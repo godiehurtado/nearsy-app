@@ -4,26 +4,75 @@
     "slug": "nearsy-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./src/assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
+
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./src/assets/icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nearsy.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "We use your location to show nearby profiles.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "We use your location in the background to keep you visible to nearby users.",
+        "NSLocationAlwaysUsageDescription": "We use your location to keep your profile active even when the app is not open.",
+        "NSPhotoLibraryUsageDescription": "We need access to your photo library to let you choose profile and gallery photos.",
+        "NSPhotoLibraryAddUsageDescription": "We need permission to save photos to your library if you choose to export or save images.",
+        "NSCameraUsageDescription": "We use the camera if you decide to take a new photo for your profile or gallery.",
+        "UIBackgroundModes": ["location"]
+      }
     },
+
     "android": {
+      "package": "com.nearsy.app",
+      "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./src/assets/icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "READ_MEDIA_IMAGES"
+      ]
     },
+
     "web": {
-      "favicon": "./assets/favicon.png"
-    }
+      "favicon": "./src/assets/icon.png"
+    },
+
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+
+    "plugins": [
+      "expo-dev-client",
+      "expo-image-picker",
+      [
+        "expo-location",
+        {
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ]
+    ],
+
+    "extra": {
+      "eas": {
+        "projectId": "fdb12a0f-6136-465d-bbf7-1eda6dcc14de"
+      }
+    },
+
+    "owner": "godie.hurtado"
   }
 }
