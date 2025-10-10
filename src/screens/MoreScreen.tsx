@@ -30,7 +30,7 @@ type ProfileDoc = {
   topBarImage?: string | null;
   topBarMode?: 'color' | 'image';
 
-  phoneNumber?: string;
+  phone?: string;
   birthYear?: number;
   visibleToMinAge?: number | null;
   visibleToMaxAge?: number | null;
@@ -49,7 +49,7 @@ export default function MoreScreen() {
   const [profileImage, setProfileImage] = useState<string | null>(null);
 
   // data
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phone, setphone] = useState('');
   const [birthYear, setBirthYear] = useState<string>(''); // mantener como string para input
   const [visibleToMinAge, setVisibleToMinAge] = useState<string>(''); // string -> number al guardar
   const [visibleToMaxAge, setVisibleToMaxAge] = useState<string>('');
@@ -86,7 +86,7 @@ export default function MoreScreen() {
           setProfileImage(data.profileImage ?? null);
 
           // data
-          setPhoneNumber(data.phoneNumber ?? '');
+          setphone(data.phone ?? '');
           setBirthYear(
             typeof data.birthYear === 'number' && data.birthYear > 1900
               ? String(data.birthYear)
@@ -140,7 +140,7 @@ export default function MoreScreen() {
       throw new Error('Min age cannot be greater than max age.');
 
     return {
-      phoneNumber: phoneNumber.trim(),
+      phone: phone.trim(),
       birthYear: by,
       visibleToMinAge: minA ?? null,
       visibleToMaxAge: maxA ?? null,
@@ -210,7 +210,7 @@ export default function MoreScreen() {
       await setDoc(
         doc(firestore, 'users', uid),
         {
-          phoneNumber: parsed.phoneNumber,
+          phone: parsed.phone,
           birthYear: parsed.birthYear,
           visibleToMinAge: parsed.visibleToMinAge,
           visibleToMaxAge: parsed.visibleToMaxAge,
@@ -292,8 +292,8 @@ export default function MoreScreen() {
           <TextInput
             style={[styles.input, !isEditing && styles.inputDisabled]}
             placeholder="+1 555 123 4567"
-            value={phoneNumber}
-            onChangeText={setPhoneNumber}
+            value={phone}
+            onChangeText={setphone}
             editable={isEditing}
             keyboardType="phone-pad"
           />
@@ -427,7 +427,7 @@ export default function MoreScreen() {
           onPress={handleLogout}
           activeOpacity={0.9}
         >
-          <Text style={styles.logoutText}>Cerrar sesión</Text>
+          <Text style={styles.logoutText}>Log out</Text>
         </TouchableOpacity>
 
         {/* Guardado desde el top, no botón extra aquí */}

@@ -1,5 +1,11 @@
 // src/screens/AlertsScreen.tsx
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
@@ -25,18 +31,19 @@ import { firestore } from '../config/firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { RootTabsParamList } from '../navigation/RootTabs';
+import { registerPushToken } from '../services/pushTokens';
 
 type AlertKind = 'interest_nearby' | 'contact_nearby';
 
 type AlertItem = {
   id: string;
-  uid?: string; // si existe, navegamos al perfil
-  name: string; // “Diego H.”
-  avatar?: string | null; // url
+  uid?: string;
+  name: string;
+  avatar?: string | null;
   kind: AlertKind;
-  distanceKm?: number; // para “near you”
-  sharedInterests?: string[]; // para “share interests”
-  at: number; // timestamp (cuando detectamos la cercanía)
+  distanceFt?: number; // ✅ pies
+  sharedInterests?: string[];
+  at: number;
 };
 
 type LocationDoc = { lat: number; lng: number; updatedAt?: number };
@@ -50,6 +57,12 @@ type UserDoc = {
   personalInterests?: string[];
   professionalInterests?: string[];
   mode?: 'personal' | 'professional';
+
+  // filtros y bloqueos
+  birthYear?: number;
+  visibleToMinAge?: number | null;
+  visibleToMaxAge?: number | null;
+  blockedContacts?: string[];
 };
 
 // ===== utilidades =====
@@ -89,8 +102,11 @@ function haversineKm(
   return R * d;
 }
 
+// ✅ coherencia con 500 ft
+const FEET_PER_METER = 3.28084;
 const FEET_500_IN_KM = 0.1524; // 500 ft ≈ 152.4 m
-const LOCATION_FRESH_MS = 15 * 60 * 1000; // 15 min “reciente” (ajústalo si quieres)
+const LOCATION_FRESH_MS = 5 * 60 * 1000;
+const AUTO_REFRESH_MS = 30 * 1000;
 
 export default function AlertsScreen() {
   const navigation =
@@ -102,6 +118,13 @@ export default function AlertsScreen() {
   const [me, setMe] = useState<UserDoc | null>(null);
 
   const insets = useSafeAreaInsets();
+  const currentYear = useMemo(() => new Date().getFullYear(), []); // ✅
+  const intervalRef = useRef<NodeJS.Timer | null>(null); // ✅
+
+  // Reasegura el token push al abrir esta screen (barato e idempotente)
+  useEffect(() => {
+    registerPushToken().catch(() => {});
+  }, []);
 
   // Suscríbete a MI doc: color, visibility y location
   useEffect(() => {
@@ -114,7 +137,6 @@ export default function AlertsScreen() {
     const unsub = onSnapshot(ref, (snap) => {
       if (snap.exists()) {
         const data = snap.data() as UserDoc;
-        // color
         if (typeof data.topBarColor === 'string' && data.topBarColor) {
           setTopColor(data.topBarColor);
         }
@@ -134,92 +156,129 @@ export default function AlertsScreen() {
       return;
     }
 
-    // Si no está ACTIVE o no tiene location válida, no mostramos nada
+    // Reglas base: debo estar visible y tener location válida
     if (!me.visibility || !me.location?.lat || !me.location?.lng) {
       setAlerts([]);
       return;
     }
 
-    // Solo usuarios visibles y con location
-    // (No podemos filtrar por campo-anidado no-existente con where, así que filtramos en cliente)
-    const q1 = query(
-      collection(firestore, 'users'),
-      where('visibility', '==', true),
-      limit(200),
-    );
-    const s = await getDocs(q1);
+    try {
+      const q1 = query(
+        collection(firestore, 'users'),
+        where('visibility', '==', true),
+        limit(200),
+      );
+      const s = await getDocs(q1);
 
-    const myPoint = { lat: me.location.lat, lng: me.location.lng };
-    const myInterests = new Set<string>(
-      [
-        ...(me.personalInterests ?? []),
-        ...(me.professionalInterests ?? []),
-      ].map((x) => (x || '').toLowerCase()),
-    );
+      const myPoint = { lat: me.location.lat, lng: me.location.lng };
+      const now = Date.now();
 
-    const now = Date.now();
-    const results: AlertItem[] = [];
+      const myAge =
+        typeof me.birthYear === 'number' ? currentYear - me.birthYear : null;
 
-    s.forEach((d) => {
-      if (d.id === uid) return; // no yo
-      const u = d.data() as UserDoc;
+      const myBlocked = new Set(me.blockedContacts ?? []);
 
-      // Debe tener location válida y reciente
-      const loc = u.location;
-      if (!loc?.lat || !loc?.lng) return;
-      if (loc.updatedAt && now - loc.updatedAt > LOCATION_FRESH_MS) return;
-
-      // Distancia
-      const km = haversineKm(myPoint, { lat: loc.lat, lng: loc.lng });
-      if (km > FEET_500_IN_KM) return;
-
-      // Intereses compartidos (muy simple: strings coincidentes)
-      const otherInterests = new Set<string>(
+      // 🔹 Optimización: mis intereses se calculan una sola vez
+      const myInterests = new Set(
         [
-          ...(u.personalInterests ?? []),
-          ...(u.professionalInterests ?? []),
+          ...(me.personalInterests ?? []),
+          ...(me.professionalInterests ?? []),
         ].map((x) => (x || '').toLowerCase()),
       );
 
-      const shared: string[] = [];
-      otherInterests.forEach((tag) => {
-        if (myInterests.has(tag)) shared.push(tag);
+      const results: AlertItem[] = [];
+
+      s.forEach((d) => {
+        if (d.id === uid) return;
+        const u = d.data() as UserDoc & {
+          birthYear?: number;
+          visibleToMinAge?: number | null;
+          visibleToMaxAge?: number | null;
+          blockedContacts?: string[];
+        };
+
+        // 🚫 Bloqueos (mutuos)
+        const otherBlocked = new Set(u.blockedContacts ?? []);
+        if (myBlocked.has(d.id) || otherBlocked.has(uid)) return;
+
+        // 🚫 Edad fuera de rango (mutuos)
+        const theirAge =
+          typeof u.birthYear === 'number' ? currentYear - u.birthYear : null;
+
+        if (myAge !== null) {
+          if (u.visibleToMinAge && myAge < u.visibleToMinAge) return;
+          if (u.visibleToMaxAge && myAge > u.visibleToMaxAge) return;
+        }
+        if (theirAge !== null) {
+          if (me.visibleToMinAge && theirAge < me.visibleToMinAge) return;
+          if (me.visibleToMaxAge && theirAge > me.visibleToMaxAge) return;
+        }
+
+        // 🚫 Ubicación inválida o vieja
+        const loc = u.location;
+        if (!loc?.lat || !loc?.lng) return;
+        if (loc.updatedAt && now - loc.updatedAt > LOCATION_FRESH_MS) return;
+
+        // Distancia → en ft
+        const km = haversineKm(myPoint, { lat: loc.lat, lng: loc.lng });
+        if (km > FEET_500_IN_KM) return;
+        const meters = km * 1000;
+        const feet = meters * FEET_PER_METER;
+
+        // Intereses compartidos (para etiquetar la alerta)
+        const otherInterests = new Set(
+          [
+            ...(u.personalInterests ?? []),
+            ...(u.professionalInterests ?? []),
+          ].map((x) => (x || '').toLowerCase()),
+        );
+
+        const shared: string[] = [];
+        otherInterests.forEach((tag) => {
+          if (myInterests.has(tag)) shared.push(tag);
+        });
+
+        const kind: AlertKind =
+          shared.length > 0 ? 'interest_nearby' : 'contact_nearby';
+
+        results.push({
+          id: `${d.id}-${loc.updatedAt || now}`,
+          uid: d.id,
+          name: shortName(u.realName),
+          avatar: u.profileImage ?? undefined,
+          kind,
+          distanceFt: Math.round(feet), // ✅ UI en pies
+          sharedInterests: shared.slice(0, 3),
+          at: loc.updatedAt || now,
+        });
       });
 
-      const kind: AlertKind =
-        shared.length > 0 ? 'interest_nearby' : 'contact_nearby';
+      // Ordenar por distancia (menor primero)
+      results.sort((a, b) => (a.distanceFt ?? 0) - (b.distanceFt ?? 0));
+      setAlerts(results);
+    } catch (err) {
+      // Si hay error de permisos/red
+      setAlerts([]);
+    }
+  }, [me, currentYear]);
 
-      results.push({
-        id: `${d.id}-${loc.updatedAt || now}`,
-        uid: d.id,
-        name: shortName(u.realName),
-        avatar: u.profileImage ?? undefined,
-        kind,
-        distanceKm: km,
-        sharedInterests: shared.slice(0, 3), // 3 máx para mostrar
-        at: loc.updatedAt || now,
-      });
-    });
-
-    // Ordenar por “más cercano” o por más reciente; aquí por reciente
-    results.sort((a, b) => b.at - a.at);
-    setAlerts(results);
-  }, [me]);
-
-  // Carga inicial y cada vez que “me” cambie
+  // Inicial + auto refresh (un solo intervalo estable) ✅
   useEffect(() => {
-    (async () => {
-      if (!me) {
-        setAlerts([]);
-        return;
-      }
-      setLoading(true);
-      try {
-        await buildAlerts();
-      } finally {
-        setLoading(false);
-      }
-    })();
+    if (!me) {
+      setAlerts([]);
+      return;
+    }
+    setLoading(true);
+    buildAlerts().finally(() => setLoading(false));
+
+    let id: ReturnType<typeof setInterval> | null = null;
+    id = setInterval(() => {
+      buildAlerts();
+    }, AUTO_REFRESH_MS);
+
+    return () => {
+      if (id) clearInterval(id as unknown as number);
+    };
   }, [me, buildAlerts]);
 
   const onRefresh = useCallback(async () => {
@@ -276,7 +335,12 @@ export default function AlertsScreen() {
         }
         ListHeaderComponent={
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Alerts</Text>
+            <Text style={styles.headerTitle}>Alerts (real-time)</Text>
+            <Text
+              style={{ textAlign: 'center', color: '#6B7280', marginTop: 6 }}
+            >
+              Showing only users within 500 ft right now.
+            </Text>
             {noLocation && (
               <Text
                 style={{ textAlign: 'center', color: '#6B7280', marginTop: 6 }}
@@ -291,10 +355,12 @@ export default function AlertsScreen() {
             activeOpacity={0.85}
             onPress={() => {
               if (!item.uid) return;
+              // Si usas el ref global, aquí puedes conservar:
+              // (navigationRef as any).navigate('Home', { screen: 'ProfileDetail', params: { uid: item.uid } });
               navigation.navigate('Home', {
                 screen: 'ProfileDetail',
                 params: { uid: item.uid },
-              });
+              } as any);
             }}
           >
             <View style={styles.row}>
@@ -308,10 +374,8 @@ export default function AlertsScreen() {
                   {renderMsg(item)}
                 </Text>
                 <View style={styles.metaRow}>
-                  {typeof item.distanceKm === 'number' && (
-                    <Text style={styles.meta}>
-                      {item.distanceKm.toFixed(2)} km
-                    </Text>
+                  {typeof item.distanceFt === 'number' && (
+                    <Text style={styles.meta}>{item.distanceFt} ft</Text>
                   )}
                   <Text style={styles.dot}>•</Text>
                   <Text style={styles.meta}>{timeAgo(item.at)}</Text>

@@ -289,7 +289,7 @@ export default function ProfileDetailScreen() {
                       resizeMode="contain"
                     />
                     <Text style={styles.logoCaption} numberOfLines={1}>
-                      {a.label}
+                      {a.name}
                     </Text>
                   </View>
                 );

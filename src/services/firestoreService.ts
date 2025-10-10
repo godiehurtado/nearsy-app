@@ -54,7 +54,7 @@ export type UserProfile = {
 /** Crea un perfil base en Firestore (si no existe) */
 export const createUserProfile = async (
   uid: string,
-  data: { email: string; phone?: string },
+  data: { email: string; phone?: string; birthYear: number },
 ) => {
   try {
     await setDoc(
@@ -62,6 +62,7 @@ export const createUserProfile = async (
       {
         email: data.email,
         phone: data.phone ?? null,
+        birthYear: data.birthYear,
 
         // timestamps
         createdAt: serverTimestamp(),

@@ -7,13 +7,11 @@
     "icon": "./src/assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
-
     "splash": {
       "image": "./src/assets/icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.nearsy.app",
@@ -24,10 +22,11 @@
         "NSPhotoLibraryUsageDescription": "We need access to your photo library to let you choose profile and gallery photos.",
         "NSPhotoLibraryAddUsageDescription": "We need permission to save photos to your library if you choose to export or save images.",
         "NSCameraUsageDescription": "We use the camera if you decide to take a new photo for your profile or gallery.",
-        "UIBackgroundModes": ["location"]
+        "UIBackgroundModes": [
+          "location"
+        ]
       }
     },
-
     "android": {
       "package": "com.nearsy.app",
       "edgeToEdgeEnabled": true,
@@ -42,20 +41,22 @@
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_LOCATION",
         "READ_MEDIA_IMAGES"
-      ]
+      ],
+      "notification": {
+        "icon": "./src/assets/notification-icon.png",
+        "color": "#3A5985",
+        "channelId": "default"
+      }
     },
-
     "web": {
       "favicon": "./src/assets/icon.png"
     },
-
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
       "fallbackToCacheTimeout": 0
     },
-
     "plugins": [
       "expo-dev-client",
       "expo-image-picker",
@@ -64,15 +65,18 @@
         {
           "isAndroidForegroundServiceEnabled": true
         }
-      ]
+      ],
+      [
+        "expo-notifications"
+      ],
+      "expo-asset",
+      "expo-font"
     ],
-
     "extra": {
       "eas": {
         "projectId": "fdb12a0f-6136-465d-bbf7-1eda6dcc14de"
       }
     },
-
     "owner": "godie.hurtado"
   }
 }
