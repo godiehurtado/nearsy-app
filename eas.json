@@ -11,7 +11,9 @@
     },
     "preview": {
       "distribution": "internal",
-      "channel": "preview"
+      "channel": "preview",
+      "android": { "buildType": "apk" },
+      "installCommand": "npm install"
     },
     "production": {
       "distribution": "store",
