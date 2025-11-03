@@ -21,6 +21,9 @@ import {
   stopBackgroundLocation,
 } from './src/services/backgroundLocation';
 
+import * as WebBrowser from 'expo-web-browser';
+WebBrowser.maybeCompleteAuthSession();
+
 // ===== Handler global de notificaciones (también en foreground) =====
 Notifications.setNotificationHandler({
   handleNotification:

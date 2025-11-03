@@ -11,16 +11,20 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { loginWithEmail } from '../services/authService';
 import { isProfileComplete } from '../services/firestoreService';
+import { useGoogleAuth } from '../services/googleAuth'; // ⬅️ añadido
 
 export default function LoginScreen({ navigation }: any) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
   const insets = useSafeAreaInsets();
+
+  // Google hooks
+  const { signInWithGoogle, request } = useGoogleAuth();
 
   const handleLogin = async () => {
     try {
@@ -40,6 +44,27 @@ export default function LoginScreen({ navigation }: any) {
       const msg = getAuthErrorMessage(e?.code);
       alert('Login Error: ' + msg);
     }
+  };
+
+  const handleGoogle = async () => {
+    try {
+      const user = await signInWithGoogle();
+      const complete = await isProfileComplete(user.uid);
+      navigation.navigate(complete ? 'MainTabs' : 'CompleteProfile');
+    } catch (e: any) {
+      Alert.alert(
+        'Google Sign-in',
+        e?.message ?? 'Failed to sign in with Google',
+      );
+    }
+  };
+
+  //'En Android usaremos flujo web; lo habilitamos cuando registremos tu Service ID.'
+  const handleApple = async () => {
+    Alert.alert(
+      'Sign in with Apple',
+      Platform.OS === 'ios' ? 'Comming Soon' : 'Comming Soon',
+    );
   };
 
   // Mensajes amigables por error de Firebase
@@ -94,6 +119,7 @@ export default function LoginScreen({ navigation }: any) {
             style={{ width: 250, height: 250, resizeMode: 'contain' }}
           />
 
+          {/* Email */}
           <View style={styles.inputContainer}>
             <Ionicons
               name="person"
@@ -112,6 +138,7 @@ export default function LoginScreen({ navigation }: any) {
             />
           </View>
 
+          {/* Password */}
           <View style={styles.inputContainer}>
             <Ionicons
               name="lock-closed"
@@ -133,6 +160,45 @@ export default function LoginScreen({ navigation }: any) {
             <Text style={styles.buttonText}>Log In</Text>
           </TouchableOpacity>
 
+          {/* ---------- OR SEPARATOR ---------- */}
+          <View style={styles.separatorRow}>
+            <View style={styles.separatorLine} />
+            <Text style={styles.separatorText}>or</Text>
+            <View style={styles.separatorLine} />
+          </View>
+
+          {/* Social buttons */}
+          <View style={styles.socialGroup}>
+            <TouchableOpacity
+              style={[styles.socialBtn, styles.googleBtn]}
+              onPress={handleGoogle}
+              disabled={!request}
+              activeOpacity={0.85}
+            >
+              <Ionicons
+                name="logo-google"
+                size={18}
+                color="#fff"
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.socialTextLight}>Continue with Google</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.socialBtn, styles.appleBtn]}
+              onPress={handleApple}
+              activeOpacity={0.85}
+            >
+              <Ionicons
+                name="logo-apple"
+                size={20}
+                color="#000"
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.socialTextDark}>Continue with Apple</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.linksContainer}>
             <TouchableOpacity>
               <Text style={styles.link}>Forgot Password</Text>
@@ -142,7 +208,6 @@ export default function LoginScreen({ navigation }: any) {
             </TouchableOpacity>
           </View>
 
-          {/* espacio para que no lo tape la barra inferior */}
           <View style={{ height: 80 }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -187,6 +252,7 @@ const styles = StyleSheet.create({
   },
   inputIcon: { marginRight: 8 },
   input: { flex: 1, height: 45, fontSize: 16, color: '#333' },
+
   button: {
     backgroundColor: '#ADCBE3',
     paddingVertical: 12,
@@ -195,9 +261,43 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   buttonText: { color: '#1A2B3C', fontSize: 16, fontWeight: 'bold' },
+
+  // separator
+  separatorRow: {
+    width: '100%',
+    marginTop: 22,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  separatorLine: { flex: 1, height: 1, backgroundColor: '#E5E7EB' },
+  separatorText: { color: '#6B7280', fontSize: 12, fontWeight: '600' },
+
+  // social
+  socialGroup: { width: '100%', gap: 12, alignItems: 'center' },
+  socialBtn: {
+    width: '100%',
+    height: 46,
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleBtn: { backgroundColor: '#1F2937' },
+  appleBtn: {
+    backgroundColor: '#F7F7F7',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  socialTextLight: { color: '#fff', fontWeight: '700' },
+  socialTextDark: { color: '#111', fontWeight: '700' },
+
   link: { color: '#555', marginTop: 10, fontSize: 14 },
   linkSmall: { color: '#555', marginTop: 4, marginBottom: 10, fontSize: 12 },
   linksContainer: { marginTop: 20, alignItems: 'center' },
+
   bottomBar: {
     position: 'absolute',
     bottom: 0,

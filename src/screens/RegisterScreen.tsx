@@ -1,4 +1,3 @@
-// src/screens/RegisterScreen.tsx
 import { useMemo, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -14,8 +13,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { registerWithEmail } from '../services/authService';
+import { useGoogleAuth } from '../services/googleAuth';
 import { createUserProfile } from '../services/firestoreService';
 import WheelPicker from 'react-native-wheel-picker-expo';
+import { signInWithApple } from '../services/appleAuth';
 
 export default function RegisterScreen({ navigation }: any) {
   const [email, setEmail] = useState('');
@@ -35,13 +36,11 @@ export default function RegisterScreen({ navigation }: any) {
 
   const currentYear = new Date().getFullYear();
   const years = useMemo(
-    // últimos 100 años (ajusta si quieres más)
     () => Array.from({ length: 100 }, (_, i) => currentYear - i),
     [currentYear],
   );
 
   const openYear = () => {
-    // por defecto 18 años
     const fallback = currentYear - 18;
     setTempYear(birthYear ?? fallback);
     setYearOpen(true);
@@ -49,6 +48,50 @@ export default function RegisterScreen({ navigation }: any) {
   const confirmYear = () => {
     if (tempYear) setBirthYear(tempYear);
     setYearOpen(false);
+  };
+
+  const { signInWithGoogle, request } = useGoogleAuth();
+
+  const handleGoogle = async () => {
+    try {
+      const user = await signInWithGoogle();
+      const profile: any = { email: email.trim(), birthYear };
+      if (phone.trim()) profile.phone = phone.trim();
+      await createUserProfile(user.uid, profile);
+      navigation.navigate('CompleteProfile', {
+        uid: user.uid,
+        email: user.email,
+      });
+    } catch (e: any) {
+      Alert.alert(
+        'Google Sign-in',
+        e?.message ?? 'Failed to sign in with Google',
+      );
+    }
+  };
+
+  //'Lo activamos cuando Apple Developer esté listo.''En Android usaremos flujo web; lo habilitamos cuando registremos tu Service ID.'
+  const handleApple = async () => {
+    Alert.alert(
+      'Sign in with Apple',
+      Platform.OS === 'ios' ? 'Comming Soon' : 'Comming Soon',
+    );
+    // try {
+    //   const user = await signInWithApple();
+    //   const profile: any = { email: user.email ?? email.trim(), birthYear };
+    //   if (phone.trim()) profile.phone = phone.trim();
+    //   await createUserProfile(user.uid, profile);
+
+    //   navigation.navigate('CompleteProfile', {
+    //     uid: user.uid,
+    //     email: user.email,
+    //   });
+    // } catch (e: any) {
+    //   Alert.alert(
+    //     'Apple Sign-in',
+    //     e?.message ?? 'Failed to sign in with Apple',
+    //   );
+    // }
   };
 
   const computedAge = birthYear != null ? currentYear - birthYear : null;
@@ -62,8 +105,6 @@ export default function RegisterScreen({ navigation }: any) {
       Alert.alert('Minimum age', 'You must be 14+ to create an account.');
       return;
     }
-
-    // ✅ Validaciones locales antes de Firebase
     if (!isValidEmail(email)) {
       Alert.alert('Invalid email', 'Please enter a valid email address.');
       return;
@@ -75,7 +116,6 @@ export default function RegisterScreen({ navigation }: any) {
 
     try {
       const { user } = await registerWithEmail(email.trim(), password);
-
       const profile: any = { email: email.trim(), birthYear };
       if (phone.trim()) profile.phone = phone.trim();
       await createUserProfile(user.uid, profile);
@@ -86,7 +126,6 @@ export default function RegisterScreen({ navigation }: any) {
         email: user.email,
       });
     } catch (e: any) {
-      // ✅ Mensaje claro según el código de Firebase
       const msg = getAuthErrorMessage(e?.code);
       Alert.alert('Error', msg);
     }
@@ -94,7 +133,6 @@ export default function RegisterScreen({ navigation }: any) {
 
   const ageInvalid = computedAge !== null && computedAge < 14;
 
-  // Mensajes amigables por error de Firebase
   function getAuthErrorMessage(code?: string) {
     switch (code) {
       case 'auth/invalid-email':
@@ -115,7 +153,6 @@ export default function RegisterScreen({ navigation }: any) {
     }
   }
 
-  // Validador simple de email
   const isValidEmail = (value: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
@@ -168,7 +205,7 @@ export default function RegisterScreen({ navigation }: any) {
         />
       </View>
 
-      {/* Birth year (required) → abre modal con wheel */}
+      {/* Birth year */}
       <View style={styles.ageRow}>
         <View
           style={{
@@ -201,6 +238,46 @@ export default function RegisterScreen({ navigation }: any) {
       <TouchableOpacity style={styles.button} onPress={handleRegister}>
         <Text style={styles.buttonText}>Register</Text>
       </TouchableOpacity>
+
+      {/* ---------- OR SEPARATOR ---------- */}
+      <View style={styles.separatorRow}>
+        <View style={styles.separatorLine} />
+        <Text style={styles.separatorText}>or</Text>
+        <View style={styles.separatorLine} />
+      </View>
+
+      {/* Social buttons */}
+      <View style={styles.socialGroup}>
+        <TouchableOpacity
+          style={[styles.socialBtn, styles.googleBtn]}
+          onPress={handleGoogle}
+          disabled={!request}
+          activeOpacity={0.85}
+        >
+          <Ionicons
+            name="logo-google"
+            size={18}
+            color="#fff"
+            style={{ marginRight: 8 }}
+          />
+          <Text style={styles.socialTextLight}>Continue with Google</Text>
+        </TouchableOpacity>
+
+        {/* Apple: visible en ambas plataformas (placeholder hasta configurar Apple) */}
+        <TouchableOpacity
+          style={[styles.socialBtn, styles.appleBtn]}
+          onPress={handleApple}
+          activeOpacity={0.85}
+        >
+          <Ionicons
+            name="logo-apple"
+            size={20}
+            color="#000"
+            style={{ marginRight: 8 }}
+          />
+          <Text style={styles.socialTextDark}>Continue with Apple</Text>
+        </TouchableOpacity>
+      </View>
 
       <TouchableOpacity onPress={() => navigation.navigate('Login')}>
         <Text style={styles.link}>Already have an account? Log In</Text>
@@ -319,6 +396,51 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   buttonText: { color: '#1A2B3C', fontSize: 16, fontWeight: 'bold' },
+
+  // --- separator + social buttons ---
+  separatorRow: {
+    width: '100%',
+    marginTop: 22,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  separatorLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  separatorText: {
+    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  socialGroup: {
+    width: '100%',
+    gap: 12,
+    alignItems: 'center',
+  },
+  socialBtn: {
+    width: '100%',
+    height: 46,
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleBtn: {
+    backgroundColor: '#1F2937', // oscuro para contraste con icono blanco
+  },
+  appleBtn: {
+    backgroundColor: '#F7F7F7',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  socialTextLight: { color: '#fff', fontWeight: '700' },
+  socialTextDark: { color: '#111', fontWeight: '700' },
+
   link: { marginTop: 20, fontSize: 14, color: '#555' },
 
   modalBackdrop: {
