@@ -1,14 +1,32 @@
 {
   "cli": { "version": ">= 12.2.0", "appVersionSource": "remote" },
   "build": {
-    "development": { "developmentClient": true, "distribution": "internal" },
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
     "preview": {
       "distribution": "internal",
       "channel": "preview",
       "android": { "buildType": "apk" },
-      "env": { "npm_config_legacy_peer_deps": "true" }
+      "env": {
+        "EXPO_NODE_VERSION": "20",
+        "npm_config_legacy_peer_deps": "true"
+      }
     },
-    "production": { "distribution": "store", "channel": "production" }
+    "production": {
+      "distribution": "store",
+      "channel": "production",
+      "env": {
+        "EXPO_NODE_VERSION": "20"
+      }
+    }
   },
-  "submit": { "production": { "android": { "track": "internal" } } }
+  "submit": {
+    "production": {
+      "android": {
+        "track": "internal"
+      }
+    }
+  }
 }
