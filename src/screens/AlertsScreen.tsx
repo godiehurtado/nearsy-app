@@ -102,9 +102,9 @@ function haversineKm(
   return R * d;
 }
 
-// ✅ coherencia con 500 ft
+// ✅ coherencia con 350 ft
 const FEET_PER_METER = 3.28084;
-const FEET_500_IN_KM = 0.1524; // 500 ft ≈ 152.4 m
+const FEET_350_IN_KM = 0.1524; // 350 ft ≈ 152.4 m
 const LOCATION_FRESH_MS = 5 * 60 * 1000;
 const AUTO_REFRESH_MS = 30 * 1000;
 
@@ -221,7 +221,7 @@ export default function AlertsScreen() {
 
         // Distancia → en ft
         const km = haversineKm(myPoint, { lat: loc.lat, lng: loc.lng });
-        if (km > FEET_500_IN_KM) return;
+        if (km > FEET_350_IN_KM) return;
         const meters = km * 1000;
         const feet = meters * FEET_PER_METER;
 
@@ -339,7 +339,7 @@ export default function AlertsScreen() {
             <Text
               style={{ textAlign: 'center', color: '#6B7280', marginTop: 6 }}
             >
-              Showing only users within 500 ft right now.
+              Showing only users within 350 ft right now.
             </Text>
             {noLocation && (
               <Text

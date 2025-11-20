@@ -69,3 +69,20 @@ export async function uploadInterestLogo(
 
   return { url, path: filename };
 }
+
+export async function uploadAffiliationImage(
+  uid: string,
+  localUri: string,
+  category: string,
+): Promise<string> {
+  const response = await fetch(localUri);
+  const blob = await response.blob();
+
+  const ext = localUri.split('.').pop() || 'jpg';
+  const path = `users/${uid}/affiliations/${category}_${Date.now()}.${ext}`;
+  const storageRef = ref(storage, path);
+
+  await uploadBytes(storageRef, blob);
+  const downloadUrl = await getDownloadURL(storageRef);
+  return downloadUrl;
+}

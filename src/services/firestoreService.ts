@@ -5,6 +5,7 @@ import {
   InterestAffiliations,
   SocialLinks,
   GalleryPhoto,
+  AffiliationItem,
 } from '../types/profile';
 
 export type UserProfile = {
@@ -14,7 +15,8 @@ export type UserProfile = {
   phone?: string | null;
   realName: string;
 
-  // ubicación (como la usas en MainHomeScreen)
+  status?: string;
+
   location?: { lat: number; lng: number; updatedAt: number } | null;
 
   mode?: 'personal' | 'professional';
@@ -31,8 +33,12 @@ export type UserProfile = {
   socialLinksProfessional?: SocialLinks;
 
   // ===== Galería por modo =====
-  photosPersonal?: GalleryPhoto[];
-  photosProfessional?: GalleryPhoto[];
+  personalGallery?: GalleryPhoto[];
+  professionalGallery?: GalleryPhoto[];
+
+  // ===== Affiliations por modo =====
+  personalAffiliations?: AffiliationItem[];
+  professionalAffiliations?: AffiliationItem[];
 
   // ===== Media/top bar =====
   profileImage?: string | null;
@@ -74,6 +80,7 @@ export const createUserProfile = async (
 
         // perfil
         bio: '',
+        status: '',
         realName: '',
         occupation: '',
         company: '',
@@ -95,8 +102,12 @@ export const createUserProfile = async (
         socialLinksProfessional: {},
 
         // galería por modo
-        photosPersonal: [],
-        photosProfessional: [],
+        personalGallery: [],
+        professionalGallery: [],
+
+        // ===== Affiliations por modo =====
+        personalAffiliations: [],
+        professionalAffiliations: [],
 
         // ubicación aún no seteada
         location: null,
@@ -108,6 +119,16 @@ export const createUserProfile = async (
     throw error;
   }
 };
+
+export async function updateUserAffiliations(
+  uid: string,
+  fieldName: 'personalAffiliations' | 'professionalAffiliations',
+  items: AffiliationItem[],
+) {
+  return upsertUserProfile(uid, {
+    [fieldName]: items,
+  });
+}
 
 async function upsertUserProfile(uid: string, patch: Record<string, any>) {
   try {
@@ -155,3 +176,17 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const snap = await getDoc(ref);
   return snap.exists() ? (snap.data() as UserProfile) : null;
 }
+
+export const updateUserMode = async (
+  uid: string,
+  mode: 'personal' | 'professional',
+) => {
+  await setDoc(
+    doc(firestore, 'users', uid),
+    {
+      mode,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+};

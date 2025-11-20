@@ -4,6 +4,7 @@ import SocialMediaScreen from '../screens/SocialMediaScreen';
 import CompleteProfileScreen from '../screens/CompleteProfileScreen';
 import InterestsScreen from '../screens/InterestsScreen';
 import GalleryScreen from '../screens/GalleryScreen';
+import AffiliationsScreen from '../screens/AffiliationsScreen';
 
 export type ProfileStackParamList = {
   CompleteProfile: undefined; // armar perfil general
@@ -12,6 +13,9 @@ export type ProfileStackParamList = {
     mode: 'personal' | 'professional';
   };
   Gallery: { uid?: string } | undefined;
+  Affiliations: {
+    mode: 'personal' | 'professional';
+  };
 };
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
@@ -26,6 +30,7 @@ export default function ProfileStack() {
       <Stack.Screen name="SocialMedia" component={SocialMediaScreen} />
       <Stack.Screen name="Interests" component={InterestsScreen} />
       <Stack.Screen name="Gallery" component={GalleryScreen} />
+      <Stack.Screen name="Affiliations" component={AffiliationsScreen} />
     </Stack.Navigator>
   );
 }

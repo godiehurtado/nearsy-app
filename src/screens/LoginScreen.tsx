@@ -107,12 +107,22 @@ export default function LoginScreen({ navigation }: any) {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Image
-            source={require('../assets/icon.png')}
-            style={{ width: 48, height: 48, resizeMode: 'contain' }}
-          />
           <Text style={styles.subtitle}>Welcome to</Text>
-          <Text style={styles.title}>Nearsy</Text>
+
+          <View style={styles.brandRow}>
+            <Image
+              source={require('../assets/icon.png')}
+              style={{
+                width: 36,
+                height: 36,
+                resizeMode: 'contain',
+                marginRight: 8,
+              }}
+            />
+            <Text style={styles.title}>Nearsy</Text>
+          </View>
+
+          <Text style={styles.slogan}>Be your own billboard</Text>
 
           <Image
             source={require('../assets/login_image_with_background.png')}
@@ -234,11 +244,24 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 20,
     zIndex: 1,
   },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     color: '#2B3A42',
     marginBottom: 10,
+  },
+  slogan: {
+    fontSize: 12,
+    color: '#6B7280', // gris elegante
+    marginTop: -4, // sútil, acerca el slogan al título
+    marginBottom: 20, // espacio antes de la imagen
+    fontWeight: '500',
   },
   subtitle: { fontSize: 18 },
   inputContainer: {

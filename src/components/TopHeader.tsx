@@ -168,6 +168,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 2,
+    borderColor: '#3B5A85',
   },
   brandCenter: {
     flex: 1,

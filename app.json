@@ -1,5 +1,32 @@
 {
   "expo": {
+    "name": "nearsy-app",
+    "slug": "nearsy-app",
+    "scheme": "nearsy",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./src/assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "splash": {
+      "image": "./src/assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nearsy.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "...",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "...",
+        "NSLocationAlwaysUsageDescription": "...",
+        "NSPhotoLibraryUsageDescription": "...",
+        "NSPhotoLibraryAddUsageDescription": "...",
+        "NSCameraUsageDescription": "...",
+        "UIBackgroundModes": ["location", "location"]
+      },
+      "usesAppleSignIn": true
+    },
     "android": {
       "package": "com.nearsy.app",
       "edgeToEdgeEnabled": true,
@@ -7,32 +34,60 @@
         "foregroundImage": "./src/assets/icon.png",
         "backgroundColor": "#ffffff"
       },
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "notification": {
+        "icon": "./src/assets/notification-icon.png",
+        "color": "#3B5A85",
+        "channelId": "default"
+      },
       "intentFilters": [
         {
           "action": "VIEW",
-          "category": ["BROWSABLE", "DEFAULT"],
           "data": [
             {
-              "scheme": "com.googleusercontent.apps.557470198780-1l8p3r2rpeik05a87t44t2g1iv9lbb8j",
-              "host": "oauthredirect"
+              "scheme": "com.googleusercontent.apps.557470198780-mm5ok68jl6kortcfk88h4k9op3e34ch1"
             }
-          ]
-        },
-        {
-          "action": "VIEW",
-          "category": ["BROWSABLE", "DEFAULT"],
-          "data": [{ "scheme": "nearsy", "host": "oauthredirect" }]
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
         }
       ]
     },
+    "web": {
+      "favicon": "./src/assets/icon.png"
+    },
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/fdb12a0f-6136-465d-bbf7-1eda6dcc14de"
+    },
+    "plugins": [
+      "expo-dev-client",
+      "expo-image-picker",
+      ["expo-location", { "isAndroidForegroundServiceEnabled": true }],
+      ["expo-notifications"],
+      "expo-asset",
+      "expo-font",
+      "expo-web-browser"
+    ],
     "extra": {
-      "eas": { "projectId": "fdb12a0f-6136-465d-bbf7-1eda6dcc14de" },
+      "eas": {
+        "projectId": "fdb12a0f-6136-465d-bbf7-1eda6dcc14de"
+      },
       "EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID": "",
       "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "557470198780-1l8p3r2rpeik05a87t44t2g1iv9lbb8j.apps.googleusercontent.com",
       "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "557470198780-9qe3qg59h682e3fn14ic97hf9t375m3n.apps.googleusercontent.com",
       "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "557470198780-8ls8o304sfcf8va409va90o6rar3vc5a.apps.googleusercontent.com",
       "EXPO_PUBLIC_APPLE_SERVICE_ID": "com.nearsy.app.signin",
       "EXPO_PUBLIC_APPLE_REDIRECT_WEB": "https://auth.expo.io/@godie.hurtado/nearsy-app"
-    }
+    },
+    "owner": "godie.hurtado"
   }
 }

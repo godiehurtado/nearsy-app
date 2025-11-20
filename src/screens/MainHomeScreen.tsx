@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
   },
   dotOn: {
     backgroundColor: '#A8BDDA',
-    color: '#3A5985',
+    color: '#3B5A85',
   },
   dotOff: {
     backgroundColor: '#E5E7EB',

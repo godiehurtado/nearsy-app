@@ -30,8 +30,8 @@ type ProfileDoc = {
   mode?: 'personal' | 'professional';
 
   // NUEVO esquema por modo:
-  photosPersonal?: GalleryPhoto[] | string[];
-  photosProfessional?: GalleryPhoto[] | string[];
+  personalGallery?: GalleryPhoto[] | string[];
+  professionalGallery?: GalleryPhoto[] | string[];
 
   // LEGACY (por si hay restos)
   photos?: GalleryPhoto[] | string[];
@@ -59,7 +59,7 @@ export default function ProfileGalleryScreen() {
   const routeMode = route.params?.mode;
 
   const [loading, setLoading] = useState(true);
-  const [topColor, setTopColor] = useState('#3A5985');
+  const [topColor, setTopColor] = useState('#3B5A85');
   const [firstName, setFirstName] = useState('Unnamed');
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [resolvedMode, setResolvedMode] = useState<'personal' | 'professional'>(
@@ -87,7 +87,7 @@ export default function ProfileGalleryScreen() {
 
           // 1) nombre y color del perfil visto
           setFirstName(deriveFirstName(data.realName));
-          setTopColor(data.topBarColor ?? '#3A5985');
+          setTopColor(data.topBarColor ?? '#3B5A85');
 
           // 2) modo a usar: el que pasó la ruta, o el guardado en el doc, o 'personal'
           const mode: 'personal' | 'professional' =
@@ -97,8 +97,8 @@ export default function ProfileGalleryScreen() {
           // 3) fotos según modo (con fallback legacy si hiciera falta)
           const list =
             mode === 'professional'
-              ? normalizePhotos(data.photosProfessional)
-              : normalizePhotos(data.photosPersonal);
+              ? normalizePhotos(data.professionalGallery)
+              : normalizePhotos(data.personalGallery);
 
           const finalList =
             list.length > 0 ? list : normalizePhotos(data.photos); // fallback suave

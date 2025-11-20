@@ -20,6 +20,7 @@ import {
 import ModeSwitch from '../components/ModeSwitch';
 import ProfileQuickActions from '../components/ProfileQuickActions';
 import TopHeader from '../components/TopHeader';
+import ColorPickerModal from '../components/ColorPickerModal';
 import {
   InterestAffiliations,
   InterestLabel,
@@ -30,6 +31,7 @@ import {
 import {
   saveCompleteProfile,
   getUserProfile,
+  updateUserMode,
 } from '../services/firestoreService';
 import {
   uploadProfileImage,
@@ -38,19 +40,27 @@ import {
 
 type TopBarMode = 'color' | 'image';
 
+// límites de caracteres
+const NAME_MAX = 40;
+const OCCUPATION_MAX = 60;
+const COMPANY_MAX = 60;
+const STATUS_MAX = 50;
+const BIO_MAX = 200;
+
 export default function CompleteProfileScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
 
   // Perfil
   const [realName, setRealName] = useState('');
   const [bio, setBio] = useState('');
+  const [status, setStatus] = useState('');
   const [mode, setMode] = useState<'personal' | 'professional' | null>(null);
   const [occupation, setOccupation] = useState('');
   const [company, setCompany] = useState('');
   const [profileImage, setProfileImage] = useState<string | null>(null);
 
   // Top visuals
-  const [topBarColor, setTopBarColor] = useState('#3A5985');
+  const [topBarColor, setTopBarColor] = useState('#3B5A85');
   const [topBarImage, setTopBarImage] = useState<string | null>(null);
   const [topBarMode, setTopBarMode] = useState<TopBarMode>('color');
 
@@ -73,6 +83,19 @@ export default function CompleteProfileScreen({ navigation }: any) {
     GalleryPhoto[]
   >([]);
 
+  type AffiliationItem = {
+    category: 'sportsTeam' | 'college' | 'hometown' | 'organization';
+    label: string;
+    imageUrl: string | null;
+  };
+
+  const [personalAffiliations, setPersonalAffiliations] = useState<
+    AffiliationItem[]
+  >([]);
+  const [professionalAffiliations, setProfessionalAffiliations] = useState<
+    AffiliationItem[]
+  >([]);
+
   // UI state
   const [isLoading, setIsLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -92,6 +115,7 @@ export default function CompleteProfileScreen({ navigation }: any) {
         const existing = await getUserProfile(uid);
         if (existing && existing.realName != '') {
           setRealName(existing.realName ?? '');
+          setStatus((existing as any).status ?? '');
           setBio(existing.bio ?? '');
           const currentMode = existing.mode ?? 'personal';
           setMode(currentMode);
@@ -99,7 +123,7 @@ export default function CompleteProfileScreen({ navigation }: any) {
           setOccupation(existing.occupation ?? '');
           setCompany(existing.company ?? '');
           setProfileImage(existing.profileImage ?? null);
-          setTopBarColor(existing.topBarColor ?? '#3A5985');
+          setTopBarColor(existing.topBarColor ?? '#3B5A85');
           setTopBarImage((existing as any).topBarImage ?? null);
           setTopBarMode(
             (existing as any).topBarMode ??
@@ -139,6 +163,17 @@ export default function CompleteProfileScreen({ navigation }: any) {
               : [],
           );
 
+          setPersonalAffiliations(
+            Array.isArray((existing as any).personalAffiliations)
+              ? (existing as any).personalAffiliations
+              : [],
+          );
+          setProfessionalAffiliations(
+            Array.isArray((existing as any).professionalAffiliations)
+              ? (existing as any).professionalAffiliations
+              : [],
+          );
+
           setIsEditing(false);
           setIsNewProfile(false);
         } else {
@@ -155,7 +190,7 @@ export default function CompleteProfileScreen({ navigation }: any) {
   }, []);
 
   const COLOR_OPTIONS = [
-    '#3A5985',
+    '#3B5A85',
     '#2B3A42',
     '#ADCBE3',
     '#FF8A65',
@@ -203,6 +238,11 @@ export default function CompleteProfileScreen({ navigation }: any) {
     (mode ?? 'personal') === 'professional'
       ? professionalGallery.length
       : personalGallery.length;
+
+  const affiliationsCount =
+    (mode ?? 'personal') === 'professional'
+      ? professionalAffiliations.length
+      : personalAffiliations.length;
 
   const pickImage = async () => {
     try {
@@ -254,6 +294,24 @@ export default function CompleteProfileScreen({ navigation }: any) {
     setPickerOpen(false);
   };
 
+  const handleToggleMode = async () => {
+    const nextMode: 'personal' | 'professional' =
+      (mode ?? 'personal') === 'personal' ? 'professional' : 'personal';
+
+    // actualiza UI inmediatamente
+    setMode(nextMode);
+
+    try {
+      const uid = getAuth().currentUser?.uid;
+      if (!uid) return;
+      await updateUserMode(uid, nextMode);
+    } catch (e) {
+      console.error('Error updating mode', e);
+      // opcional: pequeño aviso sin frenar el flujo
+      // Alert.alert('Error', 'Could not update mode.');
+    }
+  };
+
   const handleSave = async () => {
     await handleContinue();
     if (!isNewProfile) setIsEditing(false);
@@ -298,6 +356,7 @@ export default function CompleteProfileScreen({ navigation }: any) {
       const payload = {
         realName,
         bio,
+        status,
         mode,
         occupation,
         company: mode === 'professional' ? company : '',
@@ -338,6 +397,26 @@ export default function CompleteProfileScreen({ navigation }: any) {
     );
   };
 
+  const goToAffiliations = () => {
+    const parent = navigation.getParent?.();
+    if (parent) {
+      parent.navigate('Profile', {
+        screen: 'Affiliations',
+        params: { mode: mode ?? 'personal' },
+      });
+      return;
+    }
+    navigation.navigate('MainTabs');
+    setTimeout(
+      () =>
+        navigation.getParent?.()?.navigate('Profile', {
+          screen: 'Affiliations',
+          params: { mode: mode ?? 'personal' },
+        }),
+      0,
+    );
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
       {/* HEADER unificado */}
@@ -347,7 +426,7 @@ export default function CompleteProfileScreen({ navigation }: any) {
         topBarImage={topBarImage}
         profileImage={profileImage}
         onLeftPress={() => navigation.goBack()}
-        rightIcon={isEditing ? 'checkmark' : 'pencil'}
+        rightIcon={!isEditing ? 'pencil' : undefined}
         onRightPress={isEditing ? handleSave : () => setIsEditing(true)}
         rightDisabled={isLoading}
         rightLoading={isLoading}
@@ -423,84 +502,136 @@ export default function CompleteProfileScreen({ navigation }: any) {
         </View>
       )}
 
+      {/* Botón para cambiar foto de perfil (solo en edición) */}
+      {isEditing && (
+        <TouchableOpacity
+          onPress={pickImage}
+          style={styles.changePhotoBtn}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="camera" size={14} color="#fff" />
+          <Text style={styles.changePhotoText}>Change profile photo</Text>
+        </TouchableOpacity>
+      )}
+
       <ScrollView
-        contentContainerStyle={{ paddingBottom: 30, paddingHorizontal: 20 }}
+        contentContainerStyle={{
+          paddingBottom: isEditing ? 100 : 30, // 👈 más espacio si hay barra inferior
+          paddingHorizontal: 20,
+        }}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Botón para cambiar foto de perfil (solo en edición) */}
-        {isEditing && (
-          <TouchableOpacity
-            onPress={pickImage}
-            style={styles.changePhotoBtn}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="camera" size={14} color="#fff" />
-            <Text style={styles.changePhotoText}>Change profile photo</Text>
-          </TouchableOpacity>
-        )}
-
         <Text style={styles.title}>Your Profile</Text>
 
         {/* Campos */}
-        <TextInput
-          style={styles.input}
-          placeholder="Real Name"
-          placeholderTextColor="#9CA3AF"
-          value={realName}
-          onChangeText={setRealName}
-          editable={isEditing}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Occupation"
-          placeholderTextColor="#9CA3AF"
-          value={occupation}
-          onChangeText={setOccupation}
-          editable={isEditing}
-        />
-        <TextInput
-          style={[styles.input, styles.textArea]}
-          placeholder="Short Biography (Eg: Likes | Career | Study ...)"
-          placeholderTextColor="#9CA3AF"
-          value={bio}
-          onChangeText={setBio}
-          multiline
-          numberOfLines={4}
-          editable={isEditing}
-        />
+        {/* Name */}
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>Name</Text>
+          <TextInput
+            style={[styles.input, isEditing && styles.inputEditing]}
+            placeholder="Real Name"
+            placeholderTextColor="#9CA3AF"
+            value={realName}
+            onChangeText={(text) => setRealName(text)}
+            editable={isEditing}
+            maxLength={NAME_MAX}
+          />
+        </View>
+
+        {/* Occupation */}
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>Occupation</Text>
+          <TextInput
+            style={[styles.input, isEditing && styles.inputEditing]}
+            placeholder="Occupation"
+            placeholderTextColor="#9CA3AF"
+            value={occupation}
+            onChangeText={(text) => setOccupation(text)}
+            editable={isEditing}
+            maxLength={OCCUPATION_MAX}
+          />
+        </View>
+
+        {/* Status (short tagline) */}
+        <View style={styles.fieldGroup}>
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Status</Text>
+            <Text style={styles.charCounter}>
+              {status.length}/{STATUS_MAX}
+            </Text>
+          </View>
+          <TextInput
+            style={[styles.input, isEditing && styles.inputEditing]}
+            placeholder="Short status (e.g. 'Open to meet new people')"
+            placeholderTextColor="#9CA3AF"
+            value={status}
+            onChangeText={(text) => setStatus(text)}
+            editable={isEditing}
+            maxLength={STATUS_MAX}
+          />
+        </View>
+
+        {/* Biography */}
+        <View style={styles.fieldGroup}>
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Biography</Text>
+            <Text style={styles.charCounter}>
+              {bio.length}/{BIO_MAX}
+            </Text>
+          </View>
+          <TextInput
+            style={[
+              styles.input,
+              styles.textArea,
+              isEditing && styles.inputEditing,
+            ]}
+            placeholder="Short Biography (Eg: Likes | Career | Study ...)"
+            placeholderTextColor="#9CA3AF"
+            value={bio}
+            onChangeText={(text) => setBio(text)}
+            multiline
+            numberOfLines={4}
+            editable={isEditing}
+            maxLength={BIO_MAX}
+          />
+        </View>
 
         {/* Switch de modo */}
         <View style={styles.switchWrap}>
           <ModeSwitch
             mode={(mode || 'personal') as 'personal' | 'professional'}
-            topBarColor={'#3A5985'}
-            isEditing={isEditing}
-            onToggle={() =>
-              setMode((prev) =>
-                prev === 'personal' ? 'professional' : 'personal',
-              )
-            }
+            topBarColor={'#3B5A85'}
+            onToggle={handleToggleMode}
           />
         </View>
 
         {/* Campos adicionales (professional) */}
         {mode === 'professional' && (
           <View style={styles.professionalContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="Company"
-              placeholderTextColor="#9CA3AF"
-              value={company}
-              onChangeText={setCompany}
-              editable={isEditing}
-            />
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Company</Text>
+              <TextInput
+                style={[styles.input, isEditing && styles.inputEditing]}
+                placeholder="Company"
+                placeholderTextColor="#9CA3AF"
+                value={company}
+                onChangeText={(text) => setCompany(text)}
+                editable={isEditing}
+                maxLength={COMPANY_MAX}
+              />
+            </View>
           </View>
         )}
 
         {/* Quick Actions */}
         {!isNewProfile && (
           <ProfileQuickActions
-            stats={{ interestsCount, socialCount, photosCount }}
+            stats={{
+              interestsCount,
+              socialCount,
+              photosCount,
+              affiliationsCount,
+            }}
             onOpenInterests={() => {
               const uid = getAuth().currentUser?.uid;
               navigation.navigate('Interests', {
@@ -515,6 +646,7 @@ export default function CompleteProfileScreen({ navigation }: any) {
               const uid = getAuth().currentUser?.uid;
               navigation.navigate('Gallery', { uid, mode }); // ⬅️ PASAMOS MODE
             }}
+            onOpenAffiliations={goToAffiliations} // 👈 NUEVO
           />
         )}
 
@@ -529,48 +661,41 @@ export default function CompleteProfileScreen({ navigation }: any) {
         )}
       </ScrollView>
 
-      {/* Modal de colores */}
-      <Modal
+      <ColorPickerModal
         visible={pickerOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPickerOpen(false)}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setPickerOpen(false)}
+        initialColor={topBarColor}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(color) => {
+          setTopBarColor(color);
+          setPickerOpen(false); // ahora solo se ejecuta al darle "Apply color"
+        }}
+      />
+
+      {/* Barra fija inferior para guardar (solo en edición) */}
+      {isEditing && (
+        <View
+          style={[
+            styles.bottomBar,
+            { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 16 },
+          ]}
         >
-          <View style={styles.modalCard}>
-            <Text
-              style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 12 }}
-            >
-              Pick top bar color
-            </Text>
-            <View style={styles.colorGrid}>
-              {COLOR_OPTIONS.map((c) => (
-                <TouchableOpacity
-                  key={c}
-                  onPress={() => handlePickColor(c)}
-                  style={[
-                    styles.colorSwatch,
-                    {
-                      backgroundColor: c,
-                      borderColor: c === topBarColor ? '#000' : 'transparent',
-                    },
-                  ]}
-                  activeOpacity={0.85}
-                />
-              ))}
-            </View>
-            <TouchableOpacity
-              style={styles.closeBtn}
-              onPress={() => setPickerOpen(false)}
-            >
-              <Text style={{ color: '#fff', fontWeight: '600' }}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
+          <TouchableOpacity
+            style={[styles.bottomSaveBtn, isLoading && { opacity: 0.7 }]}
+            onPress={handleSave}
+            disabled={isLoading}
+            activeOpacity={0.85}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="save-outline" size={18} color="#fff" />
+                <Text style={styles.bottomSaveText}>Save changes</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -594,7 +719,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   modePillOpt: { paddingHorizontal: 8, paddingVertical: 4 },
-  modePillOptActive: { backgroundColor: '#3A5985' },
+  modePillOptActive: { backgroundColor: '#3B5A85' },
   modePillText: { color: '#374151', fontWeight: '600' },
   modePillTextActive: { color: '#fff' },
   headerTinyBtn: {
@@ -617,6 +742,31 @@ const styles = StyleSheet.create({
     marginTop: 30,
     marginBottom: 16,
   },
+
+  fieldGroup: {
+    width: '100%',
+    marginBottom: 12,
+  },
+
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 4,
+  },
+
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginLeft: 2,
+  },
+
+  charCounter: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+
   input: {
     width: '100%',
     backgroundColor: '#F1F1F1',
@@ -624,16 +774,31 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    marginBottom: 15,
     fontSize: 16,
+
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
-  textArea: { height: 100, textAlignVertical: 'top' },
-  professionalContainer: { width: '100%', marginTop: 10 },
+
+  inputEditing: {
+    borderColor: '#3B5A85',
+    backgroundColor: '#EEF2FF', // un toque más claro (opcional)
+  },
+
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
+  },
+
+  professionalContainer: {
+    width: '100%',
+    marginTop: 10,
+  },
 
   changePhotoBtn: {
     alignSelf: 'center',
     marginTop: 8,
-    backgroundColor: '#3A5985',
+    backgroundColor: '#3B5A85',
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -696,5 +861,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginVertical: 8,
     width: '100%',
+  },
+
+  bottomBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  bottomSaveBtn: {
+    height: 50,
+    borderRadius: 999,
+    backgroundColor: '#3B5A85',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  bottomSaveText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
   },
 });

@@ -39,6 +39,7 @@ type UserDoc = {
   topBarColor?: string;
   visibility?: boolean;
   bio?: string;
+  status?: string;
 
   // intereses por modo
   personalInterests?: string[];
@@ -62,7 +63,7 @@ type NearbyItem = UserDoc & { distanceFt?: number };
 // arriba de todo (constantes nuevas)
 const R_EARTH_M = 6371_000; // metros
 const FEET_PER_METER = 3.28084;
-const MAX_FEET = 500; // 500 ft ≈ 152.4 m
+const MAX_FEET = 350; // 350 ft ≈ 152.4 m
 const MAX_METERS = MAX_FEET / FEET_PER_METER;
 const STALE_MS = 30 * 60 * 1000; // ubicación del usuario válida por 30 min
 
@@ -253,20 +254,6 @@ export default function NearbySearchScreen() {
     );
   }
 
-  const extraForCard = (u: UserDoc) => {
-    if (u.mode === 'professional') {
-      const pro = (u.professionalInterests || []).slice(0, 3).join(', ');
-      if (pro) return pro;
-      if (u.company) return u.company;
-      const per = (u.personalInterests || []).slice(0, 3).join(', ');
-      return per || '—';
-    }
-    const per = (u.personalInterests || []).slice(0, 3).join(', ');
-    if (per) return per;
-    const pro = (u.professionalInterests || []).slice(0, 3).join(', ');
-    return pro || '—';
-  };
-
   return (
     <View style={{ flex: 1, backgroundColor: '#fff', paddingTop: insets.top }}>
       {/* Barra superior */}
@@ -302,7 +289,7 @@ export default function NearbySearchScreen() {
             <Text style={styles.headerTitle}>Discovery</Text>
             <Text style={styles.headerHint}>
               {hasLocation
-                ? 'Showing people within ~500 ft (sorted by distance)'
+                ? 'Showing people near you'
                 : 'Enable location to see people near you'}
             </Text>
           </View>
@@ -317,11 +304,7 @@ export default function NearbySearchScreen() {
                 : ''
             }`}
             occupation={item.occupation}
-            bio={item.bio}
-            extra={
-              (item.distanceFt ? `${item.distanceFt} ft • ` : '') +
-              (extraForCard(item) || '—')
-            }
+            status={item.status}
             isReversed={index % 2 === 1}
             onPress={() =>
               navigation.navigate('ProfileDetail', { uid: item.uid! })
@@ -354,8 +337,7 @@ function Card({
   image,
   name,
   occupation,
-  bio,
-  extra,
+  status,
   onPress,
   isReversed = false,
 }: {
@@ -363,8 +345,7 @@ function Card({
   image?: string;
   name: string;
   occupation?: string;
-  bio?: string;
-  extra?: string;
+  status?: string; // lo usamos como "status"
   onPress?: () => void;
   isReversed?: boolean;
 }) {
@@ -390,21 +371,20 @@ function Card({
       )}
 
       {/* Texto y pill */}
-      <View style={{ flex: 1, alignItems: 'center' }}>
-        <Text style={styles.cardName}>{name}</Text>
+      <View style={styles.cardTextContainer}>
+        <Text style={styles.cardName} numberOfLines={1}>
+          {name}
+        </Text>
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={onPress}
-          style={[styles.pill]}
+          style={styles.pill}
         >
           <Text style={styles.pillText} numberOfLines={1}>
             {occupation || '—'}
           </Text>
           <Text style={styles.pillText} numberOfLines={1}>
-            {bio || '—'}
-          </Text>
-          <Text style={styles.pillText} numberOfLines={1}>
-            {extra || '—'}
+            {status || '—'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -454,7 +434,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   avatar: { width: 100, height: 100, borderRadius: 12 },
-  cardName: { fontWeight: '800', color: '#1F2937', marginBottom: 4 },
   pill: {
     paddingVertical: 6,
     paddingHorizontal: 10,
@@ -482,5 +461,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     marginLeft: 20,
     marginRight: 20,
+  },
+  cardTextContainer: {
+    flex: 1,
+    alignItems: 'flex-start',
+  },
+  cardName: {
+    fontWeight: '800',
+    color: '#1F2937',
+    marginBottom: 4,
+    textAlign: 'left',
+    alignSelf: 'flex-start',
+    fontSize: 18, // un poco más grande para resaltar
+    marginLeft: 10, // misma sangría que el texto dentro de la pill
   },
 });

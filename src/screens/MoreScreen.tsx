@@ -43,7 +43,7 @@ export default function MoreScreen() {
   const insets = useSafeAreaInsets();
 
   // top visuals
-  const [topBarColor, setTopBarColor] = useState('#3A5985');
+  const [topBarColor, setTopBarColor] = useState('#3B5A85');
   const [topBarMode, setTopBarMode] = useState<'color' | 'image'>('color');
   const [topBarImage, setTopBarImage] = useState<string | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
@@ -78,7 +78,7 @@ export default function MoreScreen() {
           const data = snap.data() as ProfileDoc;
 
           // top
-          setTopBarColor(data.topBarColor ?? '#3A5985');
+          setTopBarColor(data.topBarColor ?? '#3B5A85');
           setTopBarMode(
             data.topBarMode ?? (data.topBarImage ? 'image' : 'color'),
           );
@@ -484,7 +484,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   flex1: { flex: 1 },
   addBtn: {
-    backgroundColor: '#3A5985',
+    backgroundColor: '#3B5A85',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,

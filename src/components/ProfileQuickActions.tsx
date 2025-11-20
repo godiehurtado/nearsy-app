@@ -7,10 +7,12 @@ type Props = {
   onOpenInterests: () => void;
   onOpenSocial: () => void;
   onOpenGallery: () => void;
+  onOpenAffiliations: () => void;
   stats?: {
     interestsCount?: number;
     socialCount?: number;
     photosCount?: number;
+    affiliationsCount?: number;
   };
 };
 
@@ -18,12 +20,19 @@ export default function ProfileQuickActions({
   onOpenInterests,
   onOpenSocial,
   onOpenGallery,
+  onOpenAffiliations,
   stats,
 }: Props) {
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>Quick actions</Text>
       <View style={styles.grid}>
+        <Tile
+          icon="sparkles-outline"
+          title="Affiliations"
+          subtitle={`${stats?.affiliationsCount ?? 0} selected`}
+          onPress={onOpenAffiliations}
+        />
         <Tile
           icon="sparkles-outline"
           title="Interests"
@@ -86,7 +95,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#3A5985', // Azul principal
+    backgroundColor: '#3B5A85', // Azul principal
     padding: 12,
     borderRadius: 14,
     minWidth: '47%',

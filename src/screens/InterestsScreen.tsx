@@ -7,9 +7,11 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  TouchableOpacity,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { getAuth } from 'firebase/auth';
+import { Ionicons } from '@expo/vector-icons';
 
 import TopHeader from '../components/TopHeader';
 import InterestsWithLogo from '../components/InterestsWithLogo';
@@ -28,10 +30,9 @@ export default function InterestsScreen() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
 
   const [profileImage, setProfileImage] = useState<string | null>(null);
-  const [topBarColor, setTopBarColor] = useState('#3A5985');
+  const [topBarColor, setTopBarColor] = useState('#3B5A85');
   const [topBarMode, setTopBarMode] = useState<'color' | 'image'>('color');
   const [topBarImage, setTopBarImage] = useState<string | null>(null);
 
@@ -83,7 +84,7 @@ export default function InterestsScreen() {
       }
 
       Alert.alert('Saved', 'Your interests were updated.');
-      setIsEditing(false);
+      navigation.goBack();
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Could not save interests.');
     } finally {
@@ -100,7 +101,7 @@ export default function InterestsScreen() {
 
         setPersonalAff(existing?.personalInterestAffiliations ?? {});
         setProfessionalAff(existing?.professionalInterestAffiliations ?? {});
-        setTopBarColor(existing?.topBarColor ?? '#3A5985');
+        setTopBarColor(existing?.topBarColor ?? '#3B5A85');
         setTopBarMode(
           (existing as any)?.topBarMode ??
             (existing?.topBarImage ? 'image' : 'color'),
@@ -125,36 +126,53 @@ export default function InterestsScreen() {
   }
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: '#fff' }}
-      contentContainerStyle={{ paddingBottom: 30 }}
-    >
-      {/* Top unificado (imagen/color + marca + avatar colgando + acciones) */}
-      <TopHeader
-        topBarMode={topBarMode}
-        topBarColor={topBarColor}
-        topBarImage={topBarImage}
-        profileImage={profileImage}
-        leftIcon="chevron-back"
-        onLeftPress={() => navigation.goBack()}
-        rightIcon={isEditing ? 'checkmark' : 'pencil'}
-        onRightPress={isEditing ? handleSave : () => setIsEditing(true)}
-        rightDisabled={saving}
-        rightLoading={saving}
-        showAvatar
-      />
-
-      <Text style={styles.headerTitle}>{title}</Text>
-
-      <View style={{ flex: 1, padding: 16 }}>
-        <InterestsWithLogo
-          value={currentAff}
-          onChange={setCurrentAff}
-          scope={mode}
-          editable={isEditing}
+    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 100 }} // espacio para la barra inferior
+      >
+        {/* Top unificado (header + avatar) */}
+        <TopHeader
+          topBarMode={topBarMode}
+          topBarColor={topBarColor}
+          topBarImage={topBarImage}
+          profileImage={profileImage}
+          leftIcon="chevron-back"
+          onLeftPress={() => navigation.goBack()}
+          showAvatar
         />
+
+        <Text style={styles.headerTitle}>{title}</Text>
+
+        <View style={{ flex: 1, padding: 16 }}>
+          <InterestsWithLogo
+            value={currentAff}
+            onChange={setCurrentAff}
+            scope={mode}
+            editable={true} // siempre editable
+          />
+        </View>
+      </ScrollView>
+
+      {/* Barra fija inferior para guardar */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity
+          style={[styles.bottomSaveBtn, saving && { opacity: 0.7 }]}
+          onPress={handleSave}
+          disabled={saving}
+          activeOpacity={0.85}
+        >
+          {saving ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="save-outline" size={18} color="#fff" />
+              <Text style={styles.bottomSaveText}>Save interests</Text>
+            </>
+          )}
+        </TouchableOpacity>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -166,8 +184,40 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
     textAlign: 'center',
-    marginTop: 20, // aire bajo el avatar colgando
+    marginTop: 20,
     marginBottom: 12,
     color: '#111827',
+  },
+
+  bottomBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  bottomSaveBtn: {
+    height: 50,
+    borderRadius: 999,
+    backgroundColor: '#3B5A85',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  bottomSaveText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
   },
 });

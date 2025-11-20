@@ -5,10 +5,10 @@ import {
   Text,
   StyleSheet,
   TextInput,
-  Image,
   ScrollView,
   ActivityIndicator,
   Alert,
+  TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -88,8 +88,16 @@ export default function SocialMediaScreen() {
       setSaving(true);
       const uid = getAuth().currentUser?.uid;
       if (!uid) throw new Error('User not authenticated.');
+
       await setSocialLinks(uid, mode, links);
-      Alert.alert('Saved', 'Your social media has been updated.');
+
+      Alert.alert('Saved', 'Your social media has been updated.', [
+        {
+          text: 'OK',
+          onPress: () => navigation.goBack(), // vuelve al perfil
+        },
+      ]);
+
       setIsEditing(false);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Could not save.');
@@ -107,101 +115,132 @@ export default function SocialMediaScreen() {
   }
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: '#fff' }}
-      contentContainerStyle={{ paddingBottom: 60 }}
-    >
-      {/* Top unificado */}
-      <TopHeader
-        topBarMode={topBarMode}
-        topBarColor={topBarColor}
-        topBarImage={topBarImage}
-        profileImage={profileImage}
-        leftIcon="chevron-back"
-        onLeftPress={() => navigation.goBack()}
-        rightIcon={isEditing ? 'checkmark' : 'pencil'}
-        onRightPress={isEditing ? handleSave : () => setIsEditing(true)}
-        rightDisabled={saving}
-        rightLoading={saving}
-        showAvatar
-      />
+    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: isEditing ? 100 : 40 }}
+      >
+        {/* Top unificado */}
+        <TopHeader
+          topBarMode={topBarMode}
+          topBarColor={topBarColor}
+          topBarImage={topBarImage}
+          profileImage={profileImage}
+          leftIcon="chevron-back"
+          onLeftPress={() => navigation.goBack()}
+          rightIcon={!isEditing ? 'pencil' : undefined}
+          onRightPress={() => setIsEditing((prev) => !prev)} // solo alterna edición
+          rightDisabled={saving}
+          rightLoading={false}
+          showAvatar
+        />
 
-      <View style={styles.container}>
-        <Text style={styles.title}>
-          {displayName} · {mode === 'personal' ? 'Personal' : 'Professional'}
-        </Text>
-        <Text style={styles.subtitle}>Connect your profiles</Text>
+        <View style={styles.container}>
+          <Text style={styles.title}>
+            {displayName} · {mode === 'personal' ? 'Personal' : 'Professional'}
+          </Text>
+          <Text style={styles.subtitle}>Connect your profiles</Text>
 
-        {/* Links */}
-        <Text style={styles.sectionTitle}>Links</Text>
-        <View style={styles.card}>
-          <SocialInput
-            label="LinkedIn"
-            icon="logo-linkedin"
-            value={links.linkedin ?? ''}
-            onChangeText={(v) => onChangeLink('linkedin', v)}
-            placeholder="https://www.linkedin.com/in/username"
-            editable={isEditing}
-          />
-          <SocialInput
-            label="Instagram"
-            icon="logo-instagram"
-            value={links.instagram ?? ''}
-            onChangeText={(v) => onChangeLink('instagram', v)}
-            placeholder="https://www.instagram.com/username"
-            editable={isEditing}
-          />
-          <SocialInput
-            label="Facebook"
-            icon="logo-facebook"
-            value={links.facebook ?? ''}
-            onChangeText={(v) => onChangeLink('facebook', v)}
-            placeholder="https://www.facebook.com/username"
-            editable={isEditing}
-          />
-          <SocialInput
-            label="YouTube"
-            icon="logo-youtube"
-            value={links.youtube ?? ''}
-            onChangeText={(v) => onChangeLink('youtube', v)}
-            placeholder="https://www.youtube.com/@username"
-            editable={isEditing}
-          />
-          <SocialInput
-            label="Twitter / X"
-            icon="logo-twitter"
-            value={links.twitter ?? ''}
-            onChangeText={(v) => onChangeLink('twitter', v)}
-            placeholder="https://twitter.com/username"
-            editable={isEditing}
-          />
-          <SocialInput
-            label="TikTok"
-            icon="logo-tiktok"
-            value={links.tiktok ?? ''}
-            onChangeText={(v) => onChangeLink('tiktok', v)}
-            placeholder="https://www.tiktok.com/@username"
-            editable={isEditing}
-          />
-          <SocialInput
-            label="Snapchat"
-            icon="logo-snapchat"
-            value={links.snapchat ?? ''}
-            onChangeText={(v) => onChangeLink('snapchat', v)}
-            placeholder="https://www.snapchat.com/@username"
-            editable={isEditing}
-          />
-          <SocialInput
-            label="Website"
-            icon="globe-outline"
-            value={links.website ?? ''}
-            onChangeText={(v) => onChangeLink('website', v)}
-            placeholder="https://yourdomain.com"
-            editable={isEditing}
-          />
+          {/* Links */}
+          <Text style={styles.sectionTitle}>Links</Text>
+          <View style={styles.card}>
+            <SocialInput
+              label="LinkedIn"
+              icon="logo-linkedin"
+              value={links.linkedin ?? ''}
+              onChangeText={(v) => onChangeLink('linkedin', v)}
+              placeholder="https://www.linkedin.com/in/username"
+              editable={isEditing}
+              isEditing={isEditing}
+            />
+            <SocialInput
+              label="Instagram"
+              icon="logo-instagram"
+              value={links.instagram ?? ''}
+              onChangeText={(v) => onChangeLink('instagram', v)}
+              placeholder="https://www.instagram.com/username"
+              editable={isEditing}
+              isEditing={isEditing}
+            />
+            <SocialInput
+              label="Facebook"
+              icon="logo-facebook"
+              value={links.facebook ?? ''}
+              onChangeText={(v) => onChangeLink('facebook', v)}
+              placeholder="https://www.facebook.com/username"
+              editable={isEditing}
+              isEditing={isEditing}
+            />
+            <SocialInput
+              label="YouTube"
+              icon="logo-youtube"
+              value={links.youtube ?? ''}
+              onChangeText={(v) => onChangeLink('youtube', v)}
+              placeholder="https://www.youtube.com/@username"
+              editable={isEditing}
+              isEditing={isEditing}
+            />
+            <SocialInput
+              label="Twitter / X"
+              icon="logo-twitter"
+              value={links.twitter ?? ''}
+              onChangeText={(v) => onChangeLink('twitter', v)}
+              placeholder="https://twitter.com/username"
+              editable={isEditing}
+              isEditing={isEditing}
+            />
+            <SocialInput
+              label="TikTok"
+              icon="logo-tiktok"
+              value={links.tiktok ?? ''}
+              onChangeText={(v) => onChangeLink('tiktok', v)}
+              placeholder="https://www.tiktok.com/@username"
+              editable={isEditing}
+              isEditing={isEditing}
+            />
+            <SocialInput
+              label="Snapchat"
+              icon="logo-snapchat"
+              value={links.snapchat ?? ''}
+              onChangeText={(v) => onChangeLink('snapchat', v)}
+              placeholder="https://www.snapchat.com/@username"
+              editable={isEditing}
+              isEditing={isEditing}
+            />
+            <SocialInput
+              label="Website"
+              icon="globe-outline"
+              value={links.website ?? ''}
+              onChangeText={(v) => onChangeLink('website', v)}
+              placeholder="https://yourdomain.com"
+              editable={isEditing}
+              isEditing={isEditing}
+            />
+          </View>
         </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
+
+      {/* Barra fija inferior para guardar (solo en edición) */}
+      {isEditing && (
+        <View style={styles.bottomBar}>
+          <TouchableOpacity
+            style={[styles.bottomSaveBtn, saving && { opacity: 0.7 }]}
+            onPress={handleSave}
+            disabled={saving}
+            activeOpacity={0.85}
+          >
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="save-outline" size={18} color="#fff" />
+                <Text style={styles.bottomSaveText}>Save social links</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -212,6 +251,7 @@ function SocialInput({
   onChangeText,
   placeholder,
   editable = true,
+  isEditing = false,
 }: {
   label: string;
   icon: React.ComponentProps<typeof Ionicons>['name'];
@@ -219,6 +259,7 @@ function SocialInput({
   onChangeText: (v: string) => void;
   placeholder?: string;
   editable?: boolean;
+  isEditing?: boolean;
 }) {
   return (
     <View style={{ marginBottom: 10 }}>
@@ -241,7 +282,11 @@ function SocialInput({
         selectTextOnFocus={editable}
         autoCapitalize="none"
         autoCorrect={false}
-        style={[styles.input, !editable && { opacity: 0.7 }]}
+        style={[
+          styles.input,
+          editable && isEditing && styles.inputEditing, // ⬅️ mismo patrón del profile
+          !editable && { opacity: 0.7 },
+        ]}
       />
     </View>
   );
@@ -284,5 +329,43 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 10,
+  },
+  // estilo de edición (igual concepto que en CompleteProfileScreen)
+  inputEditing: {
+    borderWidth: 1.5,
+    borderColor: '#3B5A85',
+    backgroundColor: '#EEF2FF',
+  },
+
+  bottomBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  bottomSaveBtn: {
+    height: 50,
+    borderRadius: 999,
+    backgroundColor: '#3B5A85',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  bottomSaveText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
   },
 });

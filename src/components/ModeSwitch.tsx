@@ -1,3 +1,4 @@
+// src/components/ModeSwitch.tsx
 import React from 'react';
 import {
   View,
@@ -13,23 +14,15 @@ interface Props {
   mode: 'personal' | 'professional';
   onToggle: () => void;
   topBarColor?: string;
-  isEditing?: boolean;
 }
 
-export default function ModeSwitch({
-  mode,
-  onToggle,
-  topBarColor,
-  isEditing = false,
-}: Props) {
+export default function ModeSwitch({ mode, onToggle, topBarColor }: Props) {
   const translateX = new Animated.Value(mode === 'personal' ? 0 : 1);
 
-  // asegúrate de que topBarColor siempre sea string
   const baseColor: string = topBarColor ?? '#3B5A85';
-  const light2: string = adjustColor(baseColor, 60); // más claro
-
-  const light1: string = adjustColor(baseColor, 40); // claro
-  const dark: string = adjustColor(baseColor, -30); // oscuro
+  const light2: string = adjustColor(baseColor, 60);
+  const light1: string = adjustColor(baseColor, 40);
+  const dark: string = adjustColor(baseColor, -30);
 
   Animated.timing(translateX, {
     toValue: mode === 'personal' ? 0 : 1,
@@ -43,9 +36,9 @@ export default function ModeSwitch({
   });
 
   return (
-    <TouchableWithoutFeedback onPress={onToggle} disabled={!isEditing}>
+    <TouchableWithoutFeedback onPress={onToggle}>
       <LinearGradient
-        colors={mode === 'personal' ? [light2, light1] : [baseColor, dark]} // <-- siempre string[]
+        colors={mode === 'personal' ? [light2, light1] : [baseColor, dark]}
         style={styles.container}
       >
         <Animated.View style={[styles.thumb, { left: thumbPosition }]}>
