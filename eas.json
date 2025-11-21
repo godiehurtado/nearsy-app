@@ -12,7 +12,8 @@
       "env": {
         "EXPO_NODE_VERSION": "20",
         "npm_config_legacy_peer_deps": "true"
-      }
+      },
+      "installCommand": "npm install"
     },
     "production": {
       "distribution": "store",
