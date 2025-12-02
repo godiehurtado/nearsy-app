@@ -39,9 +39,9 @@ export async function registerPushToken(): Promise<RegisterResult> {
       Constants?.expoConfig?.extra?.eas?.projectId ||
       Constants?.easConfig?.projectId;
 
-    if (!projectId) {
-      console.warn('registerPushToken: missing EAS projectId');
-      // sigue intentando: en dev a veces Expo puede resolverlo igual
+    if (!projectId && __DEV__) {
+      console.warn('[PushTokens] Missing EAS projectId');
+      // en producción simplemente seguimos intentando sin log
     }
 
     const { data: token } = await Notifications.getExpoPushTokenAsync(
@@ -71,7 +71,9 @@ export async function registerPushToken(): Promise<RegisterResult> {
 
     return { ok: true, token };
   } catch (err) {
-    console.warn('registerPushToken error:', err);
+    if (__DEV__) {
+      console.warn('[PushTokens] registerPushToken error:', err);
+    }
     return { ok: false, reason: 'exception' };
   }
 }
@@ -87,6 +89,8 @@ export async function unregisterPushToken(token?: string) {
 
     await deleteDoc(doc(firestore, 'users', user.uid, 'pushTokens', token));
   } catch (err) {
-    console.warn('unregisterPushToken error:', err);
+    if (__DEV__) {
+      console.warn('[PushTokens] unregisterPushToken error:', err);
+    }
   }
 }

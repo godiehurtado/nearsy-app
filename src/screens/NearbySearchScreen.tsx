@@ -41,7 +41,6 @@ type UserDoc = {
   bio?: string;
   status?: string;
 
-  // intereses por modo
   personalInterests?: string[];
   professionalInterests?: string[];
 
@@ -49,13 +48,21 @@ type UserDoc = {
   company?: string;
   mode?: 'personal' | 'professional';
   location?: { lat: number; lng: number; updatedAt?: number };
+
+  email?: string;
+  phone?: string;
+  blockedContacts?: string[];
 };
 
 type ProfileDoc = {
   profileImage?: string | null;
   realName?: string;
   topBarColor?: string;
-  visibility?: boolean; // <- usamos este campo como “ACTIVE”
+  visibility?: boolean;
+
+  phone?: string;
+  email?: string;
+  blockedContacts?: string[];
 };
 
 type NearbyItem = UserDoc & { distanceFt?: number };
@@ -85,6 +92,36 @@ function distanceMeters(
     Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
   return R_EARTH_M * c;
+}
+
+function normalizeId(value?: string | null): string {
+  if (!value) return '';
+  return value.trim().toLowerCase();
+}
+
+function isBlockedBetween(
+  myEmail?: string | null,
+  myPhone?: string | null,
+  myBlockedContacts?: string[] | null,
+  otherEmail?: string | null,
+  otherPhone?: string | null,
+  otherBlockedContacts?: string[] | null,
+) {
+  const meIds = [normalizeId(myEmail), normalizeId(myPhone)].filter(Boolean);
+  const otherIds = [normalizeId(otherEmail), normalizeId(otherPhone)].filter(
+    Boolean,
+  );
+
+  const myBlocked = (myBlockedContacts ?? []).map(normalizeId);
+  const otherBlocked = (otherBlockedContacts ?? []).map(normalizeId);
+
+  // Yo bloqueé al otro
+  const iBlockedOther = otherIds.some((id) => myBlocked.includes(id));
+
+  // El otro me bloqueó a mí
+  const otherBlockedMe = meIds.some((id) => otherBlocked.includes(id));
+
+  return iBlockedOther || otherBlockedMe;
 }
 
 async function getUsablePosition(): Promise<{
@@ -160,7 +197,9 @@ export default function NearbySearchScreen() {
         });
         return unsub;
       } catch (error) {
-        console.error('❌ Error fetching profile data:', error);
+        if (__DEV__) {
+          console.error('[NearbySearch] Error fetching profile data:', error);
+        }
         Alert.alert('Error', 'Could not load your profile.');
       } finally {
         setLoading(false);
@@ -174,6 +213,11 @@ export default function NearbySearchScreen() {
     try {
       const me = getAuth().currentUser?.uid;
       const myPos = await getUsablePosition();
+
+      const authUser = getAuth().currentUser;
+      const myEmail = authUser?.email;
+      const myPhone = profile.phone;
+      const myBlockedContacts = profile.blockedContacts;
 
       if (!myPos) {
         // ❌ sin ubicación: no mostramos resultados
@@ -208,6 +252,17 @@ export default function NearbySearchScreen() {
         if (d.id === me) return;
         const data = d.data() as UserDoc;
 
+        // 🔒 BLOQUEO MUTUO POR EMAIL / TELÉFONO
+        const blocked = isBlockedBetween(
+          myEmail,
+          myPhone,
+          myBlockedContacts,
+          data.email,
+          data.phone,
+          data.blockedContacts,
+        );
+        if (blocked) return;
+
         // Debe tener location y no estar vieja
         const loc = data.location;
         const updatedAt = loc?.updatedAt ?? 0;
@@ -228,13 +283,15 @@ export default function NearbySearchScreen() {
       nearby.sort((a, b) => (a.distanceFt ?? 0) - (b.distanceFt ?? 0));
       setItems(nearby);
     } catch (e: any) {
-      console.error('Nearby load error:', e);
+      if (__DEV__) {
+        console.error('[NearbySearch] Nearby load error:', e);
+      }
       Alert.alert('Error', e?.message || 'Could not load nearby profiles.');
       setItems([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [profile.phone, profile.blockedContacts]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

@@ -1,6 +1,7 @@
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../config/firebaseConfig';
 
+/** Sube la imagen del perfil */
 export const uploadProfileImage = async (
   uid: string,
   uri: string,
@@ -14,23 +15,23 @@ export const uploadProfileImage = async (
     await uploadBytes(storageRef, blob);
 
     const downloadURL = await getDownloadURL(storageRef);
-    console.log('✅ Image uploaded:', downloadURL);
     return downloadURL;
   } catch (error) {
-    console.error('❌ Error uploading image:', error);
+    if (__DEV__) {
+      console.warn('uploadProfileImage error:', error);
+    }
     throw error;
   }
 };
 
+/** Sube una imagen a la galería según el modo */
 export async function uploadGalleryImage(
   uid: string,
   localUri: string,
   mode: string,
 ) {
-  // nombre único
   const filename = `users/${uid}/gallery/${mode}/${Date.now()}.jpg`;
 
-  // convertir la URI local a blob
   const res = await fetch(localUri);
   const blob = await res.blob();
 
@@ -41,20 +42,24 @@ export async function uploadGalleryImage(
   return { url, path: filename };
 }
 
+/** Sube la imagen del top bar */
 export async function uploadTopBarImage(uid: string, localUri: string) {
   const resp = await fetch(localUri);
   const blob = await resp.blob();
+
   const path = `users/${uid}/topbar/${Date.now()}.jpg`;
   const fileRef = ref(storage, path);
+
   await uploadBytes(fileRef, blob, { contentType: 'image/jpeg' });
   const url = await getDownloadURL(fileRef);
   return url;
 }
 
+/** Sube un logo personalizado para un interés */
 export async function uploadInterestLogo(
   uid: string,
   scope: 'personal' | 'professional',
-  interest: string, // e.g. "Sports"
+  interest: string,
   localUri: string,
 ) {
   const safeInterest = interest.toLowerCase().replace(/\s+/g, '_');
@@ -70,6 +75,7 @@ export async function uploadInterestLogo(
   return { url, path: filename };
 }
 
+/** Sube una imagen para una afiliación */
 export async function uploadAffiliationImage(
   uid: string,
   localUri: string,

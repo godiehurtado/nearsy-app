@@ -72,7 +72,9 @@ export default function App() {
       try {
         await registerPushToken();
       } catch (e) {
-        console.warn('registerPushToken error:', e);
+        if (__DEV__) {
+          console.warn('[App] registerPushToken error:', e);
+        }
       }
 
       // b) background location según preferencia del usuario (bgVisible)
@@ -86,7 +88,9 @@ export default function App() {
           await stopBackgroundLocation().catch(() => {});
         }
       } catch (e) {
-        console.warn('BG location start/stop error:', e);
+        if (__DEV__) {
+          console.warn('[App] BG location start/stop error:', e);
+        }
       }
     });
 

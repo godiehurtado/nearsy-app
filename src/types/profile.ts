@@ -5,7 +5,7 @@ export type InterestLabel =
   | 'Healthy Lifestyle'
   | 'Extra-Curricular Activities'
   | 'Other'
-  | 'Lenguage';
+  | 'Language';
 
 export type LogoPick = {
   id: string;
@@ -36,12 +36,12 @@ export type AffiliationCategory =
   | 'schoolCollege'
   | 'majorField'
   | 'alumniGroup'
-  | 'favoriteSport'
+  // | 'favoriteSport'
   | 'favoriteTeam'
   | 'hobbiesClubs'
   | 'industry'
   | 'communityGroups'
-  | 'languages'
+  // | 'from'
   | 'pets';
 
 export type AffiliationItem = {

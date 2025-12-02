@@ -16,44 +16,35 @@ export type UserProfile = {
   realName: string;
 
   status?: string;
-
   location?: { lat: number; lng: number; updatedAt: number } | null;
 
   mode?: 'personal' | 'professional';
   occupation?: string;
 
-  // ===== Interests por modo =====
   personalInterestAffiliations?: InterestAffiliations;
   personalInterests?: string[];
   professionalInterestAffiliations?: InterestAffiliations;
   professionalInterests?: string[];
 
-  // ===== Social links por modo =====
   socialLinksPersonal?: SocialLinks;
   socialLinksProfessional?: SocialLinks;
 
-  // ===== Galería por modo =====
   personalGallery?: GalleryPhoto[];
   professionalGallery?: GalleryPhoto[];
 
-  // ===== Affiliations por modo =====
   personalAffiliations?: AffiliationItem[];
   professionalAffiliations?: AffiliationItem[];
 
-  // ===== Media/top bar =====
   profileImage?: string | null;
   topBarColor?: string;
-  topBarImage?: string | null; // URL de la imagen (o null si usa color)
+  topBarImage?: string | null;
   topBarMode?: 'color' | 'image';
 
-  // visibilidad
   visibility?: boolean;
 
-  // (opcional) Campos antiguos mientras migras las screens. Puedes quitarlos cuando
-  // ya no se referencien en el código.
-  /** @deprecated usar socialLinksPersonal / socialLinksProfessional */
+  /** @deprecated */
   socialLinks?: SocialLinks;
-  /** @deprecated usar photosPersonal / photosProfessional */
+  /** @deprecated */
   photos?: GalleryPhoto[];
 };
 
@@ -70,15 +61,12 @@ export const createUserProfile = async (
         phone: data.phone ?? null,
         birthYear: data.birthYear,
 
-        // timestamps
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
 
-        // defaults
         visibility: false,
         mode: 'personal',
 
-        // perfil
         bio: '',
         status: '',
         realName: '',
@@ -86,36 +74,32 @@ export const createUserProfile = async (
         company: '',
         profileImage: null,
 
-        // top bar
         topBarColor: '#3B5A85',
         topBarImage: null,
         topBarMode: 'color',
 
-        // interests por modo
         personalInterests: [],
         personalInterestAffiliations: {},
         professionalInterests: [],
         professionalInterestAffiliations: {},
 
-        // social por modo
         socialLinksPersonal: {},
         socialLinksProfessional: {},
 
-        // galería por modo
         personalGallery: [],
         professionalGallery: [],
 
-        // ===== Affiliations por modo =====
         personalAffiliations: [],
         professionalAffiliations: [],
 
-        // ubicación aún no seteada
         location: null,
       },
       { merge: true },
     );
   } catch (error) {
-    console.error('❌ Error en createUserProfile:', error);
+    if (__DEV__) {
+      console.error('[Firestore] Error in createUserProfile:', error);
+    }
     throw error;
   }
 };
@@ -125,9 +109,7 @@ export async function updateUserAffiliations(
   fieldName: 'personalAffiliations' | 'professionalAffiliations',
   items: AffiliationItem[],
 ) {
-  return upsertUserProfile(uid, {
-    [fieldName]: items,
-  });
+  return upsertUserProfile(uid, { [fieldName]: items });
 }
 
 async function upsertUserProfile(uid: string, patch: Record<string, any>) {
@@ -141,14 +123,14 @@ async function upsertUserProfile(uid: string, patch: Record<string, any>) {
       },
       { merge: true },
     );
-    console.log('✅ User profile upserted in Firestore');
   } catch (error) {
-    console.error('❌ Error updating user profile:', error);
+    if (__DEV__) {
+      console.error('[Firestore] Error updating profile:', error);
+    }
     throw error;
   }
 }
 
-/** Guarda/actualiza el perfil completo (crea si no existe) */
 export async function saveCompleteProfile(
   uid: string,
   data: Partial<UserProfile>,
@@ -156,7 +138,6 @@ export async function saveCompleteProfile(
   return upsertUserProfile(uid, data);
 }
 
-/** Actualiza solo las props enviadas en `patch` */
 export async function updateUserProfilePartial(
   uid: string,
   patch: Record<string, any>,
@@ -167,6 +148,7 @@ export async function updateUserProfilePartial(
 export const isProfileComplete = async (uid: string): Promise<boolean> => {
   const userDoc = await getDoc(doc(firestore, 'users', uid));
   if (!userDoc.exists()) return false;
+
   const data = userDoc.data() as UserProfile;
   return !!data.realName && data.realName.trim().length > 0;
 };
@@ -181,12 +163,19 @@ export const updateUserMode = async (
   uid: string,
   mode: 'personal' | 'professional',
 ) => {
-  await setDoc(
-    doc(firestore, 'users', uid),
-    {
-      mode,
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true },
-  );
+  try {
+    await setDoc(
+      doc(firestore, 'users', uid),
+      {
+        mode,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  } catch (error) {
+    if (__DEV__) {
+      console.error('[Firestore] Error updating mode:', error);
+    }
+    throw error;
+  }
 };

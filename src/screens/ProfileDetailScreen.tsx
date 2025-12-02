@@ -119,21 +119,21 @@ const AFFILIATION_CATEGORIES: {
     subtitle: 'Alumni associations or student groups you belong to.',
     emoji: '🏫',
   },
-  {
-    key: 'favoriteSport',
-    title: 'Favorite Sport',
-    subtitle: 'Sports you are passionate about.',
-    emoji: '🏀',
-  },
+  // {
+  //   key: 'favoriteSport',
+  //   title: 'Favorite Sport',
+  //   subtitle: 'Sports you are passionate about.',
+  //   emoji: '🏀',
+  // },
   {
     key: 'favoriteTeam',
-    title: 'Favorite Team',
+    title: 'Favorite Sport Team',
     subtitle: 'Teams or clubs you support.',
     emoji: '⚽',
   },
   {
     key: 'hobbiesClubs',
-    title: 'Hobbies / Clubs',
+    title: 'Clubs',
     subtitle: 'Clubs, hobbies or activities you enjoy.',
     emoji: '🎭',
   },
@@ -149,12 +149,12 @@ const AFFILIATION_CATEGORIES: {
     subtitle: 'Local groups, NGOs or communities you support.',
     emoji: '🧑‍🤝‍🧑',
   },
-  {
-    key: 'languages',
-    title: 'Languages',
-    subtitle: 'Languages that are part of your identity.',
-    emoji: '🗺️',
-  },
+  // {
+  //   key: 'from',
+  //   title: 'Where are you from?',
+  //   subtitle: 'Tell others where you were born or raised.',
+  //   emoji: '🌎',
+  // },
   {
     key: 'pets',
     title: 'Pets',
@@ -194,7 +194,7 @@ const INTEREST_CATEGORY_META: Partial<
     subtitle: 'Clubs, hobbies and activities you participate in.',
     emoji: '🎭',
   },
-  Lenguage: {
+  Language: {
     title: 'Languages',
     subtitle: 'Languages you speak or are part of your identity.',
     emoji: '🌍',
@@ -252,7 +252,9 @@ export default function ProfileDetailScreen() {
         });
         return unsub;
       } catch (error) {
-        console.error('❌ Error fetching profile data:', error);
+        if (__DEV__) {
+          console.error('[ProfileDetail] Error fetching profile data:', error);
+        }
         Alert.alert('Error', 'Could not load your profile.');
       } finally {
         setLoading(false);

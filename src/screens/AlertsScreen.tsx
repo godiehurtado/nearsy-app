@@ -63,6 +63,8 @@ type UserDoc = {
   visibleToMinAge?: number | null;
   visibleToMaxAge?: number | null;
   blockedContacts?: string[];
+  email?: string;
+  phone?: string;
 };
 
 // ===== utilidades =====
@@ -100,6 +102,36 @@ function haversineKm(
 
   const d = 2 * Math.atan2(Math.sqrt(c), Math.sqrt(1 - c));
   return R * d;
+}
+
+function normalizeId(value?: string | null): string {
+  if (!value) return '';
+  return value.trim().toLowerCase();
+}
+
+function isBlockedBetween(
+  myEmail?: string | null,
+  myPhone?: string | null,
+  myBlockedContacts?: string[] | null,
+  otherEmail?: string | null,
+  otherPhone?: string | null,
+  otherBlockedContacts?: string[] | null,
+) {
+  const meIds = [normalizeId(myEmail), normalizeId(myPhone)].filter(Boolean);
+  const otherIds = [normalizeId(otherEmail), normalizeId(otherPhone)].filter(
+    Boolean,
+  );
+
+  const myBlocked = (myBlockedContacts ?? []).map(normalizeId);
+  const otherBlocked = (otherBlockedContacts ?? []).map(normalizeId);
+
+  // Yo bloqueé al otro
+  const iBlockedOther = otherIds.some((id) => myBlocked.includes(id));
+
+  // El otro me bloqueó a mí
+  const otherBlockedMe = meIds.some((id) => otherBlocked.includes(id));
+
+  return iBlockedOther || otherBlockedMe;
 }
 
 // ✅ coherencia con 350 ft
@@ -198,8 +230,21 @@ export default function AlertsScreen() {
         };
 
         // 🚫 Bloqueos (mutuos)
-        const otherBlocked = new Set(u.blockedContacts ?? []);
-        if (myBlocked.has(d.id) || otherBlocked.has(uid)) return;
+        const authUser = getAuth().currentUser;
+        const myEmail = authUser?.email ?? null;
+        const myPhone = me.phone ?? null;
+        const myBlockedContacts = me.blockedContacts ?? [];
+
+        const blocked = isBlockedBetween(
+          myEmail,
+          myPhone,
+          myBlockedContacts,
+          u.email ?? null,
+          u.phone ?? null,
+          u.blockedContacts ?? [],
+        );
+
+        if (blocked) return;
 
         // 🚫 Edad fuera de rango (mutuos)
         const theirAge =

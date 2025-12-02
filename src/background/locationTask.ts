@@ -15,7 +15,9 @@ type LocationTaskData = {
 TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
   try {
     if (error) {
-      console.warn('BG location task error:', error);
+      if (__DEV__) {
+        console.warn('[BG Task] location task error:', error);
+      }
       return;
     }
 
@@ -37,6 +39,8 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
       { merge: true },
     );
   } catch (e) {
-    console.warn('BG location persist error:', e);
+    if (__DEV__) {
+      console.warn('[BG Task] location persist error:', e);
+    }
   }
 });

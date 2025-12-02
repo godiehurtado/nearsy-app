@@ -67,21 +67,21 @@ const CATEGORY_CONFIG: {
     subtitle: 'Alumni associations or class groups you belong to.',
     emoji: '🏫',
   },
-  {
-    key: 'favoriteSport',
-    title: 'Favorite Sport',
-    subtitle: 'The sport you enjoy the most.',
-    emoji: '🏀',
-  },
+  // {
+  //   key: 'favoriteSport',
+  //   title: 'Favorite Sport',
+  //   subtitle: 'The sport you enjoy the most.',
+  //   emoji: '🏀',
+  // },
   {
     key: 'favoriteTeam',
-    title: 'Favorite Team',
+    title: 'Favorite Sport Team',
     subtitle: 'Club, national team or franchise you support.',
     emoji: '⚽',
   },
   {
     key: 'hobbiesClubs',
-    title: 'Hobbies / Clubs',
+    title: 'Clubs',
     subtitle: 'Hobby clubs, art groups or special interests.',
     emoji: '🎭',
   },
@@ -97,12 +97,12 @@ const CATEGORY_CONFIG: {
     subtitle: 'Community, volunteering or local groups.',
     emoji: '🧑‍🤝‍🧑',
   },
-  {
-    key: 'languages',
-    title: 'Languages',
-    subtitle: 'Languages you speak or identify with.',
-    emoji: '🗺️',
-  },
+  // {
+  //   key: 'from',
+  //   title: 'Where are you from?',
+  //   subtitle: 'Tell others where you were born or raised.',
+  //   emoji: '🌎',
+  // },
   {
     key: 'pets',
     title: 'Pets',
@@ -181,7 +181,9 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
           );
         }
       } catch (e) {
-        console.error('Error loading affiliations', e);
+        if (__DEV__) {
+          console.error('[Affiliations] Error loading affiliations', e);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -239,7 +241,9 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
       setTempLabel(existingLabel);
       setLabelModalOpen(true);
     } catch (e) {
-      console.error('Error picking affiliation image', e);
+      if (__DEV__) {
+        console.error('[Affiliations] Error picking affiliation image', e);
+      }
       Alert.alert('Error', 'Could not pick image.');
     }
   };
@@ -319,7 +323,9 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
       Alert.alert('Success', 'Affiliations updated.');
       navigation.goBack();
     } catch (e: any) {
-      console.error(e);
+      if (__DEV__) {
+        console.error('[Affiliations] Error saving affiliations', e);
+      }
       Alert.alert('Error', e?.message || 'Could not save affiliations.');
     } finally {
       setIsSaving(false);

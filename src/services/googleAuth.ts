@@ -1,58 +1,82 @@
 // src/services/googleAuth.ts
+import { useCallback } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
-import {
-  GoogleAuthProvider,
-  signInWithCredential,
-  getAuth,
-} from 'firebase/auth';
-import { Platform } from 'react-native';
+import type { AuthRequest, AuthRequestPromptOptions } from 'expo-auth-session';
+import { GoogleAuthProvider, signInWithCredential, User } from 'firebase/auth';
+import Constants from 'expo-constants';
+import { auth } from '../config/firebaseConfig';
 
 WebBrowser.maybeCompleteAuthSession();
 
-// **ATENCIÓN: Usa los IDs de Cliente de tu Consola (Captura 3)**
+type UseGoogleAuthResult = {
+  request: AuthRequest | null;
+  signInWithGoogle: (options?: AuthRequestPromptOptions) => Promise<User>;
+};
 
-// 1. Cliente Web (Tipo "Web application", necesario para el ID Token)
-const WEB_CLIENT_ID =
-  '557470198780-8ls8o304sfcf8va409va90o6rar3vc5a.apps.googleusercontent.com';
+// 🔥 redirectUri quemado según configuración actual
+const redirectUri = 'https://auth.expo.io/@godie.hurtado/nearsy-app';
 
-// 2. Cliente Android (Tipo "Android", necesario para el proxy de Android)
-const ANDROID_CLIENT_ID =
-  '557470198780-mm5ok68jl6kortcfk88h4k9op3e34ch1.apps.googleusercontent.com'; // **Reemplaza con tu ID Android real**
+export function useGoogleAuth(): UseGoogleAuthResult {
+  const extra = Constants.expoConfig?.extra ?? {};
+  const webClientId = extra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID as
+    | string
+    | undefined;
 
-// 3. Cliente iOS (Tipo "iOS", necesario para el proxy de iOS)
-const IOS_CLIENT_ID =
-  '557470198780-9qe3qg59h682e3fn14ic97hf9t375m3n.apps.googleusercontent.com'; // **Reemplaza con tu ID iOS real**
+  if (!webClientId && __DEV__) {
+    console.warn(
+      '[GoogleAuth] Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID in app.json -> extra',
+    );
+  }
 
-export function useGoogleAuth() {
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    // Siempre usaremos el Cliente WEB para que Google sepa qué API Key usar
-    clientId: WEB_CLIENT_ID,
-
-    // **Estos son CRUCIALES para el modo Expo Go/Proxy**
-    // Indican a Expo cómo generar las URLs de redirección correctas para el proxy.
-    androidClientId: ANDROID_CLIENT_ID,
-    iosClientId: IOS_CLIENT_ID,
+  const [request, , promptAsync] = Google.useAuthRequest({
+    clientId: webClientId,
+    redirectUri,
+    useProxy: true,
+    scopes: ['openid', 'profile', 'email'],
   });
 
-  const signInWithGoogle = async () => {
-    // ⚠️ CAMBIA useProxy: true por useProxy: false ⚠️
-    // Esto obliga a usar la redirección nativa, evitando el servidor proxy de Expo.
-    const res = await (promptAsync as any)({ useProxy: false });
+  const signInWithGoogle = useCallback(
+    async (options?: AuthRequestPromptOptions) => {
+      try {
+        const res = await promptAsync({ useProxy: true, ...options });
 
-    if (res.type !== 'success' || !res.params?.id_token) {
-      // Manejar el error de cancelación o fallo
-      throw new Error('Google sign-in canceled or failed');
-    }
+        if (res.type !== 'success') {
+          throw new Error(
+            res.type === 'dismiss' || res.type === 'cancel'
+              ? 'Google sign-in cancelled.'
+              : 'Google sign-in failed.',
+          );
+        }
 
-    // 1. Crear la credencial de Firebase con el ID Token
-    const credential = GoogleAuthProvider.credential(res.params.id_token);
+        const { authentication } = res;
 
-    // 2. Iniciar sesión en Firebase
-    const user = (await signInWithCredential(getAuth(), credential)).user;
+        if (!authentication?.idToken && !authentication?.accessToken) {
+          throw new Error(
+            'Google authentication did not return a valid token.',
+          );
+        }
 
-    return user;
-  };
+        const credential = authentication.idToken
+          ? GoogleAuthProvider.credential(authentication.idToken)
+          : GoogleAuthProvider.credential(
+              null,
+              authentication.accessToken ?? undefined,
+            );
 
-  return { request, response, signInWithGoogle };
+        const userCredential = await signInWithCredential(auth, credential);
+        return userCredential.user;
+      } catch (err: any) {
+        if (__DEV__) {
+          console.error('[GoogleAuth] Sign-in error:', err);
+        }
+
+        // Sanitizar mensaje para producción
+        throw new Error('Google authentication failed. Please try again.');
+      }
+    },
+    [promptAsync],
+  );
+
+  return { request, signInWithGoogle };
 }

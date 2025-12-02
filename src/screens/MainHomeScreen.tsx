@@ -9,6 +9,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native';
 import { getAuth } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -33,6 +34,7 @@ type Props = NativeStackScreenProps<any>;
 export default function MainHomeScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<ProfileDoc>({});
+  const [statusUpdating, setStatusUpdating] = useState(false);
 
   const firstName = useMemo(() => {
     const rn = (profile.realName || '').trim();
@@ -53,7 +55,9 @@ export default function MainHomeScreen({ navigation }: Props) {
         });
         return unsub;
       } catch (error) {
-        console.error('❌ Error fetching profile data:', error);
+        if (__DEV__) {
+          console.error('[MainHome] Error fetching profile data:', error);
+        }
         Alert.alert('Error', 'Could not load your profile.');
         setLoading(false);
       }
@@ -75,7 +79,10 @@ export default function MainHomeScreen({ navigation }: Props) {
           if (perm.status !== 'granted') return;
 
           const pos = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
+            accuracy:
+              Platform.OS === 'android'
+                ? Location.Accuracy.Lowest
+                : Location.Accuracy.Balanced,
           });
           if (cancelled) return;
 
@@ -97,28 +104,62 @@ export default function MainHomeScreen({ navigation }: Props) {
   );
 
   const handleToggleActive = async () => {
-    try {
-      const uid = getAuth().currentUser?.uid;
-      if (!uid) return;
-      const next = !profile.visibility;
+    if (statusUpdating) return;
 
-      if (next) {
-        // Solo pedimos permiso al ACTIVAR
-        const perm = await Location.getForegroundPermissionsAsync();
+    const auth = getAuth();
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    const goingActive = !profile.visibility;
+
+    try {
+      setStatusUpdating(true);
+
+      // 1) Cambio rápido en Firestore SOLO de visibility
+      await updateUserProfilePartial(uid, { visibility: goingActive });
+
+      // 2) Actualizar estado local inmediatamente (UI responde al toque)
+      setProfile((p) => ({ ...p, visibility: goingActive }));
+    } catch (e) {
+      if (__DEV__) {
+        console.error('[MainHome] Error toggling visibility', e);
+      }
+      Alert.alert('Error', 'Could not update your status.');
+      return;
+    } finally {
+      setStatusUpdating(false);
+    }
+
+    // 3) Si activamos, tratamos de actualizar la ubicación en background (no bloquea la UI)
+    if (goingActive) {
+      updateLocationInBackground(uid);
+    }
+  };
+
+  const updateLocationInBackground = (uid: string) => {
+    (async () => {
+      try {
+        // 1) Permisos de ubicación
+        let perm = await Location.getForegroundPermissionsAsync();
         if (perm.status !== 'granted') {
-          const { status } = await Location.requestForegroundPermissionsAsync();
-          if (status !== 'granted') {
-            Alert.alert('Location', 'Permission is required to go ACTIVE.');
-            return;
+          perm = await Location.requestForegroundPermissionsAsync();
+          if (perm.status !== 'granted') {
+            if (__DEV__) {
+              console.warn('[MainHome] Location permission not granted');
+            }
+            return; // no molestamos al usuario, solo no guardamos ubicación
           }
         }
 
+        // 2) Intentar obtener ubicación con precisión más baja en Android
         const pos = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
+          accuracy:
+            Platform.OS === 'android'
+              ? Location.Accuracy.Low
+              : Location.Accuracy.Balanced,
         });
 
         await updateUserProfilePartial(uid, {
-          visibility: true,
           location: {
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
@@ -126,14 +167,19 @@ export default function MainHomeScreen({ navigation }: Props) {
           },
         });
 
-        setProfile((p) => ({ ...p, visibility: true }));
-      } else {
-        await updateUserProfilePartial(uid, { visibility: false });
-        setProfile((p) => ({ ...p, visibility: false }));
+        if (__DEV__) {
+          console.log('[MainHome] Location updated in background');
+        }
+      } catch (err) {
+        if (__DEV__) {
+          console.warn(
+            '[MainHome] Failed to update location in background',
+            err,
+          );
+        }
+        // Nada de alertas aquí: no queremos molestar al usuario si el GPS falla
       }
-    } catch (e) {
-      Alert.alert('Error', 'Could not update your status.');
-    }
+    })();
   };
 
   if (loading) {
@@ -169,9 +215,11 @@ export default function MainHomeScreen({ navigation }: Props) {
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={handleToggleActive}
+          disabled={statusUpdating}
           style={[
             styles.activePill,
             profile.visibility ? styles.activeOn : styles.activeOff,
+            statusUpdating && { opacity: 0.7 },
           ]}
         >
           <Text
@@ -188,7 +236,13 @@ export default function MainHomeScreen({ navigation }: Props) {
               { color: profile.visibility ? '#0F5132' : '#6B7280' },
             ]}
           >
-            {profile.visibility ? 'ACTIVE' : 'INACTIVE'}
+            {statusUpdating
+              ? profile.visibility
+                ? 'UPDATING...'
+                : 'ACTIVATING...'
+              : profile.visibility
+              ? 'ACTIVE'
+              : 'INACTIVE'}
           </Text>
         </TouchableOpacity>
 

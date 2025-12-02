@@ -772,7 +772,7 @@ const OTHER_GROUPS: OtherSubcategory[] = [
   },
 ];
 
-// Subcategorías para Lenguage (top 10 languages)
+// Subcategorías para Language (top 10 languages)
 type LanguageSubcategoryId = 'top_languages';
 
 type LanguageSubcategory = {
@@ -806,7 +806,7 @@ const logoCatalog: Record<InterestLabel, LogoOption[]> = {
   Music: MUSIC_GROUPS.flatMap((g) => g.options),
   'Healthy Lifestyle': HEALTHY_GROUPS.flatMap((g) => g.options),
   'Extra-Curricular Activities': EXTRA_GROUPS.flatMap((g) => g.options),
-  Lenguage: LANGUAGE_GROUPS.flatMap((g) => g.options),
+  Language: LANGUAGE_GROUPS.flatMap((g) => g.options),
   Other: OTHER_GROUPS.flatMap((g) => g.options),
 };
 
@@ -832,7 +832,7 @@ export default function InterestsWithLogo({
       return [
         { label: 'Sports', icon: '🏀' },
         { label: 'Music', icon: '🎵' },
-        { label: 'Lenguage', icon: '🔤' },
+        { label: 'Language', icon: '🔤' },
         { label: 'Healthy Lifestyle', icon: '🧘' },
         { label: 'Extra-Curricular Activities', icon: '🎭' },
         { label: 'Other', icon: '🌐' },
@@ -841,7 +841,7 @@ export default function InterestsWithLogo({
     return [
       { label: 'Sports', icon: '🏀' },
       { label: 'Music', icon: '🎵' },
-      { label: 'Lenguage', icon: '🔤' },
+      { label: 'Language', icon: '🔤' },
       { label: 'Healthy Lifestyle', icon: '🧘' },
       { label: 'Extra-Curricular Activities', icon: '🕺' },
       { label: 'Other', icon: '✨' },
@@ -922,7 +922,7 @@ export default function InterestsWithLogo({
       ? HEALTHY_GROUPS
       : currentInterest === 'Extra-Curricular Activities'
       ? EXTRA_GROUPS
-      : currentInterest === 'Lenguage'
+      : currentInterest === 'Language'
       ? LANGUAGE_GROUPS
       : currentInterest === 'Other'
       ? OTHER_GROUPS

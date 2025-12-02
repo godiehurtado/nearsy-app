@@ -32,7 +32,9 @@ export default function SocialMediaScreen() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+
+  // 👇 Siempre editable en esta screen
+  const isEditing = true;
 
   // Modo actual (personal/professional)
   const [mode, setMode] = useState<ProfileMode>('personal');
@@ -94,11 +96,9 @@ export default function SocialMediaScreen() {
       Alert.alert('Saved', 'Your social media has been updated.', [
         {
           text: 'OK',
-          onPress: () => navigation.goBack(), // vuelve al perfil
+          onPress: () => navigation.goBack(), // vuelve a CompleteProfileScreen
         },
       ]);
-
-      setIsEditing(false);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Could not save.');
     } finally {
@@ -118,9 +118,9 @@ export default function SocialMediaScreen() {
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: isEditing ? 100 : 40 }}
+        contentContainerStyle={{ paddingBottom: 100 }} // 👈 espacio fijo para el botón
       >
-        {/* Top unificado */}
+        {/* Top unificado (sin lápiz) */}
         <TopHeader
           topBarMode={topBarMode}
           topBarColor={topBarColor}
@@ -128,10 +128,6 @@ export default function SocialMediaScreen() {
           profileImage={profileImage}
           leftIcon="chevron-back"
           onLeftPress={() => navigation.goBack()}
-          rightIcon={!isEditing ? 'pencil' : undefined}
-          onRightPress={() => setIsEditing((prev) => !prev)} // solo alterna edición
-          rightDisabled={saving}
-          rightLoading={false}
           showAvatar
         />
 
@@ -220,26 +216,24 @@ export default function SocialMediaScreen() {
         </View>
       </ScrollView>
 
-      {/* Barra fija inferior para guardar (solo en edición) */}
-      {isEditing && (
-        <View style={styles.bottomBar}>
-          <TouchableOpacity
-            style={[styles.bottomSaveBtn, saving && { opacity: 0.7 }]}
-            onPress={handleSave}
-            disabled={saving}
-            activeOpacity={0.85}
-          >
-            {saving ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="save-outline" size={18} color="#fff" />
-                <Text style={styles.bottomSaveText}>Save social links</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
+      {/* Barra fija inferior SIEMPRE visible en esta screen */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity
+          style={[styles.bottomSaveBtn, saving && { opacity: 0.7 }]}
+          onPress={handleSave}
+          disabled={saving}
+          activeOpacity={0.85}
+        >
+          {saving ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="save-outline" size={18} color="#fff" />
+              <Text style={styles.bottomSaveText}>Save social links</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -284,7 +278,7 @@ function SocialInput({
         autoCorrect={false}
         style={[
           styles.input,
-          editable && isEditing && styles.inputEditing, // ⬅️ mismo patrón del profile
+          editable && isEditing && styles.inputEditing,
           !editable && { opacity: 0.7 },
         ]}
       />
@@ -297,7 +291,7 @@ const styles = StyleSheet.create({
 
   container: {
     paddingHorizontal: 20,
-    paddingTop: 20, // aire bajo el avatar
+    paddingTop: 20,
   },
 
   title: {
@@ -330,7 +324,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 10,
   },
-  // estilo de edición (igual concepto que en CompleteProfileScreen)
   inputEditing: {
     borderWidth: 1.5,
     borderColor: '#3B5A85',

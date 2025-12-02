@@ -14,6 +14,7 @@ type Props = {
     photosCount?: number;
     affiliationsCount?: number;
   };
+  compact?: boolean; // 👈 responsive
 };
 
 export default function ProfileQuickActions({
@@ -22,34 +23,40 @@ export default function ProfileQuickActions({
   onOpenGallery,
   onOpenAffiliations,
   stats,
+  compact,
 }: Props) {
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>Quick actions</Text>
-      <View style={styles.grid}>
+
+      <View style={[styles.grid, compact && styles.gridCompact]}>
         <Tile
           icon="sparkles-outline"
           title="Affiliations"
           subtitle={`${stats?.affiliationsCount ?? 0} selected`}
           onPress={onOpenAffiliations}
+          compact={compact}
         />
         <Tile
           icon="sparkles-outline"
           title="Interests"
           subtitle={`${stats?.interestsCount ?? 0} selected`}
           onPress={onOpenInterests}
+          compact={compact}
         />
         <Tile
           icon="share-social-outline"
           title="Social media"
           subtitle={`${stats?.socialCount ?? 0} connected`}
           onPress={onOpenSocial}
+          compact={compact}
         />
         <Tile
           icon="images-outline"
           title="Gallery"
           subtitle={`${stats?.photosCount ?? 0} photos`}
           onPress={onOpenGallery}
+          compact={compact}
         />
       </View>
     </View>
@@ -61,16 +68,22 @@ function Tile({
   title,
   subtitle,
   onPress,
+  compact,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle?: string;
   onPress: () => void;
+  compact?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.tile,
+        compact && styles.tileCompact, // 👈 full-width en modo compacto
+        pressed && styles.pressed,
+      ]}
     >
       <Ionicons name={icon} size={22} color="#FFFFFF" />
       <View style={{ flex: 1 }}>
@@ -90,7 +103,16 @@ const styles = StyleSheet.create({
     color: '#111827',
     paddingHorizontal: 4,
   },
-  grid: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+  grid: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  // 👇 En compacto apilamos una debajo de otra
+  gridCompact: {
+    flexDirection: 'column',
+    flexWrap: 'nowrap',
+  },
   tile: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -101,7 +123,12 @@ const styles = StyleSheet.create({
     minWidth: '47%',
     flexGrow: 1,
   },
-  tileTitle: { fontWeight: '700', color: '#FFFFFF' }, // Texto blanco
-  tileSubtitle: { color: '#E0E7FF', fontSize: 12 }, // Blanco más suave para contraste
+  // 👇 Full width para pantallas con texto grande
+  tileCompact: {
+    minWidth: '100%',
+    alignSelf: 'stretch',
+  },
+  tileTitle: { fontWeight: '700', color: '#FFFFFF' },
+  tileSubtitle: { color: '#E0E7FF', fontSize: 12 },
   pressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
 });
