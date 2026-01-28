@@ -16,21 +16,24 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.nearsy.app",
+      "buildNumber": "2",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "...",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "...",
-        "NSLocationAlwaysUsageDescription": "...",
-        "NSPhotoLibraryUsageDescription": "...",
-        "NSPhotoLibraryAddUsageDescription": "...",
-        "NSCameraUsageDescription": "...",
-        "UIBackgroundModes": ["location", "location"]
-      },
-      "usesAppleSignIn": true
+        "NSLocationWhenInUseUsageDescription": "Nearsy uses your location to show nearby people while you are using the app.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Nearsy uses your location in the background, only when your visibility is ON, to keep your proximity updated.",
+        "NSLocationAlwaysUsageDescription": "Nearsy uses your location in the background, only when your visibility is ON, to keep your proximity updated.",
+        "NSPhotoLibraryUsageDescription": "Nearsy needs access to your photos so you can upload images to your profile and gallery.",
+        "NSPhotoLibraryAddUsageDescription": "Nearsy needs permission to save images to your photo library when you choose to export or save content.",
+        "NSCameraUsageDescription": "Nearsy uses the camera so you can take photos for your profile and gallery.",
+        "UIBackgroundModes": ["location", "location"],
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.nearsy.app",
       "versionCode": 2,
       "edgeToEdgeEnabled": true,
+      "googleServicesFile": "./google-services.json",
       "windowSoftInputMode": "adjustResize",
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/icon.png",
@@ -42,7 +45,8 @@
         "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_LOCATION",
-        "android.permission.READ_MEDIA_IMAGES"
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "notification": {
@@ -65,6 +69,14 @@
         "expo-location",
         {
           "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 24
+          }
         }
       ],
       ["expo-notifications"],
