@@ -3,7 +3,7 @@
     "name": "nearsy-app",
     "slug": "nearsy-app",
     "scheme": "nearsy",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./src/assets/icon.png",
     "userInterfaceStyle": "light",
@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.nearsy.app",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Nearsy uses your location to show nearby people while you are using the app.",
@@ -57,12 +57,13 @@
     "web": {
       "favicon": "./src/assets/icon.png"
     },
-    "runtimeVersion": "1.0.1",
+    "runtimeVersion": "1.0.2",
     "updates": {
       "fallbackToCacheTimeout": 0,
       "url": "https://u.expo.dev/fdb12a0f-6136-465d-bbf7-1eda6dcc14de"
     },
     "plugins": [
+      "./plugins/withModularHeadersPodfile",
       "expo-dev-client",
       "expo-image-picker",
       [
