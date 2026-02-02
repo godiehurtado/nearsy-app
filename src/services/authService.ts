@@ -1,17 +1,16 @@
-// src/services/authService.ts
-import { auth } from '../config/firebaseConfig';
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  sendEmailVerification,
-  sendPasswordResetEmail,
-  User,
-} from 'firebase/auth';
+// src/services/authService.ts  ✅ RNFirebase-only (centralized instance)
+
+import { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import { firebaseAuth } from '../config/firebaseConfig';
+
+// Alias opcional para que sea más legible
+type RNUser = FirebaseAuthTypes.User;
+type RNUserCredential = FirebaseAuthTypes.UserCredential;
 
 // Envía email de verificación al usuario dado
-const sendVerificationEmail = async (user: User) => {
+const sendVerificationEmail = async (user: RNUser) => {
   try {
-    await sendEmailVerification(user);
+    await user.sendEmailVerification();
   } catch (error) {
     if (__DEV__) {
       console.error('[Auth] Error sending verification email:', error);
@@ -20,10 +19,12 @@ const sendVerificationEmail = async (user: User) => {
   }
 };
 
-export const registerWithEmail = async (email: string, password: string) => {
+export const registerWithEmail = async (
+  email: string,
+  password: string,
+): Promise<RNUserCredential> => {
   try {
-    const userCredential = await createUserWithEmailAndPassword(
-      auth,
+    const userCredential = await firebaseAuth.createUserWithEmailAndPassword(
       email,
       password,
     );
@@ -40,10 +41,12 @@ export const registerWithEmail = async (email: string, password: string) => {
   }
 };
 
-export const loginWithEmail = async (email: string, password: string) => {
+export const loginWithEmail = async (
+  email: string,
+  password: string,
+): Promise<RNUserCredential> => {
   try {
-    const userCredential = await signInWithEmailAndPassword(
-      auth,
+    const userCredential = await firebaseAuth.signInWithEmailAndPassword(
       email,
       password,
     );
@@ -52,16 +55,17 @@ export const loginWithEmail = async (email: string, password: string) => {
     await userCredential.user.reload();
 
     if (!userCredential.user.emailVerified) {
-      // Lanzamos un error con código propio para que la UI lo maneje
-      const error: any = new Error('Email not verified');
-      error.code = 'auth/email-not-verified';
-      throw error;
+      const err: any = new Error('Email not verified');
+      err.code = 'auth/email-not-verified';
+      throw err;
     }
 
     return userCredential;
   } catch (error: any) {
     if (__DEV__) {
       console.error('[Auth] Error logging in:', error);
+      console.log('Firestore error code =>', error?.code);
+      console.log('Firestore error msg  =>', error?.message);
     }
     throw error;
   }
@@ -69,7 +73,7 @@ export const loginWithEmail = async (email: string, password: string) => {
 
 export const sendPasswordReset = async (email: string) => {
   try {
-    await sendPasswordResetEmail(auth, email);
+    await firebaseAuth.sendPasswordResetEmail(email);
   } catch (error: any) {
     if (__DEV__) {
       console.error('[Auth] Error sending password reset email:', error);

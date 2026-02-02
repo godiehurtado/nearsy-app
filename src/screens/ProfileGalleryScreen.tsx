@@ -1,4 +1,4 @@
-// src/screens/ProfileGalleryScreen.tsx
+// src/screens/ProfileGalleryScreen.tsx  ✅ RNFirebase-only
 import React, { useEffect, useState, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -11,10 +11,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { doc, getDoc } from 'firebase/firestore';
-import { firestore } from '../config/firebaseConfig';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { HomeStackParamList } from '../navigation/HomeStack';
 import { Ionicons } from '@expo/vector-icons';
+
+import { firestoreDb } from '../config/firebaseConfig';
 
 type Params = { uid: string; mode?: 'personal' | 'professional' };
 
@@ -53,8 +55,16 @@ function normalizePhotos(input?: GalleryPhoto[] | string[]) {
 }
 
 export default function ProfileGalleryScreen() {
-  const route = useRoute<RouteProp<Record<string, Params>, string>>();
-  const navigation = useNavigation();
+  // ✅ tipado de route y navigation (HomeStack)
+  type NavProp = NativeStackNavigationProp<
+    HomeStackParamList,
+    'ProfileGallery'
+  >;
+  type RouteProps = RouteProp<HomeStackParamList, 'ProfileGallery'>;
+
+  const route = useRoute<RouteProps>();
+  const navigation = useNavigation<NavProp>();
+
   const viewedUid = route.params?.uid;
   const routeMode = route.params?.mode;
 
@@ -76,20 +86,34 @@ export default function ProfileGalleryScreen() {
     setViewerOpen(true);
   }, []);
 
-  // Carga del perfil consultado
+  // Carga del perfil consultado (RNFirebase)
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       try {
-        if (!viewedUid) return;
-        const snap = await getDoc(doc(firestore, 'users', viewedUid));
-        if (snap.exists()) {
+        setLoading(true);
+
+        if (!viewedUid) {
+          if (!cancelled) {
+            setFirstName('Unnamed');
+            setTopColor('#3B5A85');
+            setPhotos([]);
+          }
+          return;
+        }
+
+        const snap = await firestoreDb.collection('users').doc(viewedUid).get();
+        if (cancelled) return;
+
+        if (snap.exists) {
           const data = snap.data() as ProfileDoc;
 
           // 1) nombre y color del perfil visto
           setFirstName(deriveFirstName(data.realName));
           setTopColor(data.topBarColor ?? '#3B5A85');
 
-          // 2) modo a usar: el que pasó la ruta, o el guardado en el doc, o 'personal'
+          // 2) modo a usar: el de la ruta, o el del doc, o 'personal'
           const mode: 'personal' | 'professional' =
             routeMode ?? data.mode ?? 'personal';
           setResolvedMode(mode);
@@ -101,17 +125,26 @@ export default function ProfileGalleryScreen() {
               : normalizePhotos(data.personalGallery);
 
           const finalList =
-            list.length > 0 ? list : normalizePhotos(data.photos); // fallback suave
-
+            list.length > 0 ? list : normalizePhotos(data.photos);
           setPhotos(finalList);
         } else {
           setFirstName('Unnamed');
           setPhotos([]);
         }
+      } catch (e: any) {
+        if (__DEV__) console.error('[ProfileGallery] load error:', e);
+        if (!cancelled) {
+          setFirstName('Unnamed');
+          setPhotos([]);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [viewedUid, routeMode]);
 
   if (loading) {
@@ -133,6 +166,7 @@ export default function ProfileGalleryScreen() {
         >
           <Ionicons name="chevron-back" size={22} color="#fff" />
         </TouchableOpacity>
+
         <View style={styles.brandContainer}>
           <Image
             source={require('../assets/icon_white.png')}
@@ -140,6 +174,7 @@ export default function ProfileGalleryScreen() {
           />
           <Text style={styles.brandText}>Nearsy</Text>
         </View>
+
         <View style={styles.topBtn} />
       </View>
 
@@ -180,6 +215,7 @@ export default function ProfileGalleryScreen() {
           >
             <Ionicons name="close" size={26} color="#fff" />
           </TouchableOpacity>
+
           {current ? (
             <Image
               source={{ uri: current }}
@@ -232,7 +268,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   thumbWrap: {
-    flex: 1 / 3, // 3 por fila
+    flex: 1 / 3,
     aspectRatio: 1,
     padding: GAP / 2,
   },

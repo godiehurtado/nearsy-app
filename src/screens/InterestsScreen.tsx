@@ -1,4 +1,4 @@
-// src/screens/InterestsScreen.tsx
+// src/screens/InterestsScreen.tsx ✅ RNFirebase-only
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
@@ -8,20 +8,23 @@ import {
   Alert,
   ScrollView,
   TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { getAuth } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
 
+import { firebaseAuth } from '../config/firebaseConfig'; // ✅ RNFirebase auth
 import TopHeader from '../components/TopHeader';
 import InterestsWithLogo from '../components/InterestsWithLogo';
-import { InterestAffiliations, InterestLabel } from '../types/profile';
+import type { InterestAffiliations } from '../types/profile';
 import {
   getUserProfile,
   updateUserProfilePartial,
 } from '../services/firestoreService';
 
-type RouteParams = { mode: 'personal' | 'professional' };
+type ProfileMode = 'personal' | 'professional';
+type RouteParams = { mode: ProfileMode };
 
 export default function InterestsScreen() {
   const route = useRoute<any>();
@@ -51,20 +54,23 @@ export default function InterestsScreen() {
   );
 
   // helpers
-  const cleanAffiliations = (aff: InterestAffiliations) =>
+  const cleanAffiliations = (aff: InterestAffiliations): InterestAffiliations =>
     Object.fromEntries(
-      Object.entries(aff).filter(
+      Object.entries(aff ?? {}).filter(
         ([, arr]) => Array.isArray(arr) && arr.length > 0,
       ),
     ) as InterestAffiliations;
 
-  const labelsFromAff = (aff: InterestAffiliations) =>
-    Object.keys(aff) as InterestLabel[];
+  // Evita el cast a InterestLabel[] (si el union es estricto te da guerra).
+  // Guardamos como string[] (Firestore no necesita el union).
+  const labelsFromAff = (aff: InterestAffiliations): string[] =>
+    Object.keys(aff ?? {});
 
   const handleSave = async () => {
     try {
       setSaving(true);
-      const uid = getAuth().currentUser?.uid;
+
+      const uid = firebaseAuth.currentUser?.uid; // ✅ RNFirebase
       if (!uid) throw new Error('User not authenticated.');
 
       if (mode === 'personal') {
@@ -95,19 +101,23 @@ export default function InterestsScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const uid = getAuth().currentUser?.uid;
+        const uid = firebaseAuth.currentUser?.uid; // ✅ RNFirebase
         if (!uid) throw new Error('User not authenticated.');
+
         const existing = await getUserProfile(uid);
 
-        setPersonalAff(existing?.personalInterestAffiliations ?? {});
-        setProfessionalAff(existing?.professionalInterestAffiliations ?? {});
-        setTopBarColor(existing?.topBarColor ?? '#3B5A85');
+        setPersonalAff((existing as any)?.personalInterestAffiliations ?? {});
+        setProfessionalAff(
+          (existing as any)?.professionalInterestAffiliations ?? {},
+        );
+
+        setTopBarColor((existing as any)?.topBarColor ?? '#3B5A85');
         setTopBarMode(
           (existing as any)?.topBarMode ??
-            (existing?.topBarImage ? 'image' : 'color'),
+            ((existing as any)?.topBarImage ? 'image' : 'color'),
         );
-        setTopBarImage(existing?.topBarImage ?? null);
-        setProfileImage(existing?.profileImage ?? null);
+        setTopBarImage((existing as any)?.topBarImage ?? null);
+        setProfileImage((existing as any)?.profileImage ?? null);
       } catch (e: any) {
         Alert.alert('Error', e?.message || 'Could not load interests.');
       } finally {
@@ -127,51 +137,56 @@ export default function InterestsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <ScrollView
+      <KeyboardAvoidingView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 100 }} // espacio para la barra inferior
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
-        {/* Top unificado (header + avatar) */}
-        <TopHeader
-          topBarMode={topBarMode}
-          topBarColor={topBarColor}
-          topBarImage={topBarImage}
-          profileImage={profileImage}
-          leftIcon="chevron-back"
-          onLeftPress={() => navigation.goBack()}
-          showAvatar
-        />
-
-        <Text style={styles.headerTitle}>{title}</Text>
-
-        <View style={{ flex: 1, padding: 16 }}>
-          <InterestsWithLogo
-            value={currentAff}
-            onChange={setCurrentAff}
-            scope={mode}
-            editable={true} // siempre editable
-          />
-        </View>
-      </ScrollView>
-
-      {/* Barra fija inferior para guardar */}
-      <View style={styles.bottomBar}>
-        <TouchableOpacity
-          style={[styles.bottomSaveBtn, saving && { opacity: 0.7 }]}
-          onPress={handleSave}
-          disabled={saving}
-          activeOpacity={0.85}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: 100 }}
+          keyboardShouldPersistTaps="handled"
         >
-          {saving ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="save-outline" size={18} color="#fff" />
-              <Text style={styles.bottomSaveText}>Save interests</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
+          <TopHeader
+            topBarMode={topBarMode}
+            topBarColor={topBarColor}
+            topBarImage={topBarImage}
+            profileImage={profileImage}
+            leftIcon="chevron-back"
+            onLeftPress={() => navigation.goBack()}
+            showAvatar
+          />
+
+          <Text style={styles.headerTitle}>{title}</Text>
+
+          <View style={{ flex: 1, padding: 16 }}>
+            <InterestsWithLogo
+              value={currentAff}
+              onChange={setCurrentAff}
+              scope={mode}
+              editable={true}
+            />
+          </View>
+        </ScrollView>
+
+        <View style={styles.bottomBar}>
+          <TouchableOpacity
+            style={[styles.bottomSaveBtn, saving && { opacity: 0.7 }]}
+            onPress={handleSave}
+            disabled={saving}
+            activeOpacity={0.85}
+          >
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="save-outline" size={18} color="#fff" />
+                <Text style={styles.bottomSaveText}>Save interests</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }

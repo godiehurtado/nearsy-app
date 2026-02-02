@@ -1,6 +1,6 @@
-// src/services/firestoreService.ts
-import { firestore } from '../config/firebaseConfig';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+// src/services/firestoreService.ts  ✅ RNFirebase-only
+import firestore from '@react-native-firebase/firestore';
+import { firestoreDb } from '../config/firebaseConfig';
 import {
   InterestAffiliations,
   SocialLinks,
@@ -54,15 +54,16 @@ export const createUserProfile = async (
   data: { email: string; phone?: string; birthYear: number },
 ) => {
   try {
-    await setDoc(
-      doc(firestore, 'users', uid),
+    const ref = firestoreDb.collection('users').doc(uid);
+
+    await ref.set(
       {
         email: data.email,
         phone: data.phone ?? null,
         birthYear: data.birthYear,
 
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
 
         visibility: false,
         mode: 'personal',
@@ -114,12 +115,12 @@ export async function updateUserAffiliations(
 
 async function upsertUserProfile(uid: string, patch: Record<string, any>) {
   try {
-    const ref = doc(firestore, 'users', uid);
-    await setDoc(
-      ref,
+    const ref = firestoreDb.collection('users').doc(uid);
+
+    await ref.set(
       {
         ...patch,
-        updatedAt: serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
       },
       { merge: true },
     );
@@ -146,17 +147,23 @@ export async function updateUserProfilePartial(
 }
 
 export const isProfileComplete = async (uid: string): Promise<boolean> => {
-  const userDoc = await getDoc(doc(firestore, 'users', uid));
-  if (!userDoc.exists()) return false;
+  const snap = await firestoreDb.collection('users').doc(uid).get();
+  if (!snap.exists) return false;
 
-  const data = userDoc.data() as UserProfile;
-  return !!data.realName && data.realName.trim().length > 0;
+  const data = snap.data() as UserProfile | undefined;
+  const realName = data?.realName ?? '';
+  return realName.trim().length > 0;
 };
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-  const ref = doc(firestore, 'users', uid);
-  const snap = await getDoc(ref);
-  return snap.exists() ? (snap.data() as UserProfile) : null;
+  const ref = firestoreDb.collection('users').doc(uid);
+  const snap = await ref.get();
+
+  if (!snap.exists) {
+    return null;
+  }
+
+  return snap.data() as UserProfile;
 }
 
 export const updateUserMode = async (
@@ -164,11 +171,10 @@ export const updateUserMode = async (
   mode: 'personal' | 'professional',
 ) => {
   try {
-    await setDoc(
-      doc(firestore, 'users', uid),
+    await firestoreDb.collection('users').doc(uid).set(
       {
         mode,
-        updatedAt: serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
       },
       { merge: true },
     );

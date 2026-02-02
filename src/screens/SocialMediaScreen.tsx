@@ -1,4 +1,3 @@
-// src/screens/SocialMediaScreen.tsx
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -9,11 +8,14 @@ import {
   ActivityIndicator,
   Alert,
   TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { getAuth } from 'firebase/auth';
 
+import { firebaseAuth } from '../config/firebaseConfig';
 import TopHeader from '../components/TopHeader';
 import type { SocialLinks } from '../types/profile';
 import { getUserProfile } from '../services/firestoreService';
@@ -26,17 +28,17 @@ import {
 type RouteParams = { mode?: ProfileMode };
 
 export default function SocialMediaScreen() {
+  // ✅ Dejar tal cual tu versión (no rompe nada en tu navigator actual)
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const routeMode: ProfileMode | undefined = route?.params?.mode;
+  const routeMode: ProfileMode | undefined = (route?.params as RouteParams)
+    ?.mode;
+
+  const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // 👇 Siempre editable en esta screen
-  const isEditing = true;
-
-  // Modo actual (personal/professional)
   const [mode, setMode] = useState<ProfileMode>('personal');
 
   // Top visuals
@@ -46,19 +48,22 @@ export default function SocialMediaScreen() {
 
   // Perfil
   const [profileImage, setProfileImage] = useState<string | null>(null);
-  const [displayName] = useState('Your Social Media');
 
   // Links por modo
   const [links, setLinks] = useState<SocialLinks>({});
 
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       try {
-        const uid = getAuth().currentUser?.uid;
+        const uid = firebaseAuth.currentUser?.uid; // ✅ tu export real
         if (!uid) throw new Error('User not authenticated.');
 
-        // 1) Cargar perfil para top visuals y modo por defecto
+        // 1) Perfil para top visuals y modo default
         const profile = await getUserProfile(uid);
+        if (cancelled) return;
+
         setTopBarColor(profile?.topBarColor ?? '#3B5A85');
         setTopBarMode(
           (profile as any)?.topBarMode ??
@@ -71,33 +76,38 @@ export default function SocialMediaScreen() {
           routeMode ?? (profile?.mode as ProfileMode) ?? 'personal';
         setMode(effectiveMode);
 
-        // 2) Cargar links del modo
+        // 2) Links del modo
         const initial = await getSocialLinks(uid, effectiveMode);
-        setLinks(initial);
+        if (cancelled) return;
+
+        setLinks(initial ?? {});
       } catch (e: any) {
         Alert.alert('Error', e?.message || 'Could not load your profile.');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [routeMode]);
 
   const onChangeLink = (key: keyof SocialLinks, val: string) =>
     setLinks((p) => ({ ...p, [key]: val }));
 
   const handleSave = async () => {
+    if (saving) return;
+
     try {
       setSaving(true);
-      const uid = getAuth().currentUser?.uid;
+      const uid = firebaseAuth.currentUser?.uid; // ✅ tu export real
       if (!uid) throw new Error('User not authenticated.');
 
       await setSocialLinks(uid, mode, links);
 
       Alert.alert('Saved', 'Your social media has been updated.', [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(), // vuelve a CompleteProfileScreen
-        },
+        { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Could not save.');
@@ -116,124 +126,122 @@ export default function SocialMediaScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <ScrollView
+      <KeyboardAvoidingView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 100 }} // 👈 espacio fijo para el botón
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={insets.top + 20}
       >
-        {/* Top unificado (sin lápiz) */}
-        <TopHeader
-          topBarMode={topBarMode}
-          topBarColor={topBarColor}
-          topBarImage={topBarImage}
-          profileImage={profileImage}
-          leftIcon="chevron-back"
-          onLeftPress={() => navigation.goBack()}
-          showAvatar
-        />
+        <View style={{ flex: 1 }}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{
+              paddingBottom: insets.bottom + 120,
+            }}
+            keyboardShouldPersistTaps="handled"
+          >
+            <TopHeader
+              topBarMode={topBarMode}
+              topBarColor={topBarColor}
+              topBarImage={topBarImage}
+              profileImage={profileImage}
+              leftIcon="chevron-back"
+              onLeftPress={() => navigation.goBack()}
+              showAvatar
+            />
 
-        <View style={styles.container}>
-          <Text style={styles.title}>
-            {displayName} · {mode === 'personal' ? 'Personal' : 'Professional'}
-          </Text>
-          <Text style={styles.subtitle}>Connect your profiles</Text>
+            <View style={styles.container}>
+              <Text style={styles.title}>
+                Your Social Media ·{' '}
+                {mode === 'personal' ? 'Personal' : 'Professional'}
+              </Text>
+              <Text style={styles.subtitle}>Connect your profiles</Text>
 
-          {/* Links */}
-          <Text style={styles.sectionTitle}>Links</Text>
-          <View style={styles.card}>
-            <SocialInput
-              label="LinkedIn"
-              icon="logo-linkedin"
-              value={links.linkedin ?? ''}
-              onChangeText={(v) => onChangeLink('linkedin', v)}
-              placeholder="https://www.linkedin.com/in/username"
-              editable={isEditing}
-              isEditing={isEditing}
-            />
-            <SocialInput
-              label="Instagram"
-              icon="logo-instagram"
-              value={links.instagram ?? ''}
-              onChangeText={(v) => onChangeLink('instagram', v)}
-              placeholder="https://www.instagram.com/username"
-              editable={isEditing}
-              isEditing={isEditing}
-            />
-            <SocialInput
-              label="Facebook"
-              icon="logo-facebook"
-              value={links.facebook ?? ''}
-              onChangeText={(v) => onChangeLink('facebook', v)}
-              placeholder="https://www.facebook.com/username"
-              editable={isEditing}
-              isEditing={isEditing}
-            />
-            <SocialInput
-              label="YouTube"
-              icon="logo-youtube"
-              value={links.youtube ?? ''}
-              onChangeText={(v) => onChangeLink('youtube', v)}
-              placeholder="https://www.youtube.com/@username"
-              editable={isEditing}
-              isEditing={isEditing}
-            />
-            <SocialInput
-              label="Twitter / X"
-              icon="logo-twitter"
-              value={links.twitter ?? ''}
-              onChangeText={(v) => onChangeLink('twitter', v)}
-              placeholder="https://twitter.com/username"
-              editable={isEditing}
-              isEditing={isEditing}
-            />
-            <SocialInput
-              label="TikTok"
-              icon="logo-tiktok"
-              value={links.tiktok ?? ''}
-              onChangeText={(v) => onChangeLink('tiktok', v)}
-              placeholder="https://www.tiktok.com/@username"
-              editable={isEditing}
-              isEditing={isEditing}
-            />
-            <SocialInput
-              label="Snapchat"
-              icon="logo-snapchat"
-              value={links.snapchat ?? ''}
-              onChangeText={(v) => onChangeLink('snapchat', v)}
-              placeholder="https://www.snapchat.com/@username"
-              editable={isEditing}
-              isEditing={isEditing}
-            />
-            <SocialInput
-              label="Website"
-              icon="globe-outline"
-              value={links.website ?? ''}
-              onChangeText={(v) => onChangeLink('website', v)}
-              placeholder="https://yourdomain.com"
-              editable={isEditing}
-              isEditing={isEditing}
-            />
+              <Text style={styles.sectionTitle}>Links</Text>
+              <View style={styles.card}>
+                <SocialInput
+                  label="LinkedIn"
+                  icon="logo-linkedin"
+                  value={links.linkedin ?? ''}
+                  onChangeText={(v) => onChangeLink('linkedin', v)}
+                  placeholder="https://www.linkedin.com/in/username"
+                />
+                <SocialInput
+                  label="Instagram"
+                  icon="logo-instagram"
+                  value={links.instagram ?? ''}
+                  onChangeText={(v) => onChangeLink('instagram', v)}
+                  placeholder="https://www.instagram.com/username"
+                />
+                <SocialInput
+                  label="Facebook"
+                  icon="logo-facebook"
+                  value={links.facebook ?? ''}
+                  onChangeText={(v) => onChangeLink('facebook', v)}
+                  placeholder="https://www.facebook.com/username"
+                />
+                <SocialInput
+                  label="YouTube"
+                  icon="logo-youtube"
+                  value={links.youtube ?? ''}
+                  onChangeText={(v) => onChangeLink('youtube', v)}
+                  placeholder="https://www.youtube.com/@username"
+                />
+                <SocialInput
+                  label="Twitter / X"
+                  icon="logo-twitter"
+                  value={links.twitter ?? ''}
+                  onChangeText={(v) => onChangeLink('twitter', v)}
+                  placeholder="https://twitter.com/username"
+                />
+                <SocialInput
+                  label="TikTok"
+                  icon="logo-tiktok"
+                  value={links.tiktok ?? ''}
+                  onChangeText={(v) => onChangeLink('tiktok', v)}
+                  placeholder="https://www.tiktok.com/@username"
+                />
+                <SocialInput
+                  label="Snapchat"
+                  icon="logo-snapchat"
+                  value={links.snapchat ?? ''}
+                  onChangeText={(v) => onChangeLink('snapchat', v)}
+                  placeholder="https://www.snapchat.com/add/username"
+                />
+                <SocialInput
+                  label="Website"
+                  icon="globe-outline"
+                  value={links.website ?? ''}
+                  onChangeText={(v) => onChangeLink('website', v)}
+                  placeholder="https://yourdomain.com"
+                />
+              </View>
+            </View>
+          </ScrollView>
+
+          <View
+            style={[
+              styles.bottomBar,
+              { paddingBottom: Math.max(insets.bottom, 16) },
+            ]}
+          >
+            <TouchableOpacity
+              style={[styles.bottomSaveBtn, saving && { opacity: 0.7 }]}
+              onPress={handleSave}
+              disabled={saving}
+              activeOpacity={0.85}
+            >
+              {saving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="save-outline" size={18} color="#fff" />
+                  <Text style={styles.bottomSaveText}>Save social links</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
-      </ScrollView>
-
-      {/* Barra fija inferior SIEMPRE visible en esta screen */}
-      <View style={styles.bottomBar}>
-        <TouchableOpacity
-          style={[styles.bottomSaveBtn, saving && { opacity: 0.7 }]}
-          onPress={handleSave}
-          disabled={saving}
-          activeOpacity={0.85}
-        >
-          {saving ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="save-outline" size={18} color="#fff" />
-              <Text style={styles.bottomSaveText}>Save social links</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -244,16 +252,12 @@ function SocialInput({
   value,
   onChangeText,
   placeholder,
-  editable = true,
-  isEditing = false,
 }: {
   label: string;
   icon: React.ComponentProps<typeof Ionicons>['name'];
   value: string;
   onChangeText: (v: string) => void;
   placeholder?: string;
-  editable?: boolean;
-  isEditing?: boolean;
 }) {
   return (
     <View style={{ marginBottom: 10 }}>
@@ -272,15 +276,10 @@ function SocialInput({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        editable={editable}
-        selectTextOnFocus={editable}
         autoCapitalize="none"
         autoCorrect={false}
-        style={[
-          styles.input,
-          editable && isEditing && styles.inputEditing,
-          !editable && { opacity: 0.7 },
-        ]}
+        keyboardType="url"
+        style={[styles.input, styles.inputEditing]}
       />
     </View>
   );
@@ -340,7 +339,6 @@ const styles = StyleSheet.create({
     borderTopColor: '#E5E7EB',
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 16,
   },
   bottomSaveBtn: {
     height: 50,

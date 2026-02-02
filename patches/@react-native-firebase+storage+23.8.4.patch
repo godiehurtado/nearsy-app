@@ -1,0 +1,39 @@
+diff --git a/node_modules/@react-native-firebase/storage/ios/RNFBStorage/RNFBStorageModule.m b/node_modules/@react-native-firebase/storage/ios/RNFBStorage/RNFBStorageModule.m
+index a3695b6..9af153e 100644
+--- a/node_modules/@react-native-firebase/storage/ios/RNFBStorage/RNFBStorageModule.m
++++ b/node_modules/@react-native-firebase/storage/ios/RNFBStorage/RNFBStorageModule.m
+@@ -16,12 +16,31 @@
+  */
+ 
+ #import <Firebase/Firebase.h>
+-#import <React/RCTUtils.h>
+ 
+-#import "RNFBRCTEventEmitter.h"
+ #import "RNFBSharedUtils.h"
+ #import "RNFBStorageCommon.h"
+-#import "RNFBStorageModule.h"
++
++#if __has_include(<React/RCTBridgeModule.h>)
++  #import <React/RCTBridgeModule.h>
++  #import <React/RCTEventEmitter.h>
++  #import <React/RCTConvert.h>
++  #import <React/RCTUtils.h>
++  #import <React/RCTDefines.h>
++#elif __has_include(<React-Core/RCTBridgeModule.h>)
++  #import <React-Core/RCTBridgeModule.h>
++  #import <React-Core/RCTEventEmitter.h>
++  #import <React-Core/RCTConvert.h>
++  #import <React-Core/RCTUtils.h>
++  #import <React-Core/RCTDefines.h>
++#else
++  #import "RCTBridgeModule.h"
++  #import "RCTEventEmitter.h"
++  #import "RCTConvert.h"
++  #import "RCTUtils.h"
++  #import "RCTDefines.h"
++#endif
++
++
+ 
+ static NSString *const RNFB_STORAGE_EVENT = @"storage_event";
+ static NSString *const RNFB_STORAGE_STATE_CHANGED = @"state_changed";

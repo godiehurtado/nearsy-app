@@ -1,5 +1,5 @@
-// src/screens/PhoneVerificationScreen.tsx
-import React, { useEffect, useRef, useState } from 'react';
+// src/screens/PhoneVerificationScreen.tsx ✅ RNFirebase-only
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -15,11 +15,12 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { isProfileComplete } from '../services/firestoreService';
-
-import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
-
-import { updateUserProfilePartial } from '../services/firestoreService';
+import { firebaseAuth } from '../config/firebaseConfig';
+import { PhoneAuthProvider, PhoneAuthState } from '@react-native-firebase/auth';
+import {
+  isProfileComplete,
+  updateUserProfilePartial,
+} from '../services/firestoreService';
 
 type RouteParams = {
   uid: string;
@@ -31,7 +32,7 @@ export default function PhoneVerificationScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
 
-  const { uid, phone } = route.params as RouteParams;
+  const { uid, phone } = (route.params || {}) as RouteParams;
 
   const [verificationId, setVerificationId] = useState<string | null>(null);
   const [code, setCode] = useState('');
@@ -39,24 +40,99 @@ export default function PhoneVerificationScreen() {
   const [verifying, setVerifying] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
 
+  // Guardamos el listener object para poder limpiar y no acumular listeners
+  const phoneListenerRef = useRef<any>(null);
+
   // Timer para reintento de envío de SMS
   useEffect(() => {
     if (resendTimer <= 0) return;
-    const id = setInterval(() => {
-      setResendTimer((prev) => prev - 1);
-    }, 1000);
+    const id = setInterval(() => setResendTimer((prev) => prev - 1), 1000);
     return () => clearInterval(id);
   }, [resendTimer]);
 
-  const maskedPhone = React.useMemo(() => {
-    // Mask sencillo: deja últimos 2 dígitos
-    const trimmed = phone || '';
+  // Cleanup listener al salir
+  useEffect(() => {
+    return () => {
+      if (phoneListenerRef.current) {
+        try {
+          if (
+            typeof phoneListenerRef.current.removeAllListeners === 'function'
+          ) {
+            phoneListenerRef.current.removeAllListeners('state_changed');
+          } else if (typeof phoneListenerRef.current.off === 'function') {
+            phoneListenerRef.current.off('state_changed');
+          }
+        } catch {
+          // ignore
+        }
+        phoneListenerRef.current = null;
+      }
+    };
+  }, []);
+
+  const maskedPhone = useMemo(() => {
+    const trimmed = (phone || '').trim();
     if (trimmed.length < 4) return trimmed;
     return trimmed.slice(0, -2).replace(/./g, '•') + trimmed.slice(-2);
   }, [phone]);
 
+  const getPhoneErrorMessage = (code?: string) => {
+    switch (code) {
+      case 'auth/invalid-verification-code':
+        return 'The code is invalid. Please check it and try again.';
+      case 'auth/missing-verification-code':
+        return 'Please enter the verification code.';
+      case 'auth/code-expired':
+        return 'The code has expired. Please request a new one.';
+      case 'auth/too-many-requests':
+        return 'Too many attempts. Please wait a bit and try again.';
+      case 'auth/credential-already-in-use':
+        return 'This phone number is already associated with another account.';
+      case 'auth/provider-already-linked':
+        return 'A phone number is already linked to this account. We will update it instead.';
+      default:
+        return '';
+    }
+  };
+
+  const handleVerifyInternal = async (vId: string, c: string) => {
+    const currentUser = firebaseAuth.currentUser;
+    if (!currentUser) throw new Error('No authenticated user.');
+
+    // Seguridad: validar que el uid de route coincida con el user actual
+    if (uid && currentUser.uid !== uid) {
+      throw new Error('Session mismatch. Please log in again.');
+    }
+
+    const credential = PhoneAuthProvider.credential(vId, c.trim());
+
+    // ✅ Primero intentamos link, si ya existe provider ligado usamos updatePhoneNumber
+    try {
+      await currentUser.linkWithCredential(credential);
+    } catch (err: any) {
+      const errCode = err?.code;
+      if (
+        errCode === 'auth/provider-already-linked' ||
+        errCode === 'auth/credential-already-in-use'
+      ) {
+        await currentUser.updatePhoneNumber(credential);
+      } else {
+        throw err;
+      }
+    }
+
+    // ✅ Guardamos en Firestore (y marcamos verificado)
+    await updateUserProfilePartial(currentUser.uid, {
+      phoneVerified: true,
+      phoneVerifiedAt: new Date().toISOString(),
+      phone: phone.trim(),
+    });
+
+    return currentUser;
+  };
+
   const sendCode = async () => {
-    if (!phone) {
+    if (!phone?.trim()) {
       Alert.alert('Phone required', 'Phone number is missing.');
       return;
     }
@@ -73,37 +149,77 @@ export default function PhoneVerificationScreen() {
     try {
       setSending(true);
 
-      const currentUser = auth().currentUser;
-      if (!currentUser) {
-        throw new Error('No authenticated user.');
+      const currentUser = firebaseAuth.currentUser;
+      if (!currentUser) throw new Error('No authenticated user.');
+
+      // ✅ evita múltiples listeners
+      if (phoneListenerRef.current) {
+        try {
+          if (
+            typeof phoneListenerRef.current.removeAllListeners === 'function'
+          ) {
+            phoneListenerRef.current.removeAllListeners('state_changed');
+          } else if (typeof phoneListenerRef.current.off === 'function') {
+            phoneListenerRef.current.off('state_changed');
+          }
+        } catch {
+          // ignore
+        }
+        phoneListenerRef.current = null;
       }
 
-      const phoneAuthListener = auth().verifyPhoneNumber(phone);
+      const phoneAuthListener = firebaseAuth.verifyPhoneNumber(phone);
+      phoneListenerRef.current = phoneAuthListener;
 
-      phoneAuthListener.on('state_changed', (phoneAuthSnapshot) => {
+      phoneAuthListener.on('state_changed', async (phoneAuthSnapshot: any) => {
         const state = phoneAuthSnapshot.state;
 
-        if (state === auth.PhoneAuthState.CODE_SENT) {
+        if (state === PhoneAuthState.CODE_SENT) {
           setVerificationId(phoneAuthSnapshot.verificationId ?? null);
           setResendTimer(60);
-          Alert.alert('Code sent', `We sent a verification code to ${phone}.`);
+          Alert.alert(
+            'Code sent',
+            `We sent a verification code to ${maskedPhone}.`,
+          );
+          return;
         }
 
-        if (state === auth.PhoneAuthState.ERROR) {
-          console.log(
-            '[PhoneVerification] verifyPhoneNumber error',
-            phoneAuthSnapshot.error,
-          );
+        // ✅ A veces Android auto-verifica
+        if (state === PhoneAuthState.AUTO_VERIFIED) {
+          try {
+            const vId = phoneAuthSnapshot.verificationId;
+            const sms = (phoneAuthSnapshot as any)?.code; // no siempre viene
+            if (vId && sms) {
+              setVerificationId(vId);
+              setCode(String(sms));
+              await handleVerifyInternal(vId, String(sms));
+            }
+          } catch {
+            // si falla, el usuario puede ingresar el código manual
+          }
+          return;
+        }
+
+        if (state === PhoneAuthState.AUTO_VERIFY_TIMEOUT) {
+          // Dejamos el verificationId si está disponible
+          if (phoneAuthSnapshot.verificationId) {
+            setVerificationId(phoneAuthSnapshot.verificationId);
+          }
+          return;
+        }
+
+        if (state === PhoneAuthState.ERROR) {
+          const errCode = phoneAuthSnapshot.error?.code;
           Alert.alert(
             'Error',
-            getPhoneErrorMessage(phoneAuthSnapshot.error?.code) ||
+            getPhoneErrorMessage(errCode) ||
               phoneAuthSnapshot.error?.message ||
               'Could not send verification code.',
           );
+          return;
         }
       });
     } catch (e: any) {
-      console.log('[PhoneVerification] sendCode error', e);
       Alert.alert(
         'Error',
         getPhoneErrorMessage(e?.code) ||
@@ -146,30 +262,14 @@ export default function PhoneVerificationScreen() {
     try {
       setVerifying(true);
 
-      const currentUser = auth().currentUser;
-      if (!currentUser) {
-        throw new Error('No authenticated user.');
-      }
-
-      const credential = auth.PhoneAuthProvider.credential(
-        verificationId,
-        code.trim(),
-      );
-
-      await currentUser.linkWithCredential(credential);
-
-      await updateUserProfilePartial(uid, {
-        phoneVerified: true,
-        phoneVerifiedAt: new Date().toISOString(),
-        phone: phone,
-      });
+      const currentUser = await handleVerifyInternal(verificationId, code);
 
       Alert.alert('Phone verified', 'Your phone number has been verified.', [
         {
           text: 'Continue',
           onPress: async () => {
             try {
-              const complete = await isProfileComplete(uid);
+              const complete = await isProfileComplete(currentUser.uid);
 
               navigation.reset({
                 index: 0,
@@ -178,10 +278,7 @@ export default function PhoneVerificationScreen() {
                     name: complete ? 'MainTabs' : 'CompleteProfile',
                     params: complete
                       ? undefined
-                      : {
-                          uid,
-                          email: currentUser.email,
-                        },
+                      : { uid: currentUser.uid, email: currentUser.email },
                   },
                 ],
               });
@@ -191,10 +288,7 @@ export default function PhoneVerificationScreen() {
                 routes: [
                   {
                     name: 'CompleteProfile',
-                    params: {
-                      uid,
-                      email: currentUser.email,
-                    },
+                    params: { uid: currentUser.uid, email: currentUser.email },
                   },
                 ],
               });
@@ -203,7 +297,6 @@ export default function PhoneVerificationScreen() {
         },
       ]);
     } catch (e: any) {
-      console.log('[PhoneVerification] verify error', e);
       Alert.alert(
         'Error',
         getPhoneErrorMessage(e?.code) ||
@@ -214,23 +307,6 @@ export default function PhoneVerificationScreen() {
       setVerifying(false);
     }
   };
-
-  function getPhoneErrorMessage(code?: string) {
-    switch (code) {
-      case 'auth/invalid-verification-code':
-        return 'The code is invalid. Please check it and try again.';
-      case 'auth/missing-verification-code':
-        return 'Please enter the verification code.';
-      case 'auth/code-expired':
-        return 'The code has expired. Please request a new one.';
-      case 'auth/too-many-requests':
-        return 'Too many attempts. Please wait a bit and try again.';
-      case 'auth/credential-already-in-use':
-        return 'This phone number is already associated with another account.';
-      default:
-        return '';
-    }
-  }
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
@@ -310,6 +386,15 @@ export default function PhoneVerificationScreen() {
               </Text>
             </TouchableOpacity>
           </View>
+
+          {sending && (
+            <View style={{ marginTop: 16, alignItems: 'center' }}>
+              <ActivityIndicator />
+              <Text style={{ marginTop: 6, color: '#6B7280', fontSize: 12 }}>
+                Sending SMS…
+              </Text>
+            </View>
+          )}
         </View>
       </KeyboardAvoidingView>
     </View>

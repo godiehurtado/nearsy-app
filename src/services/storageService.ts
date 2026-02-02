@@ -1,5 +1,9 @@
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { storage } from '../config/firebaseConfig';
+// src/services/storageService.ts  ✅ RNFirebase-only
+import { bucket } from '../config/firebaseConfig';
+
+function safeSlug(value: string) {
+  return value.toLowerCase().trim().replace(/\s+/g, '_');
+}
 
 /** Sube la imagen del perfil */
 export const uploadProfileImage = async (
@@ -7,14 +11,13 @@ export const uploadProfileImage = async (
   uri: string,
 ): Promise<string> => {
   try {
-    const response = await fetch(uri);
-    const blob = await response.blob();
-
     const filename = `users/${uid}/${uid}_${Date.now()}.jpg`;
-    const storageRef = ref(storage, filename);
-    await uploadBytes(storageRef, blob);
+    const fileRef = bucket.ref(filename);
 
-    const downloadURL = await getDownloadURL(storageRef);
+    // ✅ RNFirebase: subir directo desde URI local (file://...)
+    await fileRef.putFile(uri, { contentType: 'image/jpeg' });
+
+    const downloadURL = await fileRef.getDownloadURL();
     return downloadURL;
   } catch (error) {
     if (__DEV__) {
@@ -28,30 +31,24 @@ export const uploadProfileImage = async (
 export async function uploadGalleryImage(
   uid: string,
   localUri: string,
-  mode: string,
+  mode: 'personal' | 'professional',
 ) {
   const filename = `users/${uid}/gallery/${mode}/${Date.now()}.jpg`;
+  const fileRef = bucket.ref(filename);
 
-  const res = await fetch(localUri);
-  const blob = await res.blob();
-
-  const r = ref(storage, filename);
-  await uploadBytes(r, blob);
-  const url = await getDownloadURL(r);
+  await fileRef.putFile(localUri, { contentType: 'image/jpeg' });
+  const url = await fileRef.getDownloadURL();
 
   return { url, path: filename };
 }
 
 /** Sube la imagen del top bar */
 export async function uploadTopBarImage(uid: string, localUri: string) {
-  const resp = await fetch(localUri);
-  const blob = await resp.blob();
-
   const path = `users/${uid}/topbar/${Date.now()}.jpg`;
-  const fileRef = ref(storage, path);
+  const fileRef = bucket.ref(path);
 
-  await uploadBytes(fileRef, blob, { contentType: 'image/jpeg' });
-  const url = await getDownloadURL(fileRef);
+  await fileRef.putFile(localUri, { contentType: 'image/jpeg' });
+  const url = await fileRef.getDownloadURL();
   return url;
 }
 
@@ -62,15 +59,13 @@ export async function uploadInterestLogo(
   interest: string,
   localUri: string,
 ) {
-  const safeInterest = interest.toLowerCase().replace(/\s+/g, '_');
+  const safeInterest = safeSlug(interest);
   const filename = `users/${uid}/interest_icons/${scope}/${safeInterest}/${Date.now()}.png`;
+  const fileRef = bucket.ref(filename);
 
-  const res = await fetch(localUri);
-  const blob = await res.blob();
-
-  const r = ref(storage, filename);
-  await uploadBytes(r, blob);
-  const url = await getDownloadURL(r);
+  // Si realmente es png, usa contentType image/png
+  await fileRef.putFile(localUri, { contentType: 'image/png' });
+  const url = await fileRef.getDownloadURL();
 
   return { url, path: filename };
 }
@@ -81,14 +76,15 @@ export async function uploadAffiliationImage(
   localUri: string,
   category: string,
 ): Promise<string> {
-  const response = await fetch(localUri);
-  const blob = await response.blob();
+  const ext = (localUri.split('.').pop() || 'jpg').toLowerCase();
+  const contentType =
+    ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
 
-  const ext = localUri.split('.').pop() || 'jpg';
-  const path = `users/${uid}/affiliations/${category}_${Date.now()}.${ext}`;
-  const storageRef = ref(storage, path);
+  const safeCategory = safeSlug(category);
+  const path = `users/${uid}/affiliations/${safeCategory}_${Date.now()}.${ext}`;
+  const fileRef = bucket.ref(path);
 
-  await uploadBytes(storageRef, blob);
-  const downloadUrl = await getDownloadURL(storageRef);
+  await fileRef.putFile(localUri, { contentType });
+  const downloadUrl = await fileRef.getDownloadURL();
   return downloadUrl;
 }

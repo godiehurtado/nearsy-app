@@ -1,9 +1,8 @@
-// src/hooks/useLiveLocation.ts
+// src/hooks/useLiveLocation.ts  ✅ RNFirebase-only
 import { useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
 import { AppState, AppStateStatus } from 'react-native';
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
-import { firestore } from '../config/firebaseConfig';
+import { firestoreDb } from '../config/firebaseConfig';
 
 type Options = {
   enabled?: boolean; // encender/apagar tracking
@@ -48,6 +47,7 @@ export function useLiveLocation({
         const last = await Location.getLastKnownPositionAsync();
         const first =
           last ?? (await Location.getCurrentPositionAsync({ accuracy }));
+
         if (first?.coords) {
           await upsertLocation(
             uid,
@@ -61,7 +61,6 @@ export function useLiveLocation({
         watcher.current = await Location.watchPositionAsync(
           {
             accuracy,
-            // iOS usa distanceInterval; Android respeta timeIntervalMs vía nuestro throttle
             distanceInterval,
             mayShowUserSettingsDialog: true,
           },
@@ -69,6 +68,7 @@ export function useLiveLocation({
             const now = Date.now();
             if (now - lastSentAt.current < timeIntervalMs) return; // throttle por tiempo
             lastSentAt.current = now;
+
             try {
               await upsertLocation(
                 uid,
@@ -92,7 +92,7 @@ export function useLiveLocation({
       watcher.current?.remove();
       watcher.current = null;
     };
-  }, [enabled, uid, accuracy, distanceInterval, timeIntervalMs]);
+  }, [enabled, uid, accuracy, distanceInterval, timeIntervalMs, onError]);
 
   // pausar cuando la app se va a background y reanudar al volver
   useEffect(() => {
@@ -101,7 +101,6 @@ export function useLiveLocation({
         appState.current.match(/inactive|background/) &&
         nextState === 'active'
       ) {
-        // al volver a foreground, forzamos un “ping” rápido
         (async () => {
           try {
             if (!enabled || !uid) return;
@@ -119,23 +118,25 @@ export function useLiveLocation({
       }
       appState.current = nextState;
     });
+
     return () => sub.remove();
-  }, [enabled, uid, accuracy]);
+  }, [enabled, uid, accuracy, onError]);
 
   return { hasPermission };
 }
 
 async function upsertLocation(uid: string, lat: number, lng: number) {
-  const ref = doc(firestore, 'users', uid);
-  // setDoc con merge por si el doc no existe aún
-  await setDoc(
-    ref,
-    {
-      location: { lat, lng, updatedAt: Date.now() },
-      updatedAt: Date.now(),
-    },
-    { merge: true },
-  );
-  // (opcional) si quieres forzar updateDoc:
-  // await updateDoc(ref, { location: { lat, lng, updatedAt: Date.now() }, updatedAt: Date.now() });
+  const now = Date.now();
+
+  // ✅ RNFirebase: set() con merge (equivalente a setDoc(..., { merge: true }))
+  await firestoreDb
+    .collection('users')
+    .doc(uid)
+    .set(
+      {
+        location: { lat, lng, updatedAt: now },
+        updatedAt: now,
+      },
+      { merge: true },
+    );
 }

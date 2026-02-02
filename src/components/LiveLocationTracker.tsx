@@ -1,9 +1,9 @@
 // src/components/LiveLocationTracker.tsx
-import { getAuth } from 'firebase/auth';
+import { firebaseAuth } from '../config/firebaseConfig';
 import { useLiveLocation } from '../hooks/useLiveLocation';
 
 export default function LiveLocationTracker() {
-  const uid = getAuth().currentUser?.uid ?? null;
+  const uid = firebaseAuth.currentUser?.uid ?? null;
   useLiveLocation({
     enabled: true,
     uid,

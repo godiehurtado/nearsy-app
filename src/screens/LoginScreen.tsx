@@ -1,4 +1,5 @@
-import { useState } from 'react';
+// src/screens/LoginScreen.tsx ✅ RNFirebase-only
+import React, { useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
@@ -15,15 +16,22 @@ import {
   Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+
+import { firebaseAuth } from '../config/firebaseConfig'; // ✅ RNFirebase auth instance
 import { loginWithEmail, sendPasswordReset } from '../services/authService';
-import { isProfileComplete } from '../services/firestoreService';
+import {
+  isProfileComplete,
+  getUserProfile,
+} from '../services/firestoreService';
 import { useGoogleAuth } from '../services/googleAuth';
 
-// 🔒 Feature flag: controlar si se muestran o no los botones sociales
+// 🔒 Feature flag: controla si se muestran o no los botones sociales
 const ENABLE_SOCIAL_LOGIN =
   process.env.EXPO_PUBLIC_ENABLE_SOCIAL_LOGIN === 'true';
 
 export default function LoginScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -38,45 +46,165 @@ export default function LoginScreen({ navigation }: any) {
     setInfoModalMessage(message);
     setInfoModalVisible(true);
   };
-  const insets = useSafeAreaInsets();
 
   // Google hooks (solo se usarán si ENABLE_SOCIAL_LOGIN === true)
   const { signInWithGoogle, request } = useGoogleAuth();
 
+  // Validador simple de email
+  const isValidEmail = (value: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
+  // Mensajes amigables por error de Firebase
+  function getAuthErrorMessage(code?: string) {
+    switch (code) {
+      case 'auth/invalid-email':
+      case 'auth/missing-email':
+        return 'Please enter a valid email address.';
+
+      case 'auth/invalid-credential':
+      case 'auth/user-not-found':
+      case 'auth/wrong-password':
+        return 'Invalid email or password.';
+
+      case 'auth/weak-password':
+        return 'Password is too weak. Please use at least 8 characters.';
+
+      case 'auth/email-already-in-use':
+        return 'This email is already registered. Try logging in.';
+
+      case 'auth/network-request-failed':
+        return 'Network error. Please check your connection and try again.';
+
+      case 'auth/too-many-requests':
+        return 'Too many attempts. Please wait a moment and try again.';
+
+      case 'auth/operation-not-allowed':
+        return 'Email/password sign-in is disabled for this project.';
+
+      default:
+        return 'Something went wrong. Please try again.';
+    }
+  }
+
   const handleLogin = async () => {
     try {
-      if (!isValidEmail(email)) {
-        alert('Invalid email: Please enter a valid email address.');
+      const trimmedEmail = email.trim();
+
+      if (!isValidEmail(trimmedEmail)) {
+        Alert.alert('Invalid email', 'Please enter a valid email address.');
         return;
       }
 
       if (!password) {
-        alert('Missing password: Please enter your password.');
+        Alert.alert('Missing password', 'Please enter your password.');
         return;
       }
 
-      // 🔐 Política mínima de seguridad: password de al menos 8 caracteres
+      // 🔐 Política mínima: 8 caracteres
       if (password.length < 8) {
-        alert('Weak password: Password must be at least 8 characters long.');
+        Alert.alert(
+          'Weak password',
+          'Password must be at least 8 characters long.',
+        );
         return;
       }
 
-      const { user } = await loginWithEmail(email, password);
+      console.log('[Login] signing in...');
+      const { user } = await loginWithEmail(trimmedEmail, password);
+      console.log('[Login] signed in uid =>', user.uid);
+
+      // 🔹 iOS: bloquear login si el correo NO está verificado
+      if (Platform.OS === 'ios' && !user.emailVerified) {
+        try {
+          await firebaseAuth.signOut(); // ✅ RNFirebase
+        } catch {
+          // ignore
+        }
+        Alert.alert(
+          'Email not verified',
+          'Please verify your email using the link we sent you before logging in on this device.',
+        );
+        return;
+      }
+
+      // 👇 Leemos el perfil
+      console.log('[Login] loading profile from Firestore...');
+      const profile: any = await getUserProfile(user.uid);
+      console.log('[Login] profile loaded =>', !!profile);
+
+      if (!profile) {
+        navigation.navigate('CompleteProfile', {
+          uid: user.uid,
+          email: user.email ?? trimmedEmail,
+        });
+        return;
+      }
+
+      // 🔹 ANDROID: si no tiene phone o no está verificado → flujo obligatorio SMS
+      if (
+        Platform.OS === 'android' &&
+        (!profile.phone || !profile.phoneVerified)
+      ) {
+        navigation.navigate('PhoneVerification', {
+          uid: user.uid,
+          phone: profile.phone ?? '',
+        });
+        return;
+      }
+
+      // ✅ Teléfono OK (o iOS) → revisamos si el perfil está completo
+      console.log('[Login] checking profile complete...');
       const complete = await isProfileComplete(user.uid);
-      navigation.navigate(complete ? 'MainTabs' : 'CompleteProfile');
+      console.log('[Login] complete =>', complete);
+      navigation.navigate(
+        complete ? 'MainTabs' : 'CompleteProfile',
+        complete
+          ? undefined
+          : { uid: user.uid, email: user.email ?? trimmedEmail },
+      );
     } catch (e: any) {
       const msg = getAuthErrorMessage(e?.code);
-      alert('Login Error: ' + msg);
+      if (__DEV__) {
+        console.log('LOGIN ERROR =>', e?.code, e?.message, e);
+        console.log('Firestore error code =>', e?.code);
+        console.log('Firestore error msg  =>', e?.message);
+      }
+      Alert.alert('Login Error', msg);
     }
   };
 
   const handleGoogle = async () => {
-    if (!ENABLE_SOCIAL_LOGIN) return; // seguridad extra por si acaso
+    if (!ENABLE_SOCIAL_LOGIN) return;
 
     try {
       const user = await signInWithGoogle();
+
+      const profile: any = await getUserProfile(user.uid);
+
+      if (!profile) {
+        navigation.navigate('CompleteProfile', {
+          uid: user.uid,
+          email: user.email ?? '',
+        });
+        return;
+      }
+
+      if (
+        Platform.OS === 'android' &&
+        (!profile.phone || !profile.phoneVerified)
+      ) {
+        navigation.navigate('PhoneVerification', {
+          uid: user.uid,
+          phone: profile.phone ?? '',
+        });
+        return;
+      }
+
       const complete = await isProfileComplete(user.uid);
-      navigation.navigate(complete ? 'MainTabs' : 'CompleteProfile');
+      navigation.navigate(
+        complete ? 'MainTabs' : 'CompleteProfile',
+        complete ? undefined : { uid: user.uid, email: user.email ?? '' },
+      );
     } catch (e: any) {
       Alert.alert(
         'Google Sign-in',
@@ -105,10 +233,9 @@ export default function LoginScreen({ navigation }: any) {
     }
 
     try {
-      // Usamos el servicio que ya creamos en authService
       await sendPasswordReset(trimmed);
 
-      // Mensaje genérico para no revelar si existe o no en Firebase
+      // Mensaje genérico para no revelar si existe o no
       showInfoModal(
         'Check your email',
         'If this email is registered, you will receive a link to reset your password in the next few minutes.',
@@ -120,7 +247,6 @@ export default function LoginScreen({ navigation }: any) {
           'We could not contact the server. Please check your connection and try again.',
         );
       } else {
-        // Mensaje genérico por seguridad
         showInfoModal(
           'Reset your password',
           'If this email is registered, you will receive a link to reset your password.',
@@ -129,56 +255,11 @@ export default function LoginScreen({ navigation }: any) {
     }
   };
 
-  //'En Android usaremos flujo web; lo habilitamos cuando registremos tu Service ID.'
   const handleApple = async () => {
-    if (!ENABLE_SOCIAL_LOGIN) return; // seguridad extra
+    if (!ENABLE_SOCIAL_LOGIN) return;
 
-    Alert.alert(
-      'Sign in with Apple',
-      Platform.OS === 'ios' ? 'Coming soon.' : 'Coming soon.',
-    );
+    Alert.alert('Sign in with Apple', 'Coming soon.');
   };
-
-  // Mensajes amigables por error de Firebase
-  function getAuthErrorMessage(code?: string) {
-    switch (code) {
-      // Errores de formato de email
-      case 'auth/invalid-email':
-      case 'auth/missing-email':
-        return 'Please enter a valid email address.';
-
-      // Errores de credenciales (no revelamos si el usuario existe o no)
-      case 'auth/invalid-credential':
-      case 'auth/user-not-found':
-      case 'auth/wrong-password':
-        return 'Invalid email or password.';
-
-      case 'auth/weak-password':
-        return 'Password is too weak. Please use at least 8 characters.';
-
-      case 'auth/email-already-in-use':
-        return 'This email is already registered. Try logging in.';
-
-      case 'auth/network-request-failed':
-        return 'Network error. Please check your connection and try again.';
-
-      case 'auth/too-many-requests':
-        return 'Too many attempts. Please wait a moment and try again.';
-
-      case 'auth/operation-not-allowed':
-        return 'Email/password sign-in is disabled for this project.';
-
-      case 'auth/email-not-verified':
-        return 'Your email is not verified yet. Please check your inbox and verify your account.';
-
-      default:
-        return 'Something went wrong. Please try again.';
-    }
-  }
-
-  // Validador simple de email
-  const isValidEmail = (value: string) =>
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
   return (
     <SafeAreaView
@@ -281,7 +362,11 @@ export default function LoginScreen({ navigation }: any) {
 
               <View style={styles.socialGroup}>
                 <TouchableOpacity
-                  style={[styles.socialBtn, styles.googleBtn]}
+                  style={[
+                    styles.socialBtn,
+                    styles.googleBtn,
+                    !request && { opacity: 0.6 },
+                  ]}
                   onPress={handleGoogle}
                   disabled={!request}
                   activeOpacity={0.85}
@@ -328,6 +413,7 @@ export default function LoginScreen({ navigation }: any) {
       </KeyboardAvoidingView>
 
       <View style={styles.bottomBar} />
+
       {/* 🔔 Modal informativo para reset password */}
       <Modal
         visible={infoModalVisible}
@@ -391,6 +477,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   subtitle: { fontSize: 18 },
+
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -411,6 +498,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingVertical: 4,
   },
+
   button: {
     backgroundColor: '#ADCBE3',
     paddingVertical: 12,
@@ -419,6 +507,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   buttonText: { color: '#1A2B3C', fontSize: 16, fontWeight: 'bold' },
+
   separatorRow: {
     width: '100%',
     marginTop: 22,
@@ -429,6 +518,7 @@ const styles = StyleSheet.create({
   },
   separatorLine: { flex: 1, height: 1, backgroundColor: '#E5E7EB' },
   separatorText: { color: '#6B7280', fontSize: 12, fontWeight: '600' },
+
   socialGroup: { width: '100%', gap: 12, alignItems: 'center' },
   socialBtn: {
     width: '100%',
@@ -447,9 +537,11 @@ const styles = StyleSheet.create({
   },
   socialTextLight: { color: '#fff', fontWeight: '700' },
   socialTextDark: { color: '#111', fontWeight: '700' },
+
   link: { color: '#555', marginTop: 10, fontSize: 14 },
   linkSmall: { color: '#555', marginTop: 4, marginBottom: 10, fontSize: 12 },
   linksContainer: { marginTop: 20, alignItems: 'center' },
+
   bottomBar: {
     position: 'absolute',
     bottom: 0,
@@ -460,7 +552,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
   },
 
-  // 🔔 Modal / toast
+  // 🔔 Modal
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',

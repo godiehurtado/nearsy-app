@@ -1,4 +1,4 @@
-// src/screens/NearbySearchScreen.tsx
+// src/screens/NearbySearchScreen.tsx ✅ RNFirebase-only
 import React, { useCallback, useEffect, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -13,18 +13,9 @@ import {
   RefreshControl,
   Linking,
 } from 'react-native';
-import { getAuth } from 'firebase/auth';
-import {
-  collection,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  where,
-  doc,
-  onSnapshot,
-} from 'firebase/firestore';
-import { firestore } from '../config/firebaseConfig';
+
+import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
+
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
@@ -52,6 +43,10 @@ type UserDoc = {
   email?: string;
   phone?: string;
   blockedContacts?: string[];
+
+  // 🔹 flags para modo demo / reviewer
+  isDemoUser?: boolean;
+  isReviewer?: boolean;
 };
 
 type ProfileDoc = {
@@ -63,14 +58,17 @@ type ProfileDoc = {
   phone?: string;
   email?: string;
   blockedContacts?: string[];
+
+  // 🔹 flag para saber si el usuario actual es revisor (cuenta de Apple)
+  isReviewer?: boolean;
 };
 
 type NearbyItem = UserDoc & { distanceFt?: number };
 
-// arriba de todo (constantes nuevas)
+// Constantes de distancia / vigencia
 const R_EARTH_M = 6371_000; // metros
 const FEET_PER_METER = 3.28084;
-const MAX_FEET = 350; // 350 ft ≈ 152.4 m
+const MAX_FEET = 20; // 20 ft ≈ 15.24 m
 const MAX_METERS = MAX_FEET / FEET_PER_METER;
 const STALE_MS = 30 * 60 * 1000; // ubicación del usuario válida por 30 min
 
@@ -162,17 +160,15 @@ async function getUsablePosition(): Promise<{
 export default function NearbySearchScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
-
   const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [items, setItems] = useState<NearbyItem[]>([]);
   const [profile, setProfile] = useState<ProfileDoc>({});
-  const topColor = profile.topBarColor || '#3B5A85';
-
-  // state nuevo
   const [hasLocation, setHasLocation] = useState(true);
+
+  const topColor = profile.topBarColor || '#3B5A85';
 
   const firstName = (full?: string) => {
     if (!full) return 'Unnamed';
@@ -181,73 +177,74 @@ export default function NearbySearchScreen() {
   };
 
   const baseColor: string = profile.topBarColor ?? '#3B5A85';
-  const light2: string = adjustColor(baseColor, 100); // más claro
+  const light2: string = adjustColor(baseColor, 100);
 
-  // Suscripción a mi perfil (para color)
+  // ✅ Suscripción a mi perfil (RNFirebase)
   useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const uid = getAuth().currentUser?.uid;
-        if (!uid) return;
-        const ref = doc(firestore, 'users', uid);
-        const unsub = onSnapshot(ref, (snap) => {
-          if (snap.exists()) {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) {
+      setLoading(false);
+      return;
+    }
+
+    const unsub = firestoreDb
+      .collection('users')
+      .doc(uid)
+      .onSnapshot(
+        (snap) => {
+          if (snap.exists) {
             setProfile(snap.data() as ProfileDoc);
           }
-        });
-        return unsub;
-      } catch (error) {
-        if (__DEV__) {
-          console.error('[NearbySearch] Error fetching profile data:', error);
-        }
-        Alert.alert('Error', 'Could not load your profile.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchProfile();
+          // NO apagues loading aquí: loadData también lo controla
+        },
+        (err) => {
+          if (__DEV__)
+            console.error('[NearbySearch] profile onSnapshot error:', err);
+          Alert.alert('Error', 'Could not load your profile.');
+        },
+      );
+
+    return () => unsub();
   }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const me = getAuth().currentUser?.uid;
+      const authUser = firebaseAuth.currentUser;
+      const me = authUser?.uid;
+      const myEmail = authUser?.email ?? null;
+
+      if (!me) {
+        setItems([]);
+        return;
+      }
+
+      const myPhone = profile.phone ?? null;
+      const myBlockedContacts = profile.blockedContacts ?? null;
+      const isReviewer = profile.isReviewer === true;
+
+      // ⚠️ Para reviewers, no obligamos a tener ubicación
       const myPos = await getUsablePosition();
 
-      const authUser = getAuth().currentUser;
-      const myEmail = authUser?.email;
-      const myPhone = profile.phone;
-      const myBlockedContacts = profile.blockedContacts;
-
-      if (!myPos) {
-        // ❌ sin ubicación: no mostramos resultados
+      if (!myPos && !isReviewer) {
         setHasLocation(false);
         setItems([]);
         return;
       }
-      setHasLocation(true);
 
-      // Traemos sólo visibles (luego filtramos por distancia+vigencia)
-      let snap;
-      try {
-        const q1 = query(
-          collection(firestore, 'users'),
-          where('visibility', '==', true),
-          orderBy('updatedAt', 'desc' as any),
-          limit(300),
-        );
-        snap = await getDocs(q1);
-      } catch {
-        const q2 = query(
-          collection(firestore, 'users'),
-          where('visibility', '==', true),
-          limit(300),
-        );
-        snap = await getDocs(q2);
-      }
+      setHasLocation(!!myPos);
+
+      // ✅ RNFirebase query: solo visibles (luego filtramos)
+      // Nota: aquí no usamos orderBy para evitar requerir índice/updatedAt.
+      const snap = await firestoreDb
+        .collection('users')
+        .where('visibility', '==', true)
+        .limit(300)
+        .get();
 
       const now = Date.now();
       const nearby: NearbyItem[] = [];
+
       snap.forEach((d) => {
         if (d.id === me) return;
         const data = d.data() as UserDoc;
@@ -257,17 +254,32 @@ export default function NearbySearchScreen() {
           myEmail,
           myPhone,
           myBlockedContacts,
-          data.email,
-          data.phone,
-          data.blockedContacts,
+          data.email ?? null,
+          data.phone ?? null,
+          data.blockedContacts ?? null,
         );
         if (blocked) return;
 
-        // Debe tener location y no estar vieja
+        // 🔹 MODO REVIEWER (Apple)
+        if (isReviewer) {
+          // Para el revisor, mostramos sólo usuarios demo
+          if (!data.isDemoUser) return;
+
+          nearby.push({
+            ...data,
+            uid: d.id,
+          });
+          return;
+        }
+
+        // 🔹 COMPORTAMIENTO NORMAL (usuarios reales)
         const loc = data.location;
         const updatedAt = loc?.updatedAt ?? 0;
+
         if (!loc?.lat || !loc?.lng) return;
         if (updatedAt && now - updatedAt > STALE_MS) return;
+
+        if (!myPos) return;
 
         const distM = distanceMeters(myPos, { lat: loc.lat, lng: loc.lng });
         if (distM <= MAX_METERS) {
@@ -279,19 +291,16 @@ export default function NearbySearchScreen() {
         }
       });
 
-      // Sólo mostramos cercanos; si no hay, lista vacía
       nearby.sort((a, b) => (a.distanceFt ?? 0) - (b.distanceFt ?? 0));
       setItems(nearby);
     } catch (e: any) {
-      if (__DEV__) {
-        console.error('[NearbySearch] Nearby load error:', e);
-      }
+      if (__DEV__) console.error('[NearbySearch] Nearby load error:', e);
       Alert.alert('Error', e?.message || 'Could not load nearby profiles.');
       setItems([]);
     } finally {
       setLoading(false);
     }
-  }, [profile.phone, profile.blockedContacts]);
+  }, [profile.phone, profile.blockedContacts, profile.isReviewer]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -402,7 +411,7 @@ function Card({
   image?: string;
   name: string;
   occupation?: string;
-  status?: string; // lo usamos como "status"
+  status?: string;
   onPress?: () => void;
   isReversed?: boolean;
 }) {
@@ -417,25 +426,24 @@ function Card({
       ]}
     >
       {/* Imagen clickeable */}
-      {image ? (
-        <TouchableOpacity activeOpacity={0.85} onPress={onPress}>
+      <TouchableOpacity activeOpacity={0.85} onPress={onPress}>
+        {image ? (
           <Image source={{ uri: image }} style={styles.avatar} />
-        </TouchableOpacity>
-      ) : (
-        <TouchableOpacity activeOpacity={0.85} onPress={onPress}>
+        ) : (
           <View style={[styles.avatar, { backgroundColor: '#E5E7EB' }]} />
-        </TouchableOpacity>
-      )}
+        )}
+      </TouchableOpacity>
 
       {/* Texto y pill */}
       <View style={styles.cardTextContainer}>
         <Text style={styles.cardName} numberOfLines={1}>
           {name}
         </Text>
+
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={onPress}
-          style={styles.pill}
+          style={[styles.pill, light2 ? { backgroundColor: light2 } : null]}
         >
           <Text style={styles.pillText} numberOfLines={1}>
             {occupation || '—'}
@@ -451,12 +459,13 @@ function Card({
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
   topBar: {
     height: 60,
     width: '100%',
-    flexDirection: 'row', // ← Alinea elementos en fila
-    alignItems: 'center', // ← Centra verticalmente
-    justifyContent: 'center', // ← Centra horizontalmente
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
   },
@@ -482,6 +491,7 @@ const styles = StyleSheet.create({
 
   header: { padding: 16, paddingBottom: 0, alignItems: 'center' },
   headerTitle: { fontSize: 22, fontWeight: '800', color: '#1F2937' },
+  headerHint: { color: '#6B7280', fontSize: 12 },
 
   card: {
     marginHorizontal: 16,
@@ -491,6 +501,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   avatar: { width: 100, height: 100, borderRadius: 12 },
+
+  cardTextContainer: { flex: 1, alignItems: 'flex-start' },
+
+  cardName: {
+    fontWeight: '800',
+    color: '#1F2937',
+    marginBottom: 4,
+    textAlign: 'left',
+    alignSelf: 'flex-start',
+    fontSize: 18,
+    marginLeft: 10,
+  },
+
   pill: {
     paddingVertical: 6,
     paddingHorizontal: 10,
@@ -512,24 +535,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     color: '#334155',
   },
-  headerHint: { color: '#6B7280', fontSize: 12 },
   sep: {
     height: 3,
     backgroundColor: '#F3F4F6',
     marginLeft: 20,
     marginRight: 20,
-  },
-  cardTextContainer: {
-    flex: 1,
-    alignItems: 'flex-start',
-  },
-  cardName: {
-    fontWeight: '800',
-    color: '#1F2937',
-    marginBottom: 4,
-    textAlign: 'left',
-    alignSelf: 'flex-start',
-    fontSize: 18, // un poco más grande para resaltar
-    marginLeft: 10, // misma sangría que el texto dentro de la pill
   },
 });

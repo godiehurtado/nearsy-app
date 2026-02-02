@@ -1,10 +1,9 @@
-// App.tsx
-import './src/background/locationTask'; // registra la Task al boot (import temprano)
+// App.tsx (RNFirebase-only)
+import './src/background/locationTask';
 import React, { useEffect } from 'react';
 import { Platform } from 'react-native';
-import { getAuth, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { firestore } from './src/config/firebaseConfig';
+
+import { firebaseAuth, firestoreDb } from './src/config/firebaseConfig';
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -24,21 +23,19 @@ import {
 import * as WebBrowser from 'expo-web-browser';
 WebBrowser.maybeCompleteAuthSession();
 
-// ===== Handler global de notificaciones (también en foreground) =====
+// ===== Handler global de notificaciones =====
 Notifications.setNotificationHandler({
   handleNotification:
     async (): Promise<Notifications.NotificationBehavior> => ({
-      // comportamiento clásico
       shouldShowAlert: true,
       shouldPlaySound: false,
       shouldSetBadge: false,
-      // campos recientes (no en todos los SO/SDK)
       shouldShowBanner: true,
       shouldShowList: true,
     }),
 });
 
-// ===== Android: crear canal por defecto (una vez) =====
+// ===== Android: canal por defecto =====
 async function ensureAndroidChannel() {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync('default', {
@@ -49,7 +46,6 @@ async function ensureAndroidChannel() {
   });
 }
 
-// ===== Ref de navegación para abrir pantallas desde taps de push =====
 export const navigationRef = createNavigationContainerRef();
 
 export default function App() {
@@ -58,9 +54,10 @@ export default function App() {
     ensureAndroidChannel();
   }, []);
 
-  // 2) Registrar token push y controlar background location según sesión/preferencia
+  // 2) RNFirebase: auth state listener
   useEffect(() => {
-    const unsub = onAuthStateChanged(getAuth(), async (user) => {
+    // ✅ RNFirebase auth listener
+    const unsubscribe = firebaseAuth.onAuthStateChanged(async (user) => {
       if (!user) {
         if (Platform.OS !== 'web') {
           await stopBackgroundLocation().catch(() => {});
@@ -72,39 +69,35 @@ export default function App() {
       try {
         await registerPushToken();
       } catch (e) {
-        if (__DEV__) {
-          console.warn('[App] registerPushToken error:', e);
-        }
+        if (__DEV__) console.warn('[App] registerPushToken error:', e);
       }
 
-      // b) background location según preferencia del usuario (bgVisible)
+      // b) background location según preferencia (bgVisible)
       if (Platform.OS === 'web') return;
+
       try {
-        const snap = await getDoc(doc(firestore, 'users', user.uid));
-        const bgVisible = snap.exists() ? !!snap.data()?.bgVisible : false;
+        const snap = await firestoreDb.collection('users').doc(user.uid).get();
+        const bgVisible = snap.exists ? !!snap.data()?.bgVisible : false;
+
         if (bgVisible) {
           await startBackgroundLocation({ uid: user.uid });
         } else {
           await stopBackgroundLocation().catch(() => {});
         }
       } catch (e) {
-        if (__DEV__) {
-          console.warn('[App] BG location start/stop error:', e);
-        }
+        if (__DEV__) console.warn('[App] BG location start/stop error:', e);
       }
     });
 
-    return () => unsub();
+    return () => unsubscribe();
   }, []);
 
-  // 3) Listeners (foreground + tap) — opcional refrescar UI si quieres
+  // 3) Listeners de notificaciones
   useEffect(() => {
-    // recibido en foreground (ya se muestra banner por el handler)
     const receivedSub = Notifications.addNotificationReceivedListener(() => {
-      // aquí podrías disparar un toast o un refetch si hace falta
+      // opcional: refrescar data o mostrar toast
     });
 
-    // El usuario tocó la notificación
     const responseSub = Notifications.addNotificationResponseReceivedListener(
       (response) => {
         const data = response.notification.request.content.data as any;

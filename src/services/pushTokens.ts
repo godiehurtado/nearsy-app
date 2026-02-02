@@ -1,11 +1,10 @@
-// src/services/pushTokens.ts
+// src/services/pushTokens.ts  ✅ RNFirebase-only
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
-import { getAuth } from 'firebase/auth';
-import { doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { firestore } from '../config/firebaseConfig';
+
+import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 
 type RegisterResult =
   | { ok: true; token: string }
@@ -13,7 +12,7 @@ type RegisterResult =
 
 export async function registerPushToken(): Promise<RegisterResult> {
   try {
-    const user = getAuth().currentUser;
+    const user = firebaseAuth.currentUser;
     if (!user) return { ok: false, reason: 'no-user' };
 
     // 1) Permisos (iOS + Android 13+)
@@ -41,7 +40,6 @@ export async function registerPushToken(): Promise<RegisterResult> {
 
     if (!projectId && __DEV__) {
       console.warn('[PushTokens] Missing EAS projectId');
-      // en producción simplemente seguimos intentando sin log
     }
 
     const { data: token } = await Notifications.getExpoPushTokenAsync(
@@ -51,13 +49,17 @@ export async function registerPushToken(): Promise<RegisterResult> {
     if (!token) return { ok: false, reason: 'no-token' };
 
     // Double-check: el usuario pudo cambiar durante el await
-    const stillUser = getAuth().currentUser;
+    const stillUser = firebaseAuth.currentUser;
     if (!stillUser) return { ok: false, reason: 'user-changed' };
 
     // 3) Guardar token como docId (idempotente)
-    const ref = doc(firestore, 'users', stillUser.uid, 'pushTokens', token);
-    await setDoc(
-      ref,
+    const ref = firestoreDb
+      .collection('users')
+      .doc(stillUser.uid)
+      .collection('pushTokens')
+      .doc(token);
+
+    await ref.set(
       {
         token,
         platform: Platform.OS,
@@ -84,10 +86,15 @@ export async function registerPushToken(): Promise<RegisterResult> {
  */
 export async function unregisterPushToken(token?: string) {
   try {
-    const user = getAuth().currentUser;
+    const user = firebaseAuth.currentUser;
     if (!user || !token) return;
 
-    await deleteDoc(doc(firestore, 'users', user.uid, 'pushTokens', token));
+    await firestoreDb
+      .collection('users')
+      .doc(user.uid)
+      .collection('pushTokens')
+      .doc(token)
+      .delete();
   } catch (err) {
     if (__DEV__) {
       console.warn('[PushTokens] unregisterPushToken error:', err);

@@ -830,21 +830,21 @@ export default function InterestsWithLogo({
   const interestOptions = useMemo(() => {
     if (scope === 'professional') {
       return [
-        { label: 'Sports', icon: '🏀' },
-        { label: 'Music', icon: '🎵' },
-        { label: 'Language', icon: '🔤' },
         { label: 'Healthy Lifestyle', icon: '🧘' },
         { label: 'Extra-Curricular Activities', icon: '🎭' },
+        { label: 'Language', icon: '🔤' },
         { label: 'Other', icon: '🌐' },
+        { label: 'Sports', icon: '🏀' },
+        { label: 'Music', icon: '🎵' },
       ] as const;
     }
     return [
+      { label: 'Healthy Lifestyle', icon: '🧘' },
+      { label: 'Extra-Curricular Activities', icon: '🎭' },
+      { label: 'Language', icon: '🔤' },
+      { label: 'Other', icon: '🌐' },
       { label: 'Sports', icon: '🏀' },
       { label: 'Music', icon: '🎵' },
-      { label: 'Language', icon: '🔤' },
-      { label: 'Healthy Lifestyle', icon: '🧘' },
-      { label: 'Extra-Curricular Activities', icon: '🕺' },
-      { label: 'Other', icon: '✨' },
     ] as const;
   }, [scope]);
 

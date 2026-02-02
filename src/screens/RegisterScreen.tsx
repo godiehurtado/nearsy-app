@@ -1,3 +1,4 @@
+// RegisterScreen.tsx
 import { useMemo, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -11,17 +12,29 @@ import {
   Pressable,
   Platform,
   Linking,
+  KeyboardAvoidingView,
+  ScrollView,
+  ActivityIndicator,
 } from 'react-native';
+import auth from '@react-native-firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
-import { registerWithEmail } from '../services/authService';
-import { useGoogleAuth } from '../services/googleAuth';
-import { createUserProfile } from '../services/firestoreService';
 import WheelPicker from 'react-native-wheel-picker-expo';
-import { signInWithApple } from '../services/appleAuth';
 
-// 🔒 Feature flag para social login (igual que en LoginScreen)
-const ENABLE_SOCIAL_LOGIN =
-  process.env.EXPO_PUBLIC_ENABLE_SOCIAL_LOGIN === 'true';
+import { registerWithEmail } from '../services/authService';
+import { createUserProfile } from '../services/firestoreService';
+
+// 🔒 Social login must be disabled + invisible for this version
+const ENABLE_SOCIAL_LOGIN = false;
+
+type CreateProfilePayload = {
+  email: string;
+  birthYear: number;
+  phone?: string | null;
+  acceptedTerms?: boolean;
+  acceptedTermsAt?: string;
+  phoneVerified?: boolean;
+  phoneVerifiedAt?: string | null;
+};
 
 export default function RegisterScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -31,6 +44,9 @@ export default function RegisterScreen({ navigation }: any) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [phone, setPhone] = useState('');
+
+  // Loading único (evita doble taps)
+  const [submitting, setSubmitting] = useState(false);
 
   // Errores en vivo
   const [emailError, setEmailError] = useState<string | null>(null);
@@ -71,8 +87,6 @@ export default function RegisterScreen({ navigation }: any) {
     setYearOpen(false);
   };
 
-  const { signInWithGoogle, request } = useGoogleAuth();
-
   const computedAge = birthYear != null ? currentYear - birthYear : null;
   const ageInvalid = computedAge !== null && computedAge < 14;
 
@@ -86,21 +100,20 @@ export default function RegisterScreen({ navigation }: any) {
     return hasLetter && hasNumber;
   };
 
+  // ✅ Validador E.164 (teléfono internacional con código de país)
   const isValidPhone = (value: string) => {
-    const cleaned = value.trim();
+    const cleaned = value.replace(/\s/g, '');
     if (!cleaned) return false;
-    // Formato simple: dígitos, espacios, guiones y opcional "+"
-    return /^[0-9+\-\s()]{7,}$/.test(cleaned);
+    return /^\+[1-9]\d{7,14}$/.test(cleaned);
   };
 
   // Handlers con validaciones en vivo
   const handleEmailChange = (value: string) => {
     setEmail(value);
+
     if (!value.trim()) {
       setEmailError(null);
-      return;
-    }
-    if (!isValidEmail(value)) {
+    } else if (!isValidEmail(value)) {
       setEmailError('Please enter a valid email address.');
     } else {
       setEmailError(null);
@@ -118,10 +131,12 @@ export default function RegisterScreen({ navigation }: any) {
 
   const handleConfirmEmailChange = (value: string) => {
     setConfirmEmail(value);
+
     if (!value.trim()) {
       setConfirmEmailError(null);
       return;
     }
+
     if (value.trim().toLowerCase() !== email.trim().toLowerCase()) {
       setConfirmEmailError('Email and confirmation email must match.');
     } else {
@@ -131,11 +146,10 @@ export default function RegisterScreen({ navigation }: any) {
 
   const handlePasswordChange = (value: string) => {
     setPassword(value);
+
     if (!value) {
       setPasswordError(null);
-      return;
-    }
-    if (!isStrongPassword(value)) {
+    } else if (!isStrongPassword(value)) {
       setPasswordError(
         'Password must be at least 8 characters and include letters and numbers.',
       );
@@ -155,10 +169,12 @@ export default function RegisterScreen({ navigation }: any) {
 
   const handleConfirmPasswordChange = (value: string) => {
     setConfirmPassword(value);
+
     if (!value) {
       setConfirmPasswordError(null);
       return;
     }
+
     if (value !== password) {
       setConfirmPasswordError('Password and confirmation must match.');
     } else {
@@ -167,6 +183,8 @@ export default function RegisterScreen({ navigation }: any) {
   };
 
   const handleRegister = async () => {
+    if (submitting) return;
+
     // Birth year
     if (birthYear === null) {
       Alert.alert('Birth year required', 'Please select your birth year.');
@@ -187,10 +205,25 @@ export default function RegisterScreen({ navigation }: any) {
       return;
     }
 
-    // Phone required
-    if (!isValidPhone(phone)) {
-      Alert.alert('Invalid phone number', 'Please enter a valid phone number.');
-      return;
+    // 📱 Phone: obligatorio en Android, opcional en iOS
+    const normalizedPhone = phone.replace(/\s/g, '');
+
+    if (Platform.OS === 'android') {
+      if (!isValidPhone(normalizedPhone)) {
+        Alert.alert(
+          'Phone required',
+          'Please enter a valid phone number with country code, e.g. +1 305 123 4567 or +57 300 123 4567. This is required on Android to verify your account by SMS.',
+        );
+        return;
+      }
+    } else {
+      if (normalizedPhone && !isValidPhone(normalizedPhone)) {
+        Alert.alert(
+          'Invalid phone number',
+          'If you provide a phone number, it must include the country code, e.g. +1 305 123 4567 or +57 300 123 4567.',
+        );
+        return;
+      }
     }
 
     // Password & confirm password
@@ -219,65 +252,65 @@ export default function RegisterScreen({ navigation }: any) {
     }
 
     try {
+      setSubmitting(true);
+
       const { user } = await registerWithEmail(email.trim(), password);
 
-      const profile: any = {
+      // ⚠️ createUserProfile en tu BONUS requiere birthYear number (no null)
+      const profile: CreateProfilePayload = {
         email: email.trim(),
         birthYear,
-        phone: phone.trim(),
+        phone: normalizedPhone || null,
+
         acceptedTerms: true,
         acceptedTermsAt: new Date().toISOString(),
+
+        phoneVerified: false,
+        phoneVerifiedAt: null,
       };
 
-      await createUserProfile(user.uid, profile);
+      await createUserProfile(user.uid, profile as any);
 
+      // 🔹 iOS: verificación por correo obligatorio
+      // Nota: registerWithEmail ya envía el email de verificación.
+      if (Platform.OS === 'ios') {
+        Alert.alert(
+          'Verify your email',
+          'We sent a verification link to your email. Please verify your account before logging in on this device.',
+          [
+            {
+              text: 'OK',
+              onPress: async () => {
+                try {
+                  await auth().signOut();
+                } catch {}
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: 'Login' }],
+                });
+              },
+            },
+          ],
+        );
+        return;
+      }
+
+      // 🔹 ANDROID: flujo actual con SMS
       Alert.alert(
         'Registration successful 🎉',
-        'We have sent you a verification email. Please check your inbox and then log in with your account.',
+        'We will now verify your phone number with a text message.',
       );
 
-      // → Después de registrarse lo mandamos a Login
-      navigation.navigate('Login');
+      navigation.navigate('PhoneVerification', {
+        uid: user.uid,
+        phone: normalizedPhone,
+      });
     } catch (e: any) {
       const msg = getAuthErrorMessage(e?.code);
       Alert.alert('Error', msg);
+    } finally {
+      setSubmitting(false);
     }
-  };
-
-  const handleGoogle = async () => {
-    if (!ENABLE_SOCIAL_LOGIN) return;
-
-    try {
-      const user = await signInWithGoogle();
-
-      const profile: any = {
-        email: email.trim() || user.email,
-        birthYear,
-        acceptedTerms: true,
-        acceptedTermsAt: new Date().toISOString(),
-      };
-      if (phone.trim()) profile.phone = phone.trim();
-
-      await createUserProfile(user.uid, profile);
-      navigation.navigate('CompleteProfile', {
-        uid: user.uid,
-        email: user.email,
-      });
-    } catch (e: any) {
-      Alert.alert(
-        'Google Sign-in',
-        e?.message ?? 'Failed to sign in with Google',
-      );
-    }
-  };
-
-  const handleApple = async () => {
-    if (!ENABLE_SOCIAL_LOGIN) return;
-
-    Alert.alert(
-      'Sign in with Apple',
-      Platform.OS === 'ios' ? 'Coming soon.' : 'Coming soon.',
-    );
   };
 
   function getAuthErrorMessage(code?: string) {
@@ -312,247 +345,252 @@ export default function RegisterScreen({ navigation }: any) {
   }
 
   return (
-    <View
-      style={[
-        styles.container,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
-      ]}
-    >
-      <Text style={styles.title}>Create Account</Text>
-
-      {/* Email */}
-      <View style={styles.fieldGroup}>
-        <Text style={styles.fieldLabel}>Email</Text>
-        <View style={styles.inputContainer}>
-          <Ionicons
-            name="mail"
-            size={20}
-            color="#999"
-            style={styles.inputIcon}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#9CA3AF"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={handleEmailChange}
-          />
-        </View>
-        {emailError && <Text style={styles.errorText}>{emailError}</Text>}
-      </View>
-
-      {/* Confirm Email */}
-      <View style={styles.fieldGroup}>
-        <Text style={styles.fieldLabel}>Confirm Email</Text>
-        <View style={styles.inputContainer}>
-          <Ionicons
-            name="mail"
-            size={20}
-            color="#999"
-            style={styles.inputIcon}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Confirm Email"
-            placeholderTextColor="#9CA3AF"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={confirmEmail}
-            onChangeText={handleConfirmEmailChange}
-          />
-        </View>
-        {confirmEmailError && (
-          <Text style={styles.errorText}>{confirmEmailError}</Text>
-        )}
-      </View>
-
-      {/* Phone (required) */}
-      <View style={styles.fieldGroup}>
-        <Text style={styles.fieldLabel}>Phone number</Text>
-        <View style={styles.inputContainer}>
-          <Ionicons
-            name="call"
-            size={20}
-            color="#999"
-            style={styles.inputIcon}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Phone number"
-            placeholderTextColor="#9CA3AF"
-            keyboardType="phone-pad"
-            value={phone}
-            onChangeText={setPhone}
-          />
-        </View>
-      </View>
-
-      {/* Password */}
-      <View style={styles.fieldGroup}>
-        <Text style={styles.fieldLabel}>Password</Text>
-        <View style={styles.inputContainer}>
-          <Ionicons
-            name="lock-closed"
-            size={20}
-            color="#999"
-            style={styles.inputIcon}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#9CA3AF"
-            secureTextEntry={!showPassword}
-            value={password}
-            onChangeText={handlePasswordChange}
-          />
-          <TouchableOpacity
-            onPress={() => setShowPassword((prev) => !prev)}
-            style={styles.eyeButton}
-          >
-            <Ionicons
-              name={showPassword ? 'eye-off' : 'eye'}
-              size={20}
-              color="#777"
-            />
-          </TouchableOpacity>
-        </View>
-        {passwordError && <Text style={styles.errorText}>{passwordError}</Text>}
-      </View>
-
-      {/* Confirm Password */}
-      <View style={styles.fieldGroup}>
-        <Text style={styles.fieldLabel}>Confirm Password</Text>
-        <View style={styles.inputContainer}>
-          <Ionicons
-            name="lock-closed"
-            size={20}
-            color="#999"
-            style={styles.inputIcon}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Confirm Password"
-            placeholderTextColor="#9CA3AF"
-            secureTextEntry={!showConfirmPassword}
-            value={confirmPassword}
-            onChangeText={handleConfirmPasswordChange}
-          />
-          <TouchableOpacity
-            onPress={() => setShowConfirmPassword((prev) => !prev)}
-            style={styles.eyeButton}
-          >
-            <Ionicons
-              name={showConfirmPassword ? 'eye-off' : 'eye'}
-              size={20}
-              color="#777"
-            />
-          </TouchableOpacity>
-        </View>
-        {confirmPasswordError && (
-          <Text style={styles.errorText}>{confirmPasswordError}</Text>
-        )}
-      </View>
-
-      {/* Birth year */}
-      <View style={[styles.fieldGroup, styles.ageRow]}>
-        <View style={styles.labelRow}>
-          <Ionicons name="calendar" size={18} color="#999" />
-          <Text style={styles.fieldLabel}>Birth year *</Text>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.selector, ageInvalid && styles.selectorError]}
-          activeOpacity={0.8}
-          onPress={openYear}
+    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={insets.top + 20}
+      >
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={[
+            styles.container,
+            {
+              paddingTop: insets.top + 20,
+              paddingBottom: insets.bottom + 40,
+            },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.selectorText}>
-            {birthYear === null ? 'Select' : String(birthYear)}
-          </Text>
-          <Ionicons name="chevron-down" size={18} color="#475569" />
-        </TouchableOpacity>
+          <Text style={styles.title}>Create Account</Text>
 
-        {ageInvalid && (
-          <Text style={styles.ageHelper}>You must be 14+ to register.</Text>
-        )}
-      </View>
-
-      {/* Terms and Conditions */}
-      <View style={styles.termsRow}>
-        <TouchableOpacity
-          style={styles.checkbox}
-          onPress={() => setAcceptedTerms((prev) => !prev)}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name={acceptedTerms ? 'checkbox' : 'square-outline'}
-            size={22}
-            color="#3B5A85"
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.termsText}>
-          I agree to the{' '}
-          <Text
-            style={styles.termsLink}
-            onPress={() => Linking.openURL('https://nearsy.app/legal')}
-          >
-            terms and conditions
-          </Text>
-          .
-        </Text>
-      </View>
-
-      <TouchableOpacity style={styles.button} onPress={handleRegister}>
-        <Text style={styles.buttonText}>Register</Text>
-      </TouchableOpacity>
-
-      {/* ---------- OR + SOCIAL SOLO SI SE HABILITA ---------- */}
-      {ENABLE_SOCIAL_LOGIN && (
-        <>
-          <View style={styles.separatorRow}>
-            <View style={styles.separatorLine} />
-            <Text style={styles.separatorText}>or</Text>
-            <View style={styles.separatorLine} />
-          </View>
-
-          <View style={styles.socialGroup}>
-            <TouchableOpacity
-              style={[styles.socialBtn, styles.googleBtn]}
-              onPress={handleGoogle}
-              disabled={!request}
-              activeOpacity={0.85}
-            >
+          {/* Email */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Email</Text>
+            <View style={styles.inputContainer}>
               <Ionicons
-                name="logo-google"
-                size={18}
-                color="#fff"
-                style={{ marginRight: 8 }}
-              />
-              <Text style={styles.socialTextLight}>Continue with Google</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.socialBtn, styles.appleBtn]}
-              onPress={handleApple}
-              activeOpacity={0.85}
-            >
-              <Ionicons
-                name="logo-apple"
+                name="mail"
                 size={20}
-                color="#000"
-                style={{ marginRight: 8 }}
+                color="#999"
+                style={styles.inputIcon}
               />
-              <Text style={styles.socialTextDark}>Continue with Apple</Text>
-            </TouchableOpacity>
+              <TextInput
+                style={styles.input}
+                placeholder="Email"
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                value={email}
+                onChangeText={handleEmailChange}
+              />
+            </View>
+            {emailError && <Text style={styles.errorText}>{emailError}</Text>}
           </View>
-        </>
-      )}
 
-      <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-        <Text style={styles.link}>Already have an account? Log In</Text>
-      </TouchableOpacity>
+          {/* Confirm Email */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Confirm Email</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons
+                name="mail"
+                size={20}
+                color="#999"
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Confirm Email"
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                value={confirmEmail}
+                onChangeText={handleConfirmEmailChange}
+              />
+            </View>
+            {confirmEmailError && (
+              <Text style={styles.errorText}>{confirmEmailError}</Text>
+            )}
+          </View>
+
+          {/* Phone (required on Android / optional on iOS) */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>
+              Phone number {Platform.OS === 'android' ? '*' : '(optional)'}
+            </Text>
+
+            <View style={styles.inputContainer}>
+              <Ionicons
+                name="call"
+                size={20}
+                color="#999"
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder={
+                  Platform.OS === 'android'
+                    ? 'Phone number (required, e.g. +1 305 123 4567)'
+                    : 'Phone number (optional)'
+                }
+                placeholderTextColor="#9CA3AF"
+                keyboardType="phone-pad"
+                value={phone}
+                onChangeText={setPhone}
+              />
+            </View>
+
+            {Platform.OS === 'android' ? (
+              <Text style={styles.helperText}>
+                Required to verify your account via SMS. Include your country
+                code (e.g. +1 or +57).
+              </Text>
+            ) : (
+              <Text style={styles.helperText}>
+                Optional. If provided, include your country code (e.g. +1 or
+                +57).
+              </Text>
+            )}
+          </View>
+
+          {/* Password */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Password</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons
+                name="lock-closed"
+                size={20}
+                color="#999"
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor="#9CA3AF"
+                secureTextEntry={!showPassword}
+                value={password}
+                onChangeText={handlePasswordChange}
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword((prev) => !prev)}
+                style={styles.eyeButton}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off' : 'eye'}
+                  size={20}
+                  color="#777"
+                />
+              </TouchableOpacity>
+            </View>
+            {passwordError && (
+              <Text style={styles.errorText}>{passwordError}</Text>
+            )}
+          </View>
+
+          {/* Confirm Password */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Confirm Password</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons
+                name="lock-closed"
+                size={20}
+                color="#999"
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Confirm Password"
+                placeholderTextColor="#9CA3AF"
+                secureTextEntry={!showConfirmPassword}
+                value={confirmPassword}
+                onChangeText={handleConfirmPasswordChange}
+              />
+              <TouchableOpacity
+                onPress={() => setShowConfirmPassword((prev) => !prev)}
+                style={styles.eyeButton}
+              >
+                <Ionicons
+                  name={showConfirmPassword ? 'eye-off' : 'eye'}
+                  size={20}
+                  color="#777"
+                />
+              </TouchableOpacity>
+            </View>
+            {confirmPasswordError && (
+              <Text style={styles.errorText}>{confirmPasswordError}</Text>
+            )}
+          </View>
+
+          {/* Birth year */}
+          <View style={[styles.fieldGroup, styles.ageRow]}>
+            <View style={styles.labelRow}>
+              <Ionicons name="calendar" size={18} color="#999" />
+              <Text style={styles.fieldLabel}>Birth year *</Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.selector, ageInvalid && styles.selectorError]}
+              activeOpacity={0.8}
+              onPress={openYear}
+            >
+              <Text style={styles.selectorText}>
+                {birthYear === null ? 'Select' : String(birthYear)}
+              </Text>
+              <Ionicons name="chevron-down" size={18} color="#475569" />
+            </TouchableOpacity>
+
+            {ageInvalid && (
+              <Text style={styles.ageHelper}>You must be 14+ to register.</Text>
+            )}
+          </View>
+
+          {/* Terms and Conditions */}
+          <View style={styles.termsRow}>
+            <TouchableOpacity
+              style={styles.checkbox}
+              onPress={() => setAcceptedTerms((prev) => !prev)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={acceptedTerms ? 'checkbox' : 'square-outline'}
+                size={22}
+                color="#3B5A85"
+              />
+            </TouchableOpacity>
+
+            <Text style={styles.termsText}>
+              I agree to the{' '}
+              <Text
+                style={styles.termsLink}
+                onPress={() => Linking.openURL('https://nearsy.app/legal')}
+              >
+                terms and conditions
+              </Text>
+              .
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.button, submitting && { opacity: 0.7 }]}
+            onPress={handleRegister}
+            disabled={submitting}
+            activeOpacity={0.85}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#1A2B3C" />
+            ) : (
+              <Text style={styles.buttonText}>Register</Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Social login hidden for this version */}
+          {ENABLE_SOCIAL_LOGIN ? null : null}
+
+          <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+            <Text style={styles.link}>Already have an account? Log In</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* MODAL WHEEL PICKER */}
       <Modal
@@ -604,8 +642,6 @@ export default function RegisterScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#fff',
     paddingHorizontal: 30,
@@ -617,7 +653,6 @@ const styles = StyleSheet.create({
     color: '#2B3A42',
   },
 
-  // ✅ NUEVOS
   fieldGroup: {
     width: '100%',
     marginBottom: 8,
@@ -657,8 +692,14 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 4,
   },
+  helperText: {
+    width: '100%',
+    color: '#6B7280',
+    fontSize: 11,
+    marginTop: 2,
+    marginBottom: 4,
+  },
 
-  // ⬇️ Birth year ahora full width como los inputs
   ageRow: {
     width: '100%',
     marginTop: 6,
@@ -712,51 +753,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 60,
     borderRadius: 20,
     marginTop: 20,
+    minWidth: 180,
+    alignItems: 'center',
   },
   buttonText: { color: '#1A2B3C', fontSize: 16, fontWeight: 'bold' },
-  separatorRow: {
-    width: '100%',
-    marginTop: 22,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  separatorLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E5E7EB',
-  },
-  separatorText: {
-    color: '#6B7280',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  socialGroup: {
-    width: '100%',
-    gap: 12,
-    alignItems: 'center',
-  },
-  socialBtn: {
-    width: '100%',
-    height: 46,
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  googleBtn: {
-    backgroundColor: '#1F2937',
-  },
-  appleBtn: {
-    backgroundColor: '#F7F7F7',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  socialTextLight: { color: '#fff', fontWeight: '700' },
-  socialTextDark: { color: '#111', fontWeight: '700' },
+
   link: { marginTop: 20, fontSize: 14, color: '#555' },
+
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',

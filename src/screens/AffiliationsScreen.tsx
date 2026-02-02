@@ -1,4 +1,4 @@
-// src/screens/AffiliationsScreen.tsx
+// src/screens/AffiliationsScreen.tsx  ✅ RNFirebase-only
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -12,9 +12,11 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getAuth } from 'firebase/auth';
+import { firebaseAuth } from '../config/firebaseConfig';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -39,7 +41,7 @@ type Props = {
   };
 };
 
-const LABEL_MAX = 20;
+const LABEL_MAX = 50;
 const MAX_PER_CATEGORY = 4;
 
 // 🔹 NUEVA CONFIG para las 10 preguntas
@@ -67,12 +69,6 @@ const CATEGORY_CONFIG: {
     subtitle: 'Alumni associations or class groups you belong to.',
     emoji: '🏫',
   },
-  // {
-  //   key: 'favoriteSport',
-  //   title: 'Favorite Sport',
-  //   subtitle: 'The sport you enjoy the most.',
-  //   emoji: '🏀',
-  // },
   {
     key: 'favoriteTeam',
     title: 'Favorite Sport Team',
@@ -97,12 +93,6 @@ const CATEGORY_CONFIG: {
     subtitle: 'Community, volunteering or local groups.',
     emoji: '🧑‍🤝‍🧑',
   },
-  // {
-  //   key: 'from',
-  //   title: 'Where are you from?',
-  //   subtitle: 'Tell others where you were born or raised.',
-  //   emoji: '🌎',
-  // },
   {
     key: 'pets',
     title: 'Pets',
@@ -150,7 +140,7 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
     setMode(initialMode);
 
     (async () => {
-      const uid = getAuth().currentUser?.uid;
+      const uid = firebaseAuth.currentUser?.uid;
       if (!uid) return;
 
       try {
@@ -188,6 +178,7 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
         setIsLoading(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const openEditorForCategory = async (
@@ -289,7 +280,7 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
   const handleSaveAll = async () => {
     try {
       setIsSaving(true);
-      const uid = getAuth().currentUser?.uid;
+      const uid = firebaseAuth.currentUser?.uid;
       if (!uid) throw new Error('User not authenticated.');
 
       // Subir imágenes locales
@@ -404,9 +395,7 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
                         <TouchableOpacity
                           key={`${cat.key}-${idx}`}
                           style={styles.affiliationCard}
-                          onPress={
-                            () => openEditorForCategory(cat.key, idx) // idx es índice global
-                          }
+                          onPress={() => openEditorForCategory(cat.key, idx)}
                           activeOpacity={0.9}
                         >
                           <View style={styles.affiliationCircle}>
@@ -475,63 +464,69 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
         animationType="fade"
         onRequestClose={() => setLabelModalOpen(false)}
       >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setLabelModalOpen(false)}
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
         >
-          <Pressable style={styles.modalCard} onPress={() => {}}>
-            <Text style={styles.modalTitle}>Set your label</Text>
-            <Text style={styles.modalSubtitle}>
-              Short text for this affiliation (max {LABEL_MAX} characters).
-            </Text>
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => setLabelModalOpen(false)}
+          >
+            <Pressable style={styles.modalCard} onPress={() => {}}>
+              <Text style={styles.modalTitle}>Set your label</Text>
+              <Text style={styles.modalSubtitle}>
+                Short text for this affiliation (max {LABEL_MAX} characters).
+              </Text>
 
-            <View style={styles.modalPreviewCircle}>
-              {tempImageUrl ? (
-                <Image
-                  source={{ uri: tempImageUrl }}
-                  style={styles.affiliationImage}
-                />
-              ) : (
-                <Ionicons name="image-outline" size={32} color="#9CA3AF" />
-              )}
-            </View>
-
-            <View style={styles.modalInputGroup}>
-              <View style={styles.modalLabelRow}>
-                <Text style={styles.modalLabel}>Label</Text>
-                <Text style={styles.modalCounter}>
-                  {tempLabel.length}/{LABEL_MAX}
-                </Text>
+              <View style={styles.modalPreviewCircle}>
+                {tempImageUrl ? (
+                  <Image
+                    source={{ uri: tempImageUrl }}
+                    style={styles.affiliationImage}
+                  />
+                ) : (
+                  <Ionicons name="image-outline" size={32} color="#9CA3AF" />
+                )}
               </View>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="E.g. MIT, Lakers, Photography Club..."
-                placeholderTextColor="#9CA3AF"
-                value={tempLabel}
-                onChangeText={(t) =>
-                  t.length <= LABEL_MAX ? setTempLabel(t) : null
-                }
-              />
-            </View>
 
-            <View style={styles.modalButtonsRow}>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalBtnGhost]}
-                onPress={() => setLabelModalOpen(false)}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.modalBtnGhostText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalBtnPrimary]}
-                onPress={handleSaveLabel}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.modalBtnPrimaryText}>Save</Text>
-              </TouchableOpacity>
-            </View>
+              <View style={styles.modalInputGroup}>
+                <View style={styles.modalLabelRow}>
+                  <Text style={styles.modalLabel}>Label</Text>
+                  <Text style={styles.modalCounter}>
+                    {tempLabel.length}/{LABEL_MAX}
+                  </Text>
+                </View>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="E.g. MIT, Lakers, Photography Club..."
+                  placeholderTextColor="#9CA3AF"
+                  value={tempLabel}
+                  onChangeText={(t) =>
+                    t.length <= LABEL_MAX ? setTempLabel(t) : null
+                  }
+                />
+              </View>
+
+              <View style={styles.modalButtonsRow}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalBtnGhost]}
+                  onPress={() => setLabelModalOpen(false)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.modalBtnGhostText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalBtnPrimary]}
+                  onPress={handleSaveLabel}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.modalBtnPrimaryText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Barra inferior para guardar */}
@@ -620,7 +615,7 @@ const styles = StyleSheet.create({
   },
   affiliationCard: {
     alignItems: 'center',
-    width: 80,
+    width: 90,
   },
   affiliationCircle: {
     width: 76,
@@ -647,7 +642,7 @@ const styles = StyleSheet.create({
     color: '#111827',
     fontWeight: '600',
     textAlign: 'center',
-    maxWidth: 90,
+    maxWidth: 100,
   },
   emptyText: {
     fontSize: 12,

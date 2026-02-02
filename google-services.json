@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "557470198780",
+    "project_id": "nearsy-pj",
+    "storage_bucket": "nearsy-pj.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:557470198780:android:95886472e8f4614a596079",
+        "android_client_info": {
+          "package_name": "com.nearsy.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "557470198780-9hs4r3aoj7qbevcrcd8d2f7thkrakpqk.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nearsy.app",
+            "certificate_hash": "9c70c79ae4d0fe22e268ea5f50a742b0edf0bc8c"
+          }
+        },
+        {
+          "client_id": "557470198780-8ls8o304sfcf8va409va90o6rar3vc5a.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAUB6s3CK6OLs8fkJfsnZJW_9DCh7mikcM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "557470198780-8ls8o304sfcf8va409va90o6rar3vc5a.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "557470198780-9qe3qg59h682e3fn14ic97hf9t375m3n.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.nearsy.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

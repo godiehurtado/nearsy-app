@@ -1,4 +1,4 @@
-// src/screens/AlertsScreen.tsx
+// src/screens/AlertsScreen.tsx  ✅ RNFirebase-only
 import React, {
   useEffect,
   useState,
@@ -17,20 +17,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { getAuth } from 'firebase/auth';
-import {
-  collection,
-  doc,
-  getDocs,
-  limit,
-  onSnapshot,
-  query,
-  where,
-} from 'firebase/firestore';
-import { firestore } from '../config/firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { RootTabsParamList } from '../navigation/RootTabs';
+
+import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { registerPushToken } from '../services/pushTokens';
 
 type AlertKind = 'interest_nearby' | 'contact_nearby';
@@ -44,6 +35,7 @@ type AlertItem = {
   distanceFt?: number; // ✅ pies
   sharedInterests?: string[];
   at: number;
+  fromContacts?: boolean; // ✅ viene de tus contactos
 };
 
 type LocationDoc = { lat: number; lng: number; updatedAt?: number };
@@ -65,6 +57,9 @@ type UserDoc = {
   blockedContacts?: string[];
   email?: string;
   phone?: string;
+
+  // 👇 contactos normalizados (email/phone)
+  contactsSafe?: string[];
 };
 
 // ===== utilidades =====
@@ -106,7 +101,7 @@ function haversineKm(
 
 function normalizeId(value?: string | null): string {
   if (!value) return '';
-  return value.trim().toLowerCase();
+  return value.replace(/\s+/g, '').toLowerCase();
 }
 
 function isBlockedBetween(
@@ -125,24 +120,24 @@ function isBlockedBetween(
   const myBlocked = (myBlockedContacts ?? []).map(normalizeId);
   const otherBlocked = (otherBlockedContacts ?? []).map(normalizeId);
 
-  // Yo bloqueé al otro
   const iBlockedOther = otherIds.some((id) => myBlocked.includes(id));
-
-  // El otro me bloqueó a mí
   const otherBlockedMe = meIds.some((id) => otherBlocked.includes(id));
 
   return iBlockedOther || otherBlockedMe;
 }
 
-// ✅ coherencia con 350 ft
+// ✅ coherencia con 20 ft
 const FEET_PER_METER = 3.28084;
-const FEET_350_IN_KM = 0.1524; // 350 ft ≈ 152.4 m
+const NEARBY_RADIUS_FT = 20;
+const NEARBY_RADIUS_KM = NEARBY_RADIUS_FT / FEET_PER_METER / 1000; // ft → m → km
+
 const LOCATION_FRESH_MS = 5 * 60 * 1000;
 const AUTO_REFRESH_MS = 30 * 1000;
 
 export default function AlertsScreen() {
   const navigation =
     useNavigation<BottomTabNavigationProp<RootTabsParamList>>();
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [topColor, setTopColor] = useState('#3B5A85');
@@ -150,8 +145,8 @@ export default function AlertsScreen() {
   const [me, setMe] = useState<UserDoc | null>(null);
 
   const insets = useSafeAreaInsets();
-  const currentYear = useMemo(() => new Date().getFullYear(), []); // ✅
-  const intervalRef = useRef<NodeJS.Timer | null>(null); // ✅
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Reasegura el token push al abrir esta screen (barato e idempotente)
   useEffect(() => {
@@ -160,15 +155,16 @@ export default function AlertsScreen() {
 
   // Suscríbete a MI doc: color, visibility y location
   useEffect(() => {
-    const uid = getAuth().currentUser?.uid;
+    const uid = firebaseAuth.currentUser?.uid;
     if (!uid) {
       setLoading(false);
       return;
     }
-    const ref = doc(firestore, 'users', uid);
-    const unsub = onSnapshot(ref, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data() as UserDoc;
+
+    const ref = firestoreDb.collection('users').doc(uid);
+    const unsub = ref.onSnapshot((snap) => {
+      if (snap.exists) {
+        const data = (snap.data() as UserDoc) ?? {};
         if (typeof data.topBarColor === 'string' && data.topBarColor) {
           setTopColor(data.topBarColor);
         }
@@ -178,11 +174,12 @@ export default function AlertsScreen() {
       }
       setLoading(false);
     });
+
     return () => unsub();
   }, []);
 
   const buildAlerts = useCallback(async () => {
-    const uid = getAuth().currentUser?.uid;
+    const uid = firebaseAuth.currentUser?.uid;
     if (!uid || !me) {
       setAlerts([]);
       return;
@@ -195,12 +192,11 @@ export default function AlertsScreen() {
     }
 
     try {
-      const q1 = query(
-        collection(firestore, 'users'),
-        where('visibility', '==', true),
-        limit(200),
-      );
-      const s = await getDocs(q1);
+      const snap = await firestoreDb
+        .collection('users')
+        .where('visibility', '==', true)
+        .limit(200)
+        .get();
 
       const myPoint = { lat: me.location.lat, lng: me.location.lng };
       const now = Date.now();
@@ -208,9 +204,12 @@ export default function AlertsScreen() {
       const myAge =
         typeof me.birthYear === 'number' ? currentYear - me.birthYear : null;
 
-      const myBlocked = new Set(me.blockedContacts ?? []);
+      // 🔹 contactos normalizados del usuario actual
+      const contactsSet = new Set<string>(
+        (me.contactsSafe ?? []).map((c) => normalizeId(c)),
+      );
 
-      // 🔹 Optimización: mis intereses se calculan una sola vez
+      // 🔹 intereses del usuario actual (se calculan una sola vez)
       const myInterests = new Set(
         [
           ...(me.personalInterests ?? []),
@@ -220,17 +219,13 @@ export default function AlertsScreen() {
 
       const results: AlertItem[] = [];
 
-      s.forEach((d) => {
+      snap.forEach((d) => {
         if (d.id === uid) return;
-        const u = d.data() as UserDoc & {
-          birthYear?: number;
-          visibleToMinAge?: number | null;
-          visibleToMaxAge?: number | null;
-          blockedContacts?: string[];
-        };
+
+        const u = (d.data() as UserDoc) ?? {};
 
         // 🚫 Bloqueos (mutuos)
-        const authUser = getAuth().currentUser;
+        const authUser = firebaseAuth.currentUser;
         const myEmail = authUser?.email ?? null;
         const myPhone = me.phone ?? null;
         const myBlockedContacts = me.blockedContacts ?? [];
@@ -243,7 +238,6 @@ export default function AlertsScreen() {
           u.phone ?? null,
           u.blockedContacts ?? [],
         );
-
         if (blocked) return;
 
         // 🚫 Edad fuera de rango (mutuos)
@@ -264,13 +258,13 @@ export default function AlertsScreen() {
         if (!loc?.lat || !loc?.lng) return;
         if (loc.updatedAt && now - loc.updatedAt > LOCATION_FRESH_MS) return;
 
-        // Distancia → en ft
+        // Distancia → en ft (con límite 20 ft)
         const km = haversineKm(myPoint, { lat: loc.lat, lng: loc.lng });
-        if (km > FEET_350_IN_KM) return;
+        if (km > NEARBY_RADIUS_KM) return;
         const meters = km * 1000;
         const feet = meters * FEET_PER_METER;
 
-        // Intereses compartidos (para etiquetar la alerta)
+        // Intereses compartidos
         const otherInterests = new Set(
           [
             ...(u.personalInterests ?? []),
@@ -283,6 +277,13 @@ export default function AlertsScreen() {
           if (myInterests.has(tag)) shared.push(tag);
         });
 
+        // 👇 ¿está en mis contactos?
+        const emailNorm = normalizeId(u.email ?? null);
+        const phoneNorm = normalizeId(u.phone ?? null);
+        const fromContacts =
+          (!!emailNorm && contactsSet.has(emailNorm)) ||
+          (!!phoneNorm && contactsSet.has(phoneNorm));
+
         const kind: AlertKind =
           shared.length > 0 ? 'interest_nearby' : 'contact_nearby';
 
@@ -292,37 +293,38 @@ export default function AlertsScreen() {
           name: shortName(u.realName),
           avatar: u.profileImage ?? undefined,
           kind,
-          distanceFt: Math.round(feet), // ✅ UI en pies
+          distanceFt: Math.round(feet),
           sharedInterests: shared.slice(0, 3),
           at: loc.updatedAt || now,
+          fromContacts,
         });
       });
 
-      // Ordenar por distancia (menor primero)
       results.sort((a, b) => (a.distanceFt ?? 0) - (b.distanceFt ?? 0));
       setAlerts(results);
-    } catch (err) {
-      // Si hay error de permisos/red
+    } catch {
       setAlerts([]);
     }
   }, [me, currentYear]);
 
-  // Inicial + auto refresh (un solo intervalo estable) ✅
+  // Inicial + auto refresh ✅
   useEffect(() => {
     if (!me) {
       setAlerts([]);
       return;
     }
+
     setLoading(true);
     buildAlerts().finally(() => setLoading(false));
 
-    let id: ReturnType<typeof setInterval> | null = null;
-    id = setInterval(() => {
+    const id = setInterval(() => {
       buildAlerts();
     }, AUTO_REFRESH_MS);
 
+    intervalRef.current = id;
+
     return () => {
-      if (id) clearInterval(id as unknown as number);
+      if (id) clearInterval(id);
     };
   }, [me, buildAlerts]);
 
@@ -336,13 +338,16 @@ export default function AlertsScreen() {
   }, [buildAlerts]);
 
   const renderMsg = (a: AlertItem) => {
-    if (a.kind === 'contact_nearby') {
-      return `${a.name} is near you.`;
-    }
     const tags = (a.sharedInterests ?? []).slice(0, 2).join(', ');
-    return `${a.name} is near you and you share interests${
-      tags ? ` (${tags})` : ''
-    }.`;
+    const inContactsLabel = a.fromContacts ? ' (in your contacts)' : '';
+
+    if (a.sharedInterests && a.sharedInterests.length > 0) {
+      return `${a.name}${inContactsLabel} is near you and you share interests${
+        tags ? ` (${tags})` : ''
+      }.`;
+    }
+
+    return `${a.name}${inContactsLabel} is near you.`;
   };
 
   if (loading) {
@@ -384,7 +389,7 @@ export default function AlertsScreen() {
             <Text
               style={{ textAlign: 'center', color: '#6B7280', marginTop: 6 }}
             >
-              Showing only users within 350 ft right now.
+              Showing only users within {NEARBY_RADIUS_FT} ft right now.
             </Text>
             {noLocation && (
               <Text
@@ -400,8 +405,6 @@ export default function AlertsScreen() {
             activeOpacity={0.85}
             onPress={() => {
               if (!item.uid) return;
-              // Si usas el ref global, aquí puedes conservar:
-              // (navigationRef as any).navigate('Home', { screen: 'ProfileDetail', params: { uid: item.uid } });
               navigation.navigate('Home', {
                 screen: 'ProfileDetail',
                 params: { uid: item.uid },

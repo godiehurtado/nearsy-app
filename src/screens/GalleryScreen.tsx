@@ -1,4 +1,4 @@
-// src/screens/GalleryScreen.tsx
+// src/screens/GalleryScreen.tsx  ✅ RNFirebase-only
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -13,19 +13,18 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
-import { useRoute } from '@react-navigation/native';
-import { getAuth } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { firestore } from '../config/firebaseConfig';
-import { getStorage, ref, deleteObject } from 'firebase/storage';
+
+import { firestoreDb, firebaseAuth } from '../config/firebaseConfig';
+import storage from '@react-native-firebase/storage';
+
 import { GalleryPhoto } from '../types/profile';
 import { uploadGalleryImage } from '../services/storageService';
 import TopHeader from '../components/TopHeader';
 
 type ProfileMode = 'personal' | 'professional';
 type RouteParams = {
-  uid?: string; // ver galería de otro usuario (opcional)
-  mode?: ProfileMode; // modo explícito (opcional)
+  uid?: string;
+  mode?: ProfileMode;
 };
 
 export default function GalleryScreen({ route, navigation }: any) {
@@ -47,23 +46,23 @@ export default function GalleryScreen({ route, navigation }: any) {
 
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
 
-  // visor
+  // viewer
   const [viewerOpen, setViewerOpen] = useState(false);
   const [current, setCurrent] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const myUid = getAuth().currentUser?.uid || null;
+        const myUid = firebaseAuth.currentUser?.uid ?? null;
         const targetUid = routeUid ?? myUid ?? null;
         if (!targetUid) throw new Error('User not authenticated.');
 
         setOwnerUid(targetUid);
         setIsOwn(!!myUid && myUid === targetUid);
 
-        // Cargar perfil para top visuals, profileImage y modo por defecto
-        const snap = await getDoc(doc(firestore, 'users', targetUid));
-        if (snap.exists()) {
+        // ✅ RNFirebase Firestore get
+        const snap = await firestoreDb.collection('users').doc(targetUid).get();
+        if (snap.exists) {
           const data = snap.data() as any;
 
           setTopBarColor(data.topBarColor ?? '#3B5A85');
@@ -77,17 +76,15 @@ export default function GalleryScreen({ route, navigation }: any) {
             routeMode ?? data.mode ?? 'personal';
           setMode(effectiveMode);
 
-          // Cargar galería por modo
-          const list: GalleryPhoto[] = Array.isArray(
+          const raw =
             effectiveMode === 'personal'
               ? data.personalGallery
-              : data.professionalGallery,
-          )
-            ? (effectiveMode === 'personal'
-                ? (data.personalGallery as GalleryPhoto[])
-                : (data.professionalGallery as GalleryPhoto[])
-              ).filter((p) => !!p?.url)
+              : data.professionalGallery;
+
+          const list: GalleryPhoto[] = Array.isArray(raw)
+            ? (raw as GalleryPhoto[]).filter((p) => !!p?.url)
             : [];
+
           setPhotos(list);
         }
       } catch (e: any) {
@@ -109,11 +106,13 @@ export default function GalleryScreen({ route, navigation }: any) {
   const handleAddPhoto = async () => {
     try {
       if (!isOwn || !ownerUid) return;
+
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
         Alert.alert('Permission required', 'We need access to your photos.');
         return;
       }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         allowsEditing: true,
         quality: 0.8,
@@ -124,16 +123,17 @@ export default function GalleryScreen({ route, navigation }: any) {
       setSaving(true);
       const asset = result.assets[0];
 
-      // ⬇️ Importante: pasar el modo al uploader
       const { url, path } = await uploadGalleryImage(ownerUid, asset.uri, mode);
       const newPhoto: GalleryPhoto = { url, path, createdAt: Date.now() };
 
       const next = [newPhoto, ...photos];
-      await setDoc(
-        doc(firestore, 'users', ownerUid),
-        { [fieldName]: next, updatedAt: new Date().toISOString() },
-        { merge: true },
-      );
+
+      // ✅ RNFirebase Firestore set(merge)
+      await firestoreDb
+        .collection('users')
+        .doc(ownerUid)
+        .set({ [fieldName]: next, updatedAt: Date.now() }, { merge: true });
+
       setPhotos(next);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Could not add photo.');
@@ -165,25 +165,22 @@ export default function GalleryScreen({ route, navigation }: any) {
 
       setSaving(true);
 
-      // elimina del Storage si hay path
+      // ✅ RNFirebase Storage delete
       if (photo.path) {
         try {
-          const storage = getStorage();
-          await deleteObject(ref(storage, photo.path));
-        } catch {
-          // si falla, continuamos igual
-        }
+          await storage().ref(photo.path).delete();
+        } catch {}
       }
 
-      // quita del array y guarda
       const next = photos.filter(
         (p) => (p.path || p.url) !== (photo.path || photo.url),
       );
-      await setDoc(
-        doc(firestore, 'users', ownerUid),
-        { [fieldName]: next, updatedAt: new Date().toISOString() },
-        { merge: true },
-      );
+
+      await firestoreDb
+        .collection('users')
+        .doc(ownerUid)
+        .set({ [fieldName]: next, updatedAt: Date.now() }, { merge: true });
+
       setPhotos(next);
 
       if (current && current === photo.url) {
@@ -210,7 +207,6 @@ export default function GalleryScreen({ route, navigation }: any) {
       style={{ flex: 1, backgroundColor: '#fff' }}
       contentContainerStyle={{ paddingBottom: 80 }}
     >
-      {/* Header unificado */}
       <TopHeader
         topBarMode={topBarMode}
         topBarColor={topBarColor}
@@ -230,7 +226,6 @@ export default function GalleryScreen({ route, navigation }: any) {
         {mode === 'personal' ? 'Personal' : 'Professional'}
       </Text>
 
-      {/* Grid */}
       <View style={styles.grid}>
         {photos.map((p, i) => (
           <View key={(p.path || p.url) + i} style={styles.gridItemWrap}>
@@ -242,7 +237,6 @@ export default function GalleryScreen({ route, navigation }: any) {
               <Image source={{ uri: p.url }} style={styles.gridItem} />
             </TouchableOpacity>
 
-            {/* Botón borrar overlay (solo propio) */}
             {isOwn && (
               <TouchableOpacity
                 style={styles.deleteBadge}
@@ -256,7 +250,6 @@ export default function GalleryScreen({ route, navigation }: any) {
         ))}
       </View>
 
-      {/* Visor fullscreen */}
       <Modal visible={viewerOpen} transparent animationType="fade">
         <View style={styles.viewerBackdrop}>
           <TouchableOpacity
@@ -266,6 +259,7 @@ export default function GalleryScreen({ route, navigation }: any) {
           >
             <Ionicons name="close" size={26} color="#fff" />
           </TouchableOpacity>
+
           {current ? (
             <Image
               source={{ uri: current }}
@@ -281,7 +275,6 @@ export default function GalleryScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
   title: {
     fontSize: 20,
     fontWeight: '800',
@@ -290,7 +283,6 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 8,
   },
-
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -321,8 +313,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  // viewer
   viewerBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.95)',

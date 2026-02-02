@@ -1,0 +1,38 @@
+diff --git a/node_modules/@react-native-firebase/firestore/ios/RNFBFirestore/RNFBFirestoreCommon.h b/node_modules/@react-native-firebase/firestore/ios/RNFBFirestore/RNFBFirestoreCommon.h
+index b2cd6d2..9dcfacb 100644
+--- a/node_modules/@react-native-firebase/firestore/ios/RNFBFirestore/RNFBFirestoreCommon.h
++++ b/node_modules/@react-native-firebase/firestore/ios/RNFBFirestore/RNFBFirestoreCommon.h
+@@ -17,7 +17,15 @@
+  */
+ 
+ #import <Firebase/Firebase.h>
+-#import <React/RCTBridgeModule.h>
++
++#if __has_include(<React/RCTBridgeModule.h>)
++  #import <React/RCTBridgeModule.h>
++#elif __has_include(<React-Core/RCTBridgeModule.h>)
++  #import <React-Core/RCTBridgeModule.h>
++#else
++  #import "RCTBridgeModule.h"
++#endif
++
+ 
+ @interface RNFBFirestoreCommon : NSObject
+ 
+diff --git a/node_modules/@react-native-firebase/firestore/ios/RNFBFirestore/RNFBFirestoreCommon.m b/node_modules/@react-native-firebase/firestore/ios/RNFBFirestore/RNFBFirestoreCommon.m
+index 2df70d1..0380a8a 100644
+--- a/node_modules/@react-native-firebase/firestore/ios/RNFBFirestore/RNFBFirestoreCommon.m
++++ b/node_modules/@react-native-firebase/firestore/ios/RNFBFirestore/RNFBFirestoreCommon.m
+@@ -120,8 +120,10 @@ NSMutableDictionary *instanceCache;
+   [preferences remove:sslKey];
+ }
+ 
+-+ (FIRDocumentReference *)getDocumentForFirestore:(FIRFirestore *)firestore path:(NSString *)path;
+-{ return [firestore documentWithPath:path]; }
+++ (FIRDocumentReference *)getDocumentForFirestore:(FIRFirestore *)firestore path:(NSString *)path {
++  return [firestore documentWithPath:path];
++}
++
+ 
+ + (FIRQuery *)getQueryForFirestore:(FIRFirestore *)firestore
+                               path:(NSString *)path

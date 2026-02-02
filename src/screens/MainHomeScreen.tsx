@@ -1,4 +1,4 @@
-// src/screens/MainHomeScreen.tsx
+// src/screens/MainHomeScreen.tsx ✅ RNFirebase-only
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   View,
@@ -11,14 +11,20 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { getAuth } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { firestore } from '../config/firebaseConfig';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import { updateUserProfilePartial } from '../services/firestoreService';
+
 import TopHeader from '../components/TopHeader';
-import { useFocusEffect } from '@react-navigation/native'; // 👈 nuevo
+import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
+import { updateUserProfilePartial } from '../services/firestoreService';
+
+// 👇 servicio de contactos
+import {
+  setContactsSyncEnabled,
+  syncContactsSafe,
+} from '../services/contactsSync';
 
 type ProfileDoc = {
   profileImage?: string | null;
@@ -27,9 +33,15 @@ type ProfileDoc = {
   visibility?: boolean;
   topBarImage?: string | null;
   topBarMode?: 'color' | 'image';
+
+  // opcional (pero lo estás usando en updateUserProfilePartial)
+  location?: { lat: number; lng: number; updatedAt?: number };
 };
 
 type Props = NativeStackScreenProps<any>;
+
+// flag local para saber si ya mostramos el diálogo de contactos
+const CONTACTS_ASKED_KEY = 'NEARSY_CONTACTS_ASKED';
 
 export default function MainHomeScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
@@ -43,36 +55,97 @@ export default function MainHomeScreen({ navigation }: Props) {
     return first || 'Unnamed';
   }, [profile.realName]);
 
+  // ✅ Suscripción al perfil (RNFirebase)
   useEffect(() => {
-    const subscribe = async () => {
-      try {
-        const uid = getAuth().currentUser?.uid;
-        if (!uid) return;
-        const ref = doc(firestore, 'users', uid);
-        const unsub = onSnapshot(ref, (snap) => {
-          if (snap.exists()) setProfile(snap.data() as ProfileDoc);
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) {
+      setLoading(false);
+      return;
+    }
+
+    const unsub = firestoreDb
+      .collection('users')
+      .doc(uid)
+      .onSnapshot(
+        (snap) => {
+          if (snap.exists) {
+            setProfile(snap.data() as ProfileDoc);
+          }
           setLoading(false);
-        });
-        return unsub;
-      } catch (error) {
-        if (__DEV__) {
-          console.error('[MainHome] Error fetching profile data:', error);
-        }
-        Alert.alert('Error', 'Could not load your profile.');
-        setLoading(false);
+        },
+        (error) => {
+          if (__DEV__) {
+            console.error('[MainHome] Error fetching profile data:', error);
+          }
+          Alert.alert('Error', 'Could not load your profile.');
+          setLoading(false);
+        },
+      );
+
+    return () => unsub();
+  }, []);
+
+  // 👉 Soft-prompt para contactos (solo una vez)
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const asked = await AsyncStorage.getItem(CONTACTS_ASKED_KEY);
+        if (cancelled || asked === '1') return;
+
+        const uid = firebaseAuth.currentUser?.uid;
+        if (!uid) return;
+
+        Alert.alert(
+          'Sync your contacts?',
+          'Nearsy can optionally check which people from your phone contacts are also using Nearsy and are nearby. We only use this to match phone numbers and we will not message your contacts.',
+          [
+            {
+              text: 'Not now',
+              style: 'cancel',
+              onPress: async () => {
+                await AsyncStorage.setItem(CONTACTS_ASKED_KEY, '1');
+                await setContactsSyncEnabled(false);
+              },
+            },
+            {
+              text: 'Allow',
+              onPress: async () => {
+                await AsyncStorage.setItem(CONTACTS_ASKED_KEY, '1');
+
+                // 👇 pide permiso y lanza la sync en background
+                const ok = await syncContactsSafe();
+                if (!ok) {
+                  await setContactsSyncEnabled(false);
+                  if (__DEV__)
+                    console.log('[MainHome] Contacts permission not granted');
+                }
+              },
+            },
+          ],
+        );
+      } catch (err) {
+        if (__DEV__)
+          console.warn('[MainHome] contacts soft prompt failed', err);
       }
+    })();
+
+    return () => {
+      cancelled = true;
     };
-    subscribe();
   }, []);
 
   // 🔄 Refresca ubicación cuando vuelves a esta pantalla (solo si está ACTIVE)
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
+
       (async () => {
         try {
           if (!profile.visibility) return;
-          const uid = getAuth().currentUser?.uid;
+
+          const uid = firebaseAuth.currentUser?.uid;
           if (!uid) return;
 
           const perm = await Location.getForegroundPermissionsAsync();
@@ -84,6 +157,7 @@ export default function MainHomeScreen({ navigation }: Props) {
                 ? Location.Accuracy.Lowest
                 : Location.Accuracy.Balanced,
           });
+
           if (cancelled) return;
 
           await updateUserProfilePartial(uid, {
@@ -94,64 +168,29 @@ export default function MainHomeScreen({ navigation }: Props) {
             },
           });
         } catch {
-          // opcional: silencio
+          // silencio
         }
       })();
+
       return () => {
         cancelled = true;
       };
     }, [profile.visibility]),
   );
 
-  const handleToggleActive = async () => {
-    if (statusUpdating) return;
-
-    const auth = getAuth();
-    const uid = auth.currentUser?.uid;
-    if (!uid) return;
-
-    const goingActive = !profile.visibility;
-
-    try {
-      setStatusUpdating(true);
-
-      // 1) Cambio rápido en Firestore SOLO de visibility
-      await updateUserProfilePartial(uid, { visibility: goingActive });
-
-      // 2) Actualizar estado local inmediatamente (UI responde al toque)
-      setProfile((p) => ({ ...p, visibility: goingActive }));
-    } catch (e) {
-      if (__DEV__) {
-        console.error('[MainHome] Error toggling visibility', e);
-      }
-      Alert.alert('Error', 'Could not update your status.');
-      return;
-    } finally {
-      setStatusUpdating(false);
-    }
-
-    // 3) Si activamos, tratamos de actualizar la ubicación en background (no bloquea la UI)
-    if (goingActive) {
-      updateLocationInBackground(uid);
-    }
-  };
-
   const updateLocationInBackground = (uid: string) => {
     (async () => {
       try {
-        // 1) Permisos de ubicación
         let perm = await Location.getForegroundPermissionsAsync();
         if (perm.status !== 'granted') {
           perm = await Location.requestForegroundPermissionsAsync();
           if (perm.status !== 'granted') {
-            if (__DEV__) {
+            if (__DEV__)
               console.warn('[MainHome] Location permission not granted');
-            }
-            return; // no molestamos al usuario, solo no guardamos ubicación
+            return;
           }
         }
 
-        // 2) Intentar obtener ubicación con precisión más baja en Android
         const pos = await Location.getCurrentPositionAsync({
           accuracy:
             Platform.OS === 'android'
@@ -167,19 +206,45 @@ export default function MainHomeScreen({ navigation }: Props) {
           },
         });
 
-        if (__DEV__) {
-          console.log('[MainHome] Location updated in background');
-        }
+        if (__DEV__) console.log('[MainHome] Location updated in background');
       } catch (err) {
-        if (__DEV__) {
+        if (__DEV__)
           console.warn(
             '[MainHome] Failed to update location in background',
             err,
           );
-        }
-        // Nada de alertas aquí: no queremos molestar al usuario si el GPS falla
       }
     })();
+  };
+
+  const handleToggleActive = async () => {
+    if (statusUpdating) return;
+
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) return;
+
+    const goingActive = !profile.visibility;
+
+    try {
+      setStatusUpdating(true);
+
+      // 1) Cambio rápido en Firestore SOLO de visibility
+      await updateUserProfilePartial(uid, { visibility: goingActive });
+
+      // 2) UI inmediata
+      setProfile((p) => ({ ...p, visibility: goingActive }));
+    } catch (e) {
+      if (__DEV__) console.error('[MainHome] Error toggling visibility', e);
+      Alert.alert('Error', 'Could not update your status.');
+      return;
+    } finally {
+      setStatusUpdating(false);
+    }
+
+    // 3) Si activamos, actualiza ubicación en background
+    if (goingActive) {
+      updateLocationInBackground(uid);
+    }
   };
 
   if (loading) {
@@ -191,7 +256,7 @@ export default function MainHomeScreen({ navigation }: Props) {
   }
 
   const topColor = profile.topBarColor || '#3B5A85';
-  const canSearch = !!profile.visibility; // 👈 habilitación
+  const canSearch = !!profile.visibility;
 
   return (
     <ScrollView
@@ -241,8 +306,8 @@ export default function MainHomeScreen({ navigation }: Props) {
                 ? 'UPDATING...'
                 : 'ACTIVATING...'
               : profile.visibility
-              ? 'ACTIVE'
-              : 'INACTIVE'}
+                ? 'ACTIVE'
+                : 'INACTIVE'}
           </Text>
         </TouchableOpacity>
 
@@ -256,7 +321,6 @@ export default function MainHomeScreen({ navigation }: Props) {
           connections.
         </Text>
 
-        {/* Botón Discovery */}
         <TouchableOpacity
           activeOpacity={canSearch ? 0.85 : 1}
           disabled={!canSearch}
@@ -290,14 +354,11 @@ export default function MainHomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 20,
-    paddingTop: 20, // espacio debajo del avatar colgante
+    paddingTop: 20,
     alignItems: 'center',
   },
-
   name: { fontSize: 26, fontWeight: '800', color: '#1F2937' },
   subtle: { marginTop: 4, color: '#6B7280' },
-
-  // Pill ACTIVO/INACTIVO
   activePill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -337,7 +398,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
-
   sectionTitle: {
     marginTop: 40,
     fontWeight: '700',
@@ -350,7 +410,6 @@ const styles = StyleSheet.create({
     color: '#334155',
     textAlign: 'center',
   },
-
   searchBtn: {
     marginTop: 14,
     width: '86%',
@@ -377,7 +436,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
   },
-
   footerNote: {
     marginTop: 8,
     color: '#6B7280',

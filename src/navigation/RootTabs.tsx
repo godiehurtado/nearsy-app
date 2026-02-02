@@ -1,4 +1,3 @@
-// src/navigation/RootTabs.tsx
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import HomeStack from './HomeStack';
 import { View, Text } from 'react-native';
@@ -10,6 +9,9 @@ import AlertsScreen from '../screens/AlertsScreen';
 import type { HomeStackParamList } from './HomeStack';
 import type { ProfileStackParamList } from './ProfileStack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// 👇 importa el hook
+import { useNearbyAlerts } from '../hooks/useNearbyAlerts';
 
 function Placeholder({ label }: { label: string }) {
   return (
@@ -30,6 +32,13 @@ const Tab = createBottomTabNavigator<RootTabsParamList>();
 
 export default function RootTabs() {
   const insets = useSafeAreaInsets();
+
+  // 👇 usamos el hook aquí para saber cuántas alerts hay
+  const { alerts } = useNearbyAlerts();
+  const alertsCount = alerts.length;
+  const alertsBadge =
+    alertsCount > 0 ? (alertsCount > 9 ? '9+' : alertsCount) : undefined;
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -37,8 +46,8 @@ export default function RootTabs() {
         tabBarActiveTintColor: '#1E3A8A',
         tabBarInactiveTintColor: '#9CA3AF',
         tabBarStyle: {
-          height: 64 + insets.bottom, // 👈 ajusta altura dinámicamente
-          paddingBottom: 10 + insets.bottom, // 👈 espacio extra para notch/homebar
+          height: 64 + insets.bottom,
+          paddingBottom: 10 + insets.bottom,
           paddingTop: 8,
           borderTopWidth: 1,
           borderTopColor: '#E5E7EB',
@@ -90,7 +99,6 @@ export default function RootTabs() {
         component={HomeStack}
         listeners={({ navigation }) => ({
           tabPress: () => {
-            // navega al screen raíz del HomeStack
             navigation.navigate('Home', { screen: 'MainHome' });
           },
         })}
@@ -100,12 +108,20 @@ export default function RootTabs() {
         component={ProfileStack}
         listeners={({ navigation }) => ({
           tabPress: () => {
-            // navega al screen raíz del HomeStack
             navigation.navigate('Profile', { screen: 'CompleteProfile' });
           },
         })}
       />
-      <Tab.Screen name="Alerts" component={AlertsScreen} />
+
+      {/* 👇 aquí aplicamos el badge solo a Alerts */}
+      <Tab.Screen
+        name="Alerts"
+        component={AlertsScreen}
+        options={{
+          tabBarBadge: alertsBadge,
+        }}
+      />
+
       <Tab.Screen name="More" component={MoreScreen} />
     </Tab.Navigator>
   );

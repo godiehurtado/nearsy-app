@@ -1,4 +1,4 @@
-// src/screens/MoreScreen.tsx
+// src/screens/MoreScreen.tsx ✅ RNFirebase-only
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
@@ -11,18 +11,27 @@ import {
   ActivityIndicator,
   Switch,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getAuth, signOut } from 'firebase/auth';
 import { useNavigation } from '@react-navigation/native';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { firestore } from '../config/firebaseConfig';
-import TopHeader from '../components/TopHeader';
 import { Ionicons } from '@expo/vector-icons';
+
+import TopHeader from '../components/TopHeader';
+import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
+
 import {
   startBackgroundLocation,
   stopBackgroundLocation,
 } from '../services/backgroundLocation';
+
+// 👇 contactos
+import {
+  isContactsSyncEnabled,
+  setContactsSyncEnabled,
+  syncContactsSafe,
+  disableContactsSyncAndPurge,
+} from '../services/contactsSync';
 
 type ProfileDoc = {
   profileImage?: string | null;
@@ -36,6 +45,8 @@ type ProfileDoc = {
   visibleToMaxAge?: number | null;
   blockedContacts?: string[];
   bgVisible?: boolean;
+
+  phoneVerified?: boolean;
 };
 
 type FieldId = 'phone' | 'birthYear' | 'visibilityAges' | 'blocked';
@@ -50,13 +61,16 @@ export default function MoreScreen() {
   const [topBarImage, setTopBarImage] = useState<string | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
 
-  // user email (para el “título”)
+  // user email
   const [userEmail, setUserEmail] = useState<string>('');
 
-  // data
-  const [phone, setphone] = useState('');
-  const [birthYear, setBirthYear] = useState<string>(''); // mantener como string para input
-  const [visibleToMinAge, setVisibleToMinAge] = useState<string>(''); // string -> number al guardar
+  // phone actual en Firestore (para detectar cambios)
+  const [originalPhone, setOriginalPhone] = useState<string>('');
+
+  // data editable
+  const [phone, setPhone] = useState('');
+  const [birthYear, setBirthYear] = useState<string>('');
+  const [visibleToMinAge, setVisibleToMinAge] = useState<string>('');
   const [visibleToMaxAge, setVisibleToMaxAge] = useState<string>('');
   const [blockedContacts, setBlockedContacts] = useState<string[]>([]);
   const [newBlocked, setNewBlocked] = useState('');
@@ -65,31 +79,36 @@ export default function MoreScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Edición por campo
+  // field editing
   const [activeField, setActiveField] = useState<FieldId | null>(null);
   const isFieldActive = (f: FieldId) => activeField === f;
   const isEditingAny = activeField !== null;
 
   // BG location toggle
   const [bgVisible, setBgVisible] = useState<boolean>(false);
-  const [bgChanging, setBgChanging] = useState<boolean>(false); // loader local del switch
+  const [bgChanging, setBgChanging] = useState<boolean>(false);
+
+  // contactos
+  const [contactsEnabled, setContactsEnabled] = useState<boolean>(false);
+  const [contactsChanging, setContactsChanging] = useState<boolean>(false);
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
 
   useEffect(() => {
     (async () => {
       try {
-        const auth = getAuth();
-        const uid = auth.currentUser?.uid;
+        const uid = firebaseAuth.currentUser?.uid;
         if (!uid) return;
 
-        setUserEmail(auth.currentUser?.email ?? '');
+        setUserEmail(firebaseAuth.currentUser?.email ?? '');
 
-        const snap = await getDoc(doc(firestore, 'users', uid));
-        if (snap.exists()) {
+        // ✅ RNFirebase get()
+        const snap = await firestoreDb.collection('users').doc(uid).get();
+
+        if (snap.exists) {
           const data = snap.data() as ProfileDoc;
 
-          // top
+          // top bar
           setTopBarColor(data.topBarColor ?? '#3B5A85');
           setTopBarMode(
             data.topBarMode ?? (data.topBarImage ? 'image' : 'color'),
@@ -97,13 +116,19 @@ export default function MoreScreen() {
           setTopBarImage(data.topBarImage ?? null);
           setProfileImage(data.profileImage ?? null);
 
-          // data
-          setphone(data.phone ?? '');
+          // phone
+          const phoneFromDb = data.phone ?? '';
+          setOriginalPhone(phoneFromDb);
+          setPhone(phoneFromDb);
+
+          // birth year
           setBirthYear(
             typeof data.birthYear === 'number' && data.birthYear > 1900
               ? String(data.birthYear)
               : '',
           );
+
+          // age visibility
           setVisibleToMinAge(
             typeof data.visibleToMinAge === 'number'
               ? String(data.visibleToMinAge)
@@ -114,11 +139,19 @@ export default function MoreScreen() {
               ? String(data.visibleToMaxAge)
               : '',
           );
+
+          // blocked contacts
           setBlockedContacts(
             Array.isArray(data.blockedContacts) ? data.blockedContacts : [],
           );
+
+          // bg visibility
           setBgVisible(!!data.bgVisible);
         }
+
+        // preferencia local de contactos
+        const enabled = await isContactsSyncEnabled();
+        setContactsEnabled(enabled);
       } catch (e: any) {
         Alert.alert('Error', e?.message || 'Could not load settings.');
       } finally {
@@ -127,7 +160,43 @@ export default function MoreScreen() {
     })();
   }, []);
 
+  const isValidEmail = (value: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
+  // ✅ Validador E.164 igual que en RegisterScreen
+  const isValidPhone = (value: string) => {
+    const cleaned = value.replace(/\s/g, '');
+    if (!cleaned) return false;
+    // E.164: + y de 8 a 15 dígitos
+    return /^\+[1-9]\d{7,14}$/.test(cleaned);
+  };
+
   const validateAndParse = () => {
+    const rawPhone = phone.trim();
+    const cleanedPhone = rawPhone.replace(/\s/g, '');
+
+    // 📱 Reglas según plataforma
+    if (Platform.OS === 'android') {
+      // ANDROID: obligatorio y E.164
+      if (!cleanedPhone) {
+        throw new Error(
+          'Phone number is required on this device. Please include your country code, e.g. +1 or +57.',
+        );
+      }
+      if (!isValidPhone(cleanedPhone)) {
+        throw new Error(
+          'Phone number must be valid and include country code, e.g. +1 305 123 4567 or +57 300 123 4567.',
+        );
+      }
+    } else {
+      // iOS / otros: opcional, pero si viene debe ser válido
+      if (cleanedPhone && !isValidPhone(cleanedPhone)) {
+        throw new Error(
+          'If you set a phone number, it must be valid and include country code, e.g. +1 or +57.',
+        );
+      }
+    }
+
     const by = birthYear.trim() ? Number(birthYear.trim()) : undefined;
     if (birthYear.trim()) {
       if (isNaN(by!) || by! < 1900 || by! > currentYear) {
@@ -151,7 +220,7 @@ export default function MoreScreen() {
       throw new Error('Min age cannot be greater than max age.');
 
     return {
-      phone: phone.trim(),
+      phone: cleanedPhone, // 👈 Guardamos ya normalizado (sin espacios)
       birthYear: by,
       visibleToMinAge: minA ?? null,
       visibleToMaxAge: maxA ?? null,
@@ -160,13 +229,12 @@ export default function MoreScreen() {
   };
 
   const handleToggleBg = async (next: boolean) => {
-    const uid = getAuth().currentUser?.uid;
+    const uid = firebaseAuth.currentUser?.uid;
     if (!uid) {
       Alert.alert('Auth', 'Please log in again.');
       return;
     }
 
-    // No se puede en web
     if (Platform.OS === 'web') {
       Alert.alert(
         'Unsupported',
@@ -178,15 +246,13 @@ export default function MoreScreen() {
     try {
       setBgChanging(true);
 
-      // Persistimos primero la preferencia (optimista)
-      await setDoc(
-        doc(firestore, 'users', uid),
-        { bgVisible: next, updatedAt: new Date().toISOString() },
-        { merge: true },
-      );
+      // ✅ RNFirebase set(merge)
+      await firestoreDb
+        .collection('users')
+        .doc(uid)
+        .set({ bgVisible: next, updatedAt: Date.now() }, { merge: true });
 
       if (next) {
-        // Encender BG → pedirá permisos si faltan
         await startBackgroundLocation({ uid });
         setBgVisible(true);
         Alert.alert(
@@ -194,20 +260,58 @@ export default function MoreScreen() {
           'You will stay visible to nearby users in background.',
         );
       } else {
-        // Apagar BG
         await stopBackgroundLocation();
         setBgVisible(false);
         Alert.alert('Disabled', 'Background visibility is now off.');
       }
     } catch (e: any) {
-      // Revertir estado si falló
-      setBgVisible((prev) => (!next && prev ? prev : !prev));
-      Alert.alert(
-        'Error',
-        e?.message || 'Could not update background location.',
-      );
+      setBgVisible(!next);
+      const msg = e?.message || 'Could not update background location.';
+      Alert.alert('Error', msg);
     } finally {
       setBgChanging(false);
+    }
+  };
+
+  // 👇 toggle de contactos
+  const handleToggleContacts = async (next: boolean) => {
+    setContactsEnabled(next);
+
+    try {
+      setContactsChanging(true);
+
+      if (next) {
+        const ok = await syncContactsSafe();
+
+        if (!ok) {
+          setContactsEnabled(false);
+          await setContactsSyncEnabled(false);
+          Alert.alert(
+            'Permission needed',
+            'We could not access your contacts. Please grant permission in your device settings if you want Nearsy to use your contacts.',
+          );
+          return;
+        }
+
+        Alert.alert(
+          'Contacts enabled',
+          'Nearsy will use your phone contacts to highlight familiar people in nearby alerts. Sync will run in the background.',
+        );
+      } else {
+        await disableContactsSyncAndPurge();
+        Alert.alert(
+          'Contacts disabled',
+          'Nearsy will no longer use your phone contacts for nearby alerts.',
+        );
+      }
+    } catch (e: any) {
+      setContactsEnabled(!next);
+      Alert.alert(
+        'Error',
+        e?.message || 'Could not update contacts permission.',
+      );
+    } finally {
+      setContactsChanging(false);
     }
   };
 
@@ -215,23 +319,71 @@ export default function MoreScreen() {
     try {
       setSaving(true);
       const parsed = validateAndParse();
-      const uid = getAuth().currentUser?.uid;
+      const uid = firebaseAuth.currentUser?.uid;
       if (!uid) throw new Error('User not authenticated.');
 
-      await setDoc(
-        doc(firestore, 'users', uid),
-        {
-          phone: parsed.phone,
-          birthYear: parsed.birthYear,
-          visibleToMinAge: parsed.visibleToMinAge,
-          visibleToMaxAge: parsed.visibleToMaxAge,
-          blockedContacts: parsed.blockedContacts,
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true },
+      const trimmedPhone = parsed.phone;
+      const normalizedOld = (originalPhone || '').replace(/\s+/g, '');
+      const normalizedNew = trimmedPhone.replace(/\s+/g, '');
+      const phoneChanged = normalizedOld !== normalizedNew;
+
+      const baseUpdate: any = {
+        birthYear: parsed.birthYear,
+        visibleToMinAge: parsed.visibleToMinAge,
+        visibleToMaxAge: parsed.visibleToMaxAge,
+        blockedContacts: parsed.blockedContacts,
+        updatedAt: Date.now(),
+      };
+
+      // 📌 iOS: siempre guardamos el teléfono directamente
+      // 📱 Android: solo guardamos el teléfono si NO cambió
+      const updateData: any = { ...baseUpdate };
+
+      if (!phoneChanged || Platform.OS === 'ios') {
+        updateData.phone = trimmedPhone;
+      }
+
+      // ✅ RNFirebase set(merge)
+      await firestoreDb
+        .collection('users')
+        .doc(uid)
+        .set(updateData, { merge: true });
+
+      // 🍎 iOS → nunca hay flujo SMS
+      if (Platform.OS === 'ios') {
+        setOriginalPhone(trimmedPhone);
+        Alert.alert('Saved', 'Your settings have been updated.');
+        setActiveField(null);
+        return;
+      }
+
+      // ANDROID: si el teléfono no cambió, solo mensaje y listo
+      if (!phoneChanged) {
+        setOriginalPhone(trimmedPhone);
+        Alert.alert('Saved', 'Your settings have been updated.');
+        setActiveField(null);
+        return;
+      }
+
+      // 📱 ANDROID + teléfono CAMBIADO → flujo de verificación por SMS
+      Alert.alert(
+        'Phone verification',
+        'We saved your other settings. Now we need to verify your new phone number with a text message.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Continue',
+            onPress: () => {
+              navigation.navigate('PhoneVerification', {
+                uid,
+                phone: trimmedPhone,
+                from: 'MoreScreen',
+              });
+            },
+          },
+        ],
       );
 
-      Alert.alert('Saved', 'Your settings have been updated.');
       setActiveField(null);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Could not save.');
@@ -242,21 +394,13 @@ export default function MoreScreen() {
 
   const handleLogout = async () => {
     try {
-      await signOut(getAuth());
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Login' }],
-      });
+      // ✅ RNFirebase signOut
+      await firebaseAuth.signOut();
+      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
     } catch (error: any) {
-      Alert.alert('Logout error', error.message);
+      Alert.alert('Logout error', error?.message ?? 'Unknown error');
     }
   };
-
-  const isValidEmail = (value: string) =>
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-
-  const isValidPhone = (value: string) =>
-    /^[0-9+\-\s()]{7,}$/.test(value.trim());
 
   const addBlocked = () => {
     if (!isFieldActive('blocked')) return;
@@ -265,9 +409,9 @@ export default function MoreScreen() {
     if (!v) return;
 
     const isEmail = isValidEmail(v);
-    const isPhone = isValidPhone(v);
+    const isPhoneVal = isValidPhone(v);
 
-    if (!isEmail && !isPhone) {
+    if (!isEmail && !isPhoneVal) {
       Alert.alert(
         'Invalid contact',
         'Please enter a valid email address or phone number.',
@@ -275,11 +419,13 @@ export default function MoreScreen() {
       return;
     }
 
-    if (blockedContacts.includes(v)) {
+    const norm = isEmail ? v.toLowerCase() : v.replace(/\s+/g, '');
+
+    if (blockedContacts.includes(norm)) {
       Alert.alert('Notice', 'This contact is already in your blocked list.');
       return;
     }
-    const norm = isEmail ? v.toLowerCase() : v.replace(/\s+/g, '');
+
     setBlockedContacts((prev) => [norm, ...prev]);
     setNewBlocked('');
   };
@@ -299,293 +445,341 @@ export default function MoreScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <ScrollView
+      <KeyboardAvoidingView
         style={{ flex: 1 }}
-        contentContainerStyle={{
-          paddingBottom: isEditingAny ? 110 : 40,
-        }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
-        <TopHeader
-          topBarMode={topBarMode}
-          topBarColor={topBarColor}
-          topBarImage={topBarImage}
-          profileImage={profileImage}
-          leftIcon="chevron-back"
-          onLeftPress={() => navigation.goBack()}
-          showAvatar
-        />
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingBottom: isEditingAny ? 110 : 40,
+          }}
+        >
+          <TopHeader
+            topBarMode={topBarMode}
+            topBarColor={topBarColor}
+            topBarImage={topBarImage}
+            profileImage={profileImage}
+            leftIcon="chevron-back"
+            onLeftPress={() => navigation.goBack()}
+            showAvatar
+          />
 
-        <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
-          {/* “Título”: email en recuadro redondeado */}
-          <View style={styles.emailPill}>
-            <Text style={styles.emailText}>
-              {userEmail || 'No email available'}
-            </Text>
-          </View>
-
-          {/* Teléfono */}
-          <View style={styles.card}>
-            <View style={styles.labelRow}>
-              <Text style={styles.cardTitle}>Phone number</Text>
-              <TouchableOpacity
-                onPress={() =>
-                  setActiveField((prev) => (prev === 'phone' ? null : 'phone'))
-                }
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="pencil"
-                  size={16}
-                  color={isFieldActive('phone') ? '#3B5A85' : '#9CA3AF'}
-                />
-              </TouchableOpacity>
-            </View>
-            <TextInput
-              style={[
-                styles.input,
-                isFieldActive('phone') && styles.inputEditing,
-                !isFieldActive('phone') && styles.inputDisabled,
-              ]}
-              placeholder="+1 555 123 4567"
-              value={phone}
-              onChangeText={setphone}
-              editable={isFieldActive('phone')}
-              keyboardType="phone-pad"
-            />
-            <Text style={styles.hint}>
-              This phone is used for contact purposes inside Nearsy (not
-              public).
-            </Text>
-          </View>
-
-          {/* Año de nacimiento */}
-          <View style={styles.card}>
-            <View style={styles.labelRow}>
-              <Text style={styles.cardTitle}>Year of birth</Text>
-              <TouchableOpacity
-                onPress={() =>
-                  setActiveField((prev) =>
-                    prev === 'birthYear' ? null : 'birthYear',
-                  )
-                }
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="pencil"
-                  size={16}
-                  color={isFieldActive('birthYear') ? '#3B5A85' : '#9CA3AF'}
-                />
-              </TouchableOpacity>
-            </View>
-            <TextInput
-              style={[
-                styles.input,
-                isFieldActive('birthYear') && styles.inputEditing,
-                !isFieldActive('birthYear') && styles.inputDisabled,
-              ]}
-              placeholder="1995"
-              value={birthYear}
-              onChangeText={setBirthYear}
-              editable={isFieldActive('birthYear')}
-              keyboardType="number-pad"
-              maxLength={4}
-            />
-          </View>
-
-          {/* Filtros por edad */}
-          <View style={styles.card}>
-            <View style={styles.labelRow}>
-              <Text style={styles.cardTitle}>Visibility by age</Text>
-              <TouchableOpacity
-                onPress={() =>
-                  setActiveField((prev) =>
-                    prev === 'visibilityAges' ? null : 'visibilityAges',
-                  )
-                }
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="pencil"
-                  size={16}
-                  color={
-                    isFieldActive('visibilityAges') ? '#3B5A85' : '#9CA3AF'
-                  }
-                />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.label}>Hide me from users younger than</Text>
-            <TextInput
-              style={[
-                styles.input,
-                isFieldActive('visibilityAges') && styles.inputEditing,
-                !isFieldActive('visibilityAges') && styles.inputDisabled,
-              ]}
-              placeholder="e.g., 18"
-              value={visibleToMinAge}
-              onChangeText={setVisibleToMinAge}
-              editable={isFieldActive('visibilityAges')}
-              keyboardType="number-pad"
-              maxLength={3}
-            />
-            <Text style={[styles.label, { marginTop: 8 }]}>
-              Hide me from users older than
-            </Text>
-            <TextInput
-              style={[
-                styles.input,
-                isFieldActive('visibilityAges') && styles.inputEditing,
-                !isFieldActive('visibilityAges') && styles.inputDisabled,
-              ]}
-              placeholder="e.g., 65"
-              value={visibleToMaxAge}
-              onChangeText={setVisibleToMaxAge}
-              editable={isFieldActive('visibilityAges')}
-              keyboardType="number-pad"
-              maxLength={3}
-            />
-            <Text style={styles.hint}>
-              Leave blank any of them if you don’t want to set that limit.
-            </Text>
-          </View>
-
-          {/* Background visibility (no requiere lápiz, se guarda inmediato) */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Stay visible in background</Text>
-
-            <View style={styles.row}>
-              <Text style={{ flex: 1, color: '#374151' }}>
-                Keep your location updated while the app is minimized.
+          <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
+            {/* Email pill */}
+            <View style={styles.emailPill}>
+              <Text style={styles.emailText}>
+                {userEmail || 'No email available'}
               </Text>
-              <Switch
-                value={bgVisible}
-                onValueChange={handleToggleBg}
-                disabled={bgChanging}
-              />
             </View>
 
-            <Text style={styles.hint}>
-              Requires location permissions. On iOS, a blue bar may appear when
-              updating. You can change this anytime.
-            </Text>
-          </View>
-
-          {/* Bloquear contactos */}
-          <View style={styles.card}>
-            <View style={styles.labelRow}>
-              <Text style={styles.cardTitle}>Blocked contacts</Text>
-              <TouchableOpacity
-                onPress={() =>
-                  setActiveField((prev) =>
-                    prev === 'blocked' ? null : 'blocked',
-                  )
-                }
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="pencil"
-                  size={16}
-                  color={isFieldActive('blocked') ? '#3B5A85' : '#9CA3AF'}
-                />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.row}>
+            {/* Phone */}
+            <View style={styles.card}>
+              <View style={styles.labelRow}>
+                <Text style={styles.cardTitle}>Phone number</Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    setActiveField((prev) =>
+                      prev === 'phone' ? null : 'phone',
+                    )
+                  }
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="pencil"
+                    size={16}
+                    color={isFieldActive('phone') ? '#3B5A85' : '#9CA3AF'}
+                  />
+                </TouchableOpacity>
+              </View>
               <TextInput
                 style={[
                   styles.input,
-                  styles.flex1,
-                  isFieldActive('blocked') && styles.inputEditing,
-                  !isFieldActive('blocked') && styles.inputDisabled,
+                  isFieldActive('phone') && styles.inputEditing,
+                  !isFieldActive('phone') && styles.inputDisabled,
                 ]}
-                placeholder="Email or phone to block"
-                value={newBlocked}
-                onChangeText={setNewBlocked}
-                editable={isFieldActive('blocked')}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="default"
+                placeholder="+1 555 123 4567"
+                value={phone}
+                onChangeText={setPhone}
+                editable={isFieldActive('phone')}
+                keyboardType="phone-pad"
               />
-              <TouchableOpacity
-                onPress={addBlocked}
-                disabled={!isFieldActive('blocked') || !newBlocked.trim()}
-                style={[
-                  styles.addBtn,
-                  (!isFieldActive('blocked') || !newBlocked.trim()) && {
-                    opacity: 0.6,
-                  },
-                ]}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="add" size={20} color="#fff" />
-              </TouchableOpacity>
+              <Text style={styles.hint}>
+                {Platform.OS === 'android'
+                  ? 'This phone is used for contact purposes and SMS verification. If you change it, we will verify it with a text message.'
+                  : 'This phone is used for contact purposes inside Nearsy (not public). On this device we do not use SMS verification.'}
+              </Text>
             </View>
 
-            {blockedContacts.length > 0 ? (
-              <View style={styles.chipsWrap}>
-                {blockedContacts.map((v) => (
-                  <View key={v} style={styles.chip}>
-                    <Text style={styles.chipText}>{v}</Text>
-                    {isFieldActive('blocked') && (
-                      <TouchableOpacity
-                        onPress={() => removeBlocked(v)}
-                        style={styles.chipRemove}
-                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                      >
-                        <Text style={{ color: '#fff', fontWeight: '800' }}>
-                          ✕
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ))}
+            {/* Birth year */}
+            <View style={styles.card}>
+              <View style={styles.labelRow}>
+                <Text style={styles.cardTitle}>Year of birth</Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    setActiveField((prev) =>
+                      prev === 'birthYear' ? null : 'birthYear',
+                    )
+                  }
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="pencil"
+                    size={16}
+                    color={isFieldActive('birthYear') ? '#3B5A85' : '#9CA3AF'}
+                  />
+                </TouchableOpacity>
               </View>
-            ) : (
-              <Text style={styles.hint}>
-                You can block contacts by email or phone number.
+              <TextInput
+                style={[
+                  styles.input,
+                  isFieldActive('birthYear') && styles.inputEditing,
+                  !isFieldActive('birthYear') && styles.inputDisabled,
+                ]}
+                placeholder="1995"
+                value={birthYear}
+                onChangeText={setBirthYear}
+                editable={isFieldActive('birthYear')}
+                keyboardType="number-pad"
+                maxLength={4}
+              />
+            </View>
+
+            {/* Age visibility */}
+            <View style={styles.card}>
+              <View style={styles.labelRow}>
+                <Text style={styles.cardTitle}>Visibility by age</Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    setActiveField((prev) =>
+                      prev === 'visibilityAges' ? null : 'visibilityAges',
+                    )
+                  }
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="pencil"
+                    size={16}
+                    color={
+                      isFieldActive('visibilityAges') ? '#3B5A85' : '#9CA3AF'
+                    }
+                  />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.label}>Hide me from users younger than</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  isFieldActive('visibilityAges') && styles.inputEditing,
+                  !isFieldActive('visibilityAges') && styles.inputDisabled,
+                ]}
+                placeholder="e.g., 18"
+                value={visibleToMinAge}
+                onChangeText={setVisibleToMinAge}
+                editable={isFieldActive('visibilityAges')}
+                keyboardType="number-pad"
+                maxLength={3}
+              />
+              <Text style={[styles.label, { marginTop: 8 }]}>
+                Hide me from users older than
               </Text>
-            )}
+              <TextInput
+                style={[
+                  styles.input,
+                  isFieldActive('visibilityAges') && styles.inputEditing,
+                  !isFieldActive('visibilityAges') && styles.inputDisabled,
+                ]}
+                placeholder="e.g., 65"
+                value={visibleToMaxAge}
+                onChangeText={setVisibleToMaxAge}
+                editable={isFieldActive('visibilityAges')}
+                keyboardType="number-pad"
+                maxLength={3}
+              />
+              <Text style={styles.hint}>
+                Leave blank any of them if you don’t want to set that limit.
+              </Text>
+            </View>
+
+            {/* Background visibility */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Stay visible in background</Text>
+
+              <View style={styles.row}>
+                <Text style={{ flex: 1, color: '#374151' }}>
+                  Keep your location updated so others can discover you nearby
+                  even when the app is closed.
+                </Text>
+
+                <Switch
+                  value={bgVisible}
+                  onValueChange={handleToggleBg}
+                  disabled={bgChanging}
+                />
+              </View>
+
+              <Text style={styles.hint}>
+                Requires “Always” location permission. On iOS, a blue indicator
+                may appear while Nearsy updates your location in background.
+              </Text>
+
+              {bgVisible && (
+                <Text
+                  style={{
+                    marginTop: 8,
+                    color: '#065F46',
+                    fontSize: 12,
+                    fontWeight: '600',
+                  }}
+                >
+                  Background visibility is ON.
+                </Text>
+              )}
+            </View>
+
+            {/* Contacts card */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>
+                Use phone contacts for alerts
+              </Text>
+
+              <View style={styles.row}>
+                <Text style={{ flex: 1, color: '#374151' }}>
+                  Allow Nearsy to safely match your phone contacts with other
+                  users, so nearby alerts can highlight familiar people.
+                </Text>
+
+                <Switch
+                  value={contactsEnabled}
+                  onValueChange={handleToggleContacts}
+                  disabled={contactsChanging}
+                />
+              </View>
+
+              <Text style={styles.hint}>
+                This is optional. We only store minimal identifiers (no contact
+                names or messages are sent to your contacts).
+              </Text>
+            </View>
+
+            {/* Blocked contacts */}
+            <View style={styles.card}>
+              <View style={styles.labelRow}>
+                <Text style={styles.cardTitle}>Blocked contacts</Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    setActiveField((prev) =>
+                      prev === 'blocked' ? null : 'blocked',
+                    )
+                  }
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="pencil"
+                    size={16}
+                    color={isFieldActive('blocked') ? '#3B5A85' : '#9CA3AF'}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.row}>
+                <TextInput
+                  style={[
+                    styles.input,
+                    styles.flex1,
+                    isFieldActive('blocked') && styles.inputEditing,
+                    !isFieldActive('blocked') && styles.inputDisabled,
+                  ]}
+                  placeholder="Email or phone to block"
+                  value={newBlocked}
+                  onChangeText={setNewBlocked}
+                  editable={isFieldActive('blocked')}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="default"
+                />
+                <TouchableOpacity
+                  onPress={addBlocked}
+                  disabled={!isFieldActive('blocked') || !newBlocked.trim()}
+                  style={[
+                    styles.addBtn,
+                    (!isFieldActive('blocked') || !newBlocked.trim()) && {
+                      opacity: 0.6,
+                    },
+                  ]}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="add" size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              {blockedContacts.length > 0 ? (
+                <View style={styles.chipsWrap}>
+                  {blockedContacts.map((v) => (
+                    <View key={v} style={styles.chip}>
+                      <Text style={styles.chipText}>{v}</Text>
+                      {isFieldActive('blocked') && (
+                        <TouchableOpacity
+                          onPress={() => removeBlocked(v)}
+                          style={styles.chipRemove}
+                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        >
+                          <Text style={{ color: '#fff', fontWeight: '800' }}>
+                            ✕
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.hint}>
+                  You can block contacts by email or phone number.
+                </Text>
+              )}
+            </View>
+
+            {/* Logout */}
+            <TouchableOpacity
+              style={styles.logoutBtn}
+              onPress={handleLogout}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.logoutText}>Log out</Text>
+            </TouchableOpacity>
+
+            <View style={{ height: 12 + insets.bottom }} />
           </View>
+        </ScrollView>
 
-          {/* Logout */}
-          <TouchableOpacity
-            style={styles.logoutBtn}
-            onPress={handleLogout}
-            activeOpacity={0.9}
+        {/* Bottom save bar */}
+        {isEditingAny && (
+          <View
+            style={[
+              styles.bottomBar,
+              { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 16 },
+            ]}
           >
-            <Text style={styles.logoutText}>Log out</Text>
-          </TouchableOpacity>
-
-          <View style={{ height: 12 + insets.bottom }} />
-        </View>
-      </ScrollView>
-
-      {/* Barra fija inferior para guardar (solo si hay campo en edición) */}
-      {isEditingAny && (
-        <View
-          style={[
-            styles.bottomBar,
-            {
-              paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 16,
-            },
-          ]}
-        >
-          <TouchableOpacity
-            style={[styles.bottomSaveBtn, saving && { opacity: 0.7 }]}
-            onPress={handleSave}
-            disabled={saving}
-            activeOpacity={0.85}
-          >
-            {saving ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="save-outline" size={18} color="#fff" />
-                <Text style={styles.bottomSaveText}>Save settings</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
+            <TouchableOpacity
+              style={[styles.bottomSaveBtn, saving && { opacity: 0.7 }]}
+              onPress={handleSave}
+              disabled={saving}
+              activeOpacity={0.85}
+            >
+              {saving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="save-outline" size={18} color="#fff" />
+                  <Text style={styles.bottomSaveText}>Save settings</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+      </KeyboardAvoidingView>
     </View>
   );
 }

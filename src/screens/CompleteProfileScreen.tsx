@@ -1,8 +1,9 @@
-// src/screens/CompleteProfileScreen.tsx
+// src/screens/CompleteProfileScreen.tsx  ✅ RNFirebase-only
 import React, { useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getAuth } from 'firebase/auth';
+import { firebaseAuth } from '../config/firebaseConfig';
+
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -13,11 +14,11 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  Modal,
-  Pressable,
   ScrollView,
   Switch,
   PixelRatio,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 
 import ModeSwitch from '../components/ModeSwitch';
@@ -26,7 +27,6 @@ import TopHeader from '../components/TopHeader';
 import ColorPickerModal from '../components/ColorPickerModal';
 import {
   InterestAffiliations,
-  InterestLabel,
   SocialLinks,
   GalleryPhoto,
 } from '../types/profile';
@@ -36,6 +36,7 @@ import {
   getUserProfile,
   updateUserMode,
 } from '../services/firestoreService';
+
 import {
   uploadProfileImage,
   uploadTopBarImage,
@@ -50,9 +51,14 @@ const COMPANY_MAX = 60;
 const STATUS_MAX = 50;
 const BIO_MAX = 200;
 
-export default function CompleteProfileScreen({ navigation }: any) {
+export default function CompleteProfileScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const isLargeText = PixelRatio.getFontScale() >= 1.2;
+
+  // ✅ Helper para obtener el UID (por route.params o por RNFirebase)
+  const getUid = () =>
+    route?.params?.uid ?? firebaseAuth.currentUser?.uid ?? null;
+
   // Perfil
   const [realName, setRealName] = useState('');
   const [bio, setBio] = useState('');
@@ -73,14 +79,14 @@ export default function CompleteProfileScreen({ navigation }: any) {
     {},
   );
 
-  // NUEVO: Social links por modo
+  // Social links por modo
   const [socialLinksPersonal, setsocialLinksPersonal] = useState<SocialLinks>(
     {},
   );
   const [socialLinksProfessional, setsocialLinksProfessional] =
     useState<SocialLinks>({});
 
-  // NUEVO: Gallery por modo
+  // Gallery por modo
   const [personalGallery, setPersonalGallery] = useState<GalleryPhoto[]>([]);
   const [professionalGallery, setProfessionalGallery] = useState<
     GalleryPhoto[]
@@ -102,7 +108,7 @@ export default function CompleteProfileScreen({ navigation }: any) {
   // UI state
   const [isLoading, setIsLoading] = useState(false);
   const [isNewProfile, setIsNewProfile] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false); // modal colores
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Campo actualmente en edición
   type FieldId =
@@ -117,13 +123,14 @@ export default function CompleteProfileScreen({ navigation }: any) {
   // Mostrar bloque de cámara + topbar
   const [showTopBarControls, setShowTopBarControls] = useState(false);
 
-  // (compat) si lo sigues usando en algún lado
+  // (compat)
   const [interestAffiliations] = useState<InterestAffiliations>({});
 
-  // Cargar perfil existente (lo usaremos en el foco de la pantalla)
+  // Cargar perfil existente
   const loadProfile = useCallback(async () => {
-    const uid = getAuth().currentUser?.uid;
+    const uid = getUid();
     if (!uid) return;
+
     try {
       setIsLoading(true);
       const existing = await getUserProfile(uid);
@@ -198,13 +205,13 @@ export default function CompleteProfileScreen({ navigation }: any) {
         setActiveField('realName');
       }
     } catch {
-      // opcional: podrías mostrar un Alert si quieres
+      // opcional: Alert
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [route?.params?.uid]);
 
-  // Cada vez que la pantalla gana foco, recargamos el perfil y por ende los contadores
+  // Cada vez que la pantalla gana foco, recargamos el perfil
   useFocusEffect(
     useCallback(() => {
       loadProfile();
@@ -229,10 +236,6 @@ export default function CompleteProfileScreen({ navigation }: any) {
   const canEditField = (field: Exclude<FieldId, null>) =>
     isNewProfile || activeField === field;
 
-  // ✅ Hay edición si:
-  // - es perfil nuevo
-  // - hay campo activo
-  // - o el panel de topbar está abierto
   const isEditingAny =
     isNewProfile || activeField !== null || showTopBarControls;
 
@@ -241,11 +244,11 @@ export default function CompleteProfileScreen({ navigation }: any) {
       ? professionalInterestsCount
       : personalInterestsCount;
 
-  // ⬇️ NUEVO: counts por modo
   const currentLinks =
     (mode ?? 'personal') === 'professional'
       ? socialLinksProfessional
       : socialLinksPersonal;
+
   const socialCount = React.useMemo(
     () =>
       Object.values(currentLinks || {}).reduce(
@@ -310,28 +313,20 @@ export default function CompleteProfileScreen({ navigation }: any) {
     }
   };
 
-  const handlePickColor = (c: string) => {
-    setTopBarColor(c);
-    setPickerOpen(false);
-  };
-
   const handleToggleMode = async () => {
     const nextMode: 'personal' | 'professional' =
       (mode ?? 'personal') === 'personal' ? 'professional' : 'personal';
 
-    // actualiza UI inmediatamente
     setMode(nextMode);
 
     try {
-      const uid = getAuth().currentUser?.uid;
+      const uid = getUid();
       if (!uid) return;
       await updateUserMode(uid, nextMode);
     } catch (e) {
       if (__DEV__) {
         console.error('[CompleteProfile] Error updating mode', e);
       }
-      // opcional: pequeño aviso sin frenar el flujo
-      // Alert.alert('Error', 'Could not update mode.');
     }
   };
 
@@ -355,8 +350,13 @@ export default function CompleteProfileScreen({ navigation }: any) {
         return;
       }
 
+      if (!profileImage) {
+        Alert.alert('Validation', 'Profile photo is required.');
+        return;
+      }
+
       setIsLoading(true);
-      const uid = getAuth().currentUser?.uid;
+      const uid = getUid();
       if (!uid) throw new Error('User not authenticated.');
 
       // subir imagen de header si es local
@@ -375,11 +375,6 @@ export default function CompleteProfileScreen({ navigation }: any) {
         uploadedImageUrl = profileImage ?? null;
       }
 
-      // (si sigues usando interestAffiliations en otro lado)
-      const selectedInterestLabels = Object.keys(
-        interestAffiliations,
-      ) as InterestLabel[];
-
       const payload = {
         realName,
         bio,
@@ -396,7 +391,10 @@ export default function CompleteProfileScreen({ navigation }: any) {
       await saveCompleteProfile(uid, payload);
 
       Alert.alert('Success', 'Profile saved successfully.');
-      navigation.navigate('MainTabs');
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'MainTabs' }],
+      });
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Could not save profile.');
     } finally {
@@ -406,10 +404,12 @@ export default function CompleteProfileScreen({ navigation }: any) {
 
   const goToSocialMedia = () => {
     const parent = navigation.getParent?.();
+    const modeParam = mode ?? 'personal';
+
     if (parent) {
       parent.navigate('Profile', {
         screen: 'SocialMedia',
-        params: { mode: mode ?? 'personal' },
+        params: { mode: modeParam },
       });
       return;
     }
@@ -418,7 +418,7 @@ export default function CompleteProfileScreen({ navigation }: any) {
       () =>
         navigation.getParent?.()?.navigate('Profile', {
           screen: 'SocialMedia',
-          params: { mode: mode ?? 'personal' },
+          params: { mode: modeParam },
         }),
       0,
     );
@@ -426,10 +426,12 @@ export default function CompleteProfileScreen({ navigation }: any) {
 
   const goToAffiliations = () => {
     const parent = navigation.getParent?.();
+    const modeParam = mode ?? 'personal';
+
     if (parent) {
       parent.navigate('Profile', {
         screen: 'Affiliations',
-        params: { mode: mode ?? 'personal' },
+        params: { mode: modeParam },
       });
       return;
     }
@@ -438,7 +440,7 @@ export default function CompleteProfileScreen({ navigation }: any) {
       () =>
         navigation.getParent?.()?.navigate('Profile', {
           screen: 'Affiliations',
-          params: { mode: mode ?? 'personal' },
+          params: { mode: modeParam },
         }),
       0,
     );
@@ -446,7 +448,6 @@ export default function CompleteProfileScreen({ navigation }: any) {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      {/* HEADER unificado */}
       <TopHeader
         topBarMode={topBarMode}
         topBarColor={topBarColor}
@@ -456,303 +457,333 @@ export default function CompleteProfileScreen({ navigation }: any) {
         showAvatar
       />
 
-      <ScrollView
-        contentContainerStyle={{
-          paddingBottom: isEditingAny ? 100 : 30,
-          paddingHorizontal: 20,
-        }}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
-        <View style={styles.profileHeaderRow}>
-          <View style={styles.profileHeaderInner}>
-            <Text style={styles.title}>Your Profile</Text>
-            <TouchableOpacity
-              style={[
-                styles.profileCameraBtn,
-                showTopBarControls && styles.profileCameraBtnActive,
-              ]}
-              onPress={() => setShowTopBarControls((prev) => !prev)}
-              activeOpacity={0.85}
-            >
-              <Ionicons
-                name={showTopBarControls ? 'close' : 'camera'}
-                size={18}
-                color="#fff"
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {showTopBarControls && (
-          <View style={styles.topBarControls}>
-            <Text style={styles.topBarSectionTitle}>Profile visuals</Text>
-
-            {/* Cambiar foto de perfil */}
-            <TouchableOpacity
-              onPress={pickImage}
-              style={styles.inlinePhotoBtn}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="camera" size={16} color="#fff" />
-              <Text style={styles.inlinePhotoText}>Change profile photo</Text>
-            </TouchableOpacity>
-
-            {/* Switch color / imagen */}
-            <View style={styles.topBarModeRow}>
-              <Text style={styles.topBarLabel}>Top bar style</Text>
-              <View style={styles.topBarSwitchRow}>
-                <Text style={styles.topBarSwitchText}>Color</Text>
-                <Switch
-                  value={topBarMode === 'image'}
-                  onValueChange={(value) =>
-                    setTopBarMode(value ? 'image' : 'color')
-                  }
-                  trackColor={{ false: '#CBD5F5', true: '#CBD5F5' }}
-                  thumbColor={topBarMode === 'image' ? '#3B5A85' : '#3B5A85'}
+        <ScrollView
+          contentContainerStyle={{
+            paddingBottom: isEditingAny ? 100 : 30,
+            paddingHorizontal: 20,
+          }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.profileHeaderRow}>
+            <View style={styles.profileHeaderInner}>
+              <Text style={styles.title}>Your Profile</Text>
+              <TouchableOpacity
+                style={[
+                  styles.profileCameraBtn,
+                  showTopBarControls && styles.profileCameraBtnActive,
+                ]}
+                onPress={() => setShowTopBarControls((prev) => !prev)}
+                activeOpacity={0.85}
+              >
+                <Ionicons
+                  name={showTopBarControls ? 'close' : 'camera'}
+                  size={18}
+                  color="#fff"
                 />
-                <Text style={styles.topBarSwitchText}>Image</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {showTopBarControls && (
+            <View style={styles.topBarControls}>
+              <Text style={styles.topBarSectionTitle}>Profile visuals</Text>
+
+              <TouchableOpacity
+                onPress={pickImage}
+                style={styles.inlinePhotoBtn}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="camera" size={16} color="#fff" />
+                <Text style={styles.inlinePhotoText}>Change profile photo</Text>
+              </TouchableOpacity>
+
+              <View style={styles.topBarModeRow}>
+                <Text style={styles.topBarLabel}>Top bar style</Text>
+                <View style={styles.topBarSwitchRow}>
+                  <Text style={styles.topBarSwitchText}>Color</Text>
+                  <Switch
+                    value={topBarMode === 'image'}
+                    onValueChange={(value) =>
+                      setTopBarMode(value ? 'image' : 'color')
+                    }
+                    trackColor={{ false: '#CBD5F5', true: '#CBD5F5' }}
+                    thumbColor="#3B5A85"
+                  />
+                  <Text style={styles.topBarSwitchText}>Image</Text>
+                </View>
               </View>
-            </View>
 
-            {/* Acción según modo */}
-            {topBarMode === 'color' ? (
-              <TouchableOpacity
-                style={styles.topBarActionBtn}
-                onPress={() => setPickerOpen(true)}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="color-palette" size={16} color="#1F2937" />
-                <Text style={styles.topBarActionText}>Pick top bar color</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.topBarActionBtn}
-                onPress={pickTopBarImage}
-                onLongPress={() => setTopBarImage(null)}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="image" size={16} color="#1F2937" />
-                <Text style={styles.topBarActionText}>Pick header image</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-
-        {/* Campos */}
-        {/* Name */}
-        <View style={styles.fieldGroup}>
-          <View style={styles.labelRow}>
-            <Text style={styles.label}>Name</Text>
-            <TouchableOpacity
-              onPress={() => setActiveField('realName')}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name="pencil"
-                size={16}
-                color={canEditField('realName') ? '#3B5A85' : '#9CA3AF'}
-              />
-            </TouchableOpacity>
-          </View>
-          <TextInput
-            style={[
-              styles.input,
-              canEditField('realName') && styles.inputEditing,
-            ]}
-            placeholder="Real Name"
-            placeholderTextColor="#9CA3AF"
-            value={realName}
-            onChangeText={setRealName}
-            editable={canEditField('realName')}
-            maxLength={NAME_MAX}
-          />
-        </View>
-
-        {/* Occupation */}
-        <View style={styles.fieldGroup}>
-          <View style={styles.labelRow}>
-            <Text style={styles.label}>Occupation</Text>
-            <TouchableOpacity
-              onPress={() => setActiveField('occupation')}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name="pencil"
-                size={16}
-                color={canEditField('occupation') ? '#3B5A85' : '#9CA3AF'}
-              />
-            </TouchableOpacity>
-          </View>
-          <TextInput
-            style={[
-              styles.input,
-              canEditField('occupation') && styles.inputEditing,
-            ]}
-            placeholder="Occupation"
-            placeholderTextColor="#9CA3AF"
-            value={occupation}
-            onChangeText={setOccupation}
-            editable={canEditField('occupation')}
-            maxLength={OCCUPATION_MAX}
-          />
-        </View>
-
-        {/* Status (short tagline) */}
-        <View style={styles.fieldGroup}>
-          <View style={styles.labelRow}>
-            <Text style={styles.label}>Status</Text>
-            <View
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
-            >
-              <Text style={styles.charCounter}>
-                {status.length}/{STATUS_MAX}
-              </Text>
-              <TouchableOpacity
-                onPress={() => setActiveField('status')}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="pencil"
-                  size={16}
-                  color={canEditField('status') ? '#3B5A85' : '#9CA3AF'}
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-          <TextInput
-            style={[
-              styles.input,
-              canEditField('status') && styles.inputEditing,
-            ]}
-            placeholder="Short status (e.g. '🇺🇸 Open to meet new people')"
-            placeholderTextColor="#9CA3AF"
-            value={status}
-            onChangeText={setStatus}
-            editable={canEditField('status')}
-            maxLength={STATUS_MAX}
-          />
-        </View>
-
-        {/* Biography */}
-        <View style={styles.fieldGroup}>
-          <View style={styles.labelRow}>
-            <Text style={styles.label}>Biography</Text>
-            <View
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
-            >
-              <Text style={styles.charCounter}>
-                {bio.length}/{BIO_MAX}
-              </Text>
-              <TouchableOpacity
-                onPress={() => setActiveField('bio')}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="pencil"
-                  size={16}
-                  color={canEditField('bio') ? '#3B5A85' : '#9CA3AF'}
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-          <TextInput
-            style={[
-              styles.input,
-              styles.textArea,
-              canEditField('bio') && styles.inputEditing,
-            ]}
-            placeholder="Short Biography (e.g. '🇺🇸 From USA · Likes coffee · Marketing · Study ...')"
-            placeholderTextColor="#9CA3AF"
-            value={bio}
-            onChangeText={setBio}
-            multiline
-            numberOfLines={4}
-            editable={canEditField('bio')}
-            maxLength={BIO_MAX}
-          />
-        </View>
-
-        {/* Switch de modo */}
-        <View style={styles.switchWrap}>
-          <ModeSwitch
-            mode={(mode || 'personal') as 'personal' | 'professional'}
-            topBarColor={'#3B5A85'}
-            onToggle={handleToggleMode}
-            compact={isLargeText}
-          />
-        </View>
-
-        {/* Campos adicionales (professional) */}
-        {mode === 'professional' && (
-          <View style={styles.professionalContainer}>
-            <View style={styles.fieldGroup}>
-              <View style={styles.labelRow}>
-                <Text style={styles.label}>Company</Text>
+              {topBarMode === 'color' ? (
                 <TouchableOpacity
-                  onPress={() => setActiveField('company')}
+                  style={styles.topBarActionBtn}
+                  onPress={() => setPickerOpen(true)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="color-palette" size={16} color="#1F2937" />
+                  <Text style={styles.topBarActionText}>
+                    Pick top bar color
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.topBarActionBtn}
+                  onPress={pickTopBarImage}
+                  onLongPress={() => setTopBarImage(null)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="image" size={16} color="#1F2937" />
+                  <Text style={styles.topBarActionText}>Pick header image</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Name */}
+          <View style={styles.fieldGroup}>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Name</Text>
+              <TouchableOpacity
+                onPress={() => setActiveField('realName')}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="pencil"
+                  size={16}
+                  color={canEditField('realName') ? '#3B5A85' : '#9CA3AF'}
+                />
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              style={[
+                styles.input,
+                canEditField('realName') && styles.inputEditing,
+              ]}
+              placeholder="Real Name"
+              placeholderTextColor="#9CA3AF"
+              value={realName}
+              onChangeText={setRealName}
+              editable={canEditField('realName')}
+              maxLength={NAME_MAX}
+            />
+          </View>
+
+          {/* Occupation */}
+          <View style={styles.fieldGroup}>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Occupation</Text>
+              <TouchableOpacity
+                onPress={() => setActiveField('occupation')}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="pencil"
+                  size={16}
+                  color={canEditField('occupation') ? '#3B5A85' : '#9CA3AF'}
+                />
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              style={[
+                styles.input,
+                canEditField('occupation') && styles.inputEditing,
+              ]}
+              placeholder="Occupation"
+              placeholderTextColor="#9CA3AF"
+              value={occupation}
+              onChangeText={setOccupation}
+              editable={canEditField('occupation')}
+              maxLength={OCCUPATION_MAX}
+            />
+          </View>
+
+          {/* Status */}
+          <View style={styles.fieldGroup}>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Status</Text>
+              <View
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+              >
+                <Text style={styles.charCounter}>
+                  {status.length}/{STATUS_MAX}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setActiveField('status')}
                   activeOpacity={0.7}
                 >
                   <Ionicons
                     name="pencil"
                     size={16}
-                    color={canEditField('company') ? '#3B5A85' : '#9CA3AF'}
+                    color={canEditField('status') ? '#3B5A85' : '#9CA3AF'}
                   />
                 </TouchableOpacity>
               </View>
-              <TextInput
-                style={[
-                  styles.input,
-                  canEditField('company') && styles.inputEditing,
-                ]}
-                placeholder="Company"
-                placeholderTextColor="#9CA3AF"
-                value={company}
-                onChangeText={setCompany}
-                editable={canEditField('company')}
-                maxLength={COMPANY_MAX}
-              />
             </View>
+            <TextInput
+              style={[
+                styles.input,
+                canEditField('status') && styles.inputEditing,
+              ]}
+              placeholder="Short status (e.g. '🇺🇸 Open to meet new people')"
+              placeholderTextColor="#9CA3AF"
+              value={status}
+              onChangeText={setStatus}
+              editable={canEditField('status')}
+              maxLength={STATUS_MAX}
+            />
+          </View>
+
+          {/* Biography */}
+          <View style={styles.fieldGroup}>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Biography</Text>
+              <View
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+              >
+                <Text style={styles.charCounter}>
+                  {bio.length}/{BIO_MAX}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setActiveField('bio')}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="pencil"
+                    size={16}
+                    color={canEditField('bio') ? '#3B5A85' : '#9CA3AF'}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+            <TextInput
+              style={[
+                styles.input,
+                styles.textArea,
+                canEditField('bio') && styles.inputEditing,
+              ]}
+              placeholder="Short Biography (e.g. '🇺🇸 From USA · Likes coffee · Marketing · Study ...')"
+              placeholderTextColor="#9CA3AF"
+              value={bio}
+              onChangeText={setBio}
+              multiline
+              numberOfLines={4}
+              editable={canEditField('bio')}
+              maxLength={BIO_MAX}
+            />
+          </View>
+
+          {/* Switch de modo */}
+          <View style={styles.switchWrap}>
+            <ModeSwitch
+              mode={(mode || 'personal') as 'personal' | 'professional'}
+              topBarColor={'#3B5A85'}
+              onToggle={handleToggleMode}
+              compact={isLargeText}
+            />
+          </View>
+
+          {/* Campos adicionales (professional) */}
+          {mode === 'professional' && (
+            <View style={styles.professionalContainer}>
+              <View style={styles.fieldGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.label}>Company</Text>
+                  <TouchableOpacity
+                    onPress={() => setActiveField('company')}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name="pencil"
+                      size={16}
+                      color={canEditField('company') ? '#3B5A85' : '#9CA3AF'}
+                    />
+                  </TouchableOpacity>
+                </View>
+                <TextInput
+                  style={[
+                    styles.input,
+                    canEditField('company') && styles.inputEditing,
+                  ]}
+                  placeholder="Company"
+                  placeholderTextColor="#9CA3AF"
+                  value={company}
+                  onChangeText={setCompany}
+                  editable={canEditField('company')}
+                  maxLength={COMPANY_MAX}
+                />
+              </View>
+            </View>
+          )}
+
+          {/* Quick Actions */}
+          {!isNewProfile && (
+            <ProfileQuickActions
+              stats={{
+                interestsCount,
+                socialCount,
+                photosCount,
+                affiliationsCount,
+              }}
+              onOpenInterests={() => {
+                const uid = getUid();
+                if (!uid) return;
+                navigation.navigate('Interests', {
+                  uid,
+                  mode,
+                  personalAff,
+                  professionalAff,
+                });
+              }}
+              onOpenSocial={goToSocialMedia}
+              onOpenGallery={() => {
+                const uid = getUid();
+                if (!uid) return;
+                navigation.navigate('Gallery', { uid, mode });
+              }}
+              onOpenAffiliations={goToAffiliations}
+              compact={isLargeText}
+            />
+          )}
+
+          {isLoading && (
+            <View style={styles.loadingOverlay} pointerEvents="auto">
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#2B3A42" />
+                <Text style={styles.loadingText}>Saving your profile...</Text>
+              </View>
+            </View>
+          )}
+        </ScrollView>
+
+        {isEditingAny && (
+          <View
+            style={[
+              styles.bottomBar,
+              { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 16 },
+            ]}
+          >
+            <TouchableOpacity
+              style={[styles.bottomSaveBtn, isLoading && { opacity: 0.7 }]}
+              onPress={handleSave}
+              disabled={isLoading}
+              activeOpacity={0.85}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="save-outline" size={18} color="#fff" />
+                  <Text style={styles.bottomSaveText}>Save changes</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         )}
-
-        {/* Quick Actions */}
-        {!isNewProfile && (
-          <ProfileQuickActions
-            stats={{
-              interestsCount,
-              socialCount,
-              photosCount,
-              affiliationsCount,
-            }}
-            onOpenInterests={() => {
-              const uid = getAuth().currentUser?.uid;
-              navigation.navigate('Interests', {
-                uid,
-                mode, // 'personal' | 'professional'
-                personalAff,
-                professionalAff,
-              });
-            }}
-            onOpenSocial={goToSocialMedia}
-            onOpenGallery={() => {
-              const uid = getAuth().currentUser?.uid;
-              navigation.navigate('Gallery', { uid, mode }); // ⬅️ PASAMOS MODE
-            }}
-            onOpenAffiliations={goToAffiliations}
-            compact={isLargeText} // 👈 nuevo prop
-          />
-        )}
-
-        {/* Loading overlay */}
-        {isLoading && (
-          <View style={styles.loadingOverlay} pointerEvents="auto">
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#2B3A42" />
-              <Text style={styles.loadingText}>Saving your profile...</Text>
-            </View>
-          </View>
-        )}
-      </ScrollView>
+      </KeyboardAvoidingView>
 
       <ColorPickerModal
         visible={pickerOpen}
@@ -760,41 +791,14 @@ export default function CompleteProfileScreen({ navigation }: any) {
         onClose={() => setPickerOpen(false)}
         onSelect={(color) => {
           setTopBarColor(color);
-          setPickerOpen(false); // ahora solo se ejecuta al darle "Apply color"
+          setPickerOpen(false);
         }}
       />
-
-      {/* Barra fija inferior para guardar (solo en edición) */}
-      {isEditingAny && (
-        <View
-          style={[
-            styles.bottomBar,
-            { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 16 },
-          ]}
-        >
-          <TouchableOpacity
-            style={[styles.bottomSaveBtn, isLoading && { opacity: 0.7 }]}
-            onPress={handleSave}
-            disabled={isLoading}
-            activeOpacity={0.85}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="save-outline" size={18} color="#fff" />
-                <Text style={styles.bottomSaveText}>Save changes</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  // Controles flotantes sobre el header
   floatingControlsWrap: {
     position: 'absolute',
     right: 8,
@@ -826,7 +830,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.5)',
   },
 
-  // Body
   title: {
     fontSize: 22,
     fontWeight: '800',
@@ -856,7 +859,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   profileCameraBtnActive: {
-    backgroundColor: '#EF4444', // opcional: rojo suave para indicar "cerrar"
+    backgroundColor: '#EF4444',
   },
 
   topBarControls: {
@@ -959,14 +962,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
-
     borderWidth: 1,
     borderColor: 'transparent',
   },
 
   inputEditing: {
     borderColor: '#3B5A85',
-    backgroundColor: '#EEF2FF', // un toque más claro (opcional)
+    backgroundColor: '#EEF2FF',
   },
 
   textArea: {
@@ -992,7 +994,6 @@ const styles = StyleSheet.create({
   },
   changePhotoText: { color: '#fff', fontWeight: '700', fontSize: 12 },
 
-  // Loading overlay
   loadingOverlay: {
     position: 'absolute',
     top: 0,
@@ -1012,7 +1013,6 @@ const styles = StyleSheet.create({
   },
   loadingText: { marginTop: 10, fontSize: 16, color: '#2B3A42' },
 
-  // Modal colores
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',

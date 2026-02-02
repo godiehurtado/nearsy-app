@@ -1,11 +1,11 @@
 // src/types/profile.ts
 export type InterestLabel =
-  | 'Sports'
-  | 'Music'
   | 'Healthy Lifestyle'
   | 'Extra-Curricular Activities'
+  | 'Language'
   | 'Other'
-  | 'Language';
+  | 'Sports'
+  | 'Music';
 
 export type LogoPick = {
   id: string;

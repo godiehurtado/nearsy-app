@@ -1,5 +1,5 @@
-// src/screens/ProfileDetailScreen.tsx
-import React, { useEffect, useState, useMemo } from 'react';
+// src/screens/ProfileDetailScreen.tsx  ✅ RNFirebase-only
+import React, { useEffect, useMemo, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
@@ -15,9 +15,7 @@ import {
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { getAuth } from 'firebase/auth';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
-import { firestore } from '../config/firebaseConfig';
+import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { IMAGES } from '../constants/images';
 import type {
@@ -38,17 +36,13 @@ type ProfileDoc = {
   bio?: string;
   status?: string;
 
-  // Interests por modo
   personalInterestAffiliations?: InterestAffiliations;
   professionalInterestAffiliations?: InterestAffiliations;
-  // LEGACY
-  interestAffiliations?: InterestAffiliations;
+  interestAffiliations?: InterestAffiliations; // legacy
 
-  // Affiliations por modo
   personalAffiliations?: AffiliationItem[];
   professionalAffiliations?: AffiliationItem[];
 
-  // Social por modo
   socialLinksPersonal?: Partial<
     Record<
       | 'facebook'
@@ -62,6 +56,7 @@ type ProfileDoc = {
       string
     >
   >;
+
   socialLinksProfessional?: Partial<
     Record<
       | 'facebook'
@@ -94,7 +89,6 @@ const SOCIAL_META: Record<
   website: { icon: 'globe-outline', color: '#1E3A8A' },
 };
 
-// mismas categorías que en AffiliationsScreen
 const AFFILIATION_CATEGORIES: {
   key: AffiliationCategory;
   title: string;
@@ -119,12 +113,6 @@ const AFFILIATION_CATEGORIES: {
     subtitle: 'Alumni associations or student groups you belong to.',
     emoji: '🏫',
   },
-  // {
-  //   key: 'favoriteSport',
-  //   title: 'Favorite Sport',
-  //   subtitle: 'Sports you are passionate about.',
-  //   emoji: '🏀',
-  // },
   {
     key: 'favoriteTeam',
     title: 'Favorite Sport Team',
@@ -149,12 +137,6 @@ const AFFILIATION_CATEGORIES: {
     subtitle: 'Local groups, NGOs or communities you support.',
     emoji: '🧑‍🤝‍🧑',
   },
-  // {
-  //   key: 'from',
-  //   title: 'Where are you from?',
-  //   subtitle: 'Tell others where you were born or raised.',
-  //   emoji: '🌎',
-  // },
   {
     key: 'pets',
     title: 'Pets',
@@ -163,7 +145,15 @@ const AFFILIATION_CATEGORIES: {
   },
 ];
 
-// mismas categorías que en InterestsWithLogo
+const INTEREST_DISPLAY_ORDER: InterestLabel[] = [
+  'Healthy Lifestyle',
+  'Extra-Curricular Activities',
+  'Language',
+  'Other',
+  'Sports',
+  'Music',
+];
+
 const INTEREST_CATEGORY_META: Partial<
   Record<
     InterestLabel,
@@ -174,16 +164,6 @@ const INTEREST_CATEGORY_META: Partial<
     }
   >
 > = {
-  Sports: {
-    title: 'Sports',
-    subtitle: 'Sports, teams and physical activities you enjoy.',
-    emoji: '🏀',
-  },
-  Music: {
-    title: 'Music',
-    subtitle: 'Genres, moods and sounds that describe you.',
-    emoji: '🎵',
-  },
   'Healthy Lifestyle': {
     title: 'Healthy Lifestyle',
     subtitle: 'Habits, wellness and health-related choices.',
@@ -204,6 +184,16 @@ const INTEREST_CATEGORY_META: Partial<
     subtitle: 'Beliefs, values or topics that define you.',
     emoji: '✨',
   },
+  Sports: {
+    title: 'Sports',
+    subtitle: 'Sports, teams and physical activities you enjoy.',
+    emoji: '🏀',
+  },
+  Music: {
+    title: 'Music',
+    subtitle: 'Genres, moods and sounds that describe you.',
+    emoji: '🎵',
+  },
 };
 
 function normalizeUrl(u: string) {
@@ -222,46 +212,82 @@ async function openLink(url: string) {
   Linking.openURL(safe);
 }
 
-type Params = { uid: string };
-
 export default function ProfileDetailScreen() {
+  // ✅ (3) Tipado de route y navigation
   type NavProp = NativeStackNavigationProp<HomeStackParamList, 'ProfileDetail'>;
+  type RouteProps = RouteProp<HomeStackParamList, 'ProfileDetail'>;
+
   const nav = useNavigation<NavProp>();
-  const route = useRoute<RouteProp<Record<string, Params>, string>>();
+  const route = useRoute<RouteProps>();
   const uidp = route.params?.uid;
 
   const insets = useSafeAreaInsets();
 
-  const [profile, setProfile] = useState<ProfileDoc>({});
-  const [loading, setLoading] = useState(true);
+  // mi perfil (solo para topColor)
+  const [myProfile, setMyProfile] = useState<ProfileDoc>({});
+
+  // perfil visto
   const [p, setP] = useState<ProfileDoc | null>(null);
 
-  const topColor = profile.topBarColor || '#3B5A85';
+  // ✅ (1) SOLO un loading (para el perfil visto)
+  const [loading, setLoading] = useState(true);
 
-  // escucha en vivo del propio usuario (para topColor, etc.)
+  const topColor = myProfile.topBarColor || '#3B5A85';
+
+  // ✅ (2) Snapshot con cleanup real (RNFirebase)
   useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const uid = getAuth().currentUser?.uid;
-        if (!uid) return;
-        const ref = doc(firestore, 'users', uid);
-        const unsub = onSnapshot(ref, (snap) => {
-          if (snap.exists()) {
-            setProfile(snap.data() as ProfileDoc);
-          }
-        });
-        return unsub;
-      } catch (error) {
-        if (__DEV__) {
-          console.error('[ProfileDetail] Error fetching profile data:', error);
-        }
-        Alert.alert('Error', 'Could not load your profile.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchProfile();
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) return;
+
+    const unsub = firestoreDb
+      .collection('users')
+      .doc(uid)
+      .onSnapshot(
+        (snap) => {
+          if (snap.exists) setMyProfile(snap.data() as ProfileDoc);
+        },
+        (error) => {
+          if (__DEV__)
+            console.error('[ProfileDetail] myProfile snapshot:', error);
+          Alert.alert('Error', 'Could not load your profile.');
+        },
+      );
+
+    return () => unsub();
   }, []);
+
+  // Carga del perfil que estoy viendo (RNFirebase get)
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setLoading(true);
+
+        if (!uidp) {
+          if (!cancelled) setP(null);
+          return;
+        }
+
+        const snap = await firestoreDb.collection('users').doc(uidp).get();
+
+        if (cancelled) return;
+        setP(snap.exists ? (snap.data() as ProfileDoc) : null);
+      } catch (e: any) {
+        if (__DEV__) console.error('[ProfileDetail] target get error:', e);
+        if (!cancelled) {
+          setP(null);
+          Alert.alert('Error', e?.message || 'Could not load profile.');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [uidp]);
 
   // social links según modo del perfil visto
   const socialForMode = useMemo(() => {
@@ -273,20 +299,6 @@ export default function ProfileDetailScreen() {
     );
   }, [p?.mode, p?.socialLinksPersonal, p?.socialLinksProfessional]);
 
-  // cargamos el perfil que se está viendo
-  useEffect(() => {
-    (async () => {
-      try {
-        if (!uidp) return;
-        const snap = await getDoc(doc(firestore, 'users', uidp));
-        setP(snap.exists() ? (snap.data() as ProfileDoc) : null);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [uidp]);
-
-  // Interests agrupados por categoría (nuevo modelo con emojis)
   const interestGroups = useMemo(() => {
     const affObj: InterestAffiliations =
       (p?.mode === 'professional'
@@ -295,7 +307,7 @@ export default function ProfileDetailScreen() {
       p?.interestAffiliations ??
       {};
 
-    return Object.entries(affObj)
+    const groups = Object.entries(affObj)
       .map(([label, picks]) => ({
         label: label as InterestLabel,
         items: (picks ?? []).map((pick: any) => ({
@@ -307,6 +319,13 @@ export default function ProfileDetailScreen() {
         })),
       }))
       .filter((g) => g.items.length > 0);
+
+    const getIndex = (label: InterestLabel) => {
+      const idx = INTEREST_DISPLAY_ORDER.indexOf(label);
+      return idx === -1 ? INTEREST_DISPLAY_ORDER.length : idx;
+    };
+
+    return groups.sort((a, b) => getIndex(a.label) - getIndex(b.label));
   }, [
     p?.mode,
     p?.personalInterestAffiliations,
@@ -314,7 +333,6 @@ export default function ProfileDetailScreen() {
     p?.interestAffiliations,
   ]);
 
-  // Affiliations (nueva estructura)
   const affiliationsOrgList = useMemo<AffiliationItem[]>(() => {
     const list =
       (p?.mode === 'professional'
@@ -334,6 +352,7 @@ export default function ProfileDetailScreen() {
       </View>
     );
   }
+
   if (!p) {
     return (
       <View style={styles.center}>
@@ -351,7 +370,6 @@ export default function ProfileDetailScreen() {
     <ScrollView
       style={{ flex: 1, backgroundColor: '#fff', paddingTop: insets.top }}
     >
-      {/* Imagen de cabecera */}
       <View style={styles.headerImageWrap}>
         {p.profileImage ? (
           <Image source={{ uri: p.profileImage }} style={styles.avatar} />
@@ -370,10 +388,8 @@ export default function ProfileDetailScreen() {
       </View>
 
       <View style={styles.container}>
-        {/* Fila con nombre / modo / status a la derecha */}
         <View style={styles.nameRow}>
           <View style={styles.statusColumn} />
-
           <View style={styles.nameColumn}>
             <Text style={styles.name}>{p.realName}</Text>
             <Text style={styles.subtle}>
@@ -387,7 +403,6 @@ export default function ProfileDetailScreen() {
           </View>
         </View>
 
-        {/* Social media */}
         {Object.values(socialForMode).some(Boolean) && (
           <View style={styles.socialRow}>
             {Object.entries(socialForMode)
@@ -408,7 +423,6 @@ export default function ProfileDetailScreen() {
           </View>
         )}
 
-        {/* Tarjeta Occupation / Company / Bio */}
         {showInfoCard && (
           <View style={styles.infoCard}>
             {hasOccupation && (
@@ -436,7 +450,6 @@ export default function ProfileDetailScreen() {
           </View>
         )}
 
-        {/* Affiliations agrupadas por categoría */}
         {affiliationsOrgList.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>Affiliations</Text>
@@ -470,8 +483,9 @@ export default function ProfileDetailScreen() {
                               <Text style={styles.logoEmoji}>{cat.emoji}</Text>
                             </View>
                           )}
+
                           {!!caption && (
-                            <Text style={styles.logoCaption} numberOfLines={1}>
+                            <Text style={styles.logoCaption} numberOfLines={2}>
                               {caption}
                             </Text>
                           )}
@@ -485,7 +499,6 @@ export default function ProfileDetailScreen() {
           </>
         )}
 
-        {/* Interests agrupados por categoría */}
         {interestGroups.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>Interests</Text>
@@ -508,8 +521,8 @@ export default function ProfileDetailScreen() {
                       const src = item.imageKey
                         ? IMAGES[item.imageKey]
                         : item.imageUrl
-                        ? { uri: item.imageUrl }
-                        : null;
+                          ? { uri: item.imageUrl }
+                          : null;
 
                       return (
                         <View
@@ -549,7 +562,6 @@ export default function ProfileDetailScreen() {
           </>
         )}
 
-        {/* Botón de galería */}
         <View style={{ height: 12 }} />
         <TouchableOpacity
           style={[styles.btn, { backgroundColor: topColor }]}
@@ -579,9 +591,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 20,
     alignSelf: 'center',
   },
-  headerImageWrap: {
-    position: 'relative',
-  },
+  headerImageWrap: { position: 'relative' },
   backBtn: {
     position: 'absolute',
     top: 40,
@@ -594,21 +604,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // fila nombre / modo / status
   nameRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     marginTop: 12,
     marginBottom: 10,
   },
-  statusColumn: {
-    flex: 1,
-    paddingRight: 8,
-  },
-  nameColumn: {
-    flexShrink: 1,
-    alignItems: 'flex-end',
-  },
+  statusColumn: { flex: 1, paddingRight: 8 },
+  nameColumn: { flexShrink: 1, alignItems: 'flex-end' },
   name: {
     fontSize: 22,
     fontWeight: '800',
@@ -623,7 +626,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
-  // Social
   socialRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -642,7 +644,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
   },
 
-  // Tarjeta de información
   infoCard: {
     backgroundColor: '#F9FAFB',
     borderRadius: 16,
@@ -651,9 +652,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
-  infoBlock: {
-    marginBottom: 8,
-  },
+  infoBlock: { marginBottom: 8 },
   infoLabel: {
     fontSize: 12,
     fontWeight: '700',
@@ -662,10 +661,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 2,
   },
-  infoValue: {
-    fontSize: 16,
-    color: '#111827',
-  },
+  infoValue: { fontSize: 16, color: '#111827' },
 
   sectionTitle: {
     fontWeight: '800',
@@ -675,23 +671,10 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 
-  // Bloques de affiliations por categoría
-  affBlock: {
-    marginTop: 4,
-    marginBottom: 6,
-  },
-  affBlockTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  affBlockSubtitle: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 6,
-  },
+  affBlock: { marginTop: 4, marginBottom: 6 },
+  affBlockTitle: { fontSize: 14, fontWeight: '700', color: '#111827' },
+  affBlockSubtitle: { fontSize: 12, color: '#6B7280', marginBottom: 6 },
 
-  // Grid de iconos
   logoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -722,9 +705,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoEmoji: {
-    fontSize: 26,
-  },
+  logoEmoji: { fontSize: 26 },
   logoCaption: {
     marginTop: 4,
     fontSize: 12,
