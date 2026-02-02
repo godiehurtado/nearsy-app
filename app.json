@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.nearsy.app",
-      "buildNumber": "3",
+      "buildNumber": "4",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Nearsy uses your location to show nearby people while you are using the app.",
@@ -25,13 +25,13 @@
         "NSPhotoLibraryUsageDescription": "Nearsy needs access to your photos so you can upload images to your profile and gallery.",
         "NSPhotoLibraryAddUsageDescription": "Nearsy needs permission to save images to your photo library when you choose to export or save content.",
         "NSCameraUsageDescription": "Nearsy uses the camera so you can take photos for your profile and gallery.",
-        "UIBackgroundModes": ["location", "location"],
+        "UIBackgroundModes": ["location"],
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.nearsy.app",
-      "versionCode": 2,
+      "versionCode": 4,
       "edgeToEdgeEnabled": true,
       "googleServicesFile": "./google-services.json",
       "windowSoftInputMode": "adjustResize",
@@ -63,24 +63,18 @@
       "url": "https://u.expo.dev/fdb12a0f-6136-465d-bbf7-1eda6dcc14de"
     },
     "plugins": [
-      "./plugins/withModularHeadersPodfile",
+      "@react-native-firebase/app",
       "expo-dev-client",
       "expo-image-picker",
-      [
-        "expo-location",
-        {
-          "isAndroidForegroundServiceEnabled": true
-        }
-      ],
+      ["expo-location", { "isAndroidForegroundServiceEnabled": true }],
       [
         "expo-build-properties",
         {
-          "android": {
-            "minSdkVersion": 24
-          }
+          "android": { "minSdkVersion": 24 },
+          "ios": { "useFrameworks": "static" }
         }
       ],
-      ["expo-notifications"],
+      "expo-notifications",
       "expo-asset",
       "expo-font",
       "expo-web-browser",
@@ -91,12 +85,10 @@
         "projectId": "fdb12a0f-6136-465d-bbf7-1eda6dcc14de"
       },
       "EXPO_PUBLIC_ENABLE_SOCIAL_LOGIN": "false",
-      "EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID": "",
       "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "557470198780-prau0p14tfrijv3h5omadqakn4r3m4tk.apps.googleusercontent.com",
       "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "557470198780-9qe3qg59h682e3fn14ic97hf9t375m3n.apps.googleusercontent.com",
       "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "557470198780-8ls8o304sfcf8va409va90o6rar3vc5a.apps.googleusercontent.com",
-      "EXPO_PUBLIC_APPLE_SERVICE_ID": "com.nearsy.app.signin",
-      "EXPO_PUBLIC_APPLE_REDIRECT_WEB": "https://auth.expo.io/@godie.hurtado/nearsy-app"
+      "EXPO_PUBLIC_APPLE_SERVICE_ID": "com.nearsy.app.signin"
     },
     "owner": "godie.hurtado"
   }
