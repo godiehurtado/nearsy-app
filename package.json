@@ -3,6 +3,10 @@
   "private": true,
   "packageManager": "pnpm@9.15.4",
   "scripts": {
+    "typecheck": "pnpm typecheck:android && pnpm typecheck:ios",
+    "typecheck:android": "pnpm --filter nearsy-android run typecheck",
+    "typecheck:ios": "pnpm --filter nearsy-ios run typecheck",
+    "validate": "pnpm typecheck",
     "android:start": "pnpm --filter nearsy-android start",
     "android:ios": "pnpm --filter nearsy-android ios",
     "android:android": "pnpm --filter nearsy-android android",

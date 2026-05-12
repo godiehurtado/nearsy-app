@@ -20,6 +20,7 @@ export default function HomeStack() {
     <>
       <LiveLocationTracker />
       <Stack.Navigator
+        id="HomeStack"
         initialRouteName="MainHome"
         screenOptions={{ headerShown: false }}
       >

@@ -46,9 +46,6 @@ export default function LoginScreen({ navigation }: any) {
     setInfoModalVisible(true);
   };
 
-  // Google hooks (solo se usarán si ENABLE_SOCIAL_LOGIN === true)
-  //const { signInWithGoogle, request } = useGoogleAuth();
-
   // Validador simple de email
   const isValidEmail = (value: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
@@ -181,46 +178,6 @@ export default function LoginScreen({ navigation }: any) {
       Alert.alert('Login Error', msg);
     }
   };
-
-  // const handleGoogle = async () => {
-  //   if (!ENABLE_SOCIAL_LOGIN) return;
-
-  //   try {
-  //     const user = await signInWithGoogle();
-
-  //     const profile: any = await getUserProfile(user.uid);
-
-  //     if (!profile) {
-  //       navigation.navigate('CompleteProfile', {
-  //         uid: user.uid,
-  //         email: user.email ?? '',
-  //       });
-  //       return;
-  //     }
-
-  //     if (
-  //       Platform.OS === 'android' &&
-  //       (!profile.phone || !profile.phoneVerified)
-  //     ) {
-  //       navigation.navigate('PhoneVerification', {
-  //         uid: user.uid,
-  //         phone: profile.phone ?? '',
-  //       });
-  //       return;
-  //     }
-
-  //     const complete = await isProfileComplete(user.uid);
-  //     navigation.navigate(
-  //       complete ? 'MainTabs' : 'CompleteProfile',
-  //       complete ? undefined : { uid: user.uid, email: user.email ?? '' },
-  //     );
-  //   } catch (e: any) {
-  //     Alert.alert(
-  //       'Google Sign-in',
-  //       e?.message ?? 'Failed to sign in with Google',
-  //     );
-  //   }
-  // };
 
   const handleForgotPassword = async () => {
     const trimmed = email.trim();
@@ -375,27 +332,6 @@ export default function LoginScreen({ navigation }: any) {
               </View>
 
               <View style={styles.socialGroup}>
-                <TouchableOpacity
-                  style={[
-                    styles.socialBtn,
-                    styles.googleBtn,
-                    !request && { opacity: 0.6 },
-                  ]}
-                  onPress={handleGoogle}
-                  disabled={!request}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons
-                    name="logo-google"
-                    size={18}
-                    color="#fff"
-                    style={{ marginRight: 8 }}
-                  />
-                  <Text style={styles.socialTextLight}>
-                    Continue with Google
-                  </Text>
-                </TouchableOpacity>
-
                 <TouchableOpacity
                   style={[styles.socialBtn, styles.appleBtn]}
                   onPress={handleApple}

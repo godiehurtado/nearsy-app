@@ -1,6 +1,7 @@
 // src/services/firestoreService.ts  ✅ Web Firestore + RNFirebase Auth
 import { firestoreDb } from '../config/firebaseConfig';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { isProfileDocumentComplete } from '../utils/profileDocumentComplete';
 
 import {
   InterestAffiliations,
@@ -155,20 +156,7 @@ export const isProfileComplete = async (uid: string): Promise<boolean> => {
 
   if (!snap.exists()) return false;
 
-  const data = snap.data() as any;
-
-  if (data.profileSetupCompleted === true) return true;
-
-  const realNameOk =
-    typeof data.realName === 'string' && data.realName.trim().length > 0;
-
-  const modeOk = data.mode === 'personal' || data.mode === 'professional';
-
-  const profileImageOk =
-    typeof data.profileImage === 'string' &&
-    data.profileImage.trim().length > 0;
-
-  return realNameOk && modeOk && profileImageOk;
+  return isProfileDocumentComplete(snap.data());
 };
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {

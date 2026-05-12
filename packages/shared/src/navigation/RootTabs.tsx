@@ -42,6 +42,7 @@ export default function RootTabs() {
 
   return (
     <Tab.Navigator
+      id="RootTabs"
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: '#1E3A8A',

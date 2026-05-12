@@ -32,6 +32,7 @@ const Stack = createNativeStackNavigator<ProfileStackParamList>();
 export default function ProfileStack() {
   return (
     <Stack.Navigator
+      id="ProfileStack"
       initialRouteName="CompleteProfile"
       screenOptions={{ headerShown: false }}
     >

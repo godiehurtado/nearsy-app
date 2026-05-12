@@ -17,6 +17,7 @@ import RootTabs from './RootTabs';
 
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { isProfileDocumentComplete } from '../utils/profileDocumentComplete';
 
 export type RootStackParamList = {
   IntroVideo: undefined;
@@ -49,38 +50,6 @@ function FullScreenLoader() {
       <ActivityIndicator size="large" />
     </View>
   );
-}
-
-// function hasCompleteProfile(data: any): boolean {
-//   if (!data) return false;
-
-//   const realNameOk =
-//     typeof data.realName === 'string' && data.realName.trim().length > 0;
-
-//   const modeOk = data.mode === 'personal' || data.mode === 'professional';
-
-//   const profileImageOk =
-//     typeof data.profileImage === 'string' &&
-//     data.profileImage.trim().length > 0;
-
-//   return realNameOk && modeOk && profileImageOk;
-// }
-
-function hasCompleteProfile(data: any): boolean {
-  if (!data) return false;
-
-  if (data.profileSetupCompleted === true) return true;
-
-  const realNameOk =
-    typeof data.realName === 'string' && data.realName.trim().length > 0;
-
-  const modeOk = data.mode === 'personal' || data.mode === 'professional';
-
-  const profileImageOk =
-    typeof data.profileImage === 'string' &&
-    data.profileImage.trim().length > 0;
-
-  return realNameOk && modeOk && profileImageOk;
 }
 
 export default function AppNavigator() {
@@ -167,14 +136,14 @@ export default function AppNavigator() {
       userRef,
       async (snap) => {
         const data = snap.exists() ? (snap.data() as any) : null;
-        setNeedsCompleteProfile(!hasCompleteProfile(data));
+        setNeedsCompleteProfile(!isProfileDocumentComplete(data));
         setProfileLoading(false);
       },
       async () => {
         try {
           const snap = await getDoc(userRef);
           const data = snap.exists() ? (snap.data() as any) : null;
-          setNeedsCompleteProfile(!hasCompleteProfile(data));
+          setNeedsCompleteProfile(!isProfileDocumentComplete(data));
         } catch {
           setNeedsCompleteProfile(false);
         } finally {
@@ -205,6 +174,7 @@ export default function AppNavigator() {
   if (!hasSeenIntroVideo) {
     return (
       <Stack.Navigator
+        id="RootIntro"
         key="intro-video"
         initialRouteName="IntroVideo"
         screenOptions={{ headerShown: false }}
@@ -231,7 +201,11 @@ export default function AppNavigator() {
   }
 
   return !uid ? (
-    <Stack.Navigator key={flowKey} screenOptions={{ headerShown: false }}>
+    <Stack.Navigator
+      id="RootGuest"
+      key={flowKey}
+      screenOptions={{ headerShown: false }}
+    >
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Register" component={RegisterScreen} />
       <Stack.Screen name="IntroVideo" component={IntroVideoScreen} />
@@ -248,6 +222,7 @@ export default function AppNavigator() {
     </Stack.Navigator>
   ) : (
     <Stack.Navigator
+      id="RootAuthed"
       key={flowKey}
       initialRouteName={authenticatedInitialRoute}
       screenOptions={{ headerShown: false }}

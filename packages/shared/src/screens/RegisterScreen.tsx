@@ -335,7 +335,7 @@ export default function RegisterScreen({ navigation }: any) {
       await createUserProfile(user.uid, profile as any);
 
       try {
-        await firebaseAuth().signOut();
+        await firebaseAuth.signOut();
       } catch {}
 
       Alert.alert(

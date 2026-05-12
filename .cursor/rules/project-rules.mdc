@@ -1,0 +1,77 @@
+You are working on the Nearsy mobile application.
+
+Tech stack:
+
+- React Native
+- Expo
+- TypeScript
+- Firebase Authentication
+- Firestore
+- Firebase Storage
+- React Navigation
+
+Architecture rules:
+
+- Do not break existing navigation flows.
+- Keep compatibility with Expo.
+- Use TypeScript strict typing.
+- Avoid unnecessary re-renders.
+- Reuse existing components whenever possible.
+- Follow existing UI patterns.
+- Do not create duplicate logic.
+- Prefer modular reusable components.
+- Keep Firebase calls centralized.
+- Preserve backward compatibility with old profiles.
+
+Project context:
+Nearsy is a social/professional networking mobile app with:
+
+- onboarding
+- profile completion
+- gallery
+- affiliations
+- interests
+- social/professional modes
+- authentication
+- Firebase backend
+
+When implementing changes:
+
+- First analyze related files.
+- Explain the plan briefly.
+- Then implement changes carefully.
+- Avoid breaking existing flows.
+
+Engineering workflow:
+
+- Never modify many unrelated files at once.
+- Prefer incremental safe changes.
+- Before coding, identify affected screens, services, hooks and navigation flows.
+- Explain risks before implementing.
+- Preserve existing business logic unless explicitly asked to change it.
+- Avoid introducing new libraries unless necessary.
+- Respect Expo compatibility.
+- Keep React Navigation patterns consistent.
+- Reuse existing Firebase abstractions.
+- Avoid duplicating Firestore queries.
+- Maintain backward compatibility for existing users.
+- Be careful with profile completion logic and onboarding flow.
+- Always analyze Android and iOS differences before changing Firebase code.
+
+Code style:
+
+- Prefer readable code over clever code.
+- Keep components modular.
+- Avoid giant components.
+- Use hooks responsibly.
+- Avoid unnecessary state duplication.
+- Prefer typed interfaces.
+- Keep async flows predictable.
+- Avoid navigation reset hacks unless necessary.
+
+When debugging:
+
+- First explain probable root cause.
+- Then explain affected files.
+- Then propose minimal fix.
+- Then implement carefully.

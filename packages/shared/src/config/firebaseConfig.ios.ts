@@ -4,6 +4,8 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
+// Metro resolves firebase/auth to the RN bundle; tsc uses browser-facing typings, so getReactNativePersistence is missing from types.
+// @ts-expect-error TS2305 — RN-only export; runtime matches Firebase v10 + Expo
 import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
