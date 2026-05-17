@@ -475,6 +475,8 @@ export default function RegisterScreen({ navigation }: any) {
         await firebaseAuth.signOut();
       } catch {}
 
+      setGuideVisible(false);
+
       Alert.alert(
         'Verify your email',
         'We sent a verification link to your email. Please verify your account before logging in on this device. If you don’t see the email, please check your Spam or Junk folder.',
@@ -482,7 +484,10 @@ export default function RegisterScreen({ navigation }: any) {
           {
             text: 'OK',
             onPress: () => {
-              navigation.replace('Login');
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Login' }],
+              });
             },
           },
         ],
@@ -717,6 +722,7 @@ export default function RegisterScreen({ navigation }: any) {
                 value={password}
                 onChangeText={handlePasswordChange}
                 ref={passwordInputRef}
+                ref={passwordInputRef}
               />
               <TouchableOpacity
                 onPress={() => setShowPassword((prev) => !prev)}
@@ -762,6 +768,7 @@ export default function RegisterScreen({ navigation }: any) {
                 secureTextEntry={!showConfirmPassword}
                 value={confirmPassword}
                 onChangeText={handleConfirmPasswordChange}
+                ref={confirmPasswordInputRef}
                 ref={confirmPasswordInputRef}
               />
               <TouchableOpacity
@@ -852,6 +859,28 @@ export default function RegisterScreen({ navigation }: any) {
             </Text>
           </View>
 
+          <View
+            onLayout={(event) => {
+              stepYPositions.current[7] = event.nativeEvent.layout.y;
+            }}
+          >
+            <TouchableOpacity
+              style={[
+                styles.button,
+                submitting && { opacity: 0.7 },
+                isGuideFieldActive(7) && styles.guideActiveButton,
+              ]}
+              onPress={handleRegister}
+              disabled={submitting}
+              activeOpacity={0.85}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#1A2B3C" />
+              ) : (
+                <Text style={styles.buttonText}>Register</Text>
+              )}
+            </TouchableOpacity>
+          </View>
           <View
             onLayout={(event) => {
               stepYPositions.current[7] = event.nativeEvent.layout.y;
