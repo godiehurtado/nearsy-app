@@ -358,13 +358,13 @@ export default function LoginScreen({ navigation }: any) {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() =>
-                navigation.navigate('IntroVideo', { preview: true })
+                navigation.navigate('IntroVideo', { preview: false })
               }
             >
               <Text
                 style={[styles.linkSmall, { textDecorationLine: 'underline' }]}
               >
-                Watch intro video
+                View registration guide
               </Text>
             </TouchableOpacity>
           </View>
