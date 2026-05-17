@@ -1,9 +1,15 @@
 // src/screens/CompleteProfileScreen.tsx  ✅ RNFirebase-only
-import React, { useState, useCallback } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { firebaseAuth } from '../config/firebaseConfig';
-
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -19,6 +25,7 @@ import {
   PixelRatio,
   KeyboardAvoidingView,
   Platform,
+  TextInput as RNTextInput,
 } from 'react-native';
 
 import ModeSwitch from '../components/ModeSwitch';
@@ -82,9 +89,65 @@ function containsObjectionableContent(value: string) {
   return BLOCKED_WORDS.some((word) => normalized.includes(word));
 }
 
+const COMPLETE_PROFILE_GUIDE_STEPS = [
+  {
+    title: 'Open profile visuals',
+    description: 'Tap the camera button to open your profile visual options.',
+  },
+  {
+    title: 'Add your profile photo',
+    description:
+      'Tap Change profile photo and choose a photo for your profile.',
+  },
+  {
+    title: 'Choose your top bar style',
+    description: 'Use Color or Image to personalize the top of your profile.',
+  },
+  {
+    title: 'Enter your name',
+    description: 'Use your real name so your profile feels trustworthy.',
+  },
+  {
+    title: 'Add your occupation',
+    description: 'Tell others what you do or what describes you best.',
+  },
+  {
+    title: 'Write a short status',
+    description: 'Add a quick phrase that represents you today.',
+  },
+  {
+    title: 'Write your biography',
+    description: 'Share a short intro about yourself.',
+  },
+  {
+    title: 'Choose your profile mode',
+    description:
+      'Select Social or Professional depending on how you want to connect.',
+  },
+  {
+    title: 'Complete your extras',
+    description:
+      'Add interests, social links, photos, or affiliations when you are ready.',
+  },
+  {
+    title: 'Save your profile',
+    description: 'Tap Save changes to finish your profile.',
+  },
+];
+
 export default function CompleteProfileScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const isLargeText = PixelRatio.getFontScale() >= 1.2;
+
+  const scrollRef = useRef<ScrollView | null>(null);
+
+  const realNameInputRef = useRef<RNTextInput | null>(null);
+  const occupationInputRef = useRef<RNTextInput | null>(null);
+  const statusInputRef = useRef<RNTextInput | null>(null);
+  const bioInputRef = useRef<RNTextInput | null>(null);
+
+  const guideYPositions = useRef<Record<number, number>>({});
+  const guideFieldRefs = useRef<Record<number, View | null>>({});
 
   // ✅ Helper para obtener el UID (por route.params o por RNFirebase)
   const getUid = () =>
@@ -140,6 +203,8 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const [isLoading, setIsLoading] = useState(false);
   const [isNewProfile, setIsNewProfile] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [guideStep, setGuideStep] = useState(0);
+  const [guideDismissed, setGuideDismissed] = useState(false);
 
   // Campo actualmente en edición
   type FieldId =
@@ -491,30 +556,12 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
       await saveCompleteProfile(uid, payload);
 
-      Alert.alert('Success', 'Profile saved successfully.', [
-        {
-          text: 'OK',
-          onPress: () => {
-            setIsNewProfile(false);
-            setActiveField(null);
-            setShowTopBarControls(false);
+      setIsNewProfile(false);
+      setActiveField(null);
+      setShowTopBarControls(false);
+      setGuideDismissed(true);
 
-            const parent = navigation.getParent?.();
-
-            if (parent) {
-              parent.reset({
-                index: 0,
-                routes: [{ name: 'MainTabs' }],
-              });
-            } else {
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'MainTabs' }],
-              });
-            }
-          },
-        },
-      ]);
+      navigation.replace('MainTabs');
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Could not save profile.');
     } finally {
@@ -576,6 +623,96 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     keyboardType: 'default' as const,
   };
 
+  const profileGuideVisible = isNewProfile && !isLoading && !guideDismissed;
+
+  const setGuideFieldRef =
+    (step: number) =>
+    (ref: View | null): void => {
+      guideFieldRefs.current[step] = ref;
+    };
+
+  useEffect(() => {
+    if (!profileGuideVisible) return;
+
+    const inputRefs: Record<number, React.RefObject<RNTextInput | null>> = {
+      3: realNameInputRef,
+      4: occupationInputRef,
+      5: statusInputRef,
+      6: bioInputRef,
+    };
+
+    const centerStep = () => {
+      const target = guideFieldRefs.current[guideStep];
+
+      if (!target || !scrollRef.current) return;
+
+      target.measureLayout(
+        scrollRef.current as any,
+        (_x, y, _width, height) => {
+          const guideCardReservedHeight = 190;
+          const bottomReservedHeight =
+            guideStep >= 3 && guideStep <= 6 ? 320 : 80;
+
+          const availableHeight =
+            760 - guideCardReservedHeight - bottomReservedHeight;
+
+          const centeredY =
+            y - guideCardReservedHeight - availableHeight / 2 + height / 2;
+
+          const finalY = Math.max(centeredY - 20, 0);
+
+          scrollRef.current?.scrollTo({
+            y: finalY,
+            animated: true,
+          });
+        },
+        () => {},
+      );
+    };
+
+    const firstScroll = setTimeout(centerStep, 120);
+
+    const focusTimeout = setTimeout(() => {
+      inputRefs[guideStep]?.current?.focus();
+    }, 320);
+
+    const secondScroll = setTimeout(centerStep, 750);
+
+    const thirdScroll = setTimeout(centerStep, 1050);
+
+    return () => {
+      clearTimeout(firstScroll);
+      clearTimeout(focusTimeout);
+      clearTimeout(secondScroll);
+      clearTimeout(thirdScroll);
+    };
+  }, [guideStep, profileGuideVisible]);
+
+  const isProfileGuideActive = (step: number) =>
+    profileGuideVisible && guideStep === step;
+
+  const goNextGuideStep = () => {
+    setGuideStep((prev) => {
+      if (prev === 0) {
+        setShowTopBarControls(true);
+      }
+
+      return Math.min(prev + 1, COMPLETE_PROFILE_GUIDE_STEPS.length - 1);
+    });
+  };
+
+  const goBackGuideStep = () => {
+    setGuideStep((prev) => Math.max(prev - 1, 0));
+  };
+
+  const skipProfileGuide = () => {
+    setGuideDismissed(true);
+    setGuideStep(0);
+  };
+
+  const guideAllows = (step: number) =>
+    !profileGuideVisible || guideStep === step;
+
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
       <KeyboardAvoidingView
@@ -586,9 +723,11 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         <ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{
-            paddingBottom: isEditingAny ? 110 : 40,
+            paddingTop: profileGuideVisible ? 150 : 0,
+            paddingBottom: profileGuideVisible ? 110 : isEditingAny ? 110 : 40,
           }}
           keyboardShouldPersistTaps="handled"
+          ref={scrollRef}
         >
           <TopHeader
             topBarMode={topBarMode}
@@ -600,7 +739,16 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
           />
 
           <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
-            <View style={styles.profileHeaderRow}>
+            <View
+              ref={setGuideFieldRef(0)}
+              style={[
+                styles.profileHeaderRow,
+                profileGuideVisible &&
+                  !isProfileGuideActive(0) &&
+                  styles.guideInactiveField,
+                isProfileGuideActive(0) && styles.guideActiveField,
+              ]}
+            >
               <View style={styles.profileHeaderInner}>
                 <Text style={styles.title}>Your Profile</Text>
                 <TouchableOpacity
@@ -608,7 +756,12 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                     styles.profileCameraBtn,
                     showTopBarControls && styles.profileCameraBtnActive,
                   ]}
-                  onPress={() => setShowTopBarControls((prev) => !prev)}
+                  onPress={() => {
+                    if (!guideAllows(0)) return;
+                    setShowTopBarControls(true);
+                    setGuideStep(1);
+                  }}
+                  disabled={!guideAllows(0)}
                   activeOpacity={0.85}
                 >
                   <Ionicons
@@ -624,26 +777,52 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
               <View style={styles.topBarControls}>
                 <Text style={styles.topBarSectionTitle}>Profile visuals</Text>
 
-                <TouchableOpacity
-                  onPress={openProfileImageOptions}
-                  style={styles.inlinePhotoBtn}
-                  activeOpacity={0.85}
+                <View
+                  ref={setGuideFieldRef(1)}
+                  style={[
+                    isProfileGuideActive(1) && styles.guideActiveField,
+                    profileGuideVisible &&
+                      !isProfileGuideActive(1) &&
+                      styles.guideInactiveField,
+                  ]}
                 >
-                  <Ionicons name="camera" size={16} color="#fff" />
-                  <Text style={styles.inlinePhotoText}>
-                    Change profile photo
-                  </Text>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (!guideAllows(1)) return;
+                      openProfileImageOptions();
+                    }}
+                    style={styles.inlinePhotoBtn}
+                    activeOpacity={0.85}
+                    disabled={!guideAllows(1)}
+                  >
+                    <Ionicons name="camera" size={16} color="#fff" />
+                    <Text style={styles.inlinePhotoText}>
+                      Change profile photo
+                    </Text>
+                  </TouchableOpacity>
+                </View>
 
-                <View style={styles.topBarModeRow}>
+                <View
+                  ref={setGuideFieldRef(2)}
+                  style={[
+                    styles.topBarModeRow,
+                    isProfileGuideActive(2) && styles.guideActiveField,
+                    profileGuideVisible &&
+                      !isProfileGuideActive(2) &&
+                      styles.guideInactiveField,
+                  ]}
+                >
                   <Text style={styles.topBarLabel}>Top bar style</Text>
+
                   <View style={styles.topBarSwitchRow}>
                     <Text style={styles.topBarSwitchText}>Color</Text>
                     <Switch
                       value={topBarMode === 'image'}
-                      onValueChange={(value) =>
-                        setTopBarMode(value ? 'image' : 'color')
-                      }
+                      onValueChange={(value) => {
+                        if (!guideAllows(2)) return;
+                        setTopBarMode(value ? 'image' : 'color');
+                      }}
+                      disabled={!guideAllows(2)}
                       trackColor={{ false: '#CBD5F5', true: '#CBD5F5' }}
                       thumbColor="#3B5A85"
                     />
@@ -654,8 +833,12 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 {topBarMode === 'color' ? (
                   <TouchableOpacity
                     style={styles.topBarActionBtn}
-                    onPress={() => setPickerOpen(true)}
+                    onPress={() => {
+                      if (!guideAllows(2)) return;
+                      setPickerOpen(true);
+                    }}
                     activeOpacity={0.85}
+                    disabled={!guideAllows(2)}
                   >
                     <Ionicons name="color-palette" size={16} color="#1F2937" />
                     <Text style={styles.topBarActionText}>
@@ -665,9 +848,16 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 ) : (
                   <TouchableOpacity
                     style={styles.topBarActionBtn}
-                    onPress={pickTopBarImage}
-                    onLongPress={() => setTopBarImage(null)}
+                    onPress={() => {
+                      if (!guideAllows(2)) return;
+                      pickTopBarImage();
+                    }}
+                    onLongPress={() => {
+                      if (!guideAllows(2)) return;
+                      setTopBarImage(null);
+                    }}
                     activeOpacity={0.85}
+                    disabled={!guideAllows(2)}
                   >
                     <Ionicons name="image" size={16} color="#1F2937" />
                     <Text style={styles.topBarActionText}>
@@ -679,7 +869,16 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
             )}
 
             {/* Name */}
-            <View style={styles.fieldGroup}>
+            <View
+              ref={setGuideFieldRef(3)}
+              style={[
+                styles.fieldGroup,
+                profileGuideVisible &&
+                  !isProfileGuideActive(3) &&
+                  styles.guideInactiveField,
+                isProfileGuideActive(3) && styles.guideActiveField,
+              ]}
+            >
               <View style={styles.labelRow}>
                 <Text style={styles.label}>Name</Text>
                 <TouchableOpacity
@@ -703,8 +902,9 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 placeholderTextColor="#9CA3AF"
                 value={realName}
                 onChangeText={setRealName}
-                editable={canEditField('realName')}
+                editable={canEditField('realName') && guideAllows(3)}
                 maxLength={NAME_MAX}
+                ref={realNameInputRef}
                 autoCapitalize="words"
                 autoCorrect={false}
                 {...nonPasswordInputProps}
@@ -712,7 +912,16 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
             </View>
 
             {/* Occupation */}
-            <View style={styles.fieldGroup}>
+            <View
+              ref={setGuideFieldRef(4)}
+              style={[
+                styles.fieldGroup,
+                profileGuideVisible &&
+                  !isProfileGuideActive(4) &&
+                  styles.guideInactiveField,
+                isProfileGuideActive(4) && styles.guideActiveField,
+              ]}
+            >
               <View style={styles.labelRow}>
                 <Text style={styles.label}>Occupation</Text>
                 <TouchableOpacity
@@ -734,9 +943,10 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 ]}
                 placeholder="Occupation"
                 placeholderTextColor="#9CA3AF"
+                ref={occupationInputRef}
                 value={occupation}
                 onChangeText={setOccupation}
-                editable={canEditField('occupation')}
+                editable={canEditField('occupation') && guideAllows(4)}
                 maxLength={OCCUPATION_MAX}
                 autoCapitalize="words"
                 autoCorrect={false}
@@ -745,7 +955,16 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
             </View>
 
             {/* Status */}
-            <View style={styles.fieldGroup}>
+            <View
+              ref={setGuideFieldRef(5)}
+              style={[
+                styles.fieldGroup,
+                profileGuideVisible &&
+                  !isProfileGuideActive(5) &&
+                  styles.guideInactiveField,
+                isProfileGuideActive(5) && styles.guideActiveField,
+              ]}
+            >
               <View style={styles.labelRow}>
                 <Text style={styles.label}>Status</Text>
                 <View
@@ -774,9 +993,10 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 ]}
                 placeholder="Short status (e.g. '🇺🇸 Open to meet new people')"
                 placeholderTextColor="#9CA3AF"
+                ref={statusInputRef}
                 value={status}
                 onChangeText={setStatus}
-                editable={canEditField('status')}
+                editable={canEditField('status') && guideAllows(5)}
                 maxLength={STATUS_MAX}
                 autoCapitalize="sentences"
                 autoCorrect={true}
@@ -785,7 +1005,16 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
             </View>
 
             {/* Biography */}
-            <View style={styles.fieldGroup}>
+            <View
+              ref={setGuideFieldRef(6)}
+              style={[
+                styles.fieldGroup,
+                profileGuideVisible &&
+                  !isProfileGuideActive(6) &&
+                  styles.guideInactiveField,
+                isProfileGuideActive(6) && styles.guideActiveField,
+              ]}
+            >
               <View style={styles.labelRow}>
                 <Text style={styles.label}>Biography</Text>
                 <View
@@ -815,11 +1044,12 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 ]}
                 placeholder="Short Biography (e.g. '🇺🇸 From USA · Likes coffee · Marketing · Study ...')"
                 placeholderTextColor="#9CA3AF"
+                ref={bioInputRef}
                 value={bio}
                 onChangeText={setBio}
                 multiline
                 numberOfLines={4}
-                editable={canEditField('bio')}
+                editable={canEditField('bio') && guideAllows(6)}
                 maxLength={BIO_MAX}
                 autoCapitalize="sentences"
                 autoCorrect={true}
@@ -828,11 +1058,23 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
             </View>
 
             {/* Switch de modo */}
-            <View style={styles.switchWrap}>
+            <View
+              ref={setGuideFieldRef(7)}
+              style={[
+                styles.switchWrap,
+                profileGuideVisible &&
+                  !isProfileGuideActive(7) &&
+                  styles.guideInactiveField,
+                isProfileGuideActive(7) && styles.guideActiveField,
+              ]}
+            >
               <ModeSwitch
                 mode={(mode || 'personal') as 'personal' | 'professional'}
                 topBarColor={'#3B5A85'}
-                onToggle={handleToggleMode}
+                onToggle={() => {
+                  if (!guideAllows(7)) return;
+                  handleToggleMode();
+                }}
                 compact={isLargeText}
               />
             </View>
@@ -875,20 +1117,41 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
             )}
 
             {/* Quick Actions */}
-
-            <ProfileQuickActions
-              stats={{
-                interestsCount,
-                socialCount,
-                photosCount,
-                affiliationsCount,
-              }}
-              onOpenInterests={() => goToProfileExtraScreen('Interests')}
-              onOpenSocial={() => goToProfileExtraScreen('SocialMedia')}
-              onOpenGallery={() => goToProfileExtraScreen('Gallery')}
-              onOpenAffiliations={() => goToProfileExtraScreen('Affiliations')}
-              compact={isLargeText}
-            />
+            <View
+              ref={setGuideFieldRef(8)}
+              style={[
+                profileGuideVisible &&
+                  !isProfileGuideActive(8) &&
+                  styles.guideInactiveField,
+                isProfileGuideActive(8) && styles.guideActiveField,
+              ]}
+            >
+              <ProfileQuickActions
+                stats={{
+                  interestsCount,
+                  socialCount,
+                  photosCount,
+                  affiliationsCount,
+                }}
+                onOpenInterests={() => {
+                  if (!guideAllows(8)) return;
+                  goToProfileExtraScreen('Interests');
+                }}
+                onOpenSocial={() => {
+                  if (!guideAllows(8)) return;
+                  goToProfileExtraScreen('SocialMedia');
+                }}
+                onOpenGallery={() => {
+                  if (!guideAllows(8)) return;
+                  goToProfileExtraScreen('Gallery');
+                }}
+                onOpenAffiliations={() => {
+                  if (!guideAllows(8)) return;
+                  goToProfileExtraScreen('Affiliations');
+                }}
+                compact={isLargeText}
+              />
+            </View>
           </View>
 
           {isLoading && (
@@ -903,15 +1166,22 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
         {isEditingAny && (
           <View
+            onLayout={(event) => {
+              guideYPositions.current[9] = event.nativeEvent.layout.y;
+            }}
             style={[
               styles.bottomBar,
               { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 16 },
             ]}
           >
             <TouchableOpacity
-              style={[styles.bottomSaveBtn, isLoading && { opacity: 0.7 }]}
+              style={[
+                styles.bottomSaveBtn,
+                isLoading && { opacity: 0.7 },
+                isProfileGuideActive(9) && styles.guideActiveButton,
+              ]}
               onPress={handleSave}
-              disabled={isLoading}
+              disabled={isLoading || !guideAllows(9)}
               activeOpacity={0.85}
             >
               {isLoading ? (
@@ -926,7 +1196,62 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
           </View>
         )}
       </KeyboardAvoidingView>
+      {profileGuideVisible && (
+        <Animated.View
+          entering={FadeInDown.duration(350)}
+          style={[styles.floatingGuideCard, { top: insets.top + 10 }]}
+        >
+          <View style={styles.guideHeader}>
+            <View style={styles.guideBadge}>
+              <Text style={styles.guideBadgeText}>
+                {guideStep + 1}/{COMPLETE_PROFILE_GUIDE_STEPS.length}
+              </Text>
+            </View>
 
+            <TouchableOpacity onPress={skipProfileGuide}>
+              <Text style={styles.guideSkip}>Skip guide</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.guideTitle}>
+            {COMPLETE_PROFILE_GUIDE_STEPS[guideStep].title}
+          </Text>
+
+          <Text style={styles.guideDescription}>
+            {COMPLETE_PROFILE_GUIDE_STEPS[guideStep].description}
+          </Text>
+
+          <View style={styles.guideActionsRow}>
+            <TouchableOpacity
+              style={[
+                styles.guideNavButton,
+                guideStep === 0 && styles.guideNavButtonDisabled,
+              ]}
+              onPress={goBackGuideStep}
+              disabled={guideStep === 0}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.guideNavButtonText}>Back</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.guideNavButtonPrimary}
+              onPress={
+                guideStep === COMPLETE_PROFILE_GUIDE_STEPS.length - 1
+                  ? skipProfileGuide
+                  : goNextGuideStep
+              }
+              activeOpacity={0.85}
+            >
+              <Text style={styles.guideNavButtonPrimaryText}>
+                {guideStep === COMPLETE_PROFILE_GUIDE_STEPS.length - 1
+                  ? 'Got it'
+                  : 'Next'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      )}
       <ColorPickerModal
         visible={pickerOpen}
         initialColor={topBarColor}
@@ -1218,5 +1543,107 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 16,
+  },
+  floatingGuideCard: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    zIndex: 50,
+    backgroundColor: '#EEF4FA',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#ADCBE3',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    elevation: 10,
+  },
+  guideHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  guideBadge: {
+    backgroundColor: '#3B5A85',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  guideBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  guideSkip: {
+    color: '#3B5A85',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  guideTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  guideDescription: {
+    fontSize: 13,
+    color: '#4B5563',
+    lineHeight: 18,
+  },
+  guideActiveField: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 10,
+    borderWidth: 2,
+    borderColor: '#3B5A85',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  guideInactiveField: {
+    opacity: 0.45,
+  },
+  guideActiveButton: {
+    borderWidth: 2,
+    borderColor: '#ADCBE3',
+  },
+  guideActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    gap: 10,
+  },
+  guideNavButton: {
+    flex: 1,
+    backgroundColor: '#E5E7EB',
+    paddingVertical: 9,
+    borderRadius: 999,
+    alignItems: 'center',
+  },
+  guideNavButtonDisabled: {
+    opacity: 0.45,
+  },
+  guideNavButtonText: {
+    color: '#374151',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  guideNavButtonPrimary: {
+    flex: 1,
+    backgroundColor: '#3B5A85',
+    paddingVertical: 9,
+    borderRadius: 999,
+    alignItems: 'center',
+  },
+  guideNavButtonPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
   },
 });

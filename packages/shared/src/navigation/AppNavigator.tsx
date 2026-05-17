@@ -27,6 +27,7 @@ export type RootStackParamList = {
     | {
         uid: string;
         email?: string | null;
+        inputNonce?: number;
       }
     | undefined;
   MainTabs: undefined;
@@ -155,11 +156,6 @@ export default function AppNavigator() {
     return () => unsubscribe();
   }, [uid]);
 
-  const authenticatedInitialRoute = useMemo<keyof RootStackParamList>(() => {
-    if (needsCompleteProfile) return 'CompleteProfile';
-    return 'MainTabs';
-  }, [needsCompleteProfile]);
-
   const flowKey = useMemo(() => {
     if (authLoading || profileLoading) return 'loading';
     if (!uid) return 'guest';
@@ -200,41 +196,64 @@ export default function AppNavigator() {
     );
   }
 
-  return !uid ? (
-    <Stack.Navigator
-      id="RootGuest"
-      key={flowKey}
-      screenOptions={{ headerShown: false }}
-    >
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Register" component={RegisterScreen} />
-      <Stack.Screen name="IntroVideo" component={IntroVideoScreen} />
-      <Stack.Screen name="CompleteProfile" component={CompleteProfileScreen} />
-      <Stack.Screen
-        name="PhoneVerification"
-        component={PhoneVerificationScreen}
-      />
-      <Stack.Screen name="MainTabs" component={RootTabs} />
-      <Stack.Screen name="Interests" component={InterestsScreen} />
-      <Stack.Screen name="Gallery" component={GalleryScreen} />
-      <Stack.Screen name="Affiliations" component={AffiliationsScreen} />
-      <Stack.Screen name="SocialMedia" component={SocialMediaScreen} />
-    </Stack.Navigator>
-  ) : (
-    <Stack.Navigator
-      id="RootAuthed"
-      key={flowKey}
-      initialRouteName={authenticatedInitialRoute}
-      screenOptions={{ headerShown: false }}
-    >
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="MainTabs" component={RootTabs} />
-      <Stack.Screen
-        name="CompleteProfile"
-        component={CompleteProfileScreen}
-        initialParams={{ uid, email: userEmail }}
-      />
+  if (!uid) {
+    return (
+      <Stack.Navigator
+        id="RootGuest"
+        key={flowKey}
+        initialRouteName="Login"
+        screenOptions={{ headerShown: false }}
+      >
+        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="Register" component={RegisterScreen} />
+        <Stack.Screen name="IntroVideo" component={IntroVideoScreen} />
+        <Stack.Screen
+          name="CompleteProfile"
+          component={CompleteProfileScreen}
+        />
+        <Stack.Screen
+          name="PhoneVerification"
+          component={PhoneVerificationScreen}
+        />
+        <Stack.Screen name="MainTabs" component={RootTabs} />
+        <Stack.Screen name="Interests" component={InterestsScreen} />
+        <Stack.Screen name="Gallery" component={GalleryScreen} />
+        <Stack.Screen name="Affiliations" component={AffiliationsScreen} />
+        <Stack.Screen name="SocialMedia" component={SocialMediaScreen} />
+      </Stack.Navigator>
+    );
+  }
 
+  if (needsCompleteProfile) {
+    return (
+      <Stack.Navigator
+        id="RootAuthenticatedComplete"
+        key={`auth-complete-${uid}`}
+        screenOptions={{ headerShown: false }}
+      >
+        <Stack.Screen
+          name="CompleteProfile"
+          component={CompleteProfileScreen}
+          initialParams={{ uid, email: userEmail }}
+        />
+        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="MainTabs" component={RootTabs} />
+        <Stack.Screen name="Interests" component={InterestsScreen} />
+        <Stack.Screen name="Gallery" component={GalleryScreen} />
+        <Stack.Screen name="Affiliations" component={AffiliationsScreen} />
+        <Stack.Screen name="SocialMedia" component={SocialMediaScreen} />
+      </Stack.Navigator>
+    );
+  }
+
+  return (
+    <Stack.Navigator
+      id="RootAuthenticatedMain"
+      key={`auth-main-${uid}`}
+      screenOptions={{ headerShown: false }}
+    >
+      <Stack.Screen name="MainTabs" component={RootTabs} />
+      <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Interests" component={InterestsScreen} />
       <Stack.Screen name="Gallery" component={GalleryScreen} />
       <Stack.Screen name="Affiliations" component={AffiliationsScreen} />

@@ -1,4 +1,5 @@
 // src/navigation/HomeStack.tsx
+import { View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import MainHomeScreen from '../screens/MainHomeScreen';
 import NearbySearchScreen from '../screens/NearbySearchScreen';
@@ -17,7 +18,7 @@ const Stack = createNativeStackNavigator<HomeStackParamList>();
 
 export default function HomeStack() {
   return (
-    <>
+    <View style={{ flex: 1 }}>
       <LiveLocationTracker />
       <Stack.Navigator
         id="HomeStack"
@@ -29,6 +30,6 @@ export default function HomeStack() {
         <Stack.Screen name="ProfileDetail" component={ProfileDetailScreen} />
         <Stack.Screen name="ProfileGallery" component={ProfileGalleryScreen} />
       </Stack.Navigator>
-    </>
+    </View>
   );
 }

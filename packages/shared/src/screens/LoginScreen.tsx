@@ -122,28 +122,26 @@ export default function LoginScreen({ navigation }: any) {
       const profile: any = await getUserProfile(user.uid);
 
       if (!profile) {
-        navigation.navigate('CompleteProfile', {
-          uid: user.uid,
-          email: user.email ?? trimmedEmail,
-        });
+        Keyboard.dismiss();
+        setTimeout(() => {
+          navigation.reset({
+            index: 0,
+            routes: [
+              {
+                name: 'CompleteProfile',
+                params: {
+                  uid: user.uid,
+                  email: user.email ?? trimmedEmail,
+                },
+              },
+            ],
+          });
+        }, 150);
         return;
       }
 
-      // 🔹 ANDROID: si no tiene phone o no está verificado → flujo obligatorio SMS
-      // if (
-      //   Platform.OS === 'android' &&
-      //   (!profile.phone || !profile.phoneVerified)
-      // ) {
-      //   navigation.navigate('PhoneVerification', {
-      //     uid: user.uid,
-      //     phone: profile.phone ?? '',
-      //   });
-      //   return;
-      // }
-
       const complete = await isProfileComplete(user.uid);
 
-      // 👇 antes de navegar
       Keyboard.dismiss();
 
       setTimeout(() => {
@@ -161,7 +159,7 @@ export default function LoginScreen({ navigation }: any) {
                 params: {
                   uid: user.uid,
                   email: user.email ?? trimmedEmail,
-                  inputNonce: Date.now(), // 🔥 clave
+                  inputNonce: Date.now(),
                 },
               },
             ],
@@ -358,13 +356,13 @@ export default function LoginScreen({ navigation }: any) {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() =>
-                navigation.navigate('IntroVideo', { preview: true })
+                navigation.navigate('IntroVideo', { preview: false })
               }
             >
               <Text
                 style={[styles.linkSmall, { textDecorationLine: 'underline' }]}
               >
-                Watch intro video
+                View registration guide
               </Text>
             </TouchableOpacity>
           </View>

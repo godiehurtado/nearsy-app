@@ -28,7 +28,8 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
 
     const now = Date.now();
 
-    await (firestoreDb as any)
+    const db = firestoreDb as any;
+    await db
       .collection('users')
       .doc(uid)
       .set(

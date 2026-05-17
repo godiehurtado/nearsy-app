@@ -1,6 +1,8 @@
 // RegisterScreen.tsx
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRoute } from '@react-navigation/native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import {
   View,
   Text,
@@ -14,6 +16,7 @@ import {
   Linking,
   KeyboardAvoidingView,
   ScrollView,
+  TextInput as RNTextInput,
   ActivityIndicator,
   FlatList,
 } from 'react-native';
@@ -86,14 +89,64 @@ const AMERICA_COUNTRIES: CountryPhoneOption[] = [
   { code: 'VE', name: 'Venezuela', dialCode: '+58', flag: '🇻🇪' },
 ];
 
+const REGISTRATION_GUIDE_STEPS = [
+  {
+    title: 'Start with your email',
+    description: 'Enter the email address you want to use for Nearsy.',
+  },
+  {
+    title: 'Confirm your email',
+    description: 'Type your email again to make sure there are no mistakes.',
+  },
+  {
+    title: 'Add your phone number',
+    description: 'Select your country code and enter your mobile number.',
+  },
+  {
+    title: 'Create a secure password',
+    description: 'Use at least 8 characters, including letters and numbers.',
+  },
+  {
+    title: 'Confirm your password',
+    description: 'Type the same password again.',
+  },
+  {
+    title: 'Select your birth year',
+    description: 'This helps us confirm you meet the minimum age requirement.',
+  },
+  {
+    title: 'Accept the terms',
+    description: 'Review and accept the terms to create your account.',
+  },
+  {
+    title: 'Finish registration',
+    description: 'Tap Register and then verify your email.',
+  },
+];
+
 export default function RegisterScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
+
+  const route = useRoute<any>();
+  const shouldShowGuide = route?.params?.showGuide === true;
+
+  const scrollRef = useRef<ScrollView | null>(null);
+
+  const emailInputRef = useRef<RNTextInput | null>(null);
+  const confirmEmailInputRef = useRef<RNTextInput | null>(null);
+  const phoneInputRef = useRef<RNTextInput | null>(null);
+  const passwordInputRef = useRef<RNTextInput | null>(null);
+  const confirmPasswordInputRef = useRef<RNTextInput | null>(null);
+
+  const stepYPositions = useRef<Record<number, number>>({});
 
   const [email, setEmail] = useState('');
   const [confirmEmail, setConfirmEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [phone, setPhone] = useState('');
+  const [guideVisible, setGuideVisible] = useState(shouldShowGuide);
+  const [guideStep, setGuideStep] = useState(0);
 
   const [selectedCountry, setSelectedCountry] = useState<CountryPhoneOption>(
     AMERICA_COUNTRIES.find((c) => c.code === 'US') || AMERICA_COUNTRIES[0],
@@ -180,6 +233,91 @@ export default function RegisterScreen({ navigation }: any) {
     if (!fullPhone) return false;
     return /^\+[1-9]\d{7,14}$/.test(fullPhone);
   };
+
+  const guideChecks = useMemo(() => {
+    const emailOk = isValidEmail(email);
+    const confirmEmailOk =
+      emailOk &&
+      confirmEmail.trim().toLowerCase() === email.trim().toLowerCase();
+
+    const passwordOk = isStrongPassword(password);
+    const confirmPasswordOk = passwordOk && confirmPassword === password;
+
+    const birthYearOk = birthYear !== null && currentYear - birthYear >= 14;
+
+    return [
+      emailOk,
+      confirmEmailOk,
+      isValidPhone(
+        buildFullPhoneNumber(
+          selectedCountry.dialCode,
+          sanitizePhoneNumber(phone),
+        ),
+      ),
+      passwordOk,
+      confirmPasswordOk,
+      birthYearOk,
+      acceptedTerms,
+      false,
+    ];
+  }, [
+    email,
+    confirmEmail,
+    phone,
+    selectedCountry,
+    password,
+    confirmPassword,
+    birthYear,
+    currentYear,
+    acceptedTerms,
+  ]);
+
+  useEffect(() => {
+    if (!guideVisible) return;
+
+    const isCurrentStepComplete = guideChecks[guideStep];
+
+    if (!isCurrentStepComplete) return;
+    if (guideStep >= REGISTRATION_GUIDE_STEPS.length - 1) return;
+
+    const timeout = setTimeout(() => {
+      setGuideStep((prev) =>
+        Math.min(prev + 1, REGISTRATION_GUIDE_STEPS.length - 1),
+      );
+    }, 450);
+
+    return () => clearTimeout(timeout);
+  }, [guideVisible, guideStep, guideChecks]);
+
+  useEffect(() => {
+    if (!guideVisible) return;
+
+    const y = stepYPositions.current[guideStep];
+
+    const timeout = setTimeout(() => {
+      if (typeof y === 'number') {
+        scrollRef.current?.scrollTo({
+          y: Math.max(y - 220, 0),
+          animated: true,
+        });
+      }
+
+      const inputRefs: Record<number, React.RefObject<RNTextInput | null>> = {
+        0: emailInputRef,
+        1: confirmEmailInputRef,
+        2: phoneInputRef,
+        3: passwordInputRef,
+        4: confirmPasswordInputRef,
+      };
+
+      inputRefs[guideStep]?.current?.focus();
+    }, 220);
+
+    return () => clearTimeout(timeout);
+  }, [guideStep, guideVisible]);
+
+  const isGuideFieldActive = (step: number) =>
+    guideVisible && guideStep === step;
 
   // Handlers con validaciones en vivo
   const handleEmailChange = (value: string) => {
@@ -282,8 +420,7 @@ export default function RegisterScreen({ navigation }: any) {
       ? buildFullPhoneNumber(selectedCountry.dialCode, localPhone)
       : '';
 
-    // ✅ Teléfono opcional en TODAS las plataformas
-    if (normalizedPhone && !isValidPhone(normalizedPhone)) {
+    if (!isValidPhone(normalizedPhone)) {
       Alert.alert(
         'Invalid phone number',
         'If you provide a phone number, please select your country code and enter a valid mobile number.',
@@ -401,17 +538,29 @@ export default function RegisterScreen({ navigation }: any) {
           contentContainerStyle={[
             styles.container,
             {
-              paddingTop: insets.top + 20,
+              paddingTop: insets.top + (guideVisible ? 170 : 20),
               paddingBottom: insets.bottom + 40,
             },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          ref={scrollRef}
         >
           <Text style={styles.title}>Create Account</Text>
 
           {/* Email */}
-          <View style={styles.fieldGroup}>
+          <View
+            onLayout={(event) => {
+              stepYPositions.current[0] = event.nativeEvent.layout.y;
+            }}
+            style={[
+              styles.fieldGroup,
+              guideVisible &&
+                !isGuideFieldActive(0) &&
+                styles.guideInactiveField,
+              isGuideFieldActive(0) && styles.guideActiveField,
+            ]}
+          >
             <Text style={styles.fieldLabel}>Email</Text>
             <View style={styles.inputContainer}>
               <Ionicons
@@ -432,13 +581,25 @@ export default function RegisterScreen({ navigation }: any) {
                 autoComplete="off"
                 textContentType="none"
                 importantForAutofill="no"
+                ref={emailInputRef}
               />
             </View>
             {emailError && <Text style={styles.errorText}>{emailError}</Text>}
           </View>
 
           {/* Confirm Email */}
-          <View style={styles.fieldGroup}>
+          <View
+            onLayout={(event) => {
+              stepYPositions.current[1] = event.nativeEvent.layout.y;
+            }}
+            style={[
+              styles.fieldGroup,
+              guideVisible &&
+                !isGuideFieldActive(1) &&
+                styles.guideInactiveField,
+              isGuideFieldActive(1) && styles.guideActiveField,
+            ]}
+          >
             <Text style={styles.fieldLabel}>Confirm Email</Text>
             <View style={styles.inputContainer}>
               <Ionicons
@@ -459,6 +620,7 @@ export default function RegisterScreen({ navigation }: any) {
                 autoComplete="off"
                 textContentType="none"
                 importantForAutofill="no"
+                ref={confirmEmailInputRef}
               />
             </View>
             {confirmEmailError && (
@@ -467,8 +629,19 @@ export default function RegisterScreen({ navigation }: any) {
           </View>
 
           {/* Phone */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Phone number (optional)</Text>
+          <View
+            onLayout={(event) => {
+              stepYPositions.current[2] = event.nativeEvent.layout.y;
+            }}
+            style={[
+              styles.fieldGroup,
+              guideVisible &&
+                !isGuideFieldActive(2) &&
+                styles.guideInactiveField,
+              isGuideFieldActive(2) && styles.guideActiveField,
+            ]}
+          >
+            <Text style={styles.fieldLabel}>Phone number</Text>
 
             <View style={styles.phoneContainer}>
               <TouchableOpacity
@@ -493,9 +666,7 @@ export default function RegisterScreen({ navigation }: any) {
                 <TextInput
                   style={styles.input}
                   placeholder={
-                    Platform.OS === 'android'
-                      ? 'Phone number (optional)'
-                      : 'Phone number (optional)'
+                    Platform.OS === 'android' ? 'Phone number' : 'Phone number'
                   }
                   placeholderTextColor="#9CA3AF"
                   keyboardType="phone-pad"
@@ -507,17 +678,29 @@ export default function RegisterScreen({ navigation }: any) {
                   autoComplete="off"
                   textContentType="none"
                   importantForAutofill="no"
+                  ref={phoneInputRef}
                 />
               </View>
             </View>
 
             <Text style={styles.helperText}>
-              Optional. Select your country and enter your mobile number.
+              Select your country and enter a valid mobile number.
             </Text>
           </View>
 
           {/* Password */}
-          <View style={styles.fieldGroup}>
+          <View
+            onLayout={(event) => {
+              stepYPositions.current[3] = event.nativeEvent.layout.y;
+            }}
+            style={[
+              styles.fieldGroup,
+              guideVisible &&
+                !isGuideFieldActive(3) &&
+                styles.guideInactiveField,
+              isGuideFieldActive(3) && styles.guideActiveField,
+            ]}
+          >
             <Text style={styles.fieldLabel}>Password</Text>
             <View style={styles.inputContainer}>
               <Ionicons
@@ -533,6 +716,7 @@ export default function RegisterScreen({ navigation }: any) {
                 secureTextEntry={!showPassword}
                 value={password}
                 onChangeText={handlePasswordChange}
+                ref={passwordInputRef}
               />
               <TouchableOpacity
                 onPress={() => setShowPassword((prev) => !prev)}
@@ -551,7 +735,18 @@ export default function RegisterScreen({ navigation }: any) {
           </View>
 
           {/* Confirm Password */}
-          <View style={styles.fieldGroup}>
+          <View
+            onLayout={(event) => {
+              stepYPositions.current[4] = event.nativeEvent.layout.y;
+            }}
+            style={[
+              styles.fieldGroup,
+              guideVisible &&
+                !isGuideFieldActive(4) &&
+                styles.guideInactiveField,
+              isGuideFieldActive(4) && styles.guideActiveField,
+            ]}
+          >
             <Text style={styles.fieldLabel}>Confirm Password</Text>
             <View style={styles.inputContainer}>
               <Ionicons
@@ -567,6 +762,7 @@ export default function RegisterScreen({ navigation }: any) {
                 secureTextEntry={!showConfirmPassword}
                 value={confirmPassword}
                 onChangeText={handleConfirmPasswordChange}
+                ref={confirmPasswordInputRef}
               />
               <TouchableOpacity
                 onPress={() => setShowConfirmPassword((prev) => !prev)}
@@ -585,7 +781,19 @@ export default function RegisterScreen({ navigation }: any) {
           </View>
 
           {/* Birth year */}
-          <View style={[styles.fieldGroup, styles.ageRow]}>
+          <View
+            onLayout={(event) => {
+              stepYPositions.current[5] = event.nativeEvent.layout.y;
+            }}
+            style={[
+              styles.fieldGroup,
+              styles.ageRow,
+              guideVisible &&
+                !isGuideFieldActive(5) &&
+                styles.guideInactiveField,
+              isGuideFieldActive(5) && styles.guideActiveField,
+            ]}
+          >
             <View style={styles.labelRow}>
               <Ionicons name="calendar" size={18} color="#999" />
               <Text style={styles.fieldLabel}>Birth year *</Text>
@@ -608,7 +816,18 @@ export default function RegisterScreen({ navigation }: any) {
           </View>
 
           {/* Terms and Conditions */}
-          <View style={styles.termsRow}>
+          <View
+            onLayout={(event) => {
+              stepYPositions.current[6] = event.nativeEvent.layout.y;
+            }}
+            style={[
+              styles.termsRow,
+              guideVisible &&
+                !isGuideFieldActive(6) &&
+                styles.guideInactiveField,
+              isGuideFieldActive(6) && styles.guideActiveField,
+            ]}
+          >
             <TouchableOpacity
               style={styles.checkbox}
               onPress={() => setAcceptedTerms((prev) => !prev)}
@@ -633,19 +852,28 @@ export default function RegisterScreen({ navigation }: any) {
             </Text>
           </View>
 
-          <TouchableOpacity
-            style={[styles.button, submitting && { opacity: 0.7 }]}
-            onPress={handleRegister}
-            disabled={submitting}
-            activeOpacity={0.85}
+          <View
+            onLayout={(event) => {
+              stepYPositions.current[7] = event.nativeEvent.layout.y;
+            }}
           >
-            {submitting ? (
-              <ActivityIndicator color="#1A2B3C" />
-            ) : (
-              <Text style={styles.buttonText}>Register</Text>
-            )}
-          </TouchableOpacity>
-
+            <TouchableOpacity
+              style={[
+                styles.button,
+                submitting && { opacity: 0.7 },
+                isGuideFieldActive(7) && styles.guideActiveButton,
+              ]}
+              onPress={handleRegister}
+              disabled={submitting}
+              activeOpacity={0.85}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#1A2B3C" />
+              ) : (
+                <Text style={styles.buttonText}>Register</Text>
+              )}
+            </TouchableOpacity>
+          </View>
           {ENABLE_SOCIAL_LOGIN ? null : null}
 
           <TouchableOpacity onPress={() => navigation.navigate('Login')}>
@@ -653,6 +881,33 @@ export default function RegisterScreen({ navigation }: any) {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {guideVisible && (
+        <Animated.View
+          entering={FadeInDown.duration(350)}
+          style={[styles.floatingGuideCard, { top: insets.top + 10 }]}
+        >
+          <View style={styles.guideHeader}>
+            <View style={styles.guideBadge}>
+              <Text style={styles.guideBadgeText}>
+                {guideStep + 1}/{REGISTRATION_GUIDE_STEPS.length}
+              </Text>
+            </View>
+
+            <TouchableOpacity onPress={() => setGuideVisible(false)}>
+              <Text style={styles.guideSkip}>Skip guide</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.guideTitle}>
+            {REGISTRATION_GUIDE_STEPS[guideStep].title}
+          </Text>
+
+          <Text style={styles.guideDescription}>
+            {REGISTRATION_GUIDE_STEPS[guideStep].description}
+          </Text>
+        </Animated.View>
+      )}
 
       {/* Birth year modal */}
       <Modal
@@ -1082,5 +1337,98 @@ const styles = StyleSheet.create({
   yearTextSelected: {
     color: '#3B5A85',
     fontWeight: '800',
+  },
+
+  guideCard: {
+    width: '100%',
+    backgroundColor: '#EEF4FA',
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#ADCBE3',
+  },
+  guideHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  guideBadge: {
+    backgroundColor: '#3B5A85',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  guideBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  guideSkip: {
+    color: '#3B5A85',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  guideTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  guideDescription: {
+    fontSize: 13,
+    color: '#4B5563',
+    lineHeight: 18,
+  },
+  guideNextButton: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    backgroundColor: '#3B5A85',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  guideNextText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  guideActiveButton: {
+    borderWidth: 2,
+    borderColor: '#3B5A85',
+  },
+
+  floatingGuideCard: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    zIndex: 50,
+    backgroundColor: '#EEF4FA',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#ADCBE3',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    elevation: 10,
+  },
+
+  guideInactiveField: {
+    opacity: 0.45,
+  },
+  guideActiveField: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 10,
+    borderWidth: 2,
+    borderColor: '#3B5A85',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 8,
   },
 });
