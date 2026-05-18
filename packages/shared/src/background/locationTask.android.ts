@@ -24,7 +24,7 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
     if (!uid) return;
 
     const fix = locations[locations.length - 1];
-    const { latitude, longitude } = fix.coords;
+    const { latitude, longitude, accuracy } = fix.coords;
 
     const now = Date.now();
 
@@ -34,7 +34,12 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
       .doc(uid)
       .set(
         {
-          location: { lat: latitude, lng: longitude, updatedAt: now },
+          location: {
+            lat: latitude,
+            lng: longitude,
+            updatedAt: now,
+            accuracy: accuracy ?? null,
+          },
           updatedAt: now,
           lastBgUpdateAt: now,
         },

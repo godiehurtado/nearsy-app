@@ -134,6 +134,11 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
       .map((item, idx) => ({ item, idx }))
       .filter(({ item }) => item.category === cat);
 
+  const getAffiliationsFieldName = () =>
+    mode === 'professional'
+      ? 'professionalAffiliations'
+      : 'personalAffiliations';
+
   // Cargar perfil + afiliaciones existentes
   useEffect(() => {
     const initialMode: ProfileMode =
@@ -226,7 +231,8 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
     }
 
     const exists = affiliations.some(
-      (a) =>
+      (a, idx) =>
+        idx !== editingItemIndex &&
         a.category === editingCategory &&
         a.label.toLowerCase() === trimmed.toLowerCase(),
     );
@@ -265,6 +271,55 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
     setTempImageUrl(null);
   };
 
+  const handleDeleteAffiliation = async (index: number) => {
+    const item = affiliations[index];
+    if (!item) return;
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Alert.alert(
+        'Delete affiliation',
+        `Are you sure you want to delete "${item.label}"?`,
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: () => resolve(true),
+          },
+        ],
+      );
+    });
+
+    if (!confirmed) return;
+
+    try {
+      setIsSaving(true);
+
+      const uid = route?.params?.uid || firebaseAuth.currentUser?.uid;
+      if (!uid) throw new Error('User not authenticated.');
+
+      const next = affiliations.filter((_, idx) => idx !== index);
+
+      await setDoc(
+        doc(firestoreDb, 'users', uid),
+        {
+          [getAffiliationsFieldName()]: next,
+          updatedAt: new Date(),
+        },
+        { merge: true },
+      );
+
+      setAffiliations(next);
+    } catch (e: any) {
+      if (__DEV__) {
+        console.error('[Affiliations] Error deleting affiliation', e);
+      }
+      Alert.alert('Error', e?.message || 'Could not delete affiliation.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSaveAll = async () => {
     try {
       setIsSaving(true);
@@ -301,10 +356,7 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
         }),
       );
 
-      const fieldName =
-        mode === 'professional'
-          ? 'professionalAffiliations'
-          : 'personalAffiliations';
+      const fieldName = getAffiliationsFieldName();
 
       // 🔥 CLAVE: setDoc con merge
       await setDoc(
@@ -384,6 +436,7 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
                         key={`${cat.key}-${idx}`}
                         style={styles.affiliationCard}
                         onPress={() => openEditorForCategory(cat.key, idx)}
+                        onLongPress={() => handleDeleteAffiliation(idx)}
                         activeOpacity={0.9}
                       >
                         <View style={styles.affiliationCircle}>

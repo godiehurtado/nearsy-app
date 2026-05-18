@@ -50,7 +50,12 @@ type UserDoc = {
   occupation?: string;
   company?: string;
   mode?: 'personal' | 'professional';
-  location?: { lat: number; lng: number; updatedAt?: number };
+  location?: {
+    lat: number;
+    lng: number;
+    updatedAt?: number;
+    accuracy?: number | null;
+  };
 
   email?: string;
   phone?: string;
@@ -137,6 +142,8 @@ function isBlockedBetween(
 async function getUsablePosition(): Promise<{
   lat: number;
   lng: number;
+  accuracy?: number | null;
+  timestamp?: number;
 } | null> {
   const perm = await Location.getForegroundPermissionsAsync();
 
@@ -161,16 +168,31 @@ async function getUsablePosition(): Promise<{
     accuracy: Location.Accuracy.Highest,
   });
   if (now?.coords) {
-    return { lat: now.coords.latitude, lng: now.coords.longitude };
+    return {
+      lat: now.coords.latitude,
+      lng: now.coords.longitude,
+      accuracy: now.coords.accuracy,
+      timestamp: now.timestamp,
+    };
   }
 
   // granted
   const last = await Location.getLastKnownPositionAsync();
   if (last?.coords) {
-    return { lat: last.coords.latitude, lng: last.coords.longitude };
+    return {
+      lat: last.coords.latitude,
+      lng: last.coords.longitude,
+      accuracy: last.coords.accuracy,
+      timestamp: last.timestamp,
+    };
   }
 
-  return { lat: now.coords.latitude, lng: now.coords.longitude };
+  return {
+    lat: now.coords.latitude,
+    lng: now.coords.longitude,
+    accuracy: now.coords.accuracy,
+    timestamp: now.timestamp,
+  };
 }
 
 async function getBlockedUserIds(uid: string): Promise<Set<string>> {
@@ -281,10 +303,10 @@ export default function NearbySearchScreen() {
       const nearby: NearbyItem[] = [];
 
       snap.forEach((d) => {
+        const data = d.data() as UserDoc;
+
         if (d.id === me) return;
         if (blockedUserIds.has(d.id)) return;
-
-        const data = d.data() as UserDoc;
 
         // 🔒 BLOQUEO MUTUO POR EMAIL / TELÉFONO
         const blocked = isBlockedBetween(
@@ -319,11 +341,12 @@ export default function NearbySearchScreen() {
         if (!myPos) return;
 
         const distM = distanceMeters(myPos, { lat: loc.lat, lng: loc.lng });
+        const distanceFt = Math.round(distM * FEET_PER_METER);
         if (distM <= MAX_METERS) {
           nearby.push({
             ...data,
             uid: d.id,
-            distanceFt: Math.round(distM * FEET_PER_METER),
+            distanceFt,
           });
         }
       });

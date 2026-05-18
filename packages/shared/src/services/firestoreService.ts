@@ -18,7 +18,14 @@ export type UserProfile = {
   realName: string;
 
   status?: string;
-  location?: { lat: number; lng: number; updatedAt: number } | null;
+  location?:
+    | {
+        lat: number;
+        lng: number;
+        updatedAt: number;
+        accuracy?: number | null;
+      }
+    | null;
 
   mode?: 'personal' | 'professional';
   occupation?: string;

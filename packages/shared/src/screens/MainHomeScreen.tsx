@@ -9,7 +9,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  Platform,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -117,10 +116,7 @@ export default function MainHomeScreen({ navigation }: Props) {
           if (perm.status !== 'granted') return;
 
           const pos = await Location.getCurrentPositionAsync({
-            accuracy:
-              Platform.OS === 'android'
-                ? Location.Accuracy.Highest
-                : Location.Accuracy.High,
+            accuracy: Location.Accuracy.Highest,
           });
 
           if (cancelled) return;
@@ -130,6 +126,7 @@ export default function MainHomeScreen({ navigation }: Props) {
               lat: pos.coords.latitude,
               lng: pos.coords.longitude,
               updatedAt: Date.now(),
+              accuracy: pos.coords.accuracy ?? null,
             },
           });
         } catch {
@@ -157,10 +154,7 @@ export default function MainHomeScreen({ navigation }: Props) {
         }
 
         const pos = await Location.getCurrentPositionAsync({
-          accuracy:
-            Platform.OS === 'android'
-              ? Location.Accuracy.Highest
-              : Location.Accuracy.High,
+          accuracy: Location.Accuracy.Highest,
         });
 
         await updateUserProfilePartial(uid, {
@@ -168,6 +162,7 @@ export default function MainHomeScreen({ navigation }: Props) {
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
             updatedAt: Date.now(),
+            accuracy: pos.coords.accuracy ?? null,
           },
         });
 
