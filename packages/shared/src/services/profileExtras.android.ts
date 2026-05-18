@@ -1,5 +1,4 @@
 // Android profile extras backed by RNFirebase Firestore.
-import { Platform } from 'react-native';
 import { firestoreDb } from '../config/firebaseConfig.android';
 
 import type { SocialLinks, GalleryPhoto } from '../types/profile';
@@ -17,17 +16,7 @@ const fieldFor = (mode: ProfileMode, base: 'socialLinks' | 'gallery') => {
   return mode === 'personal' ? 'personalGallery' : 'professionalGallery';
 };
 
-function logFirestoreSource(functionName: string, op: string) {
-  console.warn('[FirestoreSource]', {
-    service: 'profileExtras.android',
-    function: functionName,
-    platform: Platform.OS,
-    op,
-  });
-}
-
-const userDocRef = (uid: string, functionName: string) => {
-  logFirestoreSource(functionName, 'collection/doc');
+const userDocRef = (uid: string) => {
   return (firestoreDb as any).collection('users').doc(uid);
 };
 
@@ -40,8 +29,7 @@ export async function getSocialLinks(
   uid: string,
   mode: ProfileMode,
 ): Promise<SocialLinks> {
-  logFirestoreSource('getSocialLinks', 'get');
-  const snap = await userDocRef(uid, 'getSocialLinks').get();
+  const snap = await userDocRef(uid).get();
   if (!snapshotExists(snap)) return {};
 
   const data = snap.data() as UserProfile | undefined;
@@ -57,8 +45,7 @@ export async function setSocialLinks(
 ): Promise<void> {
   const key = fieldFor(mode, 'socialLinks');
 
-  logFirestoreSource('setSocialLinks', 'set');
-  await userDocRef(uid, 'setSocialLinks').set(
+  await userDocRef(uid).set(
     {
       [key]: links,
       updatedAt: Date.now(),
@@ -71,8 +58,7 @@ export async function getGallery(
   uid: string,
   mode: ProfileMode,
 ): Promise<GalleryPhoto[]> {
-  logFirestoreSource('getGallery', 'get');
-  const snap = await userDocRef(uid, 'getGallery').get();
+  const snap = await userDocRef(uid).get();
   if (!snapshotExists(snap)) return [];
 
   const data = snap.data() as UserProfile | undefined;
@@ -88,8 +74,7 @@ export async function setGallery(
 ): Promise<void> {
   const key = fieldFor(mode, 'gallery');
 
-  logFirestoreSource('setGallery', 'set');
-  await userDocRef(uid, 'setGallery').set(
+  await userDocRef(uid).set(
     {
       [key]: photos,
       updatedAt: Date.now(),

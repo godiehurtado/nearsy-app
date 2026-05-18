@@ -10,15 +10,6 @@ type RegisterResult =
   | { ok: true; token: string }
   | { ok: false; reason: string };
 
-function logFirestoreSource(functionName: string, op: string) {
-  console.warn('[FirestoreSource]', {
-    service: 'pushTokens.android',
-    function: functionName,
-    platform: Platform.OS,
-    op,
-  });
-}
-
 export async function registerPushToken(): Promise<RegisterResult> {
   try {
     const user = firebaseAuth.currentUser;
@@ -57,12 +48,9 @@ export async function registerPushToken(): Promise<RegisterResult> {
     const stillUser = firebaseAuth.currentUser;
     if (!stillUser) return { ok: false, reason: 'user-changed' };
 
-    logFirestoreSource('registerPushToken', 'collection/doc');
     const userRef = firestoreDb.collection('users').doc(stillUser.uid);
-    logFirestoreSource('registerPushToken', 'collection/doc');
     const tokenRef = userRef.collection('pushTokens').doc(token);
 
-    logFirestoreSource('registerPushToken', 'set');
     await tokenRef.set(
       {
         token,
@@ -89,12 +77,9 @@ export async function unregisterPushToken(token?: string) {
     const user = firebaseAuth.currentUser;
     if (!user || !token) return;
 
-    logFirestoreSource('unregisterPushToken', 'collection/doc');
     const userRef = firestoreDb.collection('users').doc(user.uid);
-    logFirestoreSource('unregisterPushToken', 'collection/doc');
     const tokenRef = userRef.collection('pushTokens').doc(token);
 
-    logFirestoreSource('unregisterPushToken', 'delete');
     await tokenRef.delete();
   } catch (err) {
     if (__DEV__) {

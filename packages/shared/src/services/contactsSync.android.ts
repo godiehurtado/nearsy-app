@@ -2,7 +2,6 @@
 import * as Contacts from 'expo-contacts';
 import * as Crypto from 'expo-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
 
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig.android';
 
@@ -23,17 +22,7 @@ function normalizeId(value?: string | null): string | null {
   return value.replace(/\s+/g, '').toLowerCase();
 }
 
-function logFirestoreSource(functionName: string, op: string) {
-  console.warn('[FirestoreSource]', {
-    service: 'contactsSync.android',
-    function: functionName,
-    platform: Platform.OS,
-    op,
-  });
-}
-
-function contactHashesCollection(uid: string, functionName: string) {
-  logFirestoreSource(functionName, 'collection/doc/collection');
+function contactHashesCollection(uid: string) {
   return (firestoreDb as any)
     .collection('users')
     .doc(uid)
@@ -41,8 +30,7 @@ function contactHashesCollection(uid: string, functionName: string) {
 }
 
 async function purgeContactHashes(uid: string): Promise<void> {
-  const colRef = contactHashesCollection(uid, 'purgeContactHashes');
-  logFirestoreSource('purgeContactHashes', 'get');
+  const colRef = contactHashesCollection(uid);
   const snap = await colRef.get();
 
   if (snap.empty) return;
@@ -99,7 +87,7 @@ export async function syncContactsSafe(): Promise<boolean> {
         }
       }
 
-      const colRef = contactHashesCollection(user.uid, 'syncContactsSafe');
+      const colRef = contactHashesCollection(user.uid);
 
       try {
         await purgeContactHashes(user.uid);
@@ -114,7 +102,6 @@ export async function syncContactsSafe(): Promise<boolean> {
           raw,
         );
 
-        logFirestoreSource('syncContactsSafe', 'doc');
         const hashRef = colRef.doc(hash);
 
         batch.set(hashRef, { hash, createdAt: Date.now() }, { merge: true });

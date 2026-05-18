@@ -1,5 +1,4 @@
 // src/services/firestoreService.ts  ✅ Web Firestore + RNFirebase Auth
-import { Platform } from 'react-native';
 import { firestoreDb } from '../config/firebaseConfig';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { isProfileDocumentComplete } from '../utils/profileDocumentComplete';
@@ -51,25 +50,14 @@ export type UserProfile = {
   photos?: GalleryPhoto[];
 };
 
-function logFirestoreSource(functionName: string, op: string) {
-  console.warn('[FirestoreSource]', {
-    service: 'firestoreService.ios',
-    function: functionName,
-    platform: Platform.OS,
-    op,
-  });
-}
-
 /** Crea un perfil base en Firestore (si no existe) */
 export const createUserProfile = async (
   uid: string,
   data: { email: string; phone?: string; birthYear: number },
 ) => {
   try {
-    logFirestoreSource('createUserProfile', 'doc');
     const ref = doc(firestoreDb, 'users', uid);
 
-    logFirestoreSource('createUserProfile', 'setDoc');
     await setDoc(
       ref,
       {
@@ -130,10 +118,8 @@ export async function updateUserAffiliations(
 
 async function upsertUserProfile(uid: string, patch: Record<string, any>) {
   try {
-    logFirestoreSource('upsertUserProfile', 'doc');
     const ref = doc(firestoreDb, 'users', uid);
 
-    logFirestoreSource('upsertUserProfile', 'setDoc');
     await setDoc(
       ref,
       {
@@ -165,9 +151,7 @@ export async function updateUserProfilePartial(
 }
 
 export const isProfileComplete = async (uid: string): Promise<boolean> => {
-  logFirestoreSource('isProfileComplete', 'doc');
   const ref = doc(firestoreDb, 'users', uid);
-  logFirestoreSource('isProfileComplete', 'getDoc');
   const snap = await getDoc(ref);
 
   if (!snap.exists()) return false;
@@ -176,9 +160,7 @@ export const isProfileComplete = async (uid: string): Promise<boolean> => {
 };
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-  logFirestoreSource('getUserProfile', 'doc');
   const ref = doc(firestoreDb, 'users', uid);
-  logFirestoreSource('getUserProfile', 'getDoc');
   const snap = await getDoc(ref);
 
   if (!snap.exists()) return null;
@@ -191,10 +173,8 @@ export const updateUserMode = async (
   mode: 'personal' | 'professional',
 ) => {
   try {
-    logFirestoreSource('updateUserMode', 'doc');
     const ref = doc(firestoreDb, 'users', uid);
 
-    logFirestoreSource('updateUserMode', 'setDoc');
     await setDoc(
       ref,
       {

@@ -1,25 +1,13 @@
 // Android account deletion backed by RNFirebase Auth/Firestore/Storage.
 import auth from '@react-native-firebase/auth';
-import { Platform } from 'react-native';
 import {
   firebaseAuth,
   firestoreDb,
   storageWeb,
 } from '../config/firebaseConfig.android';
 
-function logFirestoreSource(functionName: string, op: string) {
-  console.warn('[FirestoreSource]', {
-    service: 'accountDeletion.android',
-    function: functionName,
-    platform: Platform.OS,
-    op,
-  });
-}
-
 async function deleteFirestoreSubcollection(uid: string, sub: string) {
-  logFirestoreSource('deleteFirestoreSubcollection', 'collection/doc/collection');
   const colRef = (firestoreDb as any).collection('users').doc(uid).collection(sub);
-  logFirestoreSource('deleteFirestoreSubcollection', 'get');
   const snap = await colRef.get();
 
   if (snap.empty) return;
@@ -84,6 +72,5 @@ export async function deleteAccountAndData(options?: {
 
   await deleteFirestoreSubcollection(uid, 'contactHashes');
   await deleteStorageFolderRecursive(`users/${uid}`);
-  logFirestoreSource('deleteAccountAndData', 'collection/doc/delete');
   await (firestoreDb as any).collection('users').doc(uid).delete();
 }
