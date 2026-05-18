@@ -3,7 +3,7 @@
     "name": "Nearsy",
     "slug": "nearsy-android",
     "scheme": "nearsy",
-    "version": "1.0.9",
+    "version": "1.0.10",
     "orientation": "portrait",
     "icon": "../../packages/shared/src/assets/icon.png",
     "userInterfaceStyle": "light",
@@ -35,6 +35,7 @@
       "color": "#3B5A85"
     },
     "plugins": [
+      "./plugins/withAndroidGradleAutolinkingFix",
       "@react-native-firebase/app",
       "expo-dev-client",
       "expo-image-picker",
