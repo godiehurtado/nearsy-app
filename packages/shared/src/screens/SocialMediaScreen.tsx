@@ -14,7 +14,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { doc, setDoc } from 'firebase/firestore';
 
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import TopHeader from '../components/TopHeader';
@@ -125,17 +124,19 @@ export default function SocialMediaScreen() {
 
       const fieldName =
         mode === 'professional'
-          ? 'professionalSocialLinks'
-          : 'personalSocialLinks';
+          ? 'socialLinksProfessional'
+          : 'socialLinksPersonal';
 
-      await setDoc(
-        doc(firestoreDb, 'users', uid),
-        {
-          [fieldName]: links,
-          updatedAt: Date.now(),
-        },
-        { merge: true },
-      );
+      await firestoreDb
+        .collection('users')
+        .doc(uid)
+        .set(
+          {
+            [fieldName]: links,
+            updatedAt: Date.now(),
+          },
+          { merge: true },
+        );
 
       Alert.alert('Saved', 'Your social media has been updated.', [
         { text: 'OK', onPress: () => navigation.goBack() },

@@ -36,9 +36,6 @@ import {
   disableContactsSyncAndPurge,
 } from '../services/contactsSync';
 
-// ✅ Firestore Web SDK
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-
 type ProfileDoc = {
   profileImage?: string | null;
   topBarColor?: string;
@@ -218,9 +215,11 @@ export default function MoreScreen() {
 
         setUserEmail(firebaseAuth.currentUser?.email ?? '');
 
-        const snap = await getDoc(doc(firestoreDb, 'users', uid));
+        const snap = await firestoreDb.collection('users').doc(uid).get();
 
-        if (snap.exists()) {
+        const exists =
+          typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+        if (exists) {
           const data = snap.data() as ProfileDoc;
 
           // top bar
@@ -342,11 +341,10 @@ export default function MoreScreen() {
     try {
       setBgChanging(true);
 
-      await setDoc(
-        doc(firestoreDb, 'users', uid),
-        { bgVisible: next, updatedAt: Date.now() },
-        { merge: true },
-      );
+      await firestoreDb
+        .collection('users')
+        .doc(uid)
+        .set({ bgVisible: next, updatedAt: Date.now() }, { merge: true });
 
       if (next) {
         await startBackgroundLocation({ uid });
@@ -431,7 +429,10 @@ export default function MoreScreen() {
         updatedAt: Date.now(),
       };
 
-      await setDoc(doc(firestoreDb, 'users', uid), updateData, { merge: true });
+      await firestoreDb
+        .collection('users')
+        .doc(uid)
+        .set(updateData, { merge: true });
 
       setOriginalPhone(parsed.phone ?? '');
       Alert.alert('Saved', 'Your settings have been updated.');

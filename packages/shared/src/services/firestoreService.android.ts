@@ -1,5 +1,6 @@
 // src/services/firestoreService.android.ts ✅ RNFirebase Firestore
-import { firestoreDb } from '../config/firebaseConfig';
+import { Platform } from 'react-native';
+import { firestoreDb } from '../config/firebaseConfig.android';
 import { isProfileDocumentComplete } from '../utils/profileDocumentComplete';
 
 import {
@@ -51,7 +52,17 @@ export type UserProfile = {
 
 const now = () => Date.now();
 
-function userDoc(uid: string) {
+function logFirestoreSource(functionName: string, op: string) {
+  console.warn('[FirestoreSource]', {
+    service: 'firestoreService.android',
+    function: functionName,
+    platform: Platform.OS,
+    op,
+  });
+}
+
+function userDoc(uid: string, functionName: string) {
+  logFirestoreSource(functionName, 'collection/doc');
   return (firestoreDb as any).collection('users').doc(uid);
 }
 
@@ -60,7 +71,8 @@ export const createUserProfile = async (
   data: { email: string; phone?: string | null; birthYear: number },
 ) => {
   try {
-    await userDoc(uid).set(
+    logFirestoreSource('createUserProfile', 'set');
+    await userDoc(uid, 'createUserProfile').set(
       {
         email: data.email,
         phone: data.phone ?? null,
@@ -119,7 +131,8 @@ export async function updateUserAffiliations(
 
 async function upsertUserProfile(uid: string, patch: Record<string, any>) {
   try {
-    await userDoc(uid).set(
+    logFirestoreSource('upsertUserProfile', 'set');
+    await userDoc(uid, 'upsertUserProfile').set(
       {
         ...patch,
         updatedAt: now(),
@@ -149,7 +162,8 @@ export async function updateUserProfilePartial(
 }
 
 export const isProfileComplete = async (uid: string): Promise<boolean> => {
-  const snap = await userDoc(uid).get();
+  logFirestoreSource('isProfileComplete', 'get');
+  const snap = await userDoc(uid, 'isProfileComplete').get();
 
   if (!snap.exists) return false;
 
@@ -157,7 +171,8 @@ export const isProfileComplete = async (uid: string): Promise<boolean> => {
 };
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-  const snap = await userDoc(uid).get();
+  logFirestoreSource('getUserProfile', 'get');
+  const snap = await userDoc(uid, 'getUserProfile').get();
 
   if (!snap.exists) return null;
 
@@ -169,7 +184,8 @@ export const updateUserMode = async (
   mode: 'personal' | 'professional',
 ) => {
   try {
-    await userDoc(uid).set(
+    logFirestoreSource('updateUserMode', 'set');
+    await userDoc(uid, 'updateUserMode').set(
       {
         mode,
         updatedAt: now(),

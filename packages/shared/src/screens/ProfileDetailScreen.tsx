@@ -26,17 +26,6 @@ import type {
   AffiliationCategory,
 } from '../types/profile';
 
-// ✅ Firestore Web SDK
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  serverTimestamp,
-  setDoc,
-} from 'firebase/firestore';
-
 // ===== Perfil Firestore =====
 type ProfileDoc = {
   realName?: string;
@@ -257,12 +246,14 @@ export default function ProfileDetailScreen() {
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) return;
 
-    const ref = doc(firestoreDb, 'users', uid);
-
-    const unsub = onSnapshot(
-      ref,
+    const unsub = firestoreDb
+      .collection('users')
+      .doc(uid)
+      .onSnapshot(
       (snap) => {
-        if (snap.exists()) setMyProfile(snap.data() as ProfileDoc);
+        const exists =
+          typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+        if (exists) setMyProfile(snap.data() as ProfileDoc);
       },
       (error) => {
         if (__DEV__)
@@ -287,11 +278,12 @@ export default function ProfileDetailScreen() {
           return;
         }
 
-        const ref = doc(firestoreDb, 'users', uidp);
-        const snap = await getDoc(ref);
+        const snap = await firestoreDb.collection('users').doc(uidp).get();
 
         if (cancelled) return;
-        setP(snap.exists() ? (snap.data() as ProfileDoc) : null);
+        const exists =
+          typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+        setP(exists ? (snap.data() as ProfileDoc) : null);
       } catch (e: any) {
         if (__DEV__) console.error('[ProfileDetail] target get error:', e);
         if (!cancelled) {
@@ -399,22 +391,26 @@ export default function ProfileDetailScreen() {
               setActionBusy(true);
 
               // 1) guardar bloqueo para mi cuenta
-              await setDoc(
-                doc(firestoreDb, 'users', currentUid, 'blockedUsers', uidp),
-                {
-                  blockedUid: uidp,
-                  createdAt: serverTimestamp(),
-                  source: 'profile_detail',
-                },
-                { merge: true },
-              );
+              await firestoreDb
+                .collection('users')
+                .doc(currentUid)
+                .collection('blockedUsers')
+                .doc(uidp)
+                .set(
+                  {
+                    blockedUid: uidp,
+                    createdAt: Date.now(),
+                    source: 'profile_detail',
+                  },
+                  { merge: true },
+                );
 
               // 2) notificar al developer / moderación
-              await addDoc(collection(firestoreDb, 'moderationEvents'), {
+              await firestoreDb.collection('moderationEvents').add({
                 type: 'block',
                 actorUid: currentUid,
                 targetUid: uidp,
-                createdAt: serverTimestamp(),
+                createdAt: Date.now(),
                 source: 'profile_detail',
                 status: 'new',
               });
@@ -447,22 +443,22 @@ export default function ProfileDetailScreen() {
     try {
       setActionBusy(true);
 
-      await addDoc(collection(firestoreDb, 'reports'), {
+      await firestoreDb.collection('reports').add({
         type: 'user',
         reporterUid: currentUid,
         reportedUid: uidp,
         reason,
-        createdAt: serverTimestamp(),
+        createdAt: Date.now(),
         status: 'pending',
         source: 'profile_detail',
       });
 
-      await addDoc(collection(firestoreDb, 'moderationEvents'), {
+      await firestoreDb.collection('moderationEvents').add({
         type: 'report',
         actorUid: currentUid,
         targetUid: uidp,
         reason,
-        createdAt: serverTimestamp(),
+        createdAt: Date.now(),
         source: 'profile_detail',
         status: 'new',
       });

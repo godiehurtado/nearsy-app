@@ -7,7 +7,7 @@ import { makeRedirectUri, ResponseType } from 'expo-auth-session';
 import Constants from 'expo-constants';
 
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
-import { firebaseAuth } from '../config/firebaseConfig';
+import { firebaseAuth } from '../config/firebaseConfig.android';
 
 WebBrowser.maybeCompleteAuthSession();
 

@@ -2,7 +2,6 @@
 import { useEffect, useState } from 'react';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { useLiveLocation } from '../hooks/useLiveLocation';
-import { doc, onSnapshot } from 'firebase/firestore';
 
 type ProfileDoc = {
   visibility?: boolean; // ACTIVE/INACTIVE
@@ -19,9 +18,10 @@ export default function LiveLocationTracker() {
       return;
     }
 
-    const ref = doc(firestoreDb, 'users', uid);
-    const unsub = onSnapshot(
-      ref,
+    const unsub = firestoreDb
+      .collection('users')
+      .doc(uid)
+      .onSnapshot(
       (snap) => {
         const data = (snap.data() as ProfileDoc) ?? {};
         setActive(!!data.visibility);

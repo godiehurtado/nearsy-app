@@ -17,17 +17,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 
 import TopHeader from '../components/TopHeader';
-import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
+import { firebaseAuth } from '../config/firebaseConfig';
 import { updateUserProfilePartial } from '../services/firestoreService';
+import { dbOnUserSnapshot } from '../services/db';
 
 // 👇 servicio de contactos
 import {
   setContactsSyncEnabled,
   syncContactsSafe,
 } from '../services/contactsSync';
-
-// ✅ Web SDK Firestore listener
-import { doc, onSnapshot } from 'firebase/firestore';
 
 type ProfileDoc = {
   profileImage?: string | null;
@@ -58,7 +56,7 @@ export default function MainHomeScreen({ navigation }: Props) {
     return first || 'Unnamed';
   }, [profile.realName]);
 
-  // ✅ Suscripción al perfil (Web SDK)
+  // Perfil via platform db layer (Web SDK on iOS, RNFirebase on Android)
   useEffect(() => {
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) {
@@ -66,13 +64,11 @@ export default function MainHomeScreen({ navigation }: Props) {
       return;
     }
 
-    const ref = doc(firestoreDb, 'users', uid);
-
-    const unsub = onSnapshot(
-      ref,
-      (snap) => {
-        if (snap.exists()) {
-          setProfile((snap.data() as ProfileDoc) ?? {});
+    const unsub = dbOnUserSnapshot(
+      uid,
+      (data) => {
+        if (data) {
+          setProfile((data as ProfileDoc) ?? {});
         }
         setLoading(false);
       },

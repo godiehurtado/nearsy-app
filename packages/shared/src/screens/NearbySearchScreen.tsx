@@ -23,18 +23,6 @@ import { adjustColor } from '../utils/colors';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 
-// ✅ Firestore Web SDK
-import {
-  collection,
-  doc,
-  getDocs,
-  limit,
-  onSnapshot,
-  query,
-  where,
-  documentId,
-} from 'firebase/firestore';
-
 type UserDoc = {
   uid?: string;
   realName?: string;
@@ -174,9 +162,11 @@ async function getUsablePosition(): Promise<{
 }
 
 async function getBlockedUserIds(uid: string): Promise<Set<string>> {
-  const snap = await getDocs(
-    collection(firestoreDb, 'users', uid, 'blockedUsers'),
-  );
+  const snap = await firestoreDb
+    .collection('users')
+    .doc(uid)
+    .collection('blockedUsers')
+    .get();
   const ids = new Set<string>();
 
   snap.forEach((d) => {
@@ -219,12 +209,14 @@ export default function NearbySearchScreen() {
       return;
     }
 
-    const ref = doc(firestoreDb, 'users', uid);
-
-    const unsub = onSnapshot(
-      ref,
+    const unsub = firestoreDb
+      .collection('users')
+      .doc(uid)
+      .onSnapshot(
       (snap) => {
-        if (snap.exists()) {
+        const exists =
+          typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+        if (exists) {
           setProfile(snap.data() as ProfileDoc);
         }
         // NO apagues loading aquí: loadData también lo controla
@@ -268,14 +260,11 @@ export default function NearbySearchScreen() {
 
       setHasLocation(!!myPos);
 
-      // ✅ Firestore Web SDK query: solo visibles
-      const q = query(
-        collection(firestoreDb, 'users'),
-        where('visibility', '==', true),
-        limit(300),
-      );
-
-      const snap = await getDocs(q);
+      const snap = await firestoreDb
+        .collection('users')
+        .where('visibility', '==', true)
+        .limit(300)
+        .get();
 
       const now = Date.now();
       const nearby: NearbyItem[] = [];

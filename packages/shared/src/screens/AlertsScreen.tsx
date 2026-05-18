@@ -24,17 +24,6 @@ import type { RootTabsParamList } from '../navigation/RootTabs';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { registerPushToken } from '../services/pushTokens';
 
-// ✅ Web Firestore
-import {
-  collection,
-  doc,
-  getDocs,
-  limit as qLimit,
-  onSnapshot,
-  query,
-  where,
-} from 'firebase/firestore';
-
 type AlertKind = 'interest_nearby' | 'contact_nearby';
 
 type AlertItem = {
@@ -146,9 +135,11 @@ const LOCATION_FRESH_MS = 10 * 60 * 1000;
 const AUTO_REFRESH_MS = 30 * 1000;
 
 async function getBlockedUserIds(uid: string): Promise<Set<string>> {
-  const snap = await getDocs(
-    collection(firestoreDb, 'users', uid, 'blockedUsers'),
-  );
+  const snap = await firestoreDb
+    .collection('users')
+    .doc(uid)
+    .collection('blockedUsers')
+    .get();
   const ids = new Set<string>();
 
   snap.forEach((d) => {
@@ -188,11 +179,14 @@ export default function AlertsScreen() {
       return;
     }
 
-    const ref = doc(firestoreDb, 'users', uid);
-    const unsub = onSnapshot(
-      ref,
+    const unsub = firestoreDb
+      .collection('users')
+      .doc(uid)
+      .onSnapshot(
       (snap) => {
-        if (snap.exists()) {
+        const exists =
+          typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+        if (exists) {
           const data = (snap.data() as UserDoc) ?? {};
           if (typeof data.topBarColor === 'string' && data.topBarColor) {
             setTopColor(data.topBarColor);
@@ -229,9 +223,11 @@ export default function AlertsScreen() {
     }
 
     try {
-      const usersRef = collection(firestoreDb, 'users');
-      const q = query(usersRef, where('visibility', '==', true), qLimit(200));
-      const snap = await getDocs(q);
+      const snap = await firestoreDb
+        .collection('users')
+        .where('visibility', '==', true)
+        .limit(200)
+        .get();
 
       const myPoint = { lat: me.location.lat, lng: me.location.lng };
       const now = Date.now();

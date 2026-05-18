@@ -22,7 +22,6 @@ import * as ImagePicker from 'expo-image-picker';
 
 import TopHeader from '../components/TopHeader';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
-import { doc, setDoc } from 'firebase/firestore';
 import { getUserProfile } from '../services/firestoreService';
 import { uploadAffiliationImage } from '../services/storageService';
 
@@ -306,15 +305,16 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
           ? 'professionalAffiliations'
           : 'personalAffiliations';
 
-      // 🔥 CLAVE: setDoc con merge
-      await setDoc(
-        doc(firestoreDb, 'users', uid),
-        {
-          [fieldName]: withUploaded,
-          updatedAt: new Date(),
-        },
-        { merge: true },
-      );
+      await firestoreDb
+        .collection('users')
+        .doc(uid)
+        .set(
+          {
+            [fieldName]: withUploaded,
+            updatedAt: Date.now(),
+          },
+          { merge: true },
+        );
 
       setAffiliations(withUploaded);
 

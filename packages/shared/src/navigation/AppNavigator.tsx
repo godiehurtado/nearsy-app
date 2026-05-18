@@ -1,6 +1,6 @@
 // src/navigation/AppNavigator.tsx
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -15,8 +15,8 @@ import GalleryScreen from '../screens/GalleryScreen';
 import AffiliationsScreen from '../screens/AffiliationsScreen';
 import RootTabs from './RootTabs';
 
-import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { firebaseAuth } from '../config/firebaseConfig';
+import { dbGetUser, dbOnUserSnapshot } from '../services/db';
 import { isProfileDocumentComplete } from '../utils/profileDocumentComplete';
 
 export type RootStackParamList = {
@@ -99,8 +99,11 @@ export default function AppNavigator() {
 
         const refreshedUser = firebaseAuth.currentUser;
 
-        // ✅ Email verification required on ALL platforms
-        if (!refreshedUser || !refreshedUser.emailVerified) {
+        // iOS still requires verified email; Android auth proceeds to profile setup.
+        if (
+          !refreshedUser ||
+          (Platform.OS === 'ios' && !refreshedUser.emailVerified)
+        ) {
           setUid(null);
           setUserEmail(null);
           setNeedsCompleteProfile(false);
@@ -131,19 +134,15 @@ export default function AppNavigator() {
 
     setProfileLoading(true);
 
-    const userRef = doc(firestoreDb, 'users', uid);
-
-    const unsubscribe = onSnapshot(
-      userRef,
+    const unsubscribe = dbOnUserSnapshot(
+      uid,
       async (snap) => {
-        const data = snap.exists() ? (snap.data() as any) : null;
-        setNeedsCompleteProfile(!isProfileDocumentComplete(data));
+        setNeedsCompleteProfile(!isProfileDocumentComplete(snap));
         setProfileLoading(false);
       },
       async () => {
         try {
-          const snap = await getDoc(userRef);
-          const data = snap.exists() ? (snap.data() as any) : null;
+          const data = await dbGetUser(uid);
           setNeedsCompleteProfile(!isProfileDocumentComplete(data));
         } catch {
           setNeedsCompleteProfile(false);
@@ -167,7 +166,7 @@ export default function AppNavigator() {
     return <FullScreenLoader />;
   }
 
-  if (!hasSeenIntroVideo) {
+  if (!uid && !hasSeenIntroVideo) {
     return (
       <Stack.Navigator
         id="RootIntro"

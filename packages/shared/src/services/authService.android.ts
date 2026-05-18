@@ -1,6 +1,6 @@
 // src/services/authService.ts  ✅ Cross-platform (iOS Web SDK + Android RNFirebase)
 import { Platform } from 'react-native';
-import { firebaseAuth } from '../config/firebaseConfig';
+import { firebaseAuth } from '../config/firebaseConfig.android';
 
 // Tipos suaves (para que compile con ambos SDKs)
 type AnyUser = any;

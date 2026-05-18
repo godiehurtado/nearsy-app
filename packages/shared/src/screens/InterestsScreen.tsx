@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { doc, setDoc } from 'firebase/firestore';
 
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import TopHeader from '../components/TopHeader';
@@ -81,28 +80,32 @@ export default function InterestsScreen() {
         const clean = cleanAffiliations(personalAff);
         const labels = labelsFromAff(clean);
 
-        await setDoc(
-          doc(firestoreDb, 'users', uid),
-          {
-            personalInterests: labels,
-            personalInterestAffiliations: clean,
-            updatedAt: new Date(),
-          },
-          { merge: true },
-        );
+        await firestoreDb
+          .collection('users')
+          .doc(uid)
+          .set(
+            {
+              personalInterests: labels,
+              personalInterestAffiliations: clean,
+              updatedAt: Date.now(),
+            },
+            { merge: true },
+          );
       } else {
         const clean = cleanAffiliations(professionalAff);
         const labels = labelsFromAff(clean);
 
-        await setDoc(
-          doc(firestoreDb, 'users', uid),
-          {
-            professionalInterests: labels,
-            professionalInterestAffiliations: clean,
-            updatedAt: new Date(),
-          },
-          { merge: true },
-        );
+        await firestoreDb
+          .collection('users')
+          .doc(uid)
+          .set(
+            {
+              professionalInterests: labels,
+              professionalInterestAffiliations: clean,
+              updatedAt: Date.now(),
+            },
+            { merge: true },
+          );
       }
 
       Alert.alert('Saved', 'Your interests were updated.');

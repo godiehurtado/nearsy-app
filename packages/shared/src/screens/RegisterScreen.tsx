@@ -14,6 +14,7 @@ import {
   Pressable,
   Platform,
   Linking,
+  Keyboard,
   KeyboardAvoidingView,
   ScrollView,
   TextInput as RNTextInput,
@@ -471,6 +472,25 @@ export default function RegisterScreen({ navigation }: any) {
 
       await createUserProfile(user.uid, profile as any);
 
+      if (Platform.OS === 'android') {
+        setGuideVisible(false);
+        Keyboard.dismiss();
+        navigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: 'CompleteProfile',
+              params: {
+                uid: user.uid,
+                email: user.email ?? email.trim(),
+                inputNonce: Date.now(),
+              },
+            },
+          ],
+        });
+        return;
+      }
+
       try {
         await firebaseAuth.signOut();
       } catch {}
@@ -722,7 +742,6 @@ export default function RegisterScreen({ navigation }: any) {
                 value={password}
                 onChangeText={handlePasswordChange}
                 ref={passwordInputRef}
-                ref={passwordInputRef}
               />
               <TouchableOpacity
                 onPress={() => setShowPassword((prev) => !prev)}
@@ -768,7 +787,6 @@ export default function RegisterScreen({ navigation }: any) {
                 secureTextEntry={!showConfirmPassword}
                 value={confirmPassword}
                 onChangeText={handleConfirmPasswordChange}
-                ref={confirmPasswordInputRef}
                 ref={confirmPasswordInputRef}
               />
               <TouchableOpacity
@@ -859,28 +877,6 @@ export default function RegisterScreen({ navigation }: any) {
             </Text>
           </View>
 
-          <View
-            onLayout={(event) => {
-              stepYPositions.current[7] = event.nativeEvent.layout.y;
-            }}
-          >
-            <TouchableOpacity
-              style={[
-                styles.button,
-                submitting && { opacity: 0.7 },
-                isGuideFieldActive(7) && styles.guideActiveButton,
-              ]}
-              onPress={handleRegister}
-              disabled={submitting}
-              activeOpacity={0.85}
-            >
-              {submitting ? (
-                <ActivityIndicator color="#1A2B3C" />
-              ) : (
-                <Text style={styles.buttonText}>Register</Text>
-              )}
-            </TouchableOpacity>
-          </View>
           <View
             onLayout={(event) => {
               stepYPositions.current[7] = event.nativeEvent.layout.y;

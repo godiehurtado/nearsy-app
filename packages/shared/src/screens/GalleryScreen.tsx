@@ -21,8 +21,6 @@ import {
   firebaseAuth,
   storageWeb,
 } from '../config/firebaseConfig';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { ref, deleteObject } from 'firebase/storage';
 
 import { GalleryPhoto } from '../types/profile';
 import { uploadGalleryImage } from '../services/storageService';
@@ -85,9 +83,11 @@ export default function GalleryScreen({ route, navigation }: any) {
         const effectiveRouteMode: ProfileMode =
           routeMode === 'professional' ? 'professional' : 'personal';
 
-        const snap = await getDoc(doc(firestoreDb, 'users', targetUid));
+        const snap = await firestoreDb.collection('users').doc(targetUid).get();
 
-        if (!snap.exists()) {
+        const exists =
+          typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+        if (!exists) {
           setTopBarColor('#3B5A85');
           setTopBarMode('color');
           setTopBarImage(null);
@@ -207,14 +207,16 @@ export default function GalleryScreen({ route, navigation }: any) {
         p.path === localPhoto.path ? uploadedPhoto : p,
       );
 
-      await setDoc(
-        doc(firestoreDb, 'users', ownerUid),
-        {
-          [fieldName]: finalPhotos,
-          updatedAt: Date.now(),
-        },
-        { merge: true },
-      );
+      await firestoreDb
+        .collection('users')
+        .doc(ownerUid)
+        .set(
+          {
+            [fieldName]: finalPhotos,
+            updatedAt: Date.now(),
+          },
+          { merge: true },
+        );
 
       setPhotos(finalPhotos);
       setLastAddedPhotoKey(uploadedPhoto.path || uploadedPhoto.url);
@@ -255,7 +257,7 @@ export default function GalleryScreen({ route, navigation }: any) {
 
       if (photo.path && !photo.path.startsWith('local-')) {
         try {
-          await deleteObject(ref(storageWeb, photo.path));
+          await (storageWeb as any).ref(photo.path).delete();
         } catch (e) {
           if (__DEV__) {
             console.warn('[GalleryScreen] Could not delete storage object', e);
@@ -267,14 +269,16 @@ export default function GalleryScreen({ route, navigation }: any) {
         (p) => (p.path || p.url) !== (photo.path || photo.url),
       );
 
-      await setDoc(
-        doc(firestoreDb, 'users', ownerUid),
-        {
-          [fieldName]: next,
-          updatedAt: Date.now(),
-        },
-        { merge: true },
-      );
+      await firestoreDb
+        .collection('users')
+        .doc(ownerUid)
+        .set(
+          {
+            [fieldName]: next,
+            updatedAt: Date.now(),
+          },
+          { merge: true },
+        );
 
       setPhotos(next);
 

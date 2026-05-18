@@ -18,9 +18,6 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { firestoreDb } from '../config/firebaseConfig';
 
-// ✅ Firestore Web SDK
-import { doc, getDoc } from 'firebase/firestore';
-
 type Params = { uid: string; mode?: 'personal' | 'professional' };
 
 type GalleryPhoto = {
@@ -106,12 +103,13 @@ export default function ProfileGalleryScreen() {
           return;
         }
 
-        const ref = doc(firestoreDb, 'users', viewedUid);
-        const snap = await getDoc(ref);
+        const snap = await firestoreDb.collection('users').doc(viewedUid).get();
 
         if (cancelled) return;
 
-        if (snap.exists()) {
+        const exists =
+          typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+        if (exists) {
           const data = snap.data() as ProfileDoc;
 
           // 1) nombre y color del perfil visto
