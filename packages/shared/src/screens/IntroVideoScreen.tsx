@@ -132,6 +132,18 @@ export default function IntroVideoScreen() {
             <Text style={styles.primaryButtonText}>Start registration</Text>
             <Ionicons name="arrow-forward" size={18} color="#1A2B3C" />
           </TouchableOpacity>
+
+          <View style={styles.loginShortcut}>
+            <Text style={styles.loginLabel}>Already part of Nearsy?</Text>
+            <TouchableOpacity
+              style={styles.loginButton}
+              activeOpacity={0.82}
+              onPress={() => navigation.navigate('Login')}
+            >
+              <Ionicons name="log-in-outline" size={16} color="#3B5A85" />
+              <Text style={styles.loginButtonText}>Sign in</Text>
+            </TouchableOpacity>
+          </View>
         </Animated.View>
 
         {isPreview && (
@@ -256,6 +268,35 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: '#1A2B3C',
     fontSize: 16,
+    fontWeight: '800',
+  },
+  loginShortcut: {
+    marginTop: 18,
+    alignItems: 'center',
+  },
+  loginLabel: {
+    color: '#7C8794',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    marginBottom: 8,
+  },
+  loginButton: {
+    minWidth: 132,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(59,90,133,0.24)',
+    backgroundColor: 'rgba(238,244,250,0.72)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 18,
+  },
+  loginButtonText: {
+    color: '#3B5A85',
+    fontSize: 14,
     fontWeight: '800',
   },
   secondaryButton: {
