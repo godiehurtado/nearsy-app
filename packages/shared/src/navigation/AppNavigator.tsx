@@ -167,7 +167,7 @@ export default function AppNavigator() {
     return <FullScreenLoader />;
   }
 
-  if (!hasSeenIntroVideo) {
+  if (!uid && !hasSeenIntroVideo) {
     return (
       <Stack.Navigator
         id="RootIntro"

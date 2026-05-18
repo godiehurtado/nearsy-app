@@ -9,6 +9,9 @@ import {
   StyleSheet,
   ScrollView,
   TextInput,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 
 import {
@@ -855,6 +858,26 @@ export default function InterestsWithLogo({
     null,
   );
   const [searchText, setSearchText] = useState('');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent =
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, () =>
+      setKeyboardVisible(true),
+    );
+    const hideSub = Keyboard.addListener(hideEvent, () =>
+      setKeyboardVisible(false),
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const selectedInterests = useMemo(
     () => Object.keys(interestLogoMap) as InterestLabel[],
@@ -965,7 +988,11 @@ export default function InterestsWithLogo({
           setCurrentInterest(null);
         }}
       >
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardAvoider}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>
               {currentInterest
@@ -987,7 +1014,11 @@ export default function InterestsWithLogo({
             {groups ? (
               <ScrollView
                 style={{ maxHeight: '70%' }}
-                contentContainerStyle={{ paddingVertical: 6 }}
+                contentContainerStyle={[
+                  styles.groupScrollContent,
+                  keyboardVisible && styles.keyboardOpenListPadding,
+                ]}
+                keyboardShouldPersistTaps="handled"
               >
                 {groups.map((group) => {
                   const filtered = filterOptions(group.options);
@@ -1039,7 +1070,11 @@ export default function InterestsWithLogo({
                 keyExtractor={(item) => item.id}
                 numColumns={3}
                 columnWrapperStyle={styles.logoRow}
-                contentContainerStyle={styles.logoGrid}
+                contentContainerStyle={[
+                  styles.logoGrid,
+                  keyboardVisible && styles.keyboardOpenListPadding,
+                ]}
+                keyboardShouldPersistTaps="handled"
                 renderItem={({ item }) => {
                   const selected = !!interestLogoMap[currentInterest!]?.some(
                     (p) => p.id === item.id,
@@ -1093,7 +1128,8 @@ export default function InterestsWithLogo({
               <Text style={styles.modalCloseText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Selecciones */}
@@ -1189,6 +1225,9 @@ const styles = StyleSheet.create({
   interestText: { fontSize: 14 },
 
   // Modal
+  modalKeyboardAvoider: {
+    flex: 1,
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',
@@ -1215,6 +1254,12 @@ const styles = StyleSheet.create({
   },
 
   // Sports groups
+  groupScrollContent: {
+    paddingVertical: 6,
+  },
+  keyboardOpenListPadding: {
+    paddingBottom: 180,
+  },
   groupBlock: {
     marginBottom: 12,
   },
