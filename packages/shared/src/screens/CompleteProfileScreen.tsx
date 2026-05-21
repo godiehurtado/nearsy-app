@@ -552,6 +552,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         topBarImage: uploadedTopBarUrl,
         topBarMode,
         profileSetupCompleted: true,
+        visibility: true,
       };
 
       await saveCompleteProfile(uid, payload);
