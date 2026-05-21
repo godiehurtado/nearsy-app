@@ -6,16 +6,19 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "prebuildCommand": "npx expo prebuild --platform android --clean"
     },
     "preview": {
       "distribution": "internal",
+      "prebuildCommand": "npx expo prebuild --platform android --clean",
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
       "autoIncrement": true,
+      "prebuildCommand": "npx expo prebuild --platform android --clean",
       "android": {
         "buildType": "app-bundle"
       }
