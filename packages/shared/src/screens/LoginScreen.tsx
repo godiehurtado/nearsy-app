@@ -107,8 +107,7 @@ export default function LoginScreen({ navigation }: any) {
 
       const { user } = await loginWithEmail(trimmedEmail, password);
 
-      // iOS blocks unverified email; Android continues into profile setup.
-      if (Platform.OS === 'ios' && !user.emailVerified) {
+      if (!user.emailVerified) {
         try {
           await firebaseAuth.signOut(); // ✅ RNFirebase
         } catch {}
