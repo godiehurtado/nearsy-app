@@ -215,6 +215,46 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
     setLabelModalOpen(true);
   };
 
+  const persistAffiliations = async (items: AffiliationItem[]) => {
+    const uid = route?.params?.uid || firebaseAuth.currentUser?.uid;
+    if (!uid) throw new Error('User not authenticated.');
+
+    const fieldName =
+      mode === 'professional'
+        ? 'professionalAffiliations'
+        : 'personalAffiliations';
+
+    await firestoreDb
+      .collection('users')
+      .doc(uid)
+      .set({ [fieldName]: items, updatedAt: Date.now() }, { merge: true });
+  };
+
+  const handleDeleteAffiliation = (globalIndex: number) => {
+    const item = affiliations[globalIndex];
+    if (!item) return;
+
+    Alert.alert('Delete affiliation', `Remove "${item.label}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const next = affiliations.filter((_, index) => index !== globalIndex);
+          setAffiliations(next);
+          try {
+            await persistAffiliations(next);
+          } catch (e: any) {
+            Alert.alert(
+              'Error',
+              e?.message || 'Could not delete affiliation.',
+            );
+          }
+        },
+      },
+    ]);
+  };
+
   const handleSaveLabel = () => {
     if (!editingCategory) return;
 
@@ -225,9 +265,10 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
     }
 
     const exists = affiliations.some(
-      (a) =>
+      (a, index) =>
         a.category === editingCategory &&
-        a.label.toLowerCase() === trimmed.toLowerCase(),
+        a.label.toLowerCase() === trimmed.toLowerCase() &&
+        index !== editingItemIndex,
     );
 
     if (exists) {
@@ -384,6 +425,8 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
                         key={`${cat.key}-${idx}`}
                         style={styles.affiliationCard}
                         onPress={() => openEditorForCategory(cat.key, idx)}
+                        onLongPress={() => handleDeleteAffiliation(idx)}
+                        delayLongPress={400}
                         activeOpacity={0.9}
                       >
                         <View style={styles.affiliationCircle}>

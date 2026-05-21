@@ -15,6 +15,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
+import { buildLocationPayload } from '../utils/locationPayload';
 
 import TopHeader from '../components/TopHeader';
 import { firebaseAuth } from '../config/firebaseConfig';
@@ -36,7 +37,12 @@ type ProfileDoc = {
   topBarMode?: 'color' | 'image';
 
   // opcional (pero lo estás usando en updateUserProfilePartial)
-  location?: { lat: number; lng: number; updatedAt?: number };
+  location?: {
+    lat: number;
+    lng: number;
+    accuracy?: number;
+    updatedAt?: number;
+  };
 };
 
 type Props = NativeStackScreenProps<any>;
@@ -113,21 +119,19 @@ export default function MainHomeScreen({ navigation }: Props) {
           if (perm.status !== 'granted') return;
 
           const pos = await Location.getCurrentPositionAsync({
-            accuracy:
-              Platform.OS === 'android'
-                ? Location.Accuracy.Highest
-                : Location.Accuracy.High,
+            accuracy: Location.Accuracy.Highest,
           });
 
           if (cancelled) return;
 
-          await updateUserProfilePartial(uid, {
-            location: {
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude,
-              updatedAt: Date.now(),
-            },
-          });
+          await updateUserProfilePartial(
+            uid,
+            buildLocationPayload(
+              pos.coords.latitude,
+              pos.coords.longitude,
+              pos.coords,
+            ),
+          );
         } catch {
           // silencio
         }
@@ -146,34 +150,24 @@ export default function MainHomeScreen({ navigation }: Props) {
         if (perm.status !== 'granted') {
           perm = await Location.requestForegroundPermissionsAsync();
           if (perm.status !== 'granted') {
-            if (__DEV__)
-              console.warn('[MainHome] Location permission not granted');
             return;
           }
         }
 
         const pos = await Location.getCurrentPositionAsync({
-          accuracy:
-            Platform.OS === 'android'
-              ? Location.Accuracy.Highest
-              : Location.Accuracy.High,
+          accuracy: Location.Accuracy.Highest,
         });
 
-        await updateUserProfilePartial(uid, {
-          location: {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            updatedAt: Date.now(),
-          },
-        });
-
-        if (__DEV__) console.log('[MainHome] Location updated in background');
-      } catch (err) {
-        if (__DEV__)
-          console.warn(
-            '[MainHome] Failed to update location in background',
-            err,
-          );
+        await updateUserProfilePartial(
+          uid,
+          buildLocationPayload(
+            pos.coords.latitude,
+            pos.coords.longitude,
+            pos.coords,
+          ),
+        );
+      } catch {
+        // silent
       }
     })();
   };
