@@ -15,11 +15,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
-import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
+import { firebaseAuth } from '../config/firebaseConfig';
 import TopHeader from '../components/TopHeader';
 import type { SocialLinks } from '../types/profile';
 import { getUserProfile } from '../services/firestoreService';
-import { getSocialLinks, type ProfileMode } from '../services/profileExtras';
+import {
+  getSocialLinks,
+  setSocialLinks,
+  type ProfileMode,
+} from '../services/profileExtras';
 
 type RouteParams = {
   uid?: string;
@@ -108,7 +112,7 @@ export default function SocialMediaScreen() {
     return () => {
       cancelled = true;
     };
-  }, [routeMode]);
+  }, [routeMode, routeUid]);
 
   const onChangeLink = (key: keyof SocialLinks, val: string) =>
     setLinks((p) => ({ ...p, [key]: val }));
@@ -122,21 +126,7 @@ export default function SocialMediaScreen() {
       const uid = routeUid || firebaseAuth.currentUser?.uid;
       if (!uid) throw new Error('User not authenticated.');
 
-      const fieldName =
-        mode === 'professional'
-          ? 'socialLinksProfessional'
-          : 'socialLinksPersonal';
-
-      await firestoreDb
-        .collection('users')
-        .doc(uid)
-        .set(
-          {
-            [fieldName]: links,
-            updatedAt: Date.now(),
-          },
-          { merge: true },
-        );
+      await setSocialLinks(uid, mode, links);
 
       Alert.alert('Saved', 'Your social media has been updated.', [
         { text: 'OK', onPress: () => navigation.goBack() },
