@@ -13,6 +13,7 @@ import {
   Alert,
   Modal,
   Pressable,
+  Platform,
 } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import type { HomeStackParamList } from '../navigation/HomeStack';
@@ -197,20 +198,57 @@ const INTEREST_CATEGORY_META: Partial<
   },
 };
 
-function normalizeUrl(u: string) {
+function normalizeUrl(u: string): string {
   if (!u) return '';
-  if (!/^https?:\/\//i.test(u)) return `https://${u}`;
-  return u;
+
+  let trimmed = u.trim().replace(/ /g, '%20');
+  if (!trimmed) return '';
+
+  if (!/^https?:\/\//i.test(trimmed)) {
+    trimmed = `https://${trimmed}`;
+  }
+
+  return trimmed;
+}
+
+function isHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
 }
 
 async function openLink(url: string) {
   const safe = normalizeUrl(url);
-  const can = await Linking.canOpenURL(safe);
-  if (!can) {
+  if (!safe) {
     Alert.alert('Invalid link', 'Could not open this link.');
     return;
   }
-  Linking.openURL(safe);
+
+  if (isHttpUrl(safe)) {
+    if (Platform.OS !== 'android') {
+      const can = await Linking.canOpenURL(safe);
+      if (!can) {
+        Alert.alert('Invalid link', 'Could not open this link.');
+        return;
+      }
+    }
+
+    try {
+      await Linking.openURL(safe);
+    } catch {
+      Alert.alert('Invalid link', 'Could not open this link.');
+    }
+    return;
+  }
+
+  try {
+    const can = await Linking.canOpenURL(safe);
+    if (!can) {
+      Alert.alert('Invalid link', 'Could not open this link.');
+      return;
+    }
+    await Linking.openURL(safe);
+  } catch {
+    Alert.alert('Invalid link', 'Could not open this link.');
+  }
 }
 
 export default function ProfileDetailScreen() {
