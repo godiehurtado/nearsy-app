@@ -118,7 +118,7 @@ export default function IntroVideoScreen() {
               <Ionicons name="checkmark-circle" size={18} color="#3B5A85" />
             </View>
             <Text style={styles.stepText}>
-              Accept terms and verify your email
+              Accept terms and finish setting up your profile
             </Text>
           </View>
         </Animated.View>

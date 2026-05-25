@@ -18,10 +18,10 @@ export const registerWithEmail = async (email: string, password: string) => {
     password,
   );
 
-  // email verification
-  try {
-    await sendEmailVerification(cred.user);
-  } catch {}
+  // TEMP: Email verification temporarily disabled — restore block below.
+  // try {
+  //   await sendEmailVerification(cred.user);
+  // } catch {}
 
   return cred;
 };
@@ -37,12 +37,12 @@ export const loginWithEmail = async (email: string, password: string) => {
   // refrescar user
   await reload(cred.user);
 
-  // iOS exige email verificado (como ya lo querías)
-  if (!(cred.user as any).emailVerified) {
-    const err: any = new Error('Email not verified');
-    err.code = 'auth/email-not-verified';
-    throw err;
-  }
+  // TEMP: Email verification temporarily disabled — restore gate below.
+  // if (!(cred.user as any).emailVerified) {
+  //   const err: any = new Error('Email not verified');
+  //   err.code = 'auth/email-not-verified';
+  //   throw err;
+  // }
 
   return cred;
 };

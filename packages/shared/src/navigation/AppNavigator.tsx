@@ -1,6 +1,6 @@
 // src/navigation/AppNavigator.tsx
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -99,8 +99,12 @@ export default function AppNavigator() {
 
         const refreshedUser = firebaseAuth.currentUser;
 
-        // ✅ Email verification required on ALL platforms
-        if (!refreshedUser || !refreshedUser.emailVerified) {
+        // TEMP: Email verification temporarily disabled (iOS) — restore gate below.
+        const requireEmailVerified = Platform.OS !== 'ios';
+        if (
+          requireEmailVerified &&
+          (!refreshedUser || !refreshedUser.emailVerified)
+        ) {
           setUid(null);
           setUserEmail(null);
           setNeedsCompleteProfile(false);
