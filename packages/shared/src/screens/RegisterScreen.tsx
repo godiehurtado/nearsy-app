@@ -577,8 +577,8 @@ export default function RegisterScreen({ navigation }: any) {
       setGuideVisible(false);
 
       Alert.alert(
-        'Verify your email',
-        'We sent a verification link to your email. Please verify your account before logging in on this device. If you don’t see the email, please check your Spam or Junk folder.',
+        'Account created',
+        'Your account was created successfully. Please sign in to continue setting up your profile.',
         [
           {
             text: 'OK',
