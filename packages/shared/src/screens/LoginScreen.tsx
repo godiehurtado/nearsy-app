@@ -107,7 +107,8 @@ export default function LoginScreen({ navigation }: any) {
 
       const { user } = await loginWithEmail(trimmedEmail, password);
 
-      if (!user.emailVerified) {
+      // TEMP: Email verification temporarily disabled (Android only).
+      if (Platform.OS !== 'android' && !user.emailVerified) {
         try {
           await firebaseAuth.signOut(); // ✅ RNFirebase
         } catch {}

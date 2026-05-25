@@ -121,7 +121,7 @@ const REGISTRATION_GUIDE_STEPS = [
   },
   {
     title: 'Finish registration',
-    description: 'Tap Register and then verify your email.',
+    description: 'Tap Register to continue with your profile setup.',
   },
 ];
 

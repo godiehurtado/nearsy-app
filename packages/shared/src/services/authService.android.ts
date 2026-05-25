@@ -29,7 +29,8 @@ export const registerWithEmail = async (
       firebaseAuth as any
     ).createUserWithEmailAndPassword(email, password);
 
-    await sendVerificationEmail(userCredential.user);
+    // TEMP: Email verification temporarily disabled (Android only).
+    // await sendVerificationEmail(userCredential.user);
 
     return userCredential;
   } catch (error: any) {
