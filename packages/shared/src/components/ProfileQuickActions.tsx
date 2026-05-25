@@ -15,7 +15,47 @@ type Props = {
     affiliationsCount?: number;
   };
   compact?: boolean; // 👈 responsive
+  affiliationsRef?: (ref: View | null) => void;
+  interestsRef?: (ref: View | null) => void;
+  socialRef?: (ref: View | null) => void;
+  galleryRef?: (ref: View | null) => void;
+  affiliationsGuideHighlight?: boolean;
+  interestsGuideHighlight?: boolean;
+  socialGuideHighlight?: boolean;
+  galleryGuideHighlight?: boolean;
+  affiliationsGuideDimmed?: boolean;
+  interestsGuideDimmed?: boolean;
+  socialGuideDimmed?: boolean;
+  galleryGuideDimmed?: boolean;
 };
+
+function GuideTileSlot({
+  slotRef,
+  highlight,
+  dimmed,
+  compact,
+  children,
+}: {
+  slotRef?: (ref: View | null) => void;
+  highlight?: boolean;
+  dimmed?: boolean;
+  compact?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <View
+      ref={slotRef}
+      style={[styles.tileSlot, compact && styles.tileSlotCompact]}
+    >
+      <View style={[styles.tileSlotInner, dimmed && styles.tileDimmed]}>
+        {children}
+      </View>
+      {highlight ? (
+        <View style={styles.guideHighlightOverlay} pointerEvents="none" />
+      ) : null}
+    </View>
+  );
+}
 
 export default function ProfileQuickActions({
   onOpenInterests,
@@ -24,40 +64,80 @@ export default function ProfileQuickActions({
   onOpenAffiliations,
   stats,
   compact,
+  affiliationsRef,
+  interestsRef,
+  socialRef,
+  galleryRef,
+  affiliationsGuideHighlight,
+  interestsGuideHighlight,
+  socialGuideHighlight,
+  galleryGuideHighlight,
+  affiliationsGuideDimmed,
+  interestsGuideDimmed,
+  socialGuideDimmed,
+  galleryGuideDimmed,
 }: Props) {
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>Quick actions</Text>
 
       <View style={[styles.grid, compact && styles.gridCompact]}>
-        <Tile
-          icon="sparkles-outline"
-          title="Affiliations"
-          subtitle={`${stats?.affiliationsCount ?? 0} selected`}
-          onPress={onOpenAffiliations}
+        <GuideTileSlot
+          slotRef={affiliationsRef}
+          highlight={affiliationsGuideHighlight}
+          dimmed={affiliationsGuideDimmed}
           compact={compact}
-        />
-        <Tile
-          icon="sparkles-outline"
-          title="Interests"
-          subtitle={`${stats?.interestsCount ?? 0} selected`}
-          onPress={onOpenInterests}
+        >
+          <Tile
+            icon="sparkles-outline"
+            title="Affiliations"
+            subtitle={`${stats?.affiliationsCount ?? 0} selected`}
+            onPress={onOpenAffiliations}
+            compact={compact}
+          />
+        </GuideTileSlot>
+        <GuideTileSlot
+          slotRef={interestsRef}
+          highlight={interestsGuideHighlight}
+          dimmed={interestsGuideDimmed}
           compact={compact}
-        />
-        <Tile
-          icon="share-social-outline"
-          title="Social media"
-          subtitle={`${stats?.socialCount ?? 0} connected`}
-          onPress={onOpenSocial}
+        >
+          <Tile
+            icon="sparkles-outline"
+            title="Interests"
+            subtitle={`${stats?.interestsCount ?? 0} selected`}
+            onPress={onOpenInterests}
+            compact={compact}
+          />
+        </GuideTileSlot>
+        <GuideTileSlot
+          slotRef={socialRef}
+          highlight={socialGuideHighlight}
+          dimmed={socialGuideDimmed}
           compact={compact}
-        />
-        <Tile
-          icon="images-outline"
-          title="Gallery"
-          subtitle={`${stats?.photosCount ?? 0} photos`}
-          onPress={onOpenGallery}
+        >
+          <Tile
+            icon="share-social-outline"
+            title="Social media"
+            subtitle={`${stats?.socialCount ?? 0} connected`}
+            onPress={onOpenSocial}
+            compact={compact}
+          />
+        </GuideTileSlot>
+        <GuideTileSlot
+          slotRef={galleryRef}
+          highlight={galleryGuideHighlight}
+          dimmed={galleryGuideDimmed}
           compact={compact}
-        />
+        >
+          <Tile
+            icon="images-outline"
+            title="Gallery"
+            subtitle={`${stats?.photosCount ?? 0} photos`}
+            onPress={onOpenGallery}
+            compact={compact}
+          />
+        </GuideTileSlot>
       </View>
     </View>
   );
@@ -81,7 +161,7 @@ function Tile({
       onPress={onPress}
       style={({ pressed }) => [
         styles.tile,
-        compact && styles.tileCompact, // 👈 full-width en modo compacto
+        compact && styles.tileCompact,
         pressed && styles.pressed,
       ]}
     >
@@ -108,24 +188,48 @@ const styles = StyleSheet.create({
     gap: 10,
     flexWrap: 'wrap',
   },
-  // 👇 En compacto apilamos una debajo de otra
   gridCompact: {
     flexDirection: 'column',
     flexWrap: 'nowrap',
+  },
+  /** Fixed grid cell — sizing lives here so guide overlay does not shift layout. */
+  tileSlot: {
+    position: 'relative',
+    minWidth: '47%',
+    flexGrow: 1,
+  },
+  tileSlotCompact: {
+    minWidth: '100%',
+    alignSelf: 'stretch',
+  },
+  tileSlotInner: {
+    width: '100%',
+  },
+  tileDimmed: {
+    opacity: 0.45,
+  },
+  guideHighlightOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#3B5A85',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
   },
   tile: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#3B5A85', // Azul principal
+    backgroundColor: '#3B5A85',
     padding: 12,
     borderRadius: 14,
-    minWidth: '47%',
-    flexGrow: 1,
+    width: '100%',
   },
-  // 👇 Full width para pantallas con texto grande
   tileCompact: {
-    minWidth: '100%',
     alignSelf: 'stretch',
   },
   tileTitle: { fontWeight: '700', color: '#FFFFFF' },

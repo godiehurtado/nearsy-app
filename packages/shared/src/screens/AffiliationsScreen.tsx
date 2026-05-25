@@ -1,6 +1,6 @@
 // src/screens/AffiliationsScreen.tsx
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -15,10 +15,14 @@ import {
   TextInput,
   Image,
   StyleSheet,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useGuideAudio } from '../hooks/useGuideAudio';
 
 import TopHeader from '../components/TopHeader';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
@@ -100,6 +104,59 @@ const CATEGORY_CONFIG: {
   },
 ];
 
+const AFFILIATIONS_ONBOARDING_STEPS = [
+  {
+    title: 'School / College',
+    description: 'Tap Add to enter your school or college.',
+  },
+  {
+    title: 'Name your school',
+    description: 'Type your school or college name.',
+  },
+  {
+    title: 'Add an image (optional)',
+    description: 'You can add a logo or photo if you want.',
+  },
+  {
+    title: 'Save this affiliation',
+    description: 'Tap Save to add it to your profile.',
+  },
+  {
+    title: 'Other categories',
+    description:
+      'You can repeat this same process for all other affiliations.',
+  },
+];
+
+const AFFILIATIONS_GUIDE_AUDIO: number[] = [
+  require('../assets/audio/Affiliations_EnterCollegeOrSchool.mp3'),
+  require('../assets/audio/Affiliations_TypeYourSchoolName.mp3'),
+  require('../assets/audio/Affiliations_IfDesiredAddAnImage.mp3'),
+  require('../assets/audio/Affiliations_TapToSave.mp3'),
+  require('../assets/audio/Affiliations_FollowTheSameProcess.mp3'),
+];
+
+function GuideHighlightSlot({
+  highlight,
+  dimmed,
+  style,
+  children,
+}: {
+  highlight?: boolean;
+  dimmed?: boolean;
+  style?: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={[styles.guideSlot, style]}>
+      <View style={dimmed ? styles.guideDimmed : undefined}>{children}</View>
+      {highlight ? (
+        <View style={styles.guideHighlightOverlay} pointerEvents="none" />
+      ) : null}
+    </View>
+  );
+}
+
 export default function AffiliationsScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
 
@@ -127,6 +184,10 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
   const [tempLabel, setTempLabel] = useState('');
   const [tempImageUrl, setTempImageUrl] = useState<string | null>(null);
+
+  const [onboardingStep, setOnboardingStep] = useState(0);
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
+  const labelInputRef = useRef<TextInput>(null);
 
   // Helpers para agrupar
   const getItemsForCategory = (cat: AffiliationCategory) =>
@@ -167,6 +228,8 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
           return;
         }
 
+        setIsSetupMode(existing.profileSetupCompleted !== true);
+
         setProfileImage(existing.profileImage ?? null);
         setTopBarColor(existing.topBarColor ?? '#3B5A85');
         setTopBarImage((existing as any).topBarImage ?? null);
@@ -200,10 +263,79 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const onboardingActive =
+    isSetupMode &&
+    Platform.OS === 'ios' &&
+    !onboardingCompleted &&
+    !isLoading;
+
+  const { unload: unloadOnboardingAudio } = useGuideAudio(
+    onboardingActive,
+    AFFILIATIONS_GUIDE_AUDIO[onboardingStep],
+  );
+
+  const completeOnboarding = useCallback(() => {
+    setOnboardingCompleted(true);
+    void unloadOnboardingAudio();
+  }, [unloadOnboardingAudio]);
+
+  useEffect(() => {
+    if (!onboardingActive || onboardingStep !== 1 || !labelModalOpen) return;
+
+    const focusTimer = setTimeout(() => {
+      labelInputRef.current?.focus();
+    }, 320);
+
+    return () => clearTimeout(focusTimer);
+  }, [onboardingActive, onboardingStep, labelModalOpen]);
+
+  const goNextOnboardingStep = () => {
+    if (onboardingStep === 1) {
+      if (!tempLabel.trim()) {
+        Alert.alert(
+          'One more thing',
+          'Please enter a school, college, or university name.',
+        );
+        return;
+      }
+      setOnboardingStep(2);
+      return;
+    }
+
+    if (onboardingStep === 2) {
+      setOnboardingStep(3);
+    }
+  };
+
+  const goBackOnboardingStep = () => {
+    if (onboardingStep === 1) {
+      setOnboardingStep(0);
+      setLabelModalOpen(false);
+      return;
+    }
+
+    if (onboardingStep === 2) {
+      setOnboardingStep(1);
+      return;
+    }
+
+    if (onboardingStep === 3) {
+      setOnboardingStep(2);
+    }
+  };
+
   const openEditorForCategory = (
     cat: AffiliationCategory,
     globalIndex?: number,
   ) => {
+    if (
+      onboardingActive &&
+      onboardingStep < 4 &&
+      cat !== 'schoolCollege'
+    ) {
+      return;
+    }
+
     const isEditingExisting = typeof globalIndex === 'number';
 
     let existingLabel = '';
@@ -219,6 +351,15 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
     setTempLabel(existingLabel);
     setTempImageUrl(existingImage);
     setLabelModalOpen(true);
+
+    if (
+      onboardingActive &&
+      onboardingStep === 0 &&
+      cat === 'schoolCollege' &&
+      !isEditingExisting
+    ) {
+      setOnboardingStep(1);
+    }
   };
 
   const handleSaveLabel = () => {
@@ -241,6 +382,8 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
       Alert.alert('Duplicate', 'This item already exists.');
       return;
     }
+
+    const savedCategory = editingCategory;
 
     setAffiliations((prev) => {
       const next = [...prev];
@@ -269,6 +412,14 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
     setEditingItemIndex(null);
     setTempLabel('');
     setTempImageUrl(null);
+
+    if (
+      onboardingActive &&
+      savedCategory === 'schoolCollege' &&
+      onboardingStep >= 3
+    ) {
+      setOnboardingStep(4);
+    }
   };
 
   const handleDeleteAffiliation = async (index: number) => {
@@ -382,6 +533,81 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
     }
   };
 
+  const showOnboardingGuideOutside =
+    onboardingActive && (onboardingStep === 0 || onboardingStep === 4);
+
+  const showOnboardingGuideInModal =
+    onboardingActive &&
+    onboardingStep >= 1 &&
+    onboardingStep <= 3 &&
+    labelModalOpen;
+
+  const onboardingGuideCardBody = (
+    <>
+      <View style={styles.guideHeader}>
+        <View style={styles.guideBadge}>
+          <Text style={styles.guideBadgeText}>
+            {onboardingStep + 1}/{AFFILIATIONS_ONBOARDING_STEPS.length}
+          </Text>
+        </View>
+
+        <TouchableOpacity onPress={completeOnboarding}>
+          <Text style={styles.guideSkip}>Skip guide</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.guideTitle}>
+        {AFFILIATIONS_ONBOARDING_STEPS[onboardingStep].title}
+      </Text>
+
+      <Text style={styles.guideDescription}>
+        {AFFILIATIONS_ONBOARDING_STEPS[onboardingStep].description}
+      </Text>
+
+      {onboardingStep >= 1 && onboardingStep <= 2 ? (
+        <View style={styles.guideActionsRow}>
+          <TouchableOpacity
+            style={styles.guideNavButton}
+            onPress={goBackOnboardingStep}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.guideNavButtonText}>Back</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.guideNavButtonPrimary}
+            onPress={goNextOnboardingStep}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.guideNavButtonPrimaryText}>Next</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {onboardingStep === 3 ? (
+        <View style={styles.guideActionsRow}>
+          <TouchableOpacity
+            style={styles.guideNavButton}
+            onPress={goBackOnboardingStep}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.guideNavButtonText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {onboardingStep === 4 ? (
+        <TouchableOpacity
+          style={styles.guideGotItBtn}
+          onPress={completeOnboarding}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.guideGotItText}>Got it</Text>
+        </TouchableOpacity>
+      ) : null}
+    </>
+  );
+
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
       <TopHeader
@@ -419,8 +645,17 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
           CATEGORY_CONFIG.map((cat) => {
             const itemsForCat = getItemsForCategory(cat.key);
 
+            const blockDimmed =
+              onboardingActive &&
+              onboardingStep < 4 &&
+              cat.key !== 'schoolCollege';
+
             return (
-              <View key={cat.key} style={styles.block}>
+              <View
+                key={cat.key}
+                style={[styles.block, blockDimmed && styles.guideDimmed]}
+                pointerEvents={blockDimmed ? 'none' : 'auto'}
+              >
                 <View style={styles.blockHeader}>
                   <Text style={styles.blockTitle}>
                     {cat.emoji} {cat.title}
@@ -458,33 +693,82 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
                       </TouchableOpacity>
                     ))}
 
-                    <TouchableOpacity
-                      style={styles.affiliationCard}
-                      onPress={() => openEditorForCategory(cat.key)}
-                      activeOpacity={0.9}
-                    >
-                      <View
-                        style={[
-                          styles.affiliationCircle,
-                          { borderStyle: 'dashed', borderColor: '#9CA3AF' },
-                        ]}
+                    {cat.key === 'schoolCollege' ? (
+                      <GuideHighlightSlot
+                        highlight={
+                          onboardingActive && onboardingStep === 0
+                        }
+                        style={styles.affiliationCard}
                       >
-                        <Ionicons
-                          name="add-outline"
-                          size={28}
-                          color="#9CA3AF"
-                        />
-                      </View>
+                        <TouchableOpacity
+                          style={styles.affiliationCardInner}
+                          onPress={() => openEditorForCategory(cat.key)}
+                          activeOpacity={0.9}
+                          disabled={
+                            onboardingActive && onboardingStep !== 0
+                          }
+                        >
+                          <View
+                            style={[
+                              styles.affiliationCircle,
+                              {
+                                borderStyle: 'dashed',
+                                borderColor: '#9CA3AF',
+                              },
+                            ]}
+                          >
+                            <Ionicons
+                              name="add-outline"
+                              size={28}
+                              color="#9CA3AF"
+                            />
+                          </View>
 
-                      <Text
-                        style={[styles.affiliationLabel, { color: '#9CA3AF' }]}
-                        numberOfLines={2}
+                          <Text
+                            style={[
+                              styles.affiliationLabel,
+                              { color: '#9CA3AF' },
+                            ]}
+                            numberOfLines={2}
+                          >
+                            {itemsForCat.length === 0
+                              ? 'Add your first item'
+                              : 'Add more'}
+                          </Text>
+                        </TouchableOpacity>
+                      </GuideHighlightSlot>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.affiliationCard}
+                        onPress={() => openEditorForCategory(cat.key)}
+                        activeOpacity={0.9}
                       >
-                        {itemsForCat.length === 0
-                          ? 'Add your first item'
-                          : 'Add more'}
-                      </Text>
-                    </TouchableOpacity>
+                        <View
+                          style={[
+                            styles.affiliationCircle,
+                            { borderStyle: 'dashed', borderColor: '#9CA3AF' },
+                          ]}
+                        >
+                          <Ionicons
+                            name="add-outline"
+                            size={28}
+                            color="#9CA3AF"
+                          />
+                        </View>
+
+                        <Text
+                          style={[
+                            styles.affiliationLabel,
+                            { color: '#9CA3AF' },
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {itemsForCat.length === 0
+                            ? 'Add your first item'
+                            : 'Add more'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
               </View>
@@ -498,7 +782,12 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
         visible={labelModalOpen}
         transparent
         animationType="fade"
-        onRequestClose={() => setLabelModalOpen(false)}
+        onRequestClose={() => {
+          setLabelModalOpen(false);
+          if (onboardingActive && onboardingStep < 4) {
+            setOnboardingStep(0);
+          }
+        }}
       >
         <KeyboardAvoidingView
           style={{ flex: 1 }}
@@ -507,9 +796,23 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
         >
           <Pressable
             style={styles.modalBackdrop}
-            onPress={() => setLabelModalOpen(false)}
+            onPress={() => {
+              setLabelModalOpen(false);
+              if (onboardingActive && onboardingStep < 4) {
+                setOnboardingStep(0);
+              }
+            }}
           >
             <Pressable style={styles.modalCard} onPress={() => {}}>
+              {showOnboardingGuideInModal ? (
+                <Animated.View
+                  entering={FadeInDown.duration(350)}
+                  style={styles.modalGuideCard}
+                >
+                  {onboardingGuideCardBody}
+                </Animated.View>
+              ) : null}
+
               <Text style={styles.modalTitle}>Add affiliation</Text>
               <Text style={styles.modalSubtitle}>
                 Give it a name. You can also add an image if you want. (max{' '}
@@ -526,43 +829,55 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
                   <Ionicons name="image-outline" size={32} color="#9CA3AF" />
                 )}
               </View>
-              <TouchableOpacity
-                style={styles.addImageBtn}
-                onPress={async () => {
-                  try {
-                    const perm =
-                      await ImagePicker.requestMediaLibraryPermissionsAsync();
-                    if (!perm.granted) {
-                      Alert.alert(
-                        'Permission required',
-                        'We need access to your photos.',
-                      );
-                      return;
-                    }
-
-                    const result = await ImagePicker.launchImageLibraryAsync({
-                      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                      allowsEditing: true,
-                      aspect: [1, 1],
-                      quality: 0.8,
-                    });
-
-                    if (!result.canceled && result.assets.length > 0) {
-                      setTempImageUrl(result.assets[0].uri);
-                    }
-                  } catch (e) {
-                    Alert.alert('Error', 'Could not pick image.');
-                  }
-                }}
-                activeOpacity={0.85}
+              <GuideHighlightSlot
+                highlight={onboardingActive && onboardingStep === 2}
+                dimmed={onboardingActive && onboardingStep !== 2}
               >
-                <Ionicons name="image-outline" size={16} color="#3B5A85" />
-                <Text style={styles.addImageText}>
-                  {tempImageUrl ? 'Change image' : 'Add image (optional)'}
-                </Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.addImageBtn}
+                  onPress={async () => {
+                    if (onboardingActive && onboardingStep !== 2) return;
+                    try {
+                      const perm =
+                        await ImagePicker.requestMediaLibraryPermissionsAsync();
+                      if (!perm.granted) {
+                        Alert.alert(
+                          'Permission required',
+                          'We need access to your photos.',
+                        );
+                        return;
+                      }
 
-              <View style={styles.modalInputGroup}>
+                      const result =
+                        await ImagePicker.launchImageLibraryAsync({
+                          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                          allowsEditing: true,
+                          aspect: [1, 1],
+                          quality: 0.8,
+                        });
+
+                      if (!result.canceled && result.assets.length > 0) {
+                        setTempImageUrl(result.assets[0].uri);
+                      }
+                    } catch (e) {
+                      Alert.alert('Error', 'Could not pick image.');
+                    }
+                  }}
+                  activeOpacity={0.85}
+                  disabled={onboardingActive && onboardingStep !== 2}
+                >
+                  <Ionicons name="image-outline" size={16} color="#3B5A85" />
+                  <Text style={styles.addImageText}>
+                    {tempImageUrl ? 'Change image' : 'Add image (optional)'}
+                  </Text>
+                </TouchableOpacity>
+              </GuideHighlightSlot>
+
+              <GuideHighlightSlot
+                highlight={onboardingActive && onboardingStep === 1}
+                dimmed={onboardingActive && onboardingStep !== 1}
+                style={styles.modalInputGroup}
+              >
                 <View style={styles.modalLabelRow}>
                   <Text style={styles.modalLabel}>Label</Text>
                   <Text style={styles.modalCounter}>
@@ -570,31 +885,45 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
                   </Text>
                 </View>
                 <TextInput
+                  ref={labelInputRef}
                   style={styles.modalInput}
                   placeholder="E.g. MIT, Lakers, Photography Club..."
                   placeholderTextColor="#9CA3AF"
                   value={tempLabel}
+                  editable={!onboardingActive || onboardingStep === 1}
                   onChangeText={(t) =>
                     t.length <= LABEL_MAX ? setTempLabel(t) : null
                   }
                 />
-              </View>
+              </GuideHighlightSlot>
 
               <View style={styles.modalButtonsRow}>
                 <TouchableOpacity
                   style={[styles.modalBtn, styles.modalBtnGhost]}
-                  onPress={() => setLabelModalOpen(false)}
+                  onPress={() => {
+                    setLabelModalOpen(false);
+                    if (onboardingActive && onboardingStep < 4) {
+                      setOnboardingStep(0);
+                    }
+                  }}
                   activeOpacity={0.85}
+                  disabled={onboardingActive && onboardingStep >= 1}
                 >
                   <Text style={styles.modalBtnGhostText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalBtn, styles.modalBtnPrimary]}
-                  onPress={handleSaveLabel}
-                  activeOpacity={0.85}
+                <GuideHighlightSlot
+                  highlight={onboardingActive && onboardingStep === 3}
+                  dimmed={onboardingActive && onboardingStep < 3}
                 >
-                  <Text style={styles.modalBtnPrimaryText}>Save</Text>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalBtn, styles.modalBtnPrimary]}
+                    onPress={handleSaveLabel}
+                    activeOpacity={0.85}
+                    disabled={onboardingActive && onboardingStep < 3}
+                  >
+                    <Text style={styles.modalBtnPrimaryText}>Save</Text>
+                  </TouchableOpacity>
+                </GuideHighlightSlot>
               </View>
             </Pressable>
           </Pressable>
@@ -624,6 +953,16 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
           )}
         </TouchableOpacity>
       </View>
+
+      {showOnboardingGuideOutside ? (
+        <Animated.View
+          entering={FadeInDown.duration(350)}
+          style={[styles.floatingGuideCard, { top: insets.top + 10 }]}
+          pointerEvents="box-none"
+        >
+          {onboardingGuideCardBody}
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
@@ -688,6 +1027,133 @@ const styles = StyleSheet.create({
   affiliationCard: {
     alignItems: 'center',
     width: 90,
+  },
+  affiliationCardInner: {
+    alignItems: 'center',
+    width: 90,
+  },
+  guideSlot: {
+    position: 'relative',
+  },
+  guideDimmed: {
+    opacity: 0.45,
+  },
+  guideHighlightOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#3B5A85',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  floatingGuideCard: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(255,255,255,0.98)',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 10,
+  },
+  modalGuideCard: {
+    marginBottom: 12,
+    backgroundColor: 'rgba(255,255,255,0.98)',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  guideHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  guideBadge: {
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  guideBadgeText: {
+    color: '#3B5A85',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  guideSkip: {
+    color: '#6B7280',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  guideTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  guideDescription: {
+    fontSize: 13,
+    color: '#4B5563',
+    lineHeight: 18,
+  },
+  guideActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    gap: 10,
+  },
+  guideNavButton: {
+    flex: 1,
+    backgroundColor: '#E5E7EB',
+    paddingVertical: 9,
+    borderRadius: 999,
+    alignItems: 'center',
+  },
+  guideNavButtonText: {
+    color: '#374151',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  guideNavButtonPrimary: {
+    flex: 1,
+    backgroundColor: '#3B5A85',
+    paddingVertical: 9,
+    borderRadius: 999,
+    alignItems: 'center',
+  },
+  guideNavButtonPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  guideGotItBtn: {
+    marginTop: 12,
+    alignSelf: 'flex-end',
+    backgroundColor: '#3B5A85',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 999,
+  },
+  guideGotItText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
   },
   affiliationCircle: {
     width: 76,

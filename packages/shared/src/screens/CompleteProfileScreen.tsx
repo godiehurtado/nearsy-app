@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { firebaseAuth } from '../config/firebaseConfig';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
+import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import {
   View,
@@ -125,14 +126,43 @@ const COMPLETE_PROFILE_GUIDE_STEPS = [
       'Select Social or Professional depending on how you want to connect.',
   },
   {
-    title: 'Complete your extras',
+    title: 'Tap Affiliations',
     description:
-      'Add interests, social links, photos, or affiliations when you are ready.',
+      'Tap Affiliations to add teams, schools, hometowns, or organizations.',
+  },
+  {
+    title: 'Tap Interests',
+    description: 'Tap Interests to choose topics that represent you.',
+  },
+  {
+    title: 'Go to Social Media',
+    description: 'Open Social media to connect your profiles.',
+  },
+  {
+    title: 'Add photos',
+    description: 'Add photos to personalize your profile.',
   },
   {
     title: 'Save your profile',
     description: 'Tap Save changes to finish your profile.',
   },
+];
+
+/** Guide step index → audio asset (iOS guide; replicate on Android later). */
+const COMPLETE_PROFILE_GUIDE_AUDIO: (number | undefined)[] = [
+  require('../assets/audio/CompleteProfile_Step1.mp3'),
+  require('../assets/audio/CompleteProfile_Step2.mp3'),
+  require('../assets/audio/CompleteProfile_Step3.mp3'),
+  require('../assets/audio/CompleteProfile_Step4.mp3'),
+  require('../assets/audio/CompleteProfile_Step5.mp3'),
+  require('../assets/audio/CompleteProfile_Step6.mp3'),
+  require('../assets/audio/CompleteProfile_Step7.mp3'),
+  require('../assets/audio/CompleteProfile_Step8.mp3'),
+  require('../assets/audio/CompleteProfile_TabAffiliations.mp3'),
+  require('../assets/audio/CompleteProfile_TabInterests.mp3'),
+  require('../assets/audio/CompleteProfile_GoToSocialMedia.mp3'),
+  undefined,
+  require('../assets/audio/CompleteProfile_Step10.mp3'),
 ];
 
 export default function CompleteProfileScreen({ navigation, route }: any) {
@@ -148,6 +178,8 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
   const guideYPositions = useRef<Record<number, number>>({});
   const guideFieldRefs = useRef<Record<number, View | null>>({});
+  const guideSoundRef = useRef<Audio.Sound | null>(null);
+  const guideAudioModeReadyRef = useRef(false);
 
   // ✅ Helper para obtener el UID (por route.params o por RNFirebase)
   const getUid = () =>
@@ -626,6 +658,69 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
   const profileGuideVisible = isNewProfile && !isLoading && !guideDismissed;
 
+  const unloadGuideAudio = useCallback(async () => {
+    const sound = guideSoundRef.current;
+    guideSoundRef.current = null;
+    if (!sound) return;
+    try {
+      await sound.stopAsync();
+      await sound.unloadAsync();
+    } catch {
+      // non-blocking
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!profileGuideVisible || Platform.OS !== 'ios') {
+      void unloadGuideAudio();
+      return;
+    }
+
+    const source = COMPLETE_PROFILE_GUIDE_AUDIO[guideStep];
+    if (!source) {
+      void unloadGuideAudio();
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        if (!guideAudioModeReadyRef.current) {
+          await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+          guideAudioModeReadyRef.current = true;
+        }
+
+        await unloadGuideAudio();
+        if (cancelled) return;
+
+        const { sound } = await Audio.Sound.createAsync(source, {
+          shouldPlay: true,
+          isLooping: false,
+        });
+
+        if (cancelled) {
+          await sound.unloadAsync();
+          return;
+        }
+
+        guideSoundRef.current = sound;
+      } catch {
+        // non-blocking
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [guideStep, profileGuideVisible, unloadGuideAudio]);
+
+  useEffect(() => {
+    return () => {
+      void unloadGuideAudio();
+    };
+  }, [unloadGuideAudio]);
+
   const setGuideFieldRef =
     (step: number) =>
     (ref: View | null): void => {
@@ -652,7 +747,11 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         (_x, y, _width, height) => {
           const guideCardReservedHeight = 190;
           const bottomReservedHeight =
-            guideStep >= 3 && guideStep <= 6 ? 320 : 80;
+            guideStep >= 3 && guideStep <= 6
+              ? 320
+              : guideStep >= 8 && guideStep <= 11
+                ? 120
+                : 80;
 
           const availableHeight =
             760 - guideCardReservedHeight - bottomReservedHeight;
@@ -1118,15 +1217,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
             )}
 
             {/* Quick Actions */}
-            <View
-              ref={setGuideFieldRef(8)}
-              style={[
-                profileGuideVisible &&
-                  !isProfileGuideActive(8) &&
-                  styles.guideInactiveField,
-                isProfileGuideActive(8) && styles.guideActiveField,
-              ]}
-            >
+            <View>
               <ProfileQuickActions
                 stats={{
                   interestsCount,
@@ -1134,16 +1225,36 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                   photosCount,
                   affiliationsCount,
                 }}
+                affiliationsRef={setGuideFieldRef(8)}
+                interestsRef={setGuideFieldRef(9)}
+                socialRef={setGuideFieldRef(10)}
+                galleryRef={setGuideFieldRef(11)}
+                affiliationsGuideHighlight={isProfileGuideActive(8)}
+                interestsGuideHighlight={isProfileGuideActive(9)}
+                socialGuideHighlight={isProfileGuideActive(10)}
+                galleryGuideHighlight={isProfileGuideActive(11)}
+                affiliationsGuideDimmed={
+                  profileGuideVisible && !isProfileGuideActive(8)
+                }
+                interestsGuideDimmed={
+                  profileGuideVisible && !isProfileGuideActive(9)
+                }
+                socialGuideDimmed={
+                  profileGuideVisible && !isProfileGuideActive(10)
+                }
+                galleryGuideDimmed={
+                  profileGuideVisible && !isProfileGuideActive(11)
+                }
                 onOpenInterests={() => {
-                  if (!guideAllows(8)) return;
+                  if (!guideAllows(9)) return;
                   goToProfileExtraScreen('Interests');
                 }}
                 onOpenSocial={() => {
-                  if (!guideAllows(8)) return;
-                  goToProfileExtraScreen('SocialMedia');
+                  if (!guideAllows(10)) return;
+                  goToSocialMedia();
                 }}
                 onOpenGallery={() => {
-                  if (!guideAllows(8)) return;
+                  if (!guideAllows(11)) return;
                   goToProfileExtraScreen('Gallery');
                 }}
                 onOpenAffiliations={() => {
@@ -1168,7 +1279,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         {isEditingAny && (
           <View
             onLayout={(event) => {
-              guideYPositions.current[9] = event.nativeEvent.layout.y;
+              guideYPositions.current[12] = event.nativeEvent.layout.y;
             }}
             style={[
               styles.bottomBar,
@@ -1179,10 +1290,10 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
               style={[
                 styles.bottomSaveBtn,
                 isLoading && { opacity: 0.7 },
-                isProfileGuideActive(9) && styles.guideActiveButton,
+                isProfileGuideActive(12) && styles.guideActiveButton,
               ]}
               onPress={handleSave}
-              disabled={isLoading || !guideAllows(9)}
+              disabled={isLoading || !guideAllows(12)}
               activeOpacity={0.85}
             >
               {isLoading ? (
