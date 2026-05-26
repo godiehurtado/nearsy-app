@@ -29,7 +29,11 @@ import {
 } from 'react-native';
 
 import ModeSwitch from '../components/ModeSwitch';
-import ProfileQuickActions from '../components/ProfileQuickActions';
+import ProfileQuickActions, {
+  type QuickActionKey,
+} from '../components/ProfileQuickActions';
+import { GUIDE_AUDIO } from '../constants/guideAudioAssets';
+import { useGuideAudio } from '../hooks/useGuideAudio';
 import TopHeader from '../components/TopHeader';
 import ColorPickerModal from '../components/ColorPickerModal';
 import {
@@ -89,49 +93,86 @@ function containsObjectionableContent(value: string) {
   return BLOCKED_WORDS.some((word) => normalized.includes(word));
 }
 
-const COMPLETE_PROFILE_GUIDE_STEPS = [
+type CompleteProfileGuideStep = {
+  title: string;
+  description: string;
+  audio?: number | null;
+  quickAction?: QuickActionKey;
+  saveStep?: boolean;
+};
+
+const COMPLETE_PROFILE_GUIDE_STEPS: CompleteProfileGuideStep[] = [
   {
     title: 'Open profile visuals',
     description: 'Tap the camera button to open your profile visual options.',
+    audio: GUIDE_AUDIO.completeProfile.step1,
   },
   {
     title: 'Add your profile photo',
     description:
       'Tap Change profile photo and choose a photo for your profile.',
+    audio: GUIDE_AUDIO.completeProfile.step2,
   },
   {
     title: 'Choose your top bar style',
     description: 'Use Color or Image to personalize the top of your profile.',
+    audio: GUIDE_AUDIO.completeProfile.step3,
   },
   {
     title: 'Enter your name',
     description: 'Use your real name so your profile feels trustworthy.',
+    audio: GUIDE_AUDIO.completeProfile.step4,
   },
   {
     title: 'Add your occupation',
     description: 'Tell others what you do or what describes you best.',
+    audio: GUIDE_AUDIO.completeProfile.step5,
   },
   {
     title: 'Write a short status',
     description: 'Add a quick phrase that represents you today.',
+    audio: GUIDE_AUDIO.completeProfile.step6,
   },
   {
     title: 'Write your biography',
     description: 'Share a short intro about yourself.',
+    audio: GUIDE_AUDIO.completeProfile.step7,
   },
   {
     title: 'Choose your profile mode',
     description:
       'Select Social or Professional depending on how you want to connect.',
+    audio: GUIDE_AUDIO.completeProfile.step8,
   },
   {
-    title: 'Complete your extras',
-    description:
-      'Add interests, social links, photos, or affiliations when you are ready.',
+    title: 'Add affiliations',
+    description: 'Tap Affiliations to add schools, teams, or groups.',
+    audio: GUIDE_AUDIO.completeProfile.tabAffiliations,
+    quickAction: 'affiliations',
+  },
+  {
+    title: 'Add interests',
+    description: 'Tap Interests to choose what you care about.',
+    audio: GUIDE_AUDIO.completeProfile.tabInterests,
+    quickAction: 'interests',
+  },
+  {
+    title: 'Add social media',
+    description: 'Tap Social media to connect your profiles.',
+    audio: GUIDE_AUDIO.completeProfile.goToSocialMedia,
+    quickAction: 'social',
+  },
+  {
+    title: 'Add gallery photos',
+    description: 'Tap Gallery when you want to add profile photos.',
+    audio: null,
+    quickAction: 'gallery',
   },
   {
     title: 'Save your profile',
     description: 'Tap Save changes to finish your profile.',
+    audio: GUIDE_AUDIO.completeProfile.step10,
+    saveStep: true,
   },
 ];
 
@@ -625,6 +666,26 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   };
 
   const profileGuideVisible = isNewProfile && !isLoading && !guideDismissed;
+  const { playAudio, stopAudio } = useGuideAudio();
+
+  const currentGuideStep = COMPLETE_PROFILE_GUIDE_STEPS[guideStep];
+  const highlightedQuickAction = profileGuideVisible
+    ? (currentGuideStep?.quickAction ?? null)
+    : null;
+
+  useEffect(() => {
+    if (!profileGuideVisible) {
+      void stopAudio();
+      return;
+    }
+
+    void playAudio(currentGuideStep?.audio);
+  }, [profileGuideVisible, guideStep, currentGuideStep?.audio, playAudio, stopAudio]);
+
+  const guideAllowsQuickAction = (action: QuickActionKey) => {
+    if (!profileGuideVisible) return true;
+    return currentGuideStep?.quickAction === action;
+  };
 
   const setGuideFieldRef =
     (step: number) =>
@@ -692,6 +753,13 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const isProfileGuideActive = (step: number) =>
     profileGuideVisible && guideStep === step;
 
+  const isQuickActionsGuideActive =
+    profileGuideVisible && guideStep >= 8 && guideStep <= 11;
+
+  const isSaveGuideActive =
+    profileGuideVisible &&
+    guideStep === COMPLETE_PROFILE_GUIDE_STEPS.length - 1;
+
   const goNextGuideStep = () => {
     setGuideStep((prev) => {
       if (prev === 0) {
@@ -711,8 +779,12 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     setGuideStep(0);
   };
 
-  const guideAllows = (step: number) =>
-    !profileGuideVisible || guideStep === step;
+  const guideAllows = (step: number) => {
+    if (!profileGuideVisible) return true;
+    if (step === 9) return guideStep === COMPLETE_PROFILE_GUIDE_STEPS.length - 1;
+    if (step === 8) return guideStep >= 8 && guideStep <= 11;
+    return guideStep === step;
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
@@ -1122,9 +1194,9 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
               ref={setGuideFieldRef(8)}
               style={[
                 profileGuideVisible &&
-                  !isProfileGuideActive(8) &&
+                  !isQuickActionsGuideActive &&
                   styles.guideInactiveField,
-                isProfileGuideActive(8) && styles.guideActiveField,
+                isQuickActionsGuideActive && styles.guideActiveField,
               ]}
             >
               <ProfileQuickActions
@@ -1135,22 +1207,24 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                   affiliationsCount,
                 }}
                 onOpenInterests={() => {
-                  if (!guideAllows(8)) return;
+                  if (!guideAllowsQuickAction('interests')) return;
                   goToProfileExtraScreen('Interests');
                 }}
                 onOpenSocial={() => {
-                  if (!guideAllows(8)) return;
+                  if (!guideAllowsQuickAction('social')) return;
                   goToProfileExtraScreen('SocialMedia');
                 }}
                 onOpenGallery={() => {
-                  if (!guideAllows(8)) return;
+                  if (!guideAllowsQuickAction('gallery')) return;
                   goToProfileExtraScreen('Gallery');
                 }}
                 onOpenAffiliations={() => {
-                  if (!guideAllows(8)) return;
+                  if (!guideAllowsQuickAction('affiliations')) return;
                   goToProfileExtraScreen('Affiliations');
                 }}
                 compact={isLargeText}
+                highlightedAction={highlightedQuickAction}
+                dimUnhighlighted={profileGuideVisible}
               />
             </View>
           </View>
@@ -1179,7 +1253,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
               style={[
                 styles.bottomSaveBtn,
                 isLoading && { opacity: 0.7 },
-                isProfileGuideActive(9) && styles.guideActiveButton,
+                isSaveGuideActive && styles.guideActiveButton,
               ]}
               onPress={handleSave}
               disabled={isLoading || !guideAllows(9)}
@@ -1595,16 +1669,9 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   guideActiveField: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 10,
     borderWidth: 2,
     borderColor: '#3B5A85',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.14,
-    shadowRadius: 14,
-    elevation: 8,
+    borderRadius: 14,
   },
   guideInactiveField: {
     opacity: 0.45,

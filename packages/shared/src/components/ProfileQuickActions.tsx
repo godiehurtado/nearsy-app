@@ -3,6 +3,12 @@ import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+export type QuickActionKey =
+  | 'affiliations'
+  | 'interests'
+  | 'social'
+  | 'gallery';
+
 type Props = {
   onOpenInterests: () => void;
   onOpenSocial: () => void;
@@ -15,6 +21,8 @@ type Props = {
     affiliationsCount?: number;
   };
   compact?: boolean; // 👈 responsive
+  highlightedAction?: QuickActionKey | null;
+  dimUnhighlighted?: boolean;
 };
 
 export default function ProfileQuickActions({
@@ -24,6 +32,8 @@ export default function ProfileQuickActions({
   onOpenAffiliations,
   stats,
   compact,
+  highlightedAction = null,
+  dimUnhighlighted = false,
 }: Props) {
   return (
     <View style={styles.wrap}>
@@ -36,6 +46,8 @@ export default function ProfileQuickActions({
           subtitle={`${stats?.affiliationsCount ?? 0} selected`}
           onPress={onOpenAffiliations}
           compact={compact}
+          highlighted={highlightedAction === 'affiliations'}
+          dimmed={dimUnhighlighted && highlightedAction !== 'affiliations'}
         />
         <Tile
           icon="sparkles-outline"
@@ -43,6 +55,8 @@ export default function ProfileQuickActions({
           subtitle={`${stats?.interestsCount ?? 0} selected`}
           onPress={onOpenInterests}
           compact={compact}
+          highlighted={highlightedAction === 'interests'}
+          dimmed={dimUnhighlighted && highlightedAction !== 'interests'}
         />
         <Tile
           icon="share-social-outline"
@@ -50,6 +64,8 @@ export default function ProfileQuickActions({
           subtitle={`${stats?.socialCount ?? 0} connected`}
           onPress={onOpenSocial}
           compact={compact}
+          highlighted={highlightedAction === 'social'}
+          dimmed={dimUnhighlighted && highlightedAction !== 'social'}
         />
         <Tile
           icon="images-outline"
@@ -57,6 +73,8 @@ export default function ProfileQuickActions({
           subtitle={`${stats?.photosCount ?? 0} photos`}
           onPress={onOpenGallery}
           compact={compact}
+          highlighted={highlightedAction === 'gallery'}
+          dimmed={dimUnhighlighted && highlightedAction !== 'gallery'}
         />
       </View>
     </View>
@@ -69,12 +87,16 @@ function Tile({
   subtitle,
   onPress,
   compact,
+  highlighted = false,
+  dimmed = false,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle?: string;
   onPress: () => void;
   compact?: boolean;
+  highlighted?: boolean;
+  dimmed?: boolean;
 }) {
   return (
     <Pressable
@@ -82,6 +104,8 @@ function Tile({
       style={({ pressed }) => [
         styles.tile,
         compact && styles.tileCompact, // 👈 full-width en modo compacto
+        highlighted && styles.tileHighlighted,
+        dimmed && styles.tileDimmed,
         pressed && styles.pressed,
       ]}
     >
@@ -127,6 +151,13 @@ const styles = StyleSheet.create({
   tileCompact: {
     minWidth: '100%',
     alignSelf: 'stretch',
+  },
+  tileHighlighted: {
+    borderWidth: 2,
+    borderColor: '#ADCBE3',
+  },
+  tileDimmed: {
+    opacity: 0.45,
   },
   tileTitle: { fontWeight: '700', color: '#FFFFFF' },
   tileSubtitle: { color: '#E0E7FF', fontSize: 12 },

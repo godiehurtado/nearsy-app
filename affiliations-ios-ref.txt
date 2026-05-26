@@ -1,6 +1,6 @@
-// src/screens/AffiliationsScreen.tsx
+﻿// src/screens/AffiliationsScreen.tsx
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -20,14 +20,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 
-import Animated, { FadeInDown } from 'react-native-reanimated';
 import TopHeader from '../components/TopHeader';
-import GuideOnboardingCard from '../components/GuideOnboardingCard';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
+import { doc, setDoc } from 'firebase/firestore';
 import { getUserProfile } from '../services/firestoreService';
 import { uploadAffiliationImage } from '../services/storageService';
-import { GUIDE_AUDIO } from '../constants/guideAudioAssets';
-import { useGuideAudio } from '../hooks/useGuideAudio';
 
 type TopBarMode = 'color' | 'image';
 type ProfileMode = 'personal' | 'professional';
@@ -46,36 +43,7 @@ type Props = {
 
 const LABEL_MAX = 50;
 
-const AFFILIATIONS_SETUP_STEPS = [
-  {
-    title: 'Select School / College',
-    description: 'Tap School / College to add your school.',
-    audio: GUIDE_AUDIO.affiliations.selectSchool,
-  },
-  {
-    title: 'Enter school name',
-    description: 'Type the name of your school or college.',
-    audio: GUIDE_AUDIO.affiliations.enterName,
-  },
-  {
-    title: 'Add an image (optional)',
-    description: 'You can add a logo or image if you want.',
-    audio: GUIDE_AUDIO.affiliations.optionalImage,
-  },
-  {
-    title: 'Save your affiliations',
-    description: 'Tap Save affiliations when you are ready.',
-    audio: GUIDE_AUDIO.affiliations.tapSave,
-  },
-  {
-    title: 'You are all set',
-    description:
-      'Repeat this same process anytime to add more affiliations.',
-    audio: GUIDE_AUDIO.affiliations.finalMessage,
-  },
-];
-
-// 🔹 CONFIG categorías
+// ­ƒö╣ CONFIG categor├¡as
 const CATEGORY_CONFIG: {
   key: AffiliationCategory;
   title: string;
@@ -86,49 +54,49 @@ const CATEGORY_CONFIG: {
     key: 'schoolCollege',
     title: 'School / College',
     subtitle: 'Your school, college or university.',
-    emoji: '🎓',
+    emoji: '­ƒÄô',
   },
   {
     key: 'majorField',
     title: 'Major / Field',
     subtitle: 'Your main field of study or specialization.',
-    emoji: '📚',
+    emoji: '­ƒôÜ',
   },
   {
     key: 'alumniGroup',
     title: 'Alumni Group',
     subtitle: 'Alumni associations or class groups you belong to.',
-    emoji: '🏫',
+    emoji: '­ƒÅ½',
   },
   {
     key: 'favoriteTeam',
     title: 'Favorite Sport Team',
     subtitle: 'Club, national team or franchise you support.',
-    emoji: '⚽',
+    emoji: 'ÔÜ¢',
   },
   {
     key: 'hobbiesClubs',
     title: 'Clubs',
     subtitle: 'Hobby clubs, art groups or special interests.',
-    emoji: '🎭',
+    emoji: '­ƒÄ¡',
   },
   {
     key: 'industry',
     title: 'Industry',
     subtitle: 'The main industry you work or network in.',
-    emoji: '💼',
+    emoji: '­ƒÆ╝',
   },
   {
     key: 'communityGroups',
     title: 'Community Groups',
     subtitle: 'Community, volunteering or local groups.',
-    emoji: '🧑‍🤝‍🧑',
+    emoji: '­ƒºæÔÇì­ƒñØÔÇì­ƒºæ',
   },
   {
     key: 'pets',
     title: 'Pets',
     subtitle: 'Your pets or animals you feel connected to.',
-    emoji: '🐶',
+    emoji: '­ƒÉÂ',
   },
 ];
 
@@ -136,27 +104,6 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
 
   const [isSetupMode, setIsSetupMode] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState(0);
-  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
-  const onboardingActive =
-    isSetupMode && !onboardingCompleted && !isLoading;
-  const { playAudio, stopAudio } = useGuideAudio();
-
-  const currentSetupStep = AFFILIATIONS_SETUP_STEPS[onboardingStep];
-
-  useEffect(() => {
-    if (!onboardingActive) {
-      void stopAudio();
-      return;
-    }
-    void playAudio(currentSetupStep?.audio);
-  }, [onboardingActive, onboardingStep, currentSetupStep?.audio, playAudio, stopAudio]);
-
-  const completeOnboarding = useCallback(() => {
-    setOnboardingCompleted(true);
-    void stopAudio();
-  }, [stopAudio]);
 
   const [mode, setMode] = useState<ProfileMode>('personal');
 
@@ -170,6 +117,7 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
   const [affiliations, setAffiliations] = useState<AffiliationItem[]>([]);
 
   // UI state
+  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   // Modal label + logo
@@ -201,7 +149,7 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
         const existing = await getUserProfile(uid);
 
         if (!existing) {
-          // 🔥 SETUP MODE
+          // ­ƒöÑ SETUP MODE
           setIsSetupMode(true);
 
           // defaults seguros
@@ -213,11 +161,6 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
 
           return;
         }
-
-        setIsSetupMode(
-          (existing as { profileSetupCompleted?: boolean }).profileSetupCompleted !==
-            true,
-        );
 
         setProfileImage(existing.profileImage ?? null);
         setTopBarColor(existing.topBarColor ?? '#3B5A85');
@@ -256,21 +199,6 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
     cat: AffiliationCategory,
     globalIndex?: number,
   ) => {
-    if (onboardingActive) {
-      if (onboardingStep === 0 && cat !== 'schoolCollege') return;
-      if (
-        onboardingStep === 0 &&
-        cat === 'schoolCollege' &&
-        typeof globalIndex === 'number'
-      ) {
-        return;
-      }
-      if (onboardingStep === 3) return;
-      if (onboardingStep === 0 && cat === 'schoolCollege') {
-        setOnboardingStep(1);
-      }
-    }
-
     const isEditingExisting = typeof globalIndex === 'number';
 
     let existingLabel = '';
@@ -288,84 +216,38 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
     setLabelModalOpen(true);
   };
 
-  const persistAffiliations = async (items: AffiliationItem[]) => {
-    const uid = route?.params?.uid || firebaseAuth.currentUser?.uid;
-    if (!uid) throw new Error('User not authenticated.');
-
-    const fieldName =
-      mode === 'professional'
-        ? 'professionalAffiliations'
-        : 'personalAffiliations';
-
-    await firestoreDb
-      .collection('users')
-      .doc(uid)
-      .set({ [fieldName]: items, updatedAt: Date.now() }, { merge: true });
-  };
-
-  const handleDeleteAffiliation = (globalIndex: number) => {
-    const item = affiliations[globalIndex];
-    if (!item) return;
-
-    Alert.alert('Delete affiliation', `Remove "${item.label}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          const next = affiliations.filter((_, index) => index !== globalIndex);
-          setAffiliations(next);
-          try {
-            await persistAffiliations(next);
-          } catch (e: any) {
-            Alert.alert(
-              'Error',
-              e?.message || 'Could not delete affiliation.',
-            );
-          }
-        },
-      },
-    ]);
-  };
-
-  const handleOnboardingBack = () => {
-    if (onboardingStep === 1) {
-      setLabelModalOpen(false);
-    }
-    setOnboardingStep((prev) => Math.max(prev - 1, 0));
-  };
-
-  const commitAffiliationFromModal = (): boolean => {
-    if (!editingCategory) return false;
+  const handleSaveLabel = () => {
+    if (!editingCategory) return;
 
     const trimmed = tempLabel.trim();
     if (!trimmed) {
       Alert.alert('Validation', 'Please enter a short label.');
-      return false;
+      return;
     }
 
     const exists = affiliations.some(
-      (a, index) =>
+      (a) =>
         a.category === editingCategory &&
-        a.label.toLowerCase() === trimmed.toLowerCase() &&
-        index !== editingItemIndex,
+        a.label.toLowerCase() === trimmed.toLowerCase(),
     );
 
     if (exists) {
       Alert.alert('Duplicate', 'This item already exists.');
-      return false;
+      return;
     }
 
     setAffiliations((prev) => {
       const next = [...prev];
 
       if (editingItemIndex != null && next[editingItemIndex]) {
+        // actualizar existente
         next[editingItemIndex] = {
           ...next[editingItemIndex],
           label: trimmed,
           imageUrl: tempImageUrl,
         };
       } else {
+        // agregar nuevo
         next.push({
           category: editingCategory,
           label: trimmed,
@@ -376,34 +258,11 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
       return next;
     });
 
+    setLabelModalOpen(false);
     setEditingCategory(null);
     setEditingItemIndex(null);
     setTempLabel('');
     setTempImageUrl(null);
-    return true;
-  };
-
-  const handleOnboardingNext = () => {
-    if (onboardingStep === 1 && !tempLabel.trim()) {
-      Alert.alert('Validation', 'Please enter a short label.');
-      return;
-    }
-
-    setOnboardingStep((prev) =>
-      Math.min(prev + 1, AFFILIATIONS_SETUP_STEPS.length - 1),
-    );
-  };
-
-  const handleSaveLabel = () => {
-    if (!commitAffiliationFromModal()) return;
-
-    if (onboardingActive && onboardingStep === 3) {
-      setOnboardingStep(4);
-      setLabelModalOpen(false);
-      return;
-    }
-
-    setLabelModalOpen(false);
   };
 
   const handleSaveAll = async () => {
@@ -447,16 +306,15 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
           ? 'professionalAffiliations'
           : 'personalAffiliations';
 
-      await firestoreDb
-        .collection('users')
-        .doc(uid)
-        .set(
-          {
-            [fieldName]: withUploaded,
-            updatedAt: Date.now(),
-          },
-          { merge: true },
-        );
+      // ­ƒöÑ CLAVE: setDoc con merge
+      await setDoc(
+        doc(firestoreDb, 'users', uid),
+        {
+          [fieldName]: withUploaded,
+          updatedAt: new Date(),
+        },
+        { merge: true },
+      );
 
       setAffiliations(withUploaded);
 
@@ -509,22 +367,8 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
           CATEGORY_CONFIG.map((cat) => {
             const itemsForCat = getItemsForCategory(cat.key);
 
-            const isSchoolCategory =
-              onboardingActive &&
-              onboardingStep === 0 &&
-              cat.key === 'schoolCollege';
-
             return (
-              <View
-                key={cat.key}
-                style={[
-                  styles.block,
-                  onboardingActive &&
-                    onboardingStep === 0 &&
-                    cat.key !== 'schoolCollege' &&
-                    styles.guideInactiveField,
-                ]}
-              >
+              <View key={cat.key} style={styles.block}>
                 <View style={styles.blockHeader}>
                   <Text style={styles.blockTitle}>
                     {cat.emoji} {cat.title}
@@ -540,8 +384,6 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
                         key={`${cat.key}-${idx}`}
                         style={styles.affiliationCard}
                         onPress={() => openEditorForCategory(cat.key, idx)}
-                        onLongPress={() => handleDeleteAffiliation(idx)}
-                        delayLongPress={400}
                         activeOpacity={0.9}
                       >
                         <View style={styles.affiliationCircle}>
@@ -564,10 +406,7 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
                     ))}
 
                     <TouchableOpacity
-                      style={[
-                        styles.affiliationCard,
-                        isSchoolCategory && styles.guideActiveField,
-                      ]}
+                      style={styles.affiliationCard}
                       onPress={() => openEditorForCategory(cat.key)}
                       activeOpacity={0.9}
                     >
@@ -606,12 +445,7 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
         visible={labelModalOpen}
         transparent
         animationType="fade"
-        onRequestClose={() => {
-          if (onboardingActive && onboardingStep >= 1 && onboardingStep <= 3) {
-            return;
-          }
-          setLabelModalOpen(false);
-        }}
+        onRequestClose={() => setLabelModalOpen(false)}
       >
         <KeyboardAvoidingView
           style={{ flex: 1 }}
@@ -620,36 +454,9 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
         >
           <Pressable
             style={styles.modalBackdrop}
-            onPress={() => {
-              if (onboardingActive && onboardingStep >= 1 && onboardingStep <= 3) {
-                return;
-              }
-              setLabelModalOpen(false);
-            }}
+            onPress={() => setLabelModalOpen(false)}
           >
             <Pressable style={styles.modalCard} onPress={() => {}}>
-              {onboardingActive &&
-              onboardingStep >= 1 &&
-              onboardingStep <= 3 ? (
-                <View style={{ marginBottom: 12 }}>
-                  <GuideOnboardingCard
-                    stepIndex={onboardingStep}
-                    totalSteps={AFFILIATIONS_SETUP_STEPS.length}
-                    title={currentSetupStep.title}
-                    description={currentSetupStep.description}
-                    showBack={
-                      onboardingStep === 1 ||
-                      onboardingStep === 2 ||
-                      onboardingStep === 3
-                    }
-                    showNext={onboardingStep === 1 || onboardingStep === 2}
-                    onBack={handleOnboardingBack}
-                    onNext={handleOnboardingNext}
-                    onSkip={completeOnboarding}
-                  />
-                </View>
-              ) : null}
-
               <Text style={styles.modalTitle}>Add affiliation</Text>
               <Text style={styles.modalSubtitle}>
                 Give it a name. You can also add an image if you want. (max{' '}
@@ -667,17 +474,7 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
                 )}
               </View>
               <TouchableOpacity
-                style={[
-                  styles.addImageBtn,
-                  onboardingActive &&
-                    onboardingStep === 2 &&
-                    styles.guideActiveField,
-                  onboardingActive &&
-                    onboardingStep !== 2 &&
-                    onboardingStep >= 1 &&
-                    onboardingStep <= 3 &&
-                    styles.guideInactiveField,
-                ]}
+                style={styles.addImageBtn}
                 onPress={async () => {
                   try {
                     const perm =
@@ -712,19 +509,7 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
                 </Text>
               </TouchableOpacity>
 
-              <View
-                style={[
-                  styles.modalInputGroup,
-                  onboardingActive &&
-                    onboardingStep === 1 &&
-                    styles.guideActiveField,
-                  onboardingActive &&
-                    onboardingStep !== 1 &&
-                    onboardingStep >= 1 &&
-                    onboardingStep <= 3 &&
-                    styles.guideInactiveField,
-                ]}
-              >
+              <View style={styles.modalInputGroup}>
                 <View style={styles.modalLabelRow}>
                   <Text style={styles.modalLabel}>Label</Text>
                   <Text style={styles.modalCounter}>
@@ -751,18 +536,8 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
                   <Text style={styles.modalBtnGhostText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[
-                    styles.modalBtn,
-                    styles.modalBtnPrimary,
-                    onboardingActive &&
-                      onboardingStep === 3 &&
-                      styles.guideActiveField,
-                  ]}
+                  style={[styles.modalBtn, styles.modalBtnPrimary]}
                   onPress={handleSaveLabel}
-                  disabled={
-                    onboardingActive &&
-                    (onboardingStep === 1 || onboardingStep === 2)
-                  }
                   activeOpacity={0.85}
                 >
                   <Text style={styles.modalBtnPrimaryText}>Save</Text>
@@ -773,39 +548,17 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
         </KeyboardAvoidingView>
       </Modal>
 
-      {onboardingActive && (onboardingStep === 0 || onboardingStep === 4) ? (
-        <Animated.View
-          entering={FadeInDown.duration(350)}
-          style={[styles.floatingGuideCard, { top: insets.top + 10 }]}
-        >
-          <GuideOnboardingCard
-            stepIndex={onboardingStep}
-            totalSteps={AFFILIATIONS_SETUP_STEPS.length}
-            title={currentSetupStep.title}
-            description={currentSetupStep.description}
-            showBack={false}
-            showNext={onboardingStep === 4}
-            nextLabel="Got it"
-            onNext={completeOnboarding}
-            onSkip={completeOnboarding}
-          />
-        </Animated.View>
-      ) : null}
-
       {/* Barra inferior para guardar */}
       <View
         style={[
           styles.bottomBar,
           { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 16 },
-          onboardingActive &&
-            onboardingStep < 4 &&
-            styles.guideInactiveField,
         ]}
       >
         <TouchableOpacity
           style={[styles.bottomSaveBtn, isSaving && { opacity: 0.7 }]}
           onPress={handleSaveAll}
-          disabled={isSaving || (onboardingActive && onboardingStep < 4)}
+          disabled={isSaving}
           activeOpacity={0.85}
         >
           {isSaving ? (
@@ -823,25 +576,6 @@ export default function AffiliationsScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  floatingGuideCard: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    zIndex: 50,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 14,
-    elevation: 10,
-  },
-  guideActiveField: {
-    borderWidth: 2,
-    borderColor: '#3B5A85',
-    borderRadius: 14,
-  },
-  guideInactiveField: {
-    opacity: 0.45,
-  },
   title: {
     fontSize: 22,
     fontWeight: '800',

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -13,11 +13,16 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { firebaseAuth } from '../config/firebaseConfig';
 import TopHeader from '../components/TopHeader';
+import GuideOnboardingCard from '../components/GuideOnboardingCard';
 import type { SocialLinks } from '../types/profile';
+import { GUIDE_AUDIO } from '../constants/guideAudioAssets';
+import { useGuideAudio } from '../hooks/useGuideAudio';
 import { getUserProfile } from '../services/firestoreService';
 import {
   getSocialLinks,
@@ -30,6 +35,79 @@ type RouteParams = {
   mode?: ProfileMode;
 };
 
+type SocialFieldKey = keyof SocialLinks;
+
+type SocialIconSet = 'ionicons' | 'fontawesome6';
+
+const SOCIAL_ICON_COLOR = '#1E3A8A';
+
+const SOCIAL_FIELDS: {
+  key: SocialFieldKey;
+  label: string;
+  iconSet?: SocialIconSet;
+  icon: React.ComponentProps<typeof Ionicons>['name'] | 'x-twitter';
+  audio: number;
+  placeholder: string;
+}[] = [
+  {
+    key: 'linkedin',
+    label: 'LinkedIn',
+    icon: 'logo-linkedin',
+    audio: GUIDE_AUDIO.social.linkedin,
+    placeholder: 'https://www.linkedin.com/in/username',
+  },
+  {
+    key: 'instagram',
+    label: 'Instagram',
+    icon: 'logo-instagram',
+    audio: GUIDE_AUDIO.social.instagram,
+    placeholder: 'https://www.instagram.com/username',
+  },
+  {
+    key: 'facebook',
+    label: 'Facebook',
+    icon: 'logo-facebook',
+    audio: GUIDE_AUDIO.social.facebook,
+    placeholder: 'https://www.facebook.com/username',
+  },
+  {
+    key: 'youtube',
+    label: 'YouTube',
+    icon: 'logo-youtube',
+    audio: GUIDE_AUDIO.social.youtube,
+    placeholder: 'https://www.youtube.com/@username',
+  },
+  {
+    key: 'twitter',
+    label: 'X',
+    iconSet: 'fontawesome6',
+    icon: 'x-twitter',
+    audio: GUIDE_AUDIO.social.twitter,
+    placeholder: 'https://twitter.com/username',
+  },
+  {
+    key: 'tiktok',
+    label: 'TikTok',
+    icon: 'logo-tiktok',
+    audio: GUIDE_AUDIO.social.tiktok,
+    placeholder: 'https://www.tiktok.com/@username',
+  },
+  {
+    key: 'snapchat',
+    label: 'Snapchat',
+    icon: 'logo-snapchat',
+    audio: GUIDE_AUDIO.social.snapchat,
+    placeholder: 'https://www.snapchat.com/add/username',
+  },
+  {
+    key: 'website',
+    label: 'Website',
+    icon: 'globe-outline',
+    audio: GUIDE_AUDIO.social.website,
+    placeholder: 'https://yourdomain.com',
+  },
+];
+
 export default function SocialMediaScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -38,9 +116,11 @@ export default function SocialMediaScreen() {
   const routeUid: string | undefined = (route?.params as RouteParams)?.uid;
 
   const insets = useSafeAreaInsets();
+  const { playAudio } = useGuideAudio();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [setupGuideDismissed, setSetupGuideDismissed] = useState(false);
 
   const [mode, setMode] = useState<ProfileMode>('personal');
 
@@ -50,6 +130,26 @@ export default function SocialMediaScreen() {
 
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [links, setLinks] = useState<SocialLinks>({});
+
+  const isEmptyLinks = useMemo(
+    () =>
+      SOCIAL_FIELDS.every(({ key }) => !(links[key] ?? '').trim()),
+    [links],
+  );
+
+  const setupGuideVisible =
+    !loading && !setupGuideDismissed && isEmptyLinks;
+
+  const dismissSetupGuide = useCallback(() => {
+    setSetupGuideDismissed(true);
+  }, []);
+
+  const playFieldHelp = useCallback(
+    (audio: number) => {
+      void playAudio(audio);
+    },
+    [playAudio],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -162,6 +262,7 @@ export default function SocialMediaScreen() {
             style={{ flex: 1 }}
             contentContainerStyle={{
               paddingBottom: insets.bottom + 120,
+              paddingTop: setupGuideVisible ? 120 : 0,
             }}
             keyboardShouldPersistTaps="handled"
           >
@@ -184,62 +285,18 @@ export default function SocialMediaScreen() {
 
               <Text style={styles.sectionTitle}>Links</Text>
               <View style={styles.card}>
-                <SocialInput
-                  label="LinkedIn"
-                  icon="logo-linkedin"
-                  value={links.linkedin ?? ''}
-                  onChangeText={(v) => onChangeLink('linkedin', v)}
-                  placeholder="https://www.linkedin.com/in/username"
-                />
-                <SocialInput
-                  label="Instagram"
-                  icon="logo-instagram"
-                  value={links.instagram ?? ''}
-                  onChangeText={(v) => onChangeLink('instagram', v)}
-                  placeholder="https://www.instagram.com/username"
-                />
-                <SocialInput
-                  label="Facebook"
-                  icon="logo-facebook"
-                  value={links.facebook ?? ''}
-                  onChangeText={(v) => onChangeLink('facebook', v)}
-                  placeholder="https://www.facebook.com/username"
-                />
-                <SocialInput
-                  label="YouTube"
-                  icon="logo-youtube"
-                  value={links.youtube ?? ''}
-                  onChangeText={(v) => onChangeLink('youtube', v)}
-                  placeholder="https://www.youtube.com/@username"
-                />
-                <SocialInput
-                  label="Twitter / X"
-                  icon="logo-twitter"
-                  value={links.twitter ?? ''}
-                  onChangeText={(v) => onChangeLink('twitter', v)}
-                  placeholder="https://twitter.com/username"
-                />
-                <SocialInput
-                  label="TikTok"
-                  icon="logo-tiktok"
-                  value={links.tiktok ?? ''}
-                  onChangeText={(v) => onChangeLink('tiktok', v)}
-                  placeholder="https://www.tiktok.com/@username"
-                />
-                <SocialInput
-                  label="Snapchat"
-                  icon="logo-snapchat"
-                  value={links.snapchat ?? ''}
-                  onChangeText={(v) => onChangeLink('snapchat', v)}
-                  placeholder="https://www.snapchat.com/add/username"
-                />
-                <SocialInput
-                  label="Website"
-                  icon="globe-outline"
-                  value={links.website ?? ''}
-                  onChangeText={(v) => onChangeLink('website', v)}
-                  placeholder="https://yourdomain.com"
-                />
+                {SOCIAL_FIELDS.map((field) => (
+                  <SocialInput
+                    key={field.key}
+                    label={field.label}
+                    iconSet={field.iconSet}
+                    icon={field.icon}
+                    value={links[field.key] ?? ''}
+                    onChangeText={(v) => onChangeLink(field.key, v)}
+                    placeholder={field.placeholder}
+                    onInfoPress={() => playFieldHelp(field.audio)}
+                  />
+                ))}
               </View>
             </View>
           </ScrollView>
@@ -268,35 +325,95 @@ export default function SocialMediaScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      {setupGuideVisible ? (
+        <Animated.View
+          entering={FadeInDown.duration(350)}
+          style={[styles.floatingGuideCard, { top: insets.top + 10 }]}
+          pointerEvents="box-none"
+        >
+          <GuideOnboardingCard
+            stepIndex={0}
+            totalSteps={1}
+            title="Add your social links"
+            description="Tap the info icon beside each network to hear what to enter."
+            showBack={false}
+            showNext
+            nextLabel="Got it"
+            onNext={dismissSetupGuide}
+            onSkip={dismissSetupGuide}
+          />
+        </Animated.View>
+      ) : null}
     </View>
+  );
+}
+
+function SocialFieldIcon({
+  iconSet = 'ionicons',
+  icon,
+}: {
+  iconSet?: SocialIconSet;
+  icon: React.ComponentProps<typeof Ionicons>['name'] | 'x-twitter';
+}) {
+  if (iconSet === 'fontawesome6') {
+    return (
+      <FontAwesome6
+        name={icon as React.ComponentProps<typeof FontAwesome6>['name']}
+        size={18}
+        color={SOCIAL_ICON_COLOR}
+      />
+    );
+  }
+
+  return (
+    <Ionicons
+      name={icon as React.ComponentProps<typeof Ionicons>['name']}
+      size={18}
+      color={SOCIAL_ICON_COLOR}
+    />
   );
 }
 
 function SocialInput({
   label,
+  iconSet,
   icon,
   value,
   onChangeText,
   placeholder,
+  onInfoPress,
 }: {
   label: string;
-  icon: React.ComponentProps<typeof Ionicons>['name'];
+  iconSet?: SocialIconSet;
+  icon: React.ComponentProps<typeof Ionicons>['name'] | 'x-twitter';
   value: string;
   onChangeText: (v: string) => void;
   placeholder?: string;
+  onInfoPress?: () => void;
 }) {
   return (
     <View style={{ marginBottom: 10 }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 8,
-          marginBottom: 6,
-        }}
-      >
-        <Ionicons name={icon} size={18} color="#1E3A8A" />
-        <Text style={{ fontWeight: '600', color: '#111827' }}>{label}</Text>
+      <View style={styles.labelRow}>
+        <View style={styles.labelLeft}>
+          <SocialFieldIcon iconSet={iconSet} icon={icon} />
+          <Text style={styles.labelText}>{label}</Text>
+        </View>
+        {onInfoPress ? (
+          <TouchableOpacity
+            onPress={onInfoPress}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel={`Help for ${label}`}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="information-circle-outline"
+              size={20}
+              color="#6B7280"
+            />
+          </TouchableOpacity>
+        ) : null}
       </View>
       <TextInput
         value={value}
@@ -341,6 +458,22 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 12,
   },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  labelLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  labelText: {
+    fontWeight: '600',
+    color: '#111827',
+  },
   input: {
     backgroundColor: '#fff',
     borderWidth: 1,
@@ -384,5 +517,17 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 16,
+  },
+
+  floatingGuideCard: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    zIndex: 50,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    elevation: 10,
   },
 });

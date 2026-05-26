@@ -1,5 +1,6 @@
 // src/screens/InterestsScreen.tsx ✅ RNFirebase-only
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import {
   View,
   Text,
@@ -18,8 +19,11 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import TopHeader from '../components/TopHeader';
+import GuideOnboardingCard from '../components/GuideOnboardingCard';
 import InterestsWithLogo from '../components/InterestsWithLogo';
-import type { InterestAffiliations } from '../types/profile';
+import { GUIDE_AUDIO } from '../constants/guideAudioAssets';
+import { useGuideAudio } from '../hooks/useGuideAudio';
+import type { InterestAffiliations, InterestLabel } from '../types/profile';
 import { getUserProfile } from '../services/firestoreService';
 
 type ProfileMode = 'personal' | 'professional';
@@ -30,6 +34,29 @@ type RouteParams = {
   personalAff?: InterestAffiliations;
   professionalAff?: InterestAffiliations;
 };
+
+const INTERESTS_SETUP_STEPS = [
+  {
+    title: 'Select a category',
+    description: 'Tap any interest category to get started.',
+    audio: null,
+  },
+  {
+    title: 'Select your interests',
+    description: 'Choose one or more icons for this category.',
+    audio: GUIDE_AUDIO.interests.selectInterests,
+  },
+  {
+    title: 'Tap Done',
+    description: 'Tap Done when you have finished selecting icons.',
+    audio: GUIDE_AUDIO.interests.tapDone,
+  },
+  {
+    title: 'Save interests',
+    description: 'Tap Save interests to continue.',
+    audio: GUIDE_AUDIO.interests.save,
+  },
+];
 
 export default function InterestsScreen() {
   const route = useRoute<any>();
@@ -44,6 +71,37 @@ export default function InterestsScreen() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isSetupMode, setIsSetupMode] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
+  const [openedGuideCategory, setOpenedGuideCategory] =
+    useState<InterestLabel | null>(null);
+  const [interestsModalOpen, setInterestsModalOpen] = useState(false);
+  const onboardingActive =
+    isSetupMode && !onboardingCompleted && !loading;
+
+  const showOnboardingGuideOutside =
+    onboardingActive && (onboardingStep === 0 || onboardingStep === 3);
+
+  const showOnboardingGuideInModal =
+    onboardingActive &&
+    interestsModalOpen &&
+    (onboardingStep === 1 || onboardingStep === 2);
+  const { playAudio, stopAudio } = useGuideAudio();
+  const currentSetupStep = INTERESTS_SETUP_STEPS[onboardingStep];
+
+  useEffect(() => {
+    if (!onboardingActive) {
+      void stopAudio();
+      return;
+    }
+    void playAudio(currentSetupStep?.audio);
+  }, [onboardingActive, onboardingStep, currentSetupStep?.audio, playAudio, stopAudio]);
+
+  const completeOnboarding = useCallback(() => {
+    setOnboardingCompleted(true);
+    void stopAudio();
+  }, [stopAudio]);
 
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [topBarColor, setTopBarColor] = useState('#3B5A85');
@@ -59,10 +117,61 @@ export default function InterestsScreen() {
   const setCurrentAff =
     mode === 'personal' ? setPersonalAff : setProfessionalAff;
 
+  const handleOnboardingBack = () => {
+    if (onboardingStep === 1) {
+      setOpenedGuideCategory(null);
+      setOnboardingStep(0);
+      return;
+    }
+
+    if (onboardingStep === 2) {
+      setOnboardingStep(1);
+    }
+  };
+
+  const handleOnboardingNext = () => {
+    if (onboardingStep !== 1) return;
+
+    const category = openedGuideCategory;
+    const picks =
+      category && Array.isArray(currentAff[category])
+        ? currentAff[category]!
+        : [];
+
+    if (picks.length === 0) {
+      Alert.alert(
+        'One more thing',
+        'Please select at least one interest in this category.',
+      );
+      return;
+    }
+
+    setOnboardingStep(2);
+  };
+
   const title = useMemo(
     () => `${mode === 'personal' ? 'Personal' : 'Professional'} Interests`,
     [mode],
   );
+
+  const modalGuideCard = showOnboardingGuideInModal ? (
+    <Animated.View
+      entering={FadeInDown.duration(350)}
+      style={styles.modalGuideCard}
+    >
+      <GuideOnboardingCard
+        stepIndex={onboardingStep}
+        totalSteps={INTERESTS_SETUP_STEPS.length}
+        title={currentSetupStep.title}
+        description={currentSetupStep.description}
+        showBack={onboardingStep === 1 || onboardingStep === 2}
+        showNext={onboardingStep === 1}
+        onBack={handleOnboardingBack}
+        onNext={handleOnboardingNext}
+        onSkip={completeOnboarding}
+      />
+    </Animated.View>
+  ) : null;
 
   const cleanAffiliations = (aff: InterestAffiliations): InterestAffiliations =>
     Object.fromEntries(
@@ -156,6 +265,7 @@ export default function InterestsScreen() {
         const existing = await getUserProfile(uid);
 
         if (!existing) {
+          setIsSetupMode(true);
           setPersonalAff(params.personalAff ?? {});
           setProfessionalAff(params.professionalAff ?? {});
 
@@ -165,6 +275,11 @@ export default function InterestsScreen() {
           setProfileImage(null);
           return;
         }
+
+        setIsSetupMode(
+          (existing as { profileSetupCompleted?: boolean }).profileSetupCompleted !==
+            true,
+        );
 
         setPersonalAff(
           (existing as any)?.personalInterestAffiliations ??
@@ -223,8 +338,8 @@ export default function InterestsScreen() {
           style={{ flex: 1 }}
           contentContainerStyle={{
             paddingBottom: keyboardVisible
-              ? keyboardHeight + insets.bottom + 120
-              : insets.bottom + 120,
+              ? keyboardHeight + insets.bottom + 88
+              : insets.bottom + 88,
           }}
           keyboardShouldPersistTaps="handled"
         >
@@ -246,15 +361,53 @@ export default function InterestsScreen() {
               onChange={setCurrentAff}
               scope={mode}
               editable={true}
+              setupGuideActive={onboardingActive}
+              setupGuideStep={onboardingStep}
+              modalGuideCard={modalGuideCard}
+              onSetupModalOpenChange={setInterestsModalOpen}
+              onSetupCategoryOpened={(interest) => {
+                setOpenedGuideCategory(interest);
+                setOnboardingStep(1);
+              }}
+              onSetupModalDone={() => setOnboardingStep(3)}
             />
           </View>
         </ScrollView>
 
-        <View style={styles.bottomBar}>
+        {showOnboardingGuideOutside ? (
+          <Animated.View
+            entering={FadeInDown.duration(350)}
+            style={[
+              styles.floatingGuideCard,
+              onboardingStep === 0
+                ? { top: insets.top + 10 }
+                : { bottom: insets.bottom + 72 },
+            ]}
+          >
+            <GuideOnboardingCard
+              stepIndex={onboardingStep}
+              totalSteps={INTERESTS_SETUP_STEPS.length}
+              title={currentSetupStep.title}
+              description={currentSetupStep.description}
+              showBack={false}
+              showNext={false}
+              onSkip={completeOnboarding}
+            />
+          </Animated.View>
+        ) : null}
+
+        <View
+          style={[
+            styles.bottomBar,
+            onboardingActive &&
+              onboardingStep === 3 &&
+              styles.setupGuideHighlight,
+          ]}
+        >
           <TouchableOpacity
             style={[styles.bottomSaveBtn, saving && { opacity: 0.7 }]}
             onPress={handleSave}
-            disabled={saving}
+            disabled={saving || (onboardingActive && onboardingStep !== 3)}
             activeOpacity={0.85}
           >
             {saving ? (
@@ -273,6 +426,25 @@ export default function InterestsScreen() {
 }
 
 const styles = StyleSheet.create({
+  floatingGuideCard: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    zIndex: 50,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    elevation: 10,
+  },
+  modalGuideCard: {
+    marginBottom: 12,
+  },
+  setupGuideHighlight: {
+    borderWidth: 2,
+    borderColor: '#3B5A85',
+    borderRadius: 14,
+  },
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   loaderText: { color: '#374151' },
 
