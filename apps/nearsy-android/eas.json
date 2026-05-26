@@ -7,18 +7,18 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "prebuildCommand": "npx expo prebuild --platform android --clean"
+      "prebuildCommand": "npx expo prebuild --platform android --clean && node scripts/verify-android-autolinking.js"
     },
     "preview": {
       "distribution": "internal",
-      "prebuildCommand": "npx expo prebuild --platform android --clean",
+      "prebuildCommand": "npx expo prebuild --platform android --clean && node scripts/verify-android-autolinking.js",
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
       "autoIncrement": true,
-      "prebuildCommand": "npx expo prebuild --platform android --clean",
+      "prebuildCommand": "npx expo prebuild --platform android --clean && node scripts/verify-android-autolinking.js",
       "android": {
         "buildType": "app-bundle"
       }
