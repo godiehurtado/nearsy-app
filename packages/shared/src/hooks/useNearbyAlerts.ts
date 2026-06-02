@@ -8,11 +8,11 @@ import {
   dbQueryVisibleUsers,
   dbGetContactHashes,
 } from '../services/db';
-
-const FEET_PER_METER = 3.28084;
-
-const NEARBY_RADIUS_FT = 30;
-const NEARBY_RADIUS_KM = NEARBY_RADIUS_FT / FEET_PER_METER / 1000; // ft → m → km
+import {
+  FEET_PER_METER,
+  NEARBY_RADIUS_FT,
+  NEARBY_RADIUS_KM,
+} from '../config/proximityThresholds';
 const LOCATION_FRESH_MS = 5 * 60 * 1000;
 const AUTO_REFRESH_MS = 30 * 1000;
 

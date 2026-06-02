@@ -22,6 +22,7 @@ import { useNavigation } from '@react-navigation/native';
 import { adjustColor } from '../utils/colors';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import { FEET_PER_METER, MAX_METERS } from '../config/proximityThresholds';
 
 type UserDoc = {
   uid?: string;
@@ -67,9 +68,6 @@ type NearbyItem = UserDoc & { distanceFt?: number };
 
 // Constantes de distancia / vigencia
 const R_EARTH_M = 6371_000; // metros
-const FEET_PER_METER = 3.28084;
-const MAX_FEET = 50; // 50 ft ≈ 15.24 m
-const MAX_METERS = MAX_FEET / FEET_PER_METER;
 const STALE_MS = 60 * 60 * 1000; // ubicación del usuario válida por 60 min
 
 function toRad(deg: number) {

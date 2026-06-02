@@ -23,6 +23,11 @@ import type { RootTabsParamList } from '../navigation/RootTabs';
 
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { registerPushToken } from '../services/pushTokens';
+import {
+  FEET_PER_METER,
+  ALERTS_NEARBY_RADIUS_FT,
+  ALERTS_NEARBY_RADIUS_KM,
+} from '../config/proximityThresholds';
 
 type AlertKind = 'interest_nearby' | 'contact_nearby';
 
@@ -125,11 +130,6 @@ function isBlockedBetween(
 
   return iBlockedOther || otherBlockedMe;
 }
-
-// ✅ coherencia con 50 ft
-const FEET_PER_METER = 3.28084;
-const NEARBY_RADIUS_FT = 50;
-const NEARBY_RADIUS_KM = NEARBY_RADIUS_FT / FEET_PER_METER / 1000; // ft → m → km
 
 const LOCATION_FRESH_MS = 10 * 60 * 1000;
 const AUTO_REFRESH_MS = 30 * 1000;
@@ -290,9 +290,9 @@ export default function AlertsScreen() {
         if (!loc?.lat || !loc?.lng) return;
         if (loc.updatedAt && now - loc.updatedAt > LOCATION_FRESH_MS) return;
 
-        // Distancia → en ft (con límite 50 ft)
+        // Distancia → en ft (con límite NEARBY_RADIUS_FT)
         const km = haversineKm(myPoint, { lat: loc.lat, lng: loc.lng });
-        if (km > NEARBY_RADIUS_KM) return;
+        if (km > ALERTS_NEARBY_RADIUS_KM) return;
         const meters = km * 1000;
         const feet = meters * FEET_PER_METER;
 
@@ -421,7 +421,7 @@ export default function AlertsScreen() {
             <Text
               style={{ textAlign: 'center', color: '#6B7280', marginTop: 6 }}
             >
-              Showing only users within {NEARBY_RADIUS_FT} ft right now.
+              Showing only users within {ALERTS_NEARBY_RADIUS_FT} ft right now.
             </Text>
             {noLocation && (
               <Text
