@@ -137,9 +137,9 @@ function isBlockedBetween(
   return iBlockedOther || otherBlockedMe;
 }
 
-// ✅ coherencia con 50 ft
+// ✅ coherencia con Discovery (200 ft)
 const FEET_PER_METER = 3.28084;
-const NEARBY_RADIUS_FT = 50;
+const NEARBY_RADIUS_FT = 200;
 const NEARBY_RADIUS_KM = NEARBY_RADIUS_FT / FEET_PER_METER / 1000; // ft → m → km
 
 const LOCATION_FRESH_MS = 10 * 60 * 1000;
@@ -294,7 +294,7 @@ export default function AlertsScreen() {
         if (!loc?.lat || !loc?.lng) return;
         if (loc.updatedAt && now - loc.updatedAt > LOCATION_FRESH_MS) return;
 
-        // Distancia → en ft (con límite 50 ft)
+        // Distancia → en ft (con límite 200 ft)
         const km = haversineKm(myPoint, { lat: loc.lat, lng: loc.lng });
         if (km > NEARBY_RADIUS_KM) return;
         const meters = km * 1000;
