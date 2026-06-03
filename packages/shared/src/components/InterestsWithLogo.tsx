@@ -903,6 +903,7 @@ export default function InterestsWithLogo({
   );
   const [searchText, setSearchText] = useState('');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [searchInputFocused, setSearchInputFocused] = useState(false);
 
   const guideActive = typeof guideStep === 'number';
 
@@ -912,9 +913,18 @@ export default function InterestsWithLogo({
 
   useEffect(() => {
     if (!closeModalSignal) return;
+    Keyboard.dismiss();
+    setKeyboardVisible(false);
+    setSearchInputFocused(false);
     setModalVisible(false);
     setCurrentInterest(null);
   }, [closeModalSignal]);
+
+  const clearModalKeyboardState = () => {
+    Keyboard.dismiss();
+    setKeyboardVisible(false);
+    setSearchInputFocused(false);
+  };
 
   useEffect(() => {
     const showEvent =
@@ -941,6 +951,7 @@ export default function InterestsWithLogo({
   );
 
   const openInterestModal = (interest: InterestLabel) => {
+    clearModalKeyboardState();
     setCurrentInterest(interest);
     setSearchText('');
     setModalVisible(true);
@@ -960,13 +971,13 @@ export default function InterestsWithLogo({
   const guideModalStepActive =
     guideActive && (guideStep === 1 || guideStep === 2);
 
-  const pickerScrollStyle = guideModalStepActive
-    ? styles.modalPickerScrollGuide
-    : styles.modalPickerScrollDefault;
+  const keyboardListPaddingActive =
+    keyboardVisible && searchInputFocused && !guideModalStepActive;
 
   const toggleLogo = (logo: LogoOption) => {
     if (!currentInterest) return;
     if (guideActive && !guideAllowInterestToggle) return;
+    clearModalKeyboardState();
     const curr = interestLogoMap[currentInterest] ?? [];
     const exists = curr.some((p) => p.id === logo.id);
 
@@ -1021,6 +1032,24 @@ export default function InterestsWithLogo({
                 ? OTHER_GROUPS
                 : null;
 
+  const pickerScrollStyle = guideModalStepActive
+    ? styles.modalPickerScrollGuide
+    : Platform.OS === 'ios'
+      ? styles.modalPickerScrollDefaultIOS
+      : styles.modalPickerScrollDefault;
+
+  const pickerWrapStyle =
+    Platform.OS === 'ios' && !guideModalStepActive
+      ? [styles.modalPickerWrap, styles.modalPickerWrapIOS]
+      : styles.modalPickerWrap;
+
+  const pickerContentContainerStyle = [
+    ...(groups ? [styles.groupScrollContent] : [styles.logoGrid]),
+    Platform.OS === 'ios' && styles.pickerScrollContentShrink,
+    keyboardListPaddingActive && styles.keyboardOpenListPadding,
+    guideModalStepActive && styles.groupScrollContentGuide,
+  ];
+
   return (
     <View style={styles.container}>
       {/* Selector de intereses */}
@@ -1064,6 +1093,7 @@ export default function InterestsWithLogo({
         transparent
         animationType="slide"
         onRequestClose={() => {
+          clearModalKeyboardState();
           setModalVisible(false);
           setCurrentInterest(null);
         }}
@@ -1071,9 +1101,19 @@ export default function InterestsWithLogo({
         <KeyboardAvoidingView
           style={styles.modalKeyboardAvoider}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          enabled={
+            Platform.OS === 'android' ||
+            keyboardListPaddingActive ||
+            guideModalStepActive
+          }
         >
           <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View
+            style={[
+              styles.modalCard,
+              Platform.OS === 'ios' && styles.modalCardIOS,
+            ]}
+          >
             {modalGuideCard ?? null}
 
             <Text style={styles.modalTitle}>
@@ -1089,6 +1129,8 @@ export default function InterestsWithLogo({
               placeholderTextColor="#9CA3AF"
               value={searchText}
               onChangeText={setSearchText}
+              onFocus={() => setSearchInputFocused(true)}
+              onBlur={() => setSearchInputFocused(false)}
             />
 
             {/* Grid de catálogo */}
@@ -1096,20 +1138,15 @@ export default function InterestsWithLogo({
             <GuideHighlightSlot
               highlight={guideActive && guideStep === 1}
               dimmed={guideActive && guideStep !== 1}
-              style={styles.modalPickerWrap}
+              style={pickerWrapStyle}
             >
             {groups ? (
               <ScrollView
                 style={pickerScrollStyle}
-                contentContainerStyle={[
-                  styles.groupScrollContent,
-                  keyboardVisible &&
-                    !guideModalStepActive &&
-                    styles.keyboardOpenListPadding,
-                  guideModalStepActive && styles.groupScrollContentGuide,
-                ]}
+                contentContainerStyle={pickerContentContainerStyle}
                 keyboardShouldPersistTaps="handled"
                 nestedScrollEnabled
+                bounces={Platform.OS === 'ios' ? false : true}
               >
                 {groups.map((group) => {
                   const filtered = filterOptions(group.options);
@@ -1162,13 +1199,7 @@ export default function InterestsWithLogo({
                 numColumns={3}
                 columnWrapperStyle={styles.logoRow}
                 style={pickerScrollStyle}
-                contentContainerStyle={[
-                  styles.logoGrid,
-                  keyboardVisible &&
-                    !guideModalStepActive &&
-                    styles.keyboardOpenListPadding,
-                  guideModalStepActive && styles.groupScrollContentGuide,
-                ]}
+                contentContainerStyle={pickerContentContainerStyle}
                 keyboardShouldPersistTaps="handled"
                 renderItem={({ item }) => {
                   const selected = !!interestLogoMap[currentInterest!]?.some(
@@ -1216,6 +1247,7 @@ export default function InterestsWithLogo({
                     if (guideActive && guideStep === 2) {
                       onGuideModalDone?.();
                     }
+                    clearModalKeyboardState();
                     setModalVisible(false);
                     setCurrentInterest(null);
                   }}
@@ -1233,6 +1265,7 @@ export default function InterestsWithLogo({
                     styles.guideDimmed,
                 ]}
                 onPress={() => {
+                  clearModalKeyboardState();
                   setModalVisible(false);
                   setCurrentInterest(null);
                 }}
@@ -1356,13 +1389,31 @@ const styles = StyleSheet.create({
     gap: 12,
     flexDirection: 'column',
   },
+  modalCardIOS: {
+    flexShrink: 1,
+  },
   modalPickerScrollDefault: {
     maxHeight: '70%',
+  },
+  /** iOS: shrink to content; cap height only when catalog is long (no % viewport reserve). */
+  modalPickerScrollDefaultIOS: {
+    flexGrow: 0,
+    flexShrink: 1,
+    maxHeight: 360,
+    alignSelf: 'stretch',
   },
   modalPickerScrollGuide: {
     flexGrow: 0,
     flexShrink: 1,
     maxHeight: 300,
+  },
+  modalPickerWrapIOS: {
+    flexGrow: 0,
+    flexShrink: 1,
+    alignSelf: 'stretch',
+  },
+  pickerScrollContentShrink: {
+    flexGrow: 0,
   },
   groupScrollContentGuide: {
     paddingBottom: 8,
