@@ -567,6 +567,34 @@ export default function RegisterScreen({ navigation }: any) {
 
       await createUserProfile(user.uid, profile as any);
 
+      if (Platform.OS === 'ios') {
+        // TEMP: Keep session after register (no email verification) so profile setup + Storage work.
+        Keyboard.dismiss();
+        setTimeout(() => {
+          navigation.reset({
+            index: 0,
+            routes: [
+              {
+                name: 'CompleteProfile',
+                params: {
+                  uid: user.uid,
+                  email: user.email ?? email.trim(),
+                  inputNonce: Date.now(),
+                },
+              },
+            ],
+          });
+        }, 150);
+
+        setTimeout(() => {
+          Alert.alert(
+            'Account created',
+            "Your account was created successfully. Let's finish setting up your profile.",
+          );
+        }, 300);
+        return;
+      }
+
       try {
         await firebaseAuth.signOut();
       } catch {}

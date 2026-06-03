@@ -12,6 +12,8 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 
 import {
@@ -813,6 +815,27 @@ const logoCatalog: Record<InterestLabel, LogoOption[]> = {
   Other: OTHER_GROUPS.flatMap((g) => g.options),
 };
 
+function GuideHighlightSlot({
+  highlight,
+  dimmed,
+  style,
+  children,
+}: {
+  highlight?: boolean;
+  dimmed?: boolean;
+  style?: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={[styles.guideSlot, style]}>
+      <View style={dimmed ? styles.guideDimmed : undefined}>{children}</View>
+      {highlight ? (
+        <View style={styles.guideHighlightOverlay} pointerEvents="none" />
+      ) : null}
+    </View>
+  );
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Componente
 export default function InterestsWithLogo({
@@ -820,11 +843,32 @@ export default function InterestsWithLogo({
   onChange,
   scope = 'personal',
   editable = true,
+  guideStep,
+  modalGuideCard,
+  onGuideCategoryOpened,
+  onGuideModalDone,
+  onGuideModalOpenChange,
+  guideAllowCategoryIndex,
+  guideAllowInterestToggle = true,
+  guideAllowDone = true,
+  closeModalSignal = 0,
 }: {
   value: InterestAffiliations;
   onChange: (next: InterestAffiliations) => void;
   scope?: 'personal' | 'professional';
   editable?: boolean;
+  /** Active onboarding step index (omit to disable guide UI). */
+  guideStep?: number;
+  /** Rendered at top of the interest picker modal during guided steps. */
+  modalGuideCard?: React.ReactNode;
+  onGuideCategoryOpened?: (interest: InterestLabel) => void;
+  onGuideModalDone?: () => void;
+  onGuideModalOpenChange?: (visible: boolean) => void;
+  guideAllowCategoryIndex?: (index: number) => boolean;
+  guideAllowInterestToggle?: boolean;
+  guideAllowDone?: boolean;
+  /** Increment to close the picker modal from the parent (e.g. guide Back). */
+  closeModalSignal?: number;
 }) {
   const [interestLogoMap, setInterestLogoMap] = useState<InterestAffiliations>(
     value ?? {},
@@ -860,6 +904,18 @@ export default function InterestsWithLogo({
   const [searchText, setSearchText] = useState('');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
+  const guideActive = typeof guideStep === 'number';
+
+  useEffect(() => {
+    onGuideModalOpenChange?.(modalVisible);
+  }, [modalVisible, onGuideModalOpenChange]);
+
+  useEffect(() => {
+    if (!closeModalSignal) return;
+    setModalVisible(false);
+    setCurrentInterest(null);
+  }, [closeModalSignal]);
+
   useEffect(() => {
     const showEvent =
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -890,13 +946,27 @@ export default function InterestsWithLogo({
     setModalVisible(true);
   };
 
-  const onPressInterest = (interest: InterestLabel) => {
+  const onPressInterest = (interest: InterestLabel, index: number) => {
     if (!editable) return;
+    if (guideActive && guideAllowCategoryIndex && !guideAllowCategoryIndex(index)) {
+      return;
+    }
     openInterestModal(interest);
+    if (guideActive && guideStep === 0) {
+      onGuideCategoryOpened?.(interest);
+    }
   };
+
+  const guideModalStepActive =
+    guideActive && (guideStep === 1 || guideStep === 2);
+
+  const pickerScrollStyle = guideModalStepActive
+    ? styles.modalPickerScrollGuide
+    : styles.modalPickerScrollDefault;
 
   const toggleLogo = (logo: LogoOption) => {
     if (!currentInterest) return;
+    if (guideActive && !guideAllowInterestToggle) return;
     const curr = interestLogoMap[currentInterest] ?? [];
     const exists = curr.some((p) => p.id === logo.id);
 
@@ -954,29 +1024,39 @@ export default function InterestsWithLogo({
   return (
     <View style={styles.container}>
       {/* Selector de intereses */}
-      <View style={styles.interestsContainer}>
+      <GuideHighlightSlot
+        highlight={guideActive && guideStep === 0}
+        style={styles.interestsContainer}
+      >
         <Text style={styles.modeLabel}>Select Your Interests:</Text>
         <View style={styles.interestsList}>
-          {interestOptions.map((it) => {
+          {interestOptions.map((it, index) => {
             const isSelected = !!interestLogoMap[it.label];
+            const categoryDisabled =
+              !editable ||
+              (guideActive &&
+                guideAllowCategoryIndex &&
+                !guideAllowCategoryIndex(index));
+
             return (
-              <TouchableOpacity
-                key={it.label}
-                style={[
-                  styles.interestButton,
-                  isSelected && styles.interestSelected,
-                ]}
-                onPress={() => onPressInterest(it.label)}
-                disabled={!editable}
-              >
-                <Text style={styles.interestText}>
-                  {it.icon} {it.label}
-                </Text>
-              </TouchableOpacity>
+              <View key={it.label}>
+                <TouchableOpacity
+                  style={[
+                    styles.interestButton,
+                    isSelected && styles.interestSelected,
+                  ]}
+                  onPress={() => onPressInterest(it.label, index)}
+                  disabled={categoryDisabled}
+                >
+                  <Text style={styles.interestText}>
+                    {it.icon} {it.label}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             );
           })}
         </View>
-      </View>
+      </GuideHighlightSlot>
 
       {/* Modal de logos */}
       <Modal
@@ -994,6 +1074,8 @@ export default function InterestsWithLogo({
         >
           <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
+            {modalGuideCard ?? null}
+
             <Text style={styles.modalTitle}>
               {currentInterest
                 ? `Choose a ${currentInterest} icon`
@@ -1011,14 +1093,23 @@ export default function InterestsWithLogo({
 
             {/* Grid de catálogo */}
 
+            <GuideHighlightSlot
+              highlight={guideActive && guideStep === 1}
+              dimmed={guideActive && guideStep !== 1}
+              style={styles.modalPickerWrap}
+            >
             {groups ? (
               <ScrollView
-                style={{ maxHeight: '70%' }}
+                style={pickerScrollStyle}
                 contentContainerStyle={[
                   styles.groupScrollContent,
-                  keyboardVisible && styles.keyboardOpenListPadding,
+                  keyboardVisible &&
+                    !guideModalStepActive &&
+                    styles.keyboardOpenListPadding,
+                  guideModalStepActive && styles.groupScrollContentGuide,
                 ]}
                 keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
               >
                 {groups.map((group) => {
                   const filtered = filterOptions(group.options);
@@ -1070,9 +1161,13 @@ export default function InterestsWithLogo({
                 keyExtractor={(item) => item.id}
                 numColumns={3}
                 columnWrapperStyle={styles.logoRow}
+                style={pickerScrollStyle}
                 contentContainerStyle={[
                   styles.logoGrid,
-                  keyboardVisible && styles.keyboardOpenListPadding,
+                  keyboardVisible &&
+                    !guideModalStepActive &&
+                    styles.keyboardOpenListPadding,
+                  guideModalStepActive && styles.groupScrollContentGuide,
                 ]}
                 keyboardShouldPersistTaps="handled"
                 renderItem={({ item }) => {
@@ -1107,26 +1202,45 @@ export default function InterestsWithLogo({
                 No icons configured yet for this interest.
               </Text>
             )}
+            </GuideHighlightSlot>
 
-            {/* Acciones modal */}
-            <TouchableOpacity
-              style={styles.modalCloseBtn}
-              onPress={() => {
-                setModalVisible(false);
-                setCurrentInterest(null);
-              }}
-            >
-              <Text style={styles.modalCloseText}>Done</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.modalCloseBtn}
-              onPress={() => {
-                setModalVisible(false);
-                setCurrentInterest(null);
-              }}
-            >
-              <Text style={styles.modalCloseText}>Cancel</Text>
-            </TouchableOpacity>
+            <View style={styles.modalFooterActions}>
+              <GuideHighlightSlot
+                highlight={guideActive && guideStep === 2}
+                dimmed={guideActive && guideStep !== 2}
+                style={styles.modalFooterActionSlot}
+              >
+                <TouchableOpacity
+                  style={styles.modalCloseBtn}
+                  onPress={() => {
+                    if (guideActive && guideStep === 2) {
+                      onGuideModalDone?.();
+                    }
+                    setModalVisible(false);
+                    setCurrentInterest(null);
+                  }}
+                  disabled={!editable || (guideActive && !guideAllowDone)}
+                >
+                  <Text style={styles.modalCloseText}>Done</Text>
+                </TouchableOpacity>
+              </GuideHighlightSlot>
+              <TouchableOpacity
+                style={[
+                  styles.modalCloseBtn,
+                  guideActive &&
+                    guideStep >= 1 &&
+                    guideStep <= 2 &&
+                    styles.guideDimmed,
+                ]}
+                onPress={() => {
+                  setModalVisible(false);
+                  setCurrentInterest(null);
+                }}
+                disabled={guideActive && guideStep >= 1 && guideStep <= 2}
+              >
+                <Text style={styles.modalCloseText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           </View>
         </KeyboardAvoidingView>
@@ -1240,6 +1354,26 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 16,
     maxHeight: '85%',
     gap: 12,
+    flexDirection: 'column',
+  },
+  modalPickerScrollDefault: {
+    maxHeight: '70%',
+  },
+  modalPickerScrollGuide: {
+    flexGrow: 0,
+    flexShrink: 1,
+    maxHeight: 300,
+  },
+  groupScrollContentGuide: {
+    paddingBottom: 8,
+  },
+  modalFooterActions: {
+    flexShrink: 0,
+    gap: 8,
+    marginTop: 4,
+  },
+  modalFooterActionSlot: {
+    width: '100%',
   },
   modalTitle: { fontSize: 18, fontWeight: '700' },
 
@@ -1391,5 +1525,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 8,
     color: '#111827',
+  },
+
+  guideSlot: {
+    position: 'relative',
+  },
+  guideDimmed: {
+    opacity: 0.45,
+  },
+  guideHighlightOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#3B5A85',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  modalPickerWrap: {
+    width: '100%',
   },
 });
