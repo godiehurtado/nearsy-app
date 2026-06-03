@@ -1,5 +1,5 @@
 // src/screens/NearbySearchScreen.tsx ✅ Hybrid (Auth RNFirebase + Firestore Web SDK)
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
@@ -261,8 +261,13 @@ export default function NearbySearchScreen() {
     return () => unsub();
   }, []);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  type LoadDataOptions = { showFullScreenLoader?: boolean };
+
+  const loadData = useCallback(async (options?: LoadDataOptions) => {
+    const showFullScreenLoader = options?.showFullScreenLoader === true;
+    if (showFullScreenLoader) {
+      setLoading(true);
+    }
     try {
       const authUser = firebaseAuth.currentUser;
       const me = authUser?.uid;
@@ -358,18 +363,27 @@ export default function NearbySearchScreen() {
       Alert.alert('Error', e?.message || 'Could not load nearby profiles.');
       setItems([]);
     } finally {
-      setLoading(false);
+      if (showFullScreenLoader) {
+        setLoading(false);
+      }
     }
   }, [profile.phone, profile.blockedContacts, profile.isReviewer]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadData();
-    setRefreshing(false);
+    try {
+      await loadData({ showFullScreenLoader: false });
+    } finally {
+      setRefreshing(false);
+    }
   }, [loadData]);
 
+  const hasLoadedOnce = useRef(false);
+
   useEffect(() => {
-    loadData();
+    const showFullScreenLoader = !hasLoadedOnce.current;
+    hasLoadedOnce.current = true;
+    void loadData({ showFullScreenLoader });
   }, [loadData]);
 
   if (loading) {
