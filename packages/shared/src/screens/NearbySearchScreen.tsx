@@ -1,5 +1,5 @@
 // src/screens/NearbySearchScreen.tsx ✅ Hybrid (Auth RNFirebase + Firestore Web SDK)
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
@@ -187,6 +187,7 @@ export default function NearbySearchScreen() {
   const [items, setItems] = useState<NearbyItem[]>([]);
   const [profile, setProfile] = useState<ProfileDoc>({});
   const [hasLocation, setHasLocation] = useState(true);
+  const hasLoadedOnceRef = useRef(false);
 
   const topColor = profile.topBarColor || '#3B5A85';
 
@@ -229,8 +230,11 @@ export default function NearbySearchScreen() {
     return () => unsub();
   }, []);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (options?: { showFullScreenLoader?: boolean }) => {
+    const showFullScreenLoader = options?.showFullScreenLoader === true;
+    if (showFullScreenLoader) {
+      setLoading(true);
+    }
     try {
       const authUser = firebaseAuth.currentUser;
       const me = authUser?.uid;
@@ -322,18 +326,26 @@ export default function NearbySearchScreen() {
       Alert.alert('Error', e?.message || 'Could not load nearby profiles.');
       setItems([]);
     } finally {
-      setLoading(false);
+      if (showFullScreenLoader) {
+        setLoading(false);
+      }
     }
   }, [profile.phone, profile.blockedContacts, profile.isReviewer]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadData();
-    setRefreshing(false);
+    try {
+      await loadData({ showFullScreenLoader: false });
+    } finally {
+      setRefreshing(false);
+    }
   }, [loadData]);
 
   useEffect(() => {
-    loadData();
+    const showFullScreenLoader = !hasLoadedOnceRef.current;
+    void loadData({ showFullScreenLoader }).finally(() => {
+      hasLoadedOnceRef.current = true;
+    });
   }, [loadData]);
 
   if (loading) {
