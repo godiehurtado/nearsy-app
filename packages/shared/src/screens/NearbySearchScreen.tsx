@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
+import { dbSetUserMerge } from '../services/db';
 
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -75,6 +76,12 @@ type ProfileDoc = {
   phone?: string;
   email?: string;
   blockedContacts?: string[];
+  location?: {
+    lat: number;
+    lng: number;
+    updatedAt?: number;
+    accuracy?: number | null;
+  };
 
   // 🔹 flag para saber si el usuario actual es revisor (cuenta de Apple)
   isReviewer?: boolean;
@@ -195,6 +202,69 @@ async function getUsablePosition(): Promise<{
   };
 }
 
+function isViewerFirestoreLocationUsable(
+  loc: ProfileDoc['location'] | undefined,
+  now: number,
+): boolean {
+  if (!loc?.lat || !loc?.lng) return false;
+  if (loc.updatedAt && now - loc.updatedAt > STALE_MS) return false;
+  return true;
+}
+
+function viewerLocationDiffers(
+  firestoreLoc: ProfileDoc['location'] | undefined,
+  gps: { lat: number; lng: number },
+): boolean {
+  if (!firestoreLoc?.lat || !firestoreLoc?.lng) return true;
+  return (
+    distanceMeters({ lat: firestoreLoc.lat, lng: firestoreLoc.lng }, gps) > 1
+  );
+}
+
+async function syncViewerLocationToFirestore(
+  uid: string,
+  gps: { lat: number; lng: number; accuracy?: number | null },
+) {
+  const now = Date.now();
+  await dbSetUserMerge(uid, {
+    location: {
+      lat: gps.lat,
+      lng: gps.lng,
+      updatedAt: now,
+      accuracy: gps.accuracy ?? null,
+    },
+    updatedAt: now,
+  });
+}
+
+async function resolveViewerPosition(
+  uid: string,
+  firestoreLoc: ProfileDoc['location'] | undefined,
+): Promise<{ lat: number; lng: number } | null> {
+  const now = Date.now();
+
+  if (isViewerFirestoreLocationUsable(firestoreLoc, now)) {
+    if (__DEV__) {
+      console.log('[NearbySearch] viewer position from Firestore');
+    }
+    return { lat: firestoreLoc!.lat, lng: firestoreLoc!.lng };
+  }
+
+  const gps = await getUsablePosition();
+  if (!gps) return null;
+
+  if (viewerLocationDiffers(firestoreLoc, gps)) {
+    void syncViewerLocationToFirestore(uid, gps).catch((e) => {
+      if (__DEV__) console.warn('[NearbySearch] location sync error:', e);
+    });
+  }
+
+  if (__DEV__) {
+    console.log('[NearbySearch] viewer position from GPS (fallback)');
+  }
+  return { lat: gps.lat, lng: gps.lng };
+}
+
 async function getBlockedUserIds(uid: string): Promise<Set<string>> {
   const snap = await getDocs(
     collection(firestoreDb, 'users', uid, 'blockedUsers'),
@@ -221,6 +291,11 @@ export default function NearbySearchScreen() {
   const [items, setItems] = useState<NearbyItem[]>([]);
   const [profile, setProfile] = useState<ProfileDoc>({});
   const [hasLocation, setHasLocation] = useState(true);
+  const profileRef = useRef(profile);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
 
   const topColor = profile.topBarColor || '#3B5A85';
 
@@ -280,12 +355,13 @@ export default function NearbySearchScreen() {
 
       const blockedUserIds = await getBlockedUserIds(me);
 
-      const myPhone = profile.phone ?? null;
-      const myBlockedContacts = profile.blockedContacts ?? null;
-      const isReviewer = profile.isReviewer === true;
+      const currentProfile = profileRef.current;
+      const myPhone = currentProfile.phone ?? null;
+      const myBlockedContacts = currentProfile.blockedContacts ?? null;
+      const isReviewer = currentProfile.isReviewer === true;
 
-      // ⚠️ Para reviewers, no obligamos a tener ubicación
-      const myPos = await getUsablePosition();
+      // Firestore location first (matches backend proximity); GPS fallback if missing/stale
+      const myPos = await resolveViewerPosition(me, currentProfile.location);
 
       if (!myPos && !isReviewer) {
         setHasLocation(false);

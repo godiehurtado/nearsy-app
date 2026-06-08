@@ -1,5 +1,5 @@
 // packages/shared/src/App.tsx
-import './background/locationTask.android';
+import './background/locationTask';
 import React, { useEffect } from 'react';
 import { Platform } from 'react-native';
 

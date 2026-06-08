@@ -2,7 +2,7 @@
 
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BG_LOCATION_TASK } from '../background/locationTask.android';
+import { BG_LOCATION_TASK } from '../background/locationTask';
 
 type StartOpts = {
   uid: string;
