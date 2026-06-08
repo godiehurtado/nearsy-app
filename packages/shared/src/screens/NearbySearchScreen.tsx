@@ -23,6 +23,8 @@ import { adjustColor } from '../utils/colors';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { FEET_PER_METER, MAX_METERS } from '../config/proximityThresholds';
+import { dbSetUserMerge } from '../services/db';
+import { buildLocationPayload } from '../utils/locationPayload';
 
 type UserDoc = {
   uid?: string;
@@ -55,6 +57,7 @@ type ProfileDoc = {
   realName?: string;
   topBarColor?: string;
   visibility?: boolean;
+  location?: { lat: number; lng: number; updatedAt?: number };
 
   phone?: string;
   email?: string;
@@ -120,9 +123,20 @@ function isBlockedBetween(
   return iBlockedOther || otherBlockedMe;
 }
 
+function isUsableFirestoreLocation(
+  loc?: { lat?: number; lng?: number; updatedAt?: number } | null,
+  now = Date.now(),
+): loc is { lat: number; lng: number } {
+  if (!loc?.lat || !loc?.lng) return false;
+  const updatedAt = loc.updatedAt ?? 0;
+  if (updatedAt && now - updatedAt > STALE_MS) return false;
+  return true;
+}
+
 async function getUsablePosition(): Promise<{
   lat: number;
   lng: number;
+  coords?: Location.LocationObjectCoords;
 } | null> {
   const perm = await Location.getForegroundPermissionsAsync();
 
@@ -147,16 +161,44 @@ async function getUsablePosition(): Promise<{
     accuracy: Location.Accuracy.Highest,
   });
   if (now?.coords) {
-    return { lat: now.coords.latitude, lng: now.coords.longitude };
+    return {
+      lat: now.coords.latitude,
+      lng: now.coords.longitude,
+      coords: now.coords,
+    };
   }
 
-  // granted
   const last = await Location.getLastKnownPositionAsync();
   if (last?.coords) {
-    return { lat: last.coords.latitude, lng: last.coords.longitude };
+    return {
+      lat: last.coords.latitude,
+      lng: last.coords.longitude,
+      coords: last.coords,
+    };
   }
 
-  return { lat: now.coords.latitude, lng: now.coords.longitude };
+  return null;
+}
+
+async function resolveViewerPosition(
+  uid: string,
+  profileLocation?: { lat?: number; lng?: number; updatedAt?: number } | null,
+): Promise<{ lat: number; lng: number } | null> {
+  const now = Date.now();
+
+  if (isUsableFirestoreLocation(profileLocation, now)) {
+    return { lat: profileLocation.lat, lng: profileLocation.lng };
+  }
+
+  const gps = await getUsablePosition();
+  if (!gps) return null;
+
+  void dbSetUserMerge(
+    uid,
+    buildLocationPayload(gps.lat, gps.lng, gps.coords),
+  ).catch(() => {});
+
+  return { lat: gps.lat, lng: gps.lng };
 }
 
 async function getBlockedUserIds(uid: string): Promise<Set<string>> {
@@ -251,8 +293,8 @@ export default function NearbySearchScreen() {
       const myBlockedContacts = profile.blockedContacts ?? null;
       const isReviewer = profile.isReviewer === true;
 
-      // ⚠️ Para reviewers, no obligamos a tener ubicación
-      const myPos = await getUsablePosition();
+      // Firestore-first viewer position (aligned with backend alerts); GPS fallback
+      const myPos = await resolveViewerPosition(me, profile.location);
 
       if (!myPos && !isReviewer) {
         setHasLocation(false);
@@ -330,7 +372,14 @@ export default function NearbySearchScreen() {
         setLoading(false);
       }
     }
-  }, [profile.phone, profile.blockedContacts, profile.isReviewer]);
+  }, [
+    profile.phone,
+    profile.blockedContacts,
+    profile.isReviewer,
+    profile.location?.lat,
+    profile.location?.lng,
+    profile.location?.updatedAt,
+  ]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
