@@ -3,7 +3,7 @@
     "name": "Nearsy",
     "slug": "nearsy-ios",
     "scheme": "nearsy",
-    "version": "1.0.16",
+    "version": "1.0.17",
     "orientation": "portrait",
     "icon": "../../packages/shared/src/assets/icon.png",
     "userInterfaceStyle": "light",
