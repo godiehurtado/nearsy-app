@@ -1,5 +1,6 @@
 // src/services/backgroundLocation.ts
 
+import { Platform } from 'react-native';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BG_LOCATION_TASK } from '../background/locationTask.android';
@@ -51,6 +52,11 @@ export async function startBackgroundLocation({
 
   // ===== Inicia tracking =====
 
+  // Android: distanceInterval 0 → time-driven delivery while stationary (no 1 m gate).
+  // iOS: keep caller/default distanceInterval (1 m).
+  const effectiveDistanceInterval =
+    Platform.OS === 'android' ? 0 : distanceInterval;
+
   await Location.startLocationUpdatesAsync(BG_LOCATION_TASK, {
     accuracy,
 
@@ -58,7 +64,7 @@ export async function startBackgroundLocation({
     timeInterval: timeIntervalMs,
 
     // iOS: distancia mínima (Android también la considera)
-    distanceInterval,
+    distanceInterval: effectiveDistanceInterval,
 
     // iOS: barra azul
     showsBackgroundLocationIndicator: showsIndicatorIOS,
