@@ -1,32 +1,32 @@
+// src/screens/PhoneVerificationScreen.ios.tsx
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useTranslation } from '../i18n';
 
 export default function PhoneVerificationScreen() {
   const navigation = useNavigation<any>();
+  const { t } = useTranslation();
 
   const goBack = () => navigation.goBack();
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Not available yet</Text>
-      <Text style={styles.subtitle}>
-        Phone verification via SMS is currently only available on Android in
-        this beta version.
-      </Text>
+      <Text style={styles.title}>{t('authentication.otp.title')}</Text>
+      <Text style={styles.subtitle}>{t('authentication.otp.subtitle')}</Text>
 
       <TouchableOpacity
         style={styles.button}
         onPress={() => {
           Alert.alert(
-            'Coming soon',
-            'We will enable iOS phone verification in a future update.',
+            t('authentication.otp.comingSoonTitle'),
+            t('authentication.otp.comingSoonMessage'),
           );
           goBack();
         }}
         activeOpacity={0.85}
       >
-        <Text style={styles.buttonText}>Go back</Text>
+        <Text style={styles.buttonText}>{t('authentication.otp.goBack')}</Text>
       </TouchableOpacity>
     </View>
   );

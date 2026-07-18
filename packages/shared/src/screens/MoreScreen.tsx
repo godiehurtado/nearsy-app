@@ -22,6 +22,12 @@ import { Ionicons } from '@expo/vector-icons';
 
 import TopHeader from '../components/TopHeader';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
+import {
+  changeAppLanguage,
+  isSupportedLanguage,
+  useTranslation,
+  type SupportedLanguage,
+} from '../i18n';
 
 import {
   startBackgroundLocation,
@@ -63,6 +69,14 @@ type CountryPhoneOption = {
   dialCode: string;
   flag: string;
 };
+
+const LANGUAGE_OPTIONS: Array<{
+  code: SupportedLanguage;
+  labelKey: 'settings.language.english' | 'settings.language.spanish';
+}> = [
+  { code: 'en', labelKey: 'settings.language.english' },
+  { code: 'es', labelKey: 'settings.language.spanish' },
+];
 
 const AMERICA_COUNTRIES: CountryPhoneOption[] = [
   { code: 'CA', name: 'Canada', dialCode: '+1', flag: '🇨🇦' },
@@ -164,6 +178,16 @@ function splitStoredPhone(value?: string | null): {
 export default function MoreScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  const { t, i18n } = useTranslation();
+
+  const currentLanguage: SupportedLanguage = isSupportedLanguage(i18n.language)
+    ? i18n.language
+    : 'en';
+
+  const currentLanguageLabel =
+    currentLanguage === 'es'
+      ? t('settings.language.spanish')
+      : t('settings.language.english');
 
   // top visuals
   const [topBarColor, setTopBarColor] = useState('#3B5A85');
@@ -207,6 +231,10 @@ export default function MoreScreen() {
   // contactos
   const [contactsEnabled, setContactsEnabled] = useState<boolean>(false);
   const [contactsChanging, setContactsChanging] = useState<boolean>(false);
+
+  // language
+  const [languageModalOpen, setLanguageModalOpen] = useState(false);
+  const [languageChanging, setLanguageChanging] = useState(false);
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
 
@@ -440,6 +468,26 @@ export default function MoreScreen() {
       Alert.alert('Error', e?.message || 'Could not save.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSelectLanguage = async (language: SupportedLanguage) => {
+    if (!isSupportedLanguage(language)) return;
+
+    if (language === currentLanguage) {
+      setLanguageModalOpen(false);
+      return;
+    }
+
+    try {
+      setLanguageChanging(true);
+      await changeAppLanguage(language);
+      setLanguageModalOpen(false);
+      Alert.alert(t('common.appName'), t('settings.language.changeSuccess'));
+    } catch (e: any) {
+      Alert.alert(t('common.error'), e?.message || t('common.error'));
+    } finally {
+      setLanguageChanging(false);
     }
   };
 
@@ -752,6 +800,32 @@ export default function MoreScreen() {
               </Text>
             </View>
 
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>{t('settings.language.title')}</Text>
+
+              <Text style={[styles.hint, { marginBottom: 12 }]}>
+                {t('settings.language.description')}
+              </Text>
+
+              <Text style={styles.hint}>
+                {t('settings.language.current', {
+                  language: currentLanguageLabel,
+                })}
+              </Text>
+
+              <TouchableOpacity
+                style={styles.languageSelectorBtn}
+                onPress={() => setLanguageModalOpen(true)}
+                disabled={languageChanging}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.languageSelectorBtnText}>
+                  {currentLanguageLabel}
+                </Text>
+                <Ionicons name="chevron-forward" size={18} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
             {/* Blocked contacts */}
             <View style={styles.card}>
               <View style={styles.labelRow}>
@@ -938,6 +1012,67 @@ export default function MoreScreen() {
                 );
               }}
             />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={languageModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLanguageModalOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setLanguageModalOpen(false)}
+        >
+          <Pressable style={styles.countryModalCard}>
+            <Text style={styles.modalTitle}>
+              {t('settings.language.title')}
+            </Text>
+
+            <Text style={[styles.hint, { marginBottom: 12 }]}>
+              {t('settings.language.description')}
+            </Text>
+
+            {LANGUAGE_OPTIONS.map((option) => {
+              const isSelected = option.code === currentLanguage;
+
+              return (
+                <TouchableOpacity
+                  key={option.code}
+                  style={[
+                    styles.countryOption,
+                    isSelected && styles.countryOptionSelected,
+                  ]}
+                  onPress={() => handleSelectLanguage(option.code)}
+                  disabled={languageChanging}
+                >
+                  <Text style={styles.countryOptionName}>
+                    {t(option.labelKey)}
+                  </Text>
+
+                  {isSelected ? (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={22}
+                      color="#3B5A85"
+                    />
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+
+            <TouchableOpacity
+              style={styles.languageModalCloseBtn}
+              onPress={() => setLanguageModalOpen(false)}
+              disabled={languageChanging}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.languageModalCloseBtnText}>
+                {t('common.buttons.close')}
+              </Text>
+            </TouchableOpacity>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1173,5 +1308,35 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6B7280',
     marginTop: 2,
+  },
+  languageSelectorBtn: {
+    marginTop: 12,
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  languageSelectorBtnText: {
+    fontSize: 15,
+    color: '#111827',
+    fontWeight: '600',
+  },
+  languageModalCloseBtn: {
+    marginTop: 12,
+    minHeight: 44,
+    borderRadius: 12,
+    backgroundColor: '#EEF4FA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  languageModalCloseBtnText: {
+    color: '#3B5A85',
+    fontWeight: '700',
+    fontSize: 15,
   },
 });

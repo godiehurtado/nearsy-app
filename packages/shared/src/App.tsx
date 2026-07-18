@@ -1,9 +1,10 @@
 // packages/shared/src/App.tsx
 import './background/locationTask';
-import React, { useEffect } from 'react';
-import { Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Platform, View } from 'react-native';
 
 import { firebaseAuth, firestoreDb } from './config/firebaseConfig';
+import { initI18n } from './i18n';
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -49,6 +50,24 @@ async function ensureAndroidChannel() {
 export const navigationRef = createNavigationContainerRef();
 
 export default function App() {
+  const [i18nReady, setI18nReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    initI18n()
+      .catch((e) => {
+        if (__DEV__) console.warn('[App] initI18n error:', e);
+      })
+      .finally(() => {
+        if (!cancelled) setI18nReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // 1) Canal Android
   useEffect(() => {
     ensureAndroidChannel();
@@ -137,6 +156,16 @@ export default function App() {
       responseSub.remove();
     };
   }, []);
+
+  if (!i18nReady) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="large" />
+        </View>
+      </GestureHandlerRootView>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

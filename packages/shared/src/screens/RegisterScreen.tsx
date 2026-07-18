@@ -26,6 +26,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { registerWithEmail } from '../services/authService';
 import { createUserProfile } from '../services/firestoreService';
+import { useTranslation } from '../i18n';
 
 // 🔒 Social login must be disabled + invisible for this version
 const ENABLE_SOCIAL_LOGIN = false;
@@ -90,43 +91,55 @@ const AMERICA_COUNTRIES: CountryPhoneOption[] = [
   { code: 'VE', name: 'Venezuela', dialCode: '+58', flag: '🇻🇪' },
 ];
 
-const REGISTRATION_GUIDE_STEPS = [
-  {
-    title: 'Start with your email',
-    description: 'Enter the email address you want to use for Nearsy.',
-  },
-  {
-    title: 'Confirm your email',
-    description: 'Type your email again to make sure there are no mistakes.',
-  },
-  {
-    title: 'Add your phone number',
-    description: 'Select your country code and enter your mobile number.',
-  },
-  {
-    title: 'Create a secure password',
-    description: 'Use at least 8 characters, including letters and numbers.',
-  },
-  {
-    title: 'Confirm your password',
-    description: 'Type the same password again.',
-  },
-  {
-    title: 'Select your birth year',
-    description: 'This helps us confirm you meet the minimum age requirement.',
-  },
-  {
-    title: 'Accept the terms',
-    description: 'Review and accept the terms to create your account.',
-  },
-  {
-    title: 'Finish registration',
-    description: 'Tap Register to continue with your profile setup.',
-  },
-];
-
 export default function RegisterScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  const { t, i18n } = useTranslation();
+
+  const registrationGuideSteps = useMemo(
+    () => [
+      {
+        title: t('authentication.register.guide.steps.email.title'),
+        description: t('authentication.register.guide.steps.email.description'),
+      },
+      {
+        title: t('authentication.register.guide.steps.confirmEmail.title'),
+        description: t(
+          'authentication.register.guide.steps.confirmEmail.description',
+        ),
+      },
+      {
+        title: t('authentication.register.guide.steps.phone.title'),
+        description: t('authentication.register.guide.steps.phone.description'),
+      },
+      {
+        title: t('authentication.register.guide.steps.password.title'),
+        description: t(
+          'authentication.register.guide.steps.password.description',
+        ),
+      },
+      {
+        title: t('authentication.register.guide.steps.confirmPassword.title'),
+        description: t(
+          'authentication.register.guide.steps.confirmPassword.description',
+        ),
+      },
+      {
+        title: t('authentication.register.guide.steps.birthYear.title'),
+        description: t(
+          'authentication.register.guide.steps.birthYear.description',
+        ),
+      },
+      {
+        title: t('authentication.register.guide.steps.terms.title'),
+        description: t('authentication.register.guide.steps.terms.description'),
+      },
+      {
+        title: t('authentication.register.guide.steps.finish.title'),
+        description: t('authentication.register.guide.steps.finish.description'),
+      },
+    ],
+    [t, i18n.language],
+  );
 
   const route = useRoute<any>();
   const shouldShowGuide = route?.params?.showGuide === true;
@@ -371,38 +384,41 @@ export default function RegisterScreen({ navigation }: any) {
   const getGuideStepValidationMessage = (step: number) => {
     switch (step) {
       case 0:
-        return 'Please enter a valid email address to continue.';
+        return t('authentication.register.guide.validation.email');
       case 1:
-        return 'Please confirm your email. It needs to match the email above.';
+        return t('authentication.register.guide.validation.confirmEmail');
       case 2:
-        return 'Please select your country code and enter a valid mobile number.';
+        return t('authentication.register.guide.validation.phone');
       case 3:
-        return 'Please create a password with at least 8 characters, including letters and numbers.';
+        return t('authentication.register.guide.validation.password');
       case 4:
-        return 'Please confirm your password. It needs to match the password above.';
+        return t('authentication.register.guide.validation.confirmPassword');
       case 5:
-        return 'Please select a valid birth year. You must be 14+ to register.';
+        return t('authentication.register.guide.validation.birthYear');
       case 6:
-        return 'Please accept the terms and conditions to continue.';
+        return t('authentication.register.guide.validation.terms');
       default:
-        return 'Please complete the registration details before finishing the guide.';
+        return t('authentication.register.guide.validation.finish');
     }
   };
 
   const goNextGuideStep = () => {
     if (!guideChecks[guideStep]) {
-      Alert.alert('One more thing', getGuideStepValidationMessage(guideStep));
+      Alert.alert(
+        t('authentication.register.guide.oneMoreThingTitle'),
+        getGuideStepValidationMessage(guideStep),
+      );
       return;
     }
 
-    if (guideStep === REGISTRATION_GUIDE_STEPS.length - 1) {
+    if (guideStep === registrationGuideSteps.length - 1) {
       setGuideVisible(false);
       setGuideStep(0);
       return;
     }
 
     setGuideStep((prev) =>
-      Math.min(prev + 1, REGISTRATION_GUIDE_STEPS.length - 1),
+      Math.min(prev + 1, registrationGuideSteps.length - 1),
     );
   };
 
@@ -422,14 +438,14 @@ export default function RegisterScreen({ navigation }: any) {
     if (!value.trim()) {
       setEmailError(null);
     } else if (!isValidEmail(value)) {
-      setEmailError('Please enter a valid email address.');
+      setEmailError(t('authentication.errors.invalidEmail'));
     } else {
       setEmailError(null);
     }
 
     if (confirmEmail.trim()) {
       if (value.trim().toLowerCase() !== confirmEmail.trim().toLowerCase()) {
-        setConfirmEmailError('Email and confirmation email must match.');
+        setConfirmEmailError(t('validation.emailMismatch'));
       } else {
         setConfirmEmailError(null);
       }
@@ -445,7 +461,7 @@ export default function RegisterScreen({ navigation }: any) {
     }
 
     if (value.trim().toLowerCase() !== email.trim().toLowerCase()) {
-      setConfirmEmailError('Email and confirmation email must match.');
+      setConfirmEmailError(t('validation.emailMismatch'));
     } else {
       setConfirmEmailError(null);
     }
@@ -457,16 +473,14 @@ export default function RegisterScreen({ navigation }: any) {
     if (!value) {
       setPasswordError(null);
     } else if (!isStrongPassword(value)) {
-      setPasswordError(
-        'Password must be at least 8 characters and include letters and numbers.',
-      );
+      setPasswordError(t('validation.passwordLettersAndNumbers'));
     } else {
       setPasswordError(null);
     }
 
     if (confirmPassword) {
       if (confirmPassword !== value) {
-        setConfirmPasswordError('Password and confirmation must match.');
+        setConfirmPasswordError(t('validation.passwordMismatch'));
       } else {
         setConfirmPasswordError(null);
       }
@@ -482,7 +496,7 @@ export default function RegisterScreen({ navigation }: any) {
     }
 
     if (value !== password) {
-      setConfirmPasswordError('Password and confirmation must match.');
+      setConfirmPasswordError(t('validation.passwordMismatch'));
     } else {
       setConfirmPasswordError(null);
     }
@@ -492,22 +506,34 @@ export default function RegisterScreen({ navigation }: any) {
     if (submitting) return;
 
     if (birthYear === null) {
-      Alert.alert('Birth year required', 'Please select your birth year.');
+      Alert.alert(
+        t('authentication.register.alerts.birthYearRequiredTitle'),
+        t('authentication.register.alerts.birthYearRequiredMessage'),
+      );
       return;
     }
 
     if (currentYear - birthYear < 14) {
-      Alert.alert('Minimum age', 'You must be 14+ to create an account.');
+      Alert.alert(
+        t('authentication.register.alerts.minimumAgeTitle'),
+        t('authentication.register.alerts.minimumAgeMessage'),
+      );
       return;
     }
 
     if (!isValidEmail(email)) {
-      Alert.alert('Invalid email', 'Please enter a valid email address.');
+      Alert.alert(
+        t('authentication.register.alerts.invalidEmailTitle'),
+        t('authentication.errors.invalidEmail'),
+      );
       return;
     }
 
     if (email.trim().toLowerCase() !== confirmEmail.trim().toLowerCase()) {
-      Alert.alert('Email mismatch', 'Email and confirmation email must match.');
+      Alert.alert(
+        t('authentication.register.alerts.emailMismatchTitle'),
+        t('authentication.errors.emailConfirmMismatch'),
+      );
       return;
     }
 
@@ -518,32 +544,32 @@ export default function RegisterScreen({ navigation }: any) {
 
     if (!isValidPhone(normalizedPhone)) {
       Alert.alert(
-        'Invalid phone number',
-        'If you provide a phone number, please select your country code and enter a valid mobile number.',
+        t('authentication.register.alerts.invalidPhoneTitle'),
+        t('authentication.errors.invalidPhoneOptional'),
       );
       return;
     }
 
     if (!isStrongPassword(password)) {
       Alert.alert(
-        'Weak password',
-        'Password must be at least 8 characters long and include letters and numbers.',
+        t('authentication.register.alerts.weakPasswordTitle'),
+        t('authentication.errors.passwordStrong'),
       );
       return;
     }
 
     if (password !== confirmPassword) {
       Alert.alert(
-        'Password mismatch',
-        'Password and confirmation password must match.',
+        t('authentication.register.alerts.passwordMismatchTitle'),
+        t('authentication.errors.passwordConfirmMismatchLong'),
       );
       return;
     }
 
     if (!acceptedTerms) {
       Alert.alert(
-        'Terms required',
-        'You must accept the terms and conditions to create an account.',
+        t('authentication.register.alerts.termsRequiredTitle'),
+        t('authentication.errors.termsRequired'),
       );
       return;
     }
@@ -588,8 +614,8 @@ export default function RegisterScreen({ navigation }: any) {
 
         setTimeout(() => {
           Alert.alert(
-            'Account created',
-            "Your account was created successfully. Let's finish setting up your profile.",
+            t('authentication.register.successTitle'),
+            t('authentication.register.successIosMessage'),
           );
         }, 300);
         return;
@@ -600,11 +626,11 @@ export default function RegisterScreen({ navigation }: any) {
       } catch {}
 
       Alert.alert(
-        'Account created',
-        'Your account was created successfully. Please sign in to continue setting up your profile.',
+        t('authentication.register.successTitle'),
+        t('authentication.register.successAndroidMessage'),
         [
           {
-            text: 'OK',
+            text: t('common.buttons.ok'),
             onPress: () => {
               navigation.replace('Login');
             },
@@ -613,7 +639,7 @@ export default function RegisterScreen({ navigation }: any) {
       );
     } catch (e: any) {
       const msg = getAuthErrorMessage(e?.code);
-      Alert.alert('Error', msg);
+      Alert.alert(t('common.error'), msg);
     } finally {
       setSubmitting(false);
     }
@@ -623,30 +649,30 @@ export default function RegisterScreen({ navigation }: any) {
     switch (code) {
       case 'auth/invalid-email':
       case 'auth/missing-email':
-        return 'Please enter a valid email address.';
+        return t('authentication.errors.invalidEmail');
 
       case 'auth/invalid-credential':
       case 'auth/user-not-found':
       case 'auth/wrong-password':
-        return 'Invalid email or password.';
+        return t('authentication.errors.invalidCredentials');
 
       case 'auth/weak-password':
-        return 'Password is too weak. Please use a stronger password.';
+        return t('authentication.errors.weakPasswordRegister');
 
       case 'auth/email-already-in-use':
-        return 'This email is already registered. Try logging in.';
+        return t('authentication.errors.emailAlreadyInUse');
 
       case 'auth/network-request-failed':
-        return 'Network error. Please check your connection and try again.';
+        return t('authentication.errors.networkError');
 
       case 'auth/too-many-requests':
-        return 'Too many attempts. Please wait a moment and try again.';
+        return t('authentication.errors.tooManyRequests');
 
       case 'auth/operation-not-allowed':
-        return 'Email/password sign-up is disabled for this project.';
+        return t('authentication.errors.operationNotAllowedRegister');
 
       default:
-        return 'Something went wrong. Please try again.';
+        return t('authentication.errors.default');
     }
   }
 
@@ -670,7 +696,7 @@ export default function RegisterScreen({ navigation }: any) {
           showsVerticalScrollIndicator={false}
           ref={scrollRef}
         >
-          <Text style={styles.title}>Create Account</Text>
+          <Text style={styles.title}>{t('authentication.register.title')}</Text>
 
           {/* Email */}
           <View
@@ -683,7 +709,9 @@ export default function RegisterScreen({ navigation }: any) {
               isGuideFieldActive(0) && styles.guideActiveField,
             ]}
           >
-            <Text style={styles.fieldLabel}>Email</Text>
+            <Text style={styles.fieldLabel}>
+              {t('authentication.register.fields.email')}
+            </Text>
             <View style={styles.inputContainer}>
               <Ionicons
                 name="mail"
@@ -693,7 +721,7 @@ export default function RegisterScreen({ navigation }: any) {
               />
               <TextInput
                 style={styles.input}
-                placeholder="Email"
+                placeholder={t('authentication.register.placeholders.email')}
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
                 keyboardType="email-address"
@@ -721,7 +749,9 @@ export default function RegisterScreen({ navigation }: any) {
               isGuideFieldActive(1) && styles.guideActiveField,
             ]}
           >
-            <Text style={styles.fieldLabel}>Confirm Email</Text>
+            <Text style={styles.fieldLabel}>
+              {t('authentication.register.fields.confirmEmail')}
+            </Text>
             <View style={styles.inputContainer}>
               <Ionicons
                 name="mail"
@@ -731,7 +761,9 @@ export default function RegisterScreen({ navigation }: any) {
               />
               <TextInput
                 style={styles.input}
-                placeholder="Confirm Email"
+                placeholder={t(
+                  'authentication.register.placeholders.confirmEmail',
+                )}
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
                 keyboardType="email-address"
@@ -761,7 +793,9 @@ export default function RegisterScreen({ navigation }: any) {
               isGuideFieldActive(2) && styles.guideActiveField,
             ]}
           >
-            <Text style={styles.fieldLabel}>Phone number</Text>
+            <Text style={styles.fieldLabel}>
+              {t('authentication.register.fields.phone')}
+            </Text>
 
             <View style={styles.phoneContainer}>
               <TouchableOpacity
@@ -786,9 +820,7 @@ export default function RegisterScreen({ navigation }: any) {
                 />
                 <TextInput
                   style={styles.input}
-                  placeholder={
-                    Platform.OS === 'android' ? 'Phone number' : 'Phone number'
-                  }
+                  placeholder={t('authentication.register.placeholders.phone')}
                   placeholderTextColor="#9CA3AF"
                   keyboardType="phone-pad"
                   value={phone}
@@ -806,7 +838,7 @@ export default function RegisterScreen({ navigation }: any) {
             </View>
 
             <Text style={styles.helperText}>
-              Select your country and enter a valid mobile number.
+              {t('authentication.register.phoneHelper')}
             </Text>
           </View>
 
@@ -821,7 +853,9 @@ export default function RegisterScreen({ navigation }: any) {
               isGuideFieldActive(3) && styles.guideActiveField,
             ]}
           >
-            <Text style={styles.fieldLabel}>Password</Text>
+            <Text style={styles.fieldLabel}>
+              {t('authentication.register.fields.password')}
+            </Text>
             <View style={styles.inputContainer}>
               <Ionicons
                 name="lock-closed"
@@ -831,7 +865,7 @@ export default function RegisterScreen({ navigation }: any) {
               />
               <TextInput
                 style={styles.input}
-                placeholder="Password"
+                placeholder={t('authentication.register.placeholders.password')}
                 placeholderTextColor="#9CA3AF"
                 secureTextEntry={!showPassword}
                 value={password}
@@ -867,7 +901,9 @@ export default function RegisterScreen({ navigation }: any) {
               isGuideFieldActive(4) && styles.guideActiveField,
             ]}
           >
-            <Text style={styles.fieldLabel}>Confirm Password</Text>
+            <Text style={styles.fieldLabel}>
+              {t('authentication.register.fields.confirmPassword')}
+            </Text>
             <View style={styles.inputContainer}>
               <Ionicons
                 name="lock-closed"
@@ -877,7 +913,9 @@ export default function RegisterScreen({ navigation }: any) {
               />
               <TextInput
                 style={styles.input}
-                placeholder="Confirm Password"
+                placeholder={t(
+                  'authentication.register.placeholders.confirmPassword',
+                )}
                 placeholderTextColor="#9CA3AF"
                 secureTextEntry={!showConfirmPassword}
                 value={confirmPassword}
@@ -916,7 +954,9 @@ export default function RegisterScreen({ navigation }: any) {
           >
             <View style={styles.labelRow}>
               <Ionicons name="calendar" size={18} color="#999" />
-              <Text style={styles.fieldLabel}>Birth year *</Text>
+              <Text style={styles.fieldLabel}>
+                {t('authentication.register.fields.birthYear')}
+              </Text>
             </View>
 
             <TouchableOpacity
@@ -926,13 +966,17 @@ export default function RegisterScreen({ navigation }: any) {
               disabled={!guideAllows(5)}
             >
               <Text style={styles.selectorText}>
-                {birthYear === null ? 'Select' : String(birthYear)}
+                {birthYear === null
+                  ? t('authentication.register.selectBirthYear')
+                  : String(birthYear)}
               </Text>
               <Ionicons name="chevron-down" size={18} color="#475569" />
             </TouchableOpacity>
 
             {ageInvalid && (
-              <Text style={styles.ageHelper}>You must be 14+ to register.</Text>
+              <Text style={styles.ageHelper}>
+                {t('authentication.register.ageHelper')}
+              </Text>
             )}
           </View>
 
@@ -961,7 +1005,7 @@ export default function RegisterScreen({ navigation }: any) {
             </TouchableOpacity>
 
             <Text style={styles.termsText}>
-              I agree to the{' '}
+              {t('authentication.register.termsPrefix')}{' '}
               <Text
                 style={styles.termsLink}
                 onPress={() => {
@@ -969,7 +1013,7 @@ export default function RegisterScreen({ navigation }: any) {
                   Linking.openURL('https://nearsy.app/legal');
                 }}
               >
-                terms and conditions
+                {t('authentication.register.termsLink')}
               </Text>
               .
             </Text>
@@ -991,14 +1035,18 @@ export default function RegisterScreen({ navigation }: any) {
               {submitting ? (
                 <ActivityIndicator color="#1A2B3C" />
               ) : (
-                <Text style={styles.buttonText}>Register</Text>
+                <Text style={styles.buttonText}>
+                  {t('authentication.register.submit')}
+                </Text>
               )}
             </TouchableOpacity>
           </View>
           {ENABLE_SOCIAL_LOGIN ? null : null}
 
           <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-            <Text style={styles.link}>Already have an account? Log In</Text>
+            <Text style={styles.link}>
+              {t('authentication.register.loginLink')}
+            </Text>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -1011,21 +1059,23 @@ export default function RegisterScreen({ navigation }: any) {
           <View style={styles.guideHeader}>
             <View style={styles.guideBadge}>
               <Text style={styles.guideBadgeText}>
-                {guideStep + 1}/{REGISTRATION_GUIDE_STEPS.length}
+                {guideStep + 1}/{registrationGuideSteps.length}
               </Text>
             </View>
 
             <TouchableOpacity onPress={skipGuide}>
-              <Text style={styles.guideSkip}>Skip guide</Text>
+              <Text style={styles.guideSkip}>
+                {t('authentication.register.guide.skip')}
+              </Text>
             </TouchableOpacity>
           </View>
 
           <Text style={styles.guideTitle}>
-            {REGISTRATION_GUIDE_STEPS[guideStep].title}
+            {registrationGuideSteps[guideStep].title}
           </Text>
 
           <Text style={styles.guideDescription}>
-            {REGISTRATION_GUIDE_STEPS[guideStep].description}
+            {registrationGuideSteps[guideStep].description}
           </Text>
 
           <View style={styles.guideActionsRow}>
@@ -1038,7 +1088,7 @@ export default function RegisterScreen({ navigation }: any) {
               disabled={guideStep === 0}
               activeOpacity={0.85}
             >
-              <Text style={styles.guideNavButtonText}>Back</Text>
+              <Text style={styles.guideNavButtonText}>{t('common.back')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1047,9 +1097,9 @@ export default function RegisterScreen({ navigation }: any) {
               activeOpacity={0.85}
             >
               <Text style={styles.guideNavButtonPrimaryText}>
-                {guideStep === REGISTRATION_GUIDE_STEPS.length - 1
-                  ? 'Finish'
-                  : 'Next'}
+                {guideStep === registrationGuideSteps.length - 1
+                  ? t('authentication.register.guide.finish')
+                  : t('authentication.register.guide.next')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -1071,7 +1121,9 @@ export default function RegisterScreen({ navigation }: any) {
           }}
         >
           <Pressable style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Select your birth year</Text>
+            <Text style={styles.modalTitle}>
+              {t('authentication.register.birthYearModalTitle')}
+            </Text>
 
             <FlatList
               ref={yearListRef}
@@ -1138,7 +1190,9 @@ export default function RegisterScreen({ navigation }: any) {
           onPress={() => setCountryModalOpen(false)}
         >
           <Pressable style={styles.countryModalCard}>
-            <Text style={styles.modalTitle}>Select country code</Text>
+            <Text style={styles.modalTitle}>
+              {t('authentication.register.countryModalTitle')}
+            </Text>
 
             <FlatList
               data={AMERICA_COUNTRIES}

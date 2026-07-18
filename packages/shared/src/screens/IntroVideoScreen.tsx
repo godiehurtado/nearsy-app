@@ -20,12 +20,14 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from '../i18n';
 
 const INTRO_VIDEO_KEY = 'hasSeenIntroVideo';
 
 export default function IntroVideoScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const { t } = useTranslation();
   const isPreview = route?.params?.preview === true;
 
   const pulse = useSharedValue(1);
@@ -85,14 +87,14 @@ export default function IntroVideoScreen() {
           entering={FadeInUp.delay(150).duration(550)}
           style={styles.title}
         >
-          Welcome to Nearsy
+          {t('onboarding.introVideo.title')}
         </Animated.Text>
 
         <Animated.Text
           entering={FadeInUp.delay(250).duration(550)}
           style={styles.subtitle}
         >
-          Create your account and start connecting with people around you.
+          {t('onboarding.introVideo.subtitle')}
         </Animated.Text>
 
         <Animated.View
@@ -103,14 +105,18 @@ export default function IntroVideoScreen() {
             <View style={styles.stepIcon}>
               <Ionicons name="mail" size={18} color="#3B5A85" />
             </View>
-            <Text style={styles.stepText}>Add your email and password</Text>
+            <Text style={styles.stepText}>
+              {t('onboarding.introVideo.stepEmail')}
+            </Text>
           </View>
 
           <View style={styles.stepRow}>
             <View style={styles.stepIcon}>
               <Ionicons name="calendar" size={18} color="#3B5A85" />
             </View>
-            <Text style={styles.stepText}>Confirm your birth year</Text>
+            <Text style={styles.stepText}>
+              {t('onboarding.introVideo.stepBirthYear')}
+            </Text>
           </View>
 
           <View style={styles.stepRow}>
@@ -118,7 +124,7 @@ export default function IntroVideoScreen() {
               <Ionicons name="checkmark-circle" size={18} color="#3B5A85" />
             </View>
             <Text style={styles.stepText}>
-              Accept terms and finish setting up your profile
+              {t('onboarding.introVideo.stepTerms')}
             </Text>
           </View>
         </Animated.View>
@@ -129,19 +135,25 @@ export default function IntroVideoScreen() {
             activeOpacity={0.86}
             onPress={finishIntro}
           >
-            <Text style={styles.primaryButtonText}>Start registration</Text>
+            <Text style={styles.primaryButtonText}>
+              {t('onboarding.introVideo.startRegistration')}
+            </Text>
             <Ionicons name="arrow-forward" size={18} color="#1A2B3C" />
           </TouchableOpacity>
 
           <View style={styles.loginShortcut}>
-            <Text style={styles.loginLabel}>Already part of Nearsy?</Text>
+            <Text style={styles.loginLabel}>
+              {t('onboarding.introVideo.alreadyMember')}
+            </Text>
             <TouchableOpacity
               style={styles.loginButton}
               activeOpacity={0.82}
               onPress={() => navigation.navigate('Login')}
             >
               <Ionicons name="log-in-outline" size={16} color="#3B5A85" />
-              <Text style={styles.loginButtonText}>Sign in</Text>
+              <Text style={styles.loginButtonText}>
+                {t('onboarding.introVideo.signIn')}
+              </Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -151,7 +163,9 @@ export default function IntroVideoScreen() {
             style={styles.secondaryButton}
             onPress={() => navigation.goBack()}
           >
-            <Text style={styles.secondaryButtonText}>Back</Text>
+            <Text style={styles.secondaryButtonText}>
+              {t('onboarding.introVideo.back')}
+            </Text>
           </TouchableOpacity>
         )}
       </Animated.View>
