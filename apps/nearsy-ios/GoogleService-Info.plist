@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>557470198780-9qe3qg59h682e3fn14ic97hf9t375m3n.apps.googleusercontent.com</string>
+	<string>557470198780-ttslt825t6lmoma0d8e9nce1q6l1tm8c.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.557470198780-9qe3qg59h682e3fn14ic97hf9t375m3n</string>
+	<string>com.googleusercontent.apps.557470198780-ttslt825t6lmoma0d8e9nce1q6l1tm8c</string>
 	<key>ANDROID_CLIENT_ID</key>
-	<string>557470198780-prau0p14tfrijv3h5omadqakn4r3m4tk.apps.googleusercontent.com</string>
+	<string>557470198780-9hs4r3aoj7qbevcrcd8d2f7thkrakpqk.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
 	<string>AIzaSyC0FX-eQKkgDKuuiSqNYSqOCR-ww6NAS8k</string>
 	<key>GCM_SENDER_ID</key>
@@ -15,7 +15,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.nearsy.app</string>
+	<string>com.nearsy.app.client</string>
 	<key>PROJECT_ID</key>
 	<string>nearsy-pj</string>
 	<key>STORAGE_BUCKET</key>
@@ -31,6 +31,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:557470198780:ios:d7c55eb49c21d18d596079</string>
+	<string>1:557470198780:ios:6187fd020295ecda596079</string>
 </dict>
 </plist>

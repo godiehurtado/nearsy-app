@@ -15,9 +15,12 @@
     },
     "ios": {
       "bundleIdentifier": "com.nearsy.app.client",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "buildNumber": "4",
       "supportsTablet": false,
-      "deviceFamily": ["iphone"],
+      "deviceFamily": [
+        "iphone"
+      ],
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Nearsy uses your location to show nearby people while you are using the app.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Nearsy uses your location in the background, only when your visibility is ON.",
@@ -26,7 +29,9 @@
         "NSCameraUsageDescription": "Nearsy uses the camera so you can take profile or gallery photos directly within the app.",
         "NSContactsUsageDescription": "Nearsy uses your contacts to help you discover people you may know who are already using the app. Contact data is securely processed and only used to suggest connections.",
         "NSPhotoLibraryAddUsageDescription": "Nearsy needs permission to save photos generated or edited in the app to your photo library.",
-        "UIBackgroundModes": ["location"],
+        "UIBackgroundModes": [
+          "location"
+        ],
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -46,7 +51,31 @@
       "expo-notifications",
       "expo-asset",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "extraPods": [
+              {
+                "name": "GoogleUtilities",
+                "modular_headers": true
+              },
+              {
+                "name": "RecaptchaInterop",
+                "modular_headers": true
+              }
+            ]
+          }
+        }
+      ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.557470198780-ttslt825t6lmoma0d8e9nce1q6l1tm8c"
+        }
+      ],
+      "expo-localization"
     ],
     "extra": {
       "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyBv7UEL1aDLKIZRBnLZ2kuEitHmikhmqfA",
@@ -55,6 +84,9 @@
       "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "nearsy-pj.firebasestorage.app",
       "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "557470198780",
       "EXPO_PUBLIC_FIREBASE_APP_ID": "1:557470198780:web:05fe20ad2e594dc0596079",
+      "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "557470198780-8ls8o304sfcf8va409va90o6rar3vc5a.apps.googleusercontent.com",
+      "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "557470198780-ttslt825t6lmoma0d8e9nce1q6l1tm8c.apps.googleusercontent.com",
+      "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.557470198780-ttslt825t6lmoma0d8e9nce1q6l1tm8c",
       "eas": {
         "projectId": "06702f76-5fb1-4426-a1f9-df42b4491c63"
       }
