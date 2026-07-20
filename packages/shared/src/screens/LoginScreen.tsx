@@ -35,6 +35,13 @@ import {
   authRadius,
   authTypography,
 } from '../theme/authTokens';
+import {
+  createDefaultAuthenticateWithGoogle,
+  SocialAuthError,
+  sanitizeSocialErrorForLog,
+} from '../authentication/social';
+
+const authenticateWithGoogle = createDefaultAuthenticateWithGoogle();
 
 type SocialProvider = 'google' | 'apple' | 'meta' | 'linkedin';
 
@@ -78,12 +85,14 @@ export default function LoginScreen({ navigation }: any) {
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
 
   const [infoModalVisible, setInfoModalVisible] = useState(false);
   const [infoModalTitle, setInfoModalTitle] = useState('');
   const [infoModalMessage, setInfoModalMessage] = useState('');
 
   const heroHeight = Math.max(260, Math.min(372, windowHeight * 0.42));
+  const busy = submitting || googleSubmitting;
 
   const showInfoModal = (title: string, message: string) => {
     setInfoModalTitle(title);
@@ -126,7 +135,7 @@ export default function LoginScreen({ navigation }: any) {
   }
 
   const handleLogin = async () => {
-    if (submitting) return;
+    if (busy) return;
 
     try {
       const trimmedEmail = email.trim();
@@ -271,7 +280,84 @@ export default function LoginScreen({ navigation }: any) {
     }
   };
 
-  const handleSocialPress = (_provider: SocialProvider) => {
+  const handleGoogleSignIn = async () => {
+    if (busy) return;
+    if (Platform.OS !== 'ios') {
+      Alert.alert(
+        t('authentication.social.comingSoonTitle'),
+        t('authentication.social.comingSoonMessage'),
+      );
+      return;
+    }
+
+    setGoogleSubmitting(true);
+    try {
+      const result = await authenticateWithGoogle();
+
+      Keyboard.dismiss();
+      setTimeout(() => {
+        if (result.profileRoute === 'MainTabs') {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'MainTabs' }],
+          });
+          return;
+        }
+
+        const emailForProfile = result.email ?? result.session.email ?? '';
+        navigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: 'CompleteProfile',
+              params: {
+                uid: result.session.uid,
+                email: emailForProfile,
+                inputNonce: Date.now(),
+              },
+            },
+          ],
+        });
+      }, 150);
+    } catch (err) {
+      if (err instanceof SocialAuthError) {
+        if (__DEV__) {
+          console.log(
+            '[LoginScreen] Google sign-in',
+            sanitizeSocialErrorForLog(err.social),
+          );
+        }
+
+        if (err.social.code === 'CANCELLED') {
+          return;
+        }
+
+        if (err.social.code === 'IN_PROGRESS') {
+          return;
+        }
+
+        Alert.alert(
+          t('authentication.login.alerts.loginErrorTitle'),
+          t(err.social.messageKey as any),
+        );
+        return;
+      }
+
+      Alert.alert(
+        t('authentication.login.alerts.loginErrorTitle'),
+        t('authentication.social.errors.generic'),
+      );
+    } finally {
+      setGoogleSubmitting(false);
+    }
+  };
+
+  const handleSocialPress = (provider: SocialProvider) => {
+    if (provider === 'google') {
+      void handleGoogleSignIn();
+      return;
+    }
+
     Alert.alert(
       t('authentication.social.comingSoonTitle'),
       t('authentication.social.comingSoonMessage'),
@@ -386,7 +472,7 @@ export default function LoginScreen({ navigation }: any) {
               style={styles.forgotWrap}
               onPress={handleForgotPassword}
               activeOpacity={0.7}
-              disabled={submitting}
+              disabled={busy}
             >
               <Text style={styles.forgot}>
                 {t('authentication.login.forgotPassword')}
@@ -395,10 +481,10 @@ export default function LoginScreen({ navigation }: any) {
 
             <Pressable
               onPress={handleLogin}
-              disabled={submitting}
+              disabled={busy}
               style={({ pressed }) => [
                 styles.primaryButtonWrap,
-                { transform: [{ scale: pressed && !submitting ? 0.98 : 1 }] },
+                { transform: [{ scale: pressed && !busy ? 0.98 : 1 }] },
               ]}
             >
               {submitting ? (
@@ -423,7 +509,7 @@ export default function LoginScreen({ navigation }: any) {
 
             <Pressable
               onPress={handleCreateProfile}
-              disabled={submitting}
+              disabled={busy}
               style={({ pressed }) => [
                 styles.outlineButton,
                 {
@@ -443,7 +529,7 @@ export default function LoginScreen({ navigation }: any) {
               onPress={() =>
                 navigation.navigate('IntroVideo', { preview: false })
               }
-              disabled={submitting}
+              disabled={busy}
               style={styles.guideLinkWrap}
               activeOpacity={0.7}
             >
@@ -455,31 +541,46 @@ export default function LoginScreen({ navigation }: any) {
             <Divider label={t('authentication.login.orContinueWith')} />
 
             <View style={styles.socialRow}>
-              {SOCIAL_PROVIDERS.map((provider) => (
-                <Pressable
-                  key={provider.id}
-                  style={({ pressed }) => [
-                    styles.socialButton,
-                    {
-                      backgroundColor: pressed
-                        ? authColors.panel
-                        : 'transparent',
-                    },
-                  ]}
-                  onPress={() => handleSocialPress(provider.id)}
-                  disabled={submitting}
-                >
-                  <Ionicons
-                    name={provider.icon}
-                    size={14}
-                    color={authColors.textPrimary}
-                    style={styles.socialIcon}
-                  />
-                  <Text style={styles.socialText} numberOfLines={1}>
-                    {t(provider.labelKey)}
-                  </Text>
-                </Pressable>
-              ))}
+              {SOCIAL_PROVIDERS.map((provider) => {
+                const isGoogleLoading =
+                  provider.id === 'google' && googleSubmitting;
+
+                return (
+                  <Pressable
+                    key={provider.id}
+                    style={({ pressed }) => [
+                      styles.socialButton,
+                      {
+                        backgroundColor: pressed
+                          ? authColors.panel
+                          : 'transparent',
+                        opacity: busy && !isGoogleLoading ? 0.55 : 1,
+                      },
+                    ]}
+                    onPress={() => handleSocialPress(provider.id)}
+                    disabled={busy}
+                  >
+                    {isGoogleLoading ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={authColors.textPrimary}
+                      />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name={provider.icon}
+                          size={14}
+                          color={authColors.textPrimary}
+                          style={styles.socialIcon}
+                        />
+                        <Text style={styles.socialText} numberOfLines={1}>
+                          {t(provider.labelKey)}
+                        </Text>
+                      </>
+                    )}
+                  </Pressable>
+                );
+              })}
             </View>
 
             <Text style={styles.terms}>

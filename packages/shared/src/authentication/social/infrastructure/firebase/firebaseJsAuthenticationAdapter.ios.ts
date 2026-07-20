@@ -33,8 +33,7 @@ function toSession(cred: UserCredential): FirebaseAuthenticationSession {
 }
 
 /**
- * iOS Firebase adapter using the existing Firebase JavaScript SDK.
- * Must not be called from Login UI until TS-007.
+ * iOS Firebase adapter using the existing Firebase JavaScript SDK (TS-007).
  */
 export function createFirebaseJsAuthenticationAdapter(): FirebaseAuthenticationPort {
   return {

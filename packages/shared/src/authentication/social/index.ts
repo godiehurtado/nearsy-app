@@ -3,10 +3,18 @@ import {
   validateGoogleAuthenticationConfiguration,
   type GoogleConfigurationValidationResult,
 } from './application/configurationValidator';
+import {
+  createAuthenticateWithGoogle,
+  type AuthenticateWithGoogleDependencies,
+} from './application/authenticateWithGoogle';
 import { resolveGoogleAuthenticationConfiguration } from './infrastructure/google/googleConfiguration';
 import { GOOGLE_IOS_NATIVE_CONFIG } from './infrastructure/google/googleIosNativeConfig';
 import { createGoogleProviderAdapter } from './infrastructure/google/googleProviderAdapter';
 import { createFirebaseJsAuthenticationAdapter } from './infrastructure/firebase/firebaseJsAuthenticationAdapter';
+import {
+  getUserProfile,
+  isProfileComplete,
+} from '../../services/firestoreService';
 
 export type { SocialAuthProvider, SocialAuthenticationRequest } from './domain/socialAuthProvider';
 export type { ProviderAuthenticationResult } from './domain/providerAuthenticationResult';
@@ -47,9 +55,15 @@ export { createGoogleProviderAdapter } from './infrastructure/google/googleProvi
 export { resolveGoogleAuthenticationConfiguration } from './infrastructure/google/googleConfiguration';
 export { GOOGLE_IOS_NATIVE_CONFIG } from './infrastructure/google/googleIosNativeConfig';
 
+export type {
+  AuthenticateWithGoogleDependencies,
+  GoogleSignInSuccess,
+  GoogleSignInProfileRoute,
+} from './application/authenticateWithGoogle';
+export { createAuthenticateWithGoogle } from './application/authenticateWithGoogle';
+
 /**
- * TS-006 foundation registry: Google only.
- * Not wired to LoginScreen (TS-007).
+ * Default registry: Google only (TS-006 / TS-007).
  */
 export function createDefaultSocialProviderRegistry() {
   return createSocialProviderRegistry({
@@ -59,6 +73,22 @@ export function createDefaultSocialProviderRegistry() {
 
 export function createDefaultFirebaseAuthenticationPort() {
   return createFirebaseJsAuthenticationAdapter();
+}
+
+/**
+ * Production Google Sign-In orchestrator for Login (TS-007).
+ * Reuses existing Firestore profile resolution for MainTabs / CompleteProfile routing.
+ */
+export function createDefaultAuthenticateWithGoogle(
+  overrides?: Partial<AuthenticateWithGoogleDependencies>,
+) {
+  return createAuthenticateWithGoogle({
+    registry: createDefaultSocialProviderRegistry(),
+    firebaseAuth: createDefaultFirebaseAuthenticationPort(),
+    getUserProfile,
+    isProfileComplete,
+    ...overrides,
+  });
 }
 
 /**
