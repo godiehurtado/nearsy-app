@@ -10,6 +10,9 @@ import {
   sanitizeSocialErrorForLog,
   SocialAuthError,
 } from '../domain/socialAuthenticationError';
+import type { SocialProfileData } from '../domain/socialProfileData';
+import { normalizeSocialProfileData } from './normalizeSocialProfileData';
+import { setPendingSocialProfilePrefill } from './socialProfilePrefillStore';
 
 export type GoogleSignInProfileRoute = 'MainTabs' | 'CompleteProfile';
 
@@ -18,6 +21,11 @@ export interface GoogleSignInSuccess {
   profileRoute: GoogleSignInProfileRoute;
   /** Email for CompleteProfile params; prefers Firebase session email. */
   email?: string;
+  /**
+   * Safe provider profile metadata for CompleteProfile prefill (TS-008).
+   * Present only when routing to CompleteProfile; never includes tokens.
+   */
+  socialProfile?: SocialProfileData;
 }
 
 export interface AuthenticateWithGoogleDependencies {
@@ -28,8 +36,8 @@ export interface AuthenticateWithGoogleDependencies {
 }
 
 /**
- * TS-007 orchestrator: Google native sign-in → Firebase credential → profile route.
- * Does not write Firestore profiles or perform account linking (TS-008 / TS-009).
+ * Google native sign-in → Firebase credential → profile route (+ optional prefill).
+ * Does not write Firestore profiles or perform account linking (TS-009).
  */
 export function createAuthenticateWithGoogle(
   deps: AuthenticateWithGoogleDependencies,
@@ -101,8 +109,6 @@ export function createAuthenticateWithGoogle(
           accessToken: providerResult.accessToken,
         });
       } catch (firebaseErr) {
-        // Native Google session can remain after Firebase failure; clear it so
-        // the next attempt starts clean and avoids a stuck provider session.
         if (provider.clearProviderSession) {
           try {
             await provider.clearProviderSession();
@@ -113,20 +119,44 @@ export function createAuthenticateWithGoogle(
         throw firebaseErr;
       }
 
+      let socialProfile: SocialProfileData | undefined;
+      try {
+        socialProfile = normalizeSocialProfileData(providerResult);
+      } catch {
+        socialProfile = undefined;
+      }
+
       const profile = await deps.getUserProfile(session.uid);
       if (!profile) {
+        if (socialProfile) {
+          try {
+            setPendingSocialProfilePrefill(session.uid, socialProfile);
+          } catch {
+            // Fail-soft: auth still succeeds without prefill.
+          }
+        }
         return {
           session,
           profileRoute: 'CompleteProfile',
           email: session.email ?? providerResult.email,
+          socialProfile,
         };
       }
 
       const complete = await deps.isProfileComplete(session.uid);
+      if (!complete && socialProfile) {
+        try {
+          setPendingSocialProfilePrefill(session.uid, socialProfile);
+        } catch {
+          // Fail-soft.
+        }
+      }
+
       return {
         session,
         profileRoute: complete ? 'MainTabs' : 'CompleteProfile',
         email: session.email ?? providerResult.email,
+        socialProfile: complete ? undefined : socialProfile,
       };
     } catch (err) {
       if (err instanceof SocialAuthError) {
@@ -154,8 +184,6 @@ export function createAuthenticateWithGoogle(
         );
       }
 
-      // If provider signed in but an unexpected failure occurred before Firebase
-      // cleanup, still attempt to clear the native session.
       if (providerSucceeded && provider?.clearProviderSession) {
         try {
           await provider.clearProviderSession();

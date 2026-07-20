@@ -49,6 +49,11 @@ import {
   uploadProfileImage,
   uploadTopBarImage,
 } from '../services/storageService';
+import {
+  consumePendingSocialProfilePrefill,
+  clearPendingSocialProfilePrefill,
+  mergeCompleteProfilePrefill,
+} from '../authentication/social';
 
 type TopBarMode = 'color' | 'image';
 
@@ -254,7 +259,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   // (compat)
   const [interestAffiliations] = useState<InterestAffiliations>({});
 
-  // Cargar perfil existente
+  // Cargar perfil existente (+ one-shot Google prefill for empty fields)
   const loadProfile = useCallback(async () => {
     const uid = getUid();
     if (!uid) return;
@@ -262,9 +267,35 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     try {
       setIsLoading(true);
       const existing = await getUserProfile(uid);
+      let socialPrefill = null;
+      try {
+        socialPrefill = consumePendingSocialProfilePrefill(uid);
+      } catch {
+        socialPrefill = null;
+      }
 
       if (existing && existing.realName != '') {
-        setRealName(existing.realName ?? '');
+        let nextRealName = existing.realName ?? '';
+        let nextProfileImage = existing.profileImage ?? null;
+
+        if (socialPrefill) {
+          try {
+            const merged = mergeCompleteProfilePrefill(
+              {
+                realName: nextRealName,
+                profileImage: nextProfileImage,
+                email: (existing as any).email ?? null,
+              },
+              socialPrefill,
+            );
+            nextRealName = merged.realName ?? nextRealName;
+            nextProfileImage = merged.profileImage ?? nextProfileImage;
+          } catch {
+            // Fail-soft: keep Firestore values.
+          }
+        }
+
+        setRealName(nextRealName);
         setStatus((existing as any).status ?? '');
         setBio(existing.bio ?? '');
         const currentMode = existing.mode ?? 'personal';
@@ -272,7 +303,11 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
         setOccupation(existing.occupation ?? '');
         setCompany(existing.company ?? '');
-        setProfileImage(existing.profileImage ?? null);
+        setProfileImage((prev) => {
+          if (nextProfileImage) return nextProfileImage;
+          // Preserve in-progress local/Google preview when Firestore image is empty.
+          return prev;
+        });
         setTopBarColor(existing.topBarColor ?? '#3B5A85');
         setTopBarImage((existing as any).topBarImage ?? null);
         setTopBarMode(
@@ -331,6 +366,27 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         setMode('personal');
         setIsNewProfile(true);
         setActiveField('realName');
+
+        if (socialPrefill) {
+          try {
+            const merged = mergeCompleteProfilePrefill(
+              {
+                realName: '',
+                profileImage: null,
+                email: null,
+              },
+              socialPrefill,
+            );
+            if (merged.realName) {
+              setRealName(merged.realName);
+            }
+            if (merged.profileImage) {
+              setProfileImage(merged.profileImage);
+            }
+          } catch {
+            // Fail-soft: leave form empty.
+          }
+        }
       }
     } catch {
       // opcional: Alert
@@ -588,6 +644,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       };
 
       await saveCompleteProfile(uid, payload);
+      clearPendingSocialProfilePrefill();
 
       setIsNewProfile(false);
       setActiveField(null);

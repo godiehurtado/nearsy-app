@@ -62,6 +62,21 @@ export type {
 } from './application/authenticateWithGoogle';
 export { createAuthenticateWithGoogle } from './application/authenticateWithGoogle';
 
+export type { SocialProfileData } from './domain/socialProfileData';
+export { normalizeSocialProfileData } from './application/normalizeSocialProfileData';
+export {
+  mergeCompleteProfilePrefill,
+  mapSocialNameToRealName,
+  sanitizeSocialPhotoUrl,
+  isEmptyPrefillValue,
+  type CompleteProfilePrefillSeed,
+} from './application/mergeCompleteProfilePrefill';
+export {
+  setPendingSocialProfilePrefill,
+  consumePendingSocialProfilePrefill,
+  clearPendingSocialProfilePrefill,
+} from './application/socialProfilePrefillStore';
+
 /**
  * Default registry: Google only (TS-006 / TS-007).
  */
