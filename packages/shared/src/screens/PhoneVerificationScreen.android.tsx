@@ -14,6 +14,7 @@ import {
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 
 import { firebaseAuth } from '../config/firebaseConfig';
 import { PhoneAuthProvider, PhoneAuthState } from '@react-native-firebase/auth';
@@ -31,6 +32,7 @@ export default function PhoneVerificationScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
+  const { t } = useTranslation();
 
   const { uid, phone } = (route.params || {}) as RouteParams;
 
@@ -79,17 +81,17 @@ export default function PhoneVerificationScreen() {
   const getPhoneErrorMessage = (code?: string) => {
     switch (code) {
       case 'auth/invalid-verification-code':
-        return 'The code is invalid. Please check it and try again.';
+        return t('authentication.otp.errors.invalidCode');
       case 'auth/missing-verification-code':
-        return 'Please enter the verification code.';
+        return t('authentication.otp.errors.missingCode');
       case 'auth/code-expired':
-        return 'The code has expired. Please request a new one.';
+        return t('authentication.otp.errors.codeExpired');
       case 'auth/too-many-requests':
-        return 'Too many attempts. Please wait a bit and try again.';
+        return t('authentication.otp.errors.tooManyRequests');
       case 'auth/credential-already-in-use':
-        return 'This phone number is already associated with another account.';
+        return t('authentication.otp.errors.credentialAlreadyInUse');
       case 'auth/provider-already-linked':
-        return 'A phone number is already linked to this account. We will update it instead.';
+        return t('authentication.otp.errors.providerAlreadyLinked');
       default:
         return '';
     }
@@ -97,11 +99,13 @@ export default function PhoneVerificationScreen() {
 
   const handleVerifyInternal = async (vId: string, c: string) => {
     const currentUser = firebaseAuth.currentUser;
-    if (!currentUser) throw new Error('No authenticated user.');
+    if (!currentUser) {
+      throw new Error(t('authentication.otp.errors.noAuthenticatedUser'));
+    }
 
     // Seguridad: validar que el uid de route coincida con el user actual
     if (uid && currentUser.uid !== uid) {
-      throw new Error('Session mismatch. Please log in again.');
+      throw new Error(t('authentication.otp.errors.sessionMismatch'));
     }
 
     const credential = PhoneAuthProvider.credential(vId, c.trim());
@@ -133,15 +137,18 @@ export default function PhoneVerificationScreen() {
 
   const sendCode = async () => {
     if (!phone?.trim()) {
-      Alert.alert('Phone required', 'Phone number is missing.');
+      Alert.alert(
+        t('authentication.otp.alerts.phoneRequiredTitle'),
+        t('authentication.otp.alerts.phoneRequiredMessage'),
+      );
       return;
     }
 
     // 🔹 Por ahora desactivamos verificación por SMS en iOS
     if (Platform.OS === 'ios') {
       Alert.alert(
-        'Not available yet',
-        'Phone verification via SMS is currently only available on Android in this beta version.',
+        t('authentication.otp.alerts.notAvailableTitle'),
+        t('authentication.otp.alerts.notAvailableMessage'),
       );
       return;
     }
@@ -150,7 +157,9 @@ export default function PhoneVerificationScreen() {
       setSending(true);
 
       const currentUser = firebaseAuth.currentUser;
-      if (!currentUser) throw new Error('No authenticated user.');
+      if (!currentUser) {
+        throw new Error(t('authentication.otp.errors.noAuthenticatedUser'));
+      }
 
       // ✅ evita múltiples listeners
       if (phoneListenerRef.current) {
@@ -178,8 +187,10 @@ export default function PhoneVerificationScreen() {
           setVerificationId(phoneAuthSnapshot.verificationId ?? null);
           setResendTimer(60);
           Alert.alert(
-            'Code sent',
-            `We sent a verification code to ${maskedPhone}.`,
+            t('authentication.otp.alerts.codeSentTitle'),
+            t('authentication.otp.alerts.codeSentMessage', {
+              phone: maskedPhone,
+            }),
           );
           return;
         }
@@ -211,20 +222,20 @@ export default function PhoneVerificationScreen() {
         if (state === PhoneAuthState.ERROR) {
           const errCode = phoneAuthSnapshot.error?.code;
           Alert.alert(
-            'Error',
+            t('authentication.otp.alerts.errorTitle'),
             getPhoneErrorMessage(errCode) ||
               phoneAuthSnapshot.error?.message ||
-              'Could not send verification code.',
+              t('authentication.otp.alerts.sendFailed'),
           );
           return;
         }
       });
     } catch (e: any) {
       Alert.alert(
-        'Error',
+        t('authentication.otp.alerts.errorTitle'),
         getPhoneErrorMessage(e?.code) ||
           e?.message ||
-          'Could not send verification code.',
+          t('authentication.otp.alerts.sendFailed'),
       );
     } finally {
       setSending(false);
@@ -240,22 +251,25 @@ export default function PhoneVerificationScreen() {
   const handleVerify = async () => {
     if (Platform.OS === 'ios') {
       Alert.alert(
-        'Not available yet',
-        'Phone verification via SMS is currently only available on Android in this beta version.',
+        t('authentication.otp.alerts.notAvailableTitle'),
+        t('authentication.otp.alerts.notAvailableMessage'),
       );
       return;
     }
 
     if (!verificationId) {
       Alert.alert(
-        'No code sent',
-        'We could not find an active verification. Please resend the code.',
+        t('authentication.otp.alerts.noCodeSentTitle'),
+        t('authentication.otp.alerts.noCodeSentMessage'),
       );
       return;
     }
 
     if (!code.trim()) {
-      Alert.alert('Code required', 'Please enter the verification code.');
+      Alert.alert(
+        t('authentication.otp.alerts.codeRequiredTitle'),
+        t('authentication.otp.alerts.codeRequiredMessage'),
+      );
       return;
     }
 
@@ -264,44 +278,51 @@ export default function PhoneVerificationScreen() {
 
       const currentUser = await handleVerifyInternal(verificationId, code);
 
-      Alert.alert('Phone verified', 'Your phone number has been verified.', [
-        {
-          text: 'Continue',
-          onPress: async () => {
-            try {
-              const complete = await isProfileComplete(currentUser.uid);
+      Alert.alert(
+        t('authentication.otp.alerts.phoneVerifiedTitle'),
+        t('authentication.otp.alerts.phoneVerifiedMessage'),
+        [
+          {
+            text: t('common.actions.continue'),
+            onPress: async () => {
+              try {
+                const complete = await isProfileComplete(currentUser.uid);
 
-              navigation.reset({
-                index: 0,
-                routes: [
-                  {
-                    name: complete ? 'MainTabs' : 'CompleteProfile',
-                    params: complete
-                      ? undefined
-                      : { uid: currentUser.uid, email: currentUser.email },
-                  },
-                ],
-              });
-            } catch {
-              navigation.reset({
-                index: 0,
-                routes: [
-                  {
-                    name: 'CompleteProfile',
-                    params: { uid: currentUser.uid, email: currentUser.email },
-                  },
-                ],
-              });
-            }
+                navigation.reset({
+                  index: 0,
+                  routes: [
+                    {
+                      name: complete ? 'MainTabs' : 'CompleteProfile',
+                      params: complete
+                        ? undefined
+                        : { uid: currentUser.uid, email: currentUser.email },
+                    },
+                  ],
+                });
+              } catch {
+                navigation.reset({
+                  index: 0,
+                  routes: [
+                    {
+                      name: 'CompleteProfile',
+                      params: {
+                        uid: currentUser.uid,
+                        email: currentUser.email,
+                      },
+                    },
+                  ],
+                });
+              }
+            },
           },
-        },
-      ]);
+        ],
+      );
     } catch (e: any) {
       Alert.alert(
-        'Error',
+        t('authentication.otp.alerts.errorTitle'),
         getPhoneErrorMessage(e?.code) ||
           e?.message ||
-          'Could not verify this code.',
+          t('authentication.otp.alerts.verifyFailed'),
       );
     } finally {
       setVerifying(false);
@@ -324,13 +345,13 @@ export default function PhoneVerificationScreen() {
             },
           ]}
         >
-          <Text style={styles.title}>Verify your phone</Text>
+          <Text style={styles.title}>{t('authentication.otp.title')}</Text>
           <Text style={styles.subtitle}>
-            We sent a code by SMS to:{' '}
+            {t('authentication.otp.subtitlePrefix')}{' '}
             <Text style={styles.phoneText}>{maskedPhone}</Text>
           </Text>
 
-          <Text style={styles.label}>Verification code</Text>
+          <Text style={styles.label}>{t('authentication.otp.codeLabel')}</Text>
           <View style={styles.codeRow}>
             <Ionicons
               name="key-outline"
@@ -341,7 +362,7 @@ export default function PhoneVerificationScreen() {
             <TextInput
               style={styles.codeInput}
               keyboardType="number-pad"
-              placeholder="123456"
+              placeholder={t('authentication.otp.codePlaceholder')}
               placeholderTextColor="#9CA3AF"
               value={code}
               onChangeText={setCode}
@@ -364,13 +385,17 @@ export default function PhoneVerificationScreen() {
                   size={20}
                   color="#fff"
                 />
-                <Text style={styles.verifyButtonText}>Verify code</Text>
+                <Text style={styles.verifyButtonText}>
+                  {t('authentication.otp.verifyButton')}
+                </Text>
               </>
             )}
           </TouchableOpacity>
 
           <View style={styles.resendRow}>
-            <Text style={styles.resendText}>Didn't receive the code?</Text>
+            <Text style={styles.resendText}>
+              {t('authentication.otp.didNotReceive')}
+            </Text>
             <TouchableOpacity
               onPress={sendCode}
               disabled={sending || resendTimer > 0}
@@ -382,7 +407,9 @@ export default function PhoneVerificationScreen() {
                   (sending || resendTimer > 0) && { opacity: 0.6 },
                 ]}
               >
-                {resendTimer > 0 ? `Resend in ${resendTimer}s` : 'Resend code'}
+                {resendTimer > 0
+                  ? t('authentication.otp.resendIn', { seconds: resendTimer })
+                  : t('authentication.otp.resendCode')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -391,7 +418,7 @@ export default function PhoneVerificationScreen() {
             <View style={{ marginTop: 16, alignItems: 'center' }}>
               <ActivityIndicator />
               <Text style={{ marginTop: 6, color: '#6B7280', fontSize: 12 }}>
-                Sending SMS…
+                {t('authentication.otp.sendingSms')}
               </Text>
             </View>
           )}

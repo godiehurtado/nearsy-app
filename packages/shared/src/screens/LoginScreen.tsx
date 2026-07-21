@@ -1,4 +1,4 @@
-// src/screens/LoginScreen.tsx ✅ RNFirebase-only
+// src/screens/LoginScreen.tsx ✅ RNFirebase-only — Dark Login redesign (TS-005)
 import React, { useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -7,38 +7,80 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
+  Pressable,
   Image,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   Alert,
   Modal,
   Keyboard,
+  ActivityIndicator,
+  useWindowDimensions,
+  StatusBar,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { firebaseAuth } from '../config/firebaseConfig'; // ✅ RNFirebase auth instance
 import { loginWithEmail, sendPasswordReset } from '../services/authService';
 import {
   isProfileComplete,
   getUserProfile,
 } from '../services/firestoreService';
+import AnimatedNearsyLogo from '../components/auth/AnimatedNearsyLogo';
+import {
+  authColors,
+  authGradients,
+  authRadius,
+  authTypography,
+} from '../theme/authTokens';
 
-// 🔒 Feature flag: controla si se muestran o no los botones sociales
-const ENABLE_SOCIAL_LOGIN =
-  process.env.EXPO_PUBLIC_ENABLE_SOCIAL_LOGIN === 'true';
+type SocialProvider = 'google' | 'apple' | 'meta' | 'linkedin';
+
+const SOCIAL_PROVIDERS: {
+  id: SocialProvider;
+  icon: keyof typeof Ionicons.glyphMap;
+  labelKey: string;
+}[] = [
+  {
+    id: 'google',
+    icon: 'logo-google',
+    labelKey: 'authentication.login.social.google',
+  },
+  {
+    id: 'apple',
+    icon: 'logo-apple',
+    labelKey: 'authentication.login.social.apple',
+  },
+  {
+    id: 'meta',
+    icon: 'logo-facebook',
+    labelKey: 'authentication.login.social.meta',
+  },
+  {
+    id: 'linkedin',
+    icon: 'logo-linkedin',
+    labelKey: 'authentication.login.social.linkedin',
+  },
+];
 
 export default function LoginScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const { t } = useTranslation();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // 🔔 Modal informativo para reset password
   const [infoModalVisible, setInfoModalVisible] = useState(false);
   const [infoModalTitle, setInfoModalTitle] = useState('');
   const [infoModalMessage, setInfoModalMessage] = useState('');
+
+  const heroHeight = Math.max(260, Math.min(372, windowHeight * 0.42));
 
   const showInfoModal = (title: string, message: string) => {
     setInfoModalTitle(title);
@@ -55,56 +97,65 @@ export default function LoginScreen({ navigation }: any) {
     switch (code) {
       case 'auth/invalid-email':
       case 'auth/missing-email':
-        return 'Please enter a valid email address.';
+        return t('authentication.errors.invalidEmail');
 
       case 'auth/invalid-credential':
       case 'auth/user-not-found':
       case 'auth/wrong-password':
-        return 'Invalid email or password.';
+        return t('authentication.errors.invalidCredential');
 
       case 'auth/weak-password':
-        return 'Password is too weak. Please use at least 8 characters.';
+        return t('authentication.errors.weakPassword');
 
       case 'auth/email-already-in-use':
-        return 'This email is already registered. Try logging in.';
+        return t('authentication.errors.emailAlreadyInUse');
 
       case 'auth/network-request-failed':
-        return 'Network error. Please check your connection and try again.';
+        return t('authentication.errors.networkRequestFailed');
 
       case 'auth/too-many-requests':
-        return 'Too many attempts. Please wait a moment and try again.';
+        return t('authentication.errors.tooManyRequests');
 
       case 'auth/operation-not-allowed':
-        return 'Email/password sign-in is disabled for this project.';
+        return t('authentication.errors.operationNotAllowedSignIn');
 
       default:
-        return 'Something went wrong. Please try again.';
+        return t('authentication.errors.generic');
     }
   }
 
   const handleLogin = async () => {
+    if (submitting) return;
+
     try {
       const trimmedEmail = email.trim();
 
       if (!isValidEmail(trimmedEmail)) {
-        Alert.alert('Invalid email', 'Please enter a valid email address.');
+        Alert.alert(
+          t('authentication.login.alerts.invalidEmailTitle'),
+          t('authentication.login.alerts.invalidEmailMessage'),
+        );
         return;
       }
 
       if (!password) {
-        Alert.alert('Missing password', 'Please enter your password.');
+        Alert.alert(
+          t('authentication.login.alerts.missingPasswordTitle'),
+          t('authentication.login.alerts.missingPasswordMessage'),
+        );
         return;
       }
 
       // 🔐 Política mínima: 8 caracteres
       if (password.length < 8) {
         Alert.alert(
-          'Weak password',
-          'Password must be at least 8 characters long.',
+          t('authentication.login.alerts.weakPasswordTitle'),
+          t('authentication.login.alerts.weakPasswordMessage'),
         );
         return;
       }
 
+      setSubmitting(true);
       const { user } = await loginWithEmail(trimmedEmail, password);
 
       // TEMP: Email verification temporarily disabled (Android only).
@@ -113,8 +164,8 @@ export default function LoginScreen({ navigation }: any) {
           await firebaseAuth.signOut(); // ✅ RNFirebase
         } catch {}
         Alert.alert(
-          'Email not verified',
-          'Please verify your email using the link we sent you before logging in on this device. If you don’t see the email, please check your Spam or Junk folder.',
+          t('authentication.login.alerts.emailNotVerifiedTitle'),
+          t('authentication.login.alerts.emailNotVerifiedMessage'),
         );
         return;
       }
@@ -173,7 +224,9 @@ export default function LoginScreen({ navigation }: any) {
         console.log('Firestore error code =>', e?.code);
         console.log('Firestore error msg  =>', e?.message);
       }
-      Alert.alert('Login Error', msg);
+      Alert.alert(t('authentication.login.alerts.loginErrorTitle'), msg);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -182,16 +235,16 @@ export default function LoginScreen({ navigation }: any) {
 
     if (!trimmed) {
       showInfoModal(
-        'Reset your password',
-        'Please type your email address above and tap "Forgot Password" again. We will send you a reset link to that email.',
+        t('authentication.forgotPassword.emptyEmailTitle'),
+        t('authentication.forgotPassword.emptyEmailMessage'),
       );
       return;
     }
 
     if (!isValidEmail(trimmed)) {
       showInfoModal(
-        'Invalid email',
-        'Please enter a valid email address (for example: name@example.com).',
+        t('authentication.forgotPassword.invalidEmailTitle'),
+        t('authentication.forgotPassword.invalidEmailMessage'),
       );
       return;
     }
@@ -201,177 +254,255 @@ export default function LoginScreen({ navigation }: any) {
 
       // Mensaje genérico para no revelar si existe o no
       showInfoModal(
-        'Check your email',
-        'If this email is registered, you will receive a link to reset your password in the next few minutes.',
+        t('authentication.forgotPassword.successTitle'),
+        t('authentication.forgotPassword.successMessage'),
       );
     } catch (e: any) {
       if (e?.code === 'auth/network-request-failed') {
         showInfoModal(
-          'Network error',
-          'We could not contact the server. Please check your connection and try again.',
+          t('authentication.forgotPassword.networkErrorTitle'),
+          t('authentication.forgotPassword.networkErrorMessage'),
         );
       } else {
         showInfoModal(
-          'Reset your password',
-          'If this email is registered, you will receive a link to reset your password.',
+          t('authentication.forgotPassword.genericTitle'),
+          t('authentication.forgotPassword.genericMessage'),
         );
       }
     }
   };
 
-  const handleApple = async () => {
-    if (!ENABLE_SOCIAL_LOGIN) return;
+  // Temporary social buttons — no real authentication, no Firebase session change.
+  const handleSocialPress = (_provider: SocialProvider) => {
+    Alert.alert(
+      t('authentication.social.comingSoonTitle'),
+      t('authentication.social.comingSoonMessage'),
+    );
+  };
 
-    Alert.alert('Sign in with Apple', 'Coming soon.');
+  const handleCreateProfile = () => {
+    navigation.navigate('Register');
   };
 
   return (
-    <SafeAreaView
-      style={{ flex: 1, backgroundColor: '#fff', paddingTop: insets.top }}
-    >
-      <View style={styles.topBar} />
+    <View style={styles.root}>
+      <StatusBar barStyle="light-content" />
 
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={insets.top + 20}
+        keyboardVerticalOffset={0}
       >
         <ScrollView
-          contentContainerStyle={[styles.content, { flexGrow: 1 }]}
+          style={styles.flex}
+          contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="always"
           showsVerticalScrollIndicator={false}
+          bounces={false}
         >
-          <Text style={styles.subtitle}>Welcome to</Text>
-
-          <View style={styles.brandRow}>
-            <Image
-              source={require('../assets/icon.png')}
-              style={{
-                width: 60,
-                height: 60,
-                resizeMode: 'contain',
-                marginRight: 0,
-              }}
-            />
-            <Text style={styles.title}>Nearsy</Text>
-          </View>
-
-          <Text style={styles.slogan}>Be your own billboard</Text>
-
-          <Image
-            source={require('../assets/login_image_with_background.png')}
-            style={{ width: 250, height: 250, resizeMode: 'contain' }}
-          />
-
-          {/* Email */}
-          <View style={styles.inputContainer}>
-            <Ionicons
-              name="person"
-              size={20}
-              color="#999"
-              style={styles.inputIcon}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              placeholderTextColor="#999"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-          </View>
-
-          {/* Password */}
-          <View style={styles.inputContainer}>
-            <Ionicons
-              name="lock-closed"
-              size={20}
-              color="#999"
-              style={styles.inputIcon}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              placeholderTextColor="#999"
-              secureTextEntry={!passwordVisible}
-              value={password}
-              onChangeText={setPassword}
-            />
-            <TouchableOpacity
-              onPress={() => setPasswordVisible((prev) => !prev)}
-              style={styles.eyeButton}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={passwordVisible ? 'eye-off' : 'eye'}
-                size={20}
-                color="#999"
-              />
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity
-            style={styles.button}
-            onPress={handleLogin}
-            activeOpacity={0.85}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          <LinearGradient
+            colors={[...authGradients.hero]}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 0.8 }}
+            style={[
+              styles.hero,
+              { height: heroHeight, paddingTop: insets.top + 24 },
+            ]}
           >
-            <Text style={styles.buttonText}>Log In</Text>
-          </TouchableOpacity>
+            <Star top="18%" left="22%" size={3} opacity={0.5} />
+            <Star top="26%" left="76%" size={2} opacity={0.7} />
+            <Star top="60%" left="14%" size={2} opacity={0.5} />
+            <Star top="66%" left="84%" size={3} opacity={0.6} />
 
-          {/* ---------- OR + SOCIAL SOLO SI ESTÁ HABILITADO ---------- */}
-          {ENABLE_SOCIAL_LOGIN && (
-            <>
-              <View style={styles.separatorRow}>
-                <View style={styles.separatorLine} />
-                <Text style={styles.separatorText}>or</Text>
-                <View style={styles.separatorLine} />
+            <AnimatedNearsyLogo size={46} />
+            <Text style={styles.brand}>{t('common.appName')}</Text>
+            <Text style={styles.tagline}>
+              {t('authentication.login.tagline')}
+            </Text>
+
+            <Image
+              source={require('../assets/people-illustration.png')}
+              style={styles.illustration}
+              resizeMode="contain"
+            />
+          </LinearGradient>
+
+          <View
+            style={[
+              styles.sheet,
+              { paddingBottom: Math.max(insets.bottom, 16) + 24 },
+            ]}
+          >
+            <Text style={styles.welcome}>
+              {t('authentication.login.welcomeBack')}
+            </Text>
+
+            <View style={styles.fields}>
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="mail-outline"
+                  size={18}
+                  color={authColors.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder={t('authentication.login.emailPlaceholder')}
+                  placeholderTextColor={authColors.textMuted}
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  autoCorrect={false}
+                  editable={!submitting}
+                />
               </View>
 
-              <View style={styles.socialGroup}>
+              <View style={styles.inputContainer}>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={18}
+                  color={authColors.textMuted}
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder={t('authentication.login.passwordPlaceholder')}
+                  placeholderTextColor={authColors.textMuted}
+                  secureTextEntry={!passwordVisible}
+                  value={password}
+                  onChangeText={setPassword}
+                  editable={!submitting}
+                />
                 <TouchableOpacity
-                  style={[styles.socialBtn, styles.appleBtn]}
-                  onPress={handleApple}
-                  activeOpacity={0.85}
+                  onPress={() => setPasswordVisible((prev) => !prev)}
+                  style={styles.eyeButton}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Ionicons
-                    name="logo-apple"
-                    size={20}
-                    color="#000"
-                    style={{ marginRight: 8 }}
+                    name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
+                    size={18}
+                    color={authColors.textMuted}
                   />
-                  <Text style={styles.socialTextDark}>Continue with Apple</Text>
                 </TouchableOpacity>
               </View>
-            </>
-          )}
+            </View>
 
-          <View style={styles.linksContainer}>
-            <TouchableOpacity onPress={handleForgotPassword}>
-              <Text style={styles.link}>Forgot Password</Text>
+            <TouchableOpacity
+              style={styles.forgotWrap}
+              onPress={handleForgotPassword}
+              activeOpacity={0.7}
+              disabled={submitting}
+            >
+              <Text style={styles.forgot}>
+                {t('authentication.login.forgotPassword')}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-              <Text style={styles.linkSmall}>Don’t Have an Account?</Text>
-            </TouchableOpacity>
+
+            <Pressable
+              onPress={handleLogin}
+              disabled={submitting}
+              style={({ pressed }) => [
+                styles.primaryButtonWrap,
+                { transform: [{ scale: pressed && !submitting ? 0.98 : 1 }] },
+              ]}
+            >
+              {submitting ? (
+                <View
+                  style={[styles.primaryButton, styles.primaryButtonDisabled]}
+                >
+                  <ActivityIndicator color={authColors.white} />
+                </View>
+              ) : (
+                <LinearGradient
+                  colors={[...authGradients.primary]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.primaryButton}
+                >
+                  <Text style={styles.primaryButtonText}>
+                    {t('authentication.login.submit')}
+                  </Text>
+                </LinearGradient>
+              )}
+            </Pressable>
+
+            <Divider label={t('authentication.login.newHere')} strong />
+
+            <Pressable
+              onPress={handleCreateProfile}
+              disabled={submitting}
+              style={({ pressed }) => [
+                styles.outlineButton,
+                {
+                  backgroundColor: pressed ? authColors.panel : 'transparent',
+                  transform: [{ scale: pressed ? 0.98 : 1 }],
+                },
+              ]}
+            >
+              <Text style={styles.outlineButtonText}>
+                {t('authentication.login.createProfile')}
+              </Text>
+            </Pressable>
+
             <TouchableOpacity
               onPress={() =>
                 navigation.navigate('IntroVideo', { preview: false })
               }
+              disabled={submitting}
+              style={styles.guideLinkWrap}
+              activeOpacity={0.7}
             >
-              <Text
-                style={[styles.linkSmall, { textDecorationLine: 'underline' }]}
-              >
-                View registration guide
+              <Text style={styles.guideLink}>
+                {t('authentication.login.viewRegistrationGuide')}
               </Text>
             </TouchableOpacity>
-          </View>
 
-          <View style={{ height: 80 }} />
+            <Divider label={t('authentication.login.orContinueWith')} />
+
+            <View style={styles.socialRow}>
+              {SOCIAL_PROVIDERS.map((provider) => (
+                <Pressable
+                  key={provider.id}
+                  style={({ pressed }) => [
+                    styles.socialButton,
+                    {
+                      backgroundColor: pressed
+                        ? authColors.panel
+                        : 'transparent',
+                    },
+                  ]}
+                  onPress={() => handleSocialPress(provider.id)}
+                  disabled={submitting}
+                >
+                  <Ionicons
+                    name={provider.icon}
+                    size={14}
+                    color={authColors.textPrimary}
+                    style={styles.socialIcon}
+                  />
+                  <Text style={styles.socialText} numberOfLines={1}>
+                    {t(provider.labelKey)}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={styles.terms}>
+              {t('authentication.login.termsPrefix')}{' '}
+              <Text style={styles.termsLink}>
+                {t('authentication.login.termsLink')}
+              </Text>{' '}
+              {t('authentication.login.termsAnd')}{' '}
+              <Text style={styles.termsLink}>
+                {t('authentication.login.privacyLink')}
+              </Text>
+              .
+            </Text>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      <View style={styles.bottomBar} />
 
       {/* 🔔 Modal informativo para reset password */}
       <Modal
@@ -390,133 +521,232 @@ export default function LoginScreen({ navigation }: any) {
               onPress={() => setInfoModalVisible(false)}
               activeOpacity={0.85}
             >
-              <Text style={styles.modalButtonText}>OK</Text>
+              <Text style={styles.modalButtonText}>
+                {t('common.buttons.ok')}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
+  );
+}
+
+function Star({
+  top,
+  left,
+  size,
+  opacity,
+}: {
+  top: `${number}%`;
+  left: `${number}%`;
+  size: number;
+  opacity: number;
+}) {
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        top,
+        left,
+        width: size,
+        height: size,
+        borderRadius: size,
+        backgroundColor: authColors.white,
+        opacity,
+      }}
+    />
+  );
+}
+
+function Divider({ label, strong }: { label: string; strong?: boolean }) {
+  return (
+    <View style={styles.dividerRow}>
+      <View style={styles.rule} />
+      <Text style={[styles.dividerLabel, strong && styles.dividerLabelStrong]}>
+        {label}
+      </Text>
+      <View style={styles.rule} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    alignItems: 'center',
-    paddingHorizontal: 30,
-    paddingTop: 80,
-    backgroundColor: '#fff',
+  root: {
+    flex: 1,
+    backgroundColor: authColors.bg,
   },
-  topBar: {
+  flex: { flex: 1 },
+  scrollContent: {
+    flexGrow: 1,
+    backgroundColor: authColors.bg,
+  },
+  hero: {
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  brand: {
+    ...authTypography.brand,
+    color: authColors.white,
+    marginTop: 6,
+  },
+  tagline: {
+    ...authTypography.tagline,
+    color: authColors.tagline,
+    marginTop: 4,
+    textAlign: 'center',
+    paddingHorizontal: 24,
+  },
+  illustration: {
     position: 'absolute',
-    top: 0,
-    height: 40,
-    width: '100%',
-    backgroundColor: '#3B5A85',
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    zIndex: 1,
-    pointerEvents: 'none',
+    bottom: 8,
+    width: 158,
+    height: 150,
+    opacity: 0.96,
   },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
+  sheet: {
+    flexGrow: 1,
+    backgroundColor: authColors.bg,
+    borderTopLeftRadius: authRadius.sheet,
+    borderTopRightRadius: authRadius.sheet,
+    marginTop: -22,
+    paddingHorizontal: 22,
+    paddingTop: 16,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2B3A42',
-    marginBottom: 10,
+  welcome: {
+    ...authTypography.welcome,
+    color: authColors.textPrimary,
   },
-  slogan: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: -4,
-    marginBottom: 20,
-    fontWeight: '500',
+  fields: {
+    gap: 9,
+    marginTop: 12,
   },
-  subtitle: { fontSize: 18 },
-
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F1F1',
-    borderRadius: 30,
-    paddingHorizontal: 15,
-    marginVertical: 10,
+    backgroundColor: authColors.inputBg,
+    borderWidth: 1,
+    borderColor: authColors.inputBorder,
+    borderRadius: authRadius.md,
+    paddingHorizontal: 14,
     width: '100%',
   },
-  inputIcon: { marginRight: 8 },
+  inputIcon: { marginRight: 10 },
   input: {
     flex: 1,
-    height: 45,
-    fontSize: 16,
-    color: '#333',
+    paddingVertical: 12,
+    fontSize: authTypography.body.fontSize,
+    fontWeight: authTypography.body.fontWeight,
+    color: authColors.textPrimary,
   },
   eyeButton: {
-    paddingHorizontal: 4,
+    paddingLeft: 8,
     paddingVertical: 4,
   },
-
-  button: {
-    backgroundColor: '#ADCBE3',
-    paddingVertical: 12,
-    paddingHorizontal: 60,
-    borderRadius: 20,
-    marginTop: 20,
+  forgotWrap: {
+    alignSelf: 'flex-end',
+    marginTop: 7,
   },
-  buttonText: { color: '#1A2B3C', fontSize: 16, fontWeight: 'bold' },
-
-  separatorRow: {
-    width: '100%',
-    marginTop: 22,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  forgot: {
+    ...authTypography.forgot,
+    color: authColors.accent,
   },
-  separatorLine: { flex: 1, height: 1, backgroundColor: '#E5E7EB' },
-  separatorText: { color: '#6B7280', fontSize: 12, fontWeight: '600' },
-
-  socialGroup: { width: '100%', gap: 12, alignItems: 'center' },
-  socialBtn: {
-    width: '100%',
-    height: 46,
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
+  primaryButtonWrap: {
+    marginTop: 12,
+    borderRadius: authRadius.md,
+    overflow: 'hidden',
+  },
+  primaryButton: {
+    paddingVertical: 13,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: authRadius.md,
+    minHeight: 48,
   },
-  googleBtn: { backgroundColor: '#1F2937' },
-  appleBtn: {
-    backgroundColor: '#F7F7F7',
+  primaryButtonDisabled: {
+    backgroundColor: authColors.disabledBg,
+  },
+  primaryButtonText: {
+    ...authTypography.button,
+    color: authColors.white,
+  },
+  outlineButton: {
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: authColors.inputBorder,
+    borderRadius: authRadius.md,
   },
-  socialTextLight: { color: '#fff', fontWeight: '700' },
-  socialTextDark: { color: '#111', fontWeight: '700' },
-
-  link: { color: '#555', marginTop: 10, fontSize: 14 },
-  linkSmall: { color: '#555', marginTop: 4, marginBottom: 10, fontSize: 12 },
-  linksContainer: { marginTop: 20, alignItems: 'center' },
-
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    height: 40,
-    width: '100%',
-    backgroundColor: '#3B5A85',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    pointerEvents: 'none',
+  outlineButtonText: {
+    ...authTypography.button,
+    color: authColors.textPrimary,
   },
-
-  // 🔔 Modal
+  guideLinkWrap: {
+    alignSelf: 'center',
+    marginTop: 10,
+  },
+  guideLink: {
+    fontSize: 12,
+    color: authColors.accent,
+    textDecorationLine: 'underline',
+    fontWeight: '500',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginVertical: 12,
+  },
+  rule: {
+    flex: 1,
+    height: 1,
+    backgroundColor: authColors.border,
+  },
+  dividerLabel: {
+    ...authTypography.divider,
+    color: authColors.textMuted,
+  },
+  dividerLabelStrong: {
+    ...authTypography.dividerStrong,
+  },
+  socialRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  socialButton: {
+    flexGrow: 1,
+    flexBasis: '22%',
+    minWidth: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 4,
+    borderWidth: 1,
+    borderColor: authColors.inputBorder,
+    borderRadius: authRadius.social,
+    flexDirection: 'row',
+  },
+  socialIcon: {
+    marginRight: 4,
+  },
+  socialText: {
+    ...authTypography.social,
+    color: authColors.textPrimary,
+  },
+  terms: {
+    ...authTypography.terms,
+    color: authColors.textMuted,
+    textAlign: 'center',
+    marginTop: 14,
+  },
+  termsLink: {
+    color: authColors.accent,
+  },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: authColors.modalBackdrop,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 32,
@@ -524,34 +754,35 @@ const styles = StyleSheet.create({
   modalCard: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: authColors.modalCard,
     borderRadius: 18,
+    borderWidth: 1,
+    borderColor: authColors.border,
     paddingVertical: 18,
     paddingHorizontal: 18,
     alignItems: 'center',
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
+    ...authTypography.modalTitle,
+    color: authColors.textPrimary,
     marginBottom: 8,
     textAlign: 'center',
   },
   modalMessage: {
-    fontSize: 14,
-    color: '#4B5563',
+    ...authTypography.modalMessage,
+    color: authColors.textSecondary,
     textAlign: 'center',
     marginBottom: 14,
   },
   modalButton: {
     marginTop: 4,
-    backgroundColor: '#3B5A85',
+    backgroundColor: authColors.accent,
     paddingHorizontal: 24,
     paddingVertical: 10,
-    borderRadius: 999,
+    borderRadius: authRadius.pill,
   },
   modalButtonText: {
-    color: '#FFFFFF',
+    color: authColors.white,
     fontWeight: '700',
     fontSize: 14,
   },

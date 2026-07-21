@@ -57,7 +57,8 @@
       "expo-asset",
       "expo-font",
       "expo-web-browser",
-      "react-native-edge-to-edge"
+      "react-native-edge-to-edge",
+      "expo-localization"
     ],
     "extra": {
       "eas": {

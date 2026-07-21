@@ -20,8 +20,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { useTranslation } from 'react-i18next';
+
 import TopHeader from '../components/TopHeader';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
+import {
+  changeAppLanguage,
+  DEFAULT_LANGUAGE,
+  isSupportedLanguage,
+  SUPPORTED_LANGUAGES,
+  type SupportedLanguage,
+} from '../i18n';
 
 import {
   startBackgroundLocation,
@@ -161,6 +170,16 @@ function splitStoredPhone(value?: string | null): {
 export default function MoreScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  const { t, i18n } = useTranslation();
+
+  const currentLanguage: SupportedLanguage = isSupportedLanguage(i18n.language)
+    ? i18n.language
+    : DEFAULT_LANGUAGE;
+
+  const languageLabel = (lang: SupportedLanguage) =>
+    lang === 'en'
+      ? t('settings.language.english')
+      : t('settings.language.spanish');
 
   // top visuals
   const [topBarColor, setTopBarColor] = useState('#3B5A85');
@@ -179,6 +198,7 @@ export default function MoreScreen() {
     AMERICA_COUNTRIES.find((c) => c.code === 'US') || AMERICA_COUNTRIES[0],
   );
   const [countryModalOpen, setCountryModalOpen] = useState(false);
+  const [languageModalOpen, setLanguageModalOpen] = useState(false);
 
   // data editable
   const [phone, setPhone] = useState('');
@@ -499,6 +519,24 @@ export default function MoreScreen() {
     setBlockedContacts((prev) => prev.filter((x) => x !== value));
   };
 
+  const handleLanguageSelect = async (language: SupportedLanguage) => {
+    if (language === currentLanguage) {
+      setLanguageModalOpen(false);
+      return;
+    }
+
+    try {
+      await changeAppLanguage(language);
+      setLanguageModalOpen(false);
+      Alert.alert(
+        t('settings.language.title'),
+        t('settings.language.changeSuccess'),
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not change language.');
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -728,6 +766,29 @@ export default function MoreScreen() {
               )}
             </View>
 
+            {/* Language */}
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => setLanguageModalOpen(true)}
+              activeOpacity={0.85}
+            >
+              <View style={styles.labelRow}>
+                <Text style={styles.cardTitle}>
+                  {t('settings.language.title')}
+                </Text>
+                <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+              </View>
+
+              <Text style={{ color: '#374151' }}>
+                {t('settings.language.description')}
+              </Text>
+
+              <Text style={styles.hint}>
+                {t('settings.language.current')}:{' '}
+                {languageLabel(currentLanguage)}
+              </Text>
+            </TouchableOpacity>
+
             {/* Contacts card */}
             <View style={styles.card}>
               <Text style={styles.cardTitle}>
@@ -939,6 +1000,64 @@ export default function MoreScreen() {
                 );
               }}
             />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={languageModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLanguageModalOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setLanguageModalOpen(false)}
+        >
+          <Pressable style={styles.countryModalCard}>
+            <Text style={styles.modalTitle}>
+              {t('settings.language.title')}
+            </Text>
+            <Text style={[styles.hint, { marginBottom: 8 }]}>
+              {t('settings.language.description')}
+            </Text>
+
+            {SUPPORTED_LANGUAGES.map((lang) => {
+              const isSelected = lang === currentLanguage;
+
+              return (
+                <TouchableOpacity
+                  key={lang}
+                  style={[
+                    styles.countryOption,
+                    isSelected && styles.countryOptionSelected,
+                  ]}
+                  onPress={() => handleLanguageSelect(lang)}
+                >
+                  <Text style={styles.countryOptionName}>
+                    {languageLabel(lang)}
+                  </Text>
+
+                  {isSelected ? (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={22}
+                      color="#3B5A85"
+                    />
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+
+            <TouchableOpacity
+              style={styles.languageModalCloseBtn}
+              onPress={() => setLanguageModalOpen(false)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.languageModalCloseText}>
+                {t('common.buttons.close')}
+              </Text>
+            </TouchableOpacity>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1174,5 +1293,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6B7280',
     marginTop: 2,
+  },
+  languageModalCloseBtn: {
+    marginTop: 12,
+    alignSelf: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  languageModalCloseText: {
+    color: '#3B5A85',
+    fontWeight: '700',
+    fontSize: 15,
   },
 });
