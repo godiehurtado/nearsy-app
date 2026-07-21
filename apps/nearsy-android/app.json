@@ -58,7 +58,8 @@
       "expo-font",
       "expo-web-browser",
       "react-native-edge-to-edge",
-      "expo-localization"
+      "expo-localization",
+      "@react-native-google-signin/google-signin"
     ],
     "extra": {
       "eas": {

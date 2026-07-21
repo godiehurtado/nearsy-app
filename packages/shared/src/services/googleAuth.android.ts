@@ -1,107 +1,285 @@
-// src/services/googleAuth.ts  ✅ RNFirebase-only + standalone redirect (no Expo proxy)
-import { useCallback } from 'react';
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-import type { AuthRequestPromptOptions } from 'expo-auth-session';
-import { makeRedirectUri, ResponseType } from 'expo-auth-session';
-import Constants from 'expo-constants';
+/**
+ * Android Google Sign-In foundation (TS-006).
+ *
+ * Prepares native Google Sign-In configuration and availability checks for
+ * TS-007. Does not wire Login UI, Firebase credential exchange, or session
+ * establishment.
+ */
+import {
+  GoogleSignin,
+  isErrorWithCode,
+  isSuccessResponse,
+  statusCodes,
+} from '@react-native-google-signin/google-signin';
+import { Platform } from 'react-native';
 
-import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
-import { firebaseAuth } from '../config/firebaseConfig.android';
+const GOOGLE_SCOPES = ['openid', 'email', 'profile'] as const;
 
-WebBrowser.maybeCompleteAuthSession();
+export type GoogleAuthFoundationErrorCode =
+  | 'UNSUPPORTED_PLATFORM'
+  | 'MISSING_WEB_CLIENT_ID'
+  | 'NATIVE_MODULE_UNAVAILABLE'
+  | 'PLAY_SERVICES_UNAVAILABLE'
+  | 'CONFIGURATION_FAILED'
+  | 'SIGN_IN_CANCELLED'
+  | 'SIGN_IN_IN_PROGRESS'
+  | 'SIGN_IN_FAILED'
+  | 'MISSING_ID_TOKEN';
 
-type UseGoogleAuthResult = {
-  request: any | null; // evita líos de tipos entre provider y core
-  signInWithGoogle: (
-    options?: AuthRequestPromptOptions,
-  ) => Promise<FirebaseAuthTypes.User>;
+export class GoogleAuthFoundationError extends Error {
+  readonly code: GoogleAuthFoundationErrorCode;
+  readonly cause?: unknown;
+
+  constructor(
+    code: GoogleAuthFoundationErrorCode,
+    message: string,
+    cause?: unknown,
+  ) {
+    super(message);
+    this.name = 'GoogleAuthFoundationError';
+    this.code = code;
+    this.cause = cause;
+  }
+}
+
+export type GoogleIdTokenResult = {
+  idToken: string;
+  email: string | null;
+  givenName: string | null;
+  familyName: string | null;
+  photo: string | null;
+  userId: string;
 };
 
-// ✅ Redirect nativo para EAS/standalone (debe existir expo.scheme = "nearsy")
-const redirectUri = makeRedirectUri({
-  scheme: 'nearsy',
-  path: 'redirect',
-});
+type ConfigureState = {
+  configured: boolean;
+  webClientId: string | null;
+};
 
-export function useGoogleAuth(): UseGoogleAuthResult {
-  const extra = Constants.expoConfig?.extra ?? {};
+const state: ConfigureState = {
+  configured: false,
+  webClientId: null,
+};
 
-  const webClientId = extra.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID as
-    | string
-    | undefined;
+function assertAndroid(): void {
+  if (Platform.OS !== 'android') {
+    throw new GoogleAuthFoundationError(
+      'UNSUPPORTED_PLATFORM',
+      'Google Auth foundation is only available on Android.',
+    );
+  }
+}
 
-  const iosClientId = extra.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID as
-    | string
-    | undefined;
+/**
+ * Reads the Firebase Web OAuth client ID used as GoogleSignin `webClientId`.
+ * Expected EAS / local env: EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+ */
+export function getGoogleWebClientId(): string | null {
+  const value = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim();
+  return value ? value : null;
+}
 
-  const androidClientId = extra.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID as
-    | string
-    | undefined;
+export function isGoogleSignInNativeModuleAvailable(): boolean {
+  try {
+    return typeof GoogleSignin?.configure === 'function';
+  } catch {
+    return false;
+  }
+}
 
-  if (__DEV__) {
-    if (!iosClientId && !androidClientId && !webClientId) {
-      console.warn(
-        '[GoogleAuth] Missing Google client ids in app.json -> extra. Add at least one of: EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID, EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID, EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID',
-      );
+/**
+ * Idempotent, lazy Google Sign-In configuration.
+ * Safe to call multiple times; reconfigures only when webClientId changes.
+ */
+export function ensureGoogleSignInConfigured(): string {
+  assertAndroid();
+
+  if (!isGoogleSignInNativeModuleAvailable()) {
+    throw new GoogleAuthFoundationError(
+      'NATIVE_MODULE_UNAVAILABLE',
+      'Google Sign-In native module is unavailable. Rebuild the Android development client after installing @react-native-google-signin/google-signin.',
+    );
+  }
+
+  const webClientId = getGoogleWebClientId();
+  if (!webClientId) {
+    throw new GoogleAuthFoundationError(
+      'MISSING_WEB_CLIENT_ID',
+      'Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID. Set the Firebase Web OAuth client ID (client_type 3) in the environment.',
+    );
+  }
+
+  if (state.configured && state.webClientId === webClientId) {
+    return webClientId;
+  }
+
+  try {
+    GoogleSignin.configure({
+      webClientId,
+      offlineAccess: false,
+      scopes: [...GOOGLE_SCOPES],
+    });
+  } catch (cause) {
+    state.configured = false;
+    state.webClientId = null;
+    throw new GoogleAuthFoundationError(
+      'CONFIGURATION_FAILED',
+      'Failed to configure Google Sign-In.',
+      cause,
+    );
+  }
+
+  state.configured = true;
+  state.webClientId = webClientId;
+  return webClientId;
+}
+
+export async function ensureGooglePlayServicesAvailable(
+  showPlayServicesUpdateDialog = true,
+): Promise<boolean> {
+  assertAndroid();
+  ensureGoogleSignInConfigured();
+
+  try {
+    return await GoogleSignin.hasPlayServices({
+      showPlayServicesUpdateDialog,
+    });
+  } catch (cause) {
+    throw new GoogleAuthFoundationError(
+      'PLAY_SERVICES_UNAVAILABLE',
+      'Google Play Services are unavailable or outdated on this device.',
+      cause,
+    );
+  }
+}
+
+export type GoogleSignInAvailability = {
+  platform: 'android';
+  nativeModuleAvailable: boolean;
+  webClientIdConfigured: boolean;
+  configured: boolean;
+  playServicesAvailable: boolean | null;
+};
+
+/**
+ * Non-throwing availability snapshot for foundation diagnostics.
+ * Missing webClientId is reported as webClientIdConfigured=false.
+ */
+export async function getGoogleSignInAvailability(): Promise<GoogleSignInAvailability> {
+  if (Platform.OS !== 'android') {
+    return {
+      platform: 'android',
+      nativeModuleAvailable: false,
+      webClientIdConfigured: false,
+      configured: false,
+      playServicesAvailable: null,
+    };
+  }
+
+  const nativeModuleAvailable = isGoogleSignInNativeModuleAvailable();
+  const webClientIdConfigured = Boolean(getGoogleWebClientId());
+
+  let configured = false;
+  let playServicesAvailable: boolean | null = null;
+
+  if (nativeModuleAvailable && webClientIdConfigured) {
+    try {
+      ensureGoogleSignInConfigured();
+      configured = true;
+      playServicesAvailable = await GoogleSignin.hasPlayServices({
+        showPlayServicesUpdateDialog: false,
+      });
+    } catch {
+      configured = false;
+      playServicesAvailable = false;
     }
   }
 
-  const [request, , promptAsync] = Google.useAuthRequest({
-    iosClientId,
-    androidClientId,
-    clientId: webClientId, // fallback
+  return {
+    platform: 'android',
+    nativeModuleAvailable,
+    webClientIdConfigured,
+    configured,
+    playServicesAvailable,
+  };
+}
 
-    redirectUri,
-    useProxy: false,
-    scopes: ['openid', 'profile', 'email'],
-    responseType: ResponseType.IdToken,
-  });
+/**
+ * Real Google account picker → ID token primitive for TS-007.
+ * Does not create a Firebase session and must not be wired from Login yet.
+ */
+export async function requestGoogleIdToken(): Promise<GoogleIdTokenResult> {
+  assertAndroid();
+  ensureGoogleSignInConfigured();
+  await ensureGooglePlayServicesAvailable(true);
 
-  const signInWithGoogle = useCallback(
-    async (options?: AuthRequestPromptOptions) => {
-      try {
-        const res = await promptAsync({ useProxy: false, ...options });
+  try {
+    const response = await GoogleSignin.signIn();
 
-        if (res.type !== 'success') {
-          throw new Error(
-            res.type === 'dismiss' || res.type === 'cancel'
-              ? 'Google sign-in cancelled.'
-              : 'Google sign-in failed.',
-          );
-        }
+    if (!isSuccessResponse(response)) {
+      throw new GoogleAuthFoundationError(
+        'SIGN_IN_CANCELLED',
+        'Google sign-in was cancelled.',
+      );
+    }
 
-        // expo-auth-session a veces pone id_token en params, además de authentication
-        const idToken =
-          (res as any)?.authentication?.idToken ??
-          (res as any)?.params?.id_token;
+    const idToken = response.data.idToken;
+    if (!idToken) {
+      throw new GoogleAuthFoundationError(
+        'MISSING_ID_TOKEN',
+        'Google Sign-In succeeded but did not return an ID token. Verify EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is the Firebase Web client (client_type 3).',
+      );
+    }
 
-        const accessToken = (res as any)?.authentication?.accessToken;
+    const profile = response.data.user;
 
-        if (!idToken && !accessToken) {
-          throw new Error(
-            'Google authentication did not return a valid token.',
-          );
-        }
+    return {
+      idToken,
+      email: profile.email ?? null,
+      givenName: profile.givenName ?? null,
+      familyName: profile.familyName ?? null,
+      photo: profile.photo ?? null,
+      userId: profile.id,
+    };
+  } catch (cause) {
+    if (cause instanceof GoogleAuthFoundationError) {
+      throw cause;
+    }
 
-        // ✅ RNFirebase credential
-        const credential = idToken
-          ? auth.GoogleAuthProvider.credential(idToken)
-          : auth.GoogleAuthProvider.credential(null, accessToken);
-
-        const userCredential =
-          await firebaseAuth.signInWithCredential(credential);
-
-        return userCredential.user;
-      } catch (err: any) {
-        if (__DEV__) {
-          console.error('[GoogleAuth] Sign-in error:', err);
-        }
-        throw new Error('Google authentication failed. Please try again.');
+    if (isErrorWithCode(cause)) {
+      if (cause.code === statusCodes.SIGN_IN_CANCELLED) {
+        throw new GoogleAuthFoundationError(
+          'SIGN_IN_CANCELLED',
+          'Google sign-in was cancelled.',
+          cause,
+        );
       }
-    },
-    [promptAsync],
-  );
+      if (cause.code === statusCodes.IN_PROGRESS) {
+        throw new GoogleAuthFoundationError(
+          'SIGN_IN_IN_PROGRESS',
+          'Google sign-in is already in progress.',
+          cause,
+        );
+      }
+      if (cause.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        throw new GoogleAuthFoundationError(
+          'PLAY_SERVICES_UNAVAILABLE',
+          'Google Play Services are unavailable or outdated on this device.',
+          cause,
+        );
+      }
+    }
 
-  return { request, signInWithGoogle };
+    throw new GoogleAuthFoundationError(
+      'SIGN_IN_FAILED',
+      'Google sign-in failed.',
+      cause,
+    );
+  }
+}
+
+/** Test helper — resets lazy configure state. */
+export function __resetGoogleSignInFoundationForTests(): void {
+  state.configured = false;
+  state.webClientId = null;
 }
