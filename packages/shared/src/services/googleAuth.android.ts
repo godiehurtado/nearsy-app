@@ -45,9 +45,12 @@ export class GoogleAuthFoundationError extends Error {
 export type GoogleIdTokenResult = {
   idToken: string;
   email: string | null;
+  /** Google account display name (`user.name`), when available. */
+  displayName: string | null;
   givenName: string | null;
   familyName: string | null;
-  photo: string | null;
+  /** HTTPS profile photo URL from Google, when available. */
+  photoUrl: string | null;
   userId: string;
 };
 
@@ -205,8 +208,8 @@ export async function getGoogleSignInAvailability(): Promise<GoogleSignInAvailab
 }
 
 /**
- * Real Google account picker → ID token primitive for TS-007.
- * Does not create a Firebase session and must not be wired from Login yet.
+ * Real Google account picker → ID token + safe identity fields for TS-007/TS-008.
+ * Does not create a Firebase session.
  */
 export async function requestGoogleIdToken(): Promise<GoogleIdTokenResult> {
   assertAndroid();
@@ -236,9 +239,10 @@ export async function requestGoogleIdToken(): Promise<GoogleIdTokenResult> {
     return {
       idToken,
       email: profile.email ?? null,
+      displayName: profile.name ?? null,
       givenName: profile.givenName ?? null,
       familyName: profile.familyName ?? null,
-      photo: profile.photo ?? null,
+      photoUrl: profile.photo ?? null,
       userId: profile.id,
     };
   } catch (cause) {

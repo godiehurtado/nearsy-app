@@ -277,6 +277,11 @@ describe('authenticateWithGoogle', () => {
     const result = await authenticate();
     const serialized = JSON.stringify(result);
     assert.equal(serialized.includes('secret-token-value'), false);
-    assert.deepEqual(Object.keys(result).sort(), ['email', 'uid']);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(result, 'idToken'),
+      false,
+    );
+    assert.ok(Object.keys(result).includes('uid'));
+    assert.ok(Object.keys(result).includes('email'));
   });
 });

@@ -1,16 +1,43 @@
 /**
- * Google Sign-In use case (TS-007 Android — minimal architecture).
+ * Google Sign-In use case (TS-007 / TS-008 Android — minimal architecture).
  *
  * Orchestrates: native ID token → RNFirebase credential exchange.
- * Does not navigate, load profiles, write Firestore, or prefill.
+ * TS-008: builds a token-free prefill and stores it one-shot by UID
+ * before returning (race-safe vs AppNavigator remount).
+ *
+ * Does not navigate, write Firestore, or merge into CompleteProfile.
  *
  * Native adapters are loaded lazily so unit tests can exercise
  * createAuthenticateWithGoogle() without Google SDK / RNFirebase.
  */
 
+import type { GoogleProfilePrefill } from './googleProfilePrefillStore';
+
+export type { GoogleProfilePrefill };
+
 export type GoogleAuthenticationResult = {
   uid: string;
   email: string | null;
+  /** Safe Google suggestions for CompleteProfile (no tokens). */
+  prefill?: GoogleProfilePrefill;
+};
+
+/** Identity fields from Google Sign-In (idToken stays local to the use case). */
+export type GoogleIdTokenRequestResult = {
+  idToken: string;
+  email?: string | null;
+  displayName?: string | null;
+  givenName?: string | null;
+  familyName?: string | null;
+  photoUrl?: string | null;
+};
+
+export type GoogleIdentityFields = {
+  email?: string | null;
+  displayName?: string | null;
+  givenName?: string | null;
+  familyName?: string | null;
+  photoUrl?: string | null;
 };
 
 export type GoogleAuthenticationErrorCode =
@@ -60,8 +87,18 @@ export function messageKeyForGoogleAuthError(
 }
 
 export type AuthenticateWithGoogleDeps = {
-  requestIdToken: () => Promise<{ idToken: string }>;
-  signInWithIdToken: (idToken: string) => Promise<GoogleAuthenticationResult>;
+  requestIdToken: () => Promise<GoogleIdTokenRequestResult>;
+  signInWithIdToken: (
+    idToken: string,
+  ) => Promise<{ uid: string; email: string | null }>;
+  /**
+   * Persist safe prefill for CompleteProfile (TS-008).
+   * Injected so Node unit tests need not resolve Metro modules.
+   */
+  commitPrefill?: (
+    uid: string,
+    identity: GoogleIdentityFields,
+  ) => Promise<GoogleProfilePrefill | undefined> | GoogleProfilePrefill | undefined;
 };
 
 const FOUNDATION_CODE_MAP: Record<string, GoogleAuthenticationErrorCode> = {
@@ -186,17 +223,17 @@ export function createAuthenticateWithGoogle(deps: AuthenticateWithGoogleDeps) {
     inProgress = true;
 
     try {
-      let idToken: string;
+      let tokenResult: GoogleIdTokenRequestResult;
 
       try {
-        const tokenResult = await deps.requestIdToken();
-        idToken = tokenResult.idToken?.trim() ?? '';
+        tokenResult = await deps.requestIdToken();
       } catch (err) {
         const mapped = mapProviderFailure(err);
         logDev(mapped);
         throw mapped;
       }
 
+      const idToken = tokenResult.idToken?.trim() ?? '';
       if (!idToken) {
         const mapped = new GoogleAuthenticationError(
           'INVALID_CREDENTIAL',
@@ -207,28 +244,89 @@ export function createAuthenticateWithGoogle(deps: AuthenticateWithGoogleDeps) {
         throw mapped;
       }
 
+      let session: { uid: string; email: string | null };
       try {
-        return await deps.signInWithIdToken(idToken);
+        session = await deps.signInWithIdToken(idToken);
       } catch (err) {
         const mapped = mapFirebaseFailure(err);
         logDev(mapped);
         throw mapped;
       }
+
+      let prefill: GoogleProfilePrefill | undefined;
+      if (deps.commitPrefill && session.uid) {
+        try {
+          prefill =
+            (await deps.commitPrefill(session.uid, {
+              email: tokenResult.email,
+              displayName: tokenResult.displayName,
+              givenName: tokenResult.givenName,
+              familyName: tokenResult.familyName,
+              photoUrl: tokenResult.photoUrl,
+            })) ?? undefined;
+        } catch {
+          prefill = undefined;
+        }
+      }
+
+      return {
+        uid: session.uid,
+        email: session.email ?? tokenResult.email ?? null,
+        ...(prefill ? { prefill } : {}),
+      };
     } finally {
       inProgress = false;
     }
   };
 }
 
-async function requestIdTokenFromFoundation(): Promise<{ idToken: string }> {
+/**
+ * Production prefill commit: sanitize + one-shot in-memory store (TS-008).
+ * Runs before Login returns so AppNavigator remount can still consume it.
+ */
+let prefillStoreModule: typeof import('./googleProfilePrefillStore') | null =
+  null;
+
+async function loadPrefillStoreModule() {
+  if (!prefillStoreModule) {
+    prefillStoreModule = await import('./googleProfilePrefillStore');
+  }
+  return prefillStoreModule;
+}
+
+async function commitGoogleProfilePrefill(
+  uid: string,
+  identity: GoogleIdentityFields,
+): Promise<GoogleProfilePrefill | undefined> {
+  const {
+    buildGoogleProfilePrefill,
+    setPendingGoogleProfilePrefill,
+  } = await loadPrefillStoreModule();
+
+  const prefill = buildGoogleProfilePrefill(identity);
+  if (Object.keys(prefill).length === 0) {
+    return undefined;
+  }
+  setPendingGoogleProfilePrefill(uid, prefill);
+  return prefill;
+}
+
+async function requestIdTokenFromFoundation(): Promise<GoogleIdTokenRequestResult> {
   const { requestGoogleIdToken } = await import('../services/googleAuth.android');
   const result = await requestGoogleIdToken();
-  return { idToken: result.idToken };
+  return {
+    idToken: result.idToken,
+    email: result.email,
+    displayName: result.displayName,
+    givenName: result.givenName,
+    familyName: result.familyName,
+    photoUrl: result.photoUrl,
+  };
 }
 
 async function signInWithIdTokenViaFirebase(
   idToken: string,
-): Promise<GoogleAuthenticationResult> {
+): Promise<{ uid: string; email: string | null }> {
   const { signInWithGoogleIdToken } = await import(
     '../services/firebaseGoogleAuth'
   );
@@ -238,9 +336,19 @@ async function signInWithIdTokenViaFirebase(
 const defaultAuthenticateWithGoogle = createAuthenticateWithGoogle({
   requestIdToken: requestIdTokenFromFoundation,
   signInWithIdToken: signInWithIdTokenViaFirebase,
+  commitPrefill: commitGoogleProfilePrefill,
 });
 
-/** Production entry point for LoginScreen. */
+/**
+ * Production entry point for LoginScreen.
+ * Prefetches the prefill store before Google UI so setPending after Firebase
+ * is effectively synchronous (avoids AppNavigator remount consuming too early).
+ */
 export async function authenticateWithGoogle(): Promise<GoogleAuthenticationResult> {
+  try {
+    await loadPrefillStoreModule();
+  } catch {
+    // Fail-soft: auth still proceeds; prefill may be skipped.
+  }
   return defaultAuthenticateWithGoogle();
 }

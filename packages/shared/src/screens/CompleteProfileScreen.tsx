@@ -52,6 +52,11 @@ import {
   uploadProfileImage,
   uploadTopBarImage,
 } from '../services/storageService';
+import {
+  consumePendingGoogleProfilePrefill,
+  mergeCompleteProfilePrefill,
+  resolveProfileEmail,
+} from '../authentication/googleProfilePrefillStore';
 
 type TopBarMode = 'color' | 'image';
 
@@ -196,6 +201,8 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
   // Perfil
   const [realName, setRealName] = useState('');
+  /** Hidden identity email — persisted only on Continue (TS-008). */
+  const [profileEmail, setProfileEmail] = useState('');
   const [bio, setBio] = useState('');
   const [status, setStatus] = useState('');
   const [mode, setMode] = useState<'personal' | 'professional' | null>(null);
@@ -263,7 +270,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   // (compat)
   const [interestAffiliations] = useState<InterestAffiliations>({});
 
-  // Cargar perfil existente
+  // Cargar perfil existente (+ one-shot Google prefill for empty fields)
   const loadProfile = useCallback(async () => {
     const uid = getUid();
     if (!uid) return;
@@ -271,9 +278,51 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     try {
       setIsLoading(true);
       const existing = await getUserProfile(uid);
+      let googlePrefill = null;
+      try {
+        googlePrefill = consumePendingGoogleProfilePrefill(uid);
+      } catch {
+        googlePrefill = null;
+      }
+
+      const firebaseAuthEmail = firebaseAuth.currentUser?.email ?? null;
+      const routeEmail =
+        typeof route?.params?.email === 'string' ? route.params.email : null;
 
       if (existing && existing.realName != '') {
-        setRealName(existing.realName ?? '');
+        let nextRealName = existing.realName ?? '';
+        let nextProfileImage = existing.profileImage ?? null;
+        let nextEmail =
+          resolveProfileEmail({
+            firestoreEmail: (existing as any).email,
+            localEmail: null,
+            firebaseAuthEmail,
+            googleEmail: null,
+          }) ?? null;
+
+        if (googlePrefill) {
+          try {
+            const merged = mergeCompleteProfilePrefill(
+              {
+                realName: nextRealName,
+                profileImage: nextProfileImage,
+                email: nextEmail,
+              },
+              googlePrefill,
+              { firebaseAuthEmail },
+            );
+            nextRealName = merged.realName ?? nextRealName;
+            nextProfileImage = merged.profileImage ?? nextProfileImage;
+            nextEmail = merged.email ?? nextEmail;
+          } catch {
+            // Fail-soft: keep Firestore values.
+          }
+        }
+
+        setRealName(nextRealName);
+        if (nextEmail && String(nextEmail).trim()) {
+          setProfileEmail(String(nextEmail).trim());
+        }
         setStatus((existing as any).status ?? '');
         setBio(existing.bio ?? '');
         const currentMode = existing.mode ?? 'personal';
@@ -281,7 +330,11 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
         setOccupation(existing.occupation ?? '');
         setCompany(existing.company ?? '');
-        setProfileImage(existing.profileImage ?? null);
+        setProfileImage((prev) => {
+          if (nextProfileImage) return nextProfileImage;
+          // Preserve in-progress local/Google preview when Firestore image is empty.
+          return prev;
+        });
         setTopBarColor(existing.topBarColor ?? '#3B5A85');
         setTopBarImage((existing as any).topBarImage ?? null);
         setTopBarMode(
@@ -340,13 +393,48 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         setMode('personal');
         setIsNewProfile(true);
         setActiveField('realName');
+
+        if (googlePrefill) {
+          try {
+            const merged = mergeCompleteProfilePrefill(
+              {
+                realName: '',
+                profileImage: null,
+                email: null,
+              },
+              googlePrefill,
+              { firebaseAuthEmail },
+            );
+            if (merged.realName) {
+              setRealName(merged.realName);
+            }
+            if (merged.profileImage) {
+              setProfileImage(merged.profileImage);
+            }
+            if (merged.email) {
+              setProfileEmail(String(merged.email).trim());
+            }
+          } catch {
+            // Fail-soft: leave form empty.
+          }
+        } else {
+          const seedEmail = resolveProfileEmail({
+            firestoreEmail: (existing as any)?.email,
+            localEmail: null,
+            firebaseAuthEmail,
+            googleEmail: routeEmail,
+          });
+          if (seedEmail) {
+            setProfileEmail((prev) => prev || seedEmail);
+          }
+        }
       }
     } catch {
       // opcional: Alert
     } finally {
       setIsLoading(false);
     }
-  }, [route?.params?.uid]);
+  }, [route?.params?.uid, route?.params?.email]);
 
   // Cada vez que la pantalla gana foco, recargamos el perfil
   useFocusEffect(
@@ -581,7 +669,14 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         uploadedImageUrl = profileImage ?? null;
       }
 
-      const payload = {
+      const emailToPersist = resolveProfileEmail({
+        firestoreEmail: null,
+        localEmail: profileEmail,
+        firebaseAuthEmail: firebaseAuth.currentUser?.email ?? null,
+        googleEmail: null,
+      });
+
+      const payload: Record<string, unknown> = {
         realName,
         bio,
         status,
@@ -596,7 +691,12 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         visibility: true,
       };
 
-      await saveCompleteProfile(uid, payload);
+      // Persist email only on Continue; never during Google login (TS-008).
+      if (emailToPersist) {
+        payload.email = emailToPersist;
+      }
+
+      await saveCompleteProfile(uid, payload as any);
 
       setIsNewProfile(false);
       setActiveField(null);

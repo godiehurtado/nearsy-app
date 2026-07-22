@@ -32,6 +32,7 @@ import {
   authenticateWithGoogle,
   GoogleAuthenticationError,
 } from '../authentication/authenticateWithGoogle';
+import { clearPendingGoogleProfilePrefill } from '../authentication/googleProfilePrefillStore';
 import AnimatedNearsyLogo from '../components/auth/AnimatedNearsyLogo';
 import {
   authColors,
@@ -161,6 +162,8 @@ export default function LoginScreen({ navigation }: any) {
 
     setTimeout(() => {
       if (complete) {
+        // Drop any pending Google prefill so it cannot leak onto a later incomplete session.
+        clearPendingGoogleProfilePrefill();
         navigation.reset({
           index: 0,
           routes: [{ name: 'MainTabs' }],
