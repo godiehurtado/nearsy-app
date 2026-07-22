@@ -44,6 +44,21 @@ export const authenticationTranslations = {
     social: {
       comingSoonTitle: 'Coming soon',
       comingSoonMessage: 'This sign-in option will be available soon.',
+      google: {
+        errors: {
+          configuration:
+            'Google Sign-In is not configured correctly on this build. Please try again later.',
+          providerUnavailable:
+            'Google Sign-In is unavailable on this device. Please update Google Play Services and try again.',
+          network:
+            'Network error while signing in with Google. Please check your connection and try again.',
+          invalidCredential:
+            'We could not verify your Google account. Please try again.',
+          userDisabled:
+            'This account has been disabled. Please contact support.',
+          generic: 'Something went wrong with Google Sign-In. Please try again.',
+        },
+      },
     },
     forgotPassword: {
       emptyEmailTitle: 'Reset your password',
@@ -268,6 +283,22 @@ export const authenticationTranslations = {
       comingSoonTitle: 'Próximamente',
       comingSoonMessage:
         'Esta opción de inicio de sesión estará disponible próximamente.',
+      google: {
+        errors: {
+          configuration:
+            'Google Sign-In no está configurado correctamente en esta versión. Inténtalo más tarde.',
+          providerUnavailable:
+            'Google Sign-In no está disponible en este dispositivo. Actualiza Google Play Services e inténtalo de nuevo.',
+          network:
+            'Error de red al iniciar sesión con Google. Revisa tu conexión e inténtalo de nuevo.',
+          invalidCredential:
+            'No pudimos verificar tu cuenta de Google. Inténtalo de nuevo.',
+          userDisabled:
+            'Esta cuenta ha sido deshabilitada. Contacta con soporte.',
+          generic:
+            'Algo salió mal con Google Sign-In. Inténtalo de nuevo.',
+        },
+      },
     },
     forgotPassword: {
       emptyEmailTitle: 'Restablecer contraseña',

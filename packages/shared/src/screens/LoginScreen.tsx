@@ -28,6 +28,10 @@ import {
   isProfileComplete,
   getUserProfile,
 } from '../services/firestoreService';
+import {
+  authenticateWithGoogle,
+  GoogleAuthenticationError,
+} from '../authentication/authenticateWithGoogle';
 import AnimatedNearsyLogo from '../components/auth/AnimatedNearsyLogo';
 import {
   authColors,
@@ -74,12 +78,14 @@ export default function LoginScreen({ navigation }: any) {
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
 
   // 🔔 Modal informativo para reset password
   const [infoModalVisible, setInfoModalVisible] = useState(false);
   const [infoModalTitle, setInfoModalTitle] = useState('');
   const [infoModalMessage, setInfoModalMessage] = useState('');
 
+  const busy = submitting || googleSubmitting;
   const heroHeight = Math.max(260, Math.min(372, windowHeight * 0.42));
 
   const showInfoModal = (title: string, message: string) => {
@@ -124,8 +130,61 @@ export default function LoginScreen({ navigation }: any) {
     }
   }
 
+  const routeAfterAuthenticatedLogin = async (
+    uid: string,
+    emailForProfile: string,
+  ) => {
+    const profile: any = await getUserProfile(uid);
+
+    if (!profile) {
+      Keyboard.dismiss();
+      setTimeout(() => {
+        navigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: 'CompleteProfile',
+              params: {
+                uid,
+                email: emailForProfile,
+              },
+            },
+          ],
+        });
+      }, 150);
+      return;
+    }
+
+    const complete = await isProfileComplete(uid);
+
+    Keyboard.dismiss();
+
+    setTimeout(() => {
+      if (complete) {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'MainTabs' }],
+        });
+      } else {
+        navigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: 'CompleteProfile',
+              params: {
+                uid,
+                email: emailForProfile,
+                inputNonce: Date.now(),
+              },
+            },
+          ],
+        });
+      }
+    }, 150);
+  };
+
   const handleLogin = async () => {
-    if (submitting) return;
+    if (busy) return;
 
     try {
       const trimmedEmail = email.trim();
@@ -170,59 +229,14 @@ export default function LoginScreen({ navigation }: any) {
         return;
       }
 
-      const profile: any = await getUserProfile(user.uid);
-
-      if (!profile) {
-        Keyboard.dismiss();
-        setTimeout(() => {
-          navigation.reset({
-            index: 0,
-            routes: [
-              {
-                name: 'CompleteProfile',
-                params: {
-                  uid: user.uid,
-                  email: user.email ?? trimmedEmail,
-                },
-              },
-            ],
-          });
-        }, 150);
-        return;
-      }
-
-      const complete = await isProfileComplete(user.uid);
-
-      Keyboard.dismiss();
-
-      setTimeout(() => {
-        if (complete) {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'MainTabs' }],
-          });
-        } else {
-          navigation.reset({
-            index: 0,
-            routes: [
-              {
-                name: 'CompleteProfile',
-                params: {
-                  uid: user.uid,
-                  email: user.email ?? trimmedEmail,
-                  inputNonce: Date.now(),
-                },
-              },
-            ],
-          });
-        }
-      }, 150);
+      await routeAfterAuthenticatedLogin(
+        user.uid,
+        user.email ?? trimmedEmail,
+      );
     } catch (e: any) {
       const msg = getAuthErrorMessage(e?.code);
       if (__DEV__) {
-        console.log('LOGIN ERROR =>', e?.code, e?.message, e);
-        console.log('Firestore error code =>', e?.code);
-        console.log('Firestore error msg  =>', e?.message);
+        console.log('LOGIN ERROR =>', e?.code, e?.message);
       }
       Alert.alert(t('authentication.login.alerts.loginErrorTitle'), msg);
     } finally {
@@ -272,8 +286,64 @@ export default function LoginScreen({ navigation }: any) {
     }
   };
 
-  // Temporary social buttons — no real authentication, no Firebase session change.
-  const handleSocialPress = (_provider: SocialProvider) => {
+  const handleGoogleSignIn = async () => {
+    if (busy) return;
+
+    if (Platform.OS !== 'android') {
+      Alert.alert(
+        t('authentication.social.comingSoonTitle'),
+        t('authentication.social.comingSoonMessage'),
+      );
+      return;
+    }
+
+    setGoogleSubmitting(true);
+    try {
+      const result = await authenticateWithGoogle();
+      await routeAfterAuthenticatedLogin(
+        result.uid,
+        result.email ?? '',
+      );
+    } catch (err) {
+      if (err instanceof GoogleAuthenticationError) {
+        if (__DEV__) {
+          console.log('[LoginScreen] Google sign-in', {
+            code: err.code,
+            diagnosticCode: err.diagnosticCode,
+          });
+        }
+
+        if (
+          err.code === 'CANCELLED' ||
+          err.code === 'OPERATION_IN_PROGRESS'
+        ) {
+          return;
+        }
+
+        Alert.alert(
+          t('authentication.login.alerts.loginErrorTitle'),
+          t(err.messageKey as any),
+        );
+        return;
+      }
+
+      Alert.alert(
+        t('authentication.login.alerts.loginErrorTitle'),
+        t('authentication.social.google.errors.generic'),
+      );
+    } finally {
+      setGoogleSubmitting(false);
+    }
+  };
+
+  const handleSocialPress = (provider: SocialProvider) => {
+    if (busy) return;
+
+    if (provider === 'google') {
+      void handleGoogleSignIn();
+      return;
+    }
+
     Alert.alert(
       t('authentication.social.comingSoonTitle'),
       t('authentication.social.comingSoonMessage'),
@@ -393,7 +463,7 @@ export default function LoginScreen({ navigation }: any) {
               style={styles.forgotWrap}
               onPress={handleForgotPassword}
               activeOpacity={0.7}
-              disabled={submitting}
+              disabled={busy}
             >
               <Text style={styles.forgot}>
                 {t('authentication.login.forgotPassword')}
@@ -402,10 +472,10 @@ export default function LoginScreen({ navigation }: any) {
 
             <Pressable
               onPress={handleLogin}
-              disabled={submitting}
+              disabled={busy}
               style={({ pressed }) => [
                 styles.primaryButtonWrap,
-                { transform: [{ scale: pressed && !submitting ? 0.98 : 1 }] },
+                { transform: [{ scale: pressed && !busy ? 0.98 : 1 }] },
               ]}
             >
               {submitting ? (
@@ -432,12 +502,12 @@ export default function LoginScreen({ navigation }: any) {
 
             <Pressable
               onPress={handleCreateProfile}
-              disabled={submitting}
+              disabled={busy}
               style={({ pressed }) => [
                 styles.outlineButton,
                 {
                   backgroundColor: pressed ? authColors.panel : 'transparent',
-                  transform: [{ scale: pressed ? 0.98 : 1 }],
+                  transform: [{ scale: pressed && !busy ? 0.98 : 1 }],
                 },
               ]}
             >
@@ -450,7 +520,7 @@ export default function LoginScreen({ navigation }: any) {
               onPress={() =>
                 navigation.navigate('IntroVideo', { preview: false })
               }
-              disabled={submitting}
+              disabled={busy}
               style={styles.guideLinkWrap}
               activeOpacity={0.7}
             >
@@ -462,31 +532,46 @@ export default function LoginScreen({ navigation }: any) {
             <Divider label={t('authentication.login.orContinueWith')} />
 
             <View style={styles.socialRow}>
-              {SOCIAL_PROVIDERS.map((provider) => (
-                <Pressable
-                  key={provider.id}
-                  style={({ pressed }) => [
-                    styles.socialButton,
-                    {
-                      backgroundColor: pressed
-                        ? authColors.panel
-                        : 'transparent',
-                    },
-                  ]}
-                  onPress={() => handleSocialPress(provider.id)}
-                  disabled={submitting}
-                >
-                  <Ionicons
-                    name={provider.icon}
-                    size={14}
-                    color={authColors.textPrimary}
-                    style={styles.socialIcon}
-                  />
-                  <Text style={styles.socialText} numberOfLines={1}>
-                    {t(provider.labelKey)}
-                  </Text>
-                </Pressable>
-              ))}
+              {SOCIAL_PROVIDERS.map((provider) => {
+                const isGoogleLoading =
+                  provider.id === 'google' && googleSubmitting;
+
+                return (
+                  <Pressable
+                    key={provider.id}
+                    style={({ pressed }) => [
+                      styles.socialButton,
+                      {
+                        backgroundColor: pressed
+                          ? authColors.panel
+                          : 'transparent',
+                        opacity: busy && !isGoogleLoading ? 0.6 : 1,
+                      },
+                    ]}
+                    onPress={() => handleSocialPress(provider.id)}
+                    disabled={busy}
+                  >
+                    {isGoogleLoading ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={authColors.textPrimary}
+                      />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name={provider.icon}
+                          size={14}
+                          color={authColors.textPrimary}
+                          style={styles.socialIcon}
+                        />
+                        <Text style={styles.socialText} numberOfLines={1}>
+                          {t(provider.labelKey)}
+                        </Text>
+                      </>
+                    )}
+                  </Pressable>
+                );
+              })}
             </View>
 
             <Text style={styles.terms}>
