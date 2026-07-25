@@ -40,41 +40,12 @@ import {
   SocialAuthError,
   sanitizeSocialErrorForLog,
 } from '../authentication/social';
+import {
+  AuthSocialButtonRow,
+  AuthSocialProvider,
+} from '../components/AuthSocialButtonRow';
 
 const authenticateWithGoogle = createDefaultAuthenticateWithGoogle();
-
-type SocialProvider = 'google' | 'apple' | 'meta' | 'linkedin';
-
-const SOCIAL_PROVIDERS: {
-  id: SocialProvider;
-  icon: keyof typeof Ionicons.glyphMap;
-  labelKey:
-    | 'authentication.login.social.google'
-    | 'authentication.login.social.apple'
-    | 'authentication.login.social.meta'
-    | 'authentication.login.social.linkedin';
-}[] = [
-  {
-    id: 'google',
-    icon: 'logo-google',
-    labelKey: 'authentication.login.social.google',
-  },
-  {
-    id: 'apple',
-    icon: 'logo-apple',
-    labelKey: 'authentication.login.social.apple',
-  },
-  {
-    id: 'meta',
-    icon: 'logo-facebook',
-    labelKey: 'authentication.login.social.meta',
-  },
-  {
-    id: 'linkedin',
-    icon: 'logo-linkedin',
-    labelKey: 'authentication.login.social.linkedin',
-  },
-];
 
 export default function LoginScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -352,7 +323,7 @@ export default function LoginScreen({ navigation }: any) {
     }
   };
 
-  const handleSocialPress = (provider: SocialProvider) => {
+  const handleSocialPress = (provider: AuthSocialProvider) => {
     if (provider === 'google') {
       void handleGoogleSignIn();
       return;
@@ -540,48 +511,17 @@ export default function LoginScreen({ navigation }: any) {
 
             <Divider label={t('authentication.login.orContinueWith')} />
 
-            <View style={styles.socialRow}>
-              {SOCIAL_PROVIDERS.map((provider) => {
-                const isGoogleLoading =
-                  provider.id === 'google' && googleSubmitting;
-
-                return (
-                  <Pressable
-                    key={provider.id}
-                    style={({ pressed }) => [
-                      styles.socialButton,
-                      {
-                        backgroundColor: pressed
-                          ? authColors.panel
-                          : 'transparent',
-                        opacity: busy && !isGoogleLoading ? 0.55 : 1,
-                      },
-                    ]}
-                    onPress={() => handleSocialPress(provider.id)}
-                    disabled={busy}
-                  >
-                    {isGoogleLoading ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={authColors.textPrimary}
-                      />
-                    ) : (
-                      <>
-                        <Ionicons
-                          name={provider.icon}
-                          size={14}
-                          color={authColors.textPrimary}
-                          style={styles.socialIcon}
-                        />
-                        <Text style={styles.socialText} numberOfLines={1}>
-                          {t(provider.labelKey)}
-                        </Text>
-                      </>
-                    )}
-                  </Pressable>
-                );
-              })}
-            </View>
+            <AuthSocialButtonRow
+              labels={{
+                google: t('authentication.login.social.google'),
+                apple: t('authentication.login.social.apple'),
+                meta: t('authentication.login.social.meta'),
+                linkedin: t('authentication.login.social.linkedin'),
+              }}
+              onPress={handleSocialPress}
+              busy={busy}
+              loadingProvider={googleSubmitting ? 'google' : null}
+            />
 
             <Text style={styles.terms}>
               {t('authentication.login.termsPrefix')}{' '}
@@ -807,31 +747,6 @@ const styles = StyleSheet.create({
   },
   dividerLabelStrong: {
     ...authTypography.dividerStrong,
-  },
-  socialRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  socialButton: {
-    flexGrow: 1,
-    flexBasis: '22%',
-    minWidth: 72,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 9,
-    paddingHorizontal: 4,
-    borderWidth: 1,
-    borderColor: authColors.inputBorder,
-    borderRadius: authRadius.social,
-    flexDirection: 'row',
-  },
-  socialIcon: {
-    marginRight: 4,
-  },
-  socialText: {
-    ...authTypography.social,
-    color: authColors.textPrimary,
   },
   terms: {
     ...authTypography.terms,
