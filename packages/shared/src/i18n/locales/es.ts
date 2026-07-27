@@ -109,27 +109,106 @@ const es: TranslationResources = {
       submit: 'Registrarse',
       loginLink: '¿Ya tienes una cuenta? Inicia sesión',
       fields: {
+        realName: 'Nombre real *',
         email: 'Correo electrónico',
         confirmEmail: 'Confirmar correo',
-        phone: 'Número de teléfono',
+        phone: 'Número de teléfono (opcional)',
         password: 'Contraseña',
         confirmPassword: 'Confirmar contraseña',
+        birthDate: 'Fecha de nacimiento *',
         birthYear: 'Año de nacimiento *',
       },
       placeholders: {
+        realName: 'Tu nombre completo',
         email: 'Correo electrónico',
         confirmEmail: 'Confirmar correo',
         phone: 'Número de teléfono',
         password: 'Contraseña',
         confirmPassword: 'Confirmar contraseña',
       },
-      selectBirthYear: 'Seleccionar',
+      selectBirthYear: 'Año',
+      selectBirthMonth: 'Mes',
+      selectBirthDay: 'Día',
       birthYearModalTitle: 'Selecciona tu año de nacimiento',
+      birthMonthModalTitle: 'Selecciona el mes',
+      birthDayModalTitle: 'Selecciona el día',
+      birthDateModalTitle: 'Selecciona tu fecha de nacimiento',
       countryModalTitle: 'Selecciona el código de país',
-      phoneHelper: 'Selecciona tu país e ingresa un número móvil válido.',
+      phoneHelper:
+        'Opcional por ahora. Selecciona tu país e ingresa un número móvil válido.',
       ageHelper: 'Debes tener 14 años o más para registrarte.',
       termsPrefix: 'Acepto los',
       termsLink: 'términos y condiciones',
+      wizard: {
+        continue: 'Continuar',
+        createAccount: 'Crear cuenta',
+        backA11y: 'Atrás',
+        selectCountryA11y: 'Seleccionar código de país',
+        steps: {
+          name: {
+            title: '¿Cómo te llamas?',
+            subtitle: 'Así aparecerás en Nearsy.',
+          },
+          birth: {
+            title: '¿Cuándo naciste?',
+            subtitle:
+              'Tu perfil muestra tu edad, no tu fecha de nacimiento.',
+            ageOk: 'Tienes {{age}} años',
+            ageTooYoung:
+              'Debes tener 14 años o más para crear una cuenta.',
+            futureDate:
+              'Ingresa una fecha de nacimiento que no esté en el futuro.',
+            invalidDate: 'Ingresa una fecha de nacimiento válida.',
+          },
+          email: {
+            title: '¿Cuál es tu correo?',
+            subtitle: 'Lo usaremos para mantener tu cuenta segura.',
+          },
+          password: {
+            title: 'Crea una contraseña',
+            subtitle:
+              'Al menos 8 caracteres, incluyendo letras y números.',
+          },
+          phone: {
+            title: '¿Cuál es tu número móvil?',
+            subtitle:
+              'Obligatorio para tu cuenta. La verificación del teléfono se hará más adelante — aún no se envía ningún código.',
+          },
+        },
+        fields: {
+          realName: 'Nombre real',
+          day: 'Día',
+          month: 'Mes',
+          year: 'Año',
+          email: 'Correo electrónico',
+          password: 'Contraseña',
+          phone: 'Número móvil',
+        },
+        placeholders: {
+          realName: 'Nombre real',
+          day: 'DD',
+          month: 'MM',
+          year: 'AAAA',
+          email: 'Correo electrónico',
+          password: 'Contraseña',
+          phone: 'Número móvil',
+        },
+        validation: {
+          name: 'Ingresa tu nombre real',
+          birthIncomplete: 'Ingresa tu fecha de nacimiento completa',
+          birthInvalid: 'Ingresa una fecha de nacimiento válida.',
+          birthFuture:
+            'Ingresa una fecha de nacimiento que no esté en el futuro.',
+          birthMinimumAge:
+            'Debes tener 14 años o más para crear una cuenta.',
+          email: 'Ingresa un correo electrónico válido',
+          password:
+            'Usa al menos 8 caracteres con letras y números',
+          phone: 'Ingresa un número móvil válido',
+          terms:
+            'Acepta los términos y condiciones para continuar.',
+        },
+      },
       successTitle: 'Cuenta creada',
       successIosMessage:
         'Tu cuenta se creó correctamente. Terminemos de configurar tu perfil.',
@@ -141,6 +220,16 @@ const es: TranslationResources = {
         finish: 'Finalizar',
         oneMoreThingTitle: 'Un momento',
         steps: {
+          realName: {
+            title: 'Ingresa tu nombre real',
+            description:
+              'Usa el nombre con el que las personas te reconocerán en Nearsy.',
+          },
+          birthDate: {
+            title: 'Selecciona tu fecha de nacimiento',
+            description:
+              'Ingresa día, mes y año para confirmar la edad mínima.',
+          },
           email: {
             title: 'Empieza con tu correo',
             description:
@@ -151,11 +240,6 @@ const es: TranslationResources = {
             description:
               'Escríbelo otra vez para asegurarte de que no haya errores.',
           },
-          phone: {
-            title: 'Agrega tu número de teléfono',
-            description:
-              'Selecciona tu código de país e ingresa tu número móvil.',
-          },
           password: {
             title: 'Crea una contraseña segura',
             description:
@@ -165,10 +249,10 @@ const es: TranslationResources = {
             title: 'Confirma tu contraseña',
             description: 'Escribe la misma contraseña otra vez.',
           },
-          birthYear: {
-            title: 'Selecciona tu año de nacimiento',
+          phone: {
+            title: 'Agrega tu número de teléfono',
             description:
-              'Esto nos ayuda a confirmar que cumples la edad mínima.',
+              'Opcional en esta versión. Selecciona tu código de país e ingresa tu número móvil.',
           },
           terms: {
             title: 'Acepta los términos',
@@ -182,11 +266,14 @@ const es: TranslationResources = {
           },
         },
         validation: {
+          realName: 'Ingresa tu nombre real para continuar.',
+          birthDate:
+            'Selecciona una fecha de nacimiento válida. Debes tener 14 años o más.',
           email: 'Ingresa un correo válido para continuar.',
           confirmEmail:
             'Confirma tu correo. Debe coincidir con el correo de arriba.',
           phone:
-            'Selecciona tu código de país e ingresa un número móvil válido.',
+            'Si agregas un teléfono, selecciona tu código de país e ingresa un número móvil válido.',
           password:
             'Crea una contraseña con al menos 8 caracteres, incluyendo letras y números.',
           confirmPassword:
@@ -199,6 +286,10 @@ const es: TranslationResources = {
         },
       },
       alerts: {
+        realNameRequiredTitle: 'Nombre requerido',
+        realNameRequiredMessage: 'Ingresa tu nombre real.',
+        birthDateRequiredTitle: 'Fecha de nacimiento requerida',
+        birthDateRequiredMessage: 'Selecciona tu fecha de nacimiento completa.',
         birthYearRequiredTitle: 'Año de nacimiento requerido',
         birthYearRequiredMessage: 'Selecciona tu año de nacimiento.',
         minimumAgeTitle: 'Edad mínima',
@@ -273,6 +364,70 @@ const es: TranslationResources = {
     completeProfile: {
       title: 'Completa tu perfil',
       subtitle: 'Cuéntale a la gente un poco sobre ti',
+    },
+    profileCompletion: {
+      continue: 'Continuar',
+      backA11y: 'Atrás',
+      saveErrorTitle: 'No se pudo guardar',
+      saveErrorMessage: 'Inténtalo de nuevo. Tu progreso sigue aquí.',
+      type: {
+        title: '¿Cómo usarás Nearsy?',
+        subtitle: 'Puedes cambiarlo cuando quieras desde tu perfil.',
+        personalTitle: 'Personal',
+        personalBody:
+          'Conoce personas cerca – hobbies y conexiones genuinas.',
+        professionalTitle: 'Profesional',
+        professionalBody:
+          'Muestra tu empresa y haz crecer tu red.',
+        chooseRequired: 'Elige Personal o Profesional para continuar',
+      },
+      info: {
+        title: 'Agrega una foto de perfil',
+        subtitle:
+          'Muestra tu mejor versión. Puedes tomarla ahora o subirla desde tu galería.',
+        photoRequired: 'Se requiere una foto de perfil para continuar',
+        takePhoto: 'Tomar foto',
+        uploadPhoto: 'Subir',
+      },
+      interests: {
+        title: '¿Qué te gusta?',
+        subtitle:
+          'Elige algunos — nos ayudan a encontrar a tu gente. ({{count}} seleccionados)',
+        pickRequired: 'Elige al menos un interés para continuar',
+        catalogErrorTitle: 'Intereses no disponibles',
+        catalogErrorMessage:
+          'No pudimos cargar los intereses. Revisa tu conexión e inténtalo de nuevo.',
+        catalogRetry: 'Reintentar',
+      },
+      location: {
+        title: 'Activa la ubicación',
+        subtitle:
+          'Nearsy te muestra personas que están realmente cerca. Sin ubicación no podemos hacerlo.',
+        enable: 'Activar ubicación',
+        skip: 'Omitir por ahora',
+        deniedTitle: 'Ubicación no activada',
+        deniedMessage:
+          'Puedes activarla después en Ajustes. Aún puedes continuar.',
+      },
+      notifications: {
+        title: 'Mantente al día',
+        subtitle:
+          'Recibe avisos cuando alguien interesante esté cerca o te escriba.',
+        enable: 'Activar notificaciones',
+        skip: 'Omitir por ahora',
+        deniedTitle: 'Notificaciones no activadas',
+        deniedMessage:
+          'Puedes activarlas después en Ajustes. Aún puedes continuar.',
+      },
+      success: {
+        title: 'Todo listo',
+        subtitle:
+          'Tu perfil está listo. Empieza a explorar personas a tu alrededor.',
+        startExploring: 'Empezar a explorar',
+        modeLabel: 'Comenzando como {{mode}}',
+        modePersonal: 'Personal',
+        modeProfessional: 'Profesional',
+      },
     },
   },
   home: {

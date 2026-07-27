@@ -11,6 +11,7 @@ import {
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import CompleteProfileScreen from '../screens/CompleteProfileScreen';
+import ProfileCompletionScreen from '../screens/ProfileCompletionScreen';
 import PhoneVerificationScreen from '../screens/PhoneVerificationScreen';
 import IntroVideoScreen from '../screens/IntroVideoScreen';
 import ThemeSelectionScreen from '../screens/ThemeSelectionScreen';
@@ -26,6 +27,7 @@ import { useAppTheme } from '../theme/ThemeContext';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { isProfileDocumentComplete } from '../utils/profileDocumentComplete';
+import { loadHasSeenWelcome } from '../onboarding/welcomeStorage';
 
 export type { RootStackParamList } from './types';
 
@@ -46,16 +48,41 @@ function guestScreenOptions(backgroundColor: string) {
   } as const;
 }
 
+function guestInitialRoute(
+  hasChosenTheme: boolean,
+  hasSeenWelcome: boolean,
+): keyof RootStackParamList {
+  if (!hasChosenTheme) return 'ThemeSelection';
+  if (!hasSeenWelcome) return 'Welcome';
+  return 'Login';
+}
+
 export default function AppNavigator() {
   const { palette, hasChosenTheme, hydrating } = useAppTheme();
 
   const [authLoading, setAuthLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [welcomeHydrating, setWelcomeHydrating] = useState(true);
+  const [hasSeenWelcome, setHasSeenWelcome] = useState(false);
 
   const [uid, setUid] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
   const [needsCompleteProfile, setNeedsCompleteProfile] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    loadHasSeenWelcome()
+      .then((seen) => {
+        if (alive) setHasSeenWelcome(seen);
+      })
+      .finally(() => {
+        if (alive) setWelcomeHydrating(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // 1) Auth
   useEffect(() => {
@@ -137,28 +164,38 @@ export default function AppNavigator() {
 
   // Guest key must NOT flip when hasChosenTheme becomes true on Continue —
   // otherwise the stack remounts and races with navigation.replace('Welcome').
+  // hasSeenWelcome is also excluded: marking Welcome seen mid-session must not remount.
   const flowKey = useMemo(() => {
-    if (authLoading || profileLoading || hydrating) return 'loading';
+    if (authLoading || profileLoading || hydrating || welcomeHydrating)
+      return 'loading';
     if (!uid) return 'guest';
     if (needsCompleteProfile) return `auth-complete-${uid}`;
     return `auth-main-${uid}`;
-  }, [authLoading, profileLoading, hydrating, uid, needsCompleteProfile]);
+  }, [
+    authLoading,
+    profileLoading,
+    hydrating,
+    welcomeHydrating,
+    uid,
+    needsCompleteProfile,
+  ]);
 
-  if (authLoading || profileLoading || hydrating) {
+  if (authLoading || profileLoading || hydrating || welcomeHydrating) {
     return <FullScreenLoader />;
   }
 
   /**
    * Guest flow (v1.1 Experience Foundation):
    *   Launch -> ThemeSelection (first run only; replace() to Welcome)
-   *          -> Welcome -> Login | Register | Google (nav only)
+   *          -> Welcome (first launch only) -> Login | Register | Google
+   *   Later cold starts (Welcome already seen) -> Login
    */
   if (!uid) {
     return (
       <Stack.Navigator
         id="RootGuest"
         key={flowKey}
-        initialRouteName={hasChosenTheme ? 'Welcome' : 'ThemeSelection'}
+        initialRouteName={guestInitialRoute(hasChosenTheme, hasSeenWelcome)}
         screenOptions={guestScreenOptions(palette.background)}
       >
         <Stack.Screen
@@ -174,6 +211,10 @@ export default function AppNavigator() {
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Register" component={RegisterScreen} />
         <Stack.Screen name="IntroVideo" component={IntroVideoScreen} />
+        <Stack.Screen
+          name="ProfileCompletion"
+          component={ProfileCompletionScreen}
+        />
         <Stack.Screen
           name="CompleteProfile"
           component={CompleteProfileScreen}
@@ -198,6 +239,11 @@ export default function AppNavigator() {
         key={`auth-complete-${uid}`}
         screenOptions={{ headerShown: false }}
       >
+        <Stack.Screen
+          name="ProfileCompletion"
+          component={ProfileCompletionScreen}
+          initialParams={{ uid, email: userEmail }}
+        />
         <Stack.Screen
           name="CompleteProfile"
           component={CompleteProfileScreen}

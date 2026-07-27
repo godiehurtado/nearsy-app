@@ -1,6 +1,5 @@
-// Animated Nearsy branding logo for the Dark Login (TS-005A / PR-005B).
-// Visual-only: a static outlined pin whose single centered eye (a broken ring)
-// rotates in place, with a softly pulsing glow and subtle expanding rings.
+// Official Nearsy mark for auth heroes (Welcome / Login / ProfileCompletion).
+// View-based pin + rotating locator arc (no SVG dependency).
 import React, { useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import Animated, {
@@ -14,41 +13,68 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import { authColors } from '../../theme/authTokens';
+import { useAppTheme } from '../../theme/ThemeContext';
+import { duration } from '../../theme/motion';
 
 type Props = {
-  /** Diameter of the pin glyph. The surrounding glow/rings scale from this. */
+  /** Diameter of the pin glyph. */
   size?: number;
+  /**
+   * Soft light behind the mark.
+   * - ambient: soft bloom disc (Welcome / ProfileCompletion)
+   * - subtle: diffuse light + ephemeral expanding waves (Login) — no permanent ring/disc
+   */
+  bloom?: 'ambient' | 'subtle';
+  /**
+   * Layout box in the document flow.
+   * - default: box matches ambient halo (Welcome / ProfileCompletion)
+   * - compact: box hugs the mark; decorative waves paint in an absolute overlay (Login)
+   */
+  layoutDensity?: 'default' | 'compact';
 };
 
-const PIN_COLOR = '#8FCBFF';
-const INNER_BRIGHT = '#DFF1FF';
+const ROTATION_MS = 1800;
+const GLOW_MS = 2800;
+const WAVE_MS = 3200;
+const WAVE_STAGGER_MS = 1600;
 
-// Timing derived from the approved recording.
-const ROTATION_MS = 4000; // internal curved element: one slow revolution
-const GLOW_MS = 2400; // glow breathe (reversing)
-const RING_MS = 3200; // ring expand + fade
-const RING_STAGGER_MS = 1600; // second ring offset for a staggered pulse
-
-export default function AnimatedNearsyLogo({ size = 46 }: Props) {
+export default function AnimatedNearsyLogo({
+  size = 46,
+  bloom = 'ambient',
+  layoutDensity = 'default',
+}: Props) {
   const reduceMotion = useReducedMotion();
+  const { palette } = useAppTheme();
+  const compact = layoutDensity === 'compact';
+  const withWaves = bloom === 'subtle';
 
   const rotation = useSharedValue(0);
-  const glow = useSharedValue(0);
-  const ring1 = useSharedValue(0);
-  const ring2 = useSharedValue(0);
+  const glow = useSharedValue(0.55);
+  const wave1 = useSharedValue(0);
+  const wave2 = useSharedValue(0);
 
-  const glowSize = Math.round(size * 2.09);
-  // Teardrop head diameter and the single centered eye diameter.
   const headSize = Math.round(size * 0.72);
   const eyeSize = Math.round(size * 0.34);
+  const ambientHalo = Math.round(size * 2.09);
+  const subtleCore = Math.round(size * 0.55);
+
+  // Flow box: compact hugs the mark so wordmark can sit closer.
+  const layoutBox = compact
+    ? Math.round(size * 1.05)
+    : bloom === 'ambient'
+      ? ambientHalo
+      : Math.round(size * 1.15);
+
+  // Decorative wave canvas (absolute) — larger than before, outside flow.
+  const waveBase = Math.round(size * 3.6);
+  const waveCanvas = Math.round(size * 5.6);
 
   useEffect(() => {
     if (reduceMotion) {
       rotation.value = 0;
-      glow.value = 0.6;
-      ring1.value = 0;
-      ring2.value = 0;
+      glow.value = 0.65;
+      wave1.value = 0;
+      wave2.value = 0;
       return;
     }
 
@@ -58,115 +84,192 @@ export default function AnimatedNearsyLogo({ size = 46 }: Props) {
       false,
     );
     glow.value = withRepeat(
-      withTiming(1, { duration: GLOW_MS, easing: Easing.inOut(Easing.ease) }),
+      withTiming(1, {
+        duration: bloom === 'subtle' ? duration.glowBreathe : GLOW_MS,
+        easing: Easing.inOut(Easing.ease),
+      }),
       -1,
       true,
     );
-    ring1.value = withRepeat(
-      withTiming(1, { duration: RING_MS, easing: Easing.out(Easing.ease) }),
-      -1,
-      false,
-    );
-    ring2.value = withDelay(
-      RING_STAGGER_MS,
-      withRepeat(
-        withTiming(1, { duration: RING_MS, easing: Easing.out(Easing.ease) }),
+
+    if (withWaves) {
+      wave1.value = 0;
+      wave2.value = 0;
+      wave1.value = withRepeat(
+        withTiming(1, { duration: WAVE_MS, easing: Easing.out(Easing.ease) }),
         -1,
         false,
-      ),
-    );
+      );
+      wave2.value = withDelay(
+        WAVE_STAGGER_MS,
+        withRepeat(
+          withTiming(1, { duration: WAVE_MS, easing: Easing.out(Easing.ease) }),
+          -1,
+          false,
+        ),
+      );
+    }
 
     return () => {
       cancelAnimation(rotation);
       cancelAnimation(glow);
-      cancelAnimation(ring1);
-      cancelAnimation(ring2);
+      cancelAnimation(wave1);
+      cancelAnimation(wave2);
     };
-  }, [reduceMotion, glow, ring1, ring2, rotation]);
+  }, [reduceMotion, bloom, withWaves, glow, rotation, wave1, wave2]);
 
-  const glowStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(glow.value, [0, 1], [0.45, 0.9]),
-    transform: [{ scale: interpolate(glow.value, [0, 1], [0.9, 1.12]) }],
+  const ambientStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(glow.value, [0, 1], [0.35, 0.72]),
+    transform: [{ scale: interpolate(glow.value, [0, 1], [0.96, 1.04]) }],
   }));
 
-  // Rotation only — the eye spins around its own geometric center, in place.
-  const eyeStyle = useAnimatedStyle(() => ({
+  // Living light — soft core only; never a hard outer disc.
+  const subtleGlowStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(glow.value, [0, 1], [0.2, 0.55]),
+    transform: [{ scale: interpolate(glow.value, [0, 1], [0.92, 1.08]) }],
+  }));
+
+  const eyeBrightnessStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(glow.value, [0, 1], [0.7, 1]),
+  }));
+
+  const locatorStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value * 360}deg` }],
   }));
 
-  const ring1Style = useAnimatedStyle(() => ({
-    opacity: interpolate(ring1.value, [0, 0.15, 1], [0, 0.35, 0]),
-    transform: [{ scale: interpolate(ring1.value, [0, 1], [0.55, 1.25]) }],
+  // Ephemeral waves: invisible at rest → expand farther → fully gone.
+  const wave1Style = useAnimatedStyle(() => ({
+    opacity: interpolate(wave1.value, [0, 0.1, 0.5, 1], [0, 0.26, 0.1, 0]),
+    transform: [
+      { scale: interpolate(wave1.value, [0, 1], [0.28, 1.55]) },
+    ],
   }));
 
-  const ring2Style = useAnimatedStyle(() => ({
-    opacity: interpolate(ring2.value, [0, 0.15, 1], [0, 0.28, 0]),
-    transform: [{ scale: interpolate(ring2.value, [0, 1], [0.55, 1.4]) }],
+  const wave2Style = useAnimatedStyle(() => ({
+    opacity: interpolate(wave2.value, [0, 0.1, 0.5, 1], [0, 0.2, 0.08, 0]),
+    transform: [
+      { scale: interpolate(wave2.value, [0, 1], [0.28, 1.7]) },
+    ],
   }));
 
   return (
     <View
-      style={[styles.container, { width: glowSize, height: glowSize }]}
+      style={[styles.container, { width: layoutBox, height: layoutBox }]}
       pointerEvents="none"
     >
-      <Animated.View style={[styles.layer, ring2Style]}>
+      {withWaves ? (
         <View
           style={[
-            styles.ring,
+            styles.waveCanvas,
             {
-              width: glowSize,
-              height: glowSize,
-              borderRadius: glowSize / 2,
+              width: waveCanvas,
+              height: waveCanvas,
+              marginLeft: -waveCanvas / 2,
+              marginTop: -waveCanvas / 2,
             },
           ]}
-        />
-      </Animated.View>
+        >
+          <Animated.View style={[styles.layer, wave2Style]}>
+            <View
+              style={{
+                width: waveBase,
+                height: waveBase,
+                borderRadius: waveBase / 2,
+                borderWidth: 1,
+                borderColor: palette.logoAccent,
+                backgroundColor: 'transparent',
+              }}
+            />
+          </Animated.View>
+          <Animated.View style={[styles.layer, wave1Style]}>
+            <View
+              style={{
+                width: waveBase * 0.82,
+                height: waveBase * 0.82,
+                borderRadius: (waveBase * 0.82) / 2,
+                borderWidth: 1,
+                borderColor: palette.logoStroke,
+                backgroundColor: 'transparent',
+              }}
+            />
+          </Animated.View>
+        </View>
+      ) : null}
 
-      <Animated.View style={[styles.layer, ring1Style]}>
-        <View
-          style={[
-            styles.ring,
-            {
-              width: glowSize * 0.82,
-              height: glowSize * 0.82,
-              borderRadius: (glowSize * 0.82) / 2,
-            },
-          ]}
-        />
-      </Animated.View>
+      {bloom === 'subtle' ? (
+        <Animated.View style={[styles.layer, subtleGlowStyle]}>
+          <View
+            style={{
+              width: subtleCore,
+              height: subtleCore,
+              borderRadius: subtleCore / 2,
+              backgroundColor: palette.heroGlow,
+            }}
+          />
+        </Animated.View>
+      ) : (
+        <>
+          <Animated.View style={[styles.layer, ambientStyle]}>
+            <View
+              style={{
+                width: ambientHalo,
+                height: ambientHalo,
+                borderRadius: ambientHalo / 2,
+                backgroundColor: palette.heroGlow,
+              }}
+            />
+          </Animated.View>
+          <Animated.View style={[styles.layer, ambientStyle]}>
+            <View
+              style={{
+                width: ambientHalo * 0.72,
+                height: ambientHalo * 0.72,
+                borderRadius: (ambientHalo * 0.72) / 2,
+                backgroundColor: palette.heroGlow,
+              }}
+            />
+          </Animated.View>
+        </>
+      )}
 
-      <Animated.View style={[styles.layer, glowStyle]}>
-        <View
-          style={[
-            styles.glow,
-            {
-              width: glowSize * 0.86,
-              height: glowSize * 0.86,
-              borderRadius: (glowSize * 0.86) / 2,
-            },
-          ]}
-        />
-      </Animated.View>
-
+      {/* Location pin */}
       <View style={styles.layer}>
         <View
           style={[
             styles.pin,
-            { width: headSize, height: headSize },
+            { width: headSize, height: headSize, borderColor: palette.logoStroke },
           ]}
         />
       </View>
 
+      {/* Locator circle (part of the mark) + luminous rotating arc */}
+      <View style={styles.layer}>
+        <View
+          style={{
+            width: eyeSize,
+            height: eyeSize,
+            borderRadius: eyeSize / 2,
+            borderWidth: 1.5,
+            borderColor: palette.logoStroke,
+            backgroundColor: 'transparent',
+          }}
+        />
+      </View>
       <View style={styles.layer}>
         <Animated.View
           style={[
-            styles.eye,
             {
               width: eyeSize,
               height: eyeSize,
               borderRadius: eyeSize / 2,
+              borderWidth: 1.5,
+              borderTopColor: palette.logoAccent,
+              borderRightColor: palette.logoAccent,
+              borderBottomColor: 'transparent',
+              borderLeftColor: 'transparent',
             },
-            eyeStyle,
+            locatorStyle,
+            bloom === 'subtle' ? eyeBrightnessStyle : null,
           ]}
         />
       </View>
@@ -178,38 +281,27 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'visible',
+  },
+  waveCanvas: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   layer: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  glow: {
-    backgroundColor: authColors.logoGlow,
-  },
-  ring: {
-    borderWidth: 1,
-    borderColor: 'rgba(102,153,255,0.35)',
-  },
-  // Teardrop location-pin outline (no built-in eye): a rounded square with a
-  // single sharp corner, rotated 45deg so the point faces down. Its geometric
-  // center coincides with the head circle center and the layer center.
   pin: {
     backgroundColor: 'transparent',
     borderWidth: 2,
-    borderColor: PIN_COLOR,
     borderTopLeftRadius: 999,
     borderTopRightRadius: 999,
     borderBottomLeftRadius: 999,
     borderBottomRightRadius: 0,
     transform: [{ rotate: '45deg' }],
-  },
-  // Single centered eye: a broken ring (gap on one side) that rotates in place.
-  eye: {
-    borderWidth: 2,
-    borderTopColor: INNER_BRIGHT,
-    borderRightColor: INNER_BRIGHT,
-    borderBottomColor: INNER_BRIGHT,
-    borderLeftColor: 'transparent',
   },
 });

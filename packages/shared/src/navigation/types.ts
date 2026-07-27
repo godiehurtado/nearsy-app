@@ -4,6 +4,13 @@ export type RootStackParamList = {
   IntroVideo: undefined;
   Login: undefined;
   Register: undefined;
+  ProfileCompletion:
+    | {
+        uid: string;
+        email?: string | null;
+        inputNonce?: number;
+      }
+    | undefined;
   CompleteProfile:
     | {
         uid: string;

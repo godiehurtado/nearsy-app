@@ -73,27 +73,99 @@ export default {
     submit: 'Register',
     loginLink: 'Already have an account? Log In',
     fields: {
+      realName: 'Real name *',
       email: 'Email',
       confirmEmail: 'Confirm Email',
-      phone: 'Phone number',
+      phone: 'Phone number (optional)',
       password: 'Password',
       confirmPassword: 'Confirm Password',
+      birthDate: 'Date of birth *',
       birthYear: 'Birth year *',
     },
     placeholders: {
+      realName: 'Your full name',
       email: 'Email',
       confirmEmail: 'Confirm Email',
       phone: 'Phone number',
       password: 'Password',
       confirmPassword: 'Confirm Password',
     },
-    selectBirthYear: 'Select',
+    selectBirthYear: 'Year',
+    selectBirthMonth: 'Month',
+    selectBirthDay: 'Day',
     birthYearModalTitle: 'Select your birth year',
+    birthMonthModalTitle: 'Select month',
+    birthDayModalTitle: 'Select day',
+    birthDateModalTitle: 'Select your date of birth',
     countryModalTitle: 'Select country code',
-    phoneHelper: 'Select your country and enter a valid mobile number.',
+    phoneHelper: 'Optional for now. Select your country and enter a valid mobile number.',
     ageHelper: 'You must be 14+ to register.',
     termsPrefix: 'I agree to the',
     termsLink: 'terms and conditions',
+    wizard: {
+      continue: 'Continue',
+      createAccount: 'Create account',
+      backA11y: 'Back',
+      selectCountryA11y: 'Select country dial code',
+      steps: {
+        name: {
+          title: "What's your name?",
+          subtitle: "This is how you'll appear on Nearsy.",
+        },
+        birth: {
+          title: 'When were you born?',
+          subtitle: 'Your profile shows your age, not your birth date.',
+          ageOk: "You're {{age}}",
+          ageTooYoung: 'You must be 14+ to create an account.',
+          futureDate: 'Enter a date of birth that is not in the future.',
+          invalidDate: 'Enter a valid date of birth.',
+        },
+        email: {
+          title: "What's your email?",
+          subtitle: "We'll use it to keep your account secure.",
+        },
+        password: {
+          title: 'Create a password',
+          subtitle:
+            'At least 8 characters, including letters and numbers.',
+        },
+        phone: {
+          title: "What's your mobile number?",
+          subtitle:
+            'Required for your account. Phone verification will happen later — no code is sent yet.',
+        },
+      },
+      fields: {
+        realName: 'Real name',
+        day: 'Day',
+        month: 'Month',
+        year: 'Year',
+        email: 'Email',
+        password: 'Password',
+        phone: 'Mobile number',
+      },
+      placeholders: {
+        realName: 'Real name',
+        day: 'DD',
+        month: 'MM',
+        year: 'YYYY',
+        email: 'Email',
+        password: 'Password',
+        phone: 'Mobile number',
+      },
+      validation: {
+        name: 'Enter your real name',
+        birthIncomplete: 'Enter your full date of birth',
+        birthInvalid: 'Enter a valid date of birth.',
+        birthFuture: 'Enter a date of birth that is not in the future.',
+        birthMinimumAge: 'You must be 14+ to create an account.',
+        email: 'Enter a valid email address',
+        password:
+          'Use at least 8 characters with letters and numbers',
+        phone: 'Enter a valid mobile number',
+        terms: 'Please accept the terms and conditions to continue.',
+      },
+    },
     successTitle: 'Account created',
     successIosMessage:
       "Your account was created successfully. Let's finish setting up your profile.",
@@ -105,6 +177,15 @@ export default {
       finish: 'Finish',
       oneMoreThingTitle: 'One more thing',
       steps: {
+        realName: {
+          title: 'Enter your real name',
+          description: 'Use the name people will recognize you by on Nearsy.',
+        },
+        birthDate: {
+          title: 'Select your date of birth',
+          description:
+            'Enter day, month and year so we can confirm the minimum age.',
+        },
         email: {
           title: 'Start with your email',
           description: 'Enter the email address you want to use for Nearsy.',
@@ -113,10 +194,6 @@ export default {
           title: 'Confirm your email',
           description:
             'Type your email again to make sure there are no mistakes.',
-        },
-        phone: {
-          title: 'Add your phone number',
-          description: 'Select your country code and enter your mobile number.',
         },
         password: {
           title: 'Create a secure password',
@@ -127,10 +204,10 @@ export default {
           title: 'Confirm your password',
           description: 'Type the same password again.',
         },
-        birthYear: {
-          title: 'Select your birth year',
+        phone: {
+          title: 'Add your phone number',
           description:
-            'This helps us confirm you meet the minimum age requirement.',
+            'Optional for this release. Select your country code and enter your mobile number.',
         },
         terms: {
           title: 'Accept the terms',
@@ -142,11 +219,14 @@ export default {
         },
       },
       validation: {
+        realName: 'Please enter your real name to continue.',
+        birthDate:
+          'Please select a valid date of birth. You must be 14+ to register.',
         email: 'Please enter a valid email address to continue.',
         confirmEmail:
           'Please confirm your email. It needs to match the email above.',
         phone:
-          'Please select your country code and enter a valid mobile number.',
+          'If you add a phone number, select your country code and enter a valid mobile number.',
         password:
           'Please create a password with at least 8 characters, including letters and numbers.',
         confirmPassword:
@@ -159,6 +239,10 @@ export default {
       },
     },
     alerts: {
+      realNameRequiredTitle: 'Name required',
+      realNameRequiredMessage: 'Please enter your real name.',
+      birthDateRequiredTitle: 'Date of birth required',
+      birthDateRequiredMessage: 'Please select your full date of birth.',
       birthYearRequiredTitle: 'Birth year required',
       birthYearRequiredMessage: 'Please select your birth year.',
       minimumAgeTitle: 'Minimum age',

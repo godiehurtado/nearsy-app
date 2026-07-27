@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   Pressable,
   StyleSheet,
-  AccessibilityInfo,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -20,30 +20,41 @@ import { useAppTheme } from '../theme/ThemeContext';
 import { fontWeight } from '../theme/typography';
 import { radius } from '../theme/radius';
 import { useTranslation } from '../i18n';
+import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
+import { markWelcomeSeen } from '../onboarding/welcomeStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Welcome'>;
 
 /**
- * Screen: Welcome
- * Social row reuses AuthSocialButtonRow — the same visual source as Login.
+ * Welcome — first-launch only entry to Register / Login / Google.
+ * Marked seen on a valid exit CTA (not on mount).
  */
 export default function WelcomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const { palette } = useAppTheme();
+  const { theme, palette } = useAppTheme();
   const { t } = useTranslation();
-  const [reduceMotion, setReduceMotion] = useState(false);
+  const { signInWithGoogle, googleSubmitting } = useGoogleSignInFlow();
+  // Match Login surface so shared brand hero (logo / waves / people) reads the same.
+  const screenBg = theme === 'dark' ? palette.background : palette.heroBg;
 
-  useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled()
-      .then(setReduceMotion)
-      .catch(() => undefined);
-  }, []);
+  async function leaveWelcome(
+    action: () => void,
+  ): Promise<void> {
+    await markWelcomeSeen();
+    action();
+  }
 
   function onProvider(p: AuthSocialProvider) {
-    // Navigation only this sprint — no Apple/Meta/LinkedIn auth.
     if (p === 'google') {
-      navigation.navigate('Register');
+      void leaveWelcome(() => {
+        void signInWithGoogle();
+      });
+      return;
     }
+    Alert.alert(
+      t('authentication.social.comingSoonTitle'),
+      t('authentication.social.comingSoonMessage'),
+    );
   }
 
   const socialLabels = {
@@ -54,7 +65,7 @@ export default function WelcomeScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: palette.background }]}>
+    <View style={[styles.root, { backgroundColor: screenBg }]}>
       <ScrollView
         style={styles.flex}
         contentContainerStyle={[
@@ -64,18 +75,21 @@ export default function WelcomeScreen({ navigation }: Props) {
         bounces={false}
         showsVerticalScrollIndicator={false}
       >
-        <WelcomeHero reduceMotion={reduceMotion} />
+        <WelcomeHero />
 
-        <View style={[styles.card, { backgroundColor: palette.cardBg }]}>
+        {/* Actions sit on screenBg — no white/navy sheet (matches Login). */}
+        <View style={styles.actions}>
           <PrimaryButton
-            label="Create account"
-            onPress={() => navigation.navigate('Register')}
+            label={t('authentication.register.title')}
+            onPress={() => {
+              void leaveWelcome(() => navigation.navigate('Register'));
+            }}
           />
 
           <View style={styles.divider}>
             <View style={[styles.rule, { backgroundColor: palette.divider }]} />
             <Text style={[styles.dividerText, { color: palette.dividerText }]}>
-              or continue with
+              {t('authentication.login.orContinueWith')}
             </Text>
             <View style={[styles.rule, { backgroundColor: palette.divider }]} />
           </View>
@@ -83,6 +97,8 @@ export default function WelcomeScreen({ navigation }: Props) {
           <AuthSocialButtonRow
             labels={socialLabels}
             onPress={onProvider}
+            busy={googleSubmitting}
+            loadingProvider={googleSubmitting ? 'google' : null}
             borderColor={palette.socialBorder}
             textColor={palette.textPrimary}
             pressedBackground={palette.socialPressed}
@@ -90,8 +106,11 @@ export default function WelcomeScreen({ navigation }: Props) {
 
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Already have an account? Sign in"
-            onPress={() => navigation.navigate('Login')}
+            accessibilityLabel={t('authentication.register.loginLink')}
+            onPress={() => {
+              void leaveWelcome(() => navigation.navigate('Login'));
+            }}
+            disabled={googleSubmitting}
             style={({ pressed }) => [
               styles.signIn,
               {
@@ -99,18 +118,25 @@ export default function WelcomeScreen({ navigation }: Props) {
                 backgroundColor: pressed
                   ? palette.socialPressed
                   : 'transparent',
+                opacity: googleSubmitting ? 0.55 : 1,
               },
             ]}
           >
             <Text style={[styles.signInText, { color: palette.textPrimary }]}>
-              Already have an account? Sign in
+              {t('authentication.register.loginLink')}
             </Text>
           </Pressable>
 
           <Text style={[styles.terms, { color: palette.textMuted }]}>
-            By continuing you agree to Nearsy's{' '}
-            <Text style={{ color: palette.chipText }}>Terms</Text> and{' '}
-            <Text style={{ color: palette.chipText }}>Privacy Policy</Text>.
+            {t('authentication.login.termsPrefix')}{' '}
+            <Text style={{ color: palette.chipText }}>
+              {t('authentication.login.termsLink')}
+            </Text>{' '}
+            {t('authentication.login.termsAnd')}{' '}
+            <Text style={{ color: palette.chipText }}>
+              {t('authentication.login.privacyLink')}
+            </Text>
+            .
           </Text>
         </View>
       </ScrollView>
@@ -122,14 +148,9 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   flex: { flex: 1 },
   scrollContent: { flexGrow: 1 },
-  card: {
-    flexGrow: 1,
-    marginTop: -22,
-    borderTopLeftRadius: radius.card,
-    borderTopRightRadius: radius.card,
+  actions: {
     paddingHorizontal: 22,
-    paddingTop: 22,
-    justifyContent: 'center',
+    paddingTop: 16,
   },
   divider: {
     flexDirection: 'row',
@@ -149,7 +170,11 @@ const styles = StyleSheet.create({
     minHeight: 46,
     justifyContent: 'center',
   },
-  signInText: { fontSize: 13.5, fontWeight: fontWeight.bold, textAlign: 'center' },
+  signInText: {
+    fontSize: 13.5,
+    fontWeight: fontWeight.bold,
+    textAlign: 'center',
+  },
   terms: {
     fontSize: 10.5,
     lineHeight: 17,

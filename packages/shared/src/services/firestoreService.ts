@@ -10,6 +10,14 @@ import {
   AffiliationItem,
 } from '../types/profile';
 
+export type ModePresentationFields = {
+  profileImage?: string | null;
+  occupation?: string;
+  status?: string;
+  bio?: string;
+  company?: string;
+};
+
 export type UserProfile = {
   bio?: string;
   company?: string;
@@ -30,6 +38,15 @@ export type UserProfile = {
   mode?: 'personal' | 'professional';
   occupation?: string;
 
+  /**
+   * Per-mode presentation (CRJ). Shared identity stays on top-level `realName`.
+   * Legacy top-level photo/occupation/status/bio remain as read fallback.
+   */
+  profiles?: {
+    personal?: ModePresentationFields;
+    professional?: ModePresentationFields;
+  };
+
   personalInterestAffiliations?: InterestAffiliations;
   personalInterests?: string[];
   professionalInterestAffiliations?: InterestAffiliations;
@@ -44,6 +61,7 @@ export type UserProfile = {
   personalAffiliations?: AffiliationItem[];
   professionalAffiliations?: AffiliationItem[];
 
+  /** @deprecated Prefer profiles[mode].profileImage — kept for legacy fallback. */
   profileImage?: string | null;
   topBarColor?: string;
   topBarImage?: string | null;
@@ -61,7 +79,18 @@ export type UserProfile = {
 /** Crea un perfil base en Firestore (si no existe) */
 export const createUserProfile = async (
   uid: string,
-  data: { email: string; phone?: string; birthYear: number },
+  data: {
+    email: string;
+    phone?: string | null;
+    birthYear: number;
+    /** Full birth date ISO `YYYY-MM-DD` for new registrations (TSB-001). */
+    birthDate?: string | null;
+    realName?: string;
+    phoneVerified?: boolean;
+    phoneVerifiedAt?: string | null;
+    acceptedTerms?: boolean;
+    acceptedTermsAt?: string | null;
+  },
 ) => {
   try {
     const ref = doc(firestoreDb, 'users', uid);
@@ -72,19 +101,43 @@ export const createUserProfile = async (
         email: data.email,
         phone: data.phone ?? null,
         birthYear: data.birthYear,
+        ...(data.birthDate ? { birthDate: data.birthDate } : {}),
+        phoneVerified: data.phoneVerified ?? false,
+        phoneVerifiedAt: data.phoneVerifiedAt ?? null,
+        ...(data.acceptedTerms != null
+          ? {
+              acceptedTerms: data.acceptedTerms,
+              acceptedTermsAt: data.acceptedTermsAt ?? null,
+            }
+          : {}),
 
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
 
         visibility: false,
-        mode: 'personal',
+        // mode is chosen in Profile Type (CRJ) — do not default here.
 
         bio: '',
         status: '',
-        realName: '',
+        realName: data.realName?.trim() ?? '',
         occupation: '',
         company: '',
         profileImage: null,
+        profiles: {
+          personal: {
+            profileImage: null,
+            occupation: '',
+            status: '',
+            bio: '',
+          },
+          professional: {
+            profileImage: null,
+            occupation: '',
+            status: '',
+            bio: '',
+            company: '',
+          },
+        },
 
         topBarColor: '#3B5A85',
         topBarImage: null,

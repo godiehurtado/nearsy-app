@@ -40,9 +40,9 @@ import {
 } from '../types/profile';
 
 import {
-  saveCompleteProfile,
   getUserProfile,
   updateUserMode,
+  updateUserProfilePartial,
 } from '../services/firestoreService';
 
 import {
@@ -54,6 +54,11 @@ import {
   clearPendingSocialProfilePrefill,
   mergeCompleteProfilePrefill,
 } from '../authentication/social';
+import {
+  buildActiveProfileSavePatch,
+  resolveModePresentation,
+  type ProfileMode,
+} from '../profile/profileModeFields';
 
 type TopBarMode = 'color' | 'image';
 
@@ -258,6 +263,22 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
   // (compat)
   const [interestAffiliations] = useState<InterestAffiliations>({});
+  /** Latest Firestore shell for mode-switch reloads (new dual-profile model). */
+  const [profileDoc, setProfileDoc] = useState<Record<string, unknown> | null>(
+    null,
+  );
+
+  const applyModeFields = useCallback(
+    (data: Record<string, unknown> | null | undefined, nextMode: ProfileMode) => {
+      const presentation = resolveModePresentation(data, nextMode);
+      setOccupation(presentation.occupation ?? '');
+      setStatus(presentation.status ?? '');
+      setBio(presentation.bio ?? '');
+      setCompany(presentation.company ?? '');
+      setProfileImage(presentation.profileImage ?? null);
+    },
+    [],
+  );
 
   // Cargar perfil existente (+ one-shot Google prefill for empty fields)
   const loadProfile = useCallback(async () => {
@@ -274,9 +295,21 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         socialPrefill = null;
       }
 
-      if (existing && existing.realName != '') {
-        let nextRealName = existing.realName ?? '';
-        let nextProfileImage = existing.profileImage ?? null;
+      setProfileDoc(existing ? (existing as any) : null);
+
+      // Prefer trimmed realName from the registration shell so email wizard
+      // handoff does not ask the user to retype an already-persisted name.
+      const existingRealName = String(existing?.realName ?? '').trim();
+
+      if (existing && existingRealName) {
+        let nextRealName = existingRealName;
+        const currentMode: ProfileMode =
+          existing.mode === 'professional' ? 'professional' : 'personal';
+        let presentation = resolveModePresentation(
+          existing as any,
+          currentMode,
+        );
+        let nextProfileImage = presentation.profileImage ?? null;
 
         if (socialPrefill) {
           try {
@@ -296,18 +329,24 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         }
 
         setRealName(nextRealName);
-        setStatus((existing as any).status ?? '');
-        setBio(existing.bio ?? '');
-        const currentMode = existing.mode ?? 'personal';
         setMode(currentMode);
+        applyModeFields(
+          {
+            ...(existing as any),
+            profiles: {
+              ...((existing as any).profiles ?? {}),
+              [currentMode]: {
+                ...presentation,
+                profileImage: nextProfileImage,
+              },
+            },
+          },
+          currentMode,
+        );
+        if (nextProfileImage) {
+          setProfileImage(nextProfileImage);
+        }
 
-        setOccupation(existing.occupation ?? '');
-        setCompany(existing.company ?? '');
-        setProfileImage((prev) => {
-          if (nextProfileImage) return nextProfileImage;
-          // Preserve in-progress local/Google preview when Firestore image is empty.
-          return prev;
-        });
         setTopBarColor(existing.topBarColor ?? '#3B5A85');
         setTopBarImage((existing as any).topBarImage ?? null);
         setTopBarMode(
@@ -367,13 +406,24 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         setIsNewProfile(true);
         setActiveField('realName');
 
+        // Shell may exist with empty/whitespace name; never wipe a known value.
+        if (existingRealName) {
+          setRealName(existingRealName);
+        }
+
+        if (existing) {
+          const currentMode: ProfileMode =
+            existing.mode === 'professional' ? 'professional' : 'personal';
+          applyModeFields(existing as any, currentMode);
+        }
+
         if (socialPrefill) {
           try {
             const merged = mergeCompleteProfilePrefill(
               {
-                realName: '',
+                realName: existingRealName,
                 profileImage: null,
-                email: null,
+                email: (existing as any)?.email ?? null,
               },
               socialPrefill,
             );
@@ -393,7 +443,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     } finally {
       setIsLoading(false);
     }
-  }, [route?.params?.uid]);
+  }, [route?.params?.uid, applyModeFields]);
 
   // Cada vez que la pantalla gana foco, recargamos el perfil
   useFocusEffect(
@@ -536,15 +586,18 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   };
 
   const handleToggleMode = async () => {
-    const nextMode: 'personal' | 'professional' =
+    const nextMode: ProfileMode =
       (mode ?? 'personal') === 'personal' ? 'professional' : 'personal';
 
+    // Switch UI to the other mode's independent presentation — never copy fields.
     setMode(nextMode);
+    applyModeFields(profileDoc, nextMode);
 
     try {
       const uid = getUid();
       if (!uid) return;
       await updateUserMode(uid, nextMode);
+      setProfileDoc((prev) => (prev ? { ...prev, mode: nextMode } : prev));
     } catch (e) {
       if (__DEV__) {
         console.error('[CompleteProfile] Error updating mode', e);
@@ -599,6 +652,8 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         return;
       }
 
+      // Photo: required only when none is set for the active mode yet.
+      // Empty overwrite of an existing photo is never performed.
       if (!profileImage) {
         Alert.alert('Validation', 'Profile photo is required.');
         return;
@@ -628,22 +683,54 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         uploadedImageUrl = profileImage ?? null;
       }
 
-      const payload = {
-        realName,
-        bio,
-        status,
-        mode,
-        occupation,
-        company: mode === 'professional' ? company : '',
-        profileImage: uploadedImageUrl,
+      const activeMode: ProfileMode = mode;
+      const modePatch = buildActiveProfileSavePatch({
+        mode: activeMode,
+        realName: realName.trim(),
+        presentation: {
+          profileImage: uploadedImageUrl,
+          occupation,
+          status,
+          bio,
+          company: activeMode === 'professional' ? company : undefined,
+        },
+        projectActiveToTopLevel: true,
+      });
+
+      // Top-bar + completion flag only. Do NOT set visibility (Home Active toggle).
+      // Do NOT write blank company into the other mode.
+      await updateUserProfilePartial(uid, {
+        ...modePatch,
+        ...(uploadedTopBarUrl
+          ? { topBarImage: uploadedTopBarUrl }
+          : topBarImage === null
+            ? {}
+            : {}),
         topBarColor,
-        topBarImage: uploadedTopBarUrl,
         topBarMode,
         profileSetupCompleted: true,
-        visibility: true,
-      };
+      });
 
-      await saveCompleteProfile(uid, payload);
+      setProfileDoc((prev) => ({
+        ...(prev ?? {}),
+        ...modePatch,
+        mode: activeMode,
+        realName: realName.trim(),
+        profileSetupCompleted: true,
+        profiles: {
+          ...((prev?.profiles as any) ?? {}),
+          [activeMode]: {
+            profileImage: uploadedImageUrl,
+            occupation: occupation.trim() || undefined,
+            status: status.trim() || undefined,
+            bio: bio.trim() || undefined,
+            ...(activeMode === 'professional'
+              ? { company: company.trim() || undefined }
+              : {}),
+          },
+        },
+      }));
+
       clearPendingSocialProfilePrefill();
 
       setIsNewProfile(false);

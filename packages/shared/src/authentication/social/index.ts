@@ -75,6 +75,7 @@ export {
   setPendingSocialProfilePrefill,
   consumePendingSocialProfilePrefill,
   clearPendingSocialProfilePrefill,
+  peekPendingSocialProfilePrefill,
 } from './application/socialProfilePrefillStore';
 
 /**

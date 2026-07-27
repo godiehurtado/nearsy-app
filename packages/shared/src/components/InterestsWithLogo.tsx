@@ -815,6 +815,13 @@ const logoCatalog: Record<InterestLabel, LogoOption[]> = {
   Other: OTHER_GROUPS.flatMap((g) => g.options),
 };
 
+/** Read-only catalog for onboarding sampling and other consumers. */
+export function getInterestLogoCatalog(): Record<InterestLabel, LogoOption[]> {
+  return logoCatalog;
+}
+
+export type { LogoOption };
+
 function GuideHighlightSlot({
   highlight,
   dimmed,
