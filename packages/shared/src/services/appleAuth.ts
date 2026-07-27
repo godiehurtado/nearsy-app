@@ -1,4 +1,10 @@
-// src/services/appleAuth.ts  ✅ Web SDK (iOS) compatible con tu Nearsy iOS
+/**
+ * LEGACY — deferred retirement (Apple Authentication local phase).
+ *
+ * Do not wire Login/Welcome to this module. Production Sign in with Apple
+ * uses `authentication/social` (Apple provider adapter + authenticateWithApple).
+ * Keep this file until a dedicated cleanup task removes unused callers/exports.
+ */
 import { Platform } from 'react-native';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';

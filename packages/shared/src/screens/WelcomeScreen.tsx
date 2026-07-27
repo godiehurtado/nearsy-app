@@ -21,12 +21,13 @@ import { fontWeight } from '../theme/typography';
 import { radius } from '../theme/radius';
 import { useTranslation } from '../i18n';
 import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
+import { useAppleSignInFlow } from '../hooks/useAppleSignInFlow';
 import { markWelcomeSeen } from '../onboarding/welcomeStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Welcome'>;
 
 /**
- * Welcome — first-launch only entry to Register / Login / Google.
+ * Welcome — first-launch only entry to Register / Login / Google / Apple.
  * Marked seen on a valid exit CTA (not on mount).
  */
 export default function WelcomeScreen({ navigation }: Props) {
@@ -34,8 +35,10 @@ export default function WelcomeScreen({ navigation }: Props) {
   const { theme, palette } = useAppTheme();
   const { t } = useTranslation();
   const { signInWithGoogle, googleSubmitting } = useGoogleSignInFlow();
+  const { signInWithApple, appleSubmitting } = useAppleSignInFlow();
   // Match Login surface so shared brand hero (logo / waves / people) reads the same.
   const screenBg = theme === 'dark' ? palette.background : palette.heroBg;
+  const socialBusy = googleSubmitting || appleSubmitting;
 
   async function leaveWelcome(
     action: () => void,
@@ -48,6 +51,12 @@ export default function WelcomeScreen({ navigation }: Props) {
     if (p === 'google') {
       void leaveWelcome(() => {
         void signInWithGoogle();
+      });
+      return;
+    }
+    if (p === 'apple') {
+      void leaveWelcome(() => {
+        void signInWithApple();
       });
       return;
     }
@@ -97,8 +106,10 @@ export default function WelcomeScreen({ navigation }: Props) {
           <AuthSocialButtonRow
             labels={socialLabels}
             onPress={onProvider}
-            busy={googleSubmitting}
-            loadingProvider={googleSubmitting ? 'google' : null}
+            busy={socialBusy}
+            loadingProvider={
+              googleSubmitting ? 'google' : appleSubmitting ? 'apple' : null
+            }
             borderColor={palette.socialBorder}
             textColor={palette.textPrimary}
             pressedBackground={palette.socialPressed}
@@ -110,7 +121,7 @@ export default function WelcomeScreen({ navigation }: Props) {
             onPress={() => {
               void leaveWelcome(() => navigation.navigate('Login'));
             }}
-            disabled={googleSubmitting}
+            disabled={socialBusy}
             style={({ pressed }) => [
               styles.signIn,
               {
@@ -118,7 +129,7 @@ export default function WelcomeScreen({ navigation }: Props) {
                 backgroundColor: pressed
                   ? palette.socialPressed
                   : 'transparent',
-                opacity: googleSubmitting ? 0.55 : 1,
+                opacity: socialBusy ? 0.55 : 1,
               },
             ]}
           >

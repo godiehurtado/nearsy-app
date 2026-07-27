@@ -17,6 +17,7 @@
       "bundleIdentifier": "com.nearsy.app.client",
       "googleServicesFile": "./GoogleService-Info.plist",
       "buildNumber": "4",
+      "usesAppleSignIn": true,
       "supportsTablet": false,
       "deviceFamily": [
         "iphone"
@@ -75,7 +76,8 @@
           "iosUrlScheme": "com.googleusercontent.apps.557470198780-ttslt825t6lmoma0d8e9nce1q6l1tm8c"
         }
       ],
-      "expo-localization"
+      "expo-localization",
+      "expo-apple-authentication"
     ],
     "extra": {
       "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyBv7UEL1aDLKIZRBnLZ2kuEitHmikhmqfA",

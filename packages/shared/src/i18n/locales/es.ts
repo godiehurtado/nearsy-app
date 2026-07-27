@@ -75,17 +75,19 @@ const es: TranslationResources = {
       comingSoonMessage:
         'Esta opción de inicio de sesión estará disponible próximamente.',
       errors: {
-        cancelled: 'Se canceló el inicio de sesión con Google.',
-        inProgress: 'El inicio de sesión con Google ya está en curso.',
+        cancelled: 'Se canceló el inicio de sesión.',
+        inProgress: 'El inicio de sesión ya está en curso.',
         providerUnavailable:
-          'El inicio de sesión con Google no está disponible en este dispositivo por ahora.',
+          'Esta opción de inicio de sesión no está disponible en este dispositivo por ahora.',
         configuration:
-          'El inicio de sesión con Google no está configurado correctamente. Inténtalo más tarde.',
+          'El inicio de sesión no está configurado correctamente. Inténtalo más tarde.',
         network: 'Error de red. Revisa tu conexión e inténtalo de nuevo.',
+        invalidCredential:
+          'No se pudo verificar el inicio de sesión. Inténtalo de nuevo.',
         accountConflict:
           'Ya existe una cuenta con este correo usando otro método de acceso.',
         generic:
-          'Algo salió mal con el inicio de sesión de Google. Inténtalo de nuevo.',
+          'Algo salió mal al iniciar sesión. Inténtalo de nuevo.',
       },
     },
     forgotPassword: {

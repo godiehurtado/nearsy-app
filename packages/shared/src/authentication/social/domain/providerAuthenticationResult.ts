@@ -8,6 +8,8 @@ export interface ProviderAuthenticationResult {
   providerUserId: string;
   idToken?: string;
   accessToken?: string;
+  /** Apple: raw nonce paired with the hashed nonce sent to Apple Sign-In. */
+  rawNonce?: string;
   authorizationCode?: string;
   email?: string;
   emailVerified?: boolean;

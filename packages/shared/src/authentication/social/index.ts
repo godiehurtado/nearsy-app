@@ -7,13 +7,19 @@ import {
   createAuthenticateWithGoogle,
   type AuthenticateWithGoogleDependencies,
 } from './application/authenticateWithGoogle';
+import {
+  createAuthenticateWithApple,
+  type AuthenticateWithAppleDependencies,
+} from './application/authenticateWithApple';
 import { resolveGoogleAuthenticationConfiguration } from './infrastructure/google/googleConfiguration';
 import { GOOGLE_IOS_NATIVE_CONFIG } from './infrastructure/google/googleIosNativeConfig';
 import { createGoogleProviderAdapter } from './infrastructure/google/googleProviderAdapter';
+import { createAppleProviderAdapter } from './infrastructure/apple/appleProviderAdapter';
 import { createFirebaseJsAuthenticationAdapter } from './infrastructure/firebase/firebaseJsAuthenticationAdapter';
 import {
   getUserProfile,
   isProfileComplete,
+  updateUserProfilePartial,
 } from '../../services/firestoreService';
 
 export type { SocialAuthProvider, SocialAuthenticationRequest } from './domain/socialAuthProvider';
@@ -54,6 +60,12 @@ export { createFirebaseJsAuthenticationAdapter } from './infrastructure/firebase
 export { createGoogleProviderAdapter } from './infrastructure/google/googleProviderAdapter';
 export { resolveGoogleAuthenticationConfiguration } from './infrastructure/google/googleConfiguration';
 export { GOOGLE_IOS_NATIVE_CONFIG } from './infrastructure/google/googleIosNativeConfig';
+export { createAppleProviderAdapter } from './infrastructure/apple/appleProviderAdapter';
+export type {
+  AppleAuthenticationClient,
+  AppleCryptoClient,
+  AppleProviderAdapterDeps,
+} from './infrastructure/apple/appleProviderAdapter';
 
 export type {
   AuthenticateWithGoogleDependencies,
@@ -61,6 +73,17 @@ export type {
   GoogleSignInProfileRoute,
 } from './application/authenticateWithGoogle';
 export { createAuthenticateWithGoogle } from './application/authenticateWithGoogle';
+
+export type {
+  AuthenticateWithAppleDependencies,
+  AppleSignInSuccess,
+  AppleSignInProfileRoute,
+} from './application/authenticateWithApple';
+export { createAuthenticateWithApple } from './application/authenticateWithApple';
+export {
+  resolveAppleAuthNavigationTarget,
+  shouldSuppressAppleSignInAlert,
+} from './application/appleSignInUiPolicy';
 
 export type { SocialProfileData } from './domain/socialProfileData';
 export { normalizeSocialProfileData } from './application/normalizeSocialProfileData';
@@ -79,11 +102,12 @@ export {
 } from './application/socialProfilePrefillStore';
 
 /**
- * Default registry: Google only (TS-006 / TS-007).
+ * Default registry: Google + Apple (iOS social providers).
  */
 export function createDefaultSocialProviderRegistry() {
   return createSocialProviderRegistry({
     google: createGoogleProviderAdapter(),
+    apple: createAppleProviderAdapter(),
   });
 }
 
@@ -92,8 +116,7 @@ export function createDefaultFirebaseAuthenticationPort() {
 }
 
 /**
- * Production Google Sign-In orchestrator for Login (TS-007).
- * Reuses existing Firestore profile resolution for MainTabs / CompleteProfile routing.
+ * Production Google Sign-In orchestrator for Login / Welcome.
  */
 export function createDefaultAuthenticateWithGoogle(
   overrides?: Partial<AuthenticateWithGoogleDependencies>,
@@ -103,6 +126,25 @@ export function createDefaultAuthenticateWithGoogle(
     firebaseAuth: createDefaultFirebaseAuthenticationPort(),
     getUserProfile,
     isProfileComplete,
+    ...overrides,
+  });
+}
+
+/**
+ * Production Apple Sign-In orchestrator for Login / Welcome.
+ */
+export function createDefaultAuthenticateWithApple(
+  overrides?: Partial<AuthenticateWithAppleDependencies>,
+) {
+  return createAuthenticateWithApple({
+    registry: createDefaultSocialProviderRegistry(),
+    firebaseAuth: createDefaultFirebaseAuthenticationPort(),
+    getUserProfile,
+    isProfileComplete,
+    // Fill-empty-only durable capture. Never sets profileSetupCompleted.
+    persistEmptyRealName: async (uid, realName) => {
+      await updateUserProfilePartial(uid, { realName });
+    },
     ...overrides,
   });
 }

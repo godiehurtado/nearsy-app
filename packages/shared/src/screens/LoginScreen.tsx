@@ -34,12 +34,14 @@ import {
   AuthSocialProvider,
 } from '../components/AuthSocialButtonRow';
 import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
+import { useAppleSignInFlow } from '../hooks/useAppleSignInFlow';
 
 export default function LoginScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const { theme, palette } = useAppTheme();
   const { signInWithGoogle, googleSubmitting } = useGoogleSignInFlow();
+  const { signInWithApple, appleSubmitting } = useAppleSignInFlow();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -50,7 +52,7 @@ export default function LoginScreen({ navigation }: any) {
   const [infoModalTitle, setInfoModalTitle] = useState('');
   const [infoModalMessage, setInfoModalMessage] = useState('');
 
-  const busy = submitting || googleSubmitting;
+  const busy = submitting || googleSubmitting || appleSubmitting;
   const isDark = theme === 'dark';
   // Login approved surface: uniform pastel (clear) / navy (dark) — not white card.
   const screenBg = isDark ? palette.background : palette.heroBg;
@@ -249,6 +251,11 @@ export default function LoginScreen({ navigation }: any) {
   const handleSocialPress = (provider: AuthSocialProvider) => {
     if (provider === 'google') {
       void signInWithGoogle();
+      return;
+    }
+
+    if (provider === 'apple') {
+      void signInWithApple();
       return;
     }
 
@@ -459,7 +466,9 @@ export default function LoginScreen({ navigation }: any) {
               }}
               onPress={handleSocialPress}
               busy={busy}
-              loadingProvider={googleSubmitting ? 'google' : null}
+              loadingProvider={
+                googleSubmitting ? 'google' : appleSubmitting ? 'apple' : null
+              }
               borderColor={palette.socialBorder}
               textColor={palette.textPrimary}
               pressedBackground={palette.socialPressed}

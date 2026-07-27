@@ -40,16 +40,18 @@ export default {
     comingSoonTitle: 'Coming soon',
     comingSoonMessage: 'This sign-in option will be available soon.',
     errors: {
-      cancelled: 'Google sign-in was cancelled.',
-      inProgress: 'Google sign-in is already in progress.',
+      cancelled: 'Sign-in was cancelled.',
+      inProgress: 'Sign-in is already in progress.',
       providerUnavailable:
-        'Google sign-in is unavailable on this device right now.',
+        'This sign-in option is unavailable on this device right now.',
       configuration:
-        'Google sign-in is not configured correctly. Please try again later.',
+        'Sign-in is not configured correctly. Please try again later.',
       network: 'Network error. Check your connection and try again.',
+      invalidCredential:
+        'Sign-in could not be verified. Please try again.',
       accountConflict:
         'An account already exists with this email using a different sign-in method.',
-      generic: 'Something went wrong with Google sign-in. Please try again.',
+      generic: 'Something went wrong with sign-in. Please try again.',
     },
   },
   forgotPassword: {
