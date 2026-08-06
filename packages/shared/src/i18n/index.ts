@@ -4,6 +4,7 @@ export {
   resolveInitialLanguage,
   i18n,
 } from './config';
+export { useTranslation } from 'react-i18next';
 export {
   clearPersistedLanguage,
   getPersistedLanguage,

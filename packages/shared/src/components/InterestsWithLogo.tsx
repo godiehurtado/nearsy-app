@@ -810,6 +810,11 @@ const logoCatalog: Record<InterestLabel, LogoOption[]> = {
   Other: OTHER_GROUPS.flatMap((g) => g.options),
 };
 
+/** Read-only access to the full interest logo catalog (id/name/emoji per category). */
+export function getInterestLogoCatalog(): Record<InterestLabel, LogoPick[]> {
+  return logoCatalog;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Componente
 export default function InterestsWithLogo({

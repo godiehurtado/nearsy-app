@@ -2,46 +2,34 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, ActivityIndicator, Platform } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  DarkTheme,
+  DefaultTheme,
+  Theme as NavigationTheme,
+} from '@react-navigation/native';
 
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import CompleteProfileScreen from '../screens/CompleteProfileScreen';
+import ProfileCompletionScreen from '../screens/ProfileCompletionScreen';
 import PhoneVerificationScreen from '../screens/PhoneVerificationScreen';
 import IntroVideoScreen from '../screens/IntroVideoScreen';
+import ThemeSelectionScreen from '../screens/ThemeSelectionScreen';
+import WelcomeScreen from '../screens/WelcomeScreen';
 import InterestsScreen from '../screens/InterestsScreen';
 import SocialMediaScreen from '../screens/SocialMediaScreen';
 import GalleryScreen from '../screens/GalleryScreen';
 import AffiliationsScreen from '../screens/AffiliationsScreen';
 import RootTabs from './RootTabs';
+import { RootStackParamList } from './types';
+import { useAppTheme } from '../theme/ThemeContext';
 
 import { firebaseAuth } from '../config/firebaseConfig';
 import { dbGetUser, dbOnUserSnapshot } from '../services/db';
 import { isProfileDocumentComplete } from '../utils/profileDocumentComplete';
+import { loadHasSeenWelcome } from '../onboarding/welcomeStorage';
 
-export type RootStackParamList = {
-  IntroVideo: undefined;
-  Login: undefined;
-  Register: undefined;
-  CompleteProfile:
-    | {
-        uid: string;
-        email?: string | null;
-        inputNonce?: number;
-      }
-    | undefined;
-  MainTabs: undefined;
-  PhoneVerification: {
-    uid: string;
-    phone: string;
-    from?: string;
-  };
-
-  Interests: any;
-  Gallery: any;
-  Affiliations: any;
-  SocialMedia: any;
-};
+export type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -53,14 +41,29 @@ function FullScreenLoader() {
   );
 }
 
-export default function AppNavigator() {
-  const INTRO_VIDEO_KEY = 'hasSeenIntroVideo';
+function guestScreenOptions(backgroundColor: string) {
+  return {
+    headerShown: false,
+    contentStyle: { backgroundColor },
+  } as const;
+}
 
-  const [introLoading, setIntroLoading] = useState(true);
-  const [hasSeenIntroVideo, setHasSeenIntroVideo] = useState(false);
+function guestInitialRoute(
+  hasChosenTheme: boolean,
+  hasSeenWelcome: boolean,
+): keyof RootStackParamList {
+  if (!hasChosenTheme) return 'ThemeSelection';
+  if (!hasSeenWelcome) return 'Welcome';
+  return 'Login';
+}
+
+export default function AppNavigator() {
+  const { palette, hasChosenTheme, hydrating } = useAppTheme();
 
   const [authLoading, setAuthLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [welcomeHydrating, setWelcomeHydrating] = useState(true);
+  const [hasSeenWelcome, setHasSeenWelcome] = useState(false);
 
   const [uid, setUid] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -68,18 +71,17 @@ export default function AppNavigator() {
   const [needsCompleteProfile, setNeedsCompleteProfile] = useState(false);
 
   useEffect(() => {
-    const loadIntroFlag = async () => {
-      try {
-        const storedValue = await AsyncStorage.getItem(INTRO_VIDEO_KEY);
-        setHasSeenIntroVideo(storedValue === 'true');
-      } catch {
-        setHasSeenIntroVideo(false);
-      } finally {
-        setIntroLoading(false);
-      }
+    let alive = true;
+    loadHasSeenWelcome()
+      .then((seen) => {
+        if (alive) setHasSeenWelcome(seen);
+      })
+      .finally(() => {
+        if (alive) setWelcomeHydrating(false);
+      });
+    return () => {
+      alive = false;
     };
-
-    loadIntroFlag();
   }, []);
 
   // 1) Auth
@@ -99,7 +101,7 @@ export default function AppNavigator() {
 
         const refreshedUser = firebaseAuth.currentUser;
 
-        // iOS still requires verified email; Android auth proceeds to profile setup.
+        // iOS requires verified email; Android auth proceeds straight to profile setup.
         if (
           !refreshedUser ||
           (Platform.OS === 'ios' && !refreshedUser.emailVerified)
@@ -155,57 +157,59 @@ export default function AppNavigator() {
     return () => unsubscribe();
   }, [uid]);
 
+  // Guest key must NOT flip when hasChosenTheme becomes true on Continue —
+  // otherwise the stack remounts and races with navigation.replace('Welcome').
+  // hasSeenWelcome is also excluded: marking Welcome seen mid-session must not remount.
   const flowKey = useMemo(() => {
-    if (authLoading || profileLoading) return 'loading';
+    if (authLoading || profileLoading || hydrating || welcomeHydrating)
+      return 'loading';
     if (!uid) return 'guest';
     if (needsCompleteProfile) return `auth-complete-${uid}`;
     return `auth-main-${uid}`;
-  }, [authLoading, profileLoading, uid, needsCompleteProfile]);
+  }, [
+    authLoading,
+    profileLoading,
+    hydrating,
+    welcomeHydrating,
+    uid,
+    needsCompleteProfile,
+  ]);
 
-  if (authLoading || profileLoading || introLoading) {
+  if (authLoading || profileLoading || hydrating || welcomeHydrating) {
     return <FullScreenLoader />;
   }
 
-  if (!uid && !hasSeenIntroVideo) {
-    return (
-      <Stack.Navigator
-        id="RootIntro"
-        key="intro-video"
-        initialRouteName="IntroVideo"
-        screenOptions={{ headerShown: false }}
-      >
-        <Stack.Screen name="IntroVideo" component={IntroVideoScreen} />
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Register" component={RegisterScreen} />
-        <Stack.Screen
-          name="CompleteProfile"
-          component={CompleteProfileScreen}
-        />
-        <Stack.Screen
-          name="PhoneVerification"
-          component={PhoneVerificationScreen}
-        />
-        <Stack.Screen name="MainTabs" component={RootTabs} />
-
-        <Stack.Screen name="Interests" component={InterestsScreen} />
-        <Stack.Screen name="Gallery" component={GalleryScreen} />
-        <Stack.Screen name="Affiliations" component={AffiliationsScreen} />
-        <Stack.Screen name="SocialMedia" component={SocialMediaScreen} />
-      </Stack.Navigator>
-    );
-  }
-
+  /**
+   * Guest flow (v1.1 Experience Foundation):
+   *   Launch -> ThemeSelection (first run only; replace() to Welcome)
+   *          -> Welcome (first launch only) -> Login | Register | Google
+   *   Later cold starts (Welcome already seen) -> Login
+   */
   if (!uid) {
     return (
       <Stack.Navigator
         id="RootGuest"
         key={flowKey}
-        initialRouteName="Login"
-        screenOptions={{ headerShown: false }}
+        initialRouteName={guestInitialRoute(hasChosenTheme, hasSeenWelcome)}
+        screenOptions={guestScreenOptions(palette.background)}
       >
+        <Stack.Screen
+          name="ThemeSelection"
+          component={ThemeSelectionScreen}
+          options={{ gestureEnabled: false, animation: 'fade' }}
+        />
+        <Stack.Screen
+          name="Welcome"
+          component={WelcomeScreen}
+          options={{ gestureEnabled: false }}
+        />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Register" component={RegisterScreen} />
         <Stack.Screen name="IntroVideo" component={IntroVideoScreen} />
+        <Stack.Screen
+          name="ProfileCompletion"
+          component={ProfileCompletionScreen}
+        />
         <Stack.Screen
           name="CompleteProfile"
           component={CompleteProfileScreen}
@@ -230,6 +234,11 @@ export default function AppNavigator() {
         key={`auth-complete-${uid}`}
         screenOptions={{ headerShown: false }}
       >
+        <Stack.Screen
+          name="ProfileCompletion"
+          component={ProfileCompletionScreen}
+          initialParams={{ uid, email: userEmail }}
+        />
         <Stack.Screen
           name="CompleteProfile"
           component={CompleteProfileScreen}
@@ -259,4 +268,23 @@ export default function AppNavigator() {
       <Stack.Screen name="SocialMedia" component={SocialMediaScreen} />
     </Stack.Navigator>
   );
+}
+
+/** Builds a React Navigation theme from the active app palette. */
+export function buildNavigationTheme(
+  theme: 'clear' | 'dark',
+  palette: { background: string; cardBg: string; textPrimary: string; primary: string; border: string },
+): NavigationTheme {
+  const base = theme === 'dark' ? DarkTheme : DefaultTheme;
+  return {
+    ...base,
+    colors: {
+      ...base.colors,
+      background: palette.background,
+      card: palette.cardBg,
+      text: palette.textPrimary,
+      primary: palette.primary,
+      border: palette.border,
+    },
+  };
 }

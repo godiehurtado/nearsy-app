@@ -193,6 +193,15 @@ export function setPendingGoogleProfilePrefill(
 }
 
 /**
+ * Read the pending prefill (and its owning uid) without clearing it.
+ * Used to check "is there something pending for this uid?" before
+ * committing to a one-shot consume.
+ */
+export function peekPendingGoogleProfilePrefill(): PendingPrefill | null {
+  return pending;
+}
+
+/**
  * Returns and clears pending prefill when uid matches.
  */
 export function consumePendingGoogleProfilePrefill(

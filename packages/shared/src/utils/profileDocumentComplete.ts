@@ -1,22 +1,12 @@
 /**
- * Pure gate: whether a Firestore `users/{uid}` document counts as "profile complete"
- * for navigation / login checks. Same rules everywhere this is imported.
+ * Pure gate: whether a Firestore user document is complete enough to enter MainTabs.
+ *
+ * CRJ (new onboarding): the ONLY completion signal is profileSetupCompleted === true.
+ * Implicit combinations (realName + mode + profileImage, interests, etc.) must NOT
+ * eject the user from ProfileCompletion into MainTabs mid-wizard.
  */
 export function isProfileDocumentComplete(data: unknown): boolean {
-  if (data == null || typeof data !== 'object') return false;
-
+  if (!data || typeof data !== 'object') return false;
   const d = data as Record<string, unknown>;
-
-  if (d.profileSetupCompleted === true) return true;
-
-  const realNameOk =
-    typeof d.realName === 'string' && d.realName.trim().length > 0;
-
-  const modeOk = d.mode === 'personal' || d.mode === 'professional';
-
-  const profileImageOk =
-    typeof d.profileImage === 'string' &&
-    d.profileImage.trim().length > 0;
-
-  return realNameOk && modeOk && profileImageOk;
+  return d.profileSetupCompleted === true;
 }

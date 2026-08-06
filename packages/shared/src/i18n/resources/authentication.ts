@@ -103,6 +103,7 @@ export const authenticationTranslations = {
       alerts: {
         birthYearRequiredTitle: 'Birth year required',
         birthYearRequiredMessage: 'Please select your birth year.',
+        birthDateRequiredTitle: 'Date of birth required',
         minimumAgeTitle: 'Minimum age',
         minimumAgeMessage: 'You must be 14+ to create an account.',
         invalidEmailTitle: 'Invalid email',
@@ -125,6 +126,69 @@ export const authenticationTranslations = {
         accountCreatedMessage:
           'Your account was created successfully. Please sign in to continue setting up your profile.',
         errorTitle: 'Error',
+      },
+      /** Registration wizard (CRJ, 5 steps: name / birth / email / password / phone). */
+      wizard: {
+        continue: 'Continue',
+        createAccount: 'Create account',
+        backA11y: 'Back',
+        selectCountryA11y: 'Select country dial code',
+        steps: {
+          name: {
+            title: "What's your name?",
+            subtitle: "This is how you'll appear on Nearsy.",
+          },
+          birth: {
+            title: 'When were you born?',
+            subtitle: 'Your profile shows your age, not your birth date.',
+            ageOk: "You're {{age}}",
+            ageTooYoung: 'You must be 14+ to create an account.',
+            futureDate: 'Enter a date of birth that is not in the future.',
+            invalidDate: 'Enter a valid date of birth.',
+          },
+          email: {
+            title: "What's your email?",
+            subtitle: "We'll use it to keep your account secure.",
+          },
+          password: {
+            title: 'Create a password',
+            subtitle: 'At least 8 characters, including letters and numbers.',
+          },
+          phone: {
+            title: "What's your mobile number?",
+            subtitle:
+              'Required for your account. Phone verification will happen later — no code is sent yet.',
+          },
+        },
+        fields: {
+          realName: 'Real name',
+          day: 'Day',
+          month: 'Month',
+          year: 'Year',
+          email: 'Email',
+          password: 'Password',
+          phone: 'Mobile number',
+        },
+        placeholders: {
+          realName: 'Real name',
+          day: 'DD',
+          month: 'MM',
+          year: 'YYYY',
+          email: 'Email',
+          password: 'Password',
+          phone: 'Mobile number',
+        },
+        validation: {
+          name: 'Enter your real name',
+          birthIncomplete: 'Enter your full date of birth',
+          birthInvalid: 'Enter a valid date of birth.',
+          birthFuture: 'Enter a date of birth that is not in the future.',
+          birthMinimumAge: 'You must be 14+ to create an account.',
+          email: 'Enter a valid email address',
+          password: 'Use at least 8 characters with letters and numbers',
+          phone: 'Enter a valid mobile number',
+          terms: 'Please accept the terms and conditions to continue.',
+        },
       },
       guide: {
         skip: 'Skip guide',
@@ -226,6 +290,9 @@ export const authenticationTranslations = {
         'This email is already registered. Try logging in.',
       networkRequestFailed:
         'Network error. Please check your connection and try again.',
+      /** @deprecated Alias of networkRequestFailed — kept for CRJ (ported from iOS) call sites. */
+      networkError:
+        'Network error. Please check your connection and try again.',
       tooManyRequests:
         'Too many attempts. Please wait a moment and try again.',
       operationNotAllowedSignIn:
@@ -233,6 +300,10 @@ export const authenticationTranslations = {
       operationNotAllowedSignUp:
         'Email/password sign-up is disabled for this project.',
       generic: 'Something went wrong. Please try again.',
+      /** @deprecated Alias of generic — kept for CRJ (ported from iOS) call sites. */
+      default: 'Something went wrong. Please try again.',
+      termsRequired:
+        'You must accept the terms and conditions to create an account.',
     },
   },
   es: {
@@ -344,6 +415,7 @@ export const authenticationTranslations = {
       alerts: {
         birthYearRequiredTitle: 'Año de nacimiento obligatorio',
         birthYearRequiredMessage: 'Selecciona tu año de nacimiento.',
+        birthDateRequiredTitle: 'Fecha de nacimiento requerida',
         minimumAgeTitle: 'Edad mínima',
         minimumAgeMessage: 'Debes tener 14 años o más para crear una cuenta.',
         invalidEmailTitle: 'Correo no válido',
@@ -368,6 +440,71 @@ export const authenticationTranslations = {
         accountCreatedMessage:
           'Tu cuenta se creó correctamente. Inicia sesión para continuar con la configuración de tu perfil.',
         errorTitle: 'Error',
+      },
+      /** Asistente de registro (CRJ, 5 pasos: nombre / nacimiento / correo / contraseña / teléfono). */
+      wizard: {
+        continue: 'Continuar',
+        createAccount: 'Crear cuenta',
+        backA11y: 'Atrás',
+        selectCountryA11y: 'Seleccionar código de país',
+        steps: {
+          name: {
+            title: '¿Cómo te llamas?',
+            subtitle: 'Así aparecerás en Nearsy.',
+          },
+          birth: {
+            title: '¿Cuándo naciste?',
+            subtitle: 'Tu perfil muestra tu edad, no tu fecha de nacimiento.',
+            ageOk: 'Tienes {{age}} años',
+            ageTooYoung: 'Debes tener 14 años o más para crear una cuenta.',
+            futureDate:
+              'Ingresa una fecha de nacimiento que no esté en el futuro.',
+            invalidDate: 'Ingresa una fecha de nacimiento válida.',
+          },
+          email: {
+            title: '¿Cuál es tu correo?',
+            subtitle: 'Lo usaremos para mantener tu cuenta segura.',
+          },
+          password: {
+            title: 'Crea una contraseña',
+            subtitle: 'Al menos 8 caracteres, incluyendo letras y números.',
+          },
+          phone: {
+            title: '¿Cuál es tu número móvil?',
+            subtitle:
+              'Obligatorio para tu cuenta. La verificación del teléfono se hará más adelante — aún no se envía ningún código.',
+          },
+        },
+        fields: {
+          realName: 'Nombre real',
+          day: 'Día',
+          month: 'Mes',
+          year: 'Año',
+          email: 'Correo electrónico',
+          password: 'Contraseña',
+          phone: 'Número móvil',
+        },
+        placeholders: {
+          realName: 'Nombre real',
+          day: 'DD',
+          month: 'MM',
+          year: 'AAAA',
+          email: 'Correo electrónico',
+          password: 'Contraseña',
+          phone: 'Número móvil',
+        },
+        validation: {
+          name: 'Ingresa tu nombre real',
+          birthIncomplete: 'Ingresa tu fecha de nacimiento completa',
+          birthInvalid: 'Ingresa una fecha de nacimiento válida.',
+          birthFuture:
+            'Ingresa una fecha de nacimiento que no esté en el futuro.',
+          birthMinimumAge: 'Debes tener 14 años o más para crear una cuenta.',
+          email: 'Ingresa un correo electrónico válido',
+          password: 'Usa al menos 8 caracteres con letras y números',
+          phone: 'Ingresa un número móvil válido',
+          terms: 'Acepta los términos y condiciones para continuar.',
+        },
       },
       guide: {
         skip: 'Omitir guía',
@@ -482,6 +619,12 @@ export const authenticationTranslations = {
       operationNotAllowedSignUp:
         'El registro con correo y contraseña está deshabilitado en este proyecto.',
       generic: 'Algo salió mal. Inténtalo de nuevo.',
+      /** @deprecated Alias de networkRequestFailed — para sitios de llamada CRJ (portados de iOS). */
+      networkError: 'Error de red. Revisa tu conexión e inténtalo de nuevo.',
+      /** @deprecated Alias de generic — para sitios de llamada CRJ (portados de iOS). */
+      default: 'Algo salió mal. Inténtalo de nuevo.',
+      termsRequired:
+        'Debes aceptar los términos y condiciones para crear una cuenta.',
     },
   },
 } as const;

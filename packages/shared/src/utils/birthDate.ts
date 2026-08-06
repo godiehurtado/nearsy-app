@@ -1,0 +1,117 @@
+/** Full birth date — day, month and year. Never year-only (CRJ / TSB-001). */
+
+/** Productive minimum age for registration (do not change without product approval). */
+export const MIN_REGISTRATION_AGE = 14;
+
+export type BirthDateParts = {
+  day: number | null;
+  month: number | null;
+  year: number | null;
+};
+
+export type BirthDateStrings = {
+  day: string;
+  month: string;
+  year: string;
+};
+
+function startOfLocalDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+export function birthPartsFromStrings(b: BirthDateStrings): BirthDateParts {
+  const day = b.day ? Number(b.day) : null;
+  const month = b.month ? Number(b.month) : null;
+  const year = b.year ? Number(b.year) : null;
+  return {
+    day: Number.isFinite(day as number) ? day : null,
+    month: Number.isFinite(month as number) ? month : null,
+    year: Number.isFinite(year as number) ? year : null,
+  };
+}
+
+/**
+ * True when day/month/year form a real calendar date
+ * (rejects impossible dates such as 31/02 and 29/02 on non-leap years).
+ */
+export function isCompleteBirthDate(b: BirthDateParts): boolean {
+  if (b.day == null || b.month == null || b.year == null) return false;
+  if (b.year < 1900 || b.month < 1 || b.month > 12 || b.day < 1 || b.day > 31) {
+    return false;
+  }
+  const dt = new Date(b.year, b.month - 1, b.day);
+  return (
+    dt.getFullYear() === b.year &&
+    dt.getMonth() === b.month - 1 &&
+    dt.getDate() === b.day
+  );
+}
+
+export function isBirthDateInFuture(
+  b: BirthDateParts,
+  asOf: Date = new Date(),
+): boolean {
+  if (
+    !isCompleteBirthDate(b) ||
+    b.day == null ||
+    b.month == null ||
+    b.year == null
+  ) {
+    return false;
+  }
+  const birth = startOfLocalDay(new Date(b.year, b.month - 1, b.day));
+  const today = startOfLocalDay(asOf);
+  return birth.getTime() > today.getTime();
+}
+
+/** Age in full years from a complete birth date; null if incomplete/invalid. */
+export function ageFromBirthDate(
+  b: BirthDateParts,
+  asOf: Date = new Date(),
+): number | null {
+  if (
+    !isCompleteBirthDate(b) ||
+    b.day == null ||
+    b.month == null ||
+    b.year == null
+  ) {
+    return null;
+  }
+  if (isBirthDateInFuture(b, asOf)) return null;
+
+  const today = startOfLocalDay(asOf);
+  let age = today.getFullYear() - b.year;
+  const beforeBirthday =
+    today.getMonth() + 1 < b.month ||
+    (today.getMonth() + 1 === b.month && today.getDate() < b.day);
+  if (beforeBirthday) age -= 1;
+  return age;
+}
+
+/**
+ * Exact calendar age gate: turns 14 today → allowed; turns 14 tomorrow → blocked.
+ * Future / non-existent dates → blocked.
+ */
+export function meetsMinimumRegistrationAge(
+  b: BirthDateParts,
+  asOf: Date = new Date(),
+): boolean {
+  const age = ageFromBirthDate(b, asOf);
+  return age !== null && age >= MIN_REGISTRATION_AGE;
+}
+
+/** Persistable ISO date `YYYY-MM-DD` for new registrations. */
+export function birthDateToIso(b: BirthDateParts): string | null {
+  if (
+    !isCompleteBirthDate(b) ||
+    isBirthDateInFuture(b) ||
+    b.day == null ||
+    b.month == null ||
+    b.year == null
+  ) {
+    return null;
+  }
+  const mm = String(b.month).padStart(2, '0');
+  const dd = String(b.day).padStart(2, '0');
+  return `${b.year}-${mm}-${dd}`;
+}

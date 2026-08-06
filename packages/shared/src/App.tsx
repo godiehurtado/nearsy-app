@@ -2,6 +2,7 @@
 import './background/locationTask.android';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 
 import { firebaseAuth, firestoreDb } from './config/firebaseConfig';
 import { initI18n } from './i18n';
@@ -12,7 +13,8 @@ import {
   NavigationContainer,
   createNavigationContainerRef,
 } from '@react-navigation/native';
-import AppNavigator from './navigation/AppNavigator';
+import AppNavigator, { buildNavigationTheme } from './navigation/AppNavigator';
+import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 
 import * as Notifications from 'expo-notifications';
 import { registerPushToken } from './services/pushTokens';
@@ -49,35 +51,19 @@ async function ensureAndroidChannel() {
 
 export const navigationRef = createNavigationContainerRef();
 
-export default function App() {
-  const [i18nReady, setI18nReady] = useState(false);
+/**
+ * Holds a neutral surface until the persisted appearance preference is known,
+ * so the app never flashes the wrong theme before Theme Selection / Welcome.
+ */
+function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
+  const { theme, palette, hydrating, hasChosenTheme } = useAppTheme();
 
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        await initI18n();
-      } catch (e) {
-        if (__DEV__) console.warn('[App] i18n init error:', e);
-      } finally {
-        if (!cancelled) setI18nReady(true);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // 1) Canal Android
   useEffect(() => {
     ensureAndroidChannel();
   }, []);
 
-  // 2) RNFirebase: auth state listener
+  // RNFirebase: auth state listener — push token registration + BG location.
   useEffect(() => {
-    // ✅ RNFirebase auth listener
     const unsubscribe = firebaseAuth.onAuthStateChanged(
       async (user: any | null) => {
         if (!user) {
@@ -87,18 +73,11 @@ export default function App() {
           return;
         }
 
-        // a) token push
-        try {
-          await registerPushToken();
-        } catch (e) {
-          if (__DEV__) console.warn('[App] registerPushToken error:', e);
-        }
-
-        // b) background location según preferencia (bgVisible)
         if (Platform.OS === 'web') return;
 
         try {
           let bgVisible = false;
+          let profileSetupCompleted = false;
 
           try {
             // RNFirebase Firestore (Android)
@@ -107,16 +86,31 @@ export default function App() {
                 .collection('users')
                 .doc(user.uid)
                 .get();
-              bgVisible = snap?.exists ? !!snap.data()?.bgVisible : false;
+              const data = snap?.exists ? snap.data() : null;
+              bgVisible = !!data?.bgVisible;
+              profileSetupCompleted = data?.profileSetupCompleted === true;
             } else {
               // Web SDK Firestore (iOS)
               const { doc, getDoc } = await import('firebase/firestore');
               const ref = doc(firestoreDb as any, 'users', user.uid);
               const snap = await getDoc(ref);
-              bgVisible = snap.exists() ? !!snap.data()?.bgVisible : false;
+              const data = snap.exists() ? snap.data() : null;
+              bgVisible = !!data?.bgVisible;
+              profileSetupCompleted = data?.profileSetupCompleted === true;
             }
           } catch (e) {
             if (__DEV__) console.warn('[App] BG location read error:', e);
+          }
+
+          // CRJ: do not request notification permission during onboarding.
+          // Incomplete users grant (or skip) via ProfileCompletion educational step.
+          // Complete users register the token here on session restore.
+          if (profileSetupCompleted) {
+            try {
+              await registerPushToken();
+            } catch (e) {
+              if (__DEV__) console.warn('[App] registerPushToken error:', e);
+            }
           }
 
           if (bgVisible) {
@@ -133,11 +127,8 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 3) Listeners de notificaciones
   useEffect(() => {
-    const receivedSub = Notifications.addNotificationReceivedListener(() => {
-      // opcional: refrescar data o mostrar toast
-    });
+    const receivedSub = Notifications.addNotificationReceivedListener(() => {});
 
     const responseSub = Notifications.addNotificationResponseReceivedListener(
       (response) => {
@@ -159,20 +150,62 @@ export default function App() {
     };
   }, []);
 
-  if (!i18nReady) {
+  if (!i18nReady || hydrating) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color="#2B3A42" />
+      <View
+        style={{
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: palette.background,
+        }}
+      >
+        <ActivityIndicator size="large" />
       </View>
     );
   }
 
+  const navTheme = buildNavigationTheme(theme, palette);
+
+  return (
+    <>
+      <StatusBar
+        style={
+          !hasChosenTheme ? 'dark' : theme === 'dark' ? 'light' : 'dark'
+        }
+      />
+      <NavigationContainer ref={navigationRef} theme={navTheme}>
+        <AppNavigator />
+      </NavigationContainer>
+    </>
+  );
+}
+
+export default function App() {
+  const [i18nReady, setI18nReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    initI18n()
+      .catch((e) => {
+        if (__DEV__) console.warn('[App] initI18n error:', e);
+      })
+      .finally(() => {
+        if (!cancelled) setI18nReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <NavigationContainer ref={navigationRef}>
-          <AppNavigator />
-        </NavigationContainer>
+        <ThemeProvider>
+          <ThemedShell i18nReady={i18nReady} />
+        </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

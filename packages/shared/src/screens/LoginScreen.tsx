@@ -1,4 +1,4 @@
-// src/screens/LoginScreen.tsx ✅ RNFirebase-only — Dark Login redesign (TS-005)
+// src/screens/LoginScreen.tsx — RNFirebase-only, themed Login (CRJ)
 import React, { useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -8,7 +8,6 @@ import {
   TextInput,
   TouchableOpacity,
   Pressable,
-  Image,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
@@ -16,78 +15,51 @@ import {
   Modal,
   Keyboard,
   ActivityIndicator,
-  useWindowDimensions,
   StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useTranslation } from 'react-i18next';
-import { firebaseAuth } from '../config/firebaseConfig'; // ✅ RNFirebase auth instance
+import { firebaseAuth } from '../config/firebaseConfig';
 import { loginWithEmail, sendPasswordReset } from '../services/authService';
 import {
   isProfileComplete,
   getUserProfile,
 } from '../services/firestoreService';
+import { clearPendingSocialProfilePrefill } from '../authentication/social';
+import { useTranslation } from '../i18n';
+import { authGradients, authRadius, authTypography } from '../theme/authTokens';
+import { useAppTheme } from '../theme/ThemeContext';
+import { LoginHero } from '../components/LoginHero';
 import {
-  authenticateWithGoogle,
-  GoogleAuthenticationError,
-} from '../authentication/authenticateWithGoogle';
-import { clearPendingGoogleProfilePrefill } from '../authentication/googleProfilePrefillStore';
-import AnimatedNearsyLogo from '../components/auth/AnimatedNearsyLogo';
-import {
-  authColors,
-  authGradients,
-  authRadius,
-  authTypography,
-} from '../theme/authTokens';
-
-type SocialProvider = 'google' | 'apple' | 'meta' | 'linkedin';
-
-const SOCIAL_PROVIDERS: {
-  id: SocialProvider;
-  icon: keyof typeof Ionicons.glyphMap;
-  labelKey: string;
-}[] = [
-  {
-    id: 'google',
-    icon: 'logo-google',
-    labelKey: 'authentication.login.social.google',
-  },
-  {
-    id: 'apple',
-    icon: 'logo-apple',
-    labelKey: 'authentication.login.social.apple',
-  },
-  {
-    id: 'meta',
-    icon: 'logo-facebook',
-    labelKey: 'authentication.login.social.meta',
-  },
-  {
-    id: 'linkedin',
-    icon: 'logo-linkedin',
-    labelKey: 'authentication.login.social.linkedin',
-  },
-];
+  AuthSocialButtonRow,
+  AuthSocialProvider,
+} from '../components/AuthSocialButtonRow';
+import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
 
 export default function LoginScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
   const { t } = useTranslation();
+  const { theme, palette } = useAppTheme();
+  const { signInWithGoogle, googleSubmitting } = useGoogleSignInFlow();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [googleSubmitting, setGoogleSubmitting] = useState(false);
 
-  // 🔔 Modal informativo para reset password
   const [infoModalVisible, setInfoModalVisible] = useState(false);
   const [infoModalTitle, setInfoModalTitle] = useState('');
   const [infoModalMessage, setInfoModalMessage] = useState('');
 
   const busy = submitting || googleSubmitting;
-  const heroHeight = Math.max(260, Math.min(372, windowHeight * 0.42));
+  const isDark = theme === 'dark';
+  // Login approved surface: uniform pastel (clear) / navy (dark) — not white card.
+  const screenBg = isDark ? palette.background : palette.heroBg;
+  // Dark keeps the approved Login CTA (navy→teal); Light uses theme primary.
+  const ctaGradient = isDark
+    ? authGradients.primary
+    : palette.primaryGradient;
+  const onPrimary = '#FFFFFF';
 
   const showInfoModal = (title: string, message: string) => {
     setInfoModalTitle(title);
@@ -95,11 +67,9 @@ export default function LoginScreen({ navigation }: any) {
     setInfoModalVisible(true);
   };
 
-  // Validador simple de email
   const isValidEmail = (value: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
-  // Mensajes amigables por error de Firebase
   function getAuthErrorMessage(code?: string) {
     switch (code) {
       case 'auth/invalid-email':
@@ -131,61 +101,6 @@ export default function LoginScreen({ navigation }: any) {
     }
   }
 
-  const routeAfterAuthenticatedLogin = async (
-    uid: string,
-    emailForProfile: string,
-  ) => {
-    const profile: any = await getUserProfile(uid);
-
-    if (!profile) {
-      Keyboard.dismiss();
-      setTimeout(() => {
-        navigation.reset({
-          index: 0,
-          routes: [
-            {
-              name: 'CompleteProfile',
-              params: {
-                uid,
-                email: emailForProfile,
-              },
-            },
-          ],
-        });
-      }, 150);
-      return;
-    }
-
-    const complete = await isProfileComplete(uid);
-
-    Keyboard.dismiss();
-
-    setTimeout(() => {
-      if (complete) {
-        // Drop any pending Google prefill so it cannot leak onto a later incomplete session.
-        clearPendingGoogleProfilePrefill();
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'MainTabs' }],
-        });
-      } else {
-        navigation.reset({
-          index: 0,
-          routes: [
-            {
-              name: 'CompleteProfile',
-              params: {
-                uid,
-                email: emailForProfile,
-                inputNonce: Date.now(),
-              },
-            },
-          ],
-        });
-      }
-    }, 150);
-  };
-
   const handleLogin = async () => {
     if (busy) return;
 
@@ -208,7 +123,7 @@ export default function LoginScreen({ navigation }: any) {
         return;
       }
 
-      // 🔐 Política mínima: 8 caracteres
+      // Minimum policy: 8 characters.
       if (password.length < 8) {
         Alert.alert(
           t('authentication.login.alerts.weakPasswordTitle'),
@@ -223,7 +138,7 @@ export default function LoginScreen({ navigation }: any) {
       // TEMP: Email verification temporarily disabled (Android only).
       if (Platform.OS !== 'android' && !user.emailVerified) {
         try {
-          await firebaseAuth.signOut(); // ✅ RNFirebase
+          await firebaseAuth.signOut(); // RNFirebase
         } catch {}
         Alert.alert(
           t('authentication.login.alerts.emailNotVerifiedTitle'),
@@ -232,10 +147,55 @@ export default function LoginScreen({ navigation }: any) {
         return;
       }
 
-      await routeAfterAuthenticatedLogin(
-        user.uid,
-        user.email ?? trimmedEmail,
-      );
+      const profile: any = await getUserProfile(user.uid);
+
+      if (!profile) {
+        Keyboard.dismiss();
+        setTimeout(() => {
+          navigation.reset({
+            index: 0,
+            routes: [
+              {
+                name: 'ProfileCompletion',
+                params: {
+                  uid: user.uid,
+                  email: user.email ?? trimmedEmail,
+                },
+              },
+            ],
+          });
+        }, 150);
+        return;
+      }
+
+      const complete = await isProfileComplete(user.uid);
+
+      Keyboard.dismiss();
+
+      setTimeout(() => {
+        if (complete) {
+          // Drop any pending Google prefill so it cannot leak onto a later incomplete session.
+          clearPendingSocialProfilePrefill();
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'MainTabs' }],
+          });
+        } else {
+          navigation.reset({
+            index: 0,
+            routes: [
+              {
+                name: 'ProfileCompletion',
+                params: {
+                  uid: user.uid,
+                  email: user.email ?? trimmedEmail,
+                  inputNonce: Date.now(),
+                },
+              },
+            ],
+          });
+        }
+      }, 150);
     } catch (e: any) {
       const msg = getAuthErrorMessage(e?.code);
       if (__DEV__) {
@@ -269,7 +229,7 @@ export default function LoginScreen({ navigation }: any) {
     try {
       await sendPasswordReset(trimmed);
 
-      // Mensaje genérico para no revelar si existe o no
+      // Generic message to avoid revealing whether the account exists.
       showInfoModal(
         t('authentication.forgotPassword.successTitle'),
         t('authentication.forgotPassword.successMessage'),
@@ -289,61 +249,11 @@ export default function LoginScreen({ navigation }: any) {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    if (busy) return;
-
-    if (Platform.OS !== 'android') {
-      Alert.alert(
-        t('authentication.social.comingSoonTitle'),
-        t('authentication.social.comingSoonMessage'),
-      );
-      return;
-    }
-
-    setGoogleSubmitting(true);
-    try {
-      const result = await authenticateWithGoogle();
-      await routeAfterAuthenticatedLogin(
-        result.uid,
-        result.email ?? '',
-      );
-    } catch (err) {
-      if (err instanceof GoogleAuthenticationError) {
-        if (__DEV__) {
-          console.log('[LoginScreen] Google sign-in', {
-            code: err.code,
-            diagnosticCode: err.diagnosticCode,
-          });
-        }
-
-        if (
-          err.code === 'CANCELLED' ||
-          err.code === 'OPERATION_IN_PROGRESS'
-        ) {
-          return;
-        }
-
-        Alert.alert(
-          t('authentication.login.alerts.loginErrorTitle'),
-          t(err.messageKey as any),
-        );
-        return;
-      }
-
-      Alert.alert(
-        t('authentication.login.alerts.loginErrorTitle'),
-        t('authentication.social.google.errors.generic'),
-      );
-    } finally {
-      setGoogleSubmitting(false);
-    }
-  };
-
-  const handleSocialPress = (provider: SocialProvider) => {
+  const handleSocialPress = (provider: AuthSocialProvider) => {
     if (busy) return;
 
     if (provider === 'google') {
-      void handleGoogleSignIn();
+      void signInWithGoogle();
       return;
     }
 
@@ -358,8 +268,8 @@ export default function LoginScreen({ navigation }: any) {
   };
 
   return (
-    <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
+    <View style={[styles.root, { backgroundColor: screenBg }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -368,60 +278,45 @@ export default function LoginScreen({ navigation }: any) {
       >
         <ScrollView
           style={styles.flex}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              backgroundColor: screenBg,
+              paddingTop: insets.top + 12,
+              paddingBottom: Math.max(insets.bottom, 16) + 24,
+            },
+          ]}
           keyboardShouldPersistTaps="always"
           showsVerticalScrollIndicator={false}
           bounces={false}
         >
-          <LinearGradient
-            colors={[...authGradients.hero]}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 0.8 }}
-            style={[
-              styles.hero,
-              { height: heroHeight, paddingTop: insets.top + 24 },
-            ]}
-          >
-            <Star top="18%" left="22%" size={3} opacity={0.5} />
-            <Star top="26%" left="76%" size={2} opacity={0.7} />
-            <Star top="60%" left="14%" size={2} opacity={0.5} />
-            <Star top="66%" left="84%" size={3} opacity={0.6} />
+          <LoginHero />
 
-            <AnimatedNearsyLogo size={46} />
-            <Text style={styles.brand}>{t('common.appName')}</Text>
-            <Text style={styles.tagline}>
-              {t('authentication.login.tagline')}
-            </Text>
-
-            <Image
-              source={require('../assets/people-illustration.png')}
-              style={styles.illustration}
-              resizeMode="contain"
-            />
-          </LinearGradient>
-
-          <View
-            style={[
-              styles.sheet,
-              { paddingBottom: Math.max(insets.bottom, 16) + 24 },
-            ]}
-          >
-            <Text style={styles.welcome}>
+          <View style={styles.form}>
+            <Text style={[styles.welcome, { color: palette.textPrimary }]}>
               {t('authentication.login.welcomeBack')}
             </Text>
 
             <View style={styles.fields}>
-              <View style={styles.inputContainer}>
+              <View
+                style={[
+                  styles.inputContainer,
+                  {
+                    backgroundColor: palette.surface,
+                    borderColor: palette.borderStrong,
+                  },
+                ]}
+              >
                 <Ionicons
                   name="mail-outline"
                   size={18}
-                  color={authColors.textMuted}
+                  color={palette.placeholder}
                   style={styles.inputIcon}
                 />
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { color: palette.textPrimary }]}
                   placeholder={t('authentication.login.emailPlaceholder')}
-                  placeholderTextColor={authColors.textMuted}
+                  placeholderTextColor={palette.placeholder}
                   value={email}
                   onChangeText={setEmail}
                   autoCapitalize="none"
@@ -431,17 +326,25 @@ export default function LoginScreen({ navigation }: any) {
                 />
               </View>
 
-              <View style={styles.inputContainer}>
+              <View
+                style={[
+                  styles.inputContainer,
+                  {
+                    backgroundColor: palette.surface,
+                    borderColor: palette.borderStrong,
+                  },
+                ]}
+              >
                 <Ionicons
                   name="lock-closed-outline"
                   size={18}
-                  color={authColors.textMuted}
+                  color={palette.placeholder}
                   style={styles.inputIcon}
                 />
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { color: palette.textPrimary }]}
                   placeholder={t('authentication.login.passwordPlaceholder')}
-                  placeholderTextColor={authColors.textMuted}
+                  placeholderTextColor={palette.placeholder}
                   secureTextEntry={!passwordVisible}
                   value={password}
                   onChangeText={setPassword}
@@ -456,7 +359,7 @@ export default function LoginScreen({ navigation }: any) {
                   <Ionicons
                     name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
                     size={18}
-                    color={authColors.textMuted}
+                    color={palette.placeholder}
                   />
                 </TouchableOpacity>
               </View>
@@ -468,7 +371,7 @@ export default function LoginScreen({ navigation }: any) {
               activeOpacity={0.7}
               disabled={busy}
             >
-              <Text style={styles.forgot}>
+              <Text style={[styles.forgot, { color: palette.chipText }]}>
                 {t('authentication.login.forgotPassword')}
               </Text>
             </TouchableOpacity>
@@ -483,25 +386,34 @@ export default function LoginScreen({ navigation }: any) {
             >
               {submitting ? (
                 <View
-                  style={[styles.primaryButton, styles.primaryButtonDisabled]}
+                  style={[
+                    styles.primaryButton,
+                    styles.primaryButtonDisabled,
+                    { backgroundColor: palette.borderStrong },
+                  ]}
                 >
-                  <ActivityIndicator color={authColors.white} />
+                  <ActivityIndicator color={onPrimary} />
                 </View>
               ) : (
                 <LinearGradient
-                  colors={[...authGradients.primary]}
+                  colors={[...ctaGradient]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.primaryButton}
                 >
-                  <Text style={styles.primaryButtonText}>
+                  <Text style={[styles.primaryButtonText, { color: onPrimary }]}>
                     {t('authentication.login.submit')}
                   </Text>
                 </LinearGradient>
               )}
             </Pressable>
 
-            <Divider label={t('authentication.login.newHere')} strong />
+            <Divider
+              label={t('authentication.login.newHere')}
+              strong
+              ruleColor={palette.divider}
+              labelColor={palette.dividerText}
+            />
 
             <Pressable
               onPress={handleCreateProfile}
@@ -509,12 +421,17 @@ export default function LoginScreen({ navigation }: any) {
               style={({ pressed }) => [
                 styles.outlineButton,
                 {
-                  backgroundColor: pressed ? authColors.panel : 'transparent',
-                  transform: [{ scale: pressed && !busy ? 0.98 : 1 }],
+                  borderColor: palette.socialBorder,
+                  backgroundColor: pressed
+                    ? palette.socialPressed
+                    : 'transparent',
+                  transform: [{ scale: pressed ? 0.98 : 1 }],
                 },
               ]}
             >
-              <Text style={styles.outlineButtonText}>
+              <Text
+                style={[styles.outlineButtonText, { color: palette.textPrimary }]}
+              >
                 {t('authentication.login.createProfile')}
               </Text>
             </Pressable>
@@ -527,63 +444,39 @@ export default function LoginScreen({ navigation }: any) {
               style={styles.guideLinkWrap}
               activeOpacity={0.7}
             >
-              <Text style={styles.guideLink}>
+              <Text style={[styles.guideLink, { color: palette.chipText }]}>
                 {t('authentication.login.viewRegistrationGuide')}
               </Text>
             </TouchableOpacity>
 
-            <Divider label={t('authentication.login.orContinueWith')} />
+            <Divider
+              label={t('authentication.login.orContinueWith')}
+              ruleColor={palette.divider}
+              labelColor={palette.dividerText}
+            />
 
-            <View style={styles.socialRow}>
-              {SOCIAL_PROVIDERS.map((provider) => {
-                const isGoogleLoading =
-                  provider.id === 'google' && googleSubmitting;
+            <AuthSocialButtonRow
+              labels={{
+                google: t('authentication.login.social.google'),
+                apple: t('authentication.login.social.apple'),
+                meta: t('authentication.login.social.meta'),
+                linkedin: t('authentication.login.social.linkedin'),
+              }}
+              onPress={handleSocialPress}
+              busy={busy}
+              loadingProvider={googleSubmitting ? 'google' : null}
+              borderColor={palette.socialBorder}
+              textColor={palette.textPrimary}
+              pressedBackground={palette.socialPressed}
+            />
 
-                return (
-                  <Pressable
-                    key={provider.id}
-                    style={({ pressed }) => [
-                      styles.socialButton,
-                      {
-                        backgroundColor: pressed
-                          ? authColors.panel
-                          : 'transparent',
-                        opacity: busy && !isGoogleLoading ? 0.6 : 1,
-                      },
-                    ]}
-                    onPress={() => handleSocialPress(provider.id)}
-                    disabled={busy}
-                  >
-                    {isGoogleLoading ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={authColors.textPrimary}
-                      />
-                    ) : (
-                      <>
-                        <Ionicons
-                          name={provider.icon}
-                          size={14}
-                          color={authColors.textPrimary}
-                          style={styles.socialIcon}
-                        />
-                        <Text style={styles.socialText} numberOfLines={1}>
-                          {t(provider.labelKey)}
-                        </Text>
-                      </>
-                    )}
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <Text style={styles.terms}>
+            <Text style={[styles.terms, { color: palette.textMuted }]}>
               {t('authentication.login.termsPrefix')}{' '}
-              <Text style={styles.termsLink}>
+              <Text style={{ color: palette.chipText }}>
                 {t('authentication.login.termsLink')}
               </Text>{' '}
               {t('authentication.login.termsAnd')}{' '}
-              <Text style={styles.termsLink}>
+              <Text style={{ color: palette.chipText }}>
                 {t('authentication.login.privacyLink')}
               </Text>
               .
@@ -592,7 +485,6 @@ export default function LoginScreen({ navigation }: any) {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* 🔔 Modal informativo para reset password */}
       <Modal
         visible={infoModalVisible}
         transparent
@@ -600,16 +492,30 @@ export default function LoginScreen({ navigation }: any) {
         onRequestClose={() => setInfoModalVisible(false)}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{infoModalTitle}</Text>
-            <Text style={styles.modalMessage}>{infoModalMessage}</Text>
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: palette.cardBg,
+                borderColor: palette.border,
+              },
+            ]}
+          >
+            <Text style={[styles.modalTitle, { color: palette.textPrimary }]}>
+              {infoModalTitle}
+            </Text>
+            <Text
+              style={[styles.modalMessage, { color: palette.textSecondary }]}
+            >
+              {infoModalMessage}
+            </Text>
 
             <TouchableOpacity
-              style={styles.modalButton}
+              style={[styles.modalButton, { backgroundColor: palette.primary }]}
               onPress={() => setInfoModalVisible(false)}
               activeOpacity={0.85}
             >
-              <Text style={styles.modalButtonText}>
+              <Text style={[styles.modalButtonText, { color: onPrimary }]}>
                 {t('common.buttons.ok')}
               </Text>
             </TouchableOpacity>
@@ -620,41 +526,30 @@ export default function LoginScreen({ navigation }: any) {
   );
 }
 
-function Star({
-  top,
-  left,
-  size,
-  opacity,
+function Divider({
+  label,
+  strong,
+  ruleColor,
+  labelColor,
 }: {
-  top: `${number}%`;
-  left: `${number}%`;
-  size: number;
-  opacity: number;
+  label: string;
+  strong?: boolean;
+  ruleColor: string;
+  labelColor: string;
 }) {
   return (
-    <View
-      style={{
-        position: 'absolute',
-        top,
-        left,
-        width: size,
-        height: size,
-        borderRadius: size,
-        backgroundColor: authColors.white,
-        opacity,
-      }}
-    />
-  );
-}
-
-function Divider({ label, strong }: { label: string; strong?: boolean }) {
-  return (
     <View style={styles.dividerRow}>
-      <View style={styles.rule} />
-      <Text style={[styles.dividerLabel, strong && styles.dividerLabelStrong]}>
+      <View style={[styles.rule, { backgroundColor: ruleColor }]} />
+      <Text
+        style={[
+          styles.dividerLabel,
+          { color: labelColor },
+          strong && styles.dividerLabelStrong,
+        ]}
+      >
         {label}
       </Text>
-      <View style={styles.rule} />
+      <View style={[styles.rule, { backgroundColor: ruleColor }]} />
     </View>
   );
 }
@@ -662,48 +557,17 @@ function Divider({ label, strong }: { label: string; strong?: boolean }) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: authColors.bg,
   },
   flex: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
-    backgroundColor: authColors.bg,
   },
-  hero: {
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  brand: {
-    ...authTypography.brand,
-    color: authColors.white,
-    marginTop: 6,
-  },
-  tagline: {
-    ...authTypography.tagline,
-    color: authColors.tagline,
-    marginTop: 4,
-    textAlign: 'center',
-    paddingHorizontal: 24,
-  },
-  illustration: {
-    position: 'absolute',
-    bottom: 8,
-    width: 158,
-    height: 150,
-    opacity: 0.96,
-  },
-  sheet: {
-    flexGrow: 1,
-    backgroundColor: authColors.bg,
-    borderTopLeftRadius: authRadius.sheet,
-    borderTopRightRadius: authRadius.sheet,
-    marginTop: -22,
+  form: {
     paddingHorizontal: 22,
-    paddingTop: 16,
+    paddingTop: 8,
   },
   welcome: {
     ...authTypography.welcome,
-    color: authColors.textPrimary,
   },
   fields: {
     gap: 9,
@@ -712,9 +576,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: authColors.inputBg,
     borderWidth: 1,
-    borderColor: authColors.inputBorder,
     borderRadius: authRadius.md,
     paddingHorizontal: 14,
     width: '100%',
@@ -725,7 +587,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: authTypography.body.fontSize,
     fontWeight: authTypography.body.fontWeight,
-    color: authColors.textPrimary,
   },
   eyeButton: {
     paddingLeft: 8,
@@ -737,7 +598,6 @@ const styles = StyleSheet.create({
   },
   forgot: {
     ...authTypography.forgot,
-    color: authColors.accent,
   },
   primaryButtonWrap: {
     marginTop: 12,
@@ -751,24 +611,19 @@ const styles = StyleSheet.create({
     borderRadius: authRadius.md,
     minHeight: 48,
   },
-  primaryButtonDisabled: {
-    backgroundColor: authColors.disabledBg,
-  },
+  primaryButtonDisabled: {},
   primaryButtonText: {
     ...authTypography.button,
-    color: authColors.white,
   },
   outlineButton: {
     paddingVertical: 13,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: authColors.inputBorder,
     borderRadius: authRadius.md,
   },
   outlineButtonText: {
     ...authTypography.button,
-    color: authColors.textPrimary,
   },
   guideLinkWrap: {
     alignSelf: 'center',
@@ -776,7 +631,6 @@ const styles = StyleSheet.create({
   },
   guideLink: {
     fontSize: 12,
-    color: authColors.accent,
     textDecorationLine: 'underline',
     fontWeight: '500',
   },
@@ -789,52 +643,21 @@ const styles = StyleSheet.create({
   rule: {
     flex: 1,
     height: 1,
-    backgroundColor: authColors.border,
   },
   dividerLabel: {
     ...authTypography.divider,
-    color: authColors.textMuted,
   },
   dividerLabelStrong: {
     ...authTypography.dividerStrong,
   },
-  socialRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  socialButton: {
-    flexGrow: 1,
-    flexBasis: '22%',
-    minWidth: 72,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 9,
-    paddingHorizontal: 4,
-    borderWidth: 1,
-    borderColor: authColors.inputBorder,
-    borderRadius: authRadius.social,
-    flexDirection: 'row',
-  },
-  socialIcon: {
-    marginRight: 4,
-  },
-  socialText: {
-    ...authTypography.social,
-    color: authColors.textPrimary,
-  },
   terms: {
     ...authTypography.terms,
-    color: authColors.textMuted,
     textAlign: 'center',
     marginTop: 14,
   },
-  termsLink: {
-    color: authColors.accent,
-  },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: authColors.modalBackdrop,
+    backgroundColor: 'rgba(0,0,0,0.55)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 32,
@@ -842,35 +665,29 @@ const styles = StyleSheet.create({
   modalCard: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: authColors.modalCard,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: authColors.border,
     paddingVertical: 18,
     paddingHorizontal: 18,
     alignItems: 'center',
   },
   modalTitle: {
     ...authTypography.modalTitle,
-    color: authColors.textPrimary,
     marginBottom: 8,
     textAlign: 'center',
   },
   modalMessage: {
     ...authTypography.modalMessage,
-    color: authColors.textSecondary,
     textAlign: 'center',
     marginBottom: 14,
   },
   modalButton: {
     marginTop: 4,
-    backgroundColor: authColors.accent,
     paddingHorizontal: 24,
     paddingVertical: 10,
     borderRadius: authRadius.pill,
   },
   modalButtonText: {
-    color: authColors.white,
     fontWeight: '700',
     fontSize: 14,
   },

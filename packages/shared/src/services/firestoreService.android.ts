@@ -57,7 +57,16 @@ function userDoc(uid: string) {
 
 export const createUserProfile = async (
   uid: string,
-  data: { email: string; phone?: string | null; birthYear: number },
+  data: {
+    email: string;
+    phone?: string | null;
+    birthYear: number;
+    /** ISO `YYYY-MM-DD` — full birth date (CRJ registration wizard). */
+    birthDate?: string;
+    realName?: string;
+    phoneVerified?: boolean;
+    acceptedTerms?: boolean;
+  },
 ) => {
   try {
     await userDoc(uid).set(
@@ -65,16 +74,25 @@ export const createUserProfile = async (
         email: data.email,
         phone: data.phone ?? null,
         birthYear: data.birthYear,
+        ...(data.birthDate ? { birthDate: data.birthDate } : {}),
+        ...(data.phoneVerified !== undefined
+          ? { phoneVerified: data.phoneVerified }
+          : {}),
+        ...(data.acceptedTerms !== undefined
+          ? { acceptedTerms: data.acceptedTerms }
+          : {}),
 
         createdAt: now(),
         updatedAt: now(),
 
+        // CRJ: profile completion is driven exclusively by profileSetupCompleted.
+        // Do not default `mode` here — it is chosen during ProfileCompletion.
         visibility: false,
-        mode: 'personal',
+        profileSetupCompleted: false,
 
         bio: '',
         status: '',
-        realName: '',
+        realName: data.realName ?? '',
         occupation: '',
         company: '',
         profileImage: null,
@@ -82,6 +100,12 @@ export const createUserProfile = async (
         topBarColor: '#3B5A85',
         topBarImage: null,
         topBarMode: 'color',
+
+        // Empty mode shells (CRJ dual-profile presentation model).
+        profiles: {
+          personal: {},
+          professional: {},
+        },
 
         personalInterests: [],
         personalInterestAffiliations: {},
