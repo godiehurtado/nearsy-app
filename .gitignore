@@ -35,6 +35,32 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Firebase Development google-services (Android PoC) — never commit
+**/google-services.nearsy-dev.json
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+ui-debug.log
+pubsub-debug.log
+database-debug.log
+*.log
+
+# Local Emulator Suite validation artifacts (A3.1)
+.local-validation/
+emulator-data/
+
+# Local env / secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Development-only Android signing for nearsy-dev (PoC) — never commit
+**/nearsy-development-debug.keystore
+**/nearsy-development-signing.properties
+
 # typescript
 *.tsbuildinfo
 

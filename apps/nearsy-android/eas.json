@@ -9,6 +9,12 @@
       "distribution": "internal",
       "prebuildCommand": "npx expo prebuild --platform android --clean"
     },
+    "development-nearsy-dev": {
+      "extends": "development",
+      "env": {
+        "NEARSY_FIREBASE_ENV": "development"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "prebuildCommand": "npx expo prebuild --platform android --clean",

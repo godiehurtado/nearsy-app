@@ -35,6 +35,14 @@ import {
   AuthSocialProvider,
 } from '../components/AuthSocialButtonRow';
 import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
+import {
+  formatLinkedInOidcPocSummary,
+  isLinkedInOidcPocEnabled,
+  LinkedInOidcPocError,
+  signInWithLinkedInOidcPoc,
+  signOutLinkedInOidcPoc,
+} from '../authentication/linkedinOidcPoc';
+import { getLinkedInOidcPocResult } from '../authentication/linkedinOidcPocResultStore';
 
 export default function LoginScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -46,13 +54,55 @@ export default function LoginScreen({ navigation }: any) {
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [linkedinPocSubmitting, setLinkedinPocSubmitting] = useState(false);
+  const linkedInPocEnabled = isLinkedInOidcPocEnabled();
 
   const [infoModalVisible, setInfoModalVisible] = useState(false);
   const [infoModalTitle, setInfoModalTitle] = useState('');
   const [infoModalMessage, setInfoModalMessage] = useState('');
 
-  const busy = submitting || googleSubmitting;
+  const busy = submitting || googleSubmitting || linkedinPocSubmitting;
   const isDark = theme === 'dark';
+
+  const handleLinkedInOidcPoc = async () => {
+    if (!linkedInPocEnabled || busy) return;
+    setLinkedinPocSubmitting(true);
+    try {
+      const result = await signInWithLinkedInOidcPoc();
+      Alert.alert(
+        'LinkedIn OIDC PoC — success',
+        formatLinkedInOidcPocSummary(result),
+      );
+    } catch (err) {
+      if (err instanceof LinkedInOidcPocError) {
+        if (err.code === 'CANCELLED' || err.code === 'IN_PROGRESS') {
+          const last = getLinkedInOidcPocResult();
+          if (last) {
+            Alert.alert(
+              'LinkedIn OIDC PoC — cancelled',
+              formatLinkedInOidcPocSummary(last),
+            );
+          }
+          return;
+        }
+        Alert.alert(
+          'LinkedIn OIDC PoC — failed',
+          formatLinkedInOidcPocSummary(
+            getLinkedInOidcPocResult() ?? {
+              outcome: 'failed',
+              at: Date.now(),
+              errorCode: err.firebaseCode ?? err.code,
+              errorMessageSanitized: err.message,
+            },
+          ),
+        );
+        return;
+      }
+      Alert.alert('LinkedIn OIDC PoC — failed', 'Unexpected error (sanitized).');
+    } finally {
+      setLinkedinPocSubmitting(false);
+    }
+  };
   // Login approved surface: uniform pastel (clear) / navy (dark) — not white card.
   const screenBg = isDark ? palette.background : palette.heroBg;
   // Dark keeps the approved Login CTA (navy→teal); Light uses theme primary.
@@ -464,11 +514,89 @@ export default function LoginScreen({ navigation }: any) {
               }}
               onPress={handleSocialPress}
               busy={busy}
-              loadingProvider={googleSubmitting ? 'google' : null}
+              loadingProvider={
+                googleSubmitting
+                  ? 'google'
+                  : linkedinPocSubmitting
+                    ? 'linkedin'
+                    : null
+              }
               borderColor={palette.socialBorder}
               textColor={palette.textPrimary}
               pressedBackground={palette.socialPressed}
             />
+
+            {linkedInPocEnabled ? (
+              <View
+                style={[
+                  styles.pocBox,
+                  {
+                    borderColor: palette.border,
+                    backgroundColor: isDark
+                      ? 'rgba(255,255,255,0.04)'
+                      : 'rgba(0,0,0,0.03)',
+                  },
+                ]}
+              >
+                <Text style={[styles.pocTitle, { color: palette.textPrimary }]}>
+                  PoC — LinkedIn OIDC (Firebase-managed)
+                </Text>
+                <Text style={[styles.pocBody, { color: palette.textMuted }]}>
+                  Experimental only. Uses oidc.linkedin on nearsy-dev. Not
+                  production. Does not store Client Secret or tokens.
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Start LinkedIn OIDC proof of concept"
+                  disabled={busy}
+                  onPress={() => {
+                    void handleLinkedInOidcPoc();
+                  }}
+                  style={({ pressed }) => [
+                    styles.pocButton,
+                    {
+                      borderColor: palette.socialBorder,
+                      opacity: busy ? 0.55 : pressed ? 0.85 : 1,
+                    },
+                  ]}
+                >
+                  {linkedinPocSubmitting ? (
+                    <ActivityIndicator color={palette.textPrimary} />
+                  ) : (
+                    <Text
+                      style={[
+                        styles.pocButtonText,
+                        { color: palette.textPrimary },
+                      ]}
+                    >
+                      PoC: Continue with LinkedIn (OIDC)
+                    </Text>
+                  )}
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Sign out LinkedIn PoC session"
+                  disabled={busy}
+                  onPress={() => {
+                    void (async () => {
+                      try {
+                        await signOutLinkedInOidcPoc();
+                        Alert.alert('LinkedIn OIDC PoC', 'Signed out.');
+                      } catch {
+                        Alert.alert('LinkedIn OIDC PoC', 'Sign out failed.');
+                      }
+                    })();
+                  }}
+                  style={styles.pocSignOut}
+                >
+                  <Text
+                    style={[styles.pocSignOutText, { color: palette.chipText }]}
+                  >
+                    PoC: Sign out test session
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
 
             <Text style={[styles.terms, { color: palette.textMuted }]}>
               {t('authentication.login.termsPrefix')}{' '}
@@ -654,6 +782,45 @@ const styles = StyleSheet.create({
     ...authTypography.terms,
     textAlign: 'center',
     marginTop: 14,
+  },
+  pocBox: {
+    marginTop: 14,
+    borderWidth: 1,
+    borderRadius: authRadius.md,
+    padding: 12,
+    gap: 8,
+  },
+  pocTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  pocBody: {
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  pocButton: {
+    marginTop: 4,
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: authRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  pocButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  pocSignOut: {
+    alignSelf: 'center',
+    paddingVertical: 6,
+  },
+  pocSignOutText: {
+    fontSize: 12,
+    textDecorationLine: 'underline',
+    fontWeight: '500',
   },
   modalBackdrop: {
     flex: 1,

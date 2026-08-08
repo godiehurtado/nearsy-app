@@ -1,1 +1,10 @@
 android/
+
+# Firebase Development google-services — never commit (PoC / non-prod only)
+google-services.nearsy-dev.json
+
+# Development-only Android signing (nearsy-dev) — never commit
+nearsy-development-debug.keystore
+nearsy-development-signing.properties
+**/nearsy-development-debug.keystore
+**/nearsy-development-signing.properties
