@@ -463,8 +463,8 @@ export async function runLinkedInBrowserAuthFlow(
 
 /**
  * Explicit cold-start / resume inspection — does not Exchange.
- * A3.4.4 consumes `pending_exchange.claim.transactionId` via exchangeLinkedInAuth
- * (or handleLinkedInReturnUrl with exchange:true) and must sign in immediately.
+ * A3.4.4: authenticateWithLinkedInColdStartClaim / signInWithLinkedInColdStartClaim
+ * consumes pending_exchange and immediately signs in via custom token.
  */
 export async function inspectInitialLinkedInReturn(
   deps: LinkedInCoordinatorDeps,

@@ -1,5 +1,14 @@
 /**
  * Public barrel for LinkedIn A3 client (platform-resolved via Metro).
+ *
+ * Session APIs (A3.4.4) for future UI/bootstrap wiring — never expose customToken:
+ *   signInWithLinkedInBrowser
+ *   signInWithLinkedInColdStartClaim
+ *   reconcileLinkedInSession
+ *
+ * Inherited composition/test surfaces (may touch ephemeral tokens internally;
+ * UI must not use these to receive a customToken):
+ *   exchangeLinkedInAuth, runLinkedInAuthWithBrowser, processLinkedInReturnUrl
  */
 export {
   startLinkedInAuth,
@@ -10,6 +19,9 @@ export {
   processLinkedInReturnUrl,
   discardLinkedInAuthTransaction,
   subscribeLinkedInReturnUrls,
+  signInWithLinkedInBrowser,
+  signInWithLinkedInColdStartClaim,
+  reconcileLinkedInSession,
 } from './linkedinAuth';
 
 export {
@@ -34,3 +46,15 @@ export {
 } from './linkedinDeepLinkParser';
 
 export type { LinkedInReturnSource } from './linkedinAuthCoordinator';
+
+export type {
+  LinkedInFirebaseSession,
+  LinkedInFirebaseAuthPort,
+  LinkedInAuthResolution,
+} from './linkedinFirebaseAuth';
+
+export type {
+  LinkedInSessionResult,
+  LinkedInReconcileResult,
+  LinkedInUncertainBarrier,
+} from './linkedinSession';
