@@ -56,7 +56,11 @@ export type LinkedInAuthExchangeResponse = {
   customToken: string;
 };
 
-/** Future A3.4.3 deep-link coordinator input (validated shape only). */
+/**
+ * Validated deep-link shapes (A3.4.3 parser produces these).
+ * See linkedinDeepLinkParser.ts — derived from Functions redirectForTx /
+ * redirectUnknown @ f1a90b6, not from docs alone.
+ */
 export type LinkedInDeepLinkSuccess = {
   kind: 'success';
   transactionId: string;
@@ -72,7 +76,9 @@ export type LinkedInDeepLinkProviderError = {
 
 export type LinkedInDeepLinkParseResult =
   | LinkedInDeepLinkSuccess
-  | LinkedInDeepLinkProviderError;
+  | LinkedInDeepLinkProviderError
+  | { kind: 'unrelated' }
+  | { kind: 'invalid'; reason: string };
 
 export type LinkedInStoredTransaction = {
   version: 1;
@@ -193,6 +199,13 @@ export type LinkedInAuthErrorCode =
   | 'CORE_DISABLED'
   | 'NETWORK'
   | 'FUNCTIONS_ERROR'
+  | 'BROWSER_UNAVAILABLE'
+  | 'BROWSER_CANCELLED'
+  | 'BROWSER_DISMISSED'
+  | 'BROWSER_FAILED'
+  | 'CALLBACK_INVALID'
+  | 'CALLBACK_MISMATCH'
+  | 'CALLBACK_DUPLICATE'
   | 'UNKNOWN';
 
 export class LinkedInAuthError extends Error {
@@ -319,6 +332,25 @@ export function shouldClearTransactionAfterExchangeError(
     err.code === 'FUNCTIONS_ERROR' ||
     err.code === 'EXCHANGE_RESPONSE_INVALID' ||
     err.code === 'PROVIDER_CALLBACK_ERROR'
+  );
+}
+
+/**
+ * Browser / deep-link terminal outcomes → clear local transaction.
+ * NETWORK / UNKNOWN from Exchange keep A3.4.2 policy (no auto-retry here).
+ */
+export function shouldClearTransactionAfterFlowError(
+  err: LinkedInAuthError,
+): boolean {
+  if (shouldClearTransactionAfterExchangeError(err)) return true;
+  return (
+    err.code === 'BROWSER_UNAVAILABLE' ||
+    err.code === 'BROWSER_CANCELLED' ||
+    err.code === 'BROWSER_DISMISSED' ||
+    err.code === 'BROWSER_FAILED' ||
+    err.code === 'CALLBACK_INVALID' ||
+    err.code === 'CALLBACK_MISMATCH' ||
+    err.code === 'CALLBACK_DUPLICATE'
   );
 }
 

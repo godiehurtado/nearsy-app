@@ -5,6 +5,11 @@ export {
   startLinkedInAuth,
   exchangeLinkedInAuth,
   cancelLinkedInAuth,
+  runLinkedInAuthWithBrowser,
+  inspectLinkedInInitialReturn,
+  processLinkedInReturnUrl,
+  discardLinkedInAuthTransaction,
+  subscribeLinkedInReturnUrls,
 } from './linkedinAuth';
 
 export {
@@ -15,8 +20,17 @@ export {
   LINKEDIN_TX_STORAGE_KEY,
   LinkedInAuthError,
   isExactLinkedInMobileReturnBase,
+  shouldClearTransactionAfterFlowError,
   type LinkedInAuthStartResult,
   type LinkedInDeepLinkParseResult,
   type LinkedInStoredTransaction,
   type LinkedInAuthErrorCode,
 } from './linkedinAuthCore';
+
+export {
+  parseLinkedInMobileReturnUrl,
+  linkedInReturnFingerprint,
+  LINKEDIN_MOBILE_RETURN_ERROR_CODES,
+} from './linkedinDeepLinkParser';
+
+export type { LinkedInReturnSource } from './linkedinAuthCoordinator';
