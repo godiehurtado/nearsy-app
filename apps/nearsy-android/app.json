@@ -59,7 +59,13 @@
       "expo-web-browser",
       "react-native-edge-to-edge",
       "expo-localization",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
+      ]
     ],
     "extra": {
       "eas": {
