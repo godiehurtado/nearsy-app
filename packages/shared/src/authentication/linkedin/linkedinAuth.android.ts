@@ -1,9 +1,11 @@
 /**
- * Android wiring for LinkedIn A3 client core (A3.4.2).
+ * Android wiring for LinkedIn A3 client (A3.4.2 + A3.4.3).
  * Lazy-loads native modules so Node tests never import this file.
  */
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
+import * as WebBrowser from 'expo-web-browser';
+import { Linking } from 'react-native';
 import {
   ensureAppCheckInitialized,
   getAppCheckInitStatus,
@@ -12,6 +14,18 @@ import {
   getIdentityFunctions,
   getIdentityFunctionsRegion,
 } from '../../config/identityFunctions';
+import { createExpoLinkedInAuthBrowser } from './linkedinBrowserSession';
+import {
+  discardLinkedInAuthTransaction,
+  handleLinkedInReturnUrl,
+  inspectInitialLinkedInReturn,
+  runLinkedInBrowserAuthFlow,
+  subscribeLinkedInReturnUrls,
+  type LinkedInBrowserFlowResult,
+  type LinkedInCoordinatorDeps,
+  type LinkedInReturnHandleResult,
+  type LinkedInReturnSource,
+} from './linkedinAuthCoordinator';
 import {
   clearLinkedInAuthTransaction,
   createLinkedInTransactionStore,
@@ -25,6 +39,22 @@ import {
 } from './linkedinAuthCore';
 
 export * from './linkedinAuthCore';
+export {
+  parseLinkedInMobileReturnUrl,
+  linkedInReturnFingerprint,
+} from './linkedinDeepLinkParser';
+export {
+  mapExpoAuthSessionResult,
+  createExpoLinkedInAuthBrowser,
+} from './linkedinBrowserSession';
+export {
+  discardLinkedInAuthTransaction,
+  handleLinkedInReturnUrl,
+  inspectInitialLinkedInReturn,
+  runLinkedInBrowserAuthFlow,
+  subscribeLinkedInReturnUrls,
+  __resetLinkedInCoordinatorForTests,
+} from './linkedinAuthCoordinator';
 
 function createExpoPkceCrypto(): PkceCrypto {
   return {
@@ -48,7 +78,6 @@ function createExpoPkceCrypto(): PkceCrypto {
 
 function createSecureStoreKv(): SecureKv {
   const options = {
-    // Isolate LinkedIn material from other SecureStore entries.
     keychainService: 'nearsy.linkedin.auth',
   } as const;
   return {
@@ -73,7 +102,6 @@ async function ensureAppCheckReady(): Promise<void> {
       'App Check initialization failed.',
     );
   }
-  // pending/idle after await should not happen; treat as not ready
   const latest = getAppCheckInitStatus();
   if (latest.status !== 'ready') {
     throw new LinkedInAuthError(
@@ -83,7 +111,7 @@ async function ensureAppCheckReady(): Promise<void> {
   }
 }
 
-function createDefaultDeps(): LinkedInAuthClientDeps {
+function createDefaultClientDeps(): LinkedInAuthClientDeps {
   const functions = getIdentityFunctions();
   return {
     crypto: createExpoPkceCrypto(),
@@ -100,28 +128,65 @@ function createDefaultDeps(): LinkedInAuthClientDeps {
   };
 }
 
-/**
- * Starts LinkedIn auth (callable only). Does not open a browser.
- */
+function createDefaultCoordinatorDeps(): LinkedInCoordinatorDeps {
+  return {
+    ...createDefaultClientDeps(),
+    browser: createExpoLinkedInAuthBrowser(WebBrowser),
+    linking: {
+      getInitialURL: () => Linking.getInitialURL(),
+      addEventListener: (type, handler) =>
+        Linking.addEventListener(type, handler),
+    },
+  };
+}
+
+/** Starts LinkedIn auth (callable only). Does not open a browser. */
 export async function startLinkedInAuth(
-  deps: LinkedInAuthClientDeps = createDefaultDeps(),
+  deps: LinkedInAuthClientDeps = createDefaultClientDeps(),
 ): Promise<LinkedInAuthStartResult> {
   return linkedInAuthStart(deps);
 }
 
-/**
- * Exchanges a validated deep-link success for an in-memory customToken.
- * Does not call signInWithCustomToken.
- */
+/** Exchanges a validated return for an in-memory customToken. No signIn. */
 export async function exchangeLinkedInAuth(
   transactionId: string,
-  deps: LinkedInAuthClientDeps = createDefaultDeps(),
+  deps: LinkedInAuthClientDeps = createDefaultClientDeps(),
 ): Promise<{ customToken: string }> {
   return linkedInAuthExchange(deps, { transactionId });
 }
 
 export async function cancelLinkedInAuth(
-  deps: LinkedInAuthClientDeps = createDefaultDeps(),
+  deps: LinkedInAuthClientDeps = createDefaultClientDeps(),
 ): Promise<void> {
   await clearLinkedInAuthTransaction(deps.store);
 }
+
+/**
+ * Start → auth session → parse → Exchange.
+ * Returns customToken in memory only. Does not sign in.
+ */
+export async function runLinkedInAuthWithBrowser(
+  deps: LinkedInCoordinatorDeps = createDefaultCoordinatorDeps(),
+): Promise<LinkedInBrowserFlowResult> {
+  return runLinkedInBrowserAuthFlow(deps);
+}
+
+/** Explicit cold-start handoff (no auto Exchange / no App.tsx wiring). */
+export async function inspectLinkedInInitialReturn(
+  deps: LinkedInCoordinatorDeps = createDefaultCoordinatorDeps(),
+): Promise<LinkedInReturnHandleResult> {
+  return inspectInitialLinkedInReturn(deps);
+}
+
+export async function processLinkedInReturnUrl(
+  url: string,
+  options: { exchange?: boolean; source?: LinkedInReturnSource } = {},
+  deps: LinkedInAuthClientDeps = createDefaultClientDeps(),
+): Promise<LinkedInReturnHandleResult> {
+  return handleLinkedInReturnUrl(deps, url, {
+    exchange: options.exchange !== false,
+    source: options.source ?? 'explicit',
+  });
+}
+
+export { discardLinkedInAuthTransaction, subscribeLinkedInReturnUrls };
