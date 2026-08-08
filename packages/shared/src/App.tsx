@@ -5,6 +5,7 @@ import { ActivityIndicator, Platform, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { firebaseAuth, firestoreDb } from './config/firebaseConfig';
+import { ensureAppCheckInitialized } from './config/appCheckBootstrap';
 import { initI18n } from './i18n';
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -183,6 +184,30 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
 
 export default function App() {
   const [i18nReady, setI18nReady] = useState(false);
+
+  // App Check must be ready before future identity Functions callables.
+  // Non-blocking: skip/error must not prevent Google/email/Firestore startup.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    let cancelled = false;
+    ensureAppCheckInitialized()
+      .then((status) => {
+        if (cancelled || !__DEV__) return;
+        if (status.status === 'error') {
+          console.warn('[App] App Check init error:', status.message);
+        } else if (status.status === 'skipped') {
+          console.log('[App] App Check skipped:', status.decision.reason);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled && __DEV__) {
+          console.warn('[App] App Check bootstrap unexpected error:', e);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

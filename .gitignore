@@ -35,6 +35,9 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Firebase Development google-services (Android) — never commit
+**/google-services.nearsy-dev.json
+
 # typescript
 *.tsbuildinfo
 

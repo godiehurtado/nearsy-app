@@ -1,1 +1,4 @@
 android/
+
+# Firebase Development google-services — never commit (nearsy-dev only)
+google-services.nearsy-dev.json
