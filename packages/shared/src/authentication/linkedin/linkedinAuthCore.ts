@@ -1,15 +1,13 @@
 /**
- * LinkedIn A3 client core (A3.4.2) — PKCE, secure transaction, Start/Exchange.
+ * LinkedIn A3 client core — confidential OAuth + client possession proof,
+ * secure transaction, Start/Exchange.
  *
  * Pure / injectable: Node unit tests import this file with `.ts` suffix.
  * Android wiring lives in linkedinAuth.android.ts (lazy native deps).
  *
- * Authoritative Functions sources (@ f1a90b6):
- * - src/domain/types.ts
- * - src/domain/errors.ts
- * - src/config/runtime.ts, env.ts, urls.ts
- * - src/index.ts
- * - docs/operations/A3.2-MOBILE-HANDOFF.md
+ * Protocol: LinkedIn confidential `/oauth/v2/*` with server `client_secret`.
+ * Nearsy does **not** use LinkedIn native PKCE (`/oauth/native-pkce/*`).
+ * Device↔backend binding is a separate S256 client possession proof.
  */
 
 // ---------------------------------------------------------------------------
@@ -22,23 +20,26 @@ export const LINKEDIN_AUTH_START_CALLABLE = 'linkedinAuthStart' as const;
 export const LINKEDIN_AUTH_EXCHANGE_CALLABLE = 'linkedinAuthExchange' as const;
 export const LINKEDIN_MOBILE_RETURN_URL = 'nearsy://linkedin-auth' as const;
 export const LINKEDIN_TRANSACTION_TTL_MS = 10 * 60 * 1000;
-export const PKCE_METHOD_S256 = 'S256' as const;
+export const CLIENT_PROOF_METHOD_S256 = 'S256' as const;
 
-export const MIN_CODE_VERIFIER_LEN = 43;
-export const MAX_CODE_VERIFIER_LEN = 128;
-export const MIN_PKCE_CHALLENGE_LEN = 43;
-export const MAX_PKCE_CHALLENGE_LEN = 128;
+export const MIN_CLIENT_PROOF_VERIFIER_LEN = 43;
+export const MAX_CLIENT_PROOF_VERIFIER_LEN = 128;
+export const MIN_CLIENT_PROOF_CHALLENGE_LEN = 43;
+export const MAX_CLIENT_PROOF_CHALLENGE_LEN = 128;
 export const MIN_TRANSACTION_ID_LEN = 8;
 export const MAX_TRANSACTION_ID_LEN = 128;
 export const BASE64URL_RE = /^[A-Za-z0-9_-]+$/;
 
-/** SecureStore key — isolated from Google/email providers. */
-export const LINKEDIN_TX_STORAGE_KEY = 'nearsy.linkedin.auth.tx.v1' as const;
+/** SecureStore keys — isolated from Google/email providers. */
+/** Legacy A3.4.x key — purged by delete only; never read or migrated. */
+export const LINKEDIN_TX_STORAGE_KEY_V1 = 'nearsy.linkedin.auth.tx.v1' as const;
+/** Current schema key (version: 2 payload). */
+export const LINKEDIN_TX_STORAGE_KEY = 'nearsy.linkedin.auth.tx.v2' as const;
 
 export type LinkedInAuthStartRequest = {
   platform: LinkedInMobilePlatform;
-  pkceChallenge: string;
-  pkceMethod: typeof PKCE_METHOD_S256;
+  clientProofChallenge: string;
+  clientProofMethod: typeof CLIENT_PROOF_METHOD_S256;
 };
 
 export type LinkedInAuthStartResponse = {
@@ -49,7 +50,7 @@ export type LinkedInAuthStartResponse = {
 
 export type LinkedInAuthExchangeRequest = {
   transactionId: string;
-  codeVerifier: string;
+  clientProofVerifier: string;
 };
 
 export type LinkedInAuthExchangeResponse = {
@@ -81,34 +82,34 @@ export type LinkedInDeepLinkParseResult =
   | { kind: 'invalid'; reason: string };
 
 export type LinkedInStoredTransaction = {
-  version: 1;
+  version: 2;
   transactionId: string;
-  codeVerifier: string;
+  clientProofVerifier: string;
   createdAt: number;
   expiresAt: number;
   mobileReturnUrl: typeof LINKEDIN_MOBILE_RETURN_URL;
   platform: LinkedInMobilePlatform;
 };
 
-export function assertPkceChallengeShape(challenge: string): void {
+export function assertClientProofChallengeShape(challenge: string): void {
   if (
     typeof challenge !== 'string' ||
-    challenge.length < MIN_PKCE_CHALLENGE_LEN ||
-    challenge.length > MAX_PKCE_CHALLENGE_LEN ||
+    challenge.length < MIN_CLIENT_PROOF_CHALLENGE_LEN ||
+    challenge.length > MAX_CLIENT_PROOF_CHALLENGE_LEN ||
     !BASE64URL_RE.test(challenge)
   ) {
-    throw new Error('INVALID_PKCE_CHALLENGE');
+    throw new Error('INVALID_CLIENT_PROOF_CHALLENGE');
   }
 }
 
-export function assertCodeVerifierShape(verifier: string): void {
+export function assertClientProofVerifierShape(verifier: string): void {
   if (
     typeof verifier !== 'string' ||
-    verifier.length < MIN_CODE_VERIFIER_LEN ||
-    verifier.length > MAX_CODE_VERIFIER_LEN ||
+    verifier.length < MIN_CLIENT_PROOF_VERIFIER_LEN ||
+    verifier.length > MAX_CLIENT_PROOF_VERIFIER_LEN ||
     !BASE64URL_RE.test(verifier)
   ) {
-    throw new Error('INVALID_CODE_VERIFIER');
+    throw new Error('INVALID_CLIENT_PROOF_VERIFIER');
   }
 }
 
@@ -194,6 +195,7 @@ export type LinkedInAuthErrorCode =
   | 'TRANSACTION_MISSING'
   | 'TRANSACTION_EXPIRED'
   | 'TRANSACTION_CORRUPT'
+  | 'SECURE_STORE_FAILED'
   | 'PROVIDER_CALLBACK_ERROR'
   | 'EXCHANGE_RESPONSE_INVALID'
   | 'CORE_DISABLED'
@@ -312,7 +314,7 @@ export function normalizeLinkedInCallableError(err: unknown): LinkedInAuthError 
   if (
     backendCode === 'TX_INVALID' ||
     backendCode === 'TX_FAILED' ||
-    backendCode === 'PKCE_INVALID' ||
+    backendCode === 'CLIENT_PROOF_INVALID' ||
     backendCode === 'OIDC_INVALID' ||
     backendCode === 'LINKEDIN_ERROR' ||
     httpsCode?.startsWith('functions/') ||
@@ -366,10 +368,10 @@ export function shouldClearTransactionAfterFlowError(
 }
 
 // ---------------------------------------------------------------------------
-// PKCE (RFC 7636 + Functions charset [A-Za-z0-9_-])
+// Client possession proof (S256; charset aligned with Functions [A-Za-z0-9_-])
 // ---------------------------------------------------------------------------
 
-export type PkceCrypto = {
+export type ClientProofCrypto = {
   /** Cryptographically secure random bytes. */
   getRandomBytes: (byteCount: number) => Uint8Array | Promise<Uint8Array>;
   /** SHA-256 digest of UTF-8 string → raw 32 bytes. */
@@ -388,35 +390,35 @@ export function bytesToBase64Url(bytes: Uint8Array): string {
   return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
-export async function generateCodeVerifier(
-  crypto: PkceCrypto,
+export async function generateClientProofVerifier(
+  crypto: ClientProofCrypto,
   byteCount = 32,
 ): Promise<string> {
   const bytes = await Promise.resolve(crypto.getRandomBytes(byteCount));
   const verifier = bytesToBase64Url(bytes);
-  assertCodeVerifierShape(verifier);
+  assertClientProofVerifierShape(verifier);
   return verifier;
 }
 
-export async function createS256CodeChallenge(
-  crypto: PkceCrypto,
-  codeVerifier: string,
+export async function createS256ClientProofChallenge(
+  crypto: ClientProofCrypto,
+  clientProofVerifier: string,
 ): Promise<string> {
-  assertCodeVerifierShape(codeVerifier);
-  const digest = await Promise.resolve(crypto.sha256(codeVerifier));
+  assertClientProofVerifierShape(clientProofVerifier);
+  const digest = await Promise.resolve(crypto.sha256(clientProofVerifier));
   const challenge = bytesToBase64Url(digest);
-  assertPkceChallengeShape(challenge);
+  assertClientProofChallengeShape(challenge);
   return challenge;
 }
 
-export async function createPkcePair(crypto: PkceCrypto): Promise<{
-  codeVerifier: string;
-  codeChallenge: string;
-  pkceMethod: typeof PKCE_METHOD_S256;
+export async function createClientProofPair(crypto: ClientProofCrypto): Promise<{
+  clientProofVerifier: string;
+  clientProofChallenge: string;
+  clientProofMethod: typeof CLIENT_PROOF_METHOD_S256;
 }> {
-  const codeVerifier = await generateCodeVerifier(crypto);
-  const codeChallenge = await createS256CodeChallenge(crypto, codeVerifier);
-  return { codeVerifier, codeChallenge, pkceMethod: PKCE_METHOD_S256 };
+  const clientProofVerifier = await generateClientProofVerifier(crypto);
+  const clientProofChallenge = await createS256ClientProofChallenge(crypto, clientProofVerifier);
+  return { clientProofVerifier, clientProofChallenge, clientProofMethod: CLIENT_PROOF_METHOD_S256 };
 }
 
 // ---------------------------------------------------------------------------
@@ -433,6 +435,11 @@ export type LinkedInTransactionStore = {
   read: () => Promise<LinkedInStoredTransaction | null>;
   write: (tx: LinkedInStoredTransaction) => Promise<void>;
   clear: () => Promise<void>;
+  /**
+   * Physically delete legacy SecureStore key v1 (idempotent).
+   * Must never read or copy v1 contents into v2.
+   */
+  purgeLegacyV1: () => Promise<void>;
 };
 
 function parseStoredTransaction(raw: string): LinkedInStoredTransaction {
@@ -452,7 +459,7 @@ function parseStoredTransaction(raw: string): LinkedInStoredTransaction {
     );
   }
   const o = parsed as Record<string, unknown>;
-  if (o.version !== 1) {
+  if (o.version !== 2) {
     throw new LinkedInAuthError(
       'TRANSACTION_CORRUPT',
       'Stored LinkedIn transaction is corrupt.',
@@ -466,8 +473,8 @@ function parseStoredTransaction(raw: string): LinkedInStoredTransaction {
   }
   try {
     assertTransactionIdShape(o.transactionId);
-    if (typeof o.codeVerifier !== 'string') throw new Error('bad');
-    assertCodeVerifierShape(o.codeVerifier);
+    if (typeof o.clientProofVerifier !== 'string') throw new Error('bad');
+    assertClientProofVerifierShape(o.clientProofVerifier);
   } catch {
     throw new LinkedInAuthError(
       'TRANSACTION_CORRUPT',
@@ -486,9 +493,9 @@ function parseStoredTransaction(raw: string): LinkedInStoredTransaction {
     );
   }
   return {
-    version: 1,
+    version: 2,
     transactionId: o.transactionId,
-    codeVerifier: o.codeVerifier,
+    clientProofVerifier: o.clientProofVerifier,
     createdAt: o.createdAt,
     expiresAt: o.expiresAt,
     mobileReturnUrl: LINKEDIN_MOBILE_RETURN_URL,
@@ -520,7 +527,28 @@ export function createLinkedInTransactionStore(
     async clear() {
       await kv.deleteItem(LINKEDIN_TX_STORAGE_KEY);
     },
+    async purgeLegacyV1() {
+      await kv.deleteItem(LINKEDIN_TX_STORAGE_KEY_V1);
+    },
   };
+}
+
+/**
+ * Idempotent physical purge of SecureStore key v1 before Start/Exchange.
+ * Never reads v1. On failure: controlled SECURE_STORE_FAILED (retry later).
+ * Does not clear a valid v2 transaction as compensation.
+ */
+export async function purgeLegacyLinkedInTxStorageV1(
+  store: LinkedInTransactionStore,
+): Promise<void> {
+  try {
+    await store.purgeLegacyV1();
+  } catch {
+    throw new LinkedInAuthError(
+      'SECURE_STORE_FAILED',
+      'Unable to clear legacy LinkedIn auth storage.',
+    );
+  }
 }
 
 export function createMemorySecureKv(): SecureKv {
@@ -553,7 +581,7 @@ export type IdentityCallableInvoker = {
 };
 
 export type LinkedInAuthClientDeps = {
-  crypto: PkceCrypto;
+  crypto: ClientProofCrypto;
   store: LinkedInTransactionStore;
   appCheck: AppCheckGate;
   functions: IdentityCallableInvoker;
@@ -588,6 +616,7 @@ export async function linkedInAuthStart(
   }
   startInFlight = true;
   try {
+    await purgeLegacyLinkedInTxStorageV1(deps.store);
     await deps.appCheck.ensureReady();
 
     // Reject if a non-expired transaction already exists (no silent replace).
@@ -618,11 +647,11 @@ export async function linkedInAuthStart(
     }
 
     const now = (deps.now ?? Date.now)();
-    const pkce = await createPkcePair(deps.crypto);
+    const proof = await createClientProofPair(deps.crypto);
     const request: LinkedInAuthStartRequest = {
       platform: 'android',
-      pkceChallenge: pkce.codeChallenge,
-      pkceMethod: PKCE_METHOD_S256,
+      clientProofChallenge: proof.clientProofChallenge,
+      clientProofMethod: CLIENT_PROOF_METHOD_S256,
     };
 
     let response: LinkedInAuthStartResponse;
@@ -648,9 +677,9 @@ export async function linkedInAuthStart(
     }
 
     const stored: LinkedInStoredTransaction = {
-      version: 1,
+      version: 2,
       transactionId: response.transactionId,
-      codeVerifier: pkce.codeVerifier,
+      clientProofVerifier: proof.clientProofVerifier,
       createdAt: now,
       expiresAt: response.expiresAt,
       mobileReturnUrl: LINKEDIN_MOBILE_RETURN_URL,
@@ -685,6 +714,7 @@ export async function linkedInAuthExchange(
   }
   exchangeInFlight = true;
   try {
+    await purgeLegacyLinkedInTxStorageV1(deps.store);
     await deps.appCheck.ensureReady();
 
     let stored: LinkedInStoredTransaction;
@@ -714,7 +744,7 @@ export async function linkedInAuthExchange(
 
     const request: LinkedInAuthExchangeRequest = {
       transactionId: stored.transactionId,
-      codeVerifier: stored.codeVerifier,
+      clientProofVerifier: stored.clientProofVerifier,
     };
 
     let customToken: string;

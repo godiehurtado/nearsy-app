@@ -15,7 +15,7 @@ import {
   createLinkedInTransactionStore,
   createMemorySecureKv,
   linkedInAuthStart,
-  type PkceCrypto,
+  type ClientProofCrypto,
 } from '../linkedinAuthCore.ts';
 import { __resetLinkedInCoordinatorForTests } from '../linkedinAuthCoordinator.ts';
 import {
@@ -40,7 +40,7 @@ import type { LinkedInAuthBrowser } from '../linkedinBrowserSession.ts';
 const TX = 'tx_synth_session012345';
 const SYNTH_TOKEN = 'synth.custom.token.NOT_REAL';
 
-function nodePkceCrypto(): PkceCrypto {
+function nodeClientProofCrypto(): ClientProofCrypto {
   return {
     getRandomBytes: (n) => randomBytes(n),
     sha256: (utf8) => createHash('sha256').update(utf8, 'utf8').digest(),
@@ -141,7 +141,7 @@ function createSessionDeps(opts: {
     calls,
     auth,
     kv,
-    crypto: nodePkceCrypto(),
+    crypto: nodeClientProofCrypto(),
     store,
     appCheck: { ensureReady: async () => {} },
     browser,

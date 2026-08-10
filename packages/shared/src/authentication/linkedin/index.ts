@@ -30,6 +30,7 @@ export {
   LINKEDIN_MOBILE_RETURN_URL,
   LINKEDIN_TRANSACTION_TTL_MS,
   LINKEDIN_TX_STORAGE_KEY,
+  LINKEDIN_TX_STORAGE_KEY_V1,
   LinkedInAuthError,
   isExactLinkedInMobileReturnBase,
   shouldClearTransactionAfterFlowError,

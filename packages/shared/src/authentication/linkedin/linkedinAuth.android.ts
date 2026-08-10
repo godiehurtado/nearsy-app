@@ -43,7 +43,7 @@ import {
   LinkedInAuthError,
   type LinkedInAuthClientDeps,
   type LinkedInAuthStartResult,
-  type PkceCrypto,
+  type ClientProofCrypto,
   type SecureKv,
 } from './linkedinAuthCore';
 
@@ -80,7 +80,7 @@ export {
   __resetLinkedInSessionForTests,
 } from './linkedinSession';
 
-function createExpoPkceCrypto(): PkceCrypto {
+function createExpoClientProofCrypto(): ClientProofCrypto {
   return {
     async getRandomBytes(byteCount) {
       return Crypto.getRandomBytesAsync(byteCount);
@@ -138,7 +138,7 @@ async function ensureAppCheckReady(): Promise<void> {
 function createDefaultClientDeps(): LinkedInAuthClientDeps {
   const functions = getIdentityFunctions();
   return {
-    crypto: createExpoPkceCrypto(),
+    crypto: createExpoClientProofCrypto(),
     store: createLinkedInTransactionStore(createSecureStoreKv()),
     appCheck: { ensureReady: ensureAppCheckReady },
     functions: {
