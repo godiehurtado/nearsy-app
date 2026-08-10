@@ -1,5 +1,5 @@
 /**
- * LinkedIn A3.4.2 client core tests (PKCE, store, Start/Exchange).
+ * LinkedIn A3.4.2 client core tests (client possession proof, store, Start/Exchange).
  *
  * Run:
  *   node --experimental-strip-types --test packages/shared/src/authentication/linkedin/__tests__/linkedinAuthCore.test.ts
@@ -15,30 +15,33 @@ import {
   LINKEDIN_AUTH_START_CALLABLE,
   LINKEDIN_MOBILE_RETURN_URL,
   LINKEDIN_TX_STORAGE_KEY,
-  MAX_CODE_VERIFIER_LEN,
-  MIN_CODE_VERIFIER_LEN,
+  LINKEDIN_TX_STORAGE_KEY_V1,
+  MAX_CLIENT_PROOF_VERIFIER_LEN,
+  MIN_CLIENT_PROOF_VERIFIER_LEN,
   LinkedInAuthError,
-  assertCodeVerifierShape,
+  assertClientProofVerifierShape,
   bytesToBase64Url,
   clearLinkedInAuthTransaction,
   createLinkedInTransactionStore,
   createMemorySecureKv,
-  createPkcePair,
-  createS256CodeChallenge,
-  generateCodeVerifier,
+  createClientProofPair,
+  createS256ClientProofChallenge,
+  generateClientProofVerifier,
   isExactLinkedInMobileReturnBase,
   linkedInAuthExchange,
   linkedInAuthStart,
   normalizeLinkedInCallableError,
   parseLinkedInAuthExchangeResponse,
   parseLinkedInAuthStartResponse,
+  purgeLegacyLinkedInTxStorageV1,
   shouldClearTransactionAfterExchangeError,
   type IdentityCallableInvoker,
   type LinkedInAuthClientDeps,
-  type PkceCrypto,
+  type ClientProofCrypto,
+  type SecureKv,
 } from '../linkedinAuthCore.ts';
 
-function nodePkceCrypto(): PkceCrypto {
+function nodeClientProofCrypto(): ClientProofCrypto {
   return {
     getRandomBytes: (n) => randomBytes(n),
     sha256: (utf8) => createHash('sha256').update(utf8, 'utf8').digest(),
@@ -49,25 +52,25 @@ function mockAppCheckReady(): LinkedInAuthClientDeps['appCheck'] {
   return { ensureReady: async () => {} };
 }
 
-describe('PKCE', () => {
+describe('client possession proof', () => {
   it('generates verifier within Functions length + charset', async () => {
-    const v = await generateCodeVerifier(nodePkceCrypto());
-    assert.ok(v.length >= MIN_CODE_VERIFIER_LEN);
-    assert.ok(v.length <= MAX_CODE_VERIFIER_LEN);
+    const v = await generateClientProofVerifier(nodeClientProofCrypto());
+    assert.ok(v.length >= MIN_CLIENT_PROOF_VERIFIER_LEN);
+    assert.ok(v.length <= MAX_CLIENT_PROOF_VERIFIER_LEN);
     assert.match(v, BASE64URL_RE);
-    assertCodeVerifierShape(v);
+    assertClientProofVerifierShape(v);
   });
 
   it('uses crypto getRandomBytes (not Math.random)', async () => {
     let calls = 0;
-    const crypto: PkceCrypto = {
+    const crypto: ClientProofCrypto = {
       getRandomBytes: (n) => {
         calls += 1;
         return randomBytes(n);
       },
       sha256: (utf8) => createHash('sha256').update(utf8, 'utf8').digest(),
     };
-    await generateCodeVerifier(crypto);
+    await generateClientProofVerifier(crypto);
     assert.equal(calls, 1);
   });
 
@@ -75,7 +78,7 @@ describe('PKCE', () => {
     // RFC 7636 Appendix B
     const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
     const expected = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
-    const challenge = await createS256CodeChallenge(nodePkceCrypto(), verifier);
+    const challenge = await createS256ClientProofChallenge(nodeClientProofCrypto(), verifier);
     assert.equal(challenge, expected);
     assert.equal(challenge.includes('='), false);
     assert.equal(challenge.includes('+'), false);
@@ -88,10 +91,10 @@ describe('PKCE', () => {
     assert.equal(encoded.includes('='), false);
   });
 
-  it('createPkcePair returns S256 method', async () => {
-    const pair = await createPkcePair(nodePkceCrypto());
-    assert.equal(pair.pkceMethod, 'S256');
-    assert.notEqual(pair.codeVerifier, pair.codeChallenge);
+  it('createClientProofPair returns S256 method', async () => {
+    const pair = await createClientProofPair(nodeClientProofCrypto());
+    assert.equal(pair.clientProofMethod, 'S256');
+    assert.notEqual(pair.clientProofVerifier, pair.clientProofChallenge);
   });
 });
 
@@ -162,9 +165,9 @@ describe('transaction store', () => {
     const store = createLinkedInTransactionStore(createMemorySecureKv());
     const now = Date.now();
     await store.write({
-      version: 1,
+      version: 2,
       transactionId: 'txABCDEF12',
-      codeVerifier: 'v'.repeat(43),
+      clientProofVerifier: 'v'.repeat(43),
       createdAt: now,
       expiresAt: now + 600_000,
       mobileReturnUrl: LINKEDIN_MOBILE_RETURN_URL,
@@ -172,7 +175,7 @@ describe('transaction store', () => {
     });
     const read = await store.read();
     assert.equal(read?.transactionId, 'txABCDEF12');
-    assert.equal(read?.codeVerifier, 'v'.repeat(43));
+    assert.equal(read?.clientProofVerifier, 'v'.repeat(43));
   });
 
   it('expires and clears durable state', async () => {
@@ -180,9 +183,9 @@ describe('transaction store', () => {
     let now = 1_000;
     const store = createLinkedInTransactionStore(kv, () => now);
     await store.write({
-      version: 1,
+      version: 2,
       transactionId: 'txABCDEF12',
-      codeVerifier: 'v'.repeat(43),
+      clientProofVerifier: 'v'.repeat(43),
       createdAt: 1,
       expiresAt: 50,
       mobileReturnUrl: LINKEDIN_MOBILE_RETURN_URL,
@@ -224,7 +227,7 @@ describe('linkedInAuthStart / Exchange', () => {
       calls: Array<{ name: string; data: unknown }>;
     } = {
       calls,
-      crypto: nodePkceCrypto(),
+      crypto: nodeClientProofCrypto(),
       store,
       appCheck: overrides.appCheck ?? mockAppCheckReady(),
       functions: {
@@ -257,13 +260,13 @@ describe('linkedInAuthStart / Exchange', () => {
     assert.equal(deps.calls[0]!.name, LINKEDIN_AUTH_START_CALLABLE);
     const payload = deps.calls[0]!.data as Record<string, unknown>;
     assert.deepEqual(Object.keys(payload).sort(), [
-      'pkceChallenge',
-      'pkceMethod',
+      'clientProofChallenge',
+      'clientProofMethod',
       'platform',
     ]);
     assert.equal(payload.platform, 'android');
-    assert.equal(payload.pkceMethod, 'S256');
-    assert.match(String(payload.pkceChallenge), BASE64URL_RE);
+    assert.equal(payload.clientProofMethod, 'S256');
+    assert.match(String(payload.clientProofChallenge), BASE64URL_RE);
     assert.equal(out.mobileReturnUrl, LINKEDIN_MOBILE_RETURN_URL);
     assert.equal(deps.functions.region, 'us-central1');
   });
@@ -372,11 +375,11 @@ describe('linkedInAuthStart / Exchange', () => {
     assert.ok(exchangeCall);
     const payload = exchangeCall!.data as Record<string, unknown>;
     assert.deepEqual(Object.keys(payload).sort(), [
-      'codeVerifier',
+      'clientProofVerifier',
       'transactionId',
     ]);
     assert.equal(payload.transactionId, 'txStart0001');
-    assert.match(String(payload.codeVerifier), BASE64URL_RE);
+    assert.match(String(payload.clientProofVerifier), BASE64URL_RE);
     assert.equal(await deps.store.read(), null);
     // Ensure we never wrote customToken into KV
     const kvDump = JSON.stringify(
@@ -481,12 +484,158 @@ describe('linkedInAuthStart / Exchange', () => {
   });
 });
 
+describe('SecureStore v1 → v2 physical purge', () => {
+  beforeEach(() => {
+    __resetLinkedInAuthClientLocksForTests();
+  });
+
+  function trackingKv(): SecureKv & {
+    gets: string[];
+    deletes: string[];
+    map: Map<string, string>;
+  } {
+    const map = new Map<string, string>();
+    const gets: string[] = [];
+    const deletes: string[] = [];
+    return {
+      map,
+      gets,
+      deletes,
+      async getItem(key) {
+        gets.push(key);
+        return map.has(key) ? map.get(key)! : null;
+      },
+      async setItem(key, value) {
+        map.set(key, value);
+      },
+      async deleteItem(key) {
+        deletes.push(key);
+        map.delete(key);
+      },
+    };
+  }
+
+  it('v1 present → physical delete invoked; v1 never read; Start proceeds', async () => {
+    const kv = trackingKv();
+    await kv.setItem(LINKEDIN_TX_STORAGE_KEY_V1, 'LEGACY_MUST_NOT_BE_READ');
+    const store = createLinkedInTransactionStore(kv);
+    const calls: unknown[] = [];
+    const deps: LinkedInAuthClientDeps = {
+      crypto: nodeClientProofCrypto(),
+      store,
+      appCheck: mockAppCheckReady(),
+      functions: {
+        region: 'us-central1',
+        call: async (name, data) => {
+          calls.push({ name, data });
+          if (name === LINKEDIN_AUTH_START_CALLABLE) {
+            return {
+              transactionId: 'txStart0001',
+              authorizationUrl: 'https://www.linkedin.com/oauth/v2/authorization?x=1',
+              expiresAt: Date.now() + 600_000,
+            };
+          }
+          throw new Error('unexpected');
+        },
+      },
+    };
+    await linkedInAuthStart(deps);
+    assert.ok(kv.deletes.includes(LINKEDIN_TX_STORAGE_KEY_V1));
+    assert.equal(kv.gets.includes(LINKEDIN_TX_STORAGE_KEY_V1), false);
+    assert.equal(await kv.getItem(LINKEDIN_TX_STORAGE_KEY_V1), null);
+    assert.equal(calls.length, 1);
+    assert.ok(await store.read());
+  });
+
+  it('only v2 present → v2 preserved; idempotent v1 delete', async () => {
+    const kv = trackingKv();
+    const store = createLinkedInTransactionStore(kv);
+    const now = Date.now();
+    await store.write({
+      version: 2,
+      transactionId: 'txKeepV2001',
+      clientProofVerifier: 'v'.repeat(43),
+      createdAt: now,
+      expiresAt: now + 600_000,
+      mobileReturnUrl: LINKEDIN_MOBILE_RETURN_URL,
+      platform: 'android',
+    });
+    await purgeLegacyLinkedInTxStorageV1(store);
+    await purgeLegacyLinkedInTxStorageV1(store);
+    const read = await store.read();
+    assert.equal(read?.transactionId, 'txKeepV2001');
+    assert.ok(kv.deletes.filter((k) => k === LINKEDIN_TX_STORAGE_KEY_V1).length >= 2);
+  });
+
+  it('v1 delete failure → Start not called; v2 untouched; retryable', async () => {
+    const kv = trackingKv();
+    const store = createLinkedInTransactionStore(kv);
+    const now = Date.now();
+    await store.write({
+      version: 2,
+      transactionId: 'txKeepOnFail',
+      clientProofVerifier: 'v'.repeat(43),
+      createdAt: now,
+      expiresAt: now + 600_000,
+      mobileReturnUrl: LINKEDIN_MOBILE_RETURN_URL,
+      platform: 'android',
+    });
+    let failDeletes = true;
+    const originalDelete = kv.deleteItem.bind(kv);
+    kv.deleteItem = async (key: string) => {
+      if (failDeletes && key === LINKEDIN_TX_STORAGE_KEY_V1) {
+        throw new Error('securestore unavailable');
+      }
+      return originalDelete(key);
+    };
+    let startCalls = 0;
+    const deps: LinkedInAuthClientDeps = {
+      crypto: nodeClientProofCrypto(),
+      store,
+      appCheck: mockAppCheckReady(),
+      functions: {
+        region: 'us-central1',
+        call: async () => {
+          startCalls += 1;
+          throw new Error('Start must not run');
+        },
+      },
+    };
+    await assert.rejects(() => linkedInAuthStart(deps), (err: unknown) => {
+      assert.ok(err instanceof LinkedInAuthError);
+      assert.equal(err.code, 'SECURE_STORE_FAILED');
+      return true;
+    });
+    assert.equal(startCalls, 0);
+    assert.equal((await store.read())?.transactionId, 'txKeepOnFail');
+
+    failDeletes = false;
+    __resetLinkedInAuthClientLocksForTests();
+    // Second attempt re-runs purge; Start still blocked by existing v2 tx.
+    await assert.rejects(() => linkedInAuthStart(deps), (err: unknown) => {
+      assert.ok(err instanceof LinkedInAuthError);
+      assert.equal(err.code, 'OPERATION_IN_PROGRESS');
+      return true;
+    });
+    assert.equal(await kv.getItem(LINKEDIN_TX_STORAGE_KEY_V1), null);
+  });
+
+  it('v1 content is never copied into v2', async () => {
+    const kv = trackingKv();
+    await kv.setItem(LINKEDIN_TX_STORAGE_KEY_V1, '{"poison":true,"clientProofVerifier":"SHOULD_NOT_MIGRATE"}');
+    const store = createLinkedInTransactionStore(kv);
+    await purgeLegacyLinkedInTxStorageV1(store);
+    assert.equal(await kv.getItem(LINKEDIN_TX_STORAGE_KEY), null);
+    assert.equal(kv.gets.includes(LINKEDIN_TX_STORAGE_KEY_V1), false);
+  });
+});
+
 describe('module import side effects', () => {
   it('importing core does not invoke network', async () => {
     // Re-import path is static; assert callables are not auto-invoked by
     // constructing deps without calling start/exchange.
     const deps = {
-      crypto: nodePkceCrypto(),
+      crypto: nodeClientProofCrypto(),
       store: createLinkedInTransactionStore(createMemorySecureKv()),
       appCheck: mockAppCheckReady(),
       functions: {

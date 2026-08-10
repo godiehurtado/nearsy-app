@@ -18,7 +18,7 @@ import {
   createMemorySecureKv,
   linkedInAuthStart,
   type LinkedInAuthClientDeps,
-  type PkceCrypto,
+  type ClientProofCrypto,
 } from '../linkedinAuthCore.ts';
 import {
   parseLinkedInMobileReturnUrl,
@@ -44,7 +44,7 @@ const TX = 'tx_synth_abcdef012345';
 const VERIFIER =
   'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_';
 
-function nodePkceCrypto(): PkceCrypto {
+function nodeClientProofCrypto(): ClientProofCrypto {
   return {
     getRandomBytes: (n) => randomBytes(n),
     sha256: (utf8) => createHash('sha256').update(utf8, 'utf8').digest(),
@@ -86,7 +86,7 @@ function createDeps(opts: {
   return {
     calls,
     opened,
-    crypto: nodePkceCrypto(),
+    crypto: nodeClientProofCrypto(),
     store,
     appCheck: { ensureReady: async () => {} },
     browser,
@@ -487,9 +487,9 @@ describe('runLinkedInBrowserAuthFlow', () => {
     await runLinkedInBrowserAuthFlow(deps);
     // Simulate leftover durable tx + duplicate URL (process-local fingerprint remains).
     await deps.store.write({
-      version: 1,
+      version: 2,
       transactionId: TX,
-      codeVerifier: VERIFIER.slice(0, 64),
+      clientProofVerifier: VERIFIER.slice(0, 64),
       createdAt: Date.now(),
       expiresAt: Date.now() + 600_000,
       mobileReturnUrl: LINKEDIN_MOBILE_RETURN_URL,
@@ -853,7 +853,7 @@ describe('customToken persistence absence', () => {
     const store = createLinkedInTransactionStore(kv);
     const deps = createDeps({});
     const clientDeps: LinkedInAuthClientDeps = {
-      crypto: nodePkceCrypto(),
+      crypto: nodeClientProofCrypto(),
       store,
       appCheck: { ensureReady: async () => {} },
       functions: deps.functions,
@@ -868,7 +868,7 @@ describe('customToken persistence absence', () => {
     };
     const result = await runLinkedInBrowserAuthFlow(full);
     assert.equal(result.status, 'authenticated');
-    const raw = await kv.getItem('nearsy.linkedin.auth.tx.v1');
+    const raw = await kv.getItem('nearsy.linkedin.auth.tx.v2');
     assert.equal(raw, null);
     if (result.status === 'authenticated') {
       assert.ok(!JSON.stringify(result).includes('persist'));
