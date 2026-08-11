@@ -1,0 +1,7 @@
+﻿node_modules/
+firestore-debug.log
+*.log
+.firebase/
+
+.local-validation/
+

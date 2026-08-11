@@ -1,0 +1,81 @@
+rules_version = '2';
+
+/**
+ * Nearsy application Firestore rules — Source of Truth for nearsy-dev/(default).
+ *
+ * Goal: DEV_RULES_FUNCTIONAL_PARITY_WITH_PRODUCTION
+ * Functional reference: effective rules on nearsy-pj/(default) (read-only inspection).
+ * This file intentionally mirrors Production authorization logic — not hardening.
+ *
+ * Future deploy (authorized, nearsy-dev only):
+ *   cd firestore && firebase deploy --only firestore:rules --project nearsy-dev
+ *
+ * DO NOT deploy from nearsy-identity-functions.
+ * Hardening (field allowlists, type gates, immutability) is a separate future change.
+ */
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ========= users =========
+    match /users/{userId} {
+      // Owner always; other authenticated users only when visibility == true.
+      // Query `where('visibility','==',true)` succeeds; unfiltered list fails
+      // because non-visible docs in the result set are not readable.
+      allow get, list: if isSignedIn() && (
+        isOwner(userId) ||
+        resource.data.visibility == true
+      );
+
+      allow create: if isOwner(userId);
+      allow update, delete: if isOwner(userId);
+    }
+
+    match /users/{userId}/pushTokens/{tokenId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/contactHashes/{contactId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/blockedUsers/{blockedUid} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // ========= reports / moderation =========
+    match /reports/{reportId} {
+      allow create: if isSignedIn();
+      allow read: if false;
+      allow update, delete: if false;
+    }
+
+    match /moderationEvents/{eventId} {
+      allow create: if isSignedIn();
+      allow read: if false;
+      allow update, delete: if false;
+    }
+
+    // LinkedIn technical collections — clients never (Admin SDK only).
+    match /linkedinAuthTransactions/{id} {
+      allow read, write: if false;
+    }
+    match /linkedinAuthStateIndex/{id} {
+      allow read, write: if false;
+    }
+    match /linkedinIdentities/{id} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

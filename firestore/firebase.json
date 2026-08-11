@@ -1,0 +1,13 @@
+{
+  "firestore": {
+    "database": "(default)",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8088,
+      "host": "127.0.0.1"
+    }
+  }
+}
