@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -21,6 +22,8 @@ import { fontWeight } from '../theme/typography';
 import { radius } from '../theme/radius';
 import { useTranslation } from '../i18n';
 import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
+import { useLinkedInSignInFlow } from '../hooks/useLinkedInSignInFlow';
+import { isNearsyFirebaseDevelopment } from '../config/nearsyFirebaseEnv';
 import { markWelcomeSeen } from '../onboarding/welcomeStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Welcome'>;
@@ -34,8 +37,10 @@ export default function WelcomeScreen({ navigation }: Props) {
   const { theme, palette } = useAppTheme();
   const { t } = useTranslation();
   const { signInWithGoogle, googleSubmitting } = useGoogleSignInFlow();
+  const { signInWithLinkedIn, linkedInSubmitting } = useLinkedInSignInFlow();
   // Match Login surface so shared brand hero (logo / waves / people) reads the same.
   const screenBg = theme === 'dark' ? palette.background : palette.heroBg;
+  const socialBusy = googleSubmitting || linkedInSubmitting;
 
   async function leaveWelcome(
     action: () => void,
@@ -45,12 +50,26 @@ export default function WelcomeScreen({ navigation }: Props) {
   }
 
   function onProvider(p: AuthSocialProvider) {
+    if (socialBusy) return;
+
     if (p === 'google') {
       void leaveWelcome(() => {
         void signInWithGoogle();
       });
       return;
     }
+
+    if (
+      p === 'linkedin' &&
+      Platform.OS === 'android' &&
+      isNearsyFirebaseDevelopment()
+    ) {
+      void leaveWelcome(() => {
+        void signInWithLinkedIn();
+      });
+      return;
+    }
+
     Alert.alert(
       t('authentication.social.comingSoonTitle'),
       t('authentication.social.comingSoonMessage'),
@@ -97,8 +116,14 @@ export default function WelcomeScreen({ navigation }: Props) {
           <AuthSocialButtonRow
             labels={socialLabels}
             onPress={onProvider}
-            busy={googleSubmitting}
-            loadingProvider={googleSubmitting ? 'google' : null}
+            busy={socialBusy}
+            loadingProvider={
+              googleSubmitting
+                ? 'google'
+                : linkedInSubmitting
+                  ? 'linkedin'
+                  : null
+            }
             borderColor={palette.socialBorder}
             textColor={palette.textPrimary}
             pressedBackground={palette.socialPressed}
@@ -110,7 +135,7 @@ export default function WelcomeScreen({ navigation }: Props) {
             onPress={() => {
               void leaveWelcome(() => navigation.navigate('Login'));
             }}
-            disabled={googleSubmitting}
+            disabled={socialBusy}
             style={({ pressed }) => [
               styles.signIn,
               {

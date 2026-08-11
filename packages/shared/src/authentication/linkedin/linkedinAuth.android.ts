@@ -145,8 +145,27 @@ function createDefaultClientDeps(): LinkedInAuthClientDeps {
       region: getIdentityFunctionsRegion(),
       async call(name, data) {
         const callable = functions.httpsCallable(name);
-        const result = await callable(data);
-        return result.data as never;
+        try {
+          const result = await callable(data);
+          return result.data as never;
+        } catch (err: unknown) {
+          if (__DEV__) {
+            const e = err as { code?: unknown; message?: unknown };
+            const msg =
+              typeof e.message === 'string'
+                ? e.message.replace(
+                    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+                    '[redacted]',
+                  )
+                : undefined;
+            console.log('[linkedinAuth.android] callable error', {
+              name,
+              code: typeof e.code === 'string' ? e.code : undefined,
+              message: msg,
+            });
+          }
+          throw err;
+        }
       },
     },
   };
@@ -155,26 +174,27 @@ function createDefaultClientDeps(): LinkedInAuthClientDeps {
 /**
  * Canonical RNFirebase Auth port — same firebaseAuth as Google/email.
  * Readiness mirrors AppNavigator: first onAuthStateChanged ⇒ resolved.
- * The watch subscription is temporary and removed after the first emission.
+ * Shared singleton so repeated entry points reuse the resolved snapshot.
  */
+let sharedFirebaseAuthPort: LinkedInFirebaseAuthPort | null = null;
+let sharedAuthReady: Promise<void> | null = null;
+
 function createDefaultFirebaseAuthPort(): LinkedInFirebaseAuthPort {
+  if (sharedFirebaseAuthPort) return sharedFirebaseAuthPort;
+
   type Resolution =
     | { status: 'pending' }
     | { status: 'resolved'; uid: string | null };
 
   let resolution: Resolution = { status: 'pending' };
   let unsub: (() => void) | null = null;
-  let watching = false;
 
-  const ensureWatch = () => {
-    if (resolution.status === 'resolved' || watching) return;
-    watching = true;
+  sharedAuthReady = new Promise<void>((resolve) => {
     try {
       unsub = firebaseAuth.onAuthStateChanged((user) => {
         resolution = { status: 'resolved', uid: user?.uid ?? null };
         const cleanup = unsub;
         unsub = null;
-        watching = false;
         if (cleanup) {
           try {
             cleanup();
@@ -182,24 +202,30 @@ function createDefaultFirebaseAuthPort(): LinkedInFirebaseAuthPort {
             // ignore
           }
         }
+        resolve();
       });
     } catch {
-      watching = false;
-      // Leave pending; reconcile stays safe.
+      // Leave pending; callers still see FIREBASE_AUTH_NOT_READY after wait.
+      resolve();
     }
-  };
+  });
 
-  return {
+  sharedFirebaseAuthPort = {
     getCurrentUserId: () => firebaseAuth.currentUser?.uid ?? null,
     async signInWithCustomToken(customToken) {
       const cred = await firebaseAuth.signInWithCustomToken(customToken);
       return { uid: cred.user.uid };
     },
-    getAuthResolution: () => {
-      ensureWatch();
-      return resolution;
-    },
+    getAuthResolution: () => resolution,
   };
+  return sharedFirebaseAuthPort;
+}
+
+async function waitForDefaultAuthReady(): Promise<void> {
+  createDefaultFirebaseAuthPort();
+  if (sharedAuthReady) {
+    await sharedAuthReady;
+  }
 }
 
 function createDefaultCoordinatorDeps(): LinkedInCoordinatorDeps {
@@ -275,12 +301,15 @@ export async function processLinkedInReturnUrl(
 
 /**
  * Complete LinkedIn browser flow into a Firebase Auth session.
- * Never returns customToken. Not wired to Login UI in A3.4.4.
+ * Never returns customToken.
  */
 export async function signInWithLinkedInBrowser(
-  deps: LinkedInSessionDeps = createDefaultSessionDeps(),
+  deps?: LinkedInSessionDeps,
 ): Promise<LinkedInSessionResult> {
-  return authenticateWithLinkedInBrowser(deps);
+  if (!deps) {
+    await waitForDefaultAuthReady();
+  }
+  return authenticateWithLinkedInBrowser(deps ?? createDefaultSessionDeps());
 }
 
 /**
@@ -289,9 +318,15 @@ export async function signInWithLinkedInBrowser(
  */
 export async function signInWithLinkedInColdStartClaim(
   claim: unknown,
-  deps: LinkedInSessionDeps = createDefaultSessionDeps(),
+  deps?: LinkedInSessionDeps,
 ): Promise<LinkedInSessionResult> {
-  return authenticateWithLinkedInColdStartClaim(deps, claim);
+  if (!deps) {
+    await waitForDefaultAuthReady();
+  }
+  return authenticateWithLinkedInColdStartClaim(
+    deps ?? createDefaultSessionDeps(),
+    claim,
+  );
 }
 
 /**
@@ -303,5 +338,3 @@ export function reconcileLinkedInSession(
 ) {
   return reconcileLinkedInFirebaseUncertainState(deps.firebaseAuth);
 }
-
-export { discardLinkedInAuthTransaction, subscribeLinkedInReturnUrls };
