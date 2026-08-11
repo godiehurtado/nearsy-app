@@ -1,12 +1,20 @@
 // src/navigation/AppNavigator.tsx
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, ActivityIndicator, Platform } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  ActivityIndicator,
+  Platform,
+  Text,
+  Pressable,
+  StyleSheet,
+} from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import {
   DarkTheme,
   DefaultTheme,
   Theme as NavigationTheme,
 } from '@react-navigation/native';
+import { useTranslation } from 'react-i18next';
 
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
@@ -26,8 +34,12 @@ import { useAppTheme } from '../theme/ThemeContext';
 
 import { firebaseAuth } from '../config/firebaseConfig';
 import { dbGetUser, dbOnUserSnapshot } from '../services/db';
-import { isProfileDocumentComplete } from '../utils/profileDocumentComplete';
 import { loadHasSeenWelcome } from '../onboarding/welcomeStorage';
+import {
+  createAuthenticatedProfileGate,
+  PROFILE_GATE_I18N_KEYS,
+  type AuthenticatedProfileFlow,
+} from './profileGate';
 
 export type { RootStackParamList } from './types';
 
@@ -37,6 +49,45 @@ function FullScreenLoader() {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
       <ActivityIndicator size="large" />
+    </View>
+  );
+}
+
+function ProfileGateErrorView(props: {
+  reason: 'permission_denied' | 'transient';
+  onRetry: () => void;
+  backgroundColor: string;
+  textColor: string;
+  primaryColor: string;
+}) {
+  const { t } = useTranslation();
+  const message =
+    props.reason === 'permission_denied'
+      ? t(PROFILE_GATE_I18N_KEYS.permissionDeniedMessage)
+      : t(PROFILE_GATE_I18N_KEYS.errorMessage);
+
+  return (
+    <View
+      style={[
+        styles.errorRoot,
+        { backgroundColor: props.backgroundColor },
+      ]}
+    >
+      <Text style={[styles.errorTitle, { color: props.textColor }]}>
+        {t(PROFILE_GATE_I18N_KEYS.errorTitle)}
+      </Text>
+      <Text style={[styles.errorBody, { color: props.textColor }]}>
+        {message}
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        onPress={props.onRetry}
+        style={[styles.retryBtn, { backgroundColor: props.primaryColor }]}
+      >
+        <Text style={styles.retryLabel}>
+          {t(PROFILE_GATE_I18N_KEYS.retry)}
+        </Text>
+      </Pressable>
     </View>
   );
 }
@@ -61,14 +112,22 @@ export default function AppNavigator() {
   const { palette, hasChosenTheme, hydrating } = useAppTheme();
 
   const [authLoading, setAuthLoading] = useState(true);
-  const [profileLoading, setProfileLoading] = useState(false);
   const [welcomeHydrating, setWelcomeHydrating] = useState(true);
   const [hasSeenWelcome, setHasSeenWelcome] = useState(false);
 
   const [uid, setUid] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
-  const [needsCompleteProfile, setNeedsCompleteProfile] = useState(false);
+  const [profileFlow, setProfileFlow] = useState<AuthenticatedProfileFlow>({
+    kind: 'loading',
+  });
+
+  const gateRef = useRef(
+    createAuthenticatedProfileGate({
+      listen: dbOnUserSnapshot,
+      get: dbGetUser,
+    }),
+  );
 
   useEffect(() => {
     let alive = true;
@@ -91,7 +150,7 @@ export default function AppNavigator() {
         if (!user) {
           setUid(null);
           setUserEmail(null);
-          setNeedsCompleteProfile(false);
+          setProfileFlow({ kind: 'loading' });
           return;
         }
 
@@ -108,7 +167,7 @@ export default function AppNavigator() {
         ) {
           setUid(null);
           setUserEmail(null);
-          setNeedsCompleteProfile(false);
+          setProfileFlow({ kind: 'loading' });
           return;
         }
 
@@ -117,7 +176,7 @@ export default function AppNavigator() {
       } catch {
         setUid(null);
         setUserEmail(null);
-        setNeedsCompleteProfile(false);
+        setProfileFlow({ kind: 'loading' });
       } finally {
         setAuthLoading(false);
       }
@@ -126,36 +185,30 @@ export default function AppNavigator() {
     return () => unsubscribe();
   }, []);
 
-  // 2) Profile
+  // 2) Profile gate (shared by Google / password / LinkedIn — no provider branch)
   useEffect(() => {
+    const gate = gateRef.current;
     if (!uid) {
-      setProfileLoading(false);
-      setNeedsCompleteProfile(false);
+      gate.stop();
+      setProfileFlow({ kind: 'loading' });
       return;
     }
 
-    setProfileLoading(true);
-
-    const unsubscribe = dbOnUserSnapshot(
-      uid,
-      async (snap) => {
-        setNeedsCompleteProfile(!isProfileDocumentComplete(snap));
-        setProfileLoading(false);
-      },
-      async () => {
-        try {
-          const data = await dbGetUser(uid);
-          setNeedsCompleteProfile(!isProfileDocumentComplete(data));
-        } catch {
-          setNeedsCompleteProfile(false);
-        } finally {
-          setProfileLoading(false);
-        }
-      },
-    );
-
-    return () => unsubscribe();
+    gate.start(uid, setProfileFlow);
+    return () => {
+      gate.stop();
+    };
   }, [uid]);
+
+  const retryProfileGate = () => {
+    if (!uid) return;
+    gateRef.current.retry(uid, setProfileFlow);
+  };
+
+  const profileLoading = profileFlow.kind === 'loading';
+  const needsCompleteProfile = profileFlow.kind === 'ProfileCompletion';
+  const profileReadError =
+    profileFlow.kind === 'profile_read_error' ? profileFlow : null;
 
   // Guest key must NOT flip when hasChosenTheme becomes true on Continue —
   // otherwise the stack remounts and races with navigation.replace('Welcome').
@@ -164,6 +217,7 @@ export default function AppNavigator() {
     if (authLoading || profileLoading || hydrating || welcomeHydrating)
       return 'loading';
     if (!uid) return 'guest';
+    if (profileReadError) return `auth-error-${uid}`;
     if (needsCompleteProfile) return `auth-complete-${uid}`;
     return `auth-main-${uid}`;
   }, [
@@ -173,6 +227,7 @@ export default function AppNavigator() {
     welcomeHydrating,
     uid,
     needsCompleteProfile,
+    profileReadError,
   ]);
 
   if (authLoading || profileLoading || hydrating || welcomeHydrating) {
@@ -227,6 +282,18 @@ export default function AppNavigator() {
     );
   }
 
+  if (profileReadError) {
+    return (
+      <ProfileGateErrorView
+        reason={profileReadError.reason}
+        onRetry={retryProfileGate}
+        backgroundColor={palette.background}
+        textColor={palette.textPrimary}
+        primaryColor={palette.primary}
+      />
+    );
+  }
+
   if (needsCompleteProfile) {
     return (
       <Stack.Navigator
@@ -273,7 +340,13 @@ export default function AppNavigator() {
 /** Builds a React Navigation theme from the active app palette. */
 export function buildNavigationTheme(
   theme: 'clear' | 'dark',
-  palette: { background: string; cardBg: string; textPrimary: string; primary: string; border: string },
+  palette: {
+    background: string;
+    cardBg: string;
+    textPrimary: string;
+    primary: string;
+    border: string;
+  },
 ): NavigationTheme {
   const base = theme === 'dark' ? DarkTheme : DefaultTheme;
   return {
@@ -288,3 +361,35 @@ export function buildNavigationTheme(
     },
   };
 }
+
+const styles = StyleSheet.create({
+  errorRoot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  errorBody: {
+    fontSize: 15,
+    textAlign: 'center',
+    opacity: 0.85,
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  retryBtn: {
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  retryLabel: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
