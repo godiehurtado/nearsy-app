@@ -16,6 +16,15 @@ export const onboardingTranslations = {
     completeProfile: {
       title: 'Complete your profile',
     },
+    /** Gate that decides ProfileCompletion vs MainTabs after auth. */
+    profileGate: {
+      errorTitle: 'Could not load your profile',
+      errorMessage:
+        'Check your connection and try again. You stay signed in.',
+      retry: 'Try again',
+      permissionDeniedMessage:
+        'We could not access your profile right now. Try again in a moment.',
+    },
     /** ProfileCompletion wizard (CRJ): type / info / interests / location / notifications / success. */
     profileCompletion: {
       continue: 'Continue',
@@ -95,6 +104,14 @@ export const onboardingTranslations = {
     },
     completeProfile: {
       title: 'Completa tu perfil',
+    },
+    profileGate: {
+      errorTitle: 'No se pudo cargar tu perfil',
+      errorMessage:
+        'Revisa tu conexión e inténtalo de nuevo. Sigues con la sesión iniciada.',
+      retry: 'Reintentar',
+      permissionDeniedMessage:
+        'No pudimos acceder a tu perfil ahora. Inténtalo en un momento.',
     },
     profileCompletion: {
       continue: 'Continuar',
