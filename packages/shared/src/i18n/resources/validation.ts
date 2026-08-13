@@ -9,7 +9,8 @@ export default {
   emailMismatch: 'Email and confirmation email must match.',
   passwordMismatch: 'Password and confirmation must match.',
   birthYearRequired: 'Please select your birth year.',
-  minimumAge14: 'You must be 14+ to create an account.',
+  minimumAge14: 'You must be 18+ to create an account.',
+  minimumAge18: 'You must be 18+ to create an account.',
   termsRequired:
     'You must accept the terms and conditions to create an account.',
 } as const;

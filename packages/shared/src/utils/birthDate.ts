@@ -1,7 +1,7 @@
 /** Full birth date — day, month and year. Never year-only (CRJ / TSB-001). */
 
 /** Productive minimum age for registration (do not change without product approval). */
-export const MIN_REGISTRATION_AGE = 14;
+export const MIN_REGISTRATION_AGE = 18;
 
 export type BirthDateParts = {
   day: number | null;
@@ -89,7 +89,7 @@ export function ageFromBirthDate(
 }
 
 /**
- * Exact calendar age gate: turns 14 today → allowed; turns 14 tomorrow → blocked.
+ * Exact calendar age gate: turns 18 today → allowed; turns 18 tomorrow → blocked.
  * Future / non-existent dates → blocked.
  */
 export function meetsMinimumRegistrationAge(

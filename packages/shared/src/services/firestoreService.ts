@@ -11,6 +11,8 @@ import {
 } from '../types/profile';
 
 export type ModePresentationFields = {
+  realName?: string;
+  lastName?: string;
   profileImage?: string | null;
   occupation?: string;
   status?: string;
@@ -24,6 +26,8 @@ export type UserProfile = {
   email?: string;
   phone?: string | null;
   realName: string;
+  /** Temporary top-level mirror of active profile lastName (CRJ). */
+  lastName?: string;
 
   status?: string;
   location?:
@@ -39,13 +43,34 @@ export type UserProfile = {
   occupation?: string;
 
   /**
-   * Per-mode presentation (CRJ). Shared identity stays on top-level `realName`.
-   * Legacy top-level photo/occupation/status/bio remain as read fallback.
+   * Per-mode presentation (CRJ). Identity (realName/lastName) lives per mode;
+   * top-level may mirror the active face for legacy readers.
    */
   profiles?: {
     personal?: ModePresentationFields;
     professional?: ModePresentationFields;
   };
+
+  /**
+   * CRJ onboarding interest selections (detailed).
+   * INTERNAL INTERESTS MIGRATION — pending for in-app InterestsScreen.
+   */
+  personalOnboardingInterests?: Array<{
+    id: string;
+    name: string;
+    categoryId: string;
+    icon?: string;
+    isCustom?: boolean;
+    groupId?: string;
+  }>;
+  professionalOnboardingInterests?: Array<{
+    id: string;
+    name: string;
+    categoryId: string;
+    icon?: string;
+    isCustom?: boolean;
+    groupId?: string;
+  }>;
 
   personalInterestAffiliations?: InterestAffiliations;
   personalInterests?: string[];
@@ -119,6 +144,7 @@ export const createUserProfile = async (
 
         bio: '',
         status: '',
+        // Identity is collected after Profile Type (CRJ). Leave empty shell only.
         realName: data.realName?.trim() ?? '',
         occupation: '',
         company: '',

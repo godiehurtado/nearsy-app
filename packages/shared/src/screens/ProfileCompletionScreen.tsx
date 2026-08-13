@@ -1,12 +1,13 @@
 /**
- * Profile Completion wizard — CRJ steps after Authentication (6–10 + Success).
+ * Profile Completion wizard — CRJ profile-creation phase after Authentication.
  *
- * Flow: Profile Type → Profile Information/Photo → Interests → Location →
- * Notifications → Registration Success → MainTabs.
+ * Flow: Profile Type → Name → Last Name → Photo → Profile Details →
+ * Interests (12 category screens) → Location → Notifications →
+ * Registration Success → MainTabs.
  *
  * TEMPORARY: Phone OTP remains out of scope (handled earlier in Register).
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -25,7 +26,12 @@ import { RootStackParamList } from '../navigation/types';
 import { RegistrationLayout } from '../components/registration/RegistrationLayout';
 import { RegistrationProgress } from '../components/registration/RegistrationProgress';
 import { RegistrationFadeSlideIn } from '../components/registration/RegistrationFadeSlideIn';
-import { InterestChip } from '../components/InterestChip';
+import { FormInput } from '../components/registration/FormInput';
+import { OnboardingInterestCategoryPanel } from '../components/registration/OnboardingInterestCategoryPanel';
+import {
+  crjPhaseProgress,
+  type CrjProgressPhase,
+} from '../components/registration/crjProgress';
 import { PrimaryButton, SecondaryButton } from '../components/PrimaryButton';
 import AnimatedNearsyLogo from '../components/auth/AnimatedNearsyLogo';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -42,7 +48,7 @@ import {
 import { uploadProfileImage } from '../services/storageService';
 import {
   consumePendingSocialProfilePrefill,
-  mergeCompleteProfilePrefill,
+  mapSocialProfileToNamePrefill,
   peekPendingSocialProfilePrefill,
   sanitizeSocialPhotoUrl,
 } from '../authentication/social';
@@ -52,32 +58,50 @@ import {
   type ProfileMode,
 } from '../profile/profileModeFields';
 import {
-  affiliationsFromSelectedItems,
-  buildOnboardingInterestSample,
-  labelsFromAffiliations,
-  type OnboardingInterestItem,
-} from '../interests/onboardingInterestSample';
+  buildCrjInterestPersistencePatch,
+  interestsRemainingToMinimum,
+  listOnboardingCategoryIds,
+  meetsMinimumOnboardingInterests,
+  type OnboardingInterestCategoryId,
+  type OnboardingSelectedInterest,
+} from '../interests/onboardingInterestCatalog';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileCompletion'>;
 
-const STEPS = [
+const PRE_INTEREST_STEPS = [
   'type',
-  'info',
-  'interests',
-  'location',
-  'notifications',
-  'success',
+  'identity',
+  'photo',
+  'details',
+  'interestsIntro',
 ] as const;
-type Step = (typeof STEPS)[number];
+const POST_INTEREST_STEPS = ['location', 'notifications', 'success'] as const;
+const INTEREST_CATEGORY_IDS = listOnboardingCategoryIds();
 
-const STEP_NUMBER: Partial<Record<Step, number>> = {
-  type: 6,
-  info: 7,
-  interests: 8,
-  location: 9,
-  notifications: 10,
-};
-const TOTAL_STEPS = 10;
+type FixedPreStep = (typeof PRE_INTEREST_STEPS)[number];
+type FixedPostStep = (typeof POST_INTEREST_STEPS)[number];
+
+type ResolvedStep =
+  | { kind: FixedPreStep }
+  | { kind: 'interest'; interestCategoryIndex: number; categoryId: OnboardingInterestCategoryId }
+  | { kind: FixedPostStep };
+
+function resolveStep(stepIndex: number): ResolvedStep {
+  if (stepIndex < PRE_INTEREST_STEPS.length) {
+    return { kind: PRE_INTEREST_STEPS[stepIndex]! };
+  }
+  const interestOffset = stepIndex - PRE_INTEREST_STEPS.length;
+  if (interestOffset < INTEREST_CATEGORY_IDS.length) {
+    const categoryId = INTEREST_CATEGORY_IDS[interestOffset]!;
+    return {
+      kind: 'interest',
+      interestCategoryIndex: interestOffset,
+      categoryId,
+    };
+  }
+  const postOffset = interestOffset - INTEREST_CATEGORY_IDS.length;
+  return { kind: POST_INTEREST_STEPS[postOffset]! };
+}
 
 function isLocalUri(value?: string | null) {
   return !!value && /^(file|content|ph|assets-library):/i.test(value);
@@ -100,6 +124,65 @@ function resolveAuthProviderPhotoUrl(): string | null {
   return null;
 }
 
+function readOnboardingInterests(
+  data: Record<string, unknown> | null | undefined,
+  mode: ProfileMode,
+): OnboardingSelectedInterest[] {
+  const key =
+    mode === 'professional'
+      ? 'professionalOnboardingInterests'
+      : 'personalOnboardingInterests';
+  const raw = data?.[key];
+  if (!Array.isArray(raw)) return [];
+  const out: OnboardingSelectedInterest[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    if (
+      typeof row.id !== 'string' ||
+      typeof row.name !== 'string' ||
+      typeof row.categoryId !== 'string'
+    ) {
+      continue;
+    }
+    out.push({
+      id: row.id,
+      name: row.name,
+      categoryId: row.categoryId as OnboardingInterestCategoryId,
+      icon: typeof row.icon === 'string' ? row.icon : 'star-outline',
+      iconColor:
+        typeof row.iconColor === 'string' ? row.iconColor : '#64748B',
+      ...(row.isCustom === true ? { isCustom: true } : {}),
+      ...(typeof row.groupId === 'string' && row.groupId
+        ? { groupId: row.groupId }
+        : {}),
+    });
+  }
+  return out;
+}
+
+function progressPhaseForStep(step: ResolvedStep): CrjProgressPhase | null {
+  switch (step.kind) {
+    case 'type':
+      return 'type';
+    case 'identity':
+      return 'identity';
+    case 'photo':
+      return 'photo';
+    case 'details':
+      return 'details';
+    case 'interestsIntro':
+    case 'interest':
+      return 'interests';
+    case 'location':
+      return 'location';
+    case 'notifications':
+      return 'notifications';
+    case 'success':
+      return null;
+  }
+}
+
 export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const { palette } = useAppTheme();
   const { t } = useTranslation();
@@ -114,16 +197,22 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [hydrated, setHydrated] = useState(false);
 
   const [mode, setMode] = useState<ProfileMode | null>(null);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [selectedInterestIds, setSelectedInterestIds] = useState<string[]>([]);
-  const [realName, setRealName] = useState('');
+  const [occupation, setOccupation] = useState('');
+  const [company, setCompany] = useState('');
+  const [status, setStatus] = useState('');
+  const [bio, setBio] = useState('');
+  const [selectedInterests, setSelectedInterests] = useState<
+    OnboardingSelectedInterest[]
+  >([]);
   const [shellData, setShellData] = useState<Record<string, unknown> | null>(
     null,
   );
-  const [interestSample, setInterestSample] = useState<
-    OnboardingInterestItem[]
-  >([]);
-  const [interestsCatalogError, setInterestsCatalogError] = useState(false);
+
+  /** Success display name — mirrors firstName. */
+  const realName = firstName;
 
   /**
    * Wizard-held photo (Google prefill or user Take/Upload). Survives mode
@@ -132,19 +221,13 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const wizardPhotoRef = useRef<string | null>(null);
   const prefillConsumedRef = useRef(false);
 
-  const step: Step = STEPS[stepIndex];
-  const stepNumber = STEP_NUMBER[step];
+  const step = useMemo(() => resolveStep(stepIndex), [stepIndex]);
+  const interestCategoryIndex =
+    step.kind === 'interest' ? step.interestCategoryIndex : 0;
 
-  function loadInterestSample() {
-    try {
-      const sample = buildOnboardingInterestSample(4);
-      setInterestSample(sample);
-      setInterestsCatalogError(sample.length === 0);
-    } catch {
-      setInterestSample([]);
-      setInterestsCatalogError(true);
-    }
-  }
+  const progressPhase = progressPhaseForStep(step);
+  const progressValue =
+    progressPhase != null ? crjPhaseProgress(progressPhase) : 0;
 
   function setWizardPhoto(uri: string | null) {
     wizardPhotoRef.current = uri;
@@ -156,32 +239,24 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     nextMode: ProfileMode,
   ) {
     const presentation = resolveModePresentation(data, nextMode);
+
+    setFirstName((prev) => presentation.realName || prev);
+    setLastName((prev) => presentation.lastName || prev);
+    setOccupation(presentation.occupation ?? '');
+    setCompany(presentation.company ?? '');
+    setStatus(presentation.status ?? '');
+    setBio(presentation.bio ?? '');
+
     // Never wipe a Google/user wizard photo with an empty mode shell.
     if (presentation.profileImage) {
       setPhotoUri(presentation.profileImage);
     } else if (wizardPhotoRef.current) {
       setPhotoUri(wizardPhotoRef.current);
+    } else {
+      setPhotoUri(null);
     }
 
-    const aff =
-      nextMode === 'professional'
-        ? (data?.professionalInterestAffiliations as
-            | Record<string, { id: string }[] | undefined>
-            | undefined)
-        : (data?.personalInterestAffiliations as
-            | Record<string, { id: string }[] | undefined>
-            | undefined);
-    if (aff) {
-      const ids: string[] = [];
-      for (const list of Object.values(aff)) {
-        for (const item of list ?? []) {
-          if (item?.id) ids.push(item.id);
-        }
-      }
-      setSelectedInterestIds(ids);
-    } else {
-      setSelectedInterestIds([]);
-    }
+    setSelectedInterests(readOnboardingInterests(data, nextMode));
   }
 
   const loadShell = useCallback(async () => {
@@ -218,9 +293,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         existing = await getUserProfile(uid);
       }
 
-      setShellData((existing as any) ?? null);
+      setShellData((existing as Record<string, unknown>) ?? null);
 
-      let nextName = String(existing?.realName ?? '').trim();
       let nextPhoto: string | null = null;
       const existingMode =
         existing?.mode === 'personal' || existing?.mode === 'professional'
@@ -229,8 +303,14 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
 
       if (existingMode) {
         setMode(existingMode);
-        nextPhoto =
-          resolveModePresentation(existing as any, existingMode).profileImage;
+        nextPhoto = resolveModePresentation(
+          existing as Record<string, unknown>,
+          existingMode,
+        ).profileImage;
+        applyModePresentation(
+          existing as Record<string, unknown>,
+          existingMode,
+        );
       }
 
       // Precedence for initial photo (new Google user):
@@ -254,30 +334,15 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       }
 
       if (socialPrefill) {
-        const merged = mergeCompleteProfilePrefill(
-          {
-            realName: nextName,
-            profileImage: nextPhoto,
-            email: (existing as any)?.email ?? null,
-          },
-          socialPrefill,
-        );
-        if (merged.realName?.trim()) {
-          nextName = merged.realName.trim();
-        }
-        if (merged.profileImage?.trim()) {
-          nextPhoto = merged.profileImage.trim();
-        }
-        // Persist realName early so remounts keep the shared identity.
-        if (nextName && !String(existing?.realName ?? '').trim()) {
-          try {
-            await updateUserProfilePartial(uid, {
-              realName: nextName,
-              profileSetupCompleted: false,
-            });
-          } catch {
-            // fail-soft
-          }
+        // Names → wizard state only. Do NOT early-persist to Firestore
+        // before Profile Type + user confirmation.
+        const names = mapSocialProfileToNamePrefill(socialPrefill);
+        setFirstName((prev) => prev || names.firstName);
+        setLastName((prev) => prev || names.lastName);
+
+        const socialPhoto = sanitizeSocialPhotoUrl(socialPrefill.photoUrl);
+        if (socialPhoto?.trim()) {
+          nextPhoto = nextPhoto || socialPhoto.trim();
         }
       }
 
@@ -285,32 +350,10 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         nextPhoto = resolveAuthProviderPhotoUrl();
       }
 
-      if (existingMode) {
-        applyModePresentation(
-          {
-            ...(existing as any),
-            ...(nextPhoto
-              ? {
-                  profiles: {
-                    ...((existing as any)?.profiles ?? {}),
-                    [existingMode]: {
-                      ...((existing as any)?.profiles?.[existingMode] ?? {}),
-                      profileImage: nextPhoto,
-                    },
-                  },
-                }
-              : {}),
-          },
-          existingMode,
-        );
-      }
-
-      if (nextName) setRealName(nextName);
       if (nextPhoto) {
         wizardPhotoRef.current = nextPhoto;
         setPhotoUri(nextPhoto);
       }
-      loadInterestSample();
     } finally {
       setHydrated(true);
     }
@@ -319,12 +362,6 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   useEffect(() => {
     void loadShell();
   }, [loadShell]);
-
-  function toggleInterest(id: string) {
-    setSelectedInterestIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  }
 
   async function pickFromLibrary() {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -354,16 +391,29 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     }
   }
 
+  function selectionsInCurrentCategory(): number {
+    if (step.kind !== 'interest') return 0;
+    return selectedInterests.filter((s) => s.categoryId === step.categoryId)
+      .length;
+  }
+
   function isStepValid(): boolean {
-    switch (step) {
+    switch (step.kind) {
       case 'type':
         return mode != null;
-      case 'info':
-        // Approved prototype (nearsy-rn-v3 README): photo mandatory, no skip.
+      case 'identity':
+        return firstName.trim().length > 0 && lastName.trim().length > 0;
+      case 'photo':
         return !!photoUri?.trim();
-      case 'interests':
-        if (interestsCatalogError || interestSample.length === 0) return false;
-        return selectedInterestIds.length >= 1;
+      case 'details': {
+        if (!occupation.trim() || !status.trim() || !bio.trim()) return false;
+        if (mode === 'professional' && !company.trim()) return false;
+        return true;
+      }
+      case 'interestsIntro':
+      case 'interest':
+        // Continuing is gated by Next/Skip handlers (min 7 checked at end).
+        return true;
       case 'location':
       case 'notifications':
       case 'success':
@@ -373,13 +423,21 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
 
   function blockedReason(): string | undefined {
     if (isStepValid()) return undefined;
-    switch (step) {
+    switch (step.kind) {
       case 'type':
         return t('onboarding.profileCompletion.type.chooseRequired');
-      case 'info':
+      case 'identity':
+        if (!firstName.trim()) {
+          return t('onboarding.profileCompletion.identity.nameRequired');
+        }
+        if (!lastName.trim()) {
+          return t('onboarding.profileCompletion.identity.lastNameRequired');
+        }
+        return t('onboarding.profileCompletion.identity.required');
+      case 'photo':
         return t('onboarding.profileCompletion.info.photoRequired');
-      case 'interests':
-        return t('onboarding.profileCompletion.interests.pickRequired');
+      case 'details':
+        return t('onboarding.profileCompletion.details.required' as any);
       default:
         return undefined;
     }
@@ -390,7 +448,29 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     await updateUserMode(uid, mode);
   }
 
-  async function persistInfo() {
+  async function persistName() {
+    if (!uid || !mode) return;
+    const patch = buildActiveProfileSavePatch({
+      mode,
+      presentation: {
+        realName: firstName.trim(),
+        lastName: lastName.trim(),
+      },
+      projectActiveToTopLevel: true,
+    });
+    await updateUserProfilePartial(uid, {
+      ...patch,
+      profileSetupCompleted: false,
+    });
+    setShellData((prev) => ({
+      ...(prev ?? {}),
+      ...patch,
+      mode,
+      profileSetupCompleted: false,
+    }));
+  }
+
+  async function persistPhoto() {
     if (!uid || !mode || !photoUri) return;
 
     let imageUrl = photoUri;
@@ -398,10 +478,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       imageUrl = await uploadProfileImage(uid, photoUri);
     }
 
-    // Photo for active mode only. Never sets profileSetupCompleted true.
     const patch = buildActiveProfileSavePatch({
       mode,
-      realName: realName.trim() || undefined,
       presentation: {
         profileImage: imageUrl,
       },
@@ -419,34 +497,52 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       mode,
       profileSetupCompleted: false,
       profiles: {
-        ...((prev?.profiles as any) ?? {}),
+        ...((prev?.profiles as object) ?? {}),
         [mode]: {
-          ...(((prev?.profiles as any)?.[mode] as object) ?? {}),
+          ...(((prev?.profiles as Record<string, object> | undefined)?.[
+            mode
+          ] as object) ?? {}),
           profileImage: imageUrl,
         },
       },
     }));
   }
 
+  async function persistDetails() {
+    if (!uid || !mode) return;
+    const patch = buildActiveProfileSavePatch({
+      mode,
+      presentation: {
+        occupation: occupation.trim(),
+        status: status.trim(),
+        bio: bio.trim(),
+        ...(mode === 'professional'
+          ? { company: company.trim() }
+          : {}),
+      },
+      projectActiveToTopLevel: true,
+    });
+    await updateUserProfilePartial(uid, {
+      ...patch,
+      profileSetupCompleted: false,
+    });
+    setShellData((prev) => ({
+      ...(prev ?? {}),
+      ...patch,
+      mode,
+      profileSetupCompleted: false,
+    }));
+  }
+
   async function persistInterests() {
     if (!uid || !mode) return;
-    const selected = new Set(selectedInterestIds);
-    const aff = affiliationsFromSelectedItems(interestSample, selected);
-    const labels = labelsFromAffiliations(aff);
-
-    if (mode === 'personal') {
-      await updateUserProfilePartial(uid, {
-        personalInterests: labels,
-        personalInterestAffiliations: aff,
-        profileSetupCompleted: false,
-      });
-    } else {
-      await updateUserProfilePartial(uid, {
-        professionalInterests: labels,
-        professionalInterestAffiliations: aff,
-        profileSetupCompleted: false,
-      });
-    }
+    const patch = buildCrjInterestPersistencePatch(mode, selectedInterests);
+    await updateUserProfilePartial(uid, patch);
+    setShellData((prev) => ({
+      ...(prev ?? {}),
+      mode,
+      ...patch,
+    }));
   }
 
   async function requestLocation() {
@@ -502,7 +598,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       await updateUserProfilePartial(uid, {
         profileSetupCompleted: true,
         mode,
-        ...(realName.trim() ? { realName: realName.trim() } : {}),
+        ...(firstName.trim() ? { realName: firstName.trim() } : {}),
+        ...(lastName.trim() ? { lastName: lastName.trim() } : {}),
       });
       navigation.reset({
         index: 0,
@@ -518,24 +615,70 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     }
   }
 
+  async function leaveLastInterestCategory() {
+    if (!meetsMinimumOnboardingInterests(selectedInterests)) {
+      Alert.alert(
+        t('onboarding.profileCompletion.interests.minRequired' as any, {
+          count: selectedInterests.length,
+          remaining: interestsRemainingToMinimum(selectedInterests),
+        }),
+      );
+      return;
+    }
+    await persistInterests();
+    setStepIndex((i) => i + 1);
+  }
+
+  async function advanceInterest(opts: {
+    requireCategorySelection: boolean;
+  }) {
+    if (step.kind !== 'interest' || submitting) return;
+    if (
+      opts.requireCategorySelection &&
+      selectionsInCurrentCategory() < 1
+    ) {
+      return;
+    }
+
+    const isLast =
+      interestCategoryIndex >= INTEREST_CATEGORY_IDS.length - 1;
+
+    try {
+      setSubmitting(true);
+      if (isLast) {
+        await leaveLastInterestCategory();
+      } else {
+        setStepIndex((i) => i + 1);
+      }
+    } catch (e: any) {
+      Alert.alert(
+        t('onboarding.profileCompletion.saveErrorTitle'),
+        e?.message || t('onboarding.profileCompletion.saveErrorMessage'),
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function goNext() {
     if (!isStepValid() || submitting) return;
     try {
       setSubmitting(true);
-      if (step === 'type') {
+      if (step.kind === 'type') {
         await persistType();
         setStepIndex((i) => i + 1);
-      } else if (step === 'info') {
-        await persistInfo();
+      } else if (step.kind === 'identity') {
+        await persistName();
         setStepIndex((i) => i + 1);
-      } else if (step === 'interests') {
-        await persistInterests();
+      } else if (step.kind === 'photo') {
+        await persistPhoto();
         setStepIndex((i) => i + 1);
-      } else if (step === 'location') {
-        // handled by dedicated buttons
-      } else if (step === 'notifications') {
-        // handled by dedicated buttons
-      } else if (step === 'success') {
+      } else if (step.kind === 'details') {
+        await persistDetails();
+        setStepIndex((i) => i + 1);
+      } else if (step.kind === 'interestsIntro') {
+        setStepIndex((i) => i + 1);
+      } else if (step.kind === 'success') {
         await finishOnboarding();
       }
     } catch (e: any) {
@@ -549,7 +692,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   }
 
   function goBack() {
-    if (step === 'success' || stepIndex <= 0) return;
+    if (step.kind === 'success' || stepIndex <= 0) return;
     setStepIndex((i) => i - 1);
   }
 
@@ -566,14 +709,31 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   }
 
   const showFooterContinue =
-    step === 'type' || step === 'info' || step === 'interests';
+    step.kind === 'type' ||
+    step.kind === 'identity' ||
+    step.kind === 'photo' ||
+    step.kind === 'details' ||
+    step.kind === 'interestsIntro';
+
+  const animKey =
+    step.kind === 'interest'
+      ? `interest-${step.categoryId}`
+      : step.kind;
+
+  const displayName = [realName.trim(), lastName.trim()]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <RegistrationLayout
       footer={
         showFooterContinue ? (
           <PrimaryButton
-            label={t('onboarding.profileCompletion.continue')}
+            label={
+              step.kind === 'interestsIntro'
+                ? t('onboarding.profileCompletion.interestsIntro.cta')
+                : t('onboarding.profileCompletion.continue')
+            }
             onPress={() => {
               void goNext();
             }}
@@ -581,7 +741,32 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             loading={submitting}
             disabledReason={blockedReason()}
           />
-        ) : step === 'location' ? (
+        ) : step.kind === 'interest' ? (
+          <View style={styles.actionStack}>
+            <PrimaryButton
+              label={t('onboarding.profileCompletion.interests.next' as any)}
+              onPress={() => {
+                void advanceInterest({ requireCategorySelection: true });
+              }}
+              disabled={selectionsInCurrentCategory() < 1 || submitting}
+              loading={submitting}
+              disabledReason={
+                selectionsInCurrentCategory() < 1
+                  ? t(
+                      'onboarding.profileCompletion.interests.pickRequired',
+                    )
+                  : undefined
+              }
+            />
+            <SecondaryButton
+              label={t('onboarding.profileCompletion.interests.skip' as any)}
+              onPress={() => {
+                if (submitting) return;
+                void advanceInterest({ requireCategorySelection: false });
+              }}
+            />
+          </View>
+        ) : step.kind === 'location' ? (
           <View style={styles.actionStack}>
             <PrimaryButton
               label={t('onboarding.profileCompletion.location.enable')}
@@ -595,7 +780,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               onPress={() => setStepIndex((i) => i + 1)}
             />
           </View>
-        ) : step === 'notifications' ? (
+        ) : step.kind === 'notifications' ? (
           <View style={styles.actionStack}>
             <PrimaryButton
               label={t('onboarding.profileCompletion.notifications.enable')}
@@ -609,7 +794,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               onPress={() => setStepIndex((i) => i + 1)}
             />
           </View>
-        ) : step === 'success' ? (
+        ) : step.kind === 'success' ? (
           <PrimaryButton
             label={t('onboarding.profileCompletion.success.startExploring')}
             onPress={() => {
@@ -620,7 +805,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         ) : null
       }
     >
-      {step !== 'success' && stepNumber != null ? (
+      {step.kind !== 'success' && progressPhase != null ? (
         <View style={styles.header}>
           {stepIndex > 0 ? (
             <Pressable
@@ -645,10 +830,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
           ) : (
             <View style={{ width: 34 }} />
           )}
-          <RegistrationProgress
-            progress={stepNumber / TOTAL_STEPS}
-            stepLabel={`${stepNumber}/${TOTAL_STEPS}`}
-          />
+          <RegistrationProgress progress={progressValue} />
         </View>
       ) : null}
 
@@ -658,8 +840,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <RegistrationFadeSlideIn animKey={step}>
-          {step === 'type' && (
+        <RegistrationFadeSlideIn animKey={animKey}>
+          {step.kind === 'type' && (
             <>
               <Text style={[styles.title, { color: palette.textPrimary }]}>
                 {t('onboarding.profileCompletion.type.title')}
@@ -767,7 +949,44 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             </>
           )}
 
-          {step === 'info' && (
+          {step.kind === 'identity' && (
+            <>
+              <Text style={[styles.title, { color: palette.textPrimary }]}>
+                {t('onboarding.profileCompletion.identity.title')}
+              </Text>
+              <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
+                {t('onboarding.profileCompletion.identity.subtitle')}
+              </Text>
+              <View style={styles.formBlock}>
+                <FormInput
+                  label={t('onboarding.profileCompletion.identity.nameLabel')}
+                  placeholder={t(
+                    'onboarding.profileCompletion.identity.namePlaceholder',
+                  )}
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  autoCapitalize="words"
+                  autoComplete="given-name"
+                  textContentType="givenName"
+                />
+                <FormInput
+                  label={t(
+                    'onboarding.profileCompletion.identity.lastNameLabel',
+                  )}
+                  placeholder={t(
+                    'onboarding.profileCompletion.identity.lastNamePlaceholder',
+                  )}
+                  value={lastName}
+                  onChangeText={setLastName}
+                  autoCapitalize="words"
+                  autoComplete="family-name"
+                  textContentType="familyName"
+                />
+              </View>
+            </>
+          )}
+
+          {step.kind === 'photo' && (
             <>
               <Text
                 style={[
@@ -827,64 +1046,179 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             </>
           )}
 
-          {step === 'interests' && (
+          {step.kind === 'details' && (
             <>
               <Text style={[styles.title, { color: palette.textPrimary }]}>
-                {t('onboarding.profileCompletion.interests.title')}
+                {t('onboarding.profileCompletion.details.title' as any)}
               </Text>
               <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
-                {t('onboarding.profileCompletion.interests.subtitle', {
-                  count: selectedInterestIds.length,
-                })}
+                {t('onboarding.profileCompletion.details.subtitle' as any)}
               </Text>
-              {interestsCatalogError || interestSample.length === 0 ? (
-                <View style={styles.catalogError}>
-                  <Text
-                    style={[
-                      styles.optionTitle,
-                      { color: palette.textPrimary },
-                    ]}
-                  >
-                    {t(
-                      'onboarding.profileCompletion.interests.catalogErrorTitle',
+              <View style={styles.formStack}>
+                <FormInput
+                  label={t(
+                    'onboarding.profileCompletion.details.occupation' as any,
+                  )}
+                  placeholder={t(
+                    'onboarding.profileCompletion.details.occupationPlaceholder' as any,
+                  )}
+                  value={occupation}
+                  onChangeText={setOccupation}
+                  autoCapitalize="sentences"
+                />
+                {mode === 'professional' ? (
+                  <FormInput
+                    label={t(
+                      'onboarding.profileCompletion.details.company' as any,
                     )}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.optionBody,
-                      { color: palette.textSecondary, marginTop: spacing.sm },
-                    ]}
-                  >
-                    {t(
-                      'onboarding.profileCompletion.interests.catalogErrorMessage',
+                    placeholder={t(
+                      'onboarding.profileCompletion.details.companyPlaceholder' as any,
                     )}
-                  </Text>
-                  <View style={{ marginTop: spacing.lg }}>
-                    <SecondaryButton
-                      label={t(
-                        'onboarding.profileCompletion.interests.catalogRetry',
-                      )}
-                      onPress={loadInterestSample}
-                    />
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.grid}>
-                  {interestSample.map((item) => (
-                    <InterestChip
-                      key={item.id}
-                      name={item.name}
-                      emoji={item.emoji}
-                      selected={selectedInterestIds.includes(item.id)}
-                      onPress={() => toggleInterest(item.id)}
-                    />
-                  ))}
-                </View>
-              )}
+                    value={company}
+                    onChangeText={setCompany}
+                    autoCapitalize="words"
+                  />
+                ) : null}
+                <FormInput
+                  label={t(
+                    'onboarding.profileCompletion.details.status' as any,
+                  )}
+                  placeholder={t(
+                    'onboarding.profileCompletion.details.statusPlaceholder' as any,
+                  )}
+                  value={status}
+                  onChangeText={setStatus}
+                  autoCapitalize="sentences"
+                />
+                <FormInput
+                  label={t('onboarding.profileCompletion.details.bio' as any)}
+                  placeholder={t(
+                    'onboarding.profileCompletion.details.bioPlaceholder' as any,
+                  )}
+                  value={bio}
+                  onChangeText={setBio}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                  style={styles.bioInput}
+                  autoCapitalize="sentences"
+                />
+              </View>
             </>
           )}
 
-          {step === 'location' && (
+          {step.kind === 'interestsIntro' && (
+            <View style={styles.centerBody}>
+              <View
+                style={[
+                  styles.introIconRing,
+                  {
+                    borderColor: palette.primary,
+                    backgroundColor: palette.chipBg,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="people-outline"
+                  size={36}
+                  color={palette.primary}
+                />
+              </View>
+              <Text
+                style={[
+                  styles.introEyebrow,
+                  { color: palette.primary },
+                ]}
+              >
+                {t('onboarding.profileCompletion.interestsIntro.eyebrow')}
+              </Text>
+              <Text
+                style={[
+                  styles.title,
+                  { color: palette.textPrimary, textAlign: 'center' },
+                ]}
+              >
+                {t('onboarding.profileCompletion.interestsIntro.title')}
+              </Text>
+              <Text
+                style={[
+                  styles.subtitle,
+                  {
+                    color: palette.textSecondary,
+                    textAlign: 'center',
+                    maxWidth: 320,
+                  },
+                ]}
+              >
+                {t('onboarding.profileCompletion.interestsIntro.body')}
+              </Text>
+              <View style={styles.introChipRow}>
+                {(
+                  [
+                    {
+                      icon: 'cafe-outline' as const,
+                      color: '#D97706',
+                      label: 'Coffee',
+                    },
+                    {
+                      icon: 'musical-notes-outline' as const,
+                      color: '#7C3AED',
+                      label: 'Music',
+                    },
+                    {
+                      icon: 'bicycle-outline' as const,
+                      color: '#059669',
+                      label: 'Cycling',
+                    },
+                  ] as const
+                ).map((chip) => (
+                  <View
+                    key={chip.label}
+                    style={[
+                      styles.introChip,
+                      {
+                        borderColor: palette.border,
+                        backgroundColor: palette.panel,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={chip.icon}
+                      size={14}
+                      color={chip.color}
+                    />
+                    <Text
+                      style={{
+                        color: palette.textPrimary,
+                        fontSize: fontSize.sm,
+                        fontWeight: fontWeight.semibold,
+                      }}
+                    >
+                      {chip.label}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              <Text
+                style={[
+                  styles.introSupport,
+                  { color: palette.textMuted, textAlign: 'center' },
+                ]}
+              >
+                {t('onboarding.profileCompletion.interestsIntro.supporting')}
+              </Text>
+            </View>
+          )}
+
+          {step.kind === 'interest' && (
+            <OnboardingInterestCategoryPanel
+              categoryId={step.categoryId}
+              selected={selectedInterests}
+              onChangeSelected={setSelectedInterests}
+            />
+          )}
+
+          {step.kind === 'location' && (
             <View style={styles.centerBody}>
               <View style={styles.markWrap}>
                 <AnimatedNearsyLogo size={54} />
@@ -912,7 +1246,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             </View>
           )}
 
-          {step === 'notifications' && (
+          {step.kind === 'notifications' && (
             <View style={styles.centerBody}>
               <View style={styles.markWrap}>
                 <AnimatedNearsyLogo size={54} />
@@ -940,8 +1274,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             </View>
           )}
 
-          {step === 'success' && (
+          {step.kind === 'success' && (
             <View style={styles.centerBody}>
+              <View style={styles.markWrap}>
+                <AnimatedNearsyLogo size={54} />
+              </View>
               {photoUri ? (
                 <Image source={{ uri: photoUri }} style={styles.successAvatar} />
               ) : null}
@@ -961,14 +1298,14 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               >
                 {t('onboarding.profileCompletion.success.subtitle')}
               </Text>
-              {realName ? (
+              {displayName ? (
                 <Text
                   style={[
                     styles.successName,
                     { color: palette.textPrimary },
                   ]}
                 >
-                  {realName}
+                  {displayName}
                 </Text>
               ) : null}
               <Text style={{ color: palette.textMuted, marginTop: spacing.sm }}>
@@ -981,19 +1318,6 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                       : t('onboarding.profileCompletion.success.modePersonal'),
                 })}
               </Text>
-              <View style={[styles.grid, { marginTop: spacing.xl }]}>
-                {interestSample
-                  .filter((i) => selectedInterestIds.includes(i.id))
-                  .slice(0, 8)
-                  .map((item) => (
-                    <InterestChip
-                      key={item.id}
-                      name={item.name}
-                      emoji={item.emoji}
-                      selected
-                    />
-                  ))}
-              </View>
             </View>
           )}
         </RegistrationFadeSlideIn>
@@ -1034,6 +1358,12 @@ const styles = StyleSheet.create({
     fontSize: fontSize.base,
     lineHeight: fontSize.base * 1.5,
     marginTop: spacing.sm,
+  },
+  formBlock: { marginTop: spacing.xxl },
+  formStack: { gap: spacing.lg, marginTop: spacing.xxl },
+  bioInput: {
+    minHeight: 110,
+    paddingTop: 14,
   },
   options: { gap: spacing.md, marginTop: spacing.xxl },
   option: { borderRadius: radius.xl, padding: spacing.lg },
@@ -1078,15 +1408,49 @@ const styles = StyleSheet.create({
     width: '100%',
     marginTop: spacing.md,
   },
-  catalogError: {
-    marginTop: spacing.xl,
-  },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   centerBody: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: spacing.xxl,
+  },
+  introIconRing: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
+  },
+  introEyebrow: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.extrabold,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: spacing.sm,
+  },
+  introChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.xl,
+  },
+  introChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  introSupport: {
+    fontSize: fontSize.sm,
+    lineHeight: fontSize.sm * 1.45,
+    marginTop: spacing.xl,
+    maxWidth: 300,
   },
   markWrap: { marginBottom: spacing.xl },
   actionStack: { gap: spacing.sm },

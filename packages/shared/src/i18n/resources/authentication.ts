@@ -101,7 +101,7 @@ export default {
     birthDateModalTitle: 'Select your date of birth',
     countryModalTitle: 'Select country code',
     phoneHelper: 'Optional for now. Select your country and enter a valid mobile number.',
-    ageHelper: 'You must be 14+ to register.',
+    ageHelper: 'You must be 18+ to register.',
     termsPrefix: 'I agree to the',
     termsLink: 'terms and conditions',
     wizard: {
@@ -110,15 +110,11 @@ export default {
       backA11y: 'Back',
       selectCountryA11y: 'Select country dial code',
       steps: {
-        name: {
-          title: "What's your name?",
-          subtitle: "This is how you'll appear on Nearsy.",
-        },
         birth: {
           title: 'When were you born?',
           subtitle: 'Your profile shows your age, not your birth date.',
           ageOk: "You're {{age}}",
-          ageTooYoung: 'You must be 14+ to create an account.',
+          ageTooYoung: 'You must be 18+ to create an account.',
           futureDate: 'Enter a date of birth that is not in the future.',
           invalidDate: 'Enter a valid date of birth.',
         },
@@ -138,7 +134,6 @@ export default {
         },
       },
       fields: {
-        realName: 'Real name',
         day: 'Day',
         month: 'Month',
         year: 'Year',
@@ -147,7 +142,6 @@ export default {
         phone: 'Mobile number',
       },
       placeholders: {
-        realName: 'Real name',
         day: 'DD',
         month: 'MM',
         year: 'YYYY',
@@ -156,11 +150,10 @@ export default {
         phone: 'Mobile number',
       },
       validation: {
-        name: 'Enter your real name',
         birthIncomplete: 'Enter your full date of birth',
         birthInvalid: 'Enter a valid date of birth.',
         birthFuture: 'Enter a date of birth that is not in the future.',
-        birthMinimumAge: 'You must be 14+ to create an account.',
+        birthMinimumAge: 'You must be 18+ to create an account.',
         email: 'Enter a valid email address',
         password:
           'Use at least 8 characters with letters and numbers',
@@ -223,7 +216,7 @@ export default {
       validation: {
         realName: 'Please enter your real name to continue.',
         birthDate:
-          'Please select a valid date of birth. You must be 14+ to register.',
+          'Please select a valid date of birth. You must be 18+ to register.',
         email: 'Please enter a valid email address to continue.',
         confirmEmail:
           'Please confirm your email. It needs to match the email above.',
@@ -234,7 +227,7 @@ export default {
         confirmPassword:
           'Please confirm your password. It needs to match the password above.',
         birthYear:
-          'Please select a valid birth year. You must be 14+ to register.',
+          'Please select a valid birth year. You must be 18+ to register.',
         terms: 'Please accept the terms and conditions to continue.',
         finish:
           'Please complete the registration details before finishing the guide.',
@@ -248,7 +241,7 @@ export default {
       birthYearRequiredTitle: 'Birth year required',
       birthYearRequiredMessage: 'Please select your birth year.',
       minimumAgeTitle: 'Minimum age',
-      minimumAgeMessage: 'You must be 14+ to create an account.',
+      minimumAgeMessage: 'You must be 18+ to create an account.',
       invalidEmailTitle: 'Invalid email',
       emailMismatchTitle: 'Email mismatch',
       invalidPhoneTitle: 'Invalid phone number',
