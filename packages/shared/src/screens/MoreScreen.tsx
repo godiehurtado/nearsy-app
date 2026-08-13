@@ -493,6 +493,10 @@ export default function MoreScreen() {
 
   const handleLogout = async () => {
     try {
+      const { clearPendingSocialProfilePrefill } = await import(
+        '../authentication/social'
+      );
+      clearPendingSocialProfilePrefill();
       await firebaseAuth.signOut();
 
       const parent = navigation.getParent?.();

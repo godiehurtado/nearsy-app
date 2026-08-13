@@ -17,8 +17,10 @@ import type {
 } from '../infrastructure/firebase/firebaseAuthenticationPort';
 import {
   clearPendingSocialProfilePrefill,
+  consumePendingSocialProfilePrefill,
   peekPendingSocialProfilePrefill,
 } from '../application/socialProfilePrefillStore';
+import { mapSocialProfileToNamePrefill } from '../application/mapSocialNamePrefill';
 
 function createMockAppleProvider(
   overrides: Partial<SocialAuthenticationProviderAdapter> & {
@@ -579,6 +581,140 @@ describe('authenticateWithApple', () => {
         err.social.code === 'ACCOUNT_CONFLICT',
     );
     assert.equal(persist.writes.length, 0);
+    assert.equal(peekPendingSocialProfilePrefill(), null);
+  });
+
+  it('queues pending before getUserProfile resolves (CRJ handoff race)', async () => {
+    let releaseProfile!: () => void;
+    const profileGate = new Promise<null>((resolve) => {
+      releaseProfile = () => resolve(null);
+    });
+    let sawPendingDuringProfileAwait = false;
+
+    const authenticate = createAuthenticateWithApple({
+      registry: createSocialProviderRegistry({
+        apple: createMockAppleProvider(),
+      }),
+      firebaseAuth: createMockFirebase(),
+      getUserProfile: async () => {
+        sawPendingDuringProfileAwait =
+          peekPendingSocialProfilePrefill()?.uid === 'firebase-uid';
+        return profileGate;
+      },
+      isProfileComplete: async () => false,
+    });
+
+    const pending = authenticate();
+    // Allow getUserProfile to start and observe pending mid-await.
+    await new Promise((r) => setImmediate(r));
+    assert.equal(sawPendingDuringProfileAwait, true);
+    assert.equal(peekPendingSocialProfilePrefill()?.uid, 'firebase-uid');
+    releaseProfile();
+    const result = await pending;
+    assert.equal(result.profileRoute, 'CompleteProfile');
+  });
+
+  it('bridges Apple → pending → CRJ name map and soft-retains until clear', async () => {
+    const authenticate = createAuthenticateWithApple({
+      registry: createSocialProviderRegistry({
+        apple: createMockAppleProvider(),
+      }),
+      firebaseAuth: createMockFirebase(),
+      getUserProfile: async () => null,
+      isProfileComplete: async () => false,
+    });
+
+    const result = await authenticate();
+    assert.equal(result.profileRoute, 'CompleteProfile');
+
+    const first = consumePendingSocialProfilePrefill('firebase-uid');
+    assert.ok(first);
+    const mapped = mapSocialProfileToNamePrefill(first!);
+    assert.equal(mapped.firstName, 'Ada');
+    assert.equal(mapped.lastName, 'Lovelace');
+
+    // Remount of ProfileCompletion must still see pending.
+    const second = consumePendingSocialProfilePrefill('firebase-uid');
+    assert.equal(second?.givenName, 'Ada');
+    clearPendingSocialProfilePrefill();
+    assert.equal(consumePendingSocialProfilePrefill('firebase-uid'), null);
+  });
+
+  it('maps Auth displayName fallback to Name only (no last-name split)', async () => {
+    const authenticate = createAuthenticateWithApple({
+      registry: createSocialProviderRegistry({
+        apple: createMockAppleProvider({
+          authenticateImpl: async () => ({
+            provider: 'apple',
+            providerUserId: 'a-1',
+            idToken: 'token',
+            rawNonce: 'nonce',
+          }),
+        }),
+      }),
+      firebaseAuth: createMockFirebase(),
+      getUserProfile: async () => null,
+      isProfileComplete: async () => false,
+      readAuthDisplayName: async () => 'Ada Lovelace',
+    });
+
+    await authenticate();
+    const pending = peekPendingSocialProfilePrefill()?.socialProfile;
+    assert.equal(pending?.displayName, 'Ada Lovelace');
+    const mapped = mapSocialProfileToNamePrefill(pending!);
+    assert.equal(mapped.firstName, 'Ada Lovelace');
+    assert.equal(mapped.lastName, '');
+  });
+
+  it('bridges durable Firestore realName into pending when Apple name absent', async () => {
+    const authenticate = createAuthenticateWithApple({
+      registry: createSocialProviderRegistry({
+        apple: createMockAppleProvider({
+          authenticateImpl: async () => ({
+            provider: 'apple',
+            providerUserId: 'a-1',
+            idToken: 'token',
+            rawNonce: 'nonce',
+            email: 'relay@privaterelay.appleid.com',
+          }),
+        }),
+      }),
+      firebaseAuth: createMockFirebase(async () => ({
+        uid: 'uid-durable',
+        email: 'relay@privaterelay.appleid.com',
+        isNewUser: false,
+        linkedProviderIds: ['apple.com'],
+      })),
+      getUserProfile: async () => ({
+        realName: 'Ada Lovelace',
+        profileSetupCompleted: false,
+      }),
+      isProfileComplete: async () => false,
+    });
+
+    const result = await authenticate();
+    assert.equal(result.profileRoute, 'CompleteProfile');
+    const pending = peekPendingSocialProfilePrefill();
+    assert.equal(pending?.uid, 'uid-durable');
+    assert.equal(pending?.socialProfile.displayName, 'Ada Lovelace');
+    const mapped = mapSocialProfileToNamePrefill(pending!.socialProfile);
+    assert.equal(mapped.firstName, 'Ada Lovelace');
+    assert.equal(mapped.lastName, '');
+  });
+
+  it('clears pending when routing complete users to MainTabs', async () => {
+    const authenticate = createAuthenticateWithApple({
+      registry: createSocialProviderRegistry({
+        apple: createMockAppleProvider(),
+      }),
+      firebaseAuth: createMockFirebase(),
+      getUserProfile: async () => ({ profileSetupCompleted: true }),
+      isProfileComplete: async () => true,
+    });
+
+    const result = await authenticate();
+    assert.equal(result.profileRoute, 'MainTabs');
+    assert.equal(result.socialProfile, undefined);
     assert.equal(peekPendingSocialProfilePrefill(), null);
   });
 });

@@ -10,7 +10,9 @@ import {
 } from '../application/mergeCompleteProfilePrefill';
 import {
   clearPendingSocialProfilePrefill,
+  commitPendingSocialNamePrefill,
   consumePendingSocialProfilePrefill,
+  peekAppliedSocialNamePrefill,
   peekPendingSocialProfilePrefill,
   setPendingSocialProfilePrefill,
 } from '../application/socialProfilePrefillStore';
@@ -183,7 +185,7 @@ describe('socialProfilePrefillStore', () => {
     clearPendingSocialProfilePrefill();
   });
 
-  it('stores and consumes once for matching uid', () => {
+  it('soft-retains pending across remount consumes until commit/clear', () => {
     setPendingSocialProfilePrefill('uid-1', {
       provider: 'google',
       givenName: 'Ada',
@@ -191,7 +193,17 @@ describe('socialProfilePrefillStore', () => {
     assert.ok(peekPendingSocialProfilePrefill());
     const first = consumePendingSocialProfilePrefill('uid-1');
     assert.equal(first?.givenName, 'Ada');
-    assert.equal(consumePendingSocialProfilePrefill('uid-1'), null);
+    // Remount-safe: same uid can re-read until commit/clear.
+    assert.equal(consumePendingSocialProfilePrefill('uid-1')?.givenName, 'Ada');
+    commitPendingSocialNamePrefill({
+      uid: 'uid-1',
+      firstName: 'Ada',
+      lastName: '',
+    });
+    assert.equal(peekPendingSocialProfilePrefill(), null);
+    assert.equal(peekAppliedSocialNamePrefill()?.firstName, 'Ada');
+    clearPendingSocialProfilePrefill();
+    assert.equal(peekAppliedSocialNamePrefill(), null);
   });
 
   it('ignores consume for mismatched uid', () => {

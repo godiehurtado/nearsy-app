@@ -47,9 +47,11 @@ import {
 } from '../services/firestoreService';
 import { uploadProfileImage } from '../services/storageService';
 import {
-  consumePendingSocialProfilePrefill,
-  mapSocialProfileToNamePrefill,
+  commitPendingSocialNamePrefill,
+  clearPendingSocialProfilePrefill,
+  peekAppliedSocialNamePrefill,
   peekPendingSocialProfilePrefill,
+  resolveCrjNamePrefill,
   sanitizeSocialPhotoUrl,
 } from '../authentication/social';
 import {
@@ -219,7 +221,14 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
    * switches when the selected mode has no persisted image yet.
    */
   const wizardPhotoRef = useRef<string | null>(null);
-  const prefillConsumedRef = useRef(false);
+  const firstNameEditedRef = useRef(false);
+  const lastNameEditedRef = useRef(false);
+  /** True after pending was committed for this wizard instance. */
+  const namePrefillCommittedRef = useRef(false);
+  const firstNameRef = useRef(firstName);
+  const lastNameRef = useRef(lastName);
+  firstNameRef.current = firstName;
+  lastNameRef.current = lastName;
 
   const step = useMemo(() => resolveStep(stepIndex), [stepIndex]);
   const interestCategoryIndex =
@@ -232,6 +241,16 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   function setWizardPhoto(uri: string | null) {
     wizardPhotoRef.current = uri;
     setPhotoUri(uri);
+  }
+
+  function onFirstNameChange(value: string) {
+    firstNameEditedRef.current = true;
+    setFirstName(value);
+  }
+
+  function onLastNameChange(value: string) {
+    lastNameEditedRef.current = true;
+    setLastName(value);
   }
 
   function applyModePresentation(
@@ -258,6 +277,47 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
 
     setSelectedInterests(readOnboardingInterests(data, nextMode));
   }
+
+  /**
+   * Apply pending social name prefill when entering the Name step.
+   * Handles pending written after ProfileCompletion mount (Auth race).
+   */
+  const applyNamePrefillFromPending = useCallback(() => {
+    if (!uid || namePrefillCommittedRef.current) return;
+
+    const pending = peekPendingSocialProfilePrefill();
+    const retained = peekAppliedSocialNamePrefill();
+    const result = resolveCrjNamePrefill({
+      uid,
+      firstName: firstNameRef.current,
+      lastName: lastNameRef.current,
+      firstNameEdited: firstNameEditedRef.current,
+      lastNameEdited: lastNameEditedRef.current,
+      pending,
+      retainedApplied: retained,
+    });
+
+    if (result.prefillAppliedToFirstName) {
+      setFirstName(result.nextFirstName);
+      firstNameRef.current = result.nextFirstName;
+    }
+    if (result.prefillAppliedToLastName) {
+      setLastName(result.nextLastName);
+      lastNameRef.current = result.nextLastName;
+    }
+
+    if (result.shouldConsumePending && result.retainedApplied) {
+      commitPendingSocialNamePrefill(result.retainedApplied);
+      namePrefillCommittedRef.current = true;
+    } else if (
+      !result.diag.pendingPresentAtNameStep &&
+      result.retainedApplied &&
+      (result.prefillAppliedToFirstName || result.prefillAppliedToLastName)
+    ) {
+      // Remount path: re-applied from retained snapshot; mark settled.
+      namePrefillCommittedRef.current = true;
+    }
+  }, [uid]);
 
   const loadShell = useCallback(async () => {
     if (!uid) return;
@@ -316,34 +376,24 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       // Precedence for initial photo (new Google user):
       // 1) profiles[mode].profileImage (above)
       // 2) wizardPhotoRef (already chosen this session)
-      // 3) pending Google store (one-shot)
+      // 3) pending Google store (peek only — names apply on Name step)
       // 4) Firebase Auth / Google providerData
       if (!nextPhoto && wizardPhotoRef.current) {
         nextPhoto = wizardPhotoRef.current;
       }
 
-      let socialPrefill = null;
       try {
         const pending = peekPendingSocialProfilePrefill();
-        if (pending?.uid === uid && !prefillConsumedRef.current) {
-          socialPrefill = consumePendingSocialProfilePrefill(uid);
-          prefillConsumedRef.current = true;
+        if (pending?.uid === uid) {
+          const socialPhoto = sanitizeSocialPhotoUrl(
+            pending.socialProfile.photoUrl,
+          );
+          if (socialPhoto?.trim()) {
+            nextPhoto = nextPhoto || socialPhoto.trim();
+          }
         }
       } catch {
-        socialPrefill = null;
-      }
-
-      if (socialPrefill) {
-        // Names → wizard state only. Do NOT early-persist to Firestore
-        // before Profile Type + user confirmation.
-        const names = mapSocialProfileToNamePrefill(socialPrefill);
-        setFirstName((prev) => prev || names.firstName);
-        setLastName((prev) => prev || names.lastName);
-
-        const socialPhoto = sanitizeSocialPhotoUrl(socialPrefill.photoUrl);
-        if (socialPhoto?.trim()) {
-          nextPhoto = nextPhoto || socialPhoto.trim();
-        }
+        // Prefill photo is fail-soft.
       }
 
       if (!nextPhoto) {
@@ -362,6 +412,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   useEffect(() => {
     void loadShell();
   }, [loadShell]);
+
+  useEffect(() => {
+    if (!hydrated || step.kind !== 'identity') return;
+    applyNamePrefillFromPending();
+  }, [hydrated, step.kind, applyNamePrefillFromPending]);
 
   async function pickFromLibrary() {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -601,6 +656,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         ...(firstName.trim() ? { realName: firstName.trim() } : {}),
         ...(lastName.trim() ? { lastName: lastName.trim() } : {}),
       });
+      clearPendingSocialProfilePrefill();
       navigation.reset({
         index: 0,
         routes: [{ name: 'MainTabs' }],
@@ -964,7 +1020,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                     'onboarding.profileCompletion.identity.namePlaceholder',
                   )}
                   value={firstName}
-                  onChangeText={setFirstName}
+                  onChangeText={onFirstNameChange}
                   autoCapitalize="words"
                   autoComplete="given-name"
                   textContentType="givenName"
@@ -977,7 +1033,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                     'onboarding.profileCompletion.identity.lastNamePlaceholder',
                   )}
                   value={lastName}
-                  onChangeText={setLastName}
+                  onChangeText={onLastNameChange}
                   autoCapitalize="words"
                   autoComplete="family-name"
                   textContentType="familyName"

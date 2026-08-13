@@ -101,9 +101,17 @@ export {
 export {
   setPendingSocialProfilePrefill,
   consumePendingSocialProfilePrefill,
+  commitPendingSocialNamePrefill,
   clearPendingSocialProfilePrefill,
   peekPendingSocialProfilePrefill,
+  peekAppliedSocialNamePrefill,
 } from './application/socialProfilePrefillStore';
+export {
+  resolveCrjNamePrefill,
+  type ResolveCrjNamePrefillInput,
+  type ResolveCrjNamePrefillResult,
+  type AppliedSocialNamePrefill,
+} from './application/resolveCrjNamePrefill';
 
 /**
  * Default registry: Google + Apple (iOS social providers).
@@ -148,6 +156,25 @@ export function createDefaultAuthenticateWithApple(
     // Fill-empty-only durable capture. Never sets profileSetupCompleted.
     persistEmptyRealName: async (uid, realName) => {
       await updateUserProfilePartial(uid, { realName });
+    },
+    syncAuthDisplayName: async (displayName) => {
+      const { updateProfile } = await import('firebase/auth');
+      const { firebaseAuth } = await import('../../config/firebaseConfig');
+      const user = firebaseAuth.currentUser;
+      if (!user) return;
+      await updateProfile(user, { displayName });
+    },
+    readAuthDisplayName: async () => {
+      const { firebaseAuth } = await import('../../config/firebaseConfig');
+      const user = firebaseAuth.currentUser;
+      if (!user) return null;
+      try {
+        await user.reload();
+      } catch {
+        // keep cached snapshot
+      }
+      const name = firebaseAuth.currentUser?.displayName;
+      return typeof name === 'string' && name.trim() ? name.trim() : null;
     },
     ...overrides,
   });

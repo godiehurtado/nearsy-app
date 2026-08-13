@@ -16,7 +16,15 @@ import {
   isEmptyPrefillValue,
   mapSocialNameToRealName,
 } from './mergeCompleteProfilePrefill';
-import { setPendingSocialProfilePrefill } from './socialProfilePrefillStore';
+import {
+  clearPendingSocialProfilePrefill,
+  setPendingSocialProfilePrefill,
+} from './socialProfilePrefillStore';
+import { mapSocialProfileToNamePrefill } from './mapSocialNamePrefill';
+
+function presentString(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
 
 /** Historical route name kept for parity with Google orchestrator. */
 export type AppleSignInProfileRoute = 'MainTabs' | 'CompleteProfile';
@@ -38,6 +46,13 @@ export interface AuthenticateWithAppleDependencies {
    * Must not set profileSetupCompleted or invent names.
    */
   persistEmptyRealName?: (uid: string, realName: string) => Promise<void>;
+  /**
+   * Optional Auth profile mirror (displayName only) when Apple delivers a name.
+   * Fail-soft. Never writes Firestore identity.
+   */
+  syncAuthDisplayName?: (displayName: string) => Promise<void>;
+  /** Optional post-sign-in Auth displayName probe (boolean / string for fallback). */
+  readAuthDisplayName?: () => Promise<string | null>;
 }
 
 function readExistingRealName(profile: unknown | null): unknown {
@@ -185,9 +200,58 @@ export function createAuthenticateWithApple(
         socialProfile = undefined;
       }
 
+      // Priority 3: Auth displayName after sign-in when native name components absent.
+      const hasNativeName =
+        presentString(socialProfile?.givenName) ||
+        presentString(socialProfile?.familyName) ||
+        presentString(socialProfile?.displayName);
+
+      if (!hasNativeName && deps.readAuthDisplayName) {
+        try {
+          const authName = await deps.readAuthDisplayName();
+          if (presentString(authName) && authName) {
+            if (socialProfile) {
+              socialProfile = {
+                ...socialProfile,
+                displayName: authName.trim(),
+              };
+            } else {
+              socialProfile = {
+                provider: 'apple',
+                displayName: authName.trim(),
+              };
+            }
+          }
+        } catch {
+          // Fail-soft Auth probe.
+        }
+      }
+
+      // Mirror native Apple name onto Auth displayName (fail-soft) for remount probes.
+      const mappedForAuth = socialProfile
+        ? mapSocialNameToRealName(socialProfile)
+        : undefined;
+      if (mappedForAuth && deps.syncAuthDisplayName) {
+        try {
+          await deps.syncAuthDisplayName(mappedForAuth);
+        } catch {
+          // Fail-soft.
+        }
+      }
+
+      /**
+       * CRITICAL: queue pending BEFORE getUserProfile / isProfileComplete.
+       * AppNavigator mounts ProfileCompletion as soon as Auth+profile hydrate;
+       * awaiting Firestore here previously raced and lost the Apple name.
+       */
+      if (socialProfile) {
+        setPendingSocialProfilePrefill(session.uid, socialProfile);
+      }
+
       const profile = await deps.getUserProfile(session.uid);
 
-      // Durable first-authorization capture — after UID, before navigation.
+      // Legacy durable capture (top-level realName) — fill-empty only.
+      // CRJ no longer seeds Name from this on load; pending is the primary bridge.
       await persistAppleRealNameIfEmpty({
         uid: session.uid,
         socialProfile,
@@ -195,14 +259,29 @@ export function createAuthenticateWithApple(
         persistEmptyRealName: deps.persistEmptyRealName,
       });
 
-      if (!profile) {
-        if (socialProfile) {
-          try {
-            setPendingSocialProfilePrefill(session.uid, socialProfile);
-          } catch {
-            // Fail-soft: auth still succeeds without prefill.
-          }
+      /**
+       * Priority 2: reconnect durable Apple realName into pending when native
+       * components were absent. Expanded CRJ no longer seeds Name from Firestore
+       * on load; without this, fill-empty realName had no CRJ consumer.
+       */
+      const mappedAfterNative = socialProfile
+        ? mapSocialProfileToNamePrefill(socialProfile)
+        : { firstName: '', lastName: '' };
+      if (
+        !presentString(mappedAfterNative.firstName) &&
+        !presentString(mappedAfterNative.lastName)
+      ) {
+        const durable = readExistingRealName(profile);
+        if (!isEmptyPrefillValue(durable) && typeof durable === 'string') {
+          const trimmed = durable.trim();
+          socialProfile = socialProfile
+            ? { ...socialProfile, displayName: trimmed }
+            : { provider: 'apple', displayName: trimmed };
+          setPendingSocialProfilePrefill(session.uid, socialProfile);
         }
+      }
+
+      if (!profile) {
         return {
           session,
           profileRoute: 'CompleteProfile',
@@ -212,19 +291,21 @@ export function createAuthenticateWithApple(
       }
 
       const complete = await deps.isProfileComplete(session.uid);
-      if (!complete && socialProfile) {
-        try {
-          setPendingSocialProfilePrefill(session.uid, socialProfile);
-        } catch {
-          // Fail-soft.
-        }
+      if (complete) {
+        clearPendingSocialProfilePrefill();
+        return {
+          session,
+          profileRoute: 'MainTabs',
+          email: session.email ?? providerResult.email,
+          socialProfile: undefined,
+        };
       }
 
       return {
         session,
-        profileRoute: complete ? 'MainTabs' : 'CompleteProfile',
+        profileRoute: 'CompleteProfile',
         email: session.email ?? providerResult.email,
-        socialProfile: complete ? undefined : socialProfile,
+        socialProfile,
       };
     } catch (err) {
       if (err instanceof SocialAuthError) {
