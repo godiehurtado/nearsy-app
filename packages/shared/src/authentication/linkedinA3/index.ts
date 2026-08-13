@@ -45,6 +45,10 @@ export {
 export { parseLinkedInMobileReturnUrl } from './returnUrl';
 export { createClientProofPair } from './clientProof';
 export { mapExpoAuthSessionResult } from './browserSession';
+export {
+  queueLinkedInCrjPrefillIfNeeded,
+  buildLinkedInSocialProfileFromAuthHints,
+} from './profilePrefill';
 
 /** @deprecated decision marker — do not change ProfileCompletion shell in I1 */
 export const CRJ_CROSS_PLATFORM_DECISION_PENDING =

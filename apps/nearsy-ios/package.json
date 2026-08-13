@@ -4,7 +4,7 @@
   "main": "index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:linkedin-a3": "pnpm dlx tsx --test ../../packages/shared/src/authentication/linkedinA3/__tests__/linkedinA3Foundation.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/appCheckDiagnostics.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/devSmokePanelGate.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/linkedinA3I2Flow.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/metroResolution.test.cjs",
+    "test:linkedin-a3": "pnpm dlx tsx --test ../../packages/shared/src/authentication/linkedinA3/__tests__/linkedinA3Foundation.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/appCheckDiagnostics.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/devSmokePanelGate.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/linkedinA3I2Flow.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/linkedinA3Prefill.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/metroResolution.test.cjs",
     "test:firebase-appdelegate": "node --test ./plugins/__tests__/rnfbAppDelegateInit.test.cjs",
     "validate:firebase-appdelegate": "node ./scripts/validate-firebase-appdelegate.cjs",
     "start": "expo start",

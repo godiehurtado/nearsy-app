@@ -15,6 +15,7 @@ import {
 } from './orchestrator';
 import { LinkedInA3ClientError } from './sanitize';
 import { resolveNearsyFirebaseEnvironment } from './environment/nearsyFirebaseEnvironment';
+import { queueLinkedInCrjPrefillIfNeeded } from './profilePrefill';
 import Constants from 'expo-constants';
 
 export type LinkedInA3ProfileRoute = 'MainTabs' | 'CompleteProfile';
@@ -111,11 +112,48 @@ export async function signInWithLinkedInA3(): Promise<LinkedInA3SignInOutcome> {
     };
   }
 
+  try {
+    await firebaseAuth.currentUser.reload();
+  } catch {
+    // Keep the post-signIn snapshot.
+  }
+
+  const authUser = firebaseAuth.currentUser;
+  if (!authUser || authUser.uid !== uid) {
+    return {
+      status: 'failed',
+      error: new LinkedInA3ClientError(
+        'FIREBASE_SIGN_IN_FAILED',
+        'Firebase currentUser mismatch after LinkedIn sign-in.',
+      ),
+    };
+  }
+
   let complete = false;
   try {
     complete = await isProfileComplete(uid);
   } catch {
     complete = false;
+  }
+
+  const profileRoute: LinkedInA3ProfileRoute = complete
+    ? 'MainTabs'
+    : 'CompleteProfile';
+
+  if (profileRoute === 'CompleteProfile') {
+    const queued = queueLinkedInCrjPrefillIfNeeded({
+      uid,
+      profileComplete: false,
+      displayName: authUser.displayName,
+      photoURL: authUser.photoURL,
+    });
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.log('[linkedinA3.prefill]', {
+        hasDisplayName: queued.hasDisplayName,
+        hasPhotoUrl: queued.hasPhotoUrl,
+        queued: queued.queued,
+      });
+    }
   }
 
   let email = flow.session.email;
@@ -131,7 +169,7 @@ export async function signInWithLinkedInA3(): Promise<LinkedInA3SignInOutcome> {
   return {
     status: 'authenticated',
     session: { uid, email },
-    profileRoute: complete ? 'MainTabs' : 'CompleteProfile',
+    profileRoute,
     email,
   };
 }
