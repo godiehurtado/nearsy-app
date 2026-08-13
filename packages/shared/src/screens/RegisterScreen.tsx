@@ -1,14 +1,13 @@
 /**
- * Registration wizard — nearsy-rn-v3 design parity (steps 1–5 of 10).
+ * Registration wizard — auth phase only (Birth → Email → Password → Phone+Terms).
  *
  * TEMPORARY BYPASS (documented):
  *   Phone → (OTP pending — not implemented) → Firebase Email Authentication
  * Phone is mandatory and persisted with phoneVerified: false.
  * No SMS is sent; the UI must not claim a code was delivered.
  *
- * Terms: explicit checkbox required before account creation (same legal
- * behavior as the previous Register screen). acceptedTerms is only written
- * true after the user checks the box.
+ * Identity (Name / Last Name) is collected after Profile Type in ProfileCompletion.
+ * Progress shows a visual bar only — never n/N step counts.
  */
 import React, { useMemo, useState } from 'react';
 import {
@@ -30,6 +29,7 @@ import { RegistrationProgress } from '../components/registration/RegistrationPro
 import { RegistrationFadeSlideIn } from '../components/registration/RegistrationFadeSlideIn';
 import { FormInput } from '../components/registration/FormInput';
 import { REGISTRATION_COUNTRIES } from '../components/registration/countries';
+import { authPhaseProgress } from '../components/registration/crjProgress';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { useAppTheme } from '../theme/ThemeContext';
 import { fontSize, fontWeight } from '../theme/typography';
@@ -50,21 +50,12 @@ import { useTranslation } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
 
-const EMAIL_STEPS = ['name', 'birth', 'email', 'password', 'phone'] as const;
+const EMAIL_STEPS = ['birth', 'email', 'password', 'phone'] as const;
 type Step = (typeof EMAIL_STEPS)[number];
 
-const STEP_NUMBER: Record<Step, number> = {
-  name: 1,
-  birth: 2,
-  email: 3,
-  password: 4,
-  phone: 5,
-};
-const TOTAL_STEPS = 10;
 const TERMS_URL = 'https://nearsy.app/legal';
 
 type FormState = {
-  realName: string;
   birth: { day: string; month: string; year: string };
   email: string;
   password: string;
@@ -104,7 +95,6 @@ export default function RegisterScreen({ navigation }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [form, setForm] = useState<FormState>({
-    realName: '',
     birth: { day: '', month: '', year: '' },
     email: '',
     password: '',
@@ -113,7 +103,6 @@ export default function RegisterScreen({ navigation }: Props) {
   });
 
   const step: Step = EMAIL_STEPS[stepIndex];
-  const stepNumber = STEP_NUMBER[step];
   const birthParts = useMemo(
     () => birthPartsFromStrings(form.birth),
     [form.birth],
@@ -146,8 +135,6 @@ export default function RegisterScreen({ navigation }: Props) {
 
   function isStepValid(): boolean {
     switch (step) {
-      case 'name':
-        return form.realName.trim().length > 0;
       case 'birth':
         return ageOk;
       case 'email':
@@ -162,8 +149,6 @@ export default function RegisterScreen({ navigation }: Props) {
   function blockedReason(): string | undefined {
     if (isStepValid()) return undefined;
     switch (step) {
-      case 'name':
-        return t('authentication.register.wizard.validation.name');
       case 'birth':
         if (birthComplete && birthFuture) {
           return t('authentication.register.wizard.validation.birthFuture');
@@ -237,13 +222,10 @@ export default function RegisterScreen({ navigation }: Props) {
         form.password,
       );
 
-      const realName = form.realName.trim();
-
       await createUserProfile(user.uid, {
         email: form.email.trim(),
         birthYear: year,
         birthDate: isoBirthDate,
-        realName,
         phone: normalizedPhone,
         phoneVerified: false,
         phoneVerifiedAt: null,
@@ -332,8 +314,7 @@ export default function RegisterScreen({ navigation }: Props) {
           </Text>
         </Pressable>
         <RegistrationProgress
-          progress={stepNumber / TOTAL_STEPS}
-          stepLabel={`${stepNumber}/${TOTAL_STEPS}`}
+          progress={authPhaseProgress(stepIndex, EMAIL_STEPS.length)}
         />
       </View>
 
@@ -344,28 +325,6 @@ export default function RegisterScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}
       >
         <RegistrationFadeSlideIn animKey={step}>
-          {step === 'name' && (
-            <>
-              <Text style={[styles.title, { color: palette.textPrimary }]}>
-                {t('authentication.register.wizard.steps.name.title')}
-              </Text>
-              <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
-                {t('authentication.register.wizard.steps.name.subtitle')}
-              </Text>
-              <View style={styles.form}>
-                <FormInput
-                  label={t('authentication.register.wizard.fields.realName')}
-                  placeholder={t(
-                    'authentication.register.wizard.placeholders.realName',
-                  )}
-                  value={form.realName}
-                  onChangeText={(v) => update('realName', v)}
-                  autoCapitalize="words"
-                />
-              </View>
-            </>
-          )}
-
           {step === 'birth' && (
             <>
               <Text style={[styles.title, { color: palette.textPrimary }]}>

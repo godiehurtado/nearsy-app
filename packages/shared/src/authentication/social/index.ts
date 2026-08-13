@@ -88,6 +88,10 @@ export {
 export type { SocialProfileData } from './domain/socialProfileData';
 export { normalizeSocialProfileData } from './application/normalizeSocialProfileData';
 export {
+  mapSocialProfileToNamePrefill,
+} from './application/mapSocialNamePrefill';
+export type { SocialNamePrefill } from './application/mapSocialNamePrefill';
+export {
   mergeCompleteProfilePrefill,
   mapSocialNameToRealName,
   sanitizeSocialPhotoUrl,
