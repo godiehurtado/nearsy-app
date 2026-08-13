@@ -37,6 +37,7 @@ import { LinkedInA3DevSmokePanel } from '../components/LinkedInA3DevSmokePanel';
 import { shouldShowLinkedInA3DevSmokePanel } from '../authentication/linkedinA3/smoke/devSmokePanelGate';
 import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
 import { useAppleSignInFlow } from '../hooks/useAppleSignInFlow';
+import { useLinkedInSignInFlow } from '../hooks/useLinkedInSignInFlow';
 import Constants from 'expo-constants';
 
 export default function LoginScreen({ navigation }: any) {
@@ -45,6 +46,7 @@ export default function LoginScreen({ navigation }: any) {
   const { theme, palette } = useAppTheme();
   const { signInWithGoogle, googleSubmitting } = useGoogleSignInFlow();
   const { signInWithApple, appleSubmitting } = useAppleSignInFlow();
+  const { signInWithLinkedIn, linkedInSubmitting } = useLinkedInSignInFlow();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -55,7 +57,8 @@ export default function LoginScreen({ navigation }: any) {
   const [infoModalTitle, setInfoModalTitle] = useState('');
   const [infoModalMessage, setInfoModalMessage] = useState('');
 
-  const busy = submitting || googleSubmitting || appleSubmitting;
+  const busy =
+    submitting || googleSubmitting || appleSubmitting || linkedInSubmitting;
   const isDark = theme === 'dark';
   // Login approved surface: uniform pastel (clear) / navy (dark) — not white card.
   const screenBg = isDark ? palette.background : palette.heroBg;
@@ -259,6 +262,11 @@ export default function LoginScreen({ navigation }: any) {
 
     if (provider === 'apple') {
       void signInWithApple();
+      return;
+    }
+
+    if (provider === 'linkedin') {
+      void signInWithLinkedIn();
       return;
     }
 
@@ -470,7 +478,13 @@ export default function LoginScreen({ navigation }: any) {
               onPress={handleSocialPress}
               busy={busy}
               loadingProvider={
-                googleSubmitting ? 'google' : appleSubmitting ? 'apple' : null
+                googleSubmitting
+                  ? 'google'
+                  : appleSubmitting
+                    ? 'apple'
+                    : linkedInSubmitting
+                      ? 'linkedin'
+                      : null
               }
               borderColor={palette.socialBorder}
               textColor={palette.textPrimary}
@@ -497,6 +511,7 @@ export default function LoginScreen({ navigation }: any) {
                   | {
                       EXPO_PUBLIC_NEARSY_FIREBASE_ENV?: string;
                       EXPO_PUBLIC_LINKEDIN_AUTH_ENABLED?: string;
+                      EXPO_PUBLIC_NEARSY_LINKEDIN_A3_SMOKE_PANEL?: string;
                     }
                   | undefined
               )?.EXPO_PUBLIC_NEARSY_FIREBASE_ENV,
@@ -505,9 +520,17 @@ export default function LoginScreen({ navigation }: any) {
                   | {
                       EXPO_PUBLIC_NEARSY_FIREBASE_ENV?: string;
                       EXPO_PUBLIC_LINKEDIN_AUTH_ENABLED?: string;
+                      EXPO_PUBLIC_NEARSY_LINKEDIN_A3_SMOKE_PANEL?: string;
                     }
                   | undefined
               )?.EXPO_PUBLIC_LINKEDIN_AUTH_ENABLED,
+              smokePanelExplicitlyEnabled: (
+                Constants.expoConfig?.extra as
+                  | {
+                      EXPO_PUBLIC_NEARSY_LINKEDIN_A3_SMOKE_PANEL?: string;
+                    }
+                  | undefined
+              )?.EXPO_PUBLIC_NEARSY_LINKEDIN_A3_SMOKE_PANEL,
             }) ? (
               <LinkedInA3DevSmokePanel />
             ) : null}

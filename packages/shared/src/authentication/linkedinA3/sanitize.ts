@@ -31,7 +31,16 @@ export type LinkedInA3PublicErrorCode =
   | 'INVALID_ARGUMENT'
   | 'INVALID_RESPONSE'
   | 'CALLABLE_FAILED'
-  | 'RETRY_EXHAUSTED';
+  | 'RETRY_EXHAUSTED'
+  | 'OPERATION_IN_PROGRESS'
+  | 'BROWSER_FAILED'
+  | 'PROVIDER_CALLBACK_ERROR'
+  | 'CALLBACK_INVALID'
+  | 'CALLBACK_MISMATCH'
+  | 'CUSTOM_TOKEN_MISSING'
+  | 'FIREBASE_SIGN_IN_FAILED'
+  | 'SESSION_CHANGED'
+  | 'UNKNOWN';
 
 export class LinkedInA3ClientError extends Error {
   readonly code: LinkedInA3PublicErrorCode;

@@ -35,6 +35,17 @@ export {
   getLinkedInA3AppCheckState,
 } from './iosLinkedInA3Foundation';
 
+export { shouldShowLinkedInA3DevSmokePanel } from './smoke/devSmokePanelGate';
+export type { LinkedInA3DevSmokePanelGateInput } from './smoke/devSmokePanelGate';
+
+export {
+  runLinkedInA3BrowserAuthFlow,
+  clearLinkedInA3OrchestratorStateForTests,
+} from './orchestrator';
+export { parseLinkedInMobileReturnUrl } from './returnUrl';
+export { createClientProofPair } from './clientProof';
+export { mapExpoAuthSessionResult } from './browserSession';
+
 /** @deprecated decision marker — do not change ProfileCompletion shell in I1 */
 export const CRJ_CROSS_PLATFORM_DECISION_PENDING =
   'CRJ_CROSS_PLATFORM_DECISION_PENDING' as const;

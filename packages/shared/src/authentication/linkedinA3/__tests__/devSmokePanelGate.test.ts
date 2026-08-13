@@ -15,20 +15,43 @@ describe('shouldShowLinkedInA3DevSmokePanel', () => {
     linkedInAuthEnabled: 'true',
   };
 
-  it('requires __DEV__, ios, development, and LinkedIn enabled together', () => {
-    assert.equal(shouldShowLinkedInA3DevSmokePanel(allTrue), true);
+  it('requires __DEV__, ios, development, LinkedIn enabled, and explicit smoke enable', () => {
+    assert.equal(
+      shouldShowLinkedInA3DevSmokePanel({
+        ...{
+          isDev: true,
+          platform: 'ios',
+          firebaseEnvironment: 'development',
+          linkedInAuthEnabled: 'true',
+          smokePanelExplicitlyEnabled: 'true',
+        },
+      }),
+      true,
+    );
   });
 
   it('hides when not __DEV__', () => {
     assert.equal(
-      shouldShowLinkedInA3DevSmokePanel({ ...allTrue, isDev: false }),
+      shouldShowLinkedInA3DevSmokePanel({
+        isDev: false,
+        platform: 'ios',
+        firebaseEnvironment: 'development',
+        linkedInAuthEnabled: 'true',
+        smokePanelExplicitlyEnabled: 'true',
+      }),
       false,
     );
   });
 
   it('hides on android', () => {
     assert.equal(
-      shouldShowLinkedInA3DevSmokePanel({ ...allTrue, platform: 'android' }),
+      shouldShowLinkedInA3DevSmokePanel({
+        isDev: true,
+        platform: 'android',
+        firebaseEnvironment: 'development',
+        linkedInAuthEnabled: 'true',
+        smokePanelExplicitlyEnabled: 'true',
+      }),
       false,
     );
   });
@@ -36,15 +59,11 @@ describe('shouldShowLinkedInA3DevSmokePanel', () => {
   it('hides for production Firebase environment (Preview/Production)', () => {
     assert.equal(
       shouldShowLinkedInA3DevSmokePanel({
-        ...allTrue,
+        isDev: true,
+        platform: 'ios',
         firebaseEnvironment: 'production',
-      }),
-      false,
-    );
-    assert.equal(
-      shouldShowLinkedInA3DevSmokePanel({
-        ...allTrue,
-        firebaseEnvironment: '',
+        linkedInAuthEnabled: 'true',
+        smokePanelExplicitlyEnabled: 'true',
       }),
       false,
     );
@@ -53,15 +72,23 @@ describe('shouldShowLinkedInA3DevSmokePanel', () => {
   it('hides when LinkedIn is disabled', () => {
     assert.equal(
       shouldShowLinkedInA3DevSmokePanel({
-        ...allTrue,
+        isDev: true,
+        platform: 'ios',
+        firebaseEnvironment: 'development',
         linkedInAuthEnabled: 'false',
+        smokePanelExplicitlyEnabled: 'true',
       }),
       false,
     );
+  });
+
+  it('hides by default when smoke flag absent', () => {
     assert.equal(
       shouldShowLinkedInA3DevSmokePanel({
-        ...allTrue,
-        linkedInAuthEnabled: false,
+        isDev: true,
+        platform: 'ios',
+        firebaseEnvironment: 'development',
+        linkedInAuthEnabled: 'true',
       }),
       false,
     );

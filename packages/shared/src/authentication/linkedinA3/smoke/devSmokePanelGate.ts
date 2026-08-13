@@ -1,6 +1,6 @@
 /**
  * Gate for the LinkedIn A3 Development smoke panel.
- * Must never render in Preview/Production or non-iOS surfaces.
+ * Must never render in Preview/Production or without explicit enable.
  */
 
 export type LinkedInA3DevSmokePanelGateInput = {
@@ -10,6 +10,11 @@ export type LinkedInA3DevSmokePanelGateInput = {
   firebaseEnvironment: string | null | undefined;
   /** Raw EXPO_PUBLIC_LINKEDIN_AUTH_ENABLED or resolved boolean. */
   linkedInAuthEnabled: boolean | string | null | undefined;
+  /**
+   * Explicit opt-in. Default / absent = hidden.
+   * Never set in Preview/Production configs.
+   */
+  smokePanelExplicitlyEnabled?: boolean | string | null | undefined;
 };
 
 function isTruthyEnabled(value: boolean | string | null | undefined): boolean {
@@ -32,7 +37,7 @@ function isDevelopmentFirebaseEnv(
 
 /**
  * Show only when ALL are true:
- * __DEV__, iOS, Firebase environment development, LinkedIn enabled.
+ * __DEV__, iOS, Firebase development, LinkedIn enabled, explicit smoke enable.
  */
 export function shouldShowLinkedInA3DevSmokePanel(
   input: LinkedInA3DevSmokePanelGateInput,
@@ -41,5 +46,6 @@ export function shouldShowLinkedInA3DevSmokePanel(
   if (String(input.platform).toLowerCase() !== 'ios') return false;
   if (!isDevelopmentFirebaseEnv(input.firebaseEnvironment)) return false;
   if (!isTruthyEnabled(input.linkedInAuthEnabled)) return false;
+  if (!isTruthyEnabled(input.smokePanelExplicitlyEnabled)) return false;
   return true;
 }
