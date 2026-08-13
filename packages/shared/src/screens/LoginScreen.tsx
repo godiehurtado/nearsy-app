@@ -33,8 +33,11 @@ import {
   AuthSocialButtonRow,
   AuthSocialProvider,
 } from '../components/AuthSocialButtonRow';
+import { LinkedInA3DevSmokePanel } from '../components/LinkedInA3DevSmokePanel';
+import { shouldShowLinkedInA3DevSmokePanel } from '../authentication/linkedinA3/smoke/devSmokePanelGate';
 import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
 import { useAppleSignInFlow } from '../hooks/useAppleSignInFlow';
+import Constants from 'expo-constants';
 
 export default function LoginScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -485,6 +488,29 @@ export default function LoginScreen({ navigation }: any) {
               </Text>
               .
             </Text>
+
+            {shouldShowLinkedInA3DevSmokePanel({
+              isDev: __DEV__,
+              platform: Platform.OS,
+              firebaseEnvironment: (
+                Constants.expoConfig?.extra as
+                  | {
+                      EXPO_PUBLIC_NEARSY_FIREBASE_ENV?: string;
+                      EXPO_PUBLIC_LINKEDIN_AUTH_ENABLED?: string;
+                    }
+                  | undefined
+              )?.EXPO_PUBLIC_NEARSY_FIREBASE_ENV,
+              linkedInAuthEnabled: (
+                Constants.expoConfig?.extra as
+                  | {
+                      EXPO_PUBLIC_NEARSY_FIREBASE_ENV?: string;
+                      EXPO_PUBLIC_LINKEDIN_AUTH_ENABLED?: string;
+                    }
+                  | undefined
+              )?.EXPO_PUBLIC_LINKEDIN_AUTH_ENABLED,
+            }) ? (
+              <LinkedInA3DevSmokePanel />
+            ) : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
