@@ -1,15 +1,10 @@
 /**
- * Active iOS Google/Firebase native registration metadata for
- * com.nearsy.app.client (TS-006).
+ * iOS Google / Firebase registration metadata for com.nearsy.app.client.
  *
- * Values mirror apps/nearsy-ios/GoogleService-Info.plist.
- * OAuth client IDs are public identifiers, not secrets.
+ * OAuth client IDs are NOT hardcoded here — Development and Production supply
+ * them via Expo public env / EAS (and the active GoogleService-Info plist for
+ * native URL scheme registration at prebuild time).
  */
 export const GOOGLE_IOS_NATIVE_CONFIG = {
   bundleId: 'com.nearsy.app.client',
-  projectId: 'nearsy-pj',
-  iosClientId:
-    '557470198780-ttslt825t6lmoma0d8e9nce1q6l1tm8c.apps.googleusercontent.com',
-  iosUrlScheme:
-    'com.googleusercontent.apps.557470198780-ttslt825t6lmoma0d8e9nce1q6l1tm8c',
 } as const;

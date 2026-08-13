@@ -43,7 +43,11 @@ export {
   validateGoogleAuthenticationConfiguration,
   CANONICAL_IOS_BUNDLE_ID,
   CANONICAL_FIREBASE_PROJECT_ID,
+  FIREBASE_PROJECT_ID_DEVELOPMENT,
+  FIREBASE_PROJECT_ID_PRODUCTION,
+  OPS_GOOGLE_OAUTH_PROJECT_NUMBER,
   GOOGLE_DEFAULT_SCOPES,
+  expectedReversedClientIdFromIosClientId,
 } from './application/configurationValidator';
 export type {
   GoogleAuthenticationConfiguration,
@@ -188,9 +192,6 @@ export function validateGoogleAuthenticationFoundation(
 ): GoogleConfigurationValidationResult {
   const config = resolveGoogleAuthenticationConfiguration({
     plistBundleId: GOOGLE_IOS_NATIVE_CONFIG.bundleId,
-    plistProjectId: GOOGLE_IOS_NATIVE_CONFIG.projectId,
-    iosClientIdFromPlist: GOOGLE_IOS_NATIVE_CONFIG.iosClientId,
-    iosUrlSchemeFromPlist: GOOGLE_IOS_NATIVE_CONFIG.iosUrlScheme,
   });
 
   return validateGoogleAuthenticationConfiguration(config, {

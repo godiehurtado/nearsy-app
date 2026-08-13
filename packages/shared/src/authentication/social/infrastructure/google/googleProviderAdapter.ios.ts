@@ -24,9 +24,6 @@ import { GOOGLE_IOS_NATIVE_CONFIG } from './googleIosNativeConfig';
 function assertConfigured(): void {
   const config = resolveGoogleAuthenticationConfiguration({
     plistBundleId: GOOGLE_IOS_NATIVE_CONFIG.bundleId,
-    plistProjectId: GOOGLE_IOS_NATIVE_CONFIG.projectId,
-    iosClientIdFromPlist: GOOGLE_IOS_NATIVE_CONFIG.iosClientId,
-    iosUrlSchemeFromPlist: GOOGLE_IOS_NATIVE_CONFIG.iosUrlScheme,
   });
 
   const nativeModulePresent = typeof GoogleSignin?.configure === 'function';
@@ -103,9 +100,6 @@ export function createGoogleProviderAdapter(): SocialAuthenticationProviderAdapt
     async configure() {
       const config = resolveGoogleAuthenticationConfiguration({
         plistBundleId: GOOGLE_IOS_NATIVE_CONFIG.bundleId,
-        plistProjectId: GOOGLE_IOS_NATIVE_CONFIG.projectId,
-        iosClientIdFromPlist: GOOGLE_IOS_NATIVE_CONFIG.iosClientId,
-        iosUrlSchemeFromPlist: GOOGLE_IOS_NATIVE_CONFIG.iosUrlScheme,
       });
 
       const validation = validateGoogleAuthenticationConfiguration(config, {

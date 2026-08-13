@@ -33,7 +33,12 @@ function loadEasDevelopmentEnv() {
       cwd: APP_ROOT,
       encoding: 'utf8',
       shell: true,
-      env: process.env,
+      env: {
+        ...process.env,
+        // Avoid evaluating Development app.config in the EAS CLI parent before
+        // Google Dev vars are injected into the dump child.
+        EXPO_PUBLIC_NEARSY_FIREBASE_ENV: '',
+      },
     });
 
     if (result.status !== 0) {

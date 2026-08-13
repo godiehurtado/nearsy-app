@@ -24,6 +24,7 @@ describe('validateGoogleAuthenticationConfiguration', () => {
         expectedIosBundleId: CANONICAL_IOS_BUNDLE_ID,
         plistBundleId: CANONICAL_IOS_BUNDLE_ID,
         plistProjectId: 'nearsy-pj',
+        firebaseEnvironmentProjectId: 'nearsy-pj',
         scopes: ['openid', 'email', 'profile'],
       },
       { nativeModulePresent: true },
@@ -31,6 +32,65 @@ describe('validateGoogleAuthenticationConfiguration', () => {
 
     assert.equal(result.ok, true);
     assert.equal(result.issues.length, 0);
+  });
+
+  it('accepts nearsy-dev project alignment', () => {
+    const result = validateGoogleAuthenticationConfiguration(
+      {
+        enabled: true,
+        webClientId: '477970832846-web.apps.googleusercontent.com',
+        iosClientId: '477970832846-ios.apps.googleusercontent.com',
+        iosUrlScheme: 'com.googleusercontent.apps.477970832846-ios',
+        expectedIosBundleId: CANONICAL_IOS_BUNDLE_ID,
+        plistBundleId: CANONICAL_IOS_BUNDLE_ID,
+        plistProjectId: 'nearsy-dev',
+        firebaseEnvironmentProjectId: 'nearsy-dev',
+        scopes: ['openid', 'email', 'profile'],
+      },
+      { nativeModulePresent: true },
+    );
+
+    assert.equal(result.ok, true);
+  });
+
+  it('rejects Ops OAuth credentials in Development', () => {
+    const result = validateGoogleAuthenticationConfiguration({
+      enabled: true,
+      webClientId:
+        '557470198780-web.apps.googleusercontent.com',
+      iosClientId:
+        '557470198780-ios.apps.googleusercontent.com',
+      iosUrlScheme: 'com.googleusercontent.apps.557470198780-ios',
+      expectedIosBundleId: CANONICAL_IOS_BUNDLE_ID,
+      plistProjectId: 'nearsy-dev',
+      firebaseEnvironmentProjectId: 'nearsy-dev',
+      scopes: ['openid', 'email', 'profile'],
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(
+      result.issues.some(
+        (issue) => issue.code === 'GOOGLE_OPS_CREDENTIALS_IN_DEV',
+      ),
+    );
+  });
+
+  it('detects CLIENT_ID / URL scheme mismatch', () => {
+    const result = validateGoogleAuthenticationConfiguration({
+      enabled: true,
+      webClientId: 'web-client.apps.googleusercontent.com',
+      iosClientId: 'ios-client.apps.googleusercontent.com',
+      iosUrlScheme: 'com.googleusercontent.apps.other-client',
+      expectedIosBundleId: CANONICAL_IOS_BUNDLE_ID,
+      scopes: ['openid', 'email', 'profile'],
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(
+      result.issues.some(
+        (issue) => issue.code === 'GOOGLE_CLIENT_SCHEME_MISMATCH',
+      ),
+    );
   });
 
   it('detects missing web client id', () => {

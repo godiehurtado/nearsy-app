@@ -21,6 +21,8 @@ const path = require('path');
 const FUNCTIONS_REGION = 'us-central1';
 const DEV_PLIST = './GoogleService-Info.development.plist';
 const PROD_PLIST = './GoogleService-Info.plist';
+/** OAuth numeric prefix for nearsy-pj — rejected in Development. */
+const OPS_GOOGLE_OAUTH_PROJECT_NUMBER = '557470198780';
 
 function resolveEnvironmentName() {
   const raw = String(
@@ -54,6 +56,117 @@ function assertPlistExists(relativePath) {
   }
 }
 
+/** @param {string} relativePath */
+function readPlistStringMap(relativePath) {
+  const absolute = path.resolve(__dirname, relativePath);
+  const xml = fs.readFileSync(absolute, 'utf8');
+  /** @type {Record<string, string>} */
+  const map = {};
+  const re = /<key>([^<]+)<\/key>\s*<string>([^<]*)<\/string>/g;
+  let match;
+  while ((match = re.exec(xml))) {
+    map[match[1]] = match[2];
+  }
+  return map;
+}
+
+/**
+ * @param {string | undefined} value
+ * @returns {string | null}
+ */
+function oauthProjectNumber(value) {
+  if (!value || !String(value).trim()) return null;
+  const trimmed = String(value).trim();
+  if (trimmed.startsWith('com.googleusercontent.apps.')) {
+    const rest = trimmed.slice('com.googleusercontent.apps.'.length);
+    return rest.split('-')[0] || null;
+  }
+  if (trimmed.includes('.apps.googleusercontent.com')) {
+    return trimmed.split('-')[0] || null;
+  }
+  return null;
+}
+
+/**
+ * @param {string} iosClientId
+ * @returns {string}
+ */
+function expectedReversedFromIosClientId(iosClientId) {
+  return (
+    'com.googleusercontent.apps.' +
+    iosClientId.replace(/\.apps\.googleusercontent\.com$/i, '')
+  );
+}
+
+/**
+ * Development Google: require EAS env vars, reject Ops OAuth, align with plist.
+ * Never logs client IDs / schemes.
+ * @param {string} googleServicesFile
+ */
+function resolveDevelopmentGoogleConfig(googleServicesFile) {
+  const webClientId = requireEnv('EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID');
+  const iosClientId = requireEnv('EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID');
+  const iosUrlScheme = requireEnv('EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME');
+
+  for (const [label, value] of [
+    ['EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID', webClientId],
+    ['EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID', iosClientId],
+    ['EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME', iosUrlScheme],
+  ]) {
+    if (oauthProjectNumber(value) === OPS_GOOGLE_OAUTH_PROJECT_NUMBER) {
+      throw new Error(
+        `[app.config] Development must not use nearsy-pj Google OAuth credentials (${label}).`,
+      );
+    }
+  }
+
+  if (!iosUrlScheme.startsWith('com.googleusercontent.apps.')) {
+    throw new Error(
+      '[app.config] EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME must be a reversed Google client ID.',
+    );
+  }
+
+  const expectedScheme = expectedReversedFromIosClientId(iosClientId);
+  if (iosUrlScheme !== expectedScheme) {
+    throw new Error(
+      '[app.config] EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME does not match EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID.',
+    );
+  }
+
+  const plist = readPlistStringMap(googleServicesFile);
+  if (plist.PROJECT_ID !== 'nearsy-dev') {
+    throw new Error(
+      '[app.config] Development GoogleService-Info.plist PROJECT_ID must be nearsy-dev.',
+    );
+  }
+  if (plist.BUNDLE_ID !== 'com.nearsy.app.client') {
+    throw new Error(
+      '[app.config] Development GoogleService-Info.plist BUNDLE_ID must be com.nearsy.app.client.',
+    );
+  }
+  if (!plist.CLIENT_ID || !plist.REVERSED_CLIENT_ID) {
+    throw new Error(
+      '[app.config] Development GoogleService-Info.plist is missing CLIENT_ID / REVERSED_CLIENT_ID.',
+    );
+  }
+  if (plist.CLIENT_ID !== iosClientId) {
+    throw new Error(
+      '[app.config] EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID must match Development plist CLIENT_ID.',
+    );
+  }
+  if (plist.REVERSED_CLIENT_ID !== iosUrlScheme) {
+    throw new Error(
+      '[app.config] EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME must match Development plist REVERSED_CLIENT_ID.',
+    );
+  }
+
+  return {
+    EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: webClientId,
+    EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: iosClientId,
+    EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME: iosUrlScheme,
+  };
+}
+
 /** @param {import('expo/config').ConfigContext} ctx */
 module.exports = ({ config }) => {
   const environment = resolveEnvironmentName();
@@ -66,6 +179,8 @@ module.exports = ({ config }) => {
   let extraBase;
 
   if (isDevelopment) {
+    const google = resolveDevelopmentGoogleConfig(googleServicesFile);
+
     extraBase = {
       EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'development',
       EXPO_PUBLIC_FIREBASE_FUNCTIONS_REGION: FUNCTIONS_REGION,
@@ -83,16 +198,7 @@ module.exports = ({ config }) => {
         'EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID',
       ),
       EXPO_PUBLIC_FIREBASE_APP_ID: requireEnv('EXPO_PUBLIC_FIREBASE_APP_ID'),
-      // Google Sign-In may keep Ops clients until Dev clients are supplied.
-      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID:
-        process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ??
-        config.extra?.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID:
-        process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ??
-        config.extra?.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-      EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME:
-        process.env.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME ??
-        config.extra?.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME,
+      ...google,
       EXPO_PUBLIC_LINKEDIN_AUTH_ENABLED: 'true',
       NEARSY_LINKEDIN_APP_RETURN_URL: 'nearsy://linkedin-auth',
     };
@@ -157,6 +263,13 @@ module.exports = ({ config }) => {
     }
   }
 
+  const iosUrlScheme = extraBase.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME;
+  if (!iosUrlScheme || !String(iosUrlScheme).trim()) {
+    throw new Error(
+      `[app.config] Missing Google iOS URL scheme for ${environment} builds.`,
+    );
+  }
+
   return {
     ...config,
     ios: {
@@ -209,9 +322,7 @@ module.exports = ({ config }) => {
       [
         '@react-native-google-signin/google-signin',
         {
-          iosUrlScheme:
-            extraBase.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME ??
-            config.extra?.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME,
+          iosUrlScheme,
         },
       ],
       'expo-localization',
