@@ -20,8 +20,14 @@ import {
   Keyboard,
   Linking,
   TouchableOpacity,
+  Modal,
+  Platform,
+  useWindowDimensions,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Localization from 'expo-localization';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { RegistrationLayout } from '../components/registration/RegistrationLayout';
@@ -37,12 +43,22 @@ import { spacing } from '../theme/spacing';
 import { radius } from '../theme/radius';
 import {
   ageFromBirthDate,
+  applyBirthDateTextChange,
+  birthDatePlaceholderForOrder,
   birthDateToIso,
-  birthPartsFromStrings,
+  birthPartsFromDigits,
+  birthPartsToLocalDate,
+  commitCalendarSelection,
+  formatBirthDateDigits,
   isBirthDateInFuture,
   isCompleteBirthDate,
+  localDateToBirthParts,
+  maxAdultBirthDate,
   meetsMinimumRegistrationAge,
+  minBirthDateParts,
   MIN_REGISTRATION_AGE,
+  resolveBirthDateOrder,
+  resolveCalendarInitialBirthDate,
 } from '../utils/birthDate';
 import { registerWithEmail } from '../services/authService';
 import { createUserProfile } from '../services/firestoreService';
@@ -56,7 +72,8 @@ type Step = (typeof EMAIL_STEPS)[number];
 const TERMS_URL = 'https://nearsy.app/legal';
 
 type FormState = {
-  birth: { day: string; month: string; year: string };
+  /** Digit buffer only (max 8); never the localized display string. */
+  birthDigits: string;
   email: string;
   password: string;
   countryDial: string;
@@ -86,16 +103,48 @@ function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
+type NativeDateTimePickerProps = {
+  value: Date;
+  mode?: 'date' | 'time' | 'datetime';
+  display?: 'default' | 'spinner' | 'compact' | 'inline';
+  maximumDate?: Date;
+  minimumDate?: Date;
+  locale?: string;
+  themeVariant?: 'light' | 'dark';
+  accentColor?: string;
+  style?: StyleProp<ViewStyle>;
+  onChange?: (event: { type?: string }, date?: Date) => void;
+};
+
+function loadIosDateTimePicker(): React.ComponentType<NativeDateTimePickerProps> | null {
+  if (Platform.OS !== 'ios') return null;
+  try {
+    return require('@react-native-community/datetimepicker')
+      .default as React.ComponentType<NativeDateTimePickerProps>;
+  } catch {
+    return null;
+  }
+}
+
 export default function RegisterScreen({ navigation }: Props) {
-  const { palette } = useAppTheme();
+  const { palette, theme } = useAppTheme();
   const { t } = useTranslation();
+  const { height: windowHeight } = useWindowDimensions();
+  /** iOS UIDatePickerStyleInline does not report Yoga intrinsic height. */
+  const inlinePickerHeight = Math.min(
+    380,
+    Math.max(300, Math.round(windowHeight * 0.42)),
+  );
 
   const [stepIndex, setStepIndex] = useState(0);
   const [showCountries, setShowCountries] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarDraft, setCalendarDraft] = useState<Date | null>(null);
+  const NativeDateTimePicker = useMemo(() => loadIosDateTimePicker(), []);
   const [form, setForm] = useState<FormState>({
-    birth: { day: '', month: '', year: '' },
+    birthDigits: '',
     email: '',
     password: '',
     countryDial: REGISTRATION_COUNTRIES[0].dial,
@@ -103,9 +152,28 @@ export default function RegisterScreen({ navigation }: Props) {
   });
 
   const step: Step = EMAIL_STEPS[stepIndex];
+  const deviceLocaleTag =
+    Localization.getLocales()[0]?.languageTag ?? 'en-US';
+  const birthOrder = useMemo(
+    () => resolveBirthDateOrder(deviceLocaleTag),
+    [deviceLocaleTag],
+  );
+  const birthVisible = useMemo(
+    () => formatBirthDateDigits(form.birthDigits, birthOrder),
+    [form.birthDigits, birthOrder],
+  );
+  const birthPlaceholder = useMemo(() => {
+    if (birthOrder === 'MDY') {
+      return t('authentication.register.wizard.placeholders.birthDateMdy');
+    }
+    if (birthOrder === 'DMY') {
+      return t('authentication.register.wizard.placeholders.birthDateDmy');
+    }
+    return t('authentication.register.wizard.placeholders.birthDateYmd');
+  }, [birthOrder, t]);
   const birthParts = useMemo(
-    () => birthPartsFromStrings(form.birth),
-    [form.birth],
+    () => birthPartsFromDigits(form.birthDigits, birthOrder),
+    [form.birthDigits, birthOrder],
   );
   const birthComplete = useMemo(
     () => isCompleteBirthDate(birthParts),
@@ -120,6 +188,41 @@ export default function RegisterScreen({ navigation }: Props) {
     () => meetsMinimumRegistrationAge(birthParts),
     [birthParts],
   );
+  const birthDigitsFull = form.birthDigits.length === 8;
+  const calendarMaxDate = useMemo(
+    () => birthPartsToLocalDate(maxAdultBirthDate()) as Date,
+    [],
+  );
+  const calendarMinDate = useMemo(
+    () => birthPartsToLocalDate(minBirthDateParts()) as Date,
+    [],
+  );
+
+  function openBirthDateCalendar() {
+    Keyboard.dismiss();
+    const initial = resolveCalendarInitialBirthDate(birthParts);
+    const asDate = birthPartsToLocalDate(initial);
+    if (!asDate) return;
+    setCalendarDraft(asDate);
+    setCalendarOpen(true);
+  }
+
+  function cancelBirthDateCalendar() {
+    setCalendarOpen(false);
+    setCalendarDraft(null);
+  }
+
+  function confirmBirthDateCalendar() {
+    const selected = calendarDraft
+      ? localDateToBirthParts(calendarDraft)
+      : null;
+    update(
+      'birthDigits',
+      commitCalendarSelection(form.birthDigits, selected, birthOrder),
+    );
+    setCalendarOpen(false);
+    setCalendarDraft(null);
+  }
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -153,12 +256,7 @@ export default function RegisterScreen({ navigation }: Props) {
         if (birthComplete && birthFuture) {
           return t('authentication.register.wizard.validation.birthFuture');
         }
-        if (
-          form.birth.day &&
-          form.birth.month &&
-          form.birth.year &&
-          !birthComplete
-        ) {
+        if (birthDigitsFull && !birthComplete) {
           return t('authentication.register.wizard.validation.birthInvalid');
         }
         if (age !== null && age < MIN_REGISTRATION_AGE) {
@@ -333,57 +431,49 @@ export default function RegisterScreen({ navigation }: Props) {
               <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
                 {t('authentication.register.wizard.steps.birth.subtitle')}
               </Text>
-              <View style={styles.dateRow}>
-                <View style={styles.dateCell}>
-                  <FormInput
-                    label={t('authentication.register.wizard.fields.day')}
-                    placeholder={t(
-                      'authentication.register.wizard.placeholders.day',
-                    )}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                    value={form.birth.day}
-                    onChangeText={(v) =>
-                      update('birth', {
-                        ...form.birth,
-                        day: v.replace(/\D/g, ''),
-                      })
-                    }
-                  />
-                </View>
-                <View style={styles.dateCell}>
-                  <FormInput
-                    label={t('authentication.register.wizard.fields.month')}
-                    placeholder={t(
-                      'authentication.register.wizard.placeholders.month',
-                    )}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                    value={form.birth.month}
-                    onChangeText={(v) =>
-                      update('birth', {
-                        ...form.birth,
-                        month: v.replace(/\D/g, ''),
-                      })
-                    }
-                  />
-                </View>
-                <View style={styles.dateCellWide}>
-                  <FormInput
-                    label={t('authentication.register.wizard.fields.year')}
-                    placeholder={t(
-                      'authentication.register.wizard.placeholders.year',
-                    )}
-                    keyboardType="number-pad"
-                    maxLength={4}
-                    value={form.birth.year}
-                    onChangeText={(v) =>
-                      update('birth', {
-                        ...form.birth,
-                        year: v.replace(/\D/g, ''),
-                      })
-                    }
-                  />
+              <View style={styles.form}>
+                <View style={styles.birthFieldRow}>
+                  <View style={styles.birthField}>
+                    <FormInput
+                      label={t('authentication.register.wizard.fields.birthDate')}
+                      placeholder={birthPlaceholder}
+                      keyboardType="number-pad"
+                      maxLength={10}
+                      value={birthVisible}
+                      accessibilityLabel={t(
+                        'authentication.register.wizard.fields.birthDate',
+                      )}
+                      accessibilityHint={birthDatePlaceholderForOrder(birthOrder)}
+                      onChangeText={(v) =>
+                        update(
+                          'birthDigits',
+                          applyBirthDateTextChange(birthVisible, v, birthOrder),
+                        )
+                      }
+                    />
+                  </View>
+                  {NativeDateTimePicker ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t(
+                        'authentication.register.wizard.a11y.birthDateCalendar',
+                      )}
+                      onPress={openBirthDateCalendar}
+                      style={[
+                        styles.calendarBtn,
+                        {
+                          backgroundColor: palette.panel,
+                          borderColor: palette.borderStrong,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name="calendar-outline"
+                        size={22}
+                        color={palette.textPrimary}
+                      />
+                    </Pressable>
+                  ) : null}
                 </View>
               </View>
               {birthComplete && birthFuture ? (
@@ -391,10 +481,7 @@ export default function RegisterScreen({ navigation }: Props) {
                   {t('authentication.register.wizard.steps.birth.futureDate')}
                 </Text>
               ) : null}
-              {!birthComplete &&
-              form.birth.day &&
-              form.birth.month &&
-              form.birth.year ? (
+              {!birthComplete && birthDigitsFull ? (
                 <Text style={[styles.ageNote, { color: palette.danger }]}>
                   {t('authentication.register.wizard.steps.birth.invalidDate')}
                 </Text>
@@ -587,6 +674,85 @@ export default function RegisterScreen({ navigation }: Props) {
           )}
         </RegistrationFadeSlideIn>
       </ScrollView>
+      {NativeDateTimePicker && calendarOpen && calendarDraft ? (
+        <Modal
+          visible
+          transparent
+          animationType="fade"
+          onRequestClose={cancelBirthDateCalendar}
+        >
+          <View style={styles.calendarOverlay}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              accessibilityRole="button"
+              accessibilityLabel={t('common.cancel')}
+              onPress={cancelBirthDateCalendar}
+            />
+            <View
+              style={[
+                styles.calendarSheet,
+                { backgroundColor: palette.surface, borderColor: palette.border },
+              ]}
+            >
+              <View style={styles.calendarHeader}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('common.cancel')}
+                  onPress={cancelBirthDateCalendar}
+                  hitSlop={8}
+                >
+                  <Text style={[styles.calendarAction, { color: palette.textSecondary }]}>
+                    {t('common.cancel')}
+                  </Text>
+                </Pressable>
+                <Text
+                  style={[styles.calendarTitle, { color: palette.textPrimary }]}
+                  numberOfLines={1}
+                >
+                  {t('authentication.register.birthDateModalTitle')}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t(
+                    'authentication.register.wizard.calendarDone',
+                  )}
+                  onPress={confirmBirthDateCalendar}
+                  hitSlop={8}
+                >
+                  <Text style={[styles.calendarAction, { color: palette.primary }]}>
+                    {t('authentication.register.wizard.calendarDone')}
+                  </Text>
+                </Pressable>
+              </View>
+              <View
+                style={[
+                  styles.calendarPickerArea,
+                  { height: inlinePickerHeight },
+                ]}
+              >
+                <NativeDateTimePicker
+                  value={calendarDraft}
+                  mode="date"
+                  display="inline"
+                  locale={deviceLocaleTag}
+                  themeVariant={theme === 'dark' ? 'dark' : 'light'}
+                  accentColor={palette.primary}
+                  style={{ width: '100%', height: inlinePickerHeight }}
+                  maximumDate={calendarMaxDate}
+                  minimumDate={calendarMinDate}
+                  onChange={(event, date) => {
+                    if (event.type === 'dismissed') {
+                      cancelBirthDateCalendar();
+                      return;
+                    }
+                    if (date) setCalendarDraft(date);
+                  }}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </RegistrationLayout>
   );
 }
@@ -620,13 +786,56 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   form: { gap: spacing.lg, marginTop: spacing.xxl },
-  dateRow: {
+  birthFieldRow: {
     flexDirection: 'row',
-    gap: spacing.md,
-    marginTop: spacing.xxl,
+    alignItems: 'flex-start',
+    gap: spacing.sm,
   },
-  dateCell: { flex: 1 },
-  dateCellWide: { flex: 1.6 },
+  birthField: { flex: 1 },
+  calendarBtn: {
+    width: 50,
+    height: 50,
+    marginTop: fontSize.xs + 7,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+    padding: spacing.lg,
+  },
+  calendarSheet: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    paddingBottom: spacing.md,
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  calendarPickerArea: {
+    width: '100%',
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
+  },
+  calendarTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
+  },
+  calendarAction: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
+    minWidth: 64,
+  },
   ageNote: {
     fontSize: fontSize.sm,
     fontWeight: fontWeight.semibold,

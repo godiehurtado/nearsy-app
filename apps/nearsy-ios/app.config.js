@@ -327,6 +327,7 @@ module.exports = ({ config }) => {
       ],
       'expo-localization',
       'expo-apple-authentication',
+      '@react-native-community/datetimepicker',
     ],
     extra: {
       ...config.extra,
