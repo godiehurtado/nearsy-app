@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -21,8 +21,8 @@ import {
   type OnboardingAffiliationCategoryId,
   type OnboardingSelectedAffiliation,
 } from '../../affiliations/onboardingAffiliationCatalog';
-import { fixtureAffiliationEntitySearchProvider } from '../../affiliations/fixtureAffiliationEntitySearchProvider';
 import type { AffiliationEntitySearchResult } from '../../affiliations/affiliationEntitySearchProvider';
+import { getAffiliationEntitySearchProvider } from '../../affiliations/affiliationEntitySearchRuntime';
 import { resolveAffiliationLogoPresentation } from '../../affiliations/affiliationLogo';
 
 type Props = {
@@ -131,6 +131,7 @@ export function OnboardingAffiliationCategoryPanel({
   const [draftImage, setDraftImage] = useState<string | null>(null);
   const [results, setResults] = useState<AffiliationEntitySearchResult[]>([]);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
+  const searchGenerationRef = useRef(0);
 
   const selectedInCategory = useMemo(
     () => selected.filter((s) => s.categoryId === categoryId),
@@ -145,14 +146,22 @@ export function OnboardingAffiliationCategoryPanel({
 
   useEffect(() => {
     if (trimmedQuery.length < 2) {
+      searchGenerationRef.current += 1;
       setResults([]);
       return;
     }
+    const generation = ++searchGenerationRef.current;
     const handle = setTimeout(() => {
-      void fixtureAffiliationEntitySearchProvider
+      void getAffiliationEntitySearchProvider()
         .search(trimmedQuery, categoryId)
-        .then(setResults)
-        .catch(() => setResults([]));
+        .then((rows) => {
+          if (generation !== searchGenerationRef.current) return;
+          setResults(rows);
+        })
+        .catch(() => {
+          if (generation !== searchGenerationRef.current) return;
+          setResults([]);
+        });
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(handle);
   }, [trimmedQuery, categoryId]);
@@ -227,7 +236,12 @@ export function OnboardingAffiliationCategoryPanel({
       categoryId,
       source: isCustom ? 'custom' : 'provider',
       ...(isCustom ? {} : { providerId: matched!.providerId }),
-      ...(draftImage ? { logoUrl: draftImage } : {}),
+      ...(draftImage
+        ? { logoUrl: draftImage }
+        : !isCustom && matched?.logoUrl
+          ? { logoUrl: matched.logoUrl }
+          : {}),
+      ...(!isCustom && matched?.website ? { website: matched.website } : {}),
       ...(activeTopic ? { topic: activeTopic.label } : {}),
     };
 
