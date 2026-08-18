@@ -4,7 +4,7 @@
  * Flow: Profile Type → Name → Last Name → Photo → Profile Details →
  * Interests (11 category screens) → Interests Celebration / Affiliations
  * Transition → Affiliations (7 category screens) → Social Media →
- * Location → Notifications → Registration Success → MainTabs.
+ * Gallery → Location → Notifications → Registration Success → MainTabs.
  *
  * TEMPORARY: Phone OTP remains out of scope (handled earlier in Register).
  */
@@ -17,6 +17,7 @@ import {
   ScrollView,
   Image,
   Alert,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -31,6 +32,7 @@ import { FormInput } from '../components/registration/FormInput';
 import { OnboardingInterestCategoryPanel } from '../components/registration/OnboardingInterestCategoryPanel';
 import { OnboardingAffiliationCategoryPanel } from '../components/registration/OnboardingAffiliationCategoryPanel';
 import { OnboardingSocialMediaStep } from '../components/registration/OnboardingSocialMediaStep';
+import { OnboardingGalleryStep } from '../components/registration/OnboardingGalleryStep';
 import { InterestsCelebrationStep } from '../components/registration/InterestsCelebrationStep';
 import { InterestsIntroVisual } from '../components/registration/InterestsIntroVisual';
 import {
@@ -50,7 +52,7 @@ import {
   updateUserProfilePartial,
   updateUserMode,
 } from '../services/firestoreService';
-import { uploadProfileImage, uploadAffiliationImage } from '../services/storageService';
+import { uploadProfileImage, uploadAffiliationImage, uploadGalleryImage, deleteGalleryStorageObject } from '../services/storageService';
 import {
   commitPendingSocialNamePrefill,
   clearPendingSocialProfilePrefill,
@@ -99,6 +101,17 @@ import {
   readExistingSocialLinks,
 } from '../social/onboardingSocialPersistence';
 import {
+  POST_GALLERY_CRJ_STEP,
+  CRJ_GALLERY_UX_CAP,
+  abandonedSessionUploadPaths,
+  buildCrjGalleryPersistencePatch,
+  hasUploadingGalleryItems,
+  readCrjGallery,
+  removedPersistedGalleryPaths,
+  shouldPersistCrjGallery,
+  type CrjGalleryItem,
+} from '../gallery/onboardingGalleryPersistence';
+import {
   collectSocialFieldErrors,
   type CrjSocialFieldErrors,
 } from '../social/socialLinkNormalize';
@@ -116,6 +129,7 @@ const PRE_INTEREST_STEPS = [
 const AFFILIATION_CATEGORY_IDS = listOnboardingAffiliationCategoryIds();
 const POST_AFFILIATION_STEPS = [
   POST_SOCIAL_MEDIA_CRJ_STEP,
+  POST_GALLERY_CRJ_STEP,
   'notifications',
   'success',
 ] as const;
@@ -290,6 +304,8 @@ function progressPhaseForStep(step: ResolvedStep): CrjProgressPhase | null {
       return 'affiliations';
     case 'socialMedia':
       return 'social';
+    case 'gallery':
+      return 'gallery';
     case 'location':
       return 'location';
     case 'notifications':
@@ -331,6 +347,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [socialCustom, setSocialCustom] = useState<SocialCustomLink[]>([]);
   const [socialFieldErrors, setSocialFieldErrors] =
     useState<CrjSocialFieldErrors>({});
+  const [galleryItems, setGalleryItems] = useState<CrjGalleryItem[]>([]);
+  const [galleryOriginal, setGalleryOriginal] = useState<CrjGalleryItem[]>(
+    [],
+  );
+  const [galleryPermissionDenied, setGalleryPermissionDenied] =
+    useState(false);
   const [activeInterestGroupByCategory, setActiveInterestGroupByCategory] =
     useState<Partial<Record<OnboardingInterestCategoryId, string>>>({});
   const [shellData, setShellData] = useState<Record<string, unknown> | null>(
@@ -406,6 +428,10 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     setSocialDraft(social.values);
     setSocialCustom(social.custom);
     setSocialFieldErrors({});
+    const gallery = readCrjGallery(data, nextMode);
+    setGalleryItems(gallery);
+    setGalleryOriginal(gallery);
+    setGalleryPermissionDenied(false);
   }
 
   /**
@@ -600,6 +626,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       case 'interestsCelebration':
       case 'affiliation':
       case 'socialMedia':
+      case 'gallery':
         return true;
       case 'location':
       case 'notifications':
@@ -772,6 +799,122 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     }));
   }
 
+  async function persistGallery() {
+    if (!uid || !mode) return;
+    if (!shouldPersistCrjGallery(galleryOriginal, galleryItems)) return;
+    const patch = buildCrjGalleryPersistencePatch(mode, galleryItems);
+    const removed = removedPersistedGalleryPaths(galleryOriginal, galleryItems);
+    await Promise.all(removed.map((path) => deleteGalleryStorageObject(path)));
+    await updateUserProfilePartial(uid, patch);
+    const persisted = readCrjGallery({ ...patch }, mode);
+    setGalleryItems(persisted);
+    setGalleryOriginal(persisted);
+    setShellData((prev) => ({
+      ...(prev ?? {}),
+      mode,
+      ...patch,
+    }));
+  }
+
+  async function cleanupAbandonedGalleryUploads() {
+    const paths = abandonedSessionUploadPaths(galleryOriginal, galleryItems);
+    await Promise.all(paths.map((path) => deleteGalleryStorageObject(path)));
+  }
+
+  async function addGalleryPhoto() {
+    if (!uid || !mode || galleryItems.length >= CRJ_GALLERY_UX_CAP) return;
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      setGalleryPermissionDenied(true);
+      return;
+    }
+    setGalleryPermissionDenied(false);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      quality: 0.8,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    });
+    if (result.canceled || result.assets.length === 0) return;
+    const asset = result.assets[0]!;
+    const localId = `local-${Date.now()}`;
+    const pending: CrjGalleryItem = {
+      id: localId,
+      url: asset.uri,
+      path: localId,
+      createdAt: Date.now(),
+      status: 'uploading',
+      fromSession: true,
+    };
+    setGalleryItems((prev) => [...prev, pending]);
+    try {
+      const uploaded = await uploadGalleryImage(uid, asset.uri, mode);
+      const ready: CrjGalleryItem = {
+        id: uploaded.path,
+        url: uploaded.url,
+        path: uploaded.path,
+        createdAt: pending.createdAt,
+        status: 'ready',
+        fromSession: true,
+      };
+      setGalleryItems((prev) =>
+        prev.map((item) => (item.id === localId ? ready : item)),
+      );
+    } catch {
+      setGalleryItems((prev) =>
+        prev.map((item) =>
+          item.id === localId ? { ...item, status: 'failed' } : item,
+        ),
+      );
+    }
+  }
+
+  async function retryGalleryPhoto(id: string) {
+    if (!uid || !mode) return;
+    const current = galleryItems.find((item) => item.id === id);
+    if (!current || current.status !== 'failed') return;
+    if (!/^(file|content|ph|assets-library):/i.test(current.url)) return;
+    setGalleryItems((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, status: 'uploading' } : item,
+      ),
+    );
+    try {
+      const uploaded = await uploadGalleryImage(uid, current.url, mode);
+      setGalleryItems((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? {
+                id: uploaded.path,
+                url: uploaded.url,
+                path: uploaded.path,
+                createdAt: current.createdAt,
+                status: 'ready',
+                fromSession: true,
+              }
+            : item,
+        ),
+      );
+    } catch {
+      setGalleryItems((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, status: 'failed' } : item,
+        ),
+      );
+    }
+  }
+
+  async function removeGalleryPhoto(id: string) {
+    const current = galleryItems.find((item) => item.id === id);
+    setGalleryItems((prev) => prev.filter((item) => item.id !== id));
+    if (
+      current?.fromSession &&
+      current.path &&
+      !current.path.startsWith('local-')
+    ) {
+      await deleteGalleryStorageObject(current.path);
+    }
+  }
+
   async function requestLocation() {
     const current = await Location.getForegroundPermissionsAsync();
     if (current.granted) {
@@ -903,6 +1046,29 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       setSubmitting(true);
       await persistSocialMedia();
       setSocialFieldErrors({});
+      setStepIndex((i) => i + 1);
+    } catch (e: any) {
+      Alert.alert(
+        t('onboarding.profileCompletion.saveErrorTitle'),
+        e?.message || t('onboarding.profileCompletion.saveErrorMessage'),
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function advanceGallery(options: { persist: boolean }) {
+    if (step.kind !== 'gallery' || submitting) return;
+    if (options.persist && hasUploadingGalleryItems(galleryItems)) return;
+
+    try {
+      setSubmitting(true);
+      if (options.persist) {
+        await persistGallery();
+      } else {
+        await cleanupAbandonedGalleryUploads();
+        setGalleryItems(galleryOriginal);
+      }
       setStepIndex((i) => i + 1);
     } catch (e: any) {
       Alert.alert(
@@ -1093,6 +1259,26 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               onPress={() => {
                 if (submitting) return;
                 void advanceSocialMedia({ requireValidFields: false });
+              }}
+            />
+          </View>
+        ) : step.kind === 'gallery' ? (
+          <View style={styles.actionStack}>
+            <PrimaryButton
+              label={t('onboarding.profileCompletion.gallery.next' as any)}
+              onPress={() => {
+                void advanceGallery({ persist: true });
+              }}
+              disabled={
+                submitting || hasUploadingGalleryItems(galleryItems)
+              }
+              loading={submitting}
+            />
+            <SecondaryButton
+              label={t('onboarding.profileCompletion.gallery.skip' as any)}
+              onPress={() => {
+                if (submitting) return;
+                void advanceGallery({ persist: false });
               }}
             />
           </View>
@@ -1522,6 +1708,25 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                   delete next[id];
                   return next;
                 });
+              }}
+            />
+          )}
+
+          {step.kind === 'gallery' && (
+            <OnboardingGalleryStep
+              items={galleryItems}
+              permissionDenied={galleryPermissionDenied}
+              onAddPress={() => {
+                void addGalleryPhoto();
+              }}
+              onRemove={(id) => {
+                void removeGalleryPhoto(id);
+              }}
+              onRetry={(id) => {
+                void retryGalleryPhoto(id);
+              }}
+              onOpenSettings={() => {
+                void Linking.openSettings();
               }}
             />
           )}

@@ -4,6 +4,7 @@ import {
   ref,
   uploadBytes,
   getDownloadURL,
+  deleteObject,
   type UploadMetadata,
 } from 'firebase/storage';
 
@@ -132,6 +133,21 @@ export async function uploadGalleryImage(
       console.warn('uploadGalleryImage storageWeb exists:', !!storageWeb);
     }
     throw error;
+  }
+}
+
+/** Best-effort Storage cleanup for a gallery object we own. */
+export async function deleteGalleryStorageObject(path: string): Promise<void> {
+  if (!path || path.startsWith('local-') || /^(file|content|ph|assets-library):/i.test(path)) {
+    return;
+  }
+  if (!storageWeb) return;
+  try {
+    await deleteObject(ref(storageWeb, path));
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('deleteGalleryStorageObject error:', error);
+    }
   }
 }
 

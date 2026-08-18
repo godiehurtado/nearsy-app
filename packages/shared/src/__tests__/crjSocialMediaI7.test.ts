@@ -46,12 +46,11 @@ describe('CRJ-I7 Social Media architecture', () => {
     assert.ok(socialReturn > affIdx);
   });
 
-  it('B — Social Media precedes Location', () => {
-    assert.equal(POST_SOCIAL_MEDIA_CRJ_STEP, 'location');
+  it('B — Social Media precedes Gallery', () => {
+    assert.equal(POST_SOCIAL_MEDIA_CRJ_STEP, 'gallery');
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
     assert.ok(screen.includes('POST_SOCIAL_MEDIA_CRJ_STEP'));
     assert.ok(screen.includes("kind: 'socialMedia'"));
-    assert.ok(screen.includes("kind === 'location'"));
   });
 
   it('C — Social Media appears exactly once in navigation resolve', () => {
@@ -91,17 +90,18 @@ describe('CRJ-I7 Social Media architecture', () => {
     assert.ok(panel.includes('socialMedia.skip') || screen.includes("socialMedia.skip"));
   });
 
-  it('F — Skip → Location', () => {
+  it('F — Skip → Gallery', () => {
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
     assert.ok(screen.includes('advanceSocialMedia({ requireValidFields: false })'));
-    assert.equal(POST_SOCIAL_MEDIA_CRJ_STEP, 'location');
+    assert.equal(POST_SOCIAL_MEDIA_CRJ_STEP, 'gallery');
   });
 
-  it('G — Continue → Location', () => {
+  it('G — Continue → Gallery', () => {
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
     assert.ok(screen.includes('advanceSocialMedia({ requireValidFields: true })'));
     assert.ok(screen.includes('await persistSocialMedia()'));
     assert.ok(screen.includes('setStepIndex((i) => i + 1)'));
+    assert.equal(POST_SOCIAL_MEDIA_CRJ_STEP, 'gallery');
   });
 
   it('H — Location Back → Social Media', () => {
@@ -305,10 +305,8 @@ describe('CRJ-I7 Social Media data / validation', () => {
   });
 });
 
-describe('CRJ-I7 isolation from I9 / Gallery / Auth', () => {
-  it('does not implement Gallery or CRJ-I9', () => {
-    const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
-    assert.ok(!screen.includes("kind: 'gallery'"));
+describe('CRJ-I7 isolation from I9 / Auth', () => {
+  it('does not implement CRJ-I9 live search', () => {
     const provider = readSharedSource(
       'affiliations/affiliationEntitySearchProvider.ts',
     );

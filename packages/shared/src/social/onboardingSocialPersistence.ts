@@ -142,7 +142,7 @@ export function readExistingSocialLinks(
   return raw as SocialLinks;
 }
 
-/** After Social Media — I8 may later replace this with `gallery`. */
-export const POST_SOCIAL_MEDIA_CRJ_STEP = 'location' as const;
+/** After Social Media — CRJ-I8 Gallery. */
+export const POST_SOCIAL_MEDIA_CRJ_STEP = 'gallery' as const;
 
 export type { CrjSocialPlatformId };

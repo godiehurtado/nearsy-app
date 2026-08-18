@@ -12,6 +12,7 @@ export type CrjProgressPhase =
   | 'interests'
   | 'affiliations'
   | 'social'
+  | 'gallery'
   | 'location'
   | 'notifications';
 
@@ -24,8 +25,9 @@ const PHASE_PROGRESS: Record<CrjProgressPhase, number> = {
   interests: 0.58,
   affiliations: 0.68,
   social: 0.74,
-  location: 0.82,
-  notifications: 0.9,
+  gallery: 0.78,
+  location: 0.86,
+  notifications: 0.92,
 };
 
 /** Auth sub-steps nudge slightly within the auth band without exposing totals. */
