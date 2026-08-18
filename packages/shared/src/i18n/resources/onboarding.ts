@@ -99,6 +99,8 @@ export default {
       uploadA11y: 'Upload a logo instead',
       usingOwnImage: 'Using your own image',
       duplicate: 'You already added this organization',
+      suggestionsUnavailable:
+        'Suggestions are unavailable right now. You can still add this manually.',
       categories: {
         education: 'Education',
         professional: 'Professional',

@@ -15,6 +15,12 @@ export type AppCheckBootstrapPort = {
   initialize: () => Promise<void>;
   /** Force-refresh a token to prove readiness. Must not return/log the token to callers. */
   ensureToken: () => Promise<void>;
+  /**
+   * Run `fn` with a fresh App Check token. Token is not logged or stored.
+   * Optional so LinkedIn mocks stay unchanged. Affiliation search uses this
+   * because RNFB httpsCallable cannot attach Firebase JS Auth.
+   */
+  withToken?: <T>(fn: (token: string) => Promise<T>) => Promise<T>;
 };
 
 export type AppCheckBootstrapOptions = {

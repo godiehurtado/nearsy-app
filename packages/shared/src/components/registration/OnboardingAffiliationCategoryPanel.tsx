@@ -6,13 +6,21 @@ import {
   Pressable,
   Image,
   TextInput,
+  Keyboard,
+  ScrollView,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import Constants from 'expo-constants';
+import { useReducedMotion } from 'react-native-reanimated';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { fontSize, fontWeight } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { useTranslation } from '../../i18n';
+import {
+  resolveAffiliationSearchUi,
+  type AffiliationSearchUiSnapshot,
+} from '../../affiliations/affiliationSearchInteraction';
 import {
   buildCustomAffiliationId,
   getOnboardingAffiliationCategory,
@@ -22,19 +30,47 @@ import {
   type OnboardingSelectedAffiliation,
 } from '../../affiliations/onboardingAffiliationCatalog';
 import type { AffiliationEntitySearchResult } from '../../affiliations/affiliationEntitySearchProvider';
+import { AffiliationEntitySearchClientError } from '../../affiliations/affiliationEntitySearchContract';
 import { getAffiliationEntitySearchProvider } from '../../affiliations/affiliationEntitySearchRuntime';
+import {
+  buildLogoDevImageUrl,
+  domainFromAffiliationFields,
+  isLogoDevPublishableKey,
+} from '../../affiliations/affiliationLogoDev';
+import {
+  LOGO_DEV_PUBLISHABLE_KEY_ENV,
+  readLogoDevPublishableKey,
+} from '../../affiliations/affiliationLogoDevConfig';
 import { resolveAffiliationLogoPresentation } from '../../affiliations/affiliationLogo';
 
 type Props = {
   categoryId: OnboardingAffiliationCategoryId;
   selected: OnboardingSelectedAffiliation[];
   onChangeSelected: (next: OnboardingSelectedAffiliation[]) => void;
+  onSearchUiChange?: (ui: AffiliationSearchUiSnapshot) => void;
+  searchAddRef?: React.MutableRefObject<(() => void) | null>;
+  contentScrollRef?: React.RefObject<ScrollView | null>;
 };
 
 const SEARCH_DEBOUNCE_MS = 300;
 const RESULT_TILE_RADIUS = 12;
 const SELECTED_TILE_RADIUS = 18;
 const QUERY_MAX = 40;
+
+function readClientPublishableKey(): string | undefined {
+  const fromEnv = readLogoDevPublishableKey();
+  if (fromEnv) return fromEnv;
+  try {
+    const extra = (Constants.expoConfig?.extra ?? {}) as Record<string, unknown>;
+    const raw = extra[LOGO_DEV_PUBLISHABLE_KEY_ENV];
+    if (typeof raw === 'string' && isLogoDevPublishableKey(raw)) {
+      return raw.trim();
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
 
 function AffiliationLogo({
   name,
@@ -120,9 +156,13 @@ export function OnboardingAffiliationCategoryPanel({
   categoryId,
   selected,
   onChangeSelected,
+  onSearchUiChange,
+  searchAddRef,
+  contentScrollRef,
 }: Props) {
   const { palette } = useAppTheme();
   const { t } = useTranslation();
+  const reduceMotion = useReducedMotion();
   const category = getOnboardingAffiliationCategory(categoryId);
 
   const [topicId, setTopicId] = useState<string | null>(null);
@@ -131,7 +171,12 @@ export function OnboardingAffiliationCategoryPanel({
   const [draftImage, setDraftImage] = useState<string | null>(null);
   const [results, setResults] = useState<AffiliationEntitySearchResult[]>([]);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
+  const [suggestionsUnavailable, setSuggestionsUnavailable] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchPending, setSearchPending] = useState(false);
   const searchGenerationRef = useRef(0);
+  const searchInputRef = useRef<TextInput>(null);
+  const publishableKey = readClientPublishableKey();
 
   const selectedInCategory = useMemo(
     () => selected.filter((s) => s.categoryId === categoryId),
@@ -141,26 +186,72 @@ export function OnboardingAffiliationCategoryPanel({
   const activeTopic = category.topics.find((topic) => topic.id === topicId);
   const topicOpen = !!activeTopic;
   const trimmedQuery = query.trim();
-  const addReady = !!(pickedName || trimmedQuery);
+  const customNameValid = validateCustomAffiliationName(trimmedQuery).ok === true;
   const searchHintVisible = trimmedQuery.length < 2;
+  const searchUi = useMemo(
+    () =>
+      resolveAffiliationSearchUi({
+        searchFocused,
+        pickedName,
+        customName: trimmedQuery,
+        customNameValid,
+        hasProviderResults: results.length > 0,
+        searchPending,
+        suggestionsUnavailable,
+        hasDraftImage: !!draftImage,
+      }),
+    [
+      searchFocused,
+      pickedName,
+      trimmedQuery,
+      customNameValid,
+      results.length,
+      searchPending,
+      suggestionsUnavailable,
+      draftImage,
+    ],
+  );
+  const compactSearch = searchUi.hideJourneyFooter;
+
+  function displayLogoUrl(input: {
+    logoUrl?: string | null;
+    website?: string | null;
+    providerId?: string | null;
+  }): string | undefined {
+    if (input.logoUrl?.trim()) return input.logoUrl.trim();
+    return buildLogoDevImageUrl(
+      domainFromAffiliationFields(input),
+      publishableKey,
+    );
+  }
 
   useEffect(() => {
     if (trimmedQuery.length < 2) {
       searchGenerationRef.current += 1;
       setResults([]);
+      setSuggestionsUnavailable(false);
+      setSearchPending(false);
       return;
     }
     const generation = ++searchGenerationRef.current;
+    setSearchPending(true);
     const handle = setTimeout(() => {
       void getAffiliationEntitySearchProvider()
         .search(trimmedQuery, categoryId)
         .then((rows) => {
           if (generation !== searchGenerationRef.current) return;
+          setSuggestionsUnavailable(false);
           setResults(rows);
+          setSearchPending(false);
         })
-        .catch(() => {
+        .catch((error) => {
           if (generation !== searchGenerationRef.current) return;
           setResults([]);
+          setSuggestionsUnavailable(true);
+          setSearchPending(false);
+          if (__DEV__ && error instanceof AffiliationEntitySearchClientError) {
+            console.warn('[AffiliationSearch]', error.code);
+          }
         });
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(handle);
@@ -174,6 +265,45 @@ export function OnboardingAffiliationCategoryPanel({
           count: totalAdded,
         });
 
+  useEffect(() => {
+    onSearchUiChange?.(searchUi);
+  }, [searchUi, onSearchUiChange]);
+
+  function scrollSearchIntoView() {
+    contentScrollRef?.current?.scrollTo({
+      y: 0,
+      animated: !reduceMotion,
+    });
+  }
+
+  function scheduleScrollSearchIntoView() {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        scrollSearchIntoView();
+      });
+    });
+  }
+
+  useEffect(() => {
+    if (!searchFocused) return;
+    const shown = Keyboard.addListener('keyboardDidShow', () => {
+      scheduleScrollSearchIntoView();
+    });
+    return () => shown.remove();
+  }, [searchFocused, reduceMotion]);
+
+  useEffect(() => {
+    setTopicId(null);
+    setQuery('');
+    setPickedName(null);
+    setDraftImage(null);
+    setResults([]);
+    setDuplicateError(null);
+    setSuggestionsUnavailable(false);
+    setSearchFocused(false);
+    setSearchPending(false);
+  }, [categoryId]);
+
   function toggleTopic(nextId: string) {
     setTopicId((prev) => (prev === nextId ? null : nextId));
     setQuery('');
@@ -181,6 +311,7 @@ export function OnboardingAffiliationCategoryPanel({
     setDraftImage(null);
     setResults([]);
     setDuplicateError(null);
+    setSearchFocused(false);
   }
 
   function pickResult(result: AffiliationEntitySearchResult) {
@@ -212,13 +343,18 @@ export function OnboardingAffiliationCategoryPanel({
     const matched = results.find(
       (row) => row.name.toLowerCase() === validated.name.toLowerCase(),
     );
-    const isCustom = !matched || matched.isQueryMatch === true;
+    const explicitlyPicked =
+      !!pickedName &&
+      !!matched &&
+      matched.isQueryMatch !== true &&
+      pickedName.toLowerCase() === matched.name.toLowerCase();
+    const isCustom = !explicitlyPicked;
     const candidate = isCustom
       ? { name: validated.name, source: 'custom' as const }
       : {
           name: validated.name,
           source: 'provider' as const,
-          providerId: matched.providerId,
+          providerId: matched!.providerId,
         };
 
     if (isDuplicateAffiliation(selected, candidate)) {
@@ -236,11 +372,8 @@ export function OnboardingAffiliationCategoryPanel({
       categoryId,
       source: isCustom ? 'custom' : 'provider',
       ...(isCustom ? {} : { providerId: matched!.providerId }),
-      ...(draftImage
-        ? { logoUrl: draftImage }
-        : !isCustom && matched?.logoUrl
-          ? { logoUrl: matched.logoUrl }
-          : {}),
+      ...(!isCustom && matched?.provider ? { provider: matched.provider } : {}),
+      ...(draftImage ? { logoUrl: draftImage } : {}),
       ...(!isCustom && matched?.website ? { website: matched.website } : {}),
       ...(activeTopic ? { topic: activeTopic.label } : {}),
     };
@@ -252,14 +385,27 @@ export function OnboardingAffiliationCategoryPanel({
     setResults([]);
     setTopicId(null);
     setDuplicateError(null);
+    setSearchFocused(false);
+    setSearchPending(false);
+    setSuggestionsUnavailable(false);
+    searchInputRef.current?.blur();
+    Keyboard.dismiss();
   }
+
+  useEffect(() => {
+    if (!searchAddRef) return;
+    searchAddRef.current = addFromSearch;
+    return () => {
+      searchAddRef.current = null;
+    };
+  });
 
   function removeAffiliation(id: string) {
     onChangeSelected(selected.filter((s) => s.id !== id));
   }
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, compactSearch ? styles.wrapSearch : null]}>
       <Text style={[styles.eyebrow, { color: palette.chipText }]}>
         {t('onboarding.profileCompletion.affiliations.eyebrow' as any)}
       </Text>
@@ -278,104 +424,109 @@ export function OnboardingAffiliationCategoryPanel({
           )}
         </Text>
       </View>
-      <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
-        {t(
-          `onboarding.profileCompletion.affiliations.subtitles.${category.subtitleKey}` as any,
-          { defaultValue: category.subtitle },
-        )}
-      </Text>
-      <Text style={[styles.countLabel, { color: palette.chipText }]}>
-        {countLabel}
-      </Text>
+      {!compactSearch ? (
+        <>
+          <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
+            {t(
+              `onboarding.profileCompletion.affiliations.subtitles.${category.subtitleKey}` as any,
+              { defaultValue: category.subtitle },
+            )}
+          </Text>
+          <Text style={[styles.countLabel, { color: palette.chipText }]}>
+            {countLabel}
+          </Text>
 
-      {selectedInCategory.length > 0 ? (
-        <View style={styles.selectedWrap}>
-          {selectedInCategory.map((item) => (
-            <View key={item.id} style={styles.selectedTile}>
-              <View>
-                <AffiliationLogo
-                  name={item.name}
-                  categoryId={item.categoryId}
-                  logoUrl={item.logoUrl}
-                  size={64}
-                  borderRadius={SELECTED_TILE_RADIUS}
-                />
+          {selectedInCategory.length > 0 ? (
+            <View style={styles.selectedWrap}>
+              {selectedInCategory.map((item) => (
+                <View key={item.id} style={styles.selectedTile}>
+                  <View>
+                    <AffiliationLogo
+                      name={item.name}
+                      categoryId={item.categoryId}
+                      logoUrl={displayLogoUrl(item)}
+                      size={64}
+                      borderRadius={SELECTED_TILE_RADIUS}
+                    />
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t(
+                        'onboarding.profileCompletion.affiliations.removeA11y' as any,
+                        { name: item.name },
+                      )}
+                      hitSlop={8}
+                      onPress={() => removeAffiliation(item.id)}
+                      style={[
+                        styles.removeBadge,
+                        {
+                          backgroundColor: palette.background,
+                          borderColor: palette.accentBorder,
+                        },
+                      ]}
+                    >
+                      <Text style={{ color: palette.textSecondary, fontSize: 12, fontWeight: fontWeight.extrabold }}>
+                        ×
+                      </Text>
+                    </Pressable>
+                  </View>
+                  <Text
+                    style={[styles.selectedLabel, { color: palette.textPrimary }]}
+                    numberOfLines={2}
+                  >
+                    {item.name}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          <View style={[styles.rule, { backgroundColor: palette.accentBorder }]} />
+
+          <View style={styles.chips}>
+            {category.topics.map((topic) => {
+              const on = topic.id === topicId;
+              return (
                 <Pressable
+                  key={topic.id}
                   accessibilityRole="button"
-                  accessibilityLabel={t(
-                    'onboarding.profileCompletion.affiliations.removeA11y' as any,
-                    { name: item.name },
-                  )}
-                  hitSlop={8}
-                  onPress={() => removeAffiliation(item.id)}
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={topic.label}
+                  onPress={() => toggleTopic(topic.id)}
                   style={[
-                    styles.removeBadge,
+                    styles.chip,
                     {
-                      backgroundColor: palette.background,
-                      borderColor: palette.accentBorder,
+                      backgroundColor: on ? palette.primary : palette.chipBg,
+                      borderColor: on ? palette.primary : palette.accentBorder,
                     },
                   ]}
                 >
-                  <Text style={{ color: palette.textSecondary, fontSize: 12, fontWeight: fontWeight.extrabold }}>
-                    ×
+                  <Text style={styles.chipEmoji}>{topic.emoji}</Text>
+                  <Text
+                    style={[
+                      styles.chipLabel,
+                      {
+                        color: on ? '#FFFFFF' : palette.textSecondary,
+                        fontWeight: on ? fontWeight.extrabold : fontWeight.semibold,
+                      },
+                    ]}
+                  >
+                    {t(
+                      `onboarding.profileCompletion.affiliations.topics.${topic.id}` as any,
+                      { defaultValue: topic.label },
+                    )}
                   </Text>
                 </Pressable>
-              </View>
-              <Text
-                style={[styles.selectedLabel, { color: palette.textPrimary }]}
-                numberOfLines={2}
-              >
-                {item.name}
-              </Text>
-            </View>
-          ))}
-        </View>
+              );
+            })}
+          </View>
+        </>
       ) : null}
-
-      <View style={[styles.rule, { backgroundColor: palette.accentBorder }]} />
-
-      <View style={styles.chips}>
-        {category.topics.map((topic) => {
-          const on = topic.id === topicId;
-          return (
-            <Pressable
-              key={topic.id}
-              accessibilityRole="button"
-              accessibilityState={{ selected: on }}
-              accessibilityLabel={topic.label}
-              onPress={() => toggleTopic(topic.id)}
-              style={[
-                styles.chip,
-                {
-                  backgroundColor: on ? palette.primary : palette.chipBg,
-                  borderColor: on ? palette.primary : palette.accentBorder,
-                },
-              ]}
-            >
-              <Text style={styles.chipEmoji}>{topic.emoji}</Text>
-              <Text
-                style={[
-                  styles.chipLabel,
-                  {
-                    color: on ? '#FFFFFF' : palette.textSecondary,
-                    fontWeight: on ? fontWeight.extrabold : fontWeight.semibold,
-                  },
-                ]}
-              >
-                {t(
-                  `onboarding.profileCompletion.affiliations.topics.${topic.id}` as any,
-                  { defaultValue: topic.label },
-                )}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
 
       {topicOpen ? (
         <View
           style={[
             styles.searchPanel,
+            compactSearch ? styles.searchPanelFocused : null,
             {
               backgroundColor: palette.panel,
               borderColor: palette.accentBorder,
@@ -385,32 +536,44 @@ export function OnboardingAffiliationCategoryPanel({
           <Text style={[styles.topicEyebrow, { color: palette.chipText }]}>
             {activeTopic?.label}
           </Text>
-          <TextInput
-            accessibilityLabel={t(
-              'onboarding.profileCompletion.affiliations.searchA11y' as any,
-            )}
-            placeholder={t(
-              'onboarding.profileCompletion.affiliations.searchPlaceholder' as any,
-            )}
-            placeholderTextColor={palette.placeholder}
-            value={query}
-            onChangeText={(value) => {
-              setQuery(value.slice(0, QUERY_MAX));
-              setPickedName(null);
-              setDuplicateError(null);
-            }}
-            onSubmitEditing={addFromSearch}
-            returnKeyType="done"
-            autoCorrect={false}
-            autoCapitalize="words"
-            style={[
-              styles.searchInput,
-              {
-                color: palette.textPrimary,
-                borderColor: palette.accentBorder,
-              },
-            ]}
-          />
+          <View collapsable={false}>
+            <TextInput
+              ref={searchInputRef}
+              accessibilityLabel={t(
+                'onboarding.profileCompletion.affiliations.searchA11y' as any,
+              )}
+              placeholder={t(
+                'onboarding.profileCompletion.affiliations.searchPlaceholder' as any,
+              )}
+              placeholderTextColor={palette.placeholder}
+              value={query}
+              onChangeText={(value) => {
+                setQuery(value.slice(0, QUERY_MAX));
+                setPickedName(null);
+                setDuplicateError(null);
+              }}
+              onFocus={() => {
+                setSearchFocused(true);
+                scheduleScrollSearchIntoView();
+              }}
+              onBlur={() => {
+                setSearchFocused(false);
+              }}
+              onSubmitEditing={() => {
+                if (searchUi.showAddCta) addFromSearch();
+              }}
+              returnKeyType="done"
+              autoCorrect={false}
+              autoCapitalize="words"
+              style={[
+                styles.searchInput,
+                {
+                  color: palette.textPrimary,
+                  borderColor: palette.accentBorder,
+                },
+              ]}
+            />
+          </View>
 
           {searchHintVisible ? (
             <Text style={[styles.searchHint, { color: palette.textSecondary }]}>
@@ -418,8 +581,27 @@ export function OnboardingAffiliationCategoryPanel({
             </Text>
           ) : null}
 
+          {suggestionsUnavailable ? (
+            <Text
+              style={[
+                styles.searchUnavailable,
+                { color: palette.danger, backgroundColor: palette.dangerBg },
+              ]}
+            >
+              {t(
+                'onboarding.profileCompletion.affiliations.suggestionsUnavailable' as any,
+              )}
+            </Text>
+          ) : null}
+
           {results.length > 0 ? (
-            <View style={styles.results}>
+            <ScrollView
+              style={compactSearch ? styles.resultsScroll : styles.resultsIdle}
+              contentContainerStyle={styles.results}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="none"
+              nestedScrollEnabled
+            >
               {results.map((result) => {
                 const on = pickedName === result.name;
                 return (
@@ -434,13 +616,14 @@ export function OnboardingAffiliationCategoryPanel({
                       {
                         backgroundColor: on ? palette.primary : 'transparent',
                         borderColor: on ? palette.primary : palette.accentBorder,
+                        borderWidth: on ? 2 : 1,
                       },
                     ]}
                   >
                     <AffiliationLogo
                       name={result.name}
                       categoryId={categoryId}
-                      logoUrl={result.logoUrl}
+                      logoUrl={displayLogoUrl(result)}
                       size={40}
                       borderRadius={RESULT_TILE_RADIUS}
                     />
@@ -453,10 +636,19 @@ export function OnboardingAffiliationCategoryPanel({
                     >
                       {result.name}
                     </Text>
+                    {on ? (
+                      <Text
+                        accessibilityElementsHidden
+                        importantForAccessibility="no"
+                        style={styles.selectedCheck}
+                      >
+                        ✓
+                      </Text>
+                    ) : null}
                   </Pressable>
                 );
               })}
-            </View>
+            </ScrollView>
           ) : null}
 
           {draftImage ? (
@@ -492,32 +684,6 @@ export function OnboardingAffiliationCategoryPanel({
                 {t('onboarding.profileCompletion.affiliations.upload' as any)}
               </Text>
             </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t(
-                'onboarding.profileCompletion.affiliations.addA11y' as any,
-                { name: pickedName || trimmedQuery || '' },
-              )}
-              disabled={!addReady}
-              onPress={addFromSearch}
-              style={[
-                styles.addBtn,
-                {
-                  backgroundColor: addReady ? palette.primary : 'transparent',
-                  borderColor: addReady ? palette.primary : palette.accentBorder,
-                },
-              ]}
-            >
-              <Text
-                style={{
-                  color: addReady ? '#FFFFFF' : palette.textMuted,
-                  fontWeight: fontWeight.extrabold,
-                  fontSize: 12.5,
-                }}
-              >
-                {t('onboarding.profileCompletion.affiliations.add' as any)}
-              </Text>
-            </Pressable>
           </View>
         </View>
       ) : null}
@@ -527,6 +693,7 @@ export function OnboardingAffiliationCategoryPanel({
 
 const styles = StyleSheet.create({
   wrap: { width: '100%' },
+  wrapSearch: { flex: 1 },
   eyebrow: {
     fontSize: fontSize.xs,
     fontWeight: fontWeight.extrabold,
@@ -613,6 +780,10 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
   },
+  searchPanelFocused: {
+    flex: 1,
+    marginTop: 10,
+  },
   topicEyebrow: {
     fontSize: 11,
     fontWeight: fontWeight.extrabold,
@@ -635,8 +806,24 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginTop: 9,
   },
+  searchUnavailable: {
+    marginTop: 9,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    fontSize: 12.5,
+    lineHeight: 18,
+    fontWeight: fontWeight.bold,
+  },
   results: {
     gap: 7,
+  },
+  resultsIdle: {
+    marginTop: 11,
+  },
+  resultsScroll: {
+    flex: 1,
+    minHeight: 0,
     marginTop: 11,
   },
   resultRow: {
@@ -653,6 +840,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: fontWeight.bold,
+  },
+  selectedCheck: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: fontWeight.extrabold,
+    minWidth: 20,
+    textAlign: 'center',
   },
   uploadPreview: {
     flexDirection: 'row',
@@ -683,14 +877,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
-  },
-  addBtn: {
-    minHeight: 44,
-    minWidth: 72,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
   },
 });

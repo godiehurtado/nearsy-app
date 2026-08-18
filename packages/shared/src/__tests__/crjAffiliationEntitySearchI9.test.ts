@@ -10,6 +10,8 @@ import {
   AFFILIATION_ENTITY_SEARCH_MIN_QUERY,
   AffiliationEntitySearchClientError,
   SEARCH_AFFILIATION_ENTITIES_FUNCTION,
+  classifyAffiliationSearchFailure,
+  mapAffiliationSearchCallableError,
   mapNormalizedRowToUiResult,
   parseAffiliationEntitySearchResponse,
   shouldSearchAffiliationEntities,
@@ -20,9 +22,23 @@ import {
   getRegisteredAffiliationEntitySearchCallable,
   registerAffiliationEntitySearchCallable,
   resolveAffiliationEntitySearchProviderKind,
+  resolveAffiliationEntitySearchProviderKindFromEnvironment,
 } from '../affiliations/affiliationEntitySearchRuntime';
+import {
+  buildLogoDevImageUrl,
+  isEphemeralProviderLogoUrl,
+  isLogoDevPublishableKey,
+  normalizeAffiliationDomain,
+} from '../affiliations/affiliationLogoDev';
+import {
+  buildAffiliationSearchCallableUrl,
+  invokeAffiliationSearchCallableHttp,
+  unwrapFirebaseCallableHttpBody,
+} from '../affiliations/affiliationCallableHttp';
+import { buildCrjAffiliationPersistencePatch } from '../affiliations/onboardingAffiliationPersistence';
 import { fixtureAffiliationEntitySearchProvider } from '../affiliations/fixtureAffiliationEntitySearchProvider';
 import { listOnboardingAffiliationCategoryIds } from '../affiliations/onboardingAffiliationCatalog';
+import { resolveAffiliationLogoPresentation } from '../affiliations/affiliationLogo';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -90,6 +106,7 @@ describe('CRJ-I9 firebase provider adapter', () => {
         assert.equal(_name, 'searchAffiliationEntities');
         assert.equal(data.query, 'Google');
         assert.equal(data.categoryId, 'professional');
+        assert.equal(data.limit, 8);
         return {
           results: [
             {
@@ -110,18 +127,6 @@ describe('CRJ-I9 firebase provider adapter', () => {
     assert.equal(rows[0]!.logoUrl?.startsWith('https://'), true);
   });
 
-  it('returns empty on timeout/error without throwing to UI', async () => {
-    const provider = createFirebaseAffiliationEntitySearchProvider({
-      timeoutMs: 20,
-      invoke: async () =>
-        new Promise((resolve) => {
-          setTimeout(resolve, 200);
-        }),
-    });
-    const rows = await provider.search('Microsoft', 'professional');
-    assert.deepEqual(rows, []);
-  });
-
   it('returns empty results without calling Function for short queries', async () => {
     let called = 0;
     const provider = createFirebaseAffiliationEntitySearchProvider({
@@ -133,6 +138,58 @@ describe('CRJ-I9 firebase provider adapter', () => {
     const rows = await provider.search('G', 'professional');
     assert.deepEqual(rows, []);
     assert.equal(called, 0);
+  });
+
+  it('throws a normalized error on timeout so custom entry can continue', async () => {
+    const provider = createFirebaseAffiliationEntitySearchProvider({
+      timeoutMs: 20,
+      invoke: async () =>
+        new Promise((resolve) => {
+          setTimeout(resolve, 200);
+        }),
+    });
+    await assert.rejects(
+      () => provider.search('Microsoft', 'professional'),
+      (err: unknown) =>
+        err instanceof AffiliationEntitySearchClientError &&
+        err.code === 'DEADLINE_EXCEEDED',
+    );
+  });
+
+  it('D — attaches a client-safe logo URL when the Function omits logoUrl', async () => {
+    const provider = createFirebaseAffiliationEntitySearchProvider({
+      invoke: async () => ({
+        results: [
+          {
+            id: 'logo.dev:microsoft.com',
+            name: 'Microsoft',
+            provider: 'logo.dev',
+            domain: 'microsoft.com',
+          },
+        ],
+      }),
+      resolveLogoUrl: (domain) =>
+        buildLogoDevImageUrl(domain, 'pk_test_placeholder'),
+    });
+    const rows = await provider.search('Microsoft', 'professional');
+    assert.equal(
+      rows[0]!.logoUrl,
+      'https://img.logo.dev/microsoft.com?token=pk_test_placeholder',
+    );
+  });
+
+  it('F — provider errors stay mapped so custom entry can continue', async () => {
+    const provider = createFirebaseAffiliationEntitySearchProvider({
+      invoke: async () => {
+        throw { code: 'functions/unavailable' };
+      },
+    });
+    await assert.rejects(
+      () => provider.search('Agnostic', 'faith'),
+      (err: unknown) =>
+        err instanceof AffiliationEntitySearchClientError &&
+        err.code === 'UNAVAILABLE',
+    );
   });
 });
 
@@ -187,7 +244,10 @@ describe('CRJ-I9 panel wiring / custom fallback', () => {
     assert.ok(panel.includes('SEARCH_DEBOUNCE_MS = 300'));
     assert.ok(panel.includes('trimmedQuery.length < 2'));
     assert.ok(panel.includes('searchGenerationRef'));
-    assert.ok(panel.includes("source: isCustom ? 'custom' : 'provider'"));
+    assert.ok(panel.includes('explicitlyPicked'));
+    assert.ok(panel.includes('suggestionsUnavailable'));
+    assert.ok(panel.includes('draftImage ? { logoUrl: draftImage }'));
+    assert.ok(!panel.includes('matched.logoUrl'));
     assert.ok(!panel.includes('api.logo.dev'));
     assert.ok(!panel.includes('api.brandfetch.io'));
     assert.ok(!panel.includes('ActivityIndicator'));
@@ -213,8 +273,202 @@ describe('CRJ-I9 panel wiring / custom fallback', () => {
   });
 });
 
+describe('CRJ-I9-C environment / production safety', () => {
+  it('A — Development selects firebase when callable is registered', async () => {
+    registerAffiliationEntitySearchCallable(async () => ({
+      results: [
+        {
+          id: 'logo.dev:microsoft.com',
+          name: 'Microsoft',
+          provider: 'logo.dev',
+          domain: 'microsoft.com',
+        },
+      ],
+    }));
+    const provider = getAffiliationEntitySearchProvider(undefined, {
+      firebaseEnv: 'development',
+      projectId: 'nearsy-dev',
+    });
+    assert.equal(provider.id, 'firebase');
+    const rows = await provider.search('Microsoft', 'professional');
+    assert.equal(rows[0]!.provider, 'logo.dev');
+  });
+
+  it('B — Production does not silently select firebase even with a callable', () => {
+    registerAffiliationEntitySearchCallable(async () => ({ results: [] }));
+    const provider = getAffiliationEntitySearchProvider(undefined, {
+      firebaseEnv: 'production',
+      projectId: 'nearsy-pj',
+    });
+    assert.equal(provider.id, 'fixture');
+    assert.equal(
+      resolveAffiliationEntitySearchProviderKindFromEnvironment(
+        'production',
+        'nearsy-pj',
+      ),
+      'fixture',
+    );
+  });
+
+  it('C — missing callable registration falls back to fixture in Development', () => {
+    const provider = getAffiliationEntitySearchProvider(undefined, {
+      firebaseEnv: 'development',
+      projectId: 'nearsy-dev',
+    });
+    assert.equal(provider.id, 'fixture');
+  });
+
+  it('rejects nearsy-pj even if env says development', () => {
+    assert.equal(
+      resolveAffiliationEntitySearchProviderKindFromEnvironment(
+        'development',
+        'nearsy-pj',
+      ),
+      'fixture',
+    );
+  });
+
+  it('empty / production env stays on fixture even with a callable', () => {
+    registerAffiliationEntitySearchCallable(async () => ({ results: [] }));
+    assert.equal(
+      resolveAffiliationEntitySearchProviderKindFromEnvironment('', 'nearsy-pj'),
+      'fixture',
+    );
+    const provider = getAffiliationEntitySearchProvider(undefined, {
+      firebaseEnv: '',
+      projectId: 'nearsy-pj',
+    });
+    assert.equal(provider.id, 'fixture');
+  });
+});
+
+describe('CRJ-I9-C logo URL helper', () => {
+  it('A — valid domain + test-only publishable key builds img.logo.dev URL', () => {
+    const url = buildLogoDevImageUrl('microsoft.com', 'pk_test_placeholder');
+    assert.equal(
+      url,
+      'https://img.logo.dev/microsoft.com?token=pk_test_placeholder',
+    );
+  });
+
+  it('B — domain normalization strips scheme and www', () => {
+    assert.equal(
+      normalizeAffiliationDomain('https://www.Microsoft.com/about'),
+      'microsoft.com',
+    );
+  });
+
+  it('C — missing domain falls back to no URL', () => {
+    assert.equal(buildLogoDevImageUrl(undefined, 'pk_test_placeholder'), undefined);
+    assert.equal(normalizeAffiliationDomain('not-a-domain'), null);
+  });
+
+  it('D — missing publishable key yields no provider logo URL', () => {
+    assert.equal(buildLogoDevImageUrl('microsoft.com', undefined), undefined);
+    assert.equal(buildLogoDevImageUrl('microsoft.com', ''), undefined);
+  });
+
+  it('E — secret keys are rejected by the client helper', () => {
+    assert.equal(isLogoDevPublishableKey('sk_test_secret'), false);
+    assert.equal(buildLogoDevImageUrl('microsoft.com', 'sk_test_secret'), undefined);
+  });
+
+  it('F — custom uploaded logo wins over generated provider URL', () => {
+    const custom = resolveAffiliationLogoPresentation({
+      name: 'Microsoft',
+      categoryId: 'professional',
+      logoUrl: 'https://example.com/custom.png',
+    });
+    assert.equal(custom.kind, 'remote');
+    assert.equal(custom.logoUrl, 'https://example.com/custom.png');
+  });
+
+  it('G — provider image failure can fall back to initials', () => {
+    const fallback = resolveAffiliationLogoPresentation({
+      name: 'Microsoft',
+      categoryId: 'professional',
+      logoUrl: null,
+    });
+    assert.equal(fallback.kind, 'initials');
+  });
+
+  it('does not persist ephemeral Logo.dev URLs', () => {
+    assert.equal(
+      isEphemeralProviderLogoUrl(
+        'https://img.logo.dev/microsoft.com?token=pk_test_placeholder',
+      ),
+      true,
+    );
+    const patch = buildCrjAffiliationPersistencePatch('personal', [
+      {
+        id: 'microsoft.com',
+        name: 'Microsoft',
+        categoryId: 'professional',
+        source: 'provider',
+        providerId: 'microsoft.com',
+        provider: 'logo.dev',
+        website: 'https://microsoft.com',
+        logoUrl: 'https://img.logo.dev/microsoft.com?token=pk_test_placeholder',
+      },
+    ]);
+    const row = patch.personalOnboardingAffiliations?.[0];
+    assert.equal(row?.logoUrl, undefined);
+    assert.equal(row?.providerId, 'microsoft.com');
+    assert.equal(row?.provider, 'logo.dev');
+    assert.equal(row?.website, 'https://microsoft.com');
+    assert.equal(patch.profileSetupCompleted, false);
+  });
+});
+
+describe('CRJ-I9-C callable errors', () => {
+  it('maps Firebase HttpsError codes without exposing raw provider payloads', () => {
+    assert.equal(
+      mapAffiliationSearchCallableError({ code: 'functions/unauthenticated' })
+        .code,
+      'UNAUTHENTICATED',
+    );
+    assert.equal(
+      mapAffiliationSearchCallableError({ code: 'functions/failed-precondition' })
+        .code,
+      'FAILED_PRECONDITION',
+    );
+    assert.equal(
+      mapAffiliationSearchCallableError({ code: 'functions/unavailable' }).code,
+      'UNAVAILABLE',
+    );
+    assert.equal(
+      mapAffiliationSearchCallableError({ code: 'app_check_failed' }).code,
+      'FAILED_PRECONDITION',
+    );
+    assert.equal(
+      classifyAffiliationSearchFailure(
+        mapAffiliationSearchCallableError({ code: 'functions/unauthenticated' }),
+      ),
+      'auth',
+    );
+    assert.equal(
+      classifyAffiliationSearchFailure(
+        mapAffiliationSearchCallableError({ code: 'app_check_failed' }),
+      ),
+      'app_check',
+    );
+    assert.equal(
+      classifyAffiliationSearchFailure(
+        mapAffiliationSearchCallableError({ code: 'functions/unavailable' }),
+      ),
+      'function_unavailable',
+    );
+    assert.equal(
+      classifyAffiliationSearchFailure(
+        new AffiliationEntitySearchClientError('INTERNAL', 'Affiliation search failed.'),
+      ),
+      'provider',
+    );
+  });
+});
+
 describe('CRJ-I9 isolation', () => {
-  it('does not implement live Functions, Auth, or I9-B provider secrets', () => {
+  it('does not embed secrets or call Logo.dev Search from mobile', () => {
     const runtime = readSharedSource(
       'affiliations/affiliationEntitySearchRuntime.ts',
     );
@@ -224,10 +478,30 @@ describe('CRJ-I9 isolation', () => {
     const panel = readSharedSource(
       'components/registration/OnboardingAffiliationCategoryPanel.tsx',
     );
+    const bootstrap = readSharedSource(
+      'affiliations/iosAffiliationEntitySearchBootstrap.ios.ts',
+    );
+    const app = readSharedSource('App.tsx');
     assert.ok(runtime.includes("kind === 'firebase' && registeredCallable"));
     assert.ok(firebase.includes('Never talks to Logo.dev or Brandfetch directly'));
+    assert.ok(bootstrap.includes('SEARCH_AFFILIATION_ENTITIES_FUNCTION'));
+    assert.ok(bootstrap.includes('invokeAffiliationSearchCallableHttp'));
+    assert.ok(bootstrap.includes('environment.functionsRegion'));
+    assert.ok(bootstrap.includes('appCheck.ensureReady()'));
+    assert.ok(bootstrap.includes('firebaseAuth.currentUser'));
+    assert.ok(!bootstrap.includes('@react-native-firebase/functions'));
+    assert.ok(!bootstrap.includes('httpsCallable(functions'));
+    const babel = readFileSync(
+      join(here, '../../../../apps/nearsy-ios/babel.config.js'),
+      'utf8',
+    );
+    assert.ok(babel.includes("'@react-native-firebase/auth'"));
+    assert.ok(babel.includes('emptyFirebase.js'));
+    assert.ok(app.includes('startAffiliationEntitySearchBootstrap()'));
     assert.ok(!panel.includes('LOGO_DEV_SECRET_KEY'));
     assert.ok(!firebase.includes('sk_'));
+    assert.ok(!bootstrap.includes('LOGO_DEV_SECRET_KEY'));
+    assert.ok(!bootstrap.includes('api.logo.dev'));
     const functionsDirMissing = (() => {
       try {
         readFileSync(join(here, '../../../../functions/src/index.ts'), 'utf8');
@@ -237,5 +511,117 @@ describe('CRJ-I9 isolation', () => {
       }
     })();
     assert.equal(functionsDirMissing, true);
+  });
+
+  it('production app.config extra never receives the Logo.dev publishable key', () => {
+    const config = readFileSync(
+      join(here, '../../../../apps/nearsy-ios/app.config.js'),
+      'utf8',
+    );
+    const prodChunk = config.split('} else {')[1] ?? '';
+    assert.ok(prodChunk.includes("EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'production'"));
+    assert.ok(!prodChunk.includes('EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY'));
+    assert.ok(!config.includes('LOGO_DEV_SECRET_KEY'));
+    assert.ok(!config.includes('Bearer'));
+  });
+});
+
+describe('CRJ-I9-C callable HTTP protocol (JS Auth + App Check)', () => {
+  it('builds the Development callable URL only for nearsy-dev', () => {
+    assert.equal(
+      buildAffiliationSearchCallableUrl(
+        'nearsy-dev',
+        'us-central1',
+        'searchAffiliationEntities',
+      ),
+      'https://us-central1-nearsy-dev.cloudfunctions.net/searchAffiliationEntities',
+    );
+    assert.throws(
+      () =>
+        buildAffiliationSearchCallableUrl(
+          'nearsy-pj',
+          'us-central1',
+          'searchAffiliationEntities',
+        ),
+      AffiliationEntitySearchClientError,
+    );
+  });
+
+  it('unwraps callable HTTP { result } and rejects RNFB { data } wrappers', () => {
+    const unwrapped = unwrapFirebaseCallableHttpBody({
+      result: {
+        results: [
+          {
+            id: 'logo.dev:microsoft.com',
+            name: 'Microsoft',
+            domain: 'microsoft.com',
+            provider: 'logo.dev',
+            providerId: 'microsoft.com',
+          },
+        ],
+      },
+    });
+    const parsed = parseAffiliationEntitySearchResponse(unwrapped);
+    assert.equal(parsed.results.length, 1);
+    assert.equal(parsed.results[0]!.name, 'Microsoft');
+    assert.equal(parsed.results[0]!.logoUrl, undefined);
+    assert.throws(
+      () => unwrapFirebaseCallableHttpBody({ data: { results: [] } }),
+      AffiliationEntitySearchClientError,
+    );
+  });
+
+  it('sends JS Auth and App Check headers without using RNFB httpsCallable', async () => {
+    const seen: { url?: string; headers?: Record<string, string>; body?: string } =
+      {};
+    const payload = await invokeAffiliationSearchCallableHttp(
+      {
+        projectId: 'nearsy-dev',
+        region: 'us-central1',
+        functionName: 'searchAffiliationEntities',
+        idToken: 'test-id-token',
+        appCheckToken: 'test-app-check-token',
+        data: {
+          query: 'Microsoft',
+          categoryId: 'professional',
+          limit: 8,
+        },
+      },
+      {
+        fetchImpl: async (url, init) => {
+          seen.url = String(url);
+          seen.headers = init?.headers as Record<string, string>;
+          seen.body = String(init?.body ?? '');
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              result: {
+                results: [
+                  {
+                    id: 'logo.dev:microsoft.com',
+                    name: 'Microsoft',
+                    domain: 'microsoft.com',
+                    provider: 'logo.dev',
+                    providerId: 'microsoft.com',
+                  },
+                ],
+              },
+            }),
+          } as Response;
+        },
+      },
+    );
+    assert.equal(
+      seen.url,
+      'https://us-central1-nearsy-dev.cloudfunctions.net/searchAffiliationEntities',
+    );
+    assert.equal(seen.headers?.Authorization, 'Bearer test-id-token');
+    assert.equal(seen.headers?.['X-Firebase-AppCheck'], 'test-app-check-token');
+    assert.deepEqual(JSON.parse(seen.body ?? '{}'), {
+      data: { query: 'Microsoft', categoryId: 'professional', limit: 8 },
+    });
+    const parsed = parseAffiliationEntitySearchResponse(payload);
+    assert.equal(parsed.results[0]!.name, 'Microsoft');
   });
 });

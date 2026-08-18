@@ -203,6 +203,23 @@ module.exports = ({ config }) => {
       NEARSY_LINKEDIN_APP_RETURN_URL: 'nearsy://linkedin-auth',
     };
 
+    const logoPublishable = String(
+      process.env.EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY ?? '',
+    ).trim();
+    if (logoPublishable) {
+      if (logoPublishable.startsWith('sk_')) {
+        throw new Error(
+          '[app.config] EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY must be a publishable pk_ key, not a secret.',
+        );
+      }
+      if (!logoPublishable.startsWith('pk_')) {
+        throw new Error(
+          '[app.config] EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY must start with pk_.',
+        );
+      }
+      extraBase.EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY = logoPublishable;
+    }
+
     if (extraBase.EXPO_PUBLIC_FIREBASE_PROJECT_ID !== 'nearsy-dev') {
       throw new Error(
         '[app.config] Development builds must set EXPO_PUBLIC_FIREBASE_PROJECT_ID=nearsy-dev',

@@ -3,6 +3,7 @@ import {
   CRJ_AFFILIATION_TO_LEGACY_CATEGORY,
   type OnboardingSelectedAffiliation,
 } from './onboardingAffiliationCatalog';
+import { isEphemeralProviderLogoUrl } from './affiliationLogoDev';
 
 export type CrjAffiliationPersistencePatch = {
   personalAffiliations?: AffiliationItem[];
@@ -22,7 +23,12 @@ function sanitizeOnboardingAffiliationForPersistence(
     source: item.source,
   };
   if (item.providerId) row.providerId = item.providerId;
-  if (item.logoUrl && !/^(file|content|ph|assets-library):/i.test(item.logoUrl)) {
+  if (item.provider) row.provider = item.provider;
+  if (
+    item.logoUrl &&
+    !/^(file|content|ph|assets-library):/i.test(item.logoUrl) &&
+    !isEphemeralProviderLogoUrl(item.logoUrl)
+  ) {
     row.logoUrl = item.logoUrl;
   }
   if (item.website) row.website = item.website;
@@ -38,7 +44,9 @@ export function onboardingAffiliationsToLegacy(
     category: CRJ_AFFILIATION_TO_LEGACY_CATEGORY[item.categoryId],
     label: item.name,
     imageUrl:
-      item.logoUrl && !/^(file|content|ph|assets-library):/i.test(item.logoUrl)
+      item.logoUrl &&
+      !/^(file|content|ph|assets-library):/i.test(item.logoUrl) &&
+      !isEphemeralProviderLogoUrl(item.logoUrl)
         ? item.logoUrl
         : null,
   }));

@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 
 import { firebaseAuth, firestoreDb } from './config/firebaseConfig';
 import { initI18n } from './i18n';
+import { startAffiliationEntitySearchBootstrap } from './affiliations/iosAffiliationEntitySearchBootstrap';
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -57,6 +58,10 @@ export const navigationRef = createNavigationContainerRef();
  */
 function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
   const { theme, palette, hydrating, hasChosenTheme } = useAppTheme();
+
+  useEffect(() => {
+    startAffiliationEntitySearchBootstrap();
+  }, []);
 
   useEffect(() => {
     ensureAndroidChannel();

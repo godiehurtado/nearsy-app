@@ -36,6 +36,7 @@ export type OnboardingSelectedAffiliation = {
   categoryId: OnboardingAffiliationCategoryId;
   source: OnboardingAffiliationSource;
   providerId?: string;
+  provider?: string;
   logoUrl?: string;
   website?: string;
   topic?: string;

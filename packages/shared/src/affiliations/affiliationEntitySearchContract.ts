@@ -93,6 +93,92 @@ export function mapNormalizedRowToUiResult(
   return result;
 }
 
+export type AffiliationSearchFailureKind =
+  | 'auth'
+  | 'app_check'
+  | 'function_unavailable'
+  | 'provider'
+  | 'timeout'
+  | 'internal';
+
+/** Development diagnostics only — never includes tokens or keys. */
+export function classifyAffiliationSearchFailure(
+  err: AffiliationEntitySearchClientError,
+): AffiliationSearchFailureKind {
+  switch (err.code) {
+    case 'UNAUTHENTICATED':
+      return 'auth';
+    case 'FAILED_PRECONDITION':
+      return 'app_check';
+    case 'UNAVAILABLE':
+    case 'RESOURCE_EXHAUSTED':
+      return 'function_unavailable';
+    case 'DEADLINE_EXCEEDED':
+      return 'timeout';
+    case 'INTERNAL':
+      return 'provider';
+    default:
+      return 'internal';
+  }
+}
+
+export function mapAffiliationSearchCallableError(
+  err: unknown,
+): AffiliationEntitySearchClientError {
+  if (err instanceof AffiliationEntitySearchClientError) return err;
+
+  const anyErr = err as { code?: string; name?: string };
+  const raw = String(anyErr?.code ?? '').trim();
+  const normalized = raw.replace(/^functions\//i, '').toLowerCase();
+
+  if (
+    normalized === 'app_check_failed' ||
+    normalized === 'app_check_timeout' ||
+    normalized === 'failed-precondition' ||
+    normalized === 'not_initialized' ||
+    normalized === 'initializing'
+  ) {
+    return new AffiliationEntitySearchClientError(
+      'FAILED_PRECONDITION',
+      'Affiliation search is not ready.',
+    );
+  }
+  if (normalized === 'unauthenticated') {
+    return new AffiliationEntitySearchClientError(
+      'UNAUTHENTICATED',
+      'Affiliation search requires sign-in.',
+    );
+  }
+  if (normalized === 'resource-exhausted') {
+    return new AffiliationEntitySearchClientError(
+      'RESOURCE_EXHAUSTED',
+      'Affiliation search is busy.',
+    );
+  }
+  if (normalized === 'deadline-exceeded') {
+    return new AffiliationEntitySearchClientError(
+      'DEADLINE_EXCEEDED',
+      'Affiliation search timed out.',
+    );
+  }
+  if (normalized === 'unavailable') {
+    return new AffiliationEntitySearchClientError(
+      'UNAVAILABLE',
+      'Affiliation search is unavailable.',
+    );
+  }
+  if (normalized === 'invalid-argument') {
+    return new AffiliationEntitySearchClientError(
+      'INVALID_ARGUMENT',
+      'Affiliation search query is invalid.',
+    );
+  }
+  return new AffiliationEntitySearchClientError(
+    'INTERNAL',
+    'Affiliation search failed.',
+  );
+}
+
 export function parseAffiliationEntitySearchResponse(
   data: unknown,
 ): AffiliationEntitySearchResponse {

@@ -32,6 +32,10 @@ import { FormInput } from '../components/registration/FormInput';
 import { OnboardingInterestCategoryPanel } from '../components/registration/OnboardingInterestCategoryPanel';
 import { OnboardingAffiliationCategoryPanel } from '../components/registration/OnboardingAffiliationCategoryPanel';
 import { OnboardingSocialMediaStep } from '../components/registration/OnboardingSocialMediaStep';
+import {
+  IDLE_AFFILIATION_SEARCH_UI,
+  type AffiliationSearchUiSnapshot,
+} from '../affiliations/affiliationSearchInteraction';
 import { OnboardingGalleryStep } from '../components/registration/OnboardingGalleryStep';
 import { InterestsCelebrationStep } from '../components/registration/InterestsCelebrationStep';
 import { InterestsIntroVisual } from '../components/registration/InterestsIntroVisual';
@@ -341,6 +345,10 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [selectedAffiliations, setSelectedAffiliations] = useState<
     OnboardingSelectedAffiliation[]
   >([]);
+  const [affiliationSearchUi, setAffiliationSearchUi] =
+    useState<AffiliationSearchUiSnapshot>(IDLE_AFFILIATION_SEARCH_UI);
+  const affiliationAddRef = useRef<(() => void) | null>(null);
+  const stepScrollRef = useRef<ScrollView>(null);
   const [socialDraft, setSocialDraft] = useState<CrjSocialDraftValues>(
     emptyCrjSocialDraftValues,
   );
@@ -381,6 +389,10 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     step.kind === 'interest' ? step.interestCategoryIndex : 0;
   const affiliationCategoryIndex =
     step.kind === 'affiliation' ? step.affiliationCategoryIndex : 0;
+
+  useEffect(() => {
+    setAffiliationSearchUi(IDLE_AFFILIATION_SEARCH_UI);
+  }, [step.kind, affiliationCategoryIndex]);
 
   const progressPhase = progressPhaseForStep(step);
   const progressValue =
@@ -1227,23 +1239,41 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             />
           </View>
         ) : step.kind === 'affiliation' ? (
-          <View style={styles.actionStack}>
+          affiliationSearchUi.showAddCta ? (
             <PrimaryButton
-              label={t('onboarding.profileCompletion.affiliations.next' as any)}
+              label={
+                affiliationSearchUi.addName
+                  ? t(
+                      'onboarding.profileCompletion.affiliations.addA11y' as any,
+                      { name: affiliationSearchUi.addName },
+                    )
+                  : t('onboarding.profileCompletion.affiliations.add' as any)
+              }
               onPress={() => {
-                void advanceAffiliation();
+                affiliationAddRef.current?.();
               }}
               disabled={submitting}
               loading={submitting}
             />
-            <SecondaryButton
-              label={t('onboarding.profileCompletion.affiliations.skip' as any)}
-              onPress={() => {
-                if (submitting) return;
-                void advanceAffiliation();
-              }}
-            />
-          </View>
+          ) : affiliationSearchUi.hideJourneyFooter ? null : (
+            <View style={styles.actionStack}>
+              <PrimaryButton
+                label={t('onboarding.profileCompletion.affiliations.next' as any)}
+                onPress={() => {
+                  void advanceAffiliation();
+                }}
+                disabled={submitting}
+                loading={submitting}
+              />
+              <SecondaryButton
+                label={t('onboarding.profileCompletion.affiliations.skip' as any)}
+                onPress={() => {
+                  if (submitting) return;
+                  void advanceAffiliation();
+                }}
+              />
+            </View>
+          )
         ) : step.kind === 'socialMedia' ? (
           <View style={styles.actionStack}>
             <PrimaryButton
@@ -1351,12 +1381,33 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       ) : null}
 
       <ScrollView
+        ref={stepScrollRef}
         style={styles.stepScroll}
-        contentContainerStyle={styles.stepBody}
+        contentContainerStyle={[
+          styles.stepBody,
+          step.kind === 'affiliation' && affiliationSearchUi.hideJourneyFooter
+            ? styles.stepBodySearch
+            : null,
+        ]}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="none"
+        automaticallyAdjustKeyboardInsets={false}
+        scrollEnabled={
+          !(
+            step.kind === 'affiliation' &&
+            affiliationSearchUi.hideJourneyFooter
+          )
+        }
         showsVerticalScrollIndicator={false}
       >
-        <RegistrationFadeSlideIn animKey={animKey}>
+        <RegistrationFadeSlideIn
+          animKey={animKey}
+          style={
+            step.kind === 'affiliation' && affiliationSearchUi.hideJourneyFooter
+              ? { flex: 1 }
+              : undefined
+          }
+        >
           {step.kind === 'type' && (
             <>
               <Text style={[styles.title, { color: palette.textPrimary }]}>
@@ -1691,6 +1742,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               categoryId={step.categoryId}
               selected={selectedAffiliations}
               onChangeSelected={setSelectedAffiliations}
+              onSearchUiChange={setAffiliationSearchUi}
+              searchAddRef={affiliationAddRef}
+              contentScrollRef={stepScrollRef}
             />
           )}
 
@@ -1861,6 +1915,7 @@ const styles = StyleSheet.create({
   },
   stepScroll: { flex: 1 },
   stepBody: { paddingBottom: spacing.xl, flexGrow: 1 },
+  stepBodySearch: { flexGrow: 1 },
   title: {
     fontSize: fontSize.xl,
     fontWeight: fontWeight.extrabold,

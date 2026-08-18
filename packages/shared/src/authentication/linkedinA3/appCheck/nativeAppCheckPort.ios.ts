@@ -233,6 +233,39 @@ export async function createNativeAppCheckPort(options?: {
         throwDiagnosed(err, 'get_token', retryNumber);
       }
     },
+    async withToken(fn) {
+      if (!sharedAppCheckInstance) {
+        throw new LinkedInA3ClientError(
+          'NOT_INITIALIZED',
+          'App Check is not initialized.',
+        );
+      }
+      let token: string;
+      try {
+        appCheckPortTelemetry.getTokenCalls += 1;
+        const result = modularGetToken
+          ? await modularGetToken(sharedAppCheckInstance, false)
+          : await sharedAppCheckInstance.getToken?.(false);
+        if (!result?.token || typeof result.token !== 'string') {
+          throwDiagnosed(
+            new Error('App Check token was empty'),
+            'get_token',
+            retryNumber,
+          );
+        }
+        token = result.token;
+      } catch (err) {
+        if (
+          err instanceof LinkedInA3ClientError &&
+          (err as { diagnostic?: AppCheckFailureDiagnostic }).diagnostic
+        ) {
+          throw err;
+        }
+        if (err instanceof LinkedInA3ClientError) throw err;
+        throwDiagnosed(err, 'get_token', retryNumber);
+      }
+      return fn(token);
+    },
   };
 
   return {

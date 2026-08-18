@@ -9,6 +9,8 @@ import {
   AffiliationEntitySearchClientError,
   SEARCH_AFFILIATION_ENTITIES_FUNCTION,
   clampAffiliationSearchLimit,
+  classifyAffiliationSearchFailure,
+  mapAffiliationSearchCallableError,
   mapNormalizedRowToUiResult,
   normalizeAffiliationSearchQuery,
   parseAffiliationEntitySearchResponse,
@@ -25,6 +27,7 @@ export type FirebaseAffiliationEntitySearchProviderDeps = {
   invoke: AffiliationEntitySearchCallable;
   timeoutMs?: number;
   limit?: number;
+  resolveLogoUrl?: (domain?: string) => string | undefined;
 };
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -81,12 +84,24 @@ export function createFirebaseAffiliationEntitySearchProvider(
         const parsed = parseAffiliationEntitySearchResponse(data);
         return parsed.results
           .slice(0, AFFILIATION_ENTITY_SEARCH_DEFAULT_LIMIT)
-          .map((row) => mapNormalizedRowToUiResult(row, categoryId));
+          .map((row) => {
+            const mapped = mapNormalizedRowToUiResult(row, categoryId);
+            if (!mapped.logoUrl && deps.resolveLogoUrl) {
+              const logoUrl = deps.resolveLogoUrl(row.domain || row.providerId);
+              if (logoUrl) mapped.logoUrl = logoUrl;
+            }
+            return mapped;
+          });
       } catch (error) {
-        if (error instanceof AffiliationEntitySearchClientError) {
-          return [];
+        const mapped = mapAffiliationSearchCallableError(error);
+        if (typeof __DEV__ !== 'undefined' && __DEV__) {
+          console.warn(
+            '[AffiliationSearch]',
+            mapped.code,
+            classifyAffiliationSearchFailure(mapped),
+          );
         }
-        return [];
+        throw mapped;
       }
     },
   };

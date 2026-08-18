@@ -452,6 +452,8 @@ const es: TranslationResources = {
         uploadA11y: 'Subir un logo',
         usingOwnImage: 'Usando tu propia imagen',
         duplicate: 'Ya agregaste esta organización',
+        suggestionsUnavailable:
+          'Las sugerencias no están disponibles ahora. Aún puedes agregar esto manualmente.',
         categories: {
           education: 'Educación',
           professional: 'Profesional',
