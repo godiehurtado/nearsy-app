@@ -54,7 +54,7 @@ export function createLinkedInA3CallableClient(
       appCheckProvider: deps.environment.appCheckProvider,
     });
 
-    if (!consistency.ok) {
+    if (consistency.ok === false) {
       throw new LinkedInA3ClientError('ENV_INVALID', consistency.message);
     }
 

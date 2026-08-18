@@ -160,7 +160,7 @@ export function parseLinkedInMobileReturnUrl(
   }
 
   const q = parseStrictQuery(parsed.search);
-  if (!q.ok) return { kind: 'invalid', reason: q.reason };
+  if (q.ok === false) return { kind: 'invalid', reason: q.reason };
   const { params } = q;
 
   if (params.has('error_description')) {
