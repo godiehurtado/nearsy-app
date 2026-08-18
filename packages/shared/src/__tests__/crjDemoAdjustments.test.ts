@@ -195,33 +195,34 @@ describe('social name prefill', () => {
 });
 
 describe('onboarding interest catalog', () => {
-  it('has exactly 12 categories', () => {
-    assert.equal(ONBOARDING_INTEREST_CATEGORIES.length, 12);
-    assert.equal(listOnboardingCategoryIds().length, 12);
+  it('has exactly 11 categories', () => {
+    assert.equal(ONBOARDING_INTEREST_CATEGORIES.length, 11);
+    assert.equal(listOnboardingCategoryIds().length, 11);
   });
 
-  it('models Music with two levels (groups)', () => {
+  it('models Music with two levels (groups) including Anime', () => {
     const music = ONBOARDING_INTEREST_CATEGORIES.find((c) => c.id === 'music');
     assert.ok(music?.groups);
-    assert.equal(music!.groups!.length, 5);
+    assert.equal(music!.groups!.length, 6);
     assert.ok(!music!.items);
     const genres = music!.groups!.find((g) => g.id === 'music_group_genres');
     assert.ok((genres?.items.length ?? 0) >= 10);
+    assert.ok(music!.groups!.some((g) => g.id === 'music_group_anime'));
   });
 
-  it('enforces global minimum of 7', () => {
+  it('enforces global minimum of 10', () => {
     const mk = (n: number): OnboardingSelectedInterest[] =>
       Array.from({ length: n }, (_, i) =>
         sel({
           id: `sports_item_${i}`,
           name: `Item ${i}`,
-          categoryId: 'sports',
+          categoryId: 'sports_outdoors',
         }),
       );
-    assert.equal(meetsMinimumOnboardingInterests(mk(6)), false);
-    assert.equal(meetsMinimumOnboardingInterests(mk(7)), true);
-    assert.equal(meetsMinimumOnboardingInterests(mk(8)), true);
-    assert.equal(MIN_ONBOARDING_INTERESTS, 7);
+    assert.equal(meetsMinimumOnboardingInterests(mk(9)), false);
+    assert.equal(meetsMinimumOnboardingInterests(mk(10)), true);
+    assert.equal(meetsMinimumOnboardingInterests(mk(11)), true);
+    assert.equal(MIN_ONBOARDING_INTERESTS, 10);
   });
 
   it('validates custom interest name + icon + duplicate', () => {
@@ -296,7 +297,8 @@ describe('CRJ interest persistence & matching bridge', () => {
   const soccer = sel({
     id: 'sports_soccer',
     name: 'Soccer',
-    categoryId: 'sports',
+    categoryId: 'sports_outdoors',
+    groupId: 'sports_outdoors_group_sports',
     icon: 'football-outline',
     iconColor: '#059669',
   });
@@ -402,16 +404,19 @@ describe('CRJ interest persistence & matching bridge', () => {
     assert.equal(popItem?.nameKey, 'music_genre_pop');
   });
 
-  it('J — minimum 7 uses unique final interests', () => {
-    const six = [1, 2, 3, 4, 5, 6].map((n) =>
+  it('J — minimum 10 uses unique final interests', () => {
+    const nine = Array.from({ length: 9 }, (_, i) =>
       sel({
-        id: `sports_item_${n}`,
-        name: `Item ${n}`,
-        categoryId: 'sports',
+        id: `sports_item_${i}`,
+        name: `Item ${i}`,
+        categoryId: 'sports_outdoors',
       }),
     );
-    assert.equal(meetsMinimumOnboardingInterests(six), false);
-    assert.equal(meetsMinimumOnboardingInterests([...six, pop]), true);
+    assert.equal(meetsMinimumOnboardingInterests(nine), false);
+    assert.equal(
+      meetsMinimumOnboardingInterests([...nine, pop, soccer]),
+      true,
+    );
   });
 
   it('M — custom does not invent legacy affiliations', () => {
@@ -428,7 +433,7 @@ describe('Firestore serialization — no undefined', () => {
       sel({
         id: 'sports_soccer',
         name: 'Soccer',
-        categoryId: 'sports',
+        categoryId: 'sports_outdoors',
         // groupId intentionally omitted
       }),
     );
@@ -439,7 +444,7 @@ describe('Firestore serialization — no undefined', () => {
     const withUndef = sanitizeOnboardingInterestForPersistence({
       id: 'x',
       name: 'X',
-      categoryId: 'sports',
+      categoryId: 'sports_outdoors',
       icon: 'football-outline',
       iconColor: '#059669',
       groupId: undefined as any,
@@ -453,7 +458,7 @@ describe('Firestore serialization — no undefined', () => {
     const soccer = sel({
       id: 'sports_soccer',
       name: 'Soccer',
-      categoryId: 'sports',
+      categoryId: 'sports_outdoors',
     });
     // Simulate old buggy object shape with explicit undefined
     const buggy = { ...soccer, groupId: undefined as any };

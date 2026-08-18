@@ -2,15 +2,17 @@
  * CRJ onboarding interests catalog (isolated from in-app InterestsScreen).
  *
  * ID scheme (stable, deterministic):
- *   {categoryId}_{slug}              e.g. business_entrepreneurship
- *   music_{groupSlug}_{slug}         e.g. music_genre_pop
- *   custom_{categoryId}_{slug}_{ts}  e.g. custom_sports_pickle_171000
+ *   {categoryId}_{slug}                    e.g. business_entrepreneurship
+ *   music_{groupPrefix}_{slug}             e.g. music_genre_pop
+ *   food_{groupPrefix}_{slug}              e.g. food_dietary_vegan
+ *   sports_* / outdoors_* (merged category sports_outdoors)
+ *   custom_{categoryId}_{slug}_{ts}        e.g. custom_sports_outdoors_pickle_171000
  *
  * INTERNAL INTERESTS MIGRATION — pending
  * The authenticated InterestsScreen still uses the legacy InterestLabel catalog.
  */
 
-export const MIN_ONBOARDING_INTERESTS = 7;
+export const MIN_ONBOARDING_INTERESTS = 10;
 export const CUSTOM_INTEREST_MAX_LENGTH = 40;
 
 /** Coherent mid-saturation palette — readable on light and dark backgrounds. */
@@ -30,7 +32,7 @@ export const CRJ_ICON_COLOR_PALETTE = [
 ] as const;
 
 const OTHER_ICON = 'add-circle-outline';
-const OTHER_COLOR = '#64748B'; // slate — neutral for Other chips
+const OTHER_COLOR = '#0891B2';
 
 export type OnboardingInterestCategoryId =
   | 'business'
@@ -39,8 +41,7 @@ export type OnboardingInterestCategoryId =
   | 'music'
   | 'food'
   | 'fitness'
-  | 'sports'
-  | 'outdoors'
+  | 'sports_outdoors'
   | 'travel'
   | 'learning'
   | 'social'
@@ -59,7 +60,7 @@ export type OnboardingInterestItem = {
   isOther?: boolean;
 };
 
-export type OnboardingMusicGroup = {
+export type OnboardingInterestGroup = {
   id: string;
   nameKey: string;
   name: string;
@@ -72,10 +73,10 @@ export type OnboardingInterestCategory = {
   id: OnboardingInterestCategoryId;
   nameKey: string;
   name: string;
-  /** Flat chips (all categories except music). */
+  /** Flat chips (standard categories). */
   items?: OnboardingInterestItem[];
-  /** Music & Entertainment two-level model. */
-  groups?: OnboardingMusicGroup[];
+  /** Hierarchical pills (Music, Food, Sports/Outdoors). */
+  groups?: OnboardingInterestGroup[];
 };
 
 function item(
@@ -101,7 +102,7 @@ function group(
   icon: string,
   iconColor: string,
   items: OnboardingInterestItem[],
-): OnboardingMusicGroup {
+): OnboardingInterestGroup {
   return { id, name, nameKey: id, icon, iconColor, items };
 }
 
@@ -158,7 +159,7 @@ export const ONBOARDING_INTEREST_CATEGORIES: OnboardingInterestCategory[] = [
       item('arts_writing', 'Writing', 'document-text-outline', '#4F46E5'),
       item('arts_crafts', 'Crafts', 'cut-outline', '#CA8A04'),
       item('arts_acting', 'Acting', 'happy-outline', '#DC2626'),
-      item('arts_dancing', 'Dancing', 'body-outline', '#DB2777'),
+      item('arts_dancing', 'Dancing', 'musical-notes-outline', '#DB2777'),
       item('arts_filmmaking', 'Filmmaking', 'videocam-outline', '#0891B2'),
       item('arts_architecture', 'Architecture', 'business-outline', '#059669'),
       item('arts_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
@@ -180,14 +181,17 @@ export const ONBOARDING_INTEREST_CATEGORIES: OnboardingInterestCategory[] = [
         item('music_genre_classical', 'Classical & Instrumental', 'musical-notes-outline', '#7C3AED'),
         item('music_genre_caribbean_global', 'Caribbean & Global Music', 'globe-outline', '#0D9488'),
         item('music_genre_faith', 'Faith-Based Music', 'heart-outline', '#CA8A04'),
+        item('music_group_genres_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
       ]),
       group('music_group_dance', 'Dance', 'footsteps-outline', '#DB2777', [
+        item('music_dance_dancing', 'Dancing', 'musical-notes-outline', '#DB2777'),
         item('music_dance_latin', 'Latin Dance', 'flame-outline', '#EA580C'),
         item('music_dance_ballroom', 'Ballroom Dance', 'diamond-outline', '#7C3AED'),
         item('music_dance_social', 'Social Dance', 'people-outline', '#2563EB'),
         item('music_dance_cultural', 'Cultural Dance', 'globe-outline', '#0D9488'),
         item('music_dance_modern', 'Modern Dance', 'flash-outline', '#C026D3'),
         item('music_dance_brazilian', 'Brazilian Dance', 'sunny-outline', '#CA8A04'),
+        item('music_group_dance_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
       ]),
       group('music_group_live', 'Live Entertainment', 'mic-outline', '#EA580C', [
         item('music_live_events', 'Music Events', 'calendar-outline', '#2563EB'),
@@ -197,6 +201,7 @@ export const ONBOARDING_INTEREST_CATEGORIES: OnboardingInterestCategory[] = [
         item('music_live_local', 'Local Music', 'location-outline', '#059669'),
         item('music_live_open_mic', 'Open-Mic Nights', 'mic-circle-outline', '#0891B2'),
         item('music_live_karaoke', 'Karaoke', 'musical-note-outline', '#C026D3'),
+        item('music_group_live_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
       ]),
       group('music_group_performing', 'Performing Arts', 'ticket-outline', '#4F46E5', [
         item('music_performing_theater', 'Theater', 'ticket-outline', '#7C3AED'),
@@ -204,6 +209,7 @@ export const ONBOARDING_INTEREST_CATEGORIES: OnboardingInterestCategory[] = [
         item('music_performing_opera', 'Opera', 'mic-outline', '#C026D3'),
         item('music_performing_ballet', 'Ballet', 'flower-outline', '#DB2777'),
         item('music_performing_dance', 'Dance Performances', 'body-outline', '#EA580C'),
+        item('music_group_performing_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
       ]),
       group('music_group_movies_tv', 'Movies & Television', 'film-outline', '#0891B2', [
         item('music_movies_action', 'Action', 'flash-outline', '#DC2626'),
@@ -226,27 +232,77 @@ export const ONBOARDING_INTEREST_CATEGORIES: OnboardingInterestCategory[] = [
         item('music_movies_talk', 'Talk Shows', 'chatbubbles-outline', '#0891B2'),
         item('music_movies_game', 'Game Shows', 'trophy-outline', '#CA8A04'),
         item('music_movies_streaming', 'Streaming Shows', 'play-circle-outline', '#059669'),
+        item('music_group_movies_tv_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
+      ]),
+      group('music_group_anime', 'Anime', 'planet-outline', '#C026D3', [
+        item('music_anime_series', 'Anime Series', 'tv-outline', '#C026D3'),
+        item('music_anime_movies', 'Anime Movies', 'film-outline', '#DB2777'),
+        item('music_anime_manga', 'Manga', 'book-outline', '#7C3AED'),
+        item('music_anime_manhwa', 'Manhwa / Webtoon', 'phone-portrait-outline', '#0891B2'),
+        item('music_anime_games', 'Anime Video Games', 'game-controller-outline', '#4F46E5'),
+        item('music_group_anime_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
       ]),
     ],
   },
   {
     id: 'food',
-    name: 'Food & Drink',
-    nameKey: 'food',
-    items: [
-      item('food_cooking', 'Cooking', 'restaurant-outline', '#EA580C'),
-      item('food_baking', 'Baking', 'cafe-outline', '#CA8A04'),
-      item('food_restaurants', 'Restaurants', 'storefront-outline', '#DC2626'),
-      item('food_coffee', 'Coffee', 'cafe-outline', '#7C3AED'),
-      item('food_brunch', 'Brunch', 'sunny-outline', '#CA8A04'),
-      item('food_trucks', 'Food Trucks', 'bus-outline', '#0891B2'),
-      item('food_international', 'International Cuisine', 'globe-outline', '#0D9488'),
-      item('food_healthy', 'Healthy Eating', 'nutrition-outline', '#16A34A'),
-      item('food_bbq', 'Barbecue & Grilling', 'flame-outline', '#DC2626'),
-      item('food_desserts', 'Desserts', 'ice-cream-outline', '#DB2777'),
-      item('food_wine', 'Wine', 'wine-outline', '#C026D3'),
-      item('food_craft_beverages', 'Craft Beverages', 'beer-outline', '#EA580C'),
-      item('food_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
+    name: 'Food, Dining & Dietary Lifestyle',
+    nameKey: 'food_dining',
+    groups: [
+      group('food_group_dietary', 'Dietary Lifestyle', 'nutrition-outline', '#16A34A', [
+        item('food_dietary_vegan', 'Vegan', 'star-outline', '#C026D3'),
+        item('food_dietary_vegetarian', 'Vegetarian', 'star-outline', '#DB2777'),
+        item('food_dietary_pescatarian', 'Pescatarian', 'fish-outline', '#0891B2'),
+        item('food_dietary_plant_based', 'Plant-Based', 'leaf-outline', '#059669'),
+        item('food_dietary_flexitarian', 'Flexitarian', 'nutrition-outline', '#0D9488'),
+        item('food_dietary_keto', 'Keto', 'fitness-outline', '#7C3AED'),
+        item('food_dietary_halal', 'Halal', 'moon-outline', '#4F46E5'),
+        item('food_dietary_kosher', 'Kosher', 'star-outline', '#CA8A04'),
+        item('food_dietary_gluten_free', 'Gluten-Free', 'remove-circle-outline', '#EA580C'),
+        item('food_dietary_dairy_free', 'Dairy-Free', 'water-outline', '#2563EB'),
+        item('food_group_dietary_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
+      ]),
+      group('food_group_cuisines', 'Favorite Cuisines', 'restaurant-outline', '#EA580C', [
+        item('food_cuisine_italian', 'Italian', 'star-outline', '#7C3AED'),
+        item('food_cuisine_mexican', 'Mexican', 'flame-outline', '#DC2626'),
+        item('food_cuisine_costa_rican', 'Costa Rican', 'flag-outline', '#0891B2'),
+        item('food_cuisine_colombian', 'Colombian', 'flag-outline', '#CA8A04'),
+        item('food_cuisine_caribbean', 'Caribbean', 'sunny-outline', '#CA8A04'),
+        item('food_cuisine_mediterranean', 'Mediterranean', 'boat-outline', '#0891B2'),
+        item('food_cuisine_indian', 'Indian', 'sparkles-outline', '#C026D3'),
+        item('food_cuisine_japanese', 'Japanese', 'flower-outline', '#DB2777'),
+        item('food_cuisine_chinese', 'Chinese', 'restaurant-outline', '#DC2626'),
+        item('food_cuisine_thai', 'Thai', 'leaf-outline', '#16A34A'),
+        item('food_cuisine_seafood', 'Seafood', 'star-outline', '#CA8A04'),
+        item('food_cuisine_american', 'American', 'flag-outline', '#2563EB'),
+        item('food_cuisine_middle_eastern', 'Middle Eastern', 'globe-outline', '#EA580C'),
+        item('food_cuisine_african', 'African', 'earth-outline', '#059669'),
+        item('food_cuisine_brazilian', 'Brazilian', 'football-outline', '#16A34A'),
+        item('food_group_cuisines_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
+      ]),
+      group('food_group_experiences', 'Food Experiences', 'cafe-outline', '#CA8A04', [
+        item('food_cooking', 'Cooking', 'restaurant-outline', '#EA580C'),
+        item('food_baking', 'Baking', 'cafe-outline', '#CA8A04'),
+        item('food_brunch', 'Brunch', 'sunny-outline', '#CA8A04'),
+        item('food_experience_trying_new_restaurants', 'Trying New Restaurants', 'storefront-outline', '#DC2626'),
+        item('food_experience_fine_dining', 'Fine Dining', 'star-outline', '#EA580C'),
+        item('food_trucks', 'Food Trucks', 'bus-outline', '#0891B2'),
+        item('food_experience_street_food', 'Street Food', 'fast-food-outline', '#EA580C'),
+        item('food_experience_grilling', 'Grilling', 'star-outline', '#2563EB'),
+        item('food_experience_farmers_markets', 'Farmers Markets', 'basket-outline', '#16A34A'),
+        item('food_experience_food_festivals', 'Food Festivals', 'balloon-outline', '#C026D3'),
+        item('food_group_experiences_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
+      ]),
+      group('food_group_beverages', 'Beverages', 'wine-outline', '#7C3AED', [
+        item('food_coffee', 'Coffee', 'cafe-outline', '#7C3AED'),
+        item('food_beverage_tea', 'Tea', 'cafe-outline', '#059669'),
+        item('food_beverage_smoothies', 'Smoothies', 'nutrition-outline', '#16A34A'),
+        item('food_beverage_mocktails', 'Mocktails', 'wine-outline', '#C026D3'),
+        item('food_wine', 'Wine', 'wine-outline', '#C026D3'),
+        item('food_beverage_craft_beer', 'Craft Beer', 'beer-outline', '#CA8A04'),
+        item('food_beverage_cocktails', 'Cocktails', 'wine-outline', '#7C3AED'),
+        item('food_group_beverages_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
+      ]),
     ],
   },
   {
@@ -270,43 +326,40 @@ export const ONBOARDING_INTEREST_CATEGORIES: OnboardingInterestCategory[] = [
     ],
   },
   {
-    id: 'sports',
-    name: 'Sports',
-    nameKey: 'sports',
-    items: [
-      item('sports_football', 'Football', 'american-football-outline', '#EA580C'),
-      item('sports_basketball', 'Basketball', 'basketball-outline', '#DC2626'),
-      item('sports_baseball', 'Baseball', 'baseball-outline', '#2563EB'),
-      item('sports_soccer', 'Soccer', 'football-outline', '#16A34A'),
-      item('sports_tennis', 'Tennis', 'tennisball-outline', '#CA8A04'),
-      item('sports_golf', 'Golf', 'golf-outline', '#059669'),
-      item('sports_volleyball', 'Volleyball', 'football-outline', '#0891B2'),
-      item('sports_hockey', 'Hockey', 'snow-outline', '#4F46E5'),
-      item('sports_pickleball', 'Pickleball', 'tennisball-outline', '#0D9488'),
-      item('sports_boxing', 'Boxing', 'fitness-outline', '#DC2626'),
-      item('sports_motorsports', 'Motorsports', 'speedometer-outline', '#EA580C'),
-      item('sports_college', 'College Sports', 'school-outline', '#7C3AED'),
-      item('sports_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
-    ],
-  },
-  {
-    id: 'outdoors',
-    name: 'Outdoors & Adventure',
-    nameKey: 'outdoors',
-    items: [
-      item('outdoors_hiking', 'Hiking', 'trail-sign-outline', '#16A34A'),
-      item('outdoors_camping', 'Camping', 'bonfire-outline', '#EA580C'),
-      item('outdoors_fishing', 'Fishing', 'fish-outline', '#0891B2'),
-      item('outdoors_boating', 'Boating', 'boat-outline', '#2563EB'),
-      item('outdoors_beaches', 'Beaches', 'umbrella-outline', '#CA8A04'),
-      item('outdoors_parks', 'Parks', 'leaf-outline', '#059669'),
-      item('outdoors_skiing', 'Skiing', 'snow-outline', '#4F46E5'),
-      item('outdoors_snowboarding', 'Snowboarding', 'snow-outline', '#0891B2'),
-      item('outdoors_gardening', 'Gardening', 'flower-outline', '#16A34A'),
-      item('outdoors_nature', 'Nature', 'earth-outline', '#0D9488'),
-      item('outdoors_road_trips', 'Road Trips', 'car-outline', '#DC2626'),
-      item('outdoors_adventures', 'Outdoor Adventures', 'compass-outline', '#7C3AED'),
-      item('outdoors_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
+    id: 'sports_outdoors',
+    name: 'Sports, Outdoors & Adventure',
+    nameKey: 'sports_outdoors',
+    groups: [
+      group('sports_outdoors_group_sports', 'Sports', 'basketball-outline', '#DC2626', [
+        item('sports_football', 'Football', 'american-football-outline', '#EA580C'),
+        item('sports_basketball', 'Basketball', 'basketball-outline', '#DC2626'),
+        item('sports_baseball', 'Baseball', 'baseball-outline', '#2563EB'),
+        item('sports_soccer', 'Soccer', 'football-outline', '#16A34A'),
+        item('sports_tennis', 'Tennis', 'tennisball-outline', '#CA8A04'),
+        item('sports_golf', 'Golf', 'golf-outline', '#059669'),
+        item('sports_volleyball', 'Volleyball', 'football-outline', '#0891B2'),
+        item('sports_hockey', 'Hockey', 'snow-outline', '#4F46E5'),
+        item('sports_pickleball', 'Pickleball', 'tennisball-outline', '#0D9488'),
+        item('sports_boxing', 'Boxing', 'fitness-outline', '#DC2626'),
+        item('sports_motorsports', 'Motorsports', 'speedometer-outline', '#EA580C'),
+        item('sports_college', 'College Sports', 'school-outline', '#7C3AED'),
+        item('sports_outdoors_group_sports_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
+      ]),
+      group('sports_outdoors_group_outdoors', 'Outdoors & Adventure', 'compass-outline', '#059669', [
+        item('outdoors_hiking', 'Hiking', 'trail-sign-outline', '#16A34A'),
+        item('outdoors_camping', 'Camping', 'bonfire-outline', '#EA580C'),
+        item('outdoors_fishing', 'Fishing', 'fish-outline', '#0891B2'),
+        item('outdoors_boating', 'Boating', 'boat-outline', '#2563EB'),
+        item('outdoors_beaches', 'Beaches', 'umbrella-outline', '#CA8A04'),
+        item('outdoors_parks', 'Parks', 'leaf-outline', '#059669'),
+        item('outdoors_skiing', 'Skiing', 'snow-outline', '#4F46E5'),
+        item('outdoors_snowboarding', 'Snowboarding', 'snow-outline', '#0891B2'),
+        item('outdoors_gardening', 'Gardening', 'flower-outline', '#059669'),
+        item('outdoors_nature', 'Nature', 'earth-outline', '#0D9488'),
+        item('outdoors_road_trips', 'Road Trips', 'car-outline', '#DC2626'),
+        item('outdoors_adventures', 'Outdoor Adventures', 'compass-outline', '#7C3AED'),
+        item('sports_outdoors_group_outdoors_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
+      ]),
     ],
   },
   {
@@ -323,7 +376,7 @@ export const ONBOARDING_INTEREST_CATEGORIES: OnboardingInterestCategory[] = [
       item('travel_languages', 'Languages', 'language-outline', '#7C3AED'),
       item('travel_cultural', 'Cultural Experiences', 'globe-outline', '#DB2777'),
       item('travel_museums', 'Museums', 'library-outline', '#4F46E5'),
-      item('travel_history', 'History', 'time-outline', '#CA8A04'),
+      item('travel_history', 'History', 'library-outline', '#DC2626'),
       item('travel_immigration', 'Immigration Stories', 'earth-outline', '#059669'),
       item('travel_latin_culture', 'Latin Culture', 'flag-outline', '#DC2626'),
       item('travel_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
@@ -389,6 +442,7 @@ export const ONBOARDING_INTEREST_CATEGORIES: OnboardingInterestCategory[] = [
       item('community_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
     ],
   },
+
 ];
 
 /** Controlled Ionicons catalog for custom interests (no free-text icons). */
@@ -415,6 +469,53 @@ export const ONBOARDING_CUSTOM_INTEREST_ICONS = [
   'restaurant-outline',
 ] as const;
 
+/** Deterministic colored icon options for the custom-interest picker. */
+export const ONBOARDING_CUSTOM_INTEREST_ICON_OPTIONS = [
+  { icon: 'star-outline', iconColor: '#CA8A04' },
+  { icon: 'heart-outline', iconColor: '#DB2777' },
+  { icon: 'flame-outline', iconColor: '#EA580C' },
+  { icon: 'leaf-outline', iconColor: '#16A34A' },
+  { icon: 'musical-notes-outline', iconColor: '#7C3AED' },
+  { icon: 'camera-outline', iconColor: '#2563EB' },
+  { icon: 'bicycle-outline', iconColor: '#0891B2' },
+  { icon: 'airplane-outline', iconColor: '#4F46E5' },
+  { icon: 'book-outline', iconColor: '#0D9488' },
+  { icon: 'briefcase-outline', iconColor: '#059669' },
+  { icon: 'cafe-outline', iconColor: '#C026D3' },
+  { icon: 'game-controller-outline', iconColor: '#DC2626' },
+  { icon: 'globe-outline', iconColor: '#2563EB' },
+  { icon: 'home-outline', iconColor: '#EA580C' },
+  { icon: 'people-outline', iconColor: '#0891B2' },
+  { icon: 'rocket-outline', iconColor: '#7C3AED' },
+  { icon: 'football-outline', iconColor: '#16A34A' },
+  { icon: 'color-palette-outline', iconColor: '#DB2777' },
+  { icon: 'hardware-chip-outline', iconColor: '#4F46E5' },
+  { icon: 'restaurant-outline', iconColor: '#EA580C' },
+] as const satisfies ReadonlyArray<{
+  icon: (typeof ONBOARDING_CUSTOM_INTEREST_ICONS)[number];
+  iconColor: string;
+}>;
+
+export function resolveCustomInterestIconColor(icon: string): string {
+  const found = ONBOARDING_CUSTOM_INTEREST_ICON_OPTIONS.find(
+    (entry) => entry.icon === icon,
+  );
+  return found?.iconColor ?? deterministicIconColor(icon);
+}
+
+export function assertCustomIconPickerCoverage(): void {
+  for (const icon of ONBOARDING_CUSTOM_INTEREST_ICONS) {
+    const found = ONBOARDING_CUSTOM_INTEREST_ICON_OPTIONS.find(
+      (entry) => entry.icon === icon,
+    );
+    if (!found?.iconColor?.trim()) {
+      throw new Error(`Custom icon picker missing color: ${icon}`);
+    }
+  }
+}
+
+assertCustomIconPickerCoverage();
+
 export type OnboardingCustomIconName =
   (typeof ONBOARDING_CUSTOM_INTEREST_ICONS)[number];
 
@@ -425,7 +526,7 @@ export type OnboardingSelectedInterest = {
   icon: string;
   iconColor: string;
   isCustom?: boolean;
-  /** Music group id when selected from Music & Entertainment level 2. */
+  /** Hierarchical group id when selected from a grouped category. */
   groupId?: string;
 };
 
@@ -491,7 +592,7 @@ export function payloadContainsUndefined(value: unknown): boolean {
   );
 }
 
-/** Throws if any catalog item or music group is missing icon / iconColor. */
+/** Throws if any catalog item or group is missing icon / iconColor. */
 export function assertCatalogIconCoverage(): void {
   for (const cat of ONBOARDING_INTEREST_CATEGORIES) {
     if (cat.items) {
@@ -507,7 +608,7 @@ export function assertCatalogIconCoverage(): void {
       for (const g of cat.groups) {
         if (!g.icon?.trim() || !g.iconColor?.trim()) {
           throw new Error(
-            `Music group missing icon/iconColor: ${g.id}`,
+            `Interest group missing icon/iconColor: ${g.id}`,
           );
         }
         for (const it of g.items) {
@@ -548,10 +649,15 @@ export function slugifyInterestName(name: string): string {
 export function buildCustomInterestId(
   categoryId: OnboardingInterestCategoryId,
   name: string,
+  groupId?: string,
   nowMs: number = Date.now(),
 ): string {
   const slug = slugifyInterestName(name) || 'interest';
-  return `custom_${categoryId}_${slug}_${nowMs}`;
+  const groupPart =
+    typeof groupId === 'string' && groupId.length > 0
+      ? `_${slugifyInterestName(groupId)}`
+      : '';
+  return `custom_${categoryId}${groupPart}_${slug}_${nowMs}`;
 }
 
 export function normalizeCustomInterestName(name: string): string {
@@ -563,6 +669,7 @@ export function validateCustomInterestInput(input: {
   icon?: string | null;
   iconColor?: string | null;
   categoryId: OnboardingInterestCategoryId;
+  groupId?: string | null;
   existingInCategory: OnboardingSelectedInterest[];
 }):
   | { ok: true; name: string; icon: string; iconColor: string }
@@ -577,7 +684,13 @@ export function validateCustomInterestInput(input: {
   if (!input.icon || !ONBOARDING_CUSTOM_INTEREST_ICONS.includes(input.icon as any)) {
     return { ok: false, reason: 'iconRequired' };
   }
-  const duplicate = input.existingInCategory.some(
+  const scope = input.existingInCategory.filter((s) => {
+    if (input.groupId) {
+      return s.groupId === input.groupId;
+    }
+    return !s.groupId;
+  });
+  const duplicate = scope.some(
     (s) => s.name.trim().toLowerCase() === name.toLowerCase(),
   );
   if (duplicate) {
@@ -586,7 +699,7 @@ export function validateCustomInterestInput(input: {
   const iconColor =
     typeof input.iconColor === 'string' && input.iconColor.trim()
       ? input.iconColor.trim()
-      : deterministicIconColor(name);
+      : resolveCustomInterestIconColor(input.icon!);
   return { ok: true, name, icon: input.icon, iconColor };
 }
 
@@ -598,7 +711,7 @@ export function countSelectedInterests(
 
 /**
  * Final selectable interests only (unique by id).
- * Music Level-1 groups are navigation-only and never enter `selected`.
+ * Level-1 group pills are navigation-only and never enter `selected`.
  * The Other chip is not an interest until a custom entry is added.
  */
 export function countFinalOnboardingInterests(
@@ -607,11 +720,8 @@ export function countFinalOnboardingInterests(
   const ids = new Set<string>();
   for (const s of selected) {
     if (!s?.id) continue;
-    // Guard: never count the Other placeholder chip (isOther catalog items
-    // are not written into selected — only customs are).
     if (s.id.endsWith('_other') && !s.isCustom) continue;
-    // Music Level-1 groups are navigation-only.
-    if (s.id.startsWith('music_group_')) continue;
+    if (s.id.includes('_group_') && !s.isCustom) continue;
     ids.add(s.id);
   }
   return ids.size;
@@ -646,7 +756,9 @@ export function flattenCatalogInterestItems(): OnboardingInterestItem[] {
     }
     if (cat.groups) {
       for (const g of cat.groups) {
-        out.push(...g.items);
+        for (const it of g.items) {
+          if (!it.isOther) out.push(it);
+        }
       }
     }
   }
@@ -672,7 +784,7 @@ export function selectedInterestsToLabelList(
   const out: string[] = [];
   for (const s of selected) {
     if (s.id.endsWith('_other') && !s.isCustom) continue;
-    if (s.id.startsWith('music_group_')) continue;
+    if (s.id.includes('_group_') && !s.isCustom) continue;
     const name = (s.name || '').trim();
     if (!name) continue;
     const key = name.toLowerCase();
@@ -706,7 +818,7 @@ export function buildCrjInterestPersistencePatch(
     .filter(
       (s) =>
         !(s.id.endsWith('_other') && !s.isCustom) &&
-        !s.id.startsWith('music_group_'),
+        !(s.id.includes('_group_') && !s.isCustom),
     )
     .map(sanitizeOnboardingInterestForPersistence);
 
@@ -724,9 +836,21 @@ export function buildCrjInterestPersistencePatch(
   };
 }
 
-/** True when a Music selection retained hierarchy context. */
+/** True when a selection retained hierarchical group context. */
+export function isHierarchicalInterestSelection(
+  item: OnboardingSelectedInterest,
+): boolean {
+  return !!item.groupId && !!item.id;
+}
+
+/** @deprecated Use isHierarchicalInterestSelection */
 export function isMusicHierarchySelection(
   item: OnboardingSelectedInterest,
 ): boolean {
-  return item.categoryId === 'music' && !!item.groupId && !!item.id;
+  return item.categoryId === 'music' && isHierarchicalInterestSelection(item);
 }
+
+import { assertKnownHierarchicalCategories } from './interestHierarchy';
+
+assertCatalogIconCoverage();
+assertKnownHierarchicalCategories(ONBOARDING_INTEREST_CATEGORIES);

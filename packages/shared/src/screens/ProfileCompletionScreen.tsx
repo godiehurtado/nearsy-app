@@ -2,8 +2,8 @@
  * Profile Completion wizard — CRJ profile-creation phase after Authentication.
  *
  * Flow: Profile Type → Name → Last Name → Photo → Profile Details →
- * Interests (12 category screens) → Location → Notifications →
- * Registration Success → MainTabs.
+ * Interests (11 category screens) → Interests Celebration →
+ * Location → Notifications → Registration Success → MainTabs.
  *
  * TEMPORARY: Phone OTP remains out of scope (handled earlier in Register).
  */
@@ -28,6 +28,7 @@ import { RegistrationProgress } from '../components/registration/RegistrationPro
 import { RegistrationFadeSlideIn } from '../components/registration/RegistrationFadeSlideIn';
 import { FormInput } from '../components/registration/FormInput';
 import { OnboardingInterestCategoryPanel } from '../components/registration/OnboardingInterestCategoryPanel';
+import { InterestsCelebrationStep } from '../components/registration/InterestsCelebrationStep';
 import {
   crjPhaseProgress,
   type CrjProgressPhase,
@@ -61,12 +62,18 @@ import {
 } from '../profile/profileModeFields';
 import {
   buildCrjInterestPersistencePatch,
+  countFinalOnboardingInterests,
+  getOnboardingCategory,
   interestsRemainingToMinimum,
   listOnboardingCategoryIds,
   meetsMinimumOnboardingInterests,
   type OnboardingInterestCategoryId,
   type OnboardingSelectedInterest,
 } from '../interests/onboardingInterestCatalog';
+import {
+  isHierarchicalInterestCategory,
+  resolveActiveGroupId,
+} from '../interests/interestHierarchy';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileCompletion'>;
 
@@ -77,7 +84,12 @@ const PRE_INTEREST_STEPS = [
   'details',
   'interestsIntro',
 ] as const;
-const POST_INTEREST_STEPS = ['location', 'notifications', 'success'] as const;
+const POST_INTEREST_STEPS = [
+  'interestsCelebration',
+  'location',
+  'notifications',
+  'success',
+] as const;
 const INTEREST_CATEGORY_IDS = listOnboardingCategoryIds();
 
 type FixedPreStep = (typeof PRE_INTEREST_STEPS)[number];
@@ -175,6 +187,7 @@ function progressPhaseForStep(step: ResolvedStep): CrjProgressPhase | null {
       return 'details';
     case 'interestsIntro':
     case 'interest':
+    case 'interestsCelebration':
       return 'interests';
     case 'location':
       return 'location';
@@ -209,6 +222,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [selectedInterests, setSelectedInterests] = useState<
     OnboardingSelectedInterest[]
   >([]);
+  const [activeInterestGroupByCategory, setActiveInterestGroupByCategory] =
+    useState<Partial<Record<OnboardingInterestCategoryId, string>>>({});
   const [shellData, setShellData] = useState<Record<string, unknown> | null>(
     null,
   );
@@ -467,7 +482,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       }
       case 'interestsIntro':
       case 'interest':
-        // Continuing is gated by Next/Skip handlers (min 7 checked at end).
+      case 'interestsCelebration':
+        // Continuing is gated by Next/Skip handlers (min 10 checked at end).
         return true;
       case 'location':
       case 'notifications':
@@ -672,10 +688,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   }
 
   async function leaveLastInterestCategory() {
+    const total = countFinalOnboardingInterests(selectedInterests);
     if (!meetsMinimumOnboardingInterests(selectedInterests)) {
       Alert.alert(
+        t('onboarding.profileCompletion.interests.minRequiredTitle' as any),
         t('onboarding.profileCompletion.interests.minRequired' as any, {
-          count: selectedInterests.length,
+          count: total,
           remaining: interestsRemainingToMinimum(selectedInterests),
         }),
       );
@@ -734,6 +752,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         setStepIndex((i) => i + 1);
       } else if (step.kind === 'interestsIntro') {
         setStepIndex((i) => i + 1);
+      } else if (step.kind === 'interestsCelebration') {
+        setStepIndex((i) => i + 1);
       } else if (step.kind === 'success') {
         await finishOnboarding();
       }
@@ -769,7 +789,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     step.kind === 'identity' ||
     step.kind === 'photo' ||
     step.kind === 'details' ||
-    step.kind === 'interestsIntro';
+    step.kind === 'interestsIntro' ||
+    step.kind === 'interestsCelebration';
 
   const animKey =
     step.kind === 'interest'
@@ -788,7 +809,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             label={
               step.kind === 'interestsIntro'
                 ? t('onboarding.profileCompletion.interestsIntro.cta')
-                : t('onboarding.profileCompletion.continue')
+                : step.kind === 'interestsCelebration'
+                  ? t(
+                      'onboarding.profileCompletion.interestsCelebration.continue',
+                    )
+                  : t('onboarding.profileCompletion.continue')
             }
             onPress={() => {
               void goNext();
@@ -1266,12 +1291,33 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             </View>
           )}
 
-          {step.kind === 'interest' && (
-            <OnboardingInterestCategoryPanel
-              categoryId={step.categoryId}
-              selected={selectedInterests}
-              onChangeSelected={setSelectedInterests}
-            />
+          {step.kind === 'interest' && (() => {
+            const interestCategory = getOnboardingCategory(step.categoryId);
+            const hierarchical = isHierarchicalInterestCategory(interestCategory);
+            const activeGroupId = hierarchical
+              ? resolveActiveGroupId(
+                  interestCategory,
+                  activeInterestGroupByCategory[step.categoryId],
+                )
+              : undefined;
+            return (
+              <OnboardingInterestCategoryPanel
+                categoryId={step.categoryId}
+                selected={selectedInterests}
+                onChangeSelected={setSelectedInterests}
+                activeGroupId={activeGroupId}
+                onActiveGroupChange={(groupId) => {
+                  setActiveInterestGroupByCategory((prev) => ({
+                    ...prev,
+                    [step.categoryId]: groupId,
+                  }));
+                }}
+              />
+            );
+          })()}
+
+          {step.kind === 'interestsCelebration' && (
+            <InterestsCelebrationStep selected={selectedInterests} />
           )}
 
           {step.kind === 'location' && (

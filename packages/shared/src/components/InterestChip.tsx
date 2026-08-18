@@ -12,6 +12,8 @@ interface InterestChipProps {
   icon?: string;
   iconColor?: string;
   selected?: boolean;
+  /** other = Other placeholder; keeps icon colored even when active. */
+  variant?: 'default' | 'other';
   onPress?: () => void;
 }
 
@@ -22,13 +24,23 @@ export function InterestChip({
   icon,
   iconColor,
   selected = false,
+  variant = 'default',
   onPress,
 }: InterestChipProps) {
   const { palette } = useAppTheme();
-  const labelColor = selected ? '#FFFFFF' : palette.textPrimary;
-  const resolvedIconColor = selected
-    ? '#FFFFFF'
-    : iconColor || palette.primary;
+  const isOther = variant === 'other';
+  const labelColor = isOther
+    ? selected
+      ? palette.primary
+      : palette.textSecondary
+    : selected
+      ? '#FFFFFF'
+      : palette.textPrimary;
+  const resolvedIconColor = isOther
+    ? iconColor || palette.primary
+    : selected
+      ? '#FFFFFF'
+      : iconColor || palette.primary;
 
   return (
     <Pressable
@@ -37,10 +49,16 @@ export function InterestChip({
       onPress={onPress}
       style={[
         styles.pill,
-        {
-          backgroundColor: selected ? palette.primary : palette.chipBg,
-          borderColor: selected ? palette.primary : palette.border,
-        },
+        isOther
+          ? {
+              backgroundColor: selected ? palette.chipBg : 'transparent',
+              borderColor: selected ? palette.primary : palette.accentBorder,
+              borderWidth: selected ? 1.5 : 1,
+            }
+          : {
+              backgroundColor: selected ? palette.primary : palette.chipBg,
+              borderColor: selected ? palette.primary : palette.border,
+            },
       ]}
     >
       {icon ? (
@@ -53,7 +71,11 @@ export function InterestChip({
           styles.label,
           {
             color: labelColor,
-            fontWeight: selected ? fontWeight.bold : fontWeight.semibold,
+            fontWeight: isOther
+              ? fontWeight.bold
+              : selected
+                ? fontWeight.bold
+                : fontWeight.semibold,
           },
         ]}
       >

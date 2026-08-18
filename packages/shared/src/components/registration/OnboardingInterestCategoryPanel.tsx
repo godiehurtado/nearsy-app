@@ -1,28 +1,37 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text, StyleSheet } from 'react-native';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { fontSize, fontWeight } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
-import { radius } from '../../theme/radius';
 import { InterestChip } from '../InterestChip';
-import { FormInput } from './FormInput';
 import { useTranslation } from '../../i18n';
 import {
   buildCustomInterestId,
   countFinalOnboardingInterests,
-  CUSTOM_INTEREST_MAX_LENGTH,
   getOnboardingCategory,
-  ONBOARDING_CUSTOM_INTEREST_ICONS,
   validateCustomInterestInput,
   type OnboardingInterestCategoryId,
   type OnboardingSelectedInterest,
 } from '../../interests/onboardingInterestCatalog';
+import {
+  getHierarchicalGroups,
+  isHierarchicalInterestCategory,
+  resolveActiveGroupId,
+} from '../../interests/interestHierarchy';
+import { HierarchicalInterestSelector } from './HierarchicalInterestSelector';
+import { OnboardingInterestCustomComposer } from './OnboardingInterestCustomComposer';
+import {
+  otherScopeForGroup,
+  isOtherComposerOpen,
+} from './interestOtherScope';
 
 type Props = {
   categoryId: OnboardingInterestCategoryId;
   selected: OnboardingSelectedInterest[];
   onChangeSelected: (next: OnboardingSelectedInterest[]) => void;
+  /** Required for hierarchical categories — owned by ProfileCompletionScreen. */
+  activeGroupId?: string;
+  onActiveGroupChange?: (groupId: string) => void;
 };
 
 function toggleInList(
@@ -38,15 +47,26 @@ export function OnboardingInterestCategoryPanel({
   categoryId,
   selected,
   onChangeSelected,
+  activeGroupId,
+  onActiveGroupChange,
 }: Props) {
   const { palette } = useAppTheme();
   const { t } = useTranslation();
   const category = getOnboardingCategory(categoryId);
+  const hierarchical = isHierarchicalInterestCategory(category);
+  const groups = getHierarchicalGroups(category);
 
-  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
-  const [showOtherComposer, setShowOtherComposer] = useState(false);
+  const resolvedActiveGroupId = useMemo(() => {
+    if (!hierarchical) return null;
+    return resolveActiveGroupId(category, activeGroupId);
+  }, [activeGroupId, category, hierarchical]);
+
+  const [otherComposerScope, setOtherComposerScope] = useState<string | null>(
+    null,
+  );
   const [customName, setCustomName] = useState('');
   const [customIcon, setCustomIcon] = useState<string | null>(null);
+  const [customIconColor, setCustomIconColor] = useState<string | null>(null);
   const [customError, setCustomError] = useState<string | null>(null);
 
   const selectedInCategory = useMemo(
@@ -75,43 +95,82 @@ export function OnboardingInterestCategoryPanel({
     );
   }
 
-  function toggleGroup(groupId: string) {
-    setExpandedGroups((prev) =>
-      prev.includes(groupId)
-        ? prev.filter((id) => id !== groupId)
-        : [...prev, groupId],
+  function groupLabel(nameKey: string, fallback: string) {
+    return t(
+      `onboarding.profileCompletion.interests.groups.${nameKey}` as any,
+      { defaultValue: fallback },
     );
   }
 
-  function addCustom() {
+  function closeComposer() {
+    setOtherComposerScope(null);
+    setCustomName('');
+    setCustomIcon(null);
+    setCustomIconColor(null);
+    setCustomError(null);
+  }
+
+  function toggleOther(groupId?: string) {
+    const scope = otherScopeForGroup(groupId);
+    setOtherComposerScope((prev) => (prev === scope ? null : scope));
+    setCustomError(null);
+    if (otherComposerScope === scope) {
+      setCustomName('');
+      setCustomIcon(null);
+      setCustomIconColor(null);
+    }
+  }
+
+  function addCustom(groupId?: string) {
     const result = validateCustomInterestInput({
       name: customName,
       icon: customIcon,
+      iconColor: customIconColor,
       categoryId,
+      groupId: groupId ?? null,
       existingInCategory: selectedInCategory,
     });
     if (result.ok === false) {
-      const reason = result.reason;
       setCustomError(
         t(
-          `onboarding.profileCompletion.interests.custom.errors.${reason}` as any,
+          `onboarding.profileCompletion.interests.custom.errors.${result.reason}` as any,
         ),
       );
       return;
     }
     const entry: OnboardingSelectedInterest = {
-      id: buildCustomInterestId(categoryId, result.name),
+      id: buildCustomInterestId(categoryId, result.name, groupId),
       name: result.name,
       categoryId,
       icon: result.icon,
       iconColor: result.iconColor,
       isCustom: true,
+      ...(groupId ? { groupId } : {}),
     };
     onChangeSelected([...selected, entry]);
-    setCustomName('');
-    setCustomIcon(null);
-    setCustomError(null);
-    setShowOtherComposer(false);
+    closeComposer();
+  }
+
+  function renderComposer(groupId?: string) {
+    if (!isOtherComposerOpen(otherComposerScope, groupId)) return null;
+    return (
+      <OnboardingInterestCustomComposer
+        customName={customName}
+        customIcon={customIcon}
+        customError={customError}
+        onChangeName={(value) => {
+          setCustomName(value);
+          setCustomError(null);
+        }}
+        onSelectIcon={(icon, iconColor) => {
+          setCustomIcon(icon);
+          setCustomIconColor(iconColor);
+          setCustomError(null);
+        }}
+        onAdd={() => addCustom(groupId)}
+        onCancel={closeComposer}
+      />
+    );
   }
 
   function renderChip(params: {
@@ -124,18 +183,19 @@ export function OnboardingInterestCategoryPanel({
     groupId?: string;
   }) {
     if (params.isOther) {
-      const active = showOtherComposer;
+      const composerOpen = isOtherComposerOpen(
+        otherComposerScope,
+        params.groupId,
+      );
       return (
         <InterestChip
           key={params.id}
           name={itemLabel(params.nameKey, params.name)}
           icon={params.icon}
           iconColor={params.iconColor}
-          selected={active}
-          onPress={() => {
-            setShowOtherComposer((v) => !v);
-            setCustomError(null);
-          }}
+          variant="other"
+          selected={composerOpen}
+          onPress={() => toggleOther(params.groupId)}
         />
       );
     }
@@ -174,76 +234,39 @@ export function OnboardingInterestCategoryPanel({
         })}
       </Text>
 
-      {category.groups ? (
-        <View style={styles.groups}>
-          {category.groups.map((g) => {
-            const open = expandedGroups.includes(g.id);
-            return (
-              <View key={g.id} style={styles.groupBlock}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: open }}
-                  onPress={() => toggleGroup(g.id)}
-                  style={[
-                    styles.groupHeader,
-                    {
-                      borderColor: open ? palette.primary : palette.border,
-                      backgroundColor: open ? palette.chipBg : palette.panel,
-                    },
-                  ]}
-                >
-                  <View style={styles.groupHeaderLeft}>
-                    <Ionicons
-                      name={g.icon as any}
-                      size={20}
-                      color={g.iconColor}
-                    />
-                    <Text
-                      style={[
-                        styles.groupTitle,
-                        { color: palette.textPrimary },
-                      ]}
-                    >
-                      {itemLabel(g.nameKey, g.name)}
-                    </Text>
-                  </View>
-                  <Ionicons
-                    name={open ? 'chevron-up' : 'chevron-down'}
-                    size={18}
-                    color={palette.textSecondary}
-                  />
-                </Pressable>
-                {open ? (
-                  <View style={styles.chipWrap}>
-                    {g.items.map((it) =>
-                      renderChip({
-                        id: it.id,
-                        name: it.name,
-                        nameKey: it.nameKey,
-                        icon: it.icon,
-                        iconColor: it.iconColor,
-                        groupId: g.id,
-                      }),
-                    )}
-                  </View>
-                ) : null}
-              </View>
-            );
-          })}
-        </View>
+      {hierarchical && resolvedActiveGroupId ? (
+        <HierarchicalInterestSelector
+          categoryId={categoryId}
+          groups={groups}
+          activeGroupId={resolvedActiveGroupId}
+          onSelectGroup={(groupId) => {
+            onActiveGroupChange?.(groupId);
+            closeComposer();
+          }}
+          groupLabel={groupLabel}
+          renderChip={renderChip}
+          composer={renderComposer(resolvedActiveGroupId)}
+        />
+      ) : hierarchical ? (
+        <Text style={{ color: palette.danger }}>
+          {t('common.error')}
+        </Text>
       ) : (
-        <View style={styles.chipWrap}>
-          {(category.items ?? []).map((it) =>
-            renderChip({
-              id: it.id,
-              name: it.name,
-              nameKey: it.nameKey,
-              icon: it.icon,
-              iconColor: it.iconColor,
-              isOther: it.isOther,
-            }),
-          )}
-        </View>
+        <>
+          <View style={styles.chipWrap}>
+            {(category.items ?? []).map((it) =>
+              renderChip({
+                id: it.id,
+                name: it.name,
+                nameKey: it.nameKey,
+                icon: it.icon,
+                iconColor: it.iconColor,
+                isOther: it.isOther,
+              }),
+            )}
+          </View>
+          {renderComposer()}
+        </>
       )}
 
       {selectedInCategory.filter((s) => s.isCustom).length > 0 ? (
@@ -262,80 +285,6 @@ export function OnboardingInterestCategoryPanel({
                 }
               />
             ))}
-        </View>
-      ) : null}
-
-      {showOtherComposer ? (
-        <View
-          style={[
-            styles.composer,
-            { borderColor: palette.border, backgroundColor: palette.panel },
-          ]}
-        >
-          <Text style={[styles.composerTitle, { color: palette.textPrimary }]}>
-            {t('onboarding.profileCompletion.interests.custom.title')}
-          </Text>
-          <FormInput
-            label={t('onboarding.profileCompletion.interests.custom.nameLabel')}
-            placeholder={t(
-              'onboarding.profileCompletion.interests.custom.namePlaceholder',
-            )}
-            value={customName}
-            onChangeText={(v) => {
-              setCustomName(v.slice(0, CUSTOM_INTEREST_MAX_LENGTH));
-              setCustomError(null);
-            }}
-            maxLength={CUSTOM_INTEREST_MAX_LENGTH}
-            autoCapitalize="words"
-          />
-          <Text style={[styles.iconLabel, { color: palette.textMuted }]}>
-            {t('onboarding.profileCompletion.interests.custom.iconLabel')}
-          </Text>
-          <View style={styles.iconGrid}>
-            {ONBOARDING_CUSTOM_INTEREST_ICONS.map((icon) => {
-              const active = customIcon === icon;
-              return (
-                <Pressable
-                  key={icon}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  onPress={() => {
-                    setCustomIcon(icon);
-                    setCustomError(null);
-                  }}
-                  style={[
-                    styles.iconCell,
-                    {
-                      borderColor: active ? palette.primary : palette.border,
-                      backgroundColor: active
-                        ? palette.chipBg
-                        : palette.surface,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={icon as any}
-                    size={22}
-                    color={active ? palette.primary : palette.textSecondary}
-                  />
-                </Pressable>
-              );
-            })}
-          </View>
-          {customError ? (
-            <Text style={{ color: palette.danger, marginTop: spacing.sm }}>
-              {customError}
-            </Text>
-          ) : null}
-          <Pressable
-            accessibilityRole="button"
-            onPress={addCustom}
-            style={[styles.addBtn, { backgroundColor: palette.primary }]}
-          >
-            <Text style={styles.addBtnText}>
-              {t('onboarding.profileCompletion.interests.custom.add')}
-            </Text>
-          </Pressable>
         </View>
       ) : null}
     </View>
@@ -359,68 +308,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
-  },
-  groups: { gap: spacing.md },
-  groupBlock: { gap: spacing.sm },
-  groupHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-  },
-  groupHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    flex: 1,
-  },
-  groupTitle: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
-    flexShrink: 1,
-  },
-  composer: {
-    marginTop: spacing.lg,
-    borderWidth: 1,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  composerTitle: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
-  },
-  iconLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-  },
-  iconGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  iconCell: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    alignItems: 'center',
     justifyContent: 'center',
-  },
-  addBtn: {
-    marginTop: spacing.sm,
-    borderRadius: radius.lg,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  addBtnText: {
-    color: '#FFFFFF',
-    fontWeight: fontWeight.bold,
-    fontSize: fontSize.md,
   },
 });
