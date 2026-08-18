@@ -2,10 +2,9 @@
  * iOS durable adapter. Persists one active LinkedIn A3 transaction in SecureStore
  * only when the native module is present in the binary.
  *
- * The current Development IPA does not include expo-secure-store. Never evaluate
- * `import('expo-secure-store')` unless ExpoSecureStore is already registered —
- * that import calls requireNativeModule and would throw otherwise.
- * Fail-soft to process memory. Do not use AsyncStorage.
+ * Probe ExpoSecureStore before evaluating `import('expo-secure-store')` —
+ * that import calls requireNativeModule and would throw if the native module
+ * is missing from the binary. Fail-soft to process memory. Do not use AsyncStorage.
  */
 
 import {

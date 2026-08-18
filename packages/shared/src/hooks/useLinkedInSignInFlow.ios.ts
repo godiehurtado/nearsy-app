@@ -7,7 +7,7 @@ import {
   signInWithLinkedInA3,
 } from '../authentication/linkedinA3/authenticateWithLinkedIn';
 import { LinkedInA3ClientError } from '../authentication/linkedinA3/sanitize';
-import { resolveAppleAuthNavigationTarget } from '../authentication/social/application/appleSignInUiPolicy';
+import { resetNavigationAfterLinkedInA3SignIn } from '../authentication/linkedinA3/linkedinA3Navigation';
 
 /**
  * iOS Development LinkedIn A3 → Firebase session → profile routing.
@@ -85,29 +85,7 @@ export function useLinkedInSignInFlow() {
 
       Keyboard.dismiss();
       setTimeout(() => {
-        const screen = resolveAppleAuthNavigationTarget(result.profileRoute);
-        if (screen === 'MainTabs') {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'MainTabs' }],
-          });
-          return;
-        }
-
-        const emailForProfile = result.email ?? result.session.email ?? '';
-        navigation.reset({
-          index: 0,
-          routes: [
-            {
-              name: 'ProfileCompletion',
-              params: {
-                uid: result.session.uid,
-                email: emailForProfile,
-                inputNonce: Date.now(),
-              },
-            },
-          ],
-        });
+        resetNavigationAfterLinkedInA3SignIn(navigation, result);
       }, 150);
     } catch (err) {
       if (__DEV__) {

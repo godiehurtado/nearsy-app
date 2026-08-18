@@ -58,11 +58,14 @@ export {
   serializeLinkedInA3DurableRecord,
 } from './durableTransactionStore';
 export { createLinkedInA3DurableStore } from './createLinkedInA3DurableStore';
+export { getSharedLinkedInA3DurableStore } from './runtimeDurableStore';
 export {
   resumeLinkedInA3FromReturnUrl,
   resumeLinkedInA3FromLaunchUrl,
   clearLinkedInA3ResumeStateForTests,
 } from './durableResume';
+export { attachLinkedInA3AppRootResume } from './appRootResume';
+export { resetNavigationAfterLinkedInA3SignIn } from './linkedinA3Navigation';
 export {
   isLinkedInTransactionExpired,
   normalizeLinkedInExpiresAtMs,

@@ -3,6 +3,9 @@
  */
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, beforeEach } from 'node:test';
 
 import { createAppCheckBootstrap } from '../appCheck/appCheckBootstrap';
@@ -41,6 +44,8 @@ import {
   clearPendingSocialProfilePrefill,
   peekPendingSocialProfilePrefill,
 } from '../../social/application/socialProfilePrefillStore';
+import { attachLinkedInA3AppRootResume } from '../appRootResume';
+import { resetNavigationAfterLinkedInA3SignIn } from '../linkedinA3Navigation';
 import { assertLinkedInAuthExchangeResult } from '../types';
 
 const nodeCrypto: ClientProofCrypto = {
@@ -807,5 +812,188 @@ describe('durable resume from initial URL', () => {
     if (result.status === 'skipped') {
       assert.equal(result.reason, 'no_initial_url');
     }
+  });
+});
+
+describe('shared LinkedIn post-auth navigation', () => {
+  it('resets to MainTabs for complete profiles', () => {
+    const calls: unknown[] = [];
+    resetNavigationAfterLinkedInA3SignIn(
+      { reset: (state) => calls.push(state) },
+      {
+        profileRoute: 'MainTabs',
+        session: { uid: 'uid-1', email: 'a@b.c' },
+        email: 'a@b.c',
+      },
+    );
+    assert.deepEqual(calls, [
+      { index: 0, routes: [{ name: 'MainTabs' }] },
+    ]);
+  });
+
+  it('resets to ProfileCompletion for incomplete profiles', () => {
+    const calls: Array<{ routes: Array<{ name: string; params?: Record<string, unknown> }> }> =
+      [];
+    resetNavigationAfterLinkedInA3SignIn(
+      { reset: (state) => calls.push(state) },
+      {
+        profileRoute: 'CompleteProfile',
+        session: { uid: 'uid-2', email: null },
+        email: 'queued@example.com',
+      },
+    );
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.routes[0]?.name, 'ProfileCompletion');
+    assert.equal(calls[0]?.routes[0]?.params?.uid, 'uid-2');
+    assert.equal(calls[0]?.routes[0]?.params?.email, 'queued@example.com');
+  });
+});
+
+describe('app-root LinkedIn resume wiring', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+
+  beforeEach(() => {
+    clearLinkedInA3OrchestratorStateForTests();
+    clearLinkedInA3ResumeStateForTests();
+  });
+
+  function createFakeLinking(initial: string | null) {
+    const listeners: Array<(event: { url: string }) => void> = [];
+    return {
+      linking: {
+        getInitialURL: async () => initial,
+        addEventListener: (
+          _type: 'url',
+          handler: (event: { url: string }) => void,
+        ) => {
+          listeners.push(handler);
+          return {
+            remove: () => {
+              const index = listeners.indexOf(handler);
+              if (index >= 0) listeners.splice(index, 1);
+            },
+          };
+        },
+      },
+      emit(url: string) {
+        for (const listener of listeners) listener({ url });
+      },
+    };
+  }
+
+  it('cold-starts from getInitialURL without calling Start', async () => {
+    const pair = await createClientProofPair(nodeCrypto);
+    const store = createInMemoryLinkedInA3DurableStore();
+    await store.save({
+      transactionId: TX,
+      clientProofVerifier: pair.clientProofVerifier,
+      expiresAt: Date.now() + 600_000,
+      startedAt: Date.now(),
+    });
+    let startCalls = 0;
+    let exchangeCalls = 0;
+    const results: Array<{ status: string }> = [];
+    const fake = createFakeLinking(successUrl());
+    const detach = attachLinkedInA3AppRootResume({
+      linking: fake.linking,
+      resumeDeps: {
+        durableStore: store,
+        getClient: async () =>
+          ({
+            start: async () => {
+              startCalls += 1;
+              throw new Error('Start must not run on resume');
+            },
+            exchange: async () => {
+              exchangeCalls += 1;
+              return { customToken: CUSTOM_TOKEN };
+            },
+          }) as any,
+        auth: {
+          getCurrentUid: () => null,
+          signInWithCustomToken: async () => ({ uid: 'uid-1', email: null }),
+        },
+      },
+      onResult: (result) => {
+        results.push({ status: result.status });
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    detach();
+    assert.equal(startCalls, 0);
+    assert.equal(exchangeCalls, 1);
+    assert.equal(results[0]?.status, 'authenticated');
+    assert.equal(await store.load(), null);
+  });
+
+  it('accepts a later warm URL after skipping an unrelated launch URL', async () => {
+    const pair = await createClientProofPair(nodeCrypto);
+    const store = createInMemoryLinkedInA3DurableStore();
+    await store.save({
+      transactionId: TX,
+      clientProofVerifier: pair.clientProofVerifier,
+      expiresAt: Date.now() + 600_000,
+      startedAt: Date.now(),
+    });
+    let startCalls = 0;
+    let exchangeCalls = 0;
+    const statuses: string[] = [];
+    const fake = createFakeLinking('exp+nearsy-ios://expo-development-client/?url=http://10.0.0.1:8081');
+    const detach = attachLinkedInA3AppRootResume({
+      linking: fake.linking,
+      resumeDeps: {
+        durableStore: store,
+        getClient: async () =>
+          ({
+            start: async () => {
+              startCalls += 1;
+              throw new Error('Start must not run on resume');
+            },
+            exchange: async () => {
+              exchangeCalls += 1;
+              return { customToken: CUSTOM_TOKEN };
+            },
+          }) as any,
+        auth: {
+          getCurrentUid: () => null,
+          signInWithCustomToken: async () => ({ uid: 'uid-1', email: null }),
+        },
+      },
+      onResult: (result) => {
+        statuses.push(result.status);
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    fake.emit(successUrl());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    detach();
+    assert.equal(startCalls, 0);
+    assert.equal(exchangeCalls, 1);
+    assert.deepEqual(statuses, ['skipped', 'authenticated']);
+    assert.equal(await store.load(), null);
+  });
+
+  it('wires resume in shared App.tsx and keeps the iOS app a re-export', () => {
+    const app = readFileSync(join(here, '../../../App.tsx'), 'utf8');
+    assert.match(app, /attachLinkedInA3AppRootResume/);
+    assert.match(app, /finalizeLinkedInA3AuthenticatedSession/);
+    assert.match(app, /startAffiliationEntitySearchBootstrap/);
+    assert.match(app, /Linking\.getInitialURL|linking: Linking/);
+    assert.doesNotMatch(app, /client\.start\(/);
+
+    const iosApp = readFileSync(
+      join(here, '../../../../../../apps/nearsy-ios/App.tsx'),
+      'utf8',
+    );
+    assert.match(iosApp, /export \{ default \} from '@nearsy\/shared'/);
+    assert.doesNotMatch(iosApp, /attachLinkedInA3AppRootResume/);
+
+    const adapter = readFileSync(
+      join(here, '../createLinkedInA3DurableStore.ios.ts'),
+      'utf8',
+    );
+    assert.match(adapter, /requireOptionalNativeModule/);
+    assert.match(adapter, /Do not use AsyncStorage/);
+    assert.doesNotMatch(adapter, /from '@react-native-async-storage\/async-storage'/);
   });
 });

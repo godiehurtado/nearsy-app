@@ -2,8 +2,7 @@
  * Restore a LinkedIn A3 Exchange after process death using a return URL
  * (typically Linking.getInitialURL). Does not open a browser or call Start.
  *
- * App.tsx / root navigation wiring is intentionally not applied here (CRJ
- * worktree owns those files). Call resumeLinkedInA3FromLaunchUrl after merge.
+ * App root wiring lives in packages/shared/src/App.tsx via attachLinkedInA3AppRootResume.
  */
 
 import { isLinkedInTransactionExpired } from './expiresAt';
@@ -239,7 +238,7 @@ export async function resumeLinkedInA3FromReturnUrl(
 }
 
 /**
- * Launch-path helper. Pass Linking.getInitialURL after CRJ merge.
+ * Launch-path helper. Used by attachLinkedInA3AppRootResume for cold start.
  */
 export async function resumeLinkedInA3FromLaunchUrl(
   getInitialUrl: () => Promise<string | null>,

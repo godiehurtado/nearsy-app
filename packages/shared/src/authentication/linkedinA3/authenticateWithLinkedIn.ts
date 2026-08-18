@@ -11,12 +11,14 @@ import { createExpoClientProofCrypto } from './clientProof';
 import { getLinkedInA3CallableClient } from './iosLinkedInA3Foundation';
 import {
   runLinkedInA3BrowserAuthFlow,
+  type LinkedInA3FirebaseAuthPort,
   type LinkedInA3FlowResult,
 } from './orchestrator';
 import { LinkedInA3ClientError } from './sanitize';
 import { resolveNearsyFirebaseEnvironment } from './environment/nearsyFirebaseEnvironment';
-import { createLinkedInA3DurableStore } from './createLinkedInA3DurableStore';
+import { getSharedLinkedInA3DurableStore } from './runtimeDurableStore';
 import { queueLinkedInCrjPrefillIfNeeded } from './profilePrefill';
+import type { LinkedInAuthProfileHints } from './types';
 import Constants from 'expo-constants';
 
 export type LinkedInA3ProfileRoute = 'MainTabs' | 'CompleteProfile';
@@ -51,7 +53,7 @@ export function isLinkedInA3SignInEnabledForRuntime(): boolean {
   }
 }
 
-async function createDefaultAuthPort() {
+export function createLinkedInA3FirebaseAuthPort(): LinkedInA3FirebaseAuthPort {
   return {
     getCurrentUid: () => firebaseAuth.currentUser?.uid ?? null,
     async signInWithCustomToken(customToken: string) {
@@ -72,38 +74,15 @@ async function createDefaultAuthPort() {
 }
 
 /**
- * Full happy-path LinkedIn A3 sign-in for Development iOS.
+ * Shared post-auth finalizer for live LinkedIn and durable resume.
+ * profileSetupCompleted is the only gate; pending prefill is queued before navigation.
  */
-export async function signInWithLinkedInA3(): Promise<LinkedInA3SignInOutcome> {
-  if (!isLinkedInA3SignInEnabledForRuntime()) {
-    return {
-      status: 'failed',
-      error: new LinkedInA3ClientError(
-        'LINKEDIN_DISABLED',
-        'LinkedIn authentication is disabled in this environment.',
-      ),
-    };
-  }
-
-  const WebBrowser = await import('expo-web-browser');
-  const crypto = await createExpoClientProofCrypto();
-  const browser = createExpoLinkedInAuthBrowser(WebBrowser);
-  const auth = await createDefaultAuthPort();
-
-  const flow = await runLinkedInA3BrowserAuthFlow({
-    platform: 'ios',
-    crypto,
-    browser,
-    getClient: getLinkedInA3CallableClient,
-    auth,
-    durableStore: createLinkedInA3DurableStore(),
-  });
-
-  if (flow.status !== 'authenticated') {
-    return flow;
-  }
-
-  const uid = flow.session.uid;
+export async function finalizeLinkedInA3AuthenticatedSession(input: {
+  uid: string;
+  sessionEmail: string | null;
+  profileHints?: LinkedInAuthProfileHints;
+}): Promise<LinkedInA3SignInOutcome> {
+  const uid = input.uid;
   if (!firebaseAuth.currentUser || firebaseAuth.currentUser.uid !== uid) {
     return {
       status: 'failed',
@@ -146,15 +125,15 @@ export async function signInWithLinkedInA3(): Promise<LinkedInA3SignInOutcome> {
     const queued = queueLinkedInCrjPrefillIfNeeded({
       uid,
       profileComplete: false,
-      givenName: flow.profileHints?.givenName,
-      familyName: flow.profileHints?.familyName,
-      displayName: flow.profileHints?.displayName ?? authUser.displayName,
-      photoUrl: flow.profileHints?.photoUrl,
+      givenName: input.profileHints?.givenName,
+      familyName: input.profileHints?.familyName,
+      displayName: input.profileHints?.displayName ?? authUser.displayName,
+      photoUrl: input.profileHints?.photoUrl,
       photoURL: authUser.photoURL,
     });
     if (typeof __DEV__ !== 'undefined' && __DEV__) {
       console.log('[linkedinA3.prefill]', {
-        hasExchangeHints: Boolean(flow.profileHints),
+        hasExchangeHints: Boolean(input.profileHints),
         hasGivenName: queued.hasGivenName,
         hasFamilyName: queued.hasFamilyName,
         hasDisplayName: queued.hasDisplayName,
@@ -164,7 +143,7 @@ export async function signInWithLinkedInA3(): Promise<LinkedInA3SignInOutcome> {
     }
   }
 
-  let email = flow.session.email;
+  let email = input.sessionEmail;
   try {
     const profile = await getUserProfile(uid);
     if (profile && typeof (profile as { email?: unknown }).email === 'string') {
@@ -180,4 +159,43 @@ export async function signInWithLinkedInA3(): Promise<LinkedInA3SignInOutcome> {
     profileRoute,
     email,
   };
+}
+
+/**
+ * Full happy-path LinkedIn A3 sign-in for Development iOS.
+ */
+export async function signInWithLinkedInA3(): Promise<LinkedInA3SignInOutcome> {
+  if (!isLinkedInA3SignInEnabledForRuntime()) {
+    return {
+      status: 'failed',
+      error: new LinkedInA3ClientError(
+        'LINKEDIN_DISABLED',
+        'LinkedIn authentication is disabled in this environment.',
+      ),
+    };
+  }
+
+  const WebBrowser = await import('expo-web-browser');
+  const crypto = await createExpoClientProofCrypto();
+  const browser = createExpoLinkedInAuthBrowser(WebBrowser);
+  const auth = createLinkedInA3FirebaseAuthPort();
+
+  const flow = await runLinkedInA3BrowserAuthFlow({
+    platform: 'ios',
+    crypto,
+    browser,
+    getClient: getLinkedInA3CallableClient,
+    auth,
+    durableStore: getSharedLinkedInA3DurableStore(),
+  });
+
+  if (flow.status !== 'authenticated') {
+    return flow;
+  }
+
+  return finalizeLinkedInA3AuthenticatedSession({
+    uid: flow.session.uid,
+    sessionEmail: flow.session.email,
+    profileHints: flow.profileHints,
+  });
 }

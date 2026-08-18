@@ -1,12 +1,21 @@
 // packages/shared/src/App.tsx
 import './background/locationTask';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, Linking, Platform, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { firebaseAuth, firestoreDb } from './config/firebaseConfig';
-import { initI18n } from './i18n';
+import { initI18n, useTranslation } from './i18n';
 import { startAffiliationEntitySearchBootstrap } from './affiliations/iosAffiliationEntitySearchBootstrap';
+import { attachLinkedInA3AppRootResume } from './authentication/linkedinA3/appRootResume';
+import {
+  createLinkedInA3FirebaseAuthPort,
+  finalizeLinkedInA3AuthenticatedSession,
+  isLinkedInA3SignInEnabledForRuntime,
+} from './authentication/linkedinA3/authenticateWithLinkedIn';
+import { getLinkedInA3CallableClient } from './authentication/linkedinA3/iosLinkedInA3Foundation';
+import { resetNavigationAfterLinkedInA3SignIn } from './authentication/linkedinA3/linkedinA3Navigation';
+import { getSharedLinkedInA3DurableStore } from './authentication/linkedinA3/runtimeDurableStore';
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -51,6 +60,77 @@ async function ensureAndroidChannel() {
 }
 
 export const navigationRef = createNavigationContainerRef();
+
+function LinkedInA3ResumeBridge() {
+  const { t } = useTranslation();
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    if (!isLinkedInA3SignInEnabledForRuntime()) return;
+
+    let cancelled = false;
+
+    const detach = attachLinkedInA3AppRootResume({
+      linking: Linking,
+      resumeDeps: {
+        durableStore: getSharedLinkedInA3DurableStore(),
+        getClient: getLinkedInA3CallableClient,
+        auth: createLinkedInA3FirebaseAuthPort(),
+      },
+      onResult: async (result) => {
+        if (cancelled || result.status === 'skipped') return;
+
+        if (result.status !== 'authenticated') {
+          if (
+            result.status === 'expired' ||
+            result.status === 'failed' ||
+            result.status === 'provider_error'
+          ) {
+            Alert.alert(
+              t('authentication.login.alerts.loginErrorTitle'),
+              t('authentication.social.errors.generic'),
+            );
+          }
+          return;
+        }
+
+        const finalized = await finalizeLinkedInA3AuthenticatedSession({
+          uid: result.session.uid,
+          sessionEmail: result.session.email,
+          profileHints: result.profileHints,
+        });
+        if (cancelled) return;
+        if (finalized.status !== 'authenticated') {
+          Alert.alert(
+            t('authentication.login.alerts.loginErrorTitle'),
+            t('authentication.social.errors.generic'),
+          );
+          return;
+        }
+        if (!navigationRef.isReady()) return;
+        Keyboard.dismiss();
+        setTimeout(() => {
+          if (cancelled || !navigationRef.isReady()) return;
+          resetNavigationAfterLinkedInA3SignIn(
+            {
+              reset: (state) => {
+                (navigationRef as any).reset(state);
+              },
+            },
+            finalized,
+          );
+        }, 150);
+      },
+    });
+
+    return () => {
+      cancelled = true;
+      detach();
+    };
+  }, [t]);
+
+  return null;
+}
 
 /**
  * Holds a neutral surface until the persisted appearance preference is known,
@@ -167,6 +247,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
         }
       />
       <NavigationContainer ref={navigationRef} theme={navTheme}>
+        <LinkedInA3ResumeBridge />
         <AppNavigator />
       </NavigationContainer>
     </>
