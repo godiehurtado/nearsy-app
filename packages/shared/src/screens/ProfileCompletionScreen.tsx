@@ -29,6 +29,7 @@ import { RegistrationFadeSlideIn } from '../components/registration/Registration
 import { FormInput } from '../components/registration/FormInput';
 import { OnboardingInterestCategoryPanel } from '../components/registration/OnboardingInterestCategoryPanel';
 import { InterestsCelebrationStep } from '../components/registration/InterestsCelebrationStep';
+import { InterestsIntroVisual } from '../components/registration/InterestsIntroVisual';
 import {
   crjPhaseProgress,
   type CrjProgressPhase,
@@ -60,6 +61,10 @@ import {
   resolveModePresentation,
   type ProfileMode,
 } from '../profile/profileModeFields';
+import {
+  buildCrjDetailsPresentation,
+  isCrjProfileDetailsValid,
+} from '../profile/crjProfileDetails';
 import {
   buildCrjInterestPersistencePatch,
   countFinalOnboardingInterests,
@@ -217,7 +222,6 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [occupation, setOccupation] = useState('');
   const [company, setCompany] = useState('');
-  const [status, setStatus] = useState('');
   const [bio, setBio] = useState('');
   const [selectedInterests, setSelectedInterests] = useState<
     OnboardingSelectedInterest[]
@@ -278,7 +282,6 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     setLastName((prev) => presentation.lastName || prev);
     setOccupation(presentation.occupation ?? '');
     setCompany(presentation.company ?? '');
-    setStatus(presentation.status ?? '');
     setBio(presentation.bio ?? '');
 
     // Never wipe a Google/user wizard photo with an empty mode shell.
@@ -353,13 +356,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             personal: {
               profileImage: null,
               occupation: '',
-              status: '',
               bio: '',
             },
             professional: {
               profileImage: null,
               occupation: '',
-              status: '',
               bio: '',
               company: '',
             },
@@ -475,11 +476,13 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         return firstName.trim().length > 0 && lastName.trim().length > 0;
       case 'photo':
         return !!photoUri?.trim();
-      case 'details': {
-        if (!occupation.trim() || !status.trim() || !bio.trim()) return false;
-        if (mode === 'professional' && !company.trim()) return false;
-        return true;
-      }
+      case 'details':
+        return isCrjProfileDetailsValid({
+          mode,
+          occupation,
+          bio,
+          company,
+        });
       case 'interestsIntro':
       case 'interest':
       case 'interestsCelebration':
@@ -583,14 +586,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     if (!uid || !mode) return;
     const patch = buildActiveProfileSavePatch({
       mode,
-      presentation: {
-        occupation: occupation.trim(),
-        status: status.trim(),
-        bio: bio.trim(),
-        ...(mode === 'professional'
-          ? { company: company.trim() }
-          : {}),
-      },
+      presentation: buildCrjDetailsPresentation({
+        mode,
+        occupation,
+        bio,
+        company,
+      }),
       projectActiveToTopLevel: true,
     });
     await updateUserProfilePartial(uid, {
@@ -1161,17 +1162,6 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                   />
                 ) : null}
                 <FormInput
-                  label={t(
-                    'onboarding.profileCompletion.details.status' as any,
-                  )}
-                  placeholder={t(
-                    'onboarding.profileCompletion.details.statusPlaceholder' as any,
-                  )}
-                  value={status}
-                  onChangeText={setStatus}
-                  autoCapitalize="sentences"
-                />
-                <FormInput
                   label={t('onboarding.profileCompletion.details.bio' as any)}
                   placeholder={t(
                     'onboarding.profileCompletion.details.bioPlaceholder' as any,
@@ -1190,21 +1180,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
 
           {step.kind === 'interestsIntro' && (
             <View style={styles.centerBody}>
-              <View
-                style={[
-                  styles.introIconRing,
-                  {
-                    borderColor: palette.primary,
-                    backgroundColor: palette.chipBg,
-                  },
-                ]}
-              >
-                <Ionicons
-                  name="people-outline"
-                  size={36}
-                  color={palette.primary}
-                />
-              </View>
+              <InterestsIntroVisual />
               <Text
                 style={[
                   styles.introEyebrow,
@@ -1233,53 +1209,6 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               >
                 {t('onboarding.profileCompletion.interestsIntro.body')}
               </Text>
-              <View style={styles.introChipRow}>
-                {(
-                  [
-                    {
-                      icon: 'cafe-outline' as const,
-                      color: '#D97706',
-                      label: 'Coffee',
-                    },
-                    {
-                      icon: 'musical-notes-outline' as const,
-                      color: '#7C3AED',
-                      label: 'Music',
-                    },
-                    {
-                      icon: 'bicycle-outline' as const,
-                      color: '#059669',
-                      label: 'Cycling',
-                    },
-                  ] as const
-                ).map((chip) => (
-                  <View
-                    key={chip.label}
-                    style={[
-                      styles.introChip,
-                      {
-                        borderColor: palette.border,
-                        backgroundColor: palette.panel,
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name={chip.icon}
-                      size={14}
-                      color={chip.color}
-                    />
-                    <Text
-                      style={{
-                        color: palette.textPrimary,
-                        fontSize: fontSize.sm,
-                        fontWeight: fontWeight.semibold,
-                      }}
-                    >
-                      {chip.label}
-                    </Text>
-                  </View>
-                ))}
-              </View>
               <Text
                 style={[
                   styles.introSupport,
@@ -1461,7 +1390,7 @@ const styles = StyleSheet.create({
     lineHeight: fontSize.base * 1.5,
     marginTop: spacing.sm,
   },
-  formBlock: { marginTop: spacing.xxl },
+  formBlock: { marginTop: spacing.xxl, gap: spacing.lg },
   formStack: { gap: spacing.lg, marginTop: spacing.xxl },
   bioInput: {
     minHeight: 110,
@@ -1516,37 +1445,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: spacing.xxl,
   },
-  introIconRing: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.lg,
-  },
   introEyebrow: {
     fontSize: fontSize.xs,
     fontWeight: fontWeight.extrabold,
     letterSpacing: 1.2,
     textTransform: 'uppercase',
     marginBottom: spacing.sm,
-  },
-  introChipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.xl,
-  },
-  introChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: radius.pill,
-    borderWidth: 1,
   },
   introSupport: {
     fontSize: fontSize.sm,

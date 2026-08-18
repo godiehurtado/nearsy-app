@@ -1,5 +1,5 @@
 /**
- * Registration wizard — auth phase only (Birth → Email → Password → Phone+Terms).
+ * Registration wizard — auth phase only (Email → Password → Birth → Phone+Terms).
  *
  * TEMPORARY BYPASS (documented):
  *   Phone → (OTP pending — not implemented) → Firebase Email Authentication
@@ -36,6 +36,10 @@ import { RegistrationFadeSlideIn } from '../components/registration/Registration
 import { FormInput } from '../components/registration/FormInput';
 import { REGISTRATION_COUNTRIES } from '../components/registration/countries';
 import { authPhaseProgress } from '../components/registration/crjProgress';
+import {
+  EMAIL_REGISTER_STEPS,
+  type EmailRegisterStep,
+} from '../components/registration/emailRegisterSteps';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { useAppTheme } from '../theme/ThemeContext';
 import { fontSize, fontWeight } from '../theme/typography';
@@ -66,8 +70,7 @@ import { useTranslation } from '../i18n';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
 
-const EMAIL_STEPS = ['birth', 'email', 'password', 'phone'] as const;
-type Step = (typeof EMAIL_STEPS)[number];
+type Step = EmailRegisterStep;
 
 const TERMS_URL = 'https://nearsy.app/legal';
 
@@ -151,7 +154,7 @@ export default function RegisterScreen({ navigation }: Props) {
     phone: '',
   });
 
-  const step: Step = EMAIL_STEPS[stepIndex];
+  const step: Step = EMAIL_REGISTER_STEPS[stepIndex];
   const deviceLocaleTag =
     Localization.getLocales()[0]?.languageTag ?? 'en-US';
   const birthOrder = useMemo(
@@ -412,7 +415,7 @@ export default function RegisterScreen({ navigation }: Props) {
           </Text>
         </Pressable>
         <RegistrationProgress
-          progress={authPhaseProgress(stepIndex, EMAIL_STEPS.length)}
+          progress={authPhaseProgress(stepIndex, EMAIL_REGISTER_STEPS.length)}
         />
       </View>
 
