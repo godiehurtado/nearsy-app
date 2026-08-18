@@ -59,9 +59,12 @@ describe('Apple sign-in UI / hook policy', () => {
     const login = readSharedSource('screens/LoginScreen.tsx');
     const welcome = readSharedSource('screens/WelcomeScreen.tsx');
     assert.match(login, /googleSubmitting \|\| appleSubmitting|appleSubmitting/);
-    assert.match(login, /busy = submitting \|\| googleSubmitting \|\| appleSubmitting/);
+    assert.match(
+      login,
+      /submitting \|\| googleSubmitting \|\| appleSubmitting \|\| linkedInSubmitting/,
+    );
     assert.match(welcome, /socialBusy = googleSubmitting \|\| appleSubmitting/);
-    assert.match(login, /appleSubmitting \? 'apple'/);
+    assert.match(login, /appleSubmitting\s+\? 'apple'/);
     assert.match(welcome, /appleSubmitting \? 'apple'/);
   });
 });
