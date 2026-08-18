@@ -69,5 +69,5 @@ export function buildCrjAffiliationPersistencePatch(
   };
 }
 
-/** After final affiliation category — existing post-I6 CRJ step (Location today). */
-export const POST_AFFILIATIONS_CRJ_STEP = 'location' as const;
+/** After final affiliation category — CRJ-I7 Social Media. */
+export const POST_AFFILIATIONS_CRJ_STEP = 'socialMedia' as const;

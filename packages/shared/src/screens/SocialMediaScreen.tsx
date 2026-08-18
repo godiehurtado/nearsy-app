@@ -33,7 +33,7 @@ type RouteParams = {
   mode?: ProfileMode;
 };
 
-type SocialFieldKey = keyof SocialLinks;
+type SocialFieldKey = Exclude<keyof SocialLinks, 'custom'>;
 
 type SocialIconSet = 'ionicons' | 'fontawesome6';
 
@@ -218,7 +218,7 @@ export default function SocialMediaScreen() {
     };
   }, [routeMode, routeUid]);
 
-  const onChangeLink = (key: keyof SocialLinks, val: string) =>
+  const onChangeLink = (key: SocialFieldKey, val: string) =>
     setLinks((p) => ({ ...p, [key]: val }));
 
   const handleSave = async () => {

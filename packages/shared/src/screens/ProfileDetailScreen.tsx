@@ -67,7 +67,9 @@ type ProfileDoc = {
       | 'website',
       string
     >
-  >;
+  > & {
+    custom?: { name: string; url: string }[];
+  };
 
   socialLinksProfessional?: Partial<
     Record<
@@ -81,7 +83,9 @@ type ProfileDoc = {
       | 'website',
       string
     >
-  >;
+  > & {
+    custom?: { name: string; url: string }[];
+  };
 
   photosPersonal?: { url: string; path?: string }[];
   photosProfessional?: { url: string; path?: string }[];
@@ -318,6 +322,25 @@ export default function ProfileDetailScreen() {
     );
   }, [p?.mode, p?.socialLinksPersonal, p?.socialLinksProfessional]);
 
+  const socialPlatformEntries = useMemo(() => {
+    return Object.entries(socialForMode).filter(
+      ([key, url]) => key !== 'custom' && typeof url === 'string' && !!url,
+    ) as [string, string][];
+  }, [socialForMode]);
+
+  const socialCustomEntries = useMemo(() => {
+    const rows = socialForMode.custom;
+    return Array.isArray(rows)
+      ? rows.filter(
+          (row) =>
+            row &&
+            typeof row.name === 'string' &&
+            typeof row.url === 'string' &&
+            row.url.trim(),
+        )
+      : [];
+  }, [socialForMode]);
+
   const interestGroups = useMemo(() => {
     const affObj: InterestAffiliations =
       (p?.mode === 'professional'
@@ -532,16 +555,15 @@ export default function ProfileDetailScreen() {
             </View>
           </View>
 
-          {Object.values(socialForMode).some(Boolean) && (
+          {(socialPlatformEntries.length > 0 ||
+            socialCustomEntries.length > 0) && (
             <View style={styles.socialRow}>
-              {Object.entries(socialForMode)
-                .filter(([, url]) => !!url)
-                .map(([key, url]) => {
+              {socialPlatformEntries.map(([key, url]) => {
                   const meta = SOCIAL_META[key] || SOCIAL_META.website;
                   return (
                     <TouchableOpacity
                       key={key}
-                      onPress={() => openLink(url!)}
+                      onPress={() => openLink(url)}
                       activeOpacity={0.8}
                       style={styles.socialBtn}
                     >
@@ -549,6 +571,21 @@ export default function ProfileDetailScreen() {
                     </TouchableOpacity>
                   );
                 })}
+              {socialCustomEntries.map((row, index) => (
+                <TouchableOpacity
+                  key={`custom-${row.name}-${index}`}
+                  onPress={() => openLink(row.url)}
+                  activeOpacity={0.8}
+                  style={styles.socialBtn}
+                  accessibilityLabel={row.name}
+                >
+                  <Ionicons
+                    name="globe-outline"
+                    size={30}
+                    color={SOCIAL_META.website.color}
+                  />
+                </TouchableOpacity>
+              ))}
             </View>
           )}
 

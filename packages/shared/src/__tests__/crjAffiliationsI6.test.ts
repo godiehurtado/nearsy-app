@@ -251,10 +251,10 @@ describe('CRJ-I6 Affiliations', () => {
     assert.equal(listOnboardingAffiliationCategoryIds()[0], 'education');
   });
 
-  it('P — final Affiliations continuation returns to existing post-I6 step', () => {
-    assert.equal(POST_AFFILIATIONS_CRJ_STEP, 'location');
+  it('P — final Affiliations continuation enters Social Media', () => {
+    assert.equal(POST_AFFILIATIONS_CRJ_STEP, 'socialMedia');
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
-    assert.ok(screen.includes("'location'"));
+    assert.ok(screen.includes("kind: 'socialMedia'"));
     assert.ok(screen.includes('async function leaveLastAffiliationCategory()'));
     assert.ok(screen.includes('await persistAffiliations()'));
   });

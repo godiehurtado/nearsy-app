@@ -3,7 +3,7 @@
  *
  * Flow: Profile Type → Name → Last Name → Photo → Profile Details →
  * Interests (11 category screens) → Interests Celebration / Affiliations
- * Transition → Affiliations (7 category screens) →
+ * Transition → Affiliations (7 category screens) → Social Media →
  * Location → Notifications → Registration Success → MainTabs.
  *
  * TEMPORARY: Phone OTP remains out of scope (handled earlier in Register).
@@ -30,6 +30,7 @@ import { RegistrationFadeSlideIn } from '../components/registration/Registration
 import { FormInput } from '../components/registration/FormInput';
 import { OnboardingInterestCategoryPanel } from '../components/registration/OnboardingInterestCategoryPanel';
 import { OnboardingAffiliationCategoryPanel } from '../components/registration/OnboardingAffiliationCategoryPanel';
+import { OnboardingSocialMediaStep } from '../components/registration/OnboardingSocialMediaStep';
 import { InterestsCelebrationStep } from '../components/registration/InterestsCelebrationStep';
 import { InterestsIntroVisual } from '../components/registration/InterestsIntroVisual';
 import {
@@ -87,6 +88,21 @@ import {
   type OnboardingSelectedAffiliation,
 } from '../affiliations/onboardingAffiliationCatalog';
 import { buildCrjAffiliationPersistencePatch } from '../affiliations/onboardingAffiliationPersistence';
+import {
+  emptyCrjSocialDraftValues,
+  type CrjSocialDraftValues,
+} from '../social/onboardingSocialCatalog';
+import {
+  POST_SOCIAL_MEDIA_CRJ_STEP,
+  buildCrjSocialLinksPersistencePatch,
+  readCrjSocialDraft,
+  readExistingSocialLinks,
+} from '../social/onboardingSocialPersistence';
+import {
+  collectSocialFieldErrors,
+  type CrjSocialFieldErrors,
+} from '../social/socialLinkNormalize';
+import type { SocialCustomLink } from '../types/profile';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileCompletion'>;
 
@@ -99,7 +115,7 @@ const PRE_INTEREST_STEPS = [
 ] as const;
 const AFFILIATION_CATEGORY_IDS = listOnboardingAffiliationCategoryIds();
 const POST_AFFILIATION_STEPS = [
-  'location',
+  POST_SOCIAL_MEDIA_CRJ_STEP,
   'notifications',
   'success',
 ] as const;
@@ -121,6 +137,7 @@ type ResolvedStep =
       affiliationCategoryIndex: number;
       categoryId: OnboardingAffiliationCategoryId;
     }
+  | { kind: 'socialMedia' }
   | { kind: PostAffiliationStep };
 
 function resolveStep(stepIndex: number): ResolvedStep {
@@ -148,6 +165,8 @@ function resolveStep(stepIndex: number): ResolvedStep {
     };
   }
   offset -= AFFILIATION_CATEGORY_IDS.length;
+  if (offset === 0) return { kind: 'socialMedia' };
+  offset -= 1;
   return { kind: POST_AFFILIATION_STEPS[offset]! };
 }
 
@@ -269,6 +288,8 @@ function progressPhaseForStep(step: ResolvedStep): CrjProgressPhase | null {
       return 'interests';
     case 'affiliation':
       return 'affiliations';
+    case 'socialMedia':
+      return 'social';
     case 'location':
       return 'location';
     case 'notifications':
@@ -304,6 +325,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [selectedAffiliations, setSelectedAffiliations] = useState<
     OnboardingSelectedAffiliation[]
   >([]);
+  const [socialDraft, setSocialDraft] = useState<CrjSocialDraftValues>(
+    emptyCrjSocialDraftValues,
+  );
+  const [socialCustom, setSocialCustom] = useState<SocialCustomLink[]>([]);
+  const [socialFieldErrors, setSocialFieldErrors] =
+    useState<CrjSocialFieldErrors>({});
   const [activeInterestGroupByCategory, setActiveInterestGroupByCategory] =
     useState<Partial<Record<OnboardingInterestCategoryId, string>>>({});
   const [shellData, setShellData] = useState<Record<string, unknown> | null>(
@@ -375,6 +402,10 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
 
     setSelectedInterests(readOnboardingInterests(data, nextMode));
     setSelectedAffiliations(readOnboardingAffiliations(data, nextMode));
+    const social = readCrjSocialDraft(data, nextMode);
+    setSocialDraft(social.values);
+    setSocialCustom(social.custom);
+    setSocialFieldErrors({});
   }
 
   /**
@@ -568,6 +599,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       case 'interest':
       case 'interestsCelebration':
       case 'affiliation':
+      case 'socialMedia':
         return true;
       case 'location':
       case 'notifications':
@@ -723,6 +755,23 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     }));
   }
 
+  async function persistSocialMedia() {
+    if (!uid || !mode) return;
+    const existing = readExistingSocialLinks(shellData, mode);
+    const patch = buildCrjSocialLinksPersistencePatch(
+      mode,
+      socialDraft,
+      socialCustom,
+      existing,
+    );
+    await updateUserProfilePartial(uid, patch);
+    setShellData((prev) => ({
+      ...(prev ?? {}),
+      mode,
+      ...patch,
+    }));
+  }
+
   async function requestLocation() {
     const current = await Location.getForegroundPermissionsAsync();
     if (current.granted) {
@@ -828,6 +877,33 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       } else {
         setStepIndex((i) => i + 1);
       }
+    } catch (e: any) {
+      Alert.alert(
+        t('onboarding.profileCompletion.saveErrorTitle'),
+        e?.message || t('onboarding.profileCompletion.saveErrorMessage'),
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function advanceSocialMedia(options: { requireValidFields: boolean }) {
+    if (step.kind !== 'socialMedia' || submitting) return;
+
+    const errors = collectSocialFieldErrors(
+      socialDraft,
+      t('onboarding.profileCompletion.socialMedia.invalid' as any),
+    );
+    if (options.requireValidFields && Object.keys(errors).length > 0) {
+      setSocialFieldErrors(errors);
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      await persistSocialMedia();
+      setSocialFieldErrors({});
+      setStepIndex((i) => i + 1);
     } catch (e: any) {
       Alert.alert(
         t('onboarding.profileCompletion.saveErrorTitle'),
@@ -999,6 +1075,24 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               onPress={() => {
                 if (submitting) return;
                 void advanceAffiliation();
+              }}
+            />
+          </View>
+        ) : step.kind === 'socialMedia' ? (
+          <View style={styles.actionStack}>
+            <PrimaryButton
+              label={t('onboarding.profileCompletion.socialMedia.next' as any)}
+              onPress={() => {
+                void advanceSocialMedia({ requireValidFields: true });
+              }}
+              disabled={submitting}
+              loading={submitting}
+            />
+            <SecondaryButton
+              label={t('onboarding.profileCompletion.socialMedia.skip' as any)}
+              onPress={() => {
+                if (submitting) return;
+                void advanceSocialMedia({ requireValidFields: false });
               }}
             />
           </View>
@@ -1411,6 +1505,24 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               categoryId={step.categoryId}
               selected={selectedAffiliations}
               onChangeSelected={setSelectedAffiliations}
+            />
+          )}
+
+          {step.kind === 'socialMedia' && (
+            <OnboardingSocialMediaStep
+              values={socialDraft}
+              custom={socialCustom}
+              onChangeValues={setSocialDraft}
+              onChangeCustom={setSocialCustom}
+              fieldErrors={socialFieldErrors}
+              onClearFieldError={(id) => {
+                setSocialFieldErrors((prev) => {
+                  if (!prev[id]) return prev;
+                  const next = { ...prev };
+                  delete next[id];
+                  return next;
+                });
+              }}
             />
           )}
 
