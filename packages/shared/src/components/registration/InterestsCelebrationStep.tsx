@@ -18,10 +18,9 @@ import { fontSize, fontWeight } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { useTranslation } from '../../i18n';
 import {
-  countFinalOnboardingInterests,
   type OnboardingSelectedInterest,
 } from '../../interests/onboardingInterestCatalog';
-import { celebrationEntryDelayMs } from './celebrationMotion';
+import { celebrationEntryDelayMs, celebrationNextUpDelayMs } from './celebrationMotion';
 
 /** I6 can switch this to route into Affiliations without redesigning the screen. */
 export type InterestsCelebrationContinueTarget = 'location' | 'affiliations';
@@ -87,7 +86,6 @@ export function InterestsCelebrationStep({ selected }: Props) {
   const { t } = useTranslation();
   const reduceMotion = useReducedMotion();
 
-  const total = countFinalOnboardingInterests(selected);
   const iconBadges = useMemo(
     () =>
       selected
@@ -113,6 +111,8 @@ export function InterestsCelebrationStep({ selected }: Props) {
   const badge4 = useSharedValue(reduceMotion ? 1 : 0);
   const badge5 = useSharedValue(reduceMotion ? 1 : 0);
   const badgeProgress = [badge0, badge1, badge2, badge3, badge4, badge5];
+  const nextUpOpacity = useSharedValue(reduceMotion ? 1 : 0);
+  const nextUpTranslateY = useSharedValue(reduceMotion ? 0 : 8);
 
   useEffect(() => {
     if (reduceMotion) {
@@ -123,6 +123,8 @@ export function InterestsCelebrationStep({ selected }: Props) {
       badgeProgress.forEach((value) => {
         value.value = 1;
       });
+      nextUpOpacity.value = 1;
+      nextUpTranslateY.value = 0;
       return;
     }
 
@@ -162,6 +164,14 @@ export function InterestsCelebrationStep({ selected }: Props) {
       -1,
       false,
     );
+    nextUpOpacity.value = withDelay(
+      celebrationNextUpDelayMs(),
+      withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }),
+    );
+    nextUpTranslateY.value = withDelay(
+      celebrationNextUpDelayMs(),
+      withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) }),
+    );
   }, [
     badge0,
     badge1,
@@ -175,6 +185,8 @@ export function InterestsCelebrationStep({ selected }: Props) {
     haloScale,
     markOpacity,
     markScale,
+    nextUpOpacity,
+    nextUpTranslateY,
     reduceMotion,
   ]);
 
@@ -186,6 +198,11 @@ export function InterestsCelebrationStep({ selected }: Props) {
   const markAnimatedStyle = useAnimatedStyle(() => ({
     opacity: markOpacity.value,
     transform: [{ scale: markScale.value }],
+  }));
+
+  const nextUpAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: nextUpOpacity.value,
+    transform: [{ translateY: nextUpTranslateY.value }],
   }));
 
   return (
@@ -232,22 +249,22 @@ export function InterestsCelebrationStep({ selected }: Props) {
         {t('onboarding.profileCompletion.interestsCelebration.title')}
       </Text>
       <Text style={[styles.body, { color: palette.textSecondary }]}>
-        {t('onboarding.profileCompletion.interestsCelebration.body', {
-          count: total,
-        })}
+        {t('onboarding.profileCompletion.interestsCelebration.body')}
       </Text>
 
-      <View style={[styles.rule, { backgroundColor: palette.border }]} />
+      <Animated.View style={[styles.nextUp, nextUpAnimatedStyle]}>
+        <View style={[styles.rule, { backgroundColor: palette.border }]} />
 
-      <Text style={[styles.nextEyebrow, { color: palette.textMuted }]}>
-        {t('onboarding.profileCompletion.interestsCelebration.nextEyebrow')}
-      </Text>
-      <Text style={[styles.nextTitle, { color: palette.textPrimary }]}>
-        {t('onboarding.profileCompletion.interestsCelebration.nextTitle')}
-      </Text>
-      <Text style={[styles.nextBody, { color: palette.textSecondary }]}>
-        {t('onboarding.profileCompletion.interestsCelebration.nextBody')}
-      </Text>
+        <Text style={[styles.nextEyebrow, { color: palette.textMuted }]}>
+          {t('onboarding.profileCompletion.interestsCelebration.nextEyebrow')}
+        </Text>
+        <Text style={[styles.nextTitle, { color: palette.textPrimary }]}>
+          {t('onboarding.profileCompletion.interestsCelebration.nextTitle')}
+        </Text>
+        <Text style={[styles.nextBody, { color: palette.textSecondary }]}>
+          {t('onboarding.profileCompletion.interestsCelebration.nextBody')}
+        </Text>
+      </Animated.View>
     </View>
   );
 }
@@ -317,6 +334,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.sm,
     maxWidth: 280,
+  },
+  nextUp: {
+    width: '100%',
+    alignItems: 'center',
   },
   rule: {
     height: 1,

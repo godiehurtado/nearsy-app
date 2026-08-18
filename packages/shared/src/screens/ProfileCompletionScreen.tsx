@@ -2,7 +2,8 @@
  * Profile Completion wizard — CRJ profile-creation phase after Authentication.
  *
  * Flow: Profile Type → Name → Last Name → Photo → Profile Details →
- * Interests (11 category screens) → Interests Celebration →
+ * Interests (11 category screens) → Interests Celebration / Affiliations
+ * Transition → Affiliations (7 category screens) →
  * Location → Notifications → Registration Success → MainTabs.
  *
  * TEMPORARY: Phone OTP remains out of scope (handled earlier in Register).
@@ -28,6 +29,7 @@ import { RegistrationProgress } from '../components/registration/RegistrationPro
 import { RegistrationFadeSlideIn } from '../components/registration/RegistrationFadeSlideIn';
 import { FormInput } from '../components/registration/FormInput';
 import { OnboardingInterestCategoryPanel } from '../components/registration/OnboardingInterestCategoryPanel';
+import { OnboardingAffiliationCategoryPanel } from '../components/registration/OnboardingAffiliationCategoryPanel';
 import { InterestsCelebrationStep } from '../components/registration/InterestsCelebrationStep';
 import { InterestsIntroVisual } from '../components/registration/InterestsIntroVisual';
 import {
@@ -47,7 +49,7 @@ import {
   updateUserProfilePartial,
   updateUserMode,
 } from '../services/firestoreService';
-import { uploadProfileImage } from '../services/storageService';
+import { uploadProfileImage, uploadAffiliationImage } from '../services/storageService';
 import {
   commitPendingSocialNamePrefill,
   clearPendingSocialProfilePrefill,
@@ -79,6 +81,12 @@ import {
   isHierarchicalInterestCategory,
   resolveActiveGroupId,
 } from '../interests/interestHierarchy';
+import {
+  listOnboardingAffiliationCategoryIds,
+  type OnboardingAffiliationCategoryId,
+  type OnboardingSelectedAffiliation,
+} from '../affiliations/onboardingAffiliationCatalog';
+import { buildCrjAffiliationPersistencePatch } from '../affiliations/onboardingAffiliationPersistence';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileCompletion'>;
 
@@ -89,8 +97,8 @@ const PRE_INTEREST_STEPS = [
   'details',
   'interestsIntro',
 ] as const;
-const POST_INTEREST_STEPS = [
-  'interestsCelebration',
+const AFFILIATION_CATEGORY_IDS = listOnboardingAffiliationCategoryIds();
+const POST_AFFILIATION_STEPS = [
   'location',
   'notifications',
   'success',
@@ -98,28 +106,49 @@ const POST_INTEREST_STEPS = [
 const INTEREST_CATEGORY_IDS = listOnboardingCategoryIds();
 
 type FixedPreStep = (typeof PRE_INTEREST_STEPS)[number];
-type FixedPostStep = (typeof POST_INTEREST_STEPS)[number];
+type PostAffiliationStep = (typeof POST_AFFILIATION_STEPS)[number];
 
 type ResolvedStep =
   | { kind: FixedPreStep }
-  | { kind: 'interest'; interestCategoryIndex: number; categoryId: OnboardingInterestCategoryId }
-  | { kind: FixedPostStep };
+  | {
+      kind: 'interest';
+      interestCategoryIndex: number;
+      categoryId: OnboardingInterestCategoryId;
+    }
+  | { kind: 'interestsCelebration' }
+  | {
+      kind: 'affiliation';
+      affiliationCategoryIndex: number;
+      categoryId: OnboardingAffiliationCategoryId;
+    }
+  | { kind: PostAffiliationStep };
 
 function resolveStep(stepIndex: number): ResolvedStep {
   if (stepIndex < PRE_INTEREST_STEPS.length) {
     return { kind: PRE_INTEREST_STEPS[stepIndex]! };
   }
-  const interestOffset = stepIndex - PRE_INTEREST_STEPS.length;
-  if (interestOffset < INTEREST_CATEGORY_IDS.length) {
-    const categoryId = INTEREST_CATEGORY_IDS[interestOffset]!;
+  let offset = stepIndex - PRE_INTEREST_STEPS.length;
+  if (offset < INTEREST_CATEGORY_IDS.length) {
+    const categoryId = INTEREST_CATEGORY_IDS[offset]!;
     return {
       kind: 'interest',
-      interestCategoryIndex: interestOffset,
+      interestCategoryIndex: offset,
       categoryId,
     };
   }
-  const postOffset = interestOffset - INTEREST_CATEGORY_IDS.length;
-  return { kind: POST_INTEREST_STEPS[postOffset]! };
+  offset -= INTEREST_CATEGORY_IDS.length;
+  if (offset === 0) return { kind: 'interestsCelebration' };
+  offset -= 1;
+  if (offset < AFFILIATION_CATEGORY_IDS.length) {
+    const categoryId = AFFILIATION_CATEGORY_IDS[offset]!;
+    return {
+      kind: 'affiliation',
+      affiliationCategoryIndex: offset,
+      categoryId,
+    };
+  }
+  offset -= AFFILIATION_CATEGORY_IDS.length;
+  return { kind: POST_AFFILIATION_STEPS[offset]! };
 }
 
 function isLocalUri(value?: string | null) {
@@ -180,6 +209,50 @@ function readOnboardingInterests(
   return out;
 }
 
+function readOnboardingAffiliations(
+  data: Record<string, unknown> | null | undefined,
+  mode: ProfileMode,
+): OnboardingSelectedAffiliation[] {
+  const key =
+    mode === 'professional'
+      ? 'professionalOnboardingAffiliations'
+      : 'personalOnboardingAffiliations';
+  const raw = data?.[key];
+  if (!Array.isArray(raw)) return [];
+  const out: OnboardingSelectedAffiliation[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    if (
+      typeof row.id !== 'string' ||
+      typeof row.name !== 'string' ||
+      typeof row.categoryId !== 'string' ||
+      (row.source !== 'provider' && row.source !== 'custom')
+    ) {
+      continue;
+    }
+    out.push({
+      id: row.id,
+      name: row.name,
+      categoryId: row.categoryId as OnboardingAffiliationCategoryId,
+      source: row.source,
+      ...(typeof row.providerId === 'string' && row.providerId
+        ? { providerId: row.providerId }
+        : {}),
+      ...(typeof row.logoUrl === 'string' && row.logoUrl
+        ? { logoUrl: row.logoUrl }
+        : {}),
+      ...(typeof row.website === 'string' && row.website
+        ? { website: row.website }
+        : {}),
+      ...(typeof row.topic === 'string' && row.topic
+        ? { topic: row.topic }
+        : {}),
+    });
+  }
+  return out;
+}
+
 function progressPhaseForStep(step: ResolvedStep): CrjProgressPhase | null {
   switch (step.kind) {
     case 'type':
@@ -194,6 +267,8 @@ function progressPhaseForStep(step: ResolvedStep): CrjProgressPhase | null {
     case 'interest':
     case 'interestsCelebration':
       return 'interests';
+    case 'affiliation':
+      return 'affiliations';
     case 'location':
       return 'location';
     case 'notifications':
@@ -226,6 +301,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [selectedInterests, setSelectedInterests] = useState<
     OnboardingSelectedInterest[]
   >([]);
+  const [selectedAffiliations, setSelectedAffiliations] = useState<
+    OnboardingSelectedAffiliation[]
+  >([]);
   const [activeInterestGroupByCategory, setActiveInterestGroupByCategory] =
     useState<Partial<Record<OnboardingInterestCategoryId, string>>>({});
   const [shellData, setShellData] = useState<Record<string, unknown> | null>(
@@ -252,6 +330,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const step = useMemo(() => resolveStep(stepIndex), [stepIndex]);
   const interestCategoryIndex =
     step.kind === 'interest' ? step.interestCategoryIndex : 0;
+  const affiliationCategoryIndex =
+    step.kind === 'affiliation' ? step.affiliationCategoryIndex : 0;
 
   const progressPhase = progressPhaseForStep(step);
   const progressValue =
@@ -294,6 +374,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     }
 
     setSelectedInterests(readOnboardingInterests(data, nextMode));
+    setSelectedAffiliations(readOnboardingAffiliations(data, nextMode));
   }
 
   /**
@@ -486,7 +567,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       case 'interestsIntro':
       case 'interest':
       case 'interestsCelebration':
-        // Continuing is gated by Next/Skip handlers (min 10 checked at end).
+      case 'affiliation':
         return true;
       case 'location':
       case 'notifications':
@@ -617,6 +698,31 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     }));
   }
 
+  async function persistAffiliations() {
+    if (!uid || !mode) return;
+    const resolved = await Promise.all(
+      selectedAffiliations.map(async (item) => {
+        if (item.logoUrl && isLocalUri(item.logoUrl)) {
+          const logoUrl = await uploadAffiliationImage(
+            uid,
+            item.logoUrl,
+            item.categoryId,
+          );
+          return { ...item, logoUrl };
+        }
+        return item;
+      }),
+    );
+    setSelectedAffiliations(resolved);
+    const patch = buildCrjAffiliationPersistencePatch(mode, resolved);
+    await updateUserProfilePartial(uid, patch);
+    setShellData((prev) => ({
+      ...(prev ?? {}),
+      mode,
+      ...patch,
+    }));
+  }
+
   async function requestLocation() {
     const current = await Location.getForegroundPermissionsAsync();
     if (current.granted) {
@@ -702,6 +808,34 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     }
     await persistInterests();
     setStepIndex((i) => i + 1);
+  }
+
+  async function leaveLastAffiliationCategory() {
+    await persistAffiliations();
+    setStepIndex((i) => i + 1);
+  }
+
+  async function advanceAffiliation() {
+    if (step.kind !== 'affiliation' || submitting) return;
+
+    const isLast =
+      affiliationCategoryIndex >= AFFILIATION_CATEGORY_IDS.length - 1;
+
+    try {
+      setSubmitting(true);
+      if (isLast) {
+        await leaveLastAffiliationCategory();
+      } else {
+        setStepIndex((i) => i + 1);
+      }
+    } catch (e: any) {
+      Alert.alert(
+        t('onboarding.profileCompletion.saveErrorTitle'),
+        e?.message || t('onboarding.profileCompletion.saveErrorMessage'),
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function advanceInterest(opts: {
@@ -796,7 +930,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const animKey =
     step.kind === 'interest'
       ? `interest-${step.categoryId}`
-      : step.kind;
+      : step.kind === 'affiliation'
+        ? `affiliation-${step.categoryId}`
+        : step.kind;
 
   const displayName = [realName.trim(), lastName.trim()]
     .filter(Boolean)
@@ -845,6 +981,24 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               onPress={() => {
                 if (submitting) return;
                 void advanceInterest({ requireCategorySelection: false });
+              }}
+            />
+          </View>
+        ) : step.kind === 'affiliation' ? (
+          <View style={styles.actionStack}>
+            <PrimaryButton
+              label={t('onboarding.profileCompletion.affiliations.next' as any)}
+              onPress={() => {
+                void advanceAffiliation();
+              }}
+              disabled={submitting}
+              loading={submitting}
+            />
+            <SecondaryButton
+              label={t('onboarding.profileCompletion.affiliations.skip' as any)}
+              onPress={() => {
+                if (submitting) return;
+                void advanceAffiliation();
               }}
             />
           </View>
@@ -1246,7 +1400,18 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
           })()}
 
           {step.kind === 'interestsCelebration' && (
-            <InterestsCelebrationStep selected={selectedInterests} />
+            <InterestsCelebrationStep
+              selected={selectedInterests}
+              continueTarget="affiliations"
+            />
+          )}
+
+          {step.kind === 'affiliation' && (
+            <OnboardingAffiliationCategoryPanel
+              categoryId={step.categoryId}
+              selected={selectedAffiliations}
+              onChangeSelected={setSelectedAffiliations}
+            />
           )}
 
           {step.kind === 'location' && (

@@ -85,6 +85,26 @@ export type UserProfile = {
 
   personalAffiliations?: AffiliationItem[];
   professionalAffiliations?: AffiliationItem[];
+  personalOnboardingAffiliations?: Array<{
+    id: string;
+    name: string;
+    categoryId: string;
+    source: 'provider' | 'custom';
+    providerId?: string;
+    logoUrl?: string;
+    website?: string;
+    topic?: string;
+  }>;
+  professionalOnboardingAffiliations?: Array<{
+    id: string;
+    name: string;
+    categoryId: string;
+    source: 'provider' | 'custom';
+    providerId?: string;
+    logoUrl?: string;
+    website?: string;
+    topic?: string;
+  }>;
 
   /** @deprecated Prefer profiles[mode].profileImage — kept for legacy fallback. */
   profileImage?: string | null;

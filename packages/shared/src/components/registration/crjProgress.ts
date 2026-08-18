@@ -10,6 +10,7 @@ export type CrjProgressPhase =
   | 'photo'
   | 'details'
   | 'interests'
+  | 'affiliations'
   | 'location'
   | 'notifications';
 
@@ -19,7 +20,8 @@ const PHASE_PROGRESS: Record<CrjProgressPhase, number> = {
   identity: 0.32,
   photo: 0.4,
   details: 0.48,
-  interests: 0.62,
+  interests: 0.58,
+  affiliations: 0.68,
   location: 0.78,
   notifications: 0.88,
 };
