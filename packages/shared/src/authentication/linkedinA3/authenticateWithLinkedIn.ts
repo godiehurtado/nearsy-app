@@ -15,6 +15,7 @@ import {
 } from './orchestrator';
 import { LinkedInA3ClientError } from './sanitize';
 import { resolveNearsyFirebaseEnvironment } from './environment/nearsyFirebaseEnvironment';
+import { createLinkedInA3DurableStore } from './createLinkedInA3DurableStore';
 import { queueLinkedInCrjPrefillIfNeeded } from './profilePrefill';
 import Constants from 'expo-constants';
 
@@ -95,6 +96,7 @@ export async function signInWithLinkedInA3(): Promise<LinkedInA3SignInOutcome> {
     browser,
     getClient: getLinkedInA3CallableClient,
     auth,
+    durableStore: createLinkedInA3DurableStore(),
   });
 
   if (flow.status !== 'authenticated') {

@@ -1,6 +1,7 @@
 /**
  * LinkedIn A3 browser auth orchestrator (I2 / I5).
  * Start → controlled auth session → parse return → Exchange → signInWithCustomToken.
+ * Optional durable store holds one active transaction for kill/relaunch recovery.
  */
 
 import { LINKEDIN_APP_RETURN_URL } from './environment/nearsyFirebaseEnvironment';
@@ -10,6 +11,10 @@ import {
   type ClientProofCrypto,
 } from './clientProof';
 import type { LinkedInAuthBrowser } from './browserSession';
+import {
+  linkedInA3DurablePersistence,
+  type LinkedInA3DurableStore,
+} from './durableTransactionStore';
 import { isLinkedInTransactionExpired } from './expiresAt';
 import { parseLinkedInMobileReturnUrl } from './returnUrl';
 import type { LinkedInAuthProfileHints } from './types';
@@ -64,6 +69,7 @@ export type LinkedInA3OrchestratorDeps = {
   auth: LinkedInA3FirebaseAuthPort;
   /** Optional: reject if another Firebase user appears mid-flow. */
   captureUidAtStart?: boolean;
+  durableStore?: LinkedInA3DurableStore;
   now?: () => number;
 };
 
@@ -119,6 +125,7 @@ export async function runLinkedInA3BrowserAuthFlow(
   }
 
   const now = deps.now ?? Date.now;
+  const store = deps.durableStore;
 
   inFlight = (async () => {
     let startUid: string | null = null;
@@ -170,6 +177,13 @@ export async function runLinkedInA3BrowserAuthFlow(
         signedIn: false,
       };
       void pair.clientProofChallenge;
+
+      await linkedInA3DurablePersistence.persistSafely(store, {
+        transactionId: startResult.transactionId,
+        clientProofVerifier: pair.clientProofVerifier,
+        expiresAt: startResult.expiresAt,
+        startedAt: now(),
+      });
 
       const browserOutcome = await deps.browser.openAuthSession(
         startResult.authorizationUrl,
@@ -394,6 +408,7 @@ export async function runLinkedInA3BrowserAuthFlow(
       );
     } finally {
       clearActive();
+      await linkedInA3DurablePersistence.clearSafely(store);
     }
   })();
 

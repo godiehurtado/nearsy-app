@@ -4,7 +4,7 @@
   "main": "index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:linkedin-a3": "pnpm dlx tsx --test ../../packages/shared/src/authentication/linkedinA3/__tests__/linkedinA3Foundation.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/appCheckDiagnostics.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/devSmokePanelGate.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/linkedinA3I2Flow.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/linkedinA3Prefill.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/metroResolution.test.cjs",
+    "test:linkedin-a3": "pnpm dlx tsx --test --test-concurrency=1 ../../packages/shared/src/authentication/linkedinA3/__tests__/linkedinA3Foundation.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/appCheckDiagnostics.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/devSmokePanelGate.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/linkedinA3I2Flow.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/linkedinA3Prefill.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/linkedinA3I5Closure.test.ts ../../packages/shared/src/authentication/linkedinA3/__tests__/metroResolution.test.cjs",
     "test:firebase-appdelegate": "node --test ./plugins/__tests__/rnfbAppDelegateInit.test.cjs",
     "validate:firebase-appdelegate": "node ./scripts/validate-firebase-appdelegate.cjs",
     "start": "expo start",
@@ -46,6 +46,7 @@
     "expo-localization": "~17.0.9",
     "expo-location": "~19.0.8",
     "expo-notifications": "~0.32.16",
+    "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.8",
     "expo-task-manager": "~14.0.8",
     "expo-updates": "~29.0.12",

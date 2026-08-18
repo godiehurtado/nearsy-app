@@ -53,6 +53,17 @@ export {
   mergeLinkedInProfileHints,
 } from './profilePrefill';
 export {
+  createInMemoryLinkedInA3DurableStore,
+  parseLinkedInA3DurableRecord,
+  serializeLinkedInA3DurableRecord,
+} from './durableTransactionStore';
+export { createLinkedInA3DurableStore } from './createLinkedInA3DurableStore';
+export {
+  resumeLinkedInA3FromReturnUrl,
+  resumeLinkedInA3FromLaunchUrl,
+  clearLinkedInA3ResumeStateForTests,
+} from './durableResume';
+export {
   isLinkedInTransactionExpired,
   normalizeLinkedInExpiresAtMs,
 } from './expiresAt';
