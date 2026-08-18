@@ -40,7 +40,43 @@ export type LinkedInA3PublicErrorCode =
   | 'CUSTOM_TOKEN_MISSING'
   | 'FIREBASE_SIGN_IN_FAILED'
   | 'SESSION_CHANGED'
+  | 'TX_EXPIRED'
+  | 'NETWORK'
+  | 'EXCHANGE_ALREADY_CONSUMED'
   | 'UNKNOWN';
+
+export type LinkedInA3CallableSanitizeContext = 'start' | 'exchange';
+
+const APP_CHECK_FUNCTION_CODES = new Set([
+  'functions/unauthenticated',
+  'functions/permission-denied',
+]);
+
+function readErrorCode(err: unknown): string {
+  return String((err as { code?: string })?.code ?? '').trim();
+}
+
+function readDetailsCode(err: unknown): string {
+  const details = (err as { details?: { code?: unknown } })?.details;
+  return typeof details?.code === 'string' ? details.code.trim() : '';
+}
+
+function isNetworkishCallableError(err: unknown, rawCode: string): boolean {
+  if (
+    rawCode === 'functions/unavailable' ||
+    rawCode === 'functions/deadline-exceeded' ||
+    rawCode === 'unavailable' ||
+    rawCode === 'deadline-exceeded'
+  ) {
+    return true;
+  }
+  const msg = String((err as { message?: string })?.message ?? '').toLowerCase();
+  return (
+    msg === 'network request failed' ||
+    msg.includes('failed to fetch') ||
+    msg.includes('network-request-failed')
+  );
+}
 
 export class LinkedInA3ClientError extends Error {
   readonly code: LinkedInA3PublicErrorCode;
@@ -58,28 +94,71 @@ export class LinkedInA3ClientError extends Error {
   }
 }
 
-export function toSanitizedCallableError(err: unknown): LinkedInA3ClientError {
+export function toSanitizedCallableError(
+  err: unknown,
+  context: LinkedInA3CallableSanitizeContext = 'start',
+): LinkedInA3ClientError {
   if (err instanceof LinkedInA3ClientError) {
     return err;
   }
 
-  const anyErr = err as {
-    code?: string;
-    message?: string;
-  };
+  const rawCode = readErrorCode(err);
+  const detailsCode = readDetailsCode(err);
+  const fallbackMessage =
+    context === 'exchange'
+      ? 'LinkedIn auth exchange failed.'
+      : 'LinkedIn auth start failed.';
 
-  const rawCode = String(anyErr?.code ?? '').trim();
-  // Firebase Functions HttpsError codes are safe to surface as causeCode.
-  if (rawCode.startsWith('functions/')) {
+  if (detailsCode === 'TX_EXPIRED' || rawCode.endsWith('/TX_EXPIRED')) {
     return new LinkedInA3ClientError(
-      'CALLABLE_FAILED',
-      'LinkedIn auth start failed.',
+      'TX_EXPIRED',
+      'LinkedIn authentication expired.',
+    );
+  }
+
+  if (APP_CHECK_FUNCTION_CODES.has(rawCode)) {
+    return new LinkedInA3ClientError(
+      'APP_CHECK_FAILED',
+      'App Check rejected the LinkedIn auth request.',
       rawCode,
     );
   }
 
-  return new LinkedInA3ClientError(
-    'CALLABLE_FAILED',
-    'LinkedIn auth start failed.',
-  );
+  if (isNetworkishCallableError(err, rawCode)) {
+    return new LinkedInA3ClientError(
+      'NETWORK',
+      'LinkedIn authentication network error.',
+      rawCode.startsWith('functions/') ? rawCode : undefined,
+    );
+  }
+
+  if (
+    context === 'exchange' &&
+    (rawCode === 'functions/failed-precondition' ||
+      rawCode === 'functions/already-exists' ||
+      detailsCode === 'TX_FAILED' ||
+      detailsCode === 'EXCHANGE_ALREADY_CONSUMED')
+  ) {
+    return new LinkedInA3ClientError(
+      'EXCHANGE_ALREADY_CONSUMED',
+      'LinkedIn authentication result was already used.',
+      rawCode.startsWith('functions/') ? rawCode : undefined,
+    );
+  }
+
+  if (rawCode.startsWith('functions/')) {
+    return new LinkedInA3ClientError('CALLABLE_FAILED', fallbackMessage, rawCode);
+  }
+
+  return new LinkedInA3ClientError('CALLABLE_FAILED', fallbackMessage);
+}
+
+export function linkedInA3RetrySafe(input: {
+  exchangeConsumed?: boolean;
+  status?: string;
+}): boolean {
+  if (input.status === 'authenticated' || input.status === 'session_already_active') {
+    return false;
+  }
+  return input.exchangeConsumed !== true;
 }

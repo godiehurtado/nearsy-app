@@ -17,8 +17,16 @@ export type LinkedInAuthExchangeInput = {
   clientProofVerifier: string;
 };
 
+export type LinkedInAuthProfileHints = {
+  givenName?: string;
+  familyName?: string;
+  displayName?: string;
+  photoUrl?: string;
+};
+
 export type LinkedInAuthExchangeResult = {
   customToken: string;
+  profileHints?: LinkedInAuthProfileHints;
 };
 
 export function assertLinkedInAuthStartInput(
@@ -74,4 +82,48 @@ export function assertLinkedInAuthExchangeInput(
   ) {
     throw new Error('clientProofVerifier is required');
   }
+}
+
+function trimOptionalHint(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function parseOptionalProfileHints(
+  raw: unknown,
+): LinkedInAuthProfileHints | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw !== 'object') return undefined;
+  const record = raw as Record<string, unknown>;
+  const givenName = trimOptionalHint(record.givenName);
+  const familyName = trimOptionalHint(record.familyName);
+  const displayName = trimOptionalHint(record.displayName);
+  const photoUrl = trimOptionalHint(record.photoUrl);
+  const hints: LinkedInAuthProfileHints = {
+    ...(givenName ? { givenName } : {}),
+    ...(familyName ? { familyName } : {}),
+    ...(displayName ? { displayName } : {}),
+    ...(photoUrl ? { photoUrl } : {}),
+  };
+  return Object.keys(hints).length > 0 ? hints : undefined;
+}
+
+/**
+ * Accepts current backends `{ customToken }` and optional `profileHints`.
+ * Malformed hints are ignored; a valid customToken still succeeds.
+ */
+export function assertLinkedInAuthExchangeResult(
+  data: unknown,
+): LinkedInAuthExchangeResult {
+  if (!data || typeof data !== 'object') {
+    throw new Error('invalid exchange response');
+  }
+  const record = data as Record<string, unknown>;
+  const customToken = record.customToken;
+  if (typeof customToken !== 'string' || customToken.length < 8) {
+    throw new Error('invalid customToken');
+  }
+  const profileHints = parseOptionalProfileHints(record.profileHints);
+  return profileHints ? { customToken, profileHints } : { customToken };
 }

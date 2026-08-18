@@ -1,7 +1,6 @@
 /**
- * LinkedIn A3 browser auth orchestrator (I2).
+ * LinkedIn A3 browser auth orchestrator (I2 / I5).
  * Start → controlled auth session → parse return → Exchange → signInWithCustomToken.
- * Verifier stays in memory for the active attempt only (no SecureStore in I2).
  */
 
 import { LINKEDIN_APP_RETURN_URL } from './environment/nearsyFirebaseEnvironment';
@@ -11,14 +10,20 @@ import {
   type ClientProofCrypto,
 } from './clientProof';
 import type { LinkedInAuthBrowser } from './browserSession';
+import { isLinkedInTransactionExpired } from './expiresAt';
 import { parseLinkedInMobileReturnUrl } from './returnUrl';
-import { LinkedInA3ClientError } from './sanitize';
+import type { LinkedInAuthProfileHints } from './types';
+import {
+  LinkedInA3ClientError,
+  linkedInA3RetrySafe,
+} from './sanitize';
 
 export type LinkedInA3FlowStatus =
   | 'authenticated'
   | 'cancelled'
   | 'dismissed'
   | 'provider_error'
+  | 'expired'
   | 'failed'
   | 'session_already_active';
 
@@ -27,16 +32,22 @@ export type LinkedInA3AuthSession = {
   email: string | null;
 };
 
+type LinkedInA3TerminalMeta = {
+  exchangeConsumed?: boolean;
+  retrySafe?: boolean;
+};
+
 export type LinkedInA3FlowResult =
-  | {
+  | ({
       status: 'authenticated';
       session: LinkedInA3AuthSession;
-    }
-  | {
+      profileHints?: LinkedInAuthProfileHints;
+    } & LinkedInA3TerminalMeta)
+  | ({
       status: Exclude<LinkedInA3FlowStatus, 'authenticated'>;
       error?: LinkedInA3ClientError;
       providerErrorCode?: string;
-    };
+    } & LinkedInA3TerminalMeta);
 
 export type LinkedInA3FirebaseAuthPort = {
   getCurrentUid: () => string | null;
@@ -53,11 +64,13 @@ export type LinkedInA3OrchestratorDeps = {
   auth: LinkedInA3FirebaseAuthPort;
   /** Optional: reject if another Firebase user appears mid-flow. */
   captureUidAtStart?: boolean;
+  now?: () => number;
 };
 
 type ActiveAttempt = {
   transactionId: string;
   clientProofVerifier: string;
+  expiresAt: number;
   exchanged: boolean;
   signedIn: boolean;
 };
@@ -78,21 +91,38 @@ function clearActive(): void {
   active = null;
 }
 
+function terminal(
+  partial: LinkedInA3FlowResult,
+  exchangeConsumed = false,
+): LinkedInA3FlowResult {
+  return {
+    ...partial,
+    exchangeConsumed,
+    retrySafe: linkedInA3RetrySafe({
+      exchangeConsumed,
+      status: partial.status,
+    }),
+  };
+}
+
 export async function runLinkedInA3BrowserAuthFlow(
   deps: LinkedInA3OrchestratorDeps,
 ): Promise<LinkedInA3FlowResult> {
   if (inFlight) {
-    return {
+    return terminal({
       status: 'session_already_active',
       error: new LinkedInA3ClientError(
         'OPERATION_IN_PROGRESS',
         'LinkedIn authentication is already in progress.',
       ),
-    };
+    });
   }
+
+  const now = deps.now ?? Date.now;
 
   inFlight = (async () => {
     let startUid: string | null = null;
+    let exchangeConsumed = false;
     try {
       if (deps.captureUidAtStart !== false) {
         startUid = deps.auth.getCurrentUid();
@@ -109,26 +139,36 @@ export async function runLinkedInA3BrowserAuthFlow(
           clientProofMethod: pair.clientProofMethod,
         });
       } catch (err) {
-        clearActive();
         if (err instanceof LinkedInA3ClientError) {
-          return { status: 'failed', error: err };
+          const status = err.code === 'TX_EXPIRED' ? 'expired' : 'failed';
+          return terminal({ status, error: err });
         }
-        return {
+        return terminal({
           status: 'failed',
           error: new LinkedInA3ClientError(
             'CALLABLE_FAILED',
             'LinkedIn auth start failed.',
           ),
-        };
+        });
+      }
+
+      if (isLinkedInTransactionExpired(startResult.expiresAt, now())) {
+        return terminal({
+          status: 'expired',
+          error: new LinkedInA3ClientError(
+            'TX_EXPIRED',
+            'LinkedIn authentication expired.',
+          ),
+        });
       }
 
       active = {
         transactionId: startResult.transactionId,
         clientProofVerifier: pair.clientProofVerifier,
+        expiresAt: startResult.expiresAt,
         exchanged: false,
         signedIn: false,
       };
-      // Drop challenge from scope; verifier only in active.
       void pair.clientProofChallenge;
 
       const browserOutcome = await deps.browser.openAuthSession(
@@ -137,31 +177,48 @@ export async function runLinkedInA3BrowserAuthFlow(
       );
 
       if (browserOutcome.type === 'cancel') {
-        clearActive();
-        return { status: 'cancelled' };
+        return terminal({ status: 'cancelled' });
       }
       if (browserOutcome.type === 'dismiss') {
-        clearActive();
-        return { status: 'dismissed' };
+        return terminal({ status: 'dismissed' });
       }
       if (
         browserOutcome.type === 'unavailable' ||
         browserOutcome.type === 'failed'
       ) {
-        clearActive();
-        return {
+        return terminal({
           status: 'failed',
           error: new LinkedInA3ClientError(
             'BROWSER_FAILED',
             'Unable to complete LinkedIn browser authentication.',
           ),
-        };
+        });
+      }
+
+      if (active && isLinkedInTransactionExpired(active.expiresAt, now())) {
+        return terminal({
+          status: 'expired',
+          error: new LinkedInA3ClientError(
+            'TX_EXPIRED',
+            'LinkedIn authentication expired.',
+          ),
+        });
       }
 
       const parsed = parseLinkedInMobileReturnUrl(browserOutcome.url);
       if (parsed.kind === 'provider_error') {
-        clearActive();
-        return {
+        if (parsed.errorCode === 'TX_EXPIRED') {
+          return terminal({
+            status: 'expired',
+            providerErrorCode: parsed.errorCode,
+            error: new LinkedInA3ClientError(
+              'TX_EXPIRED',
+              'LinkedIn authentication expired.',
+              parsed.errorCode,
+            ),
+          });
+        }
+        return terminal({
           status: 'provider_error',
           providerErrorCode: parsed.errorCode,
           error: new LinkedInA3ClientError(
@@ -169,47 +226,42 @@ export async function runLinkedInA3BrowserAuthFlow(
             'LinkedIn authentication was rejected.',
             parsed.errorCode,
           ),
-        };
+        });
       }
       if (parsed.kind !== 'success') {
-        clearActive();
-        return {
+        return terminal({
           status: 'failed',
           error: new LinkedInA3ClientError(
             'CALLBACK_INVALID',
             'Invalid LinkedIn return URL.',
           ),
-        };
+        });
       }
 
-      if (
-        !active ||
-        parsed.transactionId !== active.transactionId
-      ) {
-        clearActive();
-        return {
+      if (!active || parsed.transactionId !== active.transactionId) {
+        return terminal({
           status: 'failed',
           error: new LinkedInA3ClientError(
             'CALLBACK_MISMATCH',
             'LinkedIn return did not match the active transaction.',
           ),
-        };
+        });
       }
 
       if (active.exchanged || active.signedIn) {
-        clearActive();
-        return {
+        return terminal({
           status: 'failed',
           error: new LinkedInA3ClientError(
             'OPERATION_IN_PROGRESS',
             'LinkedIn authentication result was already consumed.',
           ),
-        };
+        });
       }
 
       const verifier = active.clientProofVerifier;
       const transactionId = active.transactionId;
       active.exchanged = true;
+      exchangeConsumed = true;
 
       let exchangeResult;
       try {
@@ -218,20 +270,22 @@ export async function runLinkedInA3BrowserAuthFlow(
           clientProofVerifier: verifier,
         });
       } catch (err) {
-        clearActive();
         if (err instanceof LinkedInA3ClientError) {
-          return { status: 'failed', error: err };
+          const status = err.code === 'TX_EXPIRED' ? 'expired' : 'failed';
+          return terminal({ status, error: err }, true);
         }
-        return {
-          status: 'failed',
-          error: new LinkedInA3ClientError(
-            'CALLABLE_FAILED',
-            'LinkedIn auth exchange failed.',
-          ),
-        };
+        return terminal(
+          {
+            status: 'failed',
+            error: new LinkedInA3ClientError(
+              'CALLABLE_FAILED',
+              'LinkedIn auth exchange failed.',
+            ),
+          },
+          true,
+        );
       }
 
-      // Clear verifier before sign-in; never retain after Exchange.
       if (active) {
         active.clientProofVerifier = '';
       }
@@ -240,84 +294,104 @@ export async function runLinkedInA3BrowserAuthFlow(
         !exchangeResult.customToken ||
         typeof exchangeResult.customToken !== 'string'
       ) {
-        clearActive();
-        return {
-          status: 'failed',
-          error: new LinkedInA3ClientError(
-            'CUSTOM_TOKEN_MISSING',
-            'LinkedIn exchange did not return a session token.',
-          ),
-        };
+        return terminal(
+          {
+            status: 'failed',
+            error: new LinkedInA3ClientError(
+              'CUSTOM_TOKEN_MISSING',
+              'LinkedIn exchange did not return a session token.',
+            ),
+          },
+          true,
+        );
       }
 
       if (active.signedIn) {
-        clearActive();
-        return {
-          status: 'failed',
-          error: new LinkedInA3ClientError(
-            'OPERATION_IN_PROGRESS',
-            'LinkedIn sign-in was already attempted.',
-          ),
-        };
+        return terminal(
+          {
+            status: 'failed',
+            error: new LinkedInA3ClientError(
+              'OPERATION_IN_PROGRESS',
+              'LinkedIn sign-in was already attempted.',
+            ),
+          },
+          true,
+        );
       }
       active.signedIn = true;
 
       const token = exchangeResult.customToken;
-      // Drop local reference to token after call.
       let session: LinkedInA3AuthSession;
       try {
         session = await deps.auth.signInWithCustomToken(token);
       } catch (err) {
-        clearActive();
-        return {
-          status: 'failed',
-          error: new LinkedInA3ClientError(
-            'FIREBASE_SIGN_IN_FAILED',
-            'Firebase sign-in failed after LinkedIn exchange.',
-            err instanceof Error ? err.name : undefined,
-          ),
-        };
+        return terminal(
+          {
+            status: 'failed',
+            error: new LinkedInA3ClientError(
+              'FIREBASE_SIGN_IN_FAILED',
+              'Firebase sign-in failed after LinkedIn exchange.',
+              err instanceof Error ? err.name : undefined,
+            ),
+          },
+          true,
+        );
       }
 
       if (!session.uid) {
-        clearActive();
-        return {
-          status: 'failed',
-          error: new LinkedInA3ClientError(
-            'FIREBASE_SIGN_IN_FAILED',
-            'Firebase session was empty after LinkedIn sign-in.',
-          ),
-        };
+        return terminal(
+          {
+            status: 'failed',
+            error: new LinkedInA3ClientError(
+              'FIREBASE_SIGN_IN_FAILED',
+              'Firebase session was empty after LinkedIn sign-in.',
+            ),
+          },
+          true,
+        );
       }
 
       if (startUid && startUid !== session.uid) {
         // Another session was present; still accept new LinkedIn uid if start was empty.
       }
       if (startUid && deps.auth.getCurrentUid() !== session.uid) {
-        clearActive();
-        return {
-          status: 'failed',
-          error: new LinkedInA3ClientError(
-            'SESSION_CHANGED',
-            'Firebase session changed during LinkedIn authentication.',
-          ),
-        };
+        return terminal(
+          {
+            status: 'failed',
+            error: new LinkedInA3ClientError(
+              'SESSION_CHANGED',
+              'Firebase session changed during LinkedIn authentication.',
+            ),
+          },
+          true,
+        );
       }
 
-      clearActive();
-      return { status: 'authenticated', session };
+      return terminal({
+        status: 'authenticated',
+        session,
+        profileHints: exchangeResult.profileHints,
+      });
     } catch (err) {
-      clearActive();
       if (err instanceof LinkedInA3ClientError) {
-        return { status: 'failed', error: err };
+        return terminal(
+          {
+            status: err.code === 'TX_EXPIRED' ? 'expired' : 'failed',
+            error: err,
+          },
+          exchangeConsumed,
+        );
       }
-      return {
-        status: 'failed',
-        error: new LinkedInA3ClientError(
-          'UNKNOWN',
-          'LinkedIn authentication failed.',
-        ),
-      };
+      return terminal(
+        {
+          status: 'failed',
+          error: new LinkedInA3ClientError(
+            'UNKNOWN',
+            'LinkedIn authentication failed.',
+          ),
+        },
+        exchangeConsumed,
+      );
     } finally {
       clearActive();
     }

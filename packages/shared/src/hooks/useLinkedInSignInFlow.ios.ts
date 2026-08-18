@@ -48,6 +48,14 @@ export function useLinkedInSignInFlow() {
         return;
       }
 
+      if (result.status === 'expired') {
+        Alert.alert(
+          t('authentication.login.alerts.loginErrorTitle'),
+          t('authentication.social.errors.generic'),
+        );
+        return;
+      }
+
       if (result.status === 'provider_error') {
         Alert.alert(
           t('authentication.login.alerts.loginErrorTitle'),

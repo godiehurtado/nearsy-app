@@ -144,11 +144,17 @@ export async function signInWithLinkedInA3(): Promise<LinkedInA3SignInOutcome> {
     const queued = queueLinkedInCrjPrefillIfNeeded({
       uid,
       profileComplete: false,
-      displayName: authUser.displayName,
+      givenName: flow.profileHints?.givenName,
+      familyName: flow.profileHints?.familyName,
+      displayName: flow.profileHints?.displayName ?? authUser.displayName,
+      photoUrl: flow.profileHints?.photoUrl,
       photoURL: authUser.photoURL,
     });
     if (typeof __DEV__ !== 'undefined' && __DEV__) {
       console.log('[linkedinA3.prefill]', {
+        hasExchangeHints: Boolean(flow.profileHints),
+        hasGivenName: queued.hasGivenName,
+        hasFamilyName: queued.hasFamilyName,
         hasDisplayName: queued.hasDisplayName,
         hasPhotoUrl: queued.hasPhotoUrl,
         queued: queued.queued,

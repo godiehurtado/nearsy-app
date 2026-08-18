@@ -11,6 +11,7 @@ import {
 } from '../sanitize';
 import {
   assertLinkedInAuthExchangeInput,
+  assertLinkedInAuthExchangeResult,
   assertLinkedInAuthStartInput,
   assertLinkedInAuthStartResult,
   type LinkedInAuthExchangeInput,
@@ -90,7 +91,7 @@ export function createLinkedInA3CallableClient(
         }
       } catch (err) {
         if (err instanceof LinkedInA3ClientError) throw err;
-        throw toSanitizedCallableError(err);
+        throw toSanitizedCallableError(err, 'start');
       }
     },
 
@@ -115,23 +116,17 @@ export function createLinkedInA3CallableClient(
           transactionId: input.transactionId,
           clientProofVerifier: input.clientProofVerifier,
         });
-        if (!data || typeof data !== 'object') {
+        try {
+          return assertLinkedInAuthExchangeResult(data);
+        } catch {
           throw new LinkedInA3ClientError(
             'INVALID_RESPONSE',
             'Invalid LinkedIn auth exchange response.',
           );
         }
-        const customToken = (data as { customToken?: unknown }).customToken;
-        if (typeof customToken !== 'string' || customToken.length < 8) {
-          throw new LinkedInA3ClientError(
-            'INVALID_RESPONSE',
-            'Invalid LinkedIn auth exchange response.',
-          );
-        }
-        return { customToken };
       } catch (err) {
         if (err instanceof LinkedInA3ClientError) throw err;
-        throw toSanitizedCallableError(err);
+        throw toSanitizedCallableError(err, 'exchange');
       }
     },
   };

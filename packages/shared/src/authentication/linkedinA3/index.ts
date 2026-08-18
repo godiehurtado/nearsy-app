@@ -28,6 +28,8 @@ export {
   LinkedInA3ClientError,
   sanitizeTransactionId,
   sanitizeAuthorizationUrl,
+  toSanitizedCallableError,
+  linkedInA3RetrySafe,
 } from './sanitize';
 
 export {
@@ -48,7 +50,17 @@ export { mapExpoAuthSessionResult } from './browserSession';
 export {
   queueLinkedInCrjPrefillIfNeeded,
   buildLinkedInSocialProfileFromAuthHints,
+  mergeLinkedInProfileHints,
 } from './profilePrefill';
+export {
+  isLinkedInTransactionExpired,
+  normalizeLinkedInExpiresAtMs,
+} from './expiresAt';
+export { assertLinkedInAuthExchangeResult } from './types';
+export type {
+  LinkedInAuthExchangeResult,
+  LinkedInAuthProfileHints,
+} from './types';
 
 /** @deprecated decision marker — do not change ProfileCompletion shell in I1 */
 export const CRJ_CROSS_PLATFORM_DECISION_PENDING =
