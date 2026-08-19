@@ -92,11 +92,19 @@ function main() {
     'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID',
     'EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID',
     'EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME',
+    'EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY',
     'FIREBASE_APP_CHECK_DEBUG_TOKEN',
   ]) {
     if (!loaded[required]) fail(`Missing EAS key ${required}`);
   }
-  ok('Required Google + App Check EAS keys present');
+  const logoDevKey = String(loaded.EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY || '').trim();
+  if (logoDevKey.startsWith('sk_')) {
+    fail('Development Logo.dev key must be publishable (pk_), not a secret');
+  }
+  if (!logoDevKey.startsWith('pk_')) {
+    fail('Development Logo.dev key must start with pk_');
+  }
+  ok('Required Google + App Check + Logo.dev EAS keys present');
 
   // Development config evaluation
   const prev = { ...process.env };
@@ -125,6 +133,11 @@ function main() {
   if (!extra.NEARSY_APP_CHECK_DEBUG_TOKEN) {
     fail('App Check debug token not injected for Development');
   }
+  const extraLogo = String(extra.EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY || '').trim();
+  if (!extraLogo) fail('Development extra missing Logo.dev publishable key');
+  if (extraLogo.startsWith('sk_') || !extraLogo.startsWith('pk_')) {
+    fail('Development extra Logo.dev key is not a publishable pk_ value');
+  }
   assertNoOpsInDevExtra(extra);
 
   const googlePlugin = (devConfig.plugins || []).find(
@@ -146,7 +159,7 @@ function main() {
   const hasApple = (devConfig.plugins || []).includes('expo-apple-authentication');
   if (!hasApple) fail('Apple authentication plugin missing');
 
-  ok('Development Expo config: nearsy-dev + Google Dev + Apple + LinkedIn + App Check');
+  ok('Development Expo config: nearsy-dev + Google Dev + Apple + LinkedIn + App Check + Logo.dev');
   console.log(
     'shapes',
     JSON.stringify({
@@ -156,9 +169,13 @@ function main() {
     }),
   );
 
-  // Production config evaluation (clear Dev Google + debug token)
+  // Production config evaluation (clear Dev Google, Logo.dev, and debug token)
   for (const k of Object.keys(loaded)) {
-    if (k.startsWith('EXPO_PUBLIC_GOOGLE_') || k === 'FIREBASE_APP_CHECK_DEBUG_TOKEN') {
+    if (
+      k.startsWith('EXPO_PUBLIC_GOOGLE_') ||
+      k === 'FIREBASE_APP_CHECK_DEBUG_TOKEN' ||
+      k === 'EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY'
+    ) {
       delete process.env[k];
     }
   }
@@ -195,6 +212,9 @@ function main() {
   }
   if (pextra.NEARSY_APP_CHECK_DEBUG_TOKEN) {
     fail('Production must not inject App Check debug token');
+  }
+  if (pextra.EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY) {
+    fail('Production extra must not receive the Development Logo.dev key');
   }
   // Production may use Ops Google from app.json — ensure not Dev project number alone as sole check
   const prodScheme = String(pextra.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME || '');

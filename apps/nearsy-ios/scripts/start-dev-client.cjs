@@ -63,6 +63,11 @@ function loadEasDevelopmentEnv() {
         '[start-dev-client] WARNING: FIREBASE_APP_CHECK_DEBUG_TOKEN missing from EAS load.',
       );
     }
+    if (!loaded.EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY) {
+      console.warn(
+        '[start-dev-client] WARNING: EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY missing from EAS load.',
+      );
+    }
 
     return loaded;
   } finally {

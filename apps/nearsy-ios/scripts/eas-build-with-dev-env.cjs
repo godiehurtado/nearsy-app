@@ -47,6 +47,7 @@ const required = [
   'EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID',
   'EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME',
   'EXPO_PUBLIC_FIREBASE_PROJECT_ID',
+  'EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY',
 ];
 for (const key of required) {
   if (!loaded[key]) {

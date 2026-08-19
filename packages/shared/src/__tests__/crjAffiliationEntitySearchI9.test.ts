@@ -499,6 +499,7 @@ describe('CRJ-I9 isolation', () => {
     assert.ok(babel.includes('emptyFirebase.js'));
     assert.ok(app.includes('startAffiliationEntitySearchBootstrap()'));
     assert.ok(!panel.includes('LOGO_DEV_SECRET_KEY'));
+    assert.ok(!panel.includes('[AffiliationLogo]'));
     assert.ok(!firebase.includes('sk_'));
     assert.ok(!bootstrap.includes('LOGO_DEV_SECRET_KEY'));
     assert.ok(!bootstrap.includes('api.logo.dev'));
@@ -518,7 +519,14 @@ describe('CRJ-I9 isolation', () => {
       join(here, '../../../../apps/nearsy-ios/app.config.js'),
       'utf8',
     );
+    const dump = readFileSync(
+      join(here, '../../../../apps/nearsy-ios/scripts/_dump-eas-env.cjs'),
+      'utf8',
+    );
     const prodChunk = config.split('} else {')[1] ?? '';
+    assert.ok(config.includes('resolveLogoDevPublishableKey('));
+    assert.ok(config.includes('{ required: true }'));
+    assert.ok(dump.includes("'EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY'"));
     assert.ok(prodChunk.includes("EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'production'"));
     assert.ok(!prodChunk.includes('EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY'));
     assert.ok(!config.includes('LOGO_DEV_SECRET_KEY'));
