@@ -34,24 +34,32 @@ describe('Apple sign-in UI / hook policy', () => {
     assert.equal(shouldSuppressAppleSignInAlert('TOKEN_INVALID'), false);
   });
 
-  it('LoginScreen wires Apple flow and keeps Meta/LinkedIn coming soon', () => {
+  it('LoginScreen wires Apple, Google, and LinkedIn; Meta stays coming soon', () => {
     const source = readSharedSource('screens/LoginScreen.tsx');
     assert.match(source, /useAppleSignInFlow/);
     assert.match(source, /signInWithApple/);
     assert.match(source, /useGoogleSignInFlow/);
     assert.match(source, /signInWithGoogle/);
+    assert.match(source, /useLinkedInSignInFlow/);
+    assert.match(source, /signInWithLinkedIn/);
     assert.match(source, /provider === 'apple'/);
     assert.match(source, /provider === 'google'/);
+    assert.match(source, /provider === 'linkedin'/);
     assert.match(source, /comingSoonTitle/);
     assert.doesNotMatch(source, /appleComingSoon/);
   });
 
-  it('WelcomeScreen wires Apple flow alongside Google', () => {
+  it('WelcomeScreen wires Apple, Google, and LinkedIn from the register entry', () => {
     const source = readSharedSource('screens/WelcomeScreen.tsx');
     assert.match(source, /useAppleSignInFlow/);
     assert.match(source, /signInWithApple/);
+    assert.match(source, /useGoogleSignInFlow/);
+    assert.match(source, /signInWithGoogle/);
+    assert.match(source, /useLinkedInSignInFlow/);
+    assert.match(source, /signInWithLinkedIn/);
     assert.match(source, /p === 'apple'/);
     assert.match(source, /p === 'google'/);
+    assert.match(source, /p === 'linkedin'/);
     assert.match(source, /comingSoonTitle/);
   });
 
@@ -63,8 +71,12 @@ describe('Apple sign-in UI / hook policy', () => {
       login,
       /submitting \|\| googleSubmitting \|\| appleSubmitting \|\| linkedInSubmitting/,
     );
-    assert.match(welcome, /socialBusy = googleSubmitting \|\| appleSubmitting/);
+    assert.match(welcome, /googleSubmitting \|\| appleSubmitting \|\| linkedInSubmitting/);
+    assert.match(welcome, /busy=\{socialBusy\}/);
     assert.match(login, /appleSubmitting\s+\? 'apple'/);
-    assert.match(welcome, /appleSubmitting \? 'apple'/);
+    assert.match(welcome, /appleSubmitting/);
+    assert.match(welcome, /\? 'apple'/);
+    assert.match(welcome, /linkedInSubmitting/);
+    assert.match(welcome, /\? 'linkedin'/);
   });
 });

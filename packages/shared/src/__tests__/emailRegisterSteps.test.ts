@@ -105,6 +105,7 @@ describe('email register wizard order', () => {
     );
     assert.match(welcomeSocial, /signInWithGoogle/);
     assert.match(welcomeSocial, /signInWithApple/);
+    assert.match(welcomeSocial, /signInWithLinkedIn/);
     assert.doesNotMatch(welcomeSocial, /navigate\('Register'/);
   });
 

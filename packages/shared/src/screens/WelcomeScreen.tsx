@@ -22,13 +22,15 @@ import { radius } from '../theme/radius';
 import { useTranslation } from '../i18n';
 import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
 import { useAppleSignInFlow } from '../hooks/useAppleSignInFlow';
+import { useLinkedInSignInFlow } from '../hooks/useLinkedInSignInFlow';
 import { markWelcomeSeen } from '../onboarding/welcomeStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Welcome'>;
 
 /**
- * Welcome — first-launch only entry to Register / Login / Google / Apple.
+ * Welcome — first-launch only entry to Register / Login / Google / Apple / LinkedIn.
  * Marked seen on a valid exit CTA (not on mount).
+ * LinkedIn reuses the Login A3 hook (no duplicate Start/Exchange/navigation).
  */
 export default function WelcomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -36,9 +38,11 @@ export default function WelcomeScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const { signInWithGoogle, googleSubmitting } = useGoogleSignInFlow();
   const { signInWithApple, appleSubmitting } = useAppleSignInFlow();
+  const { signInWithLinkedIn, linkedInSubmitting } = useLinkedInSignInFlow();
   // Match Login surface so shared brand hero (logo / waves / people) reads the same.
   const screenBg = theme === 'dark' ? palette.background : palette.heroBg;
-  const socialBusy = googleSubmitting || appleSubmitting;
+  const socialBusy =
+    googleSubmitting || appleSubmitting || linkedInSubmitting;
 
   async function leaveWelcome(
     action: () => void,
@@ -57,6 +61,12 @@ export default function WelcomeScreen({ navigation }: Props) {
     if (p === 'apple') {
       void leaveWelcome(() => {
         void signInWithApple();
+      });
+      return;
+    }
+    if (p === 'linkedin') {
+      void leaveWelcome(() => {
+        void signInWithLinkedIn();
       });
       return;
     }
@@ -108,7 +118,13 @@ export default function WelcomeScreen({ navigation }: Props) {
             onPress={onProvider}
             busy={socialBusy}
             loadingProvider={
-              googleSubmitting ? 'google' : appleSubmitting ? 'apple' : null
+              googleSubmitting
+                ? 'google'
+                : appleSubmitting
+                  ? 'apple'
+                  : linkedInSubmitting
+                    ? 'linkedin'
+                    : null
             }
             borderColor={palette.socialBorder}
             textColor={palette.textPrimary}
