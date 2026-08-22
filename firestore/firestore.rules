@@ -3,15 +3,13 @@ rules_version = '2';
 /**
  * Nearsy application Firestore rules — Source of Truth for nearsy-dev/(default).
  *
- * Goal: DEV_RULES_FUNCTIONAL_PARITY_WITH_PRODUCTION
- * Functional reference: effective rules on nearsy-pj/(default) (read-only inspection).
- * This file intentionally mirrors Production authorization logic — not hardening.
+ * Baseline: production-parity authorization (users, subcollections, reports,
+ * moderation, LinkedIn deny-all) plus Visibility & Discovery hardening.
  *
  * Future deploy (authorized, nearsy-dev only):
  *   cd firestore && firebase deploy --only firestore:rules --project nearsy-dev
  *
- * DO NOT deploy from nearsy-identity-functions.
- * Hardening (field allowlists, type gates, immutability) is a separate future change.
+ * DO NOT deploy from nearsy-identity-functions or functions-visibility-discovery.
  */
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -24,18 +22,187 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function locationHasAuthoritativeKeys(loc) {
+      return loc is map && loc.keys().hasAny([
+        'latitude',
+        'longitude',
+        'accuracyMeters',
+        'observedAt',
+        'confirmedAt',
+        'geohash'
+      ]);
+    }
+
+    function clientLocationWriteAllowedOnCreate() {
+      return !('location' in request.resource.data)
+        || request.resource.data.location == null
+        || (
+          request.resource.data.location is map
+          && !locationHasAuthoritativeKeys(request.resource.data.location)
+        );
+    }
+
+    function clientLocationWriteAllowedOnUpdate() {
+      return !('location' in request.resource.data.diff(resource.data).affectedKeys())
+        || (
+          !locationHasAuthoritativeKeys(resource.data.get('location', null))
+          && (
+            request.resource.data.location == null
+            || (
+              request.resource.data.location is map
+              && !locationHasAuthoritativeKeys(request.resource.data.location)
+            )
+          )
+        );
+    }
+
+    function visibilityAndSchemaImmutableOnUpdate() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['visibility', 'schemaVersion']);
+    }
+
+    function validUserCreateLifecycle() {
+      return request.resource.data.get('visibility', false) == false
+        && !('schemaVersion' in request.resource.data);
+    }
+
+    function validInterestIdAt(ids, i) {
+      return ids.size() <= i
+        || (
+          ids[i] is string
+          && ids[i].size() > 0
+          && ids[i].size() <= 128
+        );
+    }
+
+    function validInterestIds(ids) {
+      return ids is list
+        && ids.size() <= 12
+        && validInterestIdAt(ids, 0)
+        && validInterestIdAt(ids, 1)
+        && validInterestIdAt(ids, 2)
+        && validInterestIdAt(ids, 3)
+        && validInterestIdAt(ids, 4)
+        && validInterestIdAt(ids, 5)
+        && validInterestIdAt(ids, 6)
+        && validInterestIdAt(ids, 7)
+        && validInterestIdAt(ids, 8)
+        && validInterestIdAt(ids, 9)
+        && validInterestIdAt(ids, 10)
+        && validInterestIdAt(ids, 11);
+    }
+
+    function validModeSearchPreferences(prefs) {
+      return prefs is map
+        && prefs.keys().hasOnly([
+          'ageMin',
+          'ageMax',
+          'maxDistanceMeters',
+          'interestIds',
+          'updatedAt'
+        ])
+        && prefs.keys().hasAll([
+          'ageMin',
+          'ageMax',
+          'maxDistanceMeters',
+          'interestIds'
+        ])
+        && prefs.ageMin is int
+        && prefs.ageMin >= 18
+        && prefs.ageMin <= 99
+        && prefs.ageMax is int
+        && prefs.ageMax >= 18
+        && prefs.ageMax <= 99
+        && prefs.ageMin <= prefs.ageMax
+        && prefs.maxDistanceMeters is number
+        && prefs.maxDistanceMeters >= 5
+        && prefs.maxDistanceMeters <= 60.96
+        && validInterestIds(prefs.interestIds)
+        && (
+          !('updatedAt' in prefs)
+          || prefs.updatedAt is number
+          || prefs.updatedAt is timestamp
+        );
+    }
+
+    function validSearchPreferencesBag(bag) {
+      return bag is map
+        && bag.keys().hasOnly(['personal', 'professional'])
+        && (!('personal' in bag) || validModeSearchPreferences(bag.personal))
+        && (!('professional' in bag) || validModeSearchPreferences(bag.professional));
+    }
+
+    function validVisibleAgeGates() {
+      return (
+          !('visibleToMinAge' in request.resource.data)
+          || request.resource.data.visibleToMinAge == null
+          || (
+            request.resource.data.visibleToMinAge is int
+            && request.resource.data.visibleToMinAge >= 18
+            && request.resource.data.visibleToMinAge <= 99
+          )
+        )
+        && (
+          !('visibleToMaxAge' in request.resource.data)
+          || request.resource.data.visibleToMaxAge == null
+          || (
+            request.resource.data.visibleToMaxAge is int
+            && request.resource.data.visibleToMaxAge >= 18
+            && request.resource.data.visibleToMaxAge <= 99
+          )
+        )
+        && (
+          !('visibleToMinAge' in request.resource.data)
+          || !('visibleToMaxAge' in request.resource.data)
+          || request.resource.data.visibleToMinAge == null
+          || request.resource.data.visibleToMaxAge == null
+          || request.resource.data.visibleToMinAge <= request.resource.data.visibleToMaxAge
+        );
+    }
+
+    function validBlockDoc(targetUid) {
+      return request.resource.data is map
+        && request.resource.data.keys().hasOnly([
+          'blockedUid',
+          'createdAt',
+          'source',
+          'at'
+        ])
+        && targetUid is string
+        && targetUid.size() > 0
+        && targetUid.size() <= 128
+        && (
+          !('blockedUid' in request.resource.data)
+          || request.resource.data.blockedUid == targetUid
+        );
+    }
+
     // ========= users =========
     match /users/{userId} {
-      // Owner always; other authenticated users only when visibility == true.
-      // Query `where('visibility','==',true)` succeeds; unfiltered list fails
-      // because non-visible docs in the result set are not readable.
-      allow get, list: if isSignedIn() && (
-        isOwner(userId) ||
-        resource.data.visibility == true
-      );
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
 
-      allow create: if isOwner(userId);
-      allow update, delete: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && validUserCreateLifecycle()
+        && clientLocationWriteAllowedOnCreate()
+        && (
+          !request.resource.data.keys().hasAny(['searchPreferences'])
+          || request.resource.data.searchPreferences == null
+          || validSearchPreferencesBag(request.resource.data.searchPreferences)
+        )
+        && validVisibleAgeGates();
+
+      allow update: if isOwner(userId)
+        && visibilityAndSchemaImmutableOnUpdate()
+        && clientLocationWriteAllowedOnUpdate()
+        && (
+          !('searchPreferences' in request.resource.data.diff(resource.data).affectedKeys())
+          || request.resource.data.searchPreferences == null
+          || validSearchPreferencesBag(request.resource.data.searchPreferences)
+        )
+        && validVisibleAgeGates();
+
+      allow delete: if isOwner(userId);
     }
 
     match /users/{userId}/pushTokens/{tokenId} {
@@ -47,7 +214,14 @@ service cloud.firestore {
     }
 
     match /users/{userId}/blockedUsers/{blockedUid} {
-      allow read, write: if isOwner(userId);
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) && validBlockDoc(blockedUid);
+      allow delete: if isOwner(userId);
+    }
+
+    // Visibility projection — Admin SDK / Functions only.
+    match /discoveryProfiles/{uid} {
+      allow read, write: if false;
     }
 
     // ========= reports / moderation =========

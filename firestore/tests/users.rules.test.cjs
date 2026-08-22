@@ -81,29 +81,23 @@ describe('users rules — Production functional parity', () => {
     await assertSucceeds(ref.delete());
   });
 
-  it('other user can read a visible profile', async () => {
+  it('other user cannot read a visible or invisible profile', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await ctx
         .firestore()
         .doc('users/visible')
         .set(ownerDoc({ visibility: true, realName: 'Visible' }));
-    });
-    const other = testEnv.authenticatedContext('viewer');
-    await assertSucceeds(other.firestore().doc('users/visible').get());
-  });
-
-  it('other user cannot read an invisible profile', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await ctx
         .firestore()
         .doc('users/hidden')
         .set(ownerDoc({ visibility: false }));
     });
     const other = testEnv.authenticatedContext('viewer');
+    await assertFails(other.firestore().doc('users/visible').get());
     await assertFails(other.firestore().doc('users/hidden').get());
   });
 
-  it('authenticated query visibility == true succeeds', async () => {
+  it('authenticated query visibility == true is rejected (private users docs)', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       const db = ctx.firestore();
       await db.doc('users/v1').set(ownerDoc({ visibility: true }));
@@ -111,10 +105,9 @@ describe('users rules — Production functional parity', () => {
       await db.doc('users/h1').set(ownerDoc({ visibility: false }));
     });
     const u = testEnv.authenticatedContext('viewer');
-    const snap = await assertSucceeds(
+    await assertFails(
       u.firestore().collection('users').where('visibility', '==', true).get(),
     );
-    assert.equal(snap.size, 2);
   });
 
   it('unfiltered users collection query is rejected', async () => {
