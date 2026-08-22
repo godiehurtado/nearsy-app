@@ -13,7 +13,12 @@ export type HomeStackParamList = {
   NearbySearch: undefined;
   ProfileDetail: { uid: string };
   DiscoveryProfile: { uid: string };
-  ProfileGallery: { uid: string; mode?: 'personal' | 'professional' };
+  ProfileGallery: {
+    uid: string;
+    mode?: 'personal' | 'professional';
+    urls?: { url: string }[];
+    displayName?: string;
+  };
 };
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();

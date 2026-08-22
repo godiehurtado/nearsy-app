@@ -1,4 +1,7 @@
-// src/screens/ProfileGalleryScreen.tsx  ✅ Hybrid (Firestore Web SDK)
+/**
+ * Profile gallery from the safe getDiscoveryProfile response (url only).
+ * Never reads another users/{uid} document.
+ */
 import React, { useEffect, useState, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -16,49 +19,15 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { Ionicons } from '@expo/vector-icons';
 
-import { firestoreDb } from '../config/firebaseConfig';
+import {
+  buildGetDiscoveryProfileRequest,
+  type DiscoveryGalleryItem,
+} from '../visibility';
+import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 
-// ✅ Firestore Web SDK
-import { doc, getDoc } from 'firebase/firestore';
-
-type Params = { uid: string; mode?: 'personal' | 'professional' };
-
-type GalleryPhoto = {
-  url: string;
-  path?: string;
-  createdAt?: number;
-};
-
-type ProfileDoc = {
-  realName?: string;
-  topBarColor?: string;
-  mode?: 'personal' | 'professional';
-
-  // NUEVO esquema por modo:
-  personalGallery?: GalleryPhoto[] | string[];
-  professionalGallery?: GalleryPhoto[] | string[];
-
-  // LEGACY (por si hay restos)
-  photos?: GalleryPhoto[] | string[];
-};
-
-function deriveFirstName(real?: string) {
-  const rn = (real || '').trim();
-  if (!rn) return 'Unnamed';
-  const [first] = rn.split(/\s+/);
-  return `${first}'s`;
-}
-
-function normalizePhotos(input?: GalleryPhoto[] | string[]) {
-  if (!Array.isArray(input)) return [];
-  if (input.length > 0 && typeof input[0] === 'string') {
-    return (input as string[]).filter(Boolean).map((url) => ({ url }));
-  }
-  return (input as GalleryPhoto[]).filter((p) => !!p?.url);
-}
+type GalleryPhoto = { url: string };
 
 export default function ProfileGalleryScreen() {
-  // ✅ tipado de route y navigation (HomeStack)
   type NavProp = NativeStackNavigationProp<
     HomeStackParamList,
     'ProfileGallery'
@@ -69,14 +38,16 @@ export default function ProfileGalleryScreen() {
   const navigation = useNavigation<NavProp>();
 
   const viewedUid = route.params?.uid;
+  const paramUrls = route.params?.urls;
+  const displayNameParam = route.params?.displayName;
   const routeMode = route.params?.mode;
 
   const [loading, setLoading] = useState(true);
-  const [topColor, setTopColor] = useState('#3B5A85');
-  const [firstName, setFirstName] = useState('Unnamed');
+  const [topColor] = useState('#3B5A85');
+  const [firstName, setFirstName] = useState('Gallery');
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [resolvedMode, setResolvedMode] = useState<'personal' | 'professional'>(
-    'personal',
+    routeMode ?? 'personal',
   );
 
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -89,7 +60,6 @@ export default function ProfileGalleryScreen() {
     setViewerOpen(true);
   }, []);
 
-  // ✅ Carga del perfil consultado (Firestore Web SDK)
   useEffect(() => {
     let cancelled = false;
 
@@ -97,49 +67,43 @@ export default function ProfileGalleryScreen() {
       try {
         setLoading(true);
 
-        if (!viewedUid) {
-          if (!cancelled) {
-            setFirstName('Unnamed');
-            setTopColor('#3B5A85');
-            setPhotos([]);
-          }
+        const apply = (
+          urls: DiscoveryGalleryItem[] | GalleryPhoto[],
+          name?: string,
+          mode?: 'personal' | 'professional',
+        ) => {
+          if (cancelled) return;
+          setPhotos(
+            urls
+              .map((item) => ({ url: item.url }))
+              .filter((item) => typeof item.url === 'string' && !!item.url),
+          );
+          if (name) setFirstName(name);
+          if (mode) setResolvedMode(mode);
+        };
+
+        if (paramUrls) {
+          apply(paramUrls, displayNameParam, routeMode);
           return;
         }
 
-        const ref = doc(firestoreDb, 'users', viewedUid);
-        const snap = await getDoc(ref);
-
-        if (cancelled) return;
-
-        if (snap.exists()) {
-          const data = snap.data() as ProfileDoc;
-
-          // 1) nombre y color del perfil visto
-          setFirstName(deriveFirstName(data.realName));
-          setTopColor(data.topBarColor ?? '#3B5A85');
-
-          // 2) modo a usar: el de la ruta, o el del doc, o 'personal'
-          const mode: 'personal' | 'professional' =
-            routeMode ?? data.mode ?? 'personal';
-          setResolvedMode(mode);
-
-          // 3) fotos según modo (con fallback legacy si hiciera falta)
-          const list =
-            mode === 'professional'
-              ? normalizePhotos(data.professionalGallery)
-              : normalizePhotos(data.personalGallery);
-
-          const finalList =
-            list.length > 0 ? list : normalizePhotos(data.photos);
-          setPhotos(finalList);
-        } else {
-          setFirstName('Unnamed');
-          setPhotos([]);
+        if (!viewedUid) {
+          apply([]);
+          return;
         }
-      } catch (e: any) {
+
+        const client = await getVisibilityDiscoveryClient();
+        const response = await client.getDiscoveryProfile(
+          buildGetDiscoveryProfileRequest(viewedUid),
+        );
+        apply(
+          response.gallery,
+          response.profile.displayName,
+          response.profile.mode,
+        );
+      } catch (e) {
         if (__DEV__) console.error('[ProfileGallery] load error:', e);
         if (!cancelled) {
-          setFirstName('Unnamed');
           setPhotos([]);
         }
       } finally {
@@ -150,7 +114,7 @@ export default function ProfileGalleryScreen() {
     return () => {
       cancelled = true;
     };
-  }, [viewedUid, routeMode]);
+  }, [viewedUid, paramUrls, displayNameParam, routeMode]);
 
   if (loading) {
     return (
@@ -162,12 +126,13 @@ export default function ProfileGalleryScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff', paddingTop: insets.top }}>
-      {/* Top bar con logo + texto centrado */}
       <View style={[styles.topBar, { backgroundColor: topColor }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.topBtn}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
         >
           <Ionicons name="chevron-back" size={22} color="#fff" />
         </TouchableOpacity>
@@ -195,13 +160,15 @@ export default function ProfileGalleryScreen() {
       ) : (
         <FlatList
           data={photos}
-          keyExtractor={(p, i) => (p.path || p.url) + i}
+          keyExtractor={(p, i) => p.url + i}
           numColumns={3}
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.thumbWrap}
               activeOpacity={0.9}
               onPress={() => openViewer(item.url)}
+              accessibilityRole="button"
+              accessibilityLabel="Photo"
             >
               <Image source={{ uri: item.url }} style={styles.thumb} />
             </TouchableOpacity>
@@ -210,13 +177,14 @@ export default function ProfileGalleryScreen() {
         />
       )}
 
-      {/* Visor fullscreen */}
       <Modal visible={viewerOpen} transparent animationType="fade">
         <View style={styles.viewerBackdrop}>
           <TouchableOpacity
             style={styles.viewerClose}
             onPress={() => setViewerOpen(false)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
           >
             <Ionicons name="close" size={26} color="#fff" />
           </TouchableOpacity>

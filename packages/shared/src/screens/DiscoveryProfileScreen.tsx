@@ -29,7 +29,10 @@ import {
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 
 export default function DiscoveryProfileScreen() {
-  const route = useRoute<RouteProp<HomeStackParamList, 'DiscoveryProfile'>>();
+  const route = useRoute<
+    | RouteProp<HomeStackParamList, 'DiscoveryProfile'>
+    | RouteProp<HomeStackParamList, 'ProfileDetail'>
+  >();
   const navigation =
     useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
   const insets = useSafeAreaInsets();
@@ -158,6 +161,25 @@ export default function DiscoveryProfileScreen() {
                 </View>
               ))}
             </View>
+          )}
+          {data.gallery.length > 0 && (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Open gallery"
+              onPress={() =>
+                navigation.navigate('ProfileGallery', {
+                  uid,
+                  urls: data.gallery,
+                  displayName: data.profile.displayName,
+                  mode: data.profile.mode,
+                })
+              }
+              style={{ marginTop: 20 }}
+            >
+              <Text style={{ color: palette.primary, fontWeight: '700' }}>
+                Open gallery
+              </Text>
+            </TouchableOpacity>
           )}
           {data.gallery.length > 0 && (
             <View style={styles.gallery}>

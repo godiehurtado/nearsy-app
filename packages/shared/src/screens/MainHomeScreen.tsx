@@ -9,6 +9,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  AccessibilityInfo,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -36,6 +37,9 @@ import {
   resolveCanonicalAfterDisplayClose,
   resolveDistanceDisplayUnit,
   selectPreferencesForMode,
+  canAddSearchInterest,
+  prepareSearchPreferencesForPersist,
+  INTEREST_IDS_OVER_MAX_REASON,
   type VisibilitySearchPreferences,
   type VisibilitySearchPreferencesByMode,
   type DistanceDisplayUnit,
@@ -45,9 +49,13 @@ import {
   MAX_DISTANCE_METERS_UI,
   DISTANCE_STEP_FEET,
   DISTANCE_STEP_METERS,
+  MAX_SEARCH_INTEREST_IDS,
   isVisibilityDiscoveryClientError,
 } from '../visibility';
-import { persistSearchPreferencesForMode } from '../visibility/searchPreferencesStore';
+import {
+  officialCatalogInterestIdSet,
+  persistSearchPreferencesForMode,
+} from '../visibility/searchPreferencesStore';
 import {
   resolveActiveMode,
   type ProfileMode,
@@ -129,6 +137,11 @@ export default function MainHomeScreen({ navigation }: Props) {
     parseSearchPreferencesFromUserDoc(null, unit),
   );
   const [savingPrefs, setSavingPrefs] = useState(false);
+  const [interestLimitMessage, setInterestLimitMessage] = useState<
+    string | null
+  >(null);
+
+  const officialInterestIds = useMemo(() => officialCatalogInterestIdSet(), []);
 
   const mode: ProfileMode = resolveActiveMode(profile) ?? 'personal';
   const activePrefs = selectPreferencesForMode(prefs, mode);
@@ -163,6 +176,7 @@ export default function MainHomeScreen({ navigation }: Props) {
             parseSearchPreferencesFromUserDoc(
               data as Record<string, unknown>,
               unit,
+              officialInterestIds,
             ),
           );
         }
@@ -175,7 +189,7 @@ export default function MainHomeScreen({ navigation }: Props) {
     );
 
     return () => unsub();
-  }, [t, unit]);
+  }, [t, unit, officialInterestIds]);
 
   useEffect(() => {
     (async () => {
@@ -221,20 +235,44 @@ export default function MainHomeScreen({ navigation }: Props) {
     }, [profile.visibility, loading]),
   );
 
+  const announceInterestLimit = () => {
+    const title = t('home.discovery.maxInterestsTitle');
+    const message = t('home.discovery.maxInterests');
+    setInterestLimitMessage(message);
+    AccessibilityInfo.announceForAccessibility(message);
+    Alert.alert(title, message);
+  };
+
   const savePrefs = async (next: VisibilitySearchPreferences) => {
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid || savingPrefs) return;
+    const prepared = prepareSearchPreferencesForPersist(
+      next,
+      officialInterestIds,
+    );
+    if (prepared.ok === false) {
+      if (prepared.reasons.includes(INTEREST_IDS_OVER_MAX_REASON)) {
+        announceInterestLimit();
+      }
+      return;
+    }
     setSavingPrefs(true);
     try {
       const updated = await persistSearchPreferencesForMode(
         uid,
         prefs,
         mode,
-        next,
+        prepared.prefs,
       );
       setPrefs(updated);
-    } catch {
-      Alert.alert('Error', 'Could not save preferences.');
+      setInterestLimitMessage(null);
+    } catch (err) {
+      const text = err instanceof Error ? err.message : '';
+      if (text.includes(INTEREST_IDS_OVER_MAX_REASON)) {
+        announceInterestLimit();
+      } else {
+        Alert.alert('Error', 'Could not save preferences.');
+      }
     } finally {
       setSavingPrefs(false);
     }
@@ -295,14 +333,36 @@ export default function MainHomeScreen({ navigation }: Props) {
     }
   };
 
-  const interestCatalog = useMemo(() => flattenCatalogInterestItems(), []);
+  const interestCatalog = useMemo(
+    () =>
+      flattenCatalogInterestItems().filter(
+        (item) => officialInterestIds.has(item.id),
+      ),
+    [officialInterestIds],
+  );
   const selectedIds = new Set(activePrefs.interestIds);
+  const atInterestLimit =
+    activePrefs.interestIds.length >= MAX_SEARCH_INTEREST_IDS;
 
   const toggleInterest = (id: string) => {
-    const nextIds = selectedIds.has(id)
-      ? activePrefs.interestIds.filter((x) => x !== id)
-      : [...activePrefs.interestIds, id];
-    void savePrefs({ ...activePrefs, interestIds: nextIds });
+    if (selectedIds.has(id)) {
+      setInterestLimitMessage(null);
+      void savePrefs({
+        ...activePrefs,
+        interestIds: activePrefs.interestIds.filter((x) => x !== id),
+      });
+      return;
+    }
+    if (
+      !canAddSearchInterest(activePrefs.interestIds, id, officialInterestIds)
+    ) {
+      announceInterestLimit();
+      return;
+    }
+    void savePrefs({
+      ...activePrefs,
+      interestIds: [...activePrefs.interestIds, id],
+    });
   };
 
   if (loading) {
@@ -432,6 +492,15 @@ export default function MainHomeScreen({ navigation }: Props) {
         <Text style={[styles.prefLabel, { color: palette.textMuted }]}>
           Interests (empty = anyone)
         </Text>
+        {interestLimitMessage ? (
+          <Text
+            accessibilityRole="alert"
+            accessibilityLiveRegion="assertive"
+            style={{ color: palette.textMuted, marginBottom: 8 }}
+          >
+            {interestLimitMessage}
+          </Text>
+        ) : null}
         <View style={styles.chips}>
           {interestCatalog.slice(0, 24).map((item) => {
             const on = selectedIds.has(item.id);
@@ -439,6 +508,16 @@ export default function MainHomeScreen({ navigation }: Props) {
               <TouchableOpacity
                 key={item.id}
                 onPress={() => toggleInterest(item.id)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={item.name}
+                accessibilityHint={
+                  on
+                    ? undefined
+                    : atInterestLimit
+                      ? t('home.discovery.maxInterests')
+                      : undefined
+                }
                 style={[
                   styles.chip,
                   {

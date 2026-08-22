@@ -51,6 +51,11 @@ export type ValidationOk = { ok: true };
 export type ValidationFail = { ok: false; reasons: readonly string[] };
 export type ValidationResult = ValidationOk | ValidationFail;
 
+/** Result of sanitizing + validating prefs before a users/{uid} write. */
+export type PreparedSearchPreferences =
+  | { ok: true; prefs: VisibilitySearchPreferences }
+  | { ok: false; reasons: readonly string[] };
+
 /**
  * Discriminated Visibility client states — UI-agnostic.
  * Impossible combinations are avoided by using a single `kind` discriminant.

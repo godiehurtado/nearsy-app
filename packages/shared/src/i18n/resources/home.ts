@@ -9,5 +9,7 @@ export default {
   discovery: {
     title: 'Discovery',
     cta: 'See who is near you',
+    maxInterestsTitle: 'Interest limit',
+    maxInterests: 'You can select up to 12 interests.',
   },
 } as const;

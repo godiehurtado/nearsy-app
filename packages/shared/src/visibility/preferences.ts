@@ -5,17 +5,21 @@
 import {
   DEFAULT_METRIC_DISTANCE_METERS,
   DEFAULT_US_DISTANCE_METERS,
+  MAX_SEARCH_INTEREST_IDS,
   MAX_VISIBILITY_AGE,
   MIN_VISIBILITY_AGE,
 } from './constants';
 import { isCanonicalDistanceInRange } from './distance';
 import type {
   DistanceDisplayUnit,
+  PreparedSearchPreferences,
   ProfileMode,
   ValidationResult,
   VisibilitySearchPreferences,
   VisibilitySearchPreferencesByMode,
 } from './types';
+
+export const INTEREST_IDS_OVER_MAX_REASON = 'interest-ids-over-max';
 
 export function createDefaultSearchPreferences(
   unit: DistanceDisplayUnit,
@@ -70,9 +74,13 @@ export function validateAgeRange(
 }
 
 /**
- * Interest IDs: non-empty trimmed strings.
+ * Interest IDs: non-empty trimmed strings; custom IDs are never official.
  * Catalog membership is optional (pass `knownIds` when available).
  */
+export function isCustomSearchInterestId(id: string): boolean {
+  return typeof id === 'string' && id.startsWith('custom_');
+}
+
 export function isValidInterestId(
   id: string,
   knownIds?: ReadonlySet<string>,
@@ -80,8 +88,49 @@ export function isValidInterestId(
   if (typeof id !== 'string') return false;
   const trimmed = id.trim();
   if (trimmed.length === 0 || trimmed !== id) return false;
+  if (isCustomSearchInterestId(id)) return false;
   if (knownIds && !knownIds.has(id)) return false;
   return true;
+}
+
+export function isOfficialSearchInterestId(
+  id: string,
+  knownIds?: ReadonlySet<string>,
+): boolean {
+  return isValidInterestId(id, knownIds);
+}
+
+/** Official unique IDs in first-seen order (does not cap length). */
+export function keepOfficialSearchInterestIds(
+  ids: readonly string[],
+  knownIds?: ReadonlySet<string>,
+): string[] {
+  return dedupeInterestIds(
+    ids.filter((id) => isOfficialSearchInterestId(id, knownIds)),
+  );
+}
+
+/** Official unique IDs, capped at MAX_SEARCH_INTEREST_IDS (lenient parse). */
+export function sanitizeSearchInterestIds(
+  ids: readonly string[],
+  knownIds?: ReadonlySet<string>,
+): string[] {
+  return keepOfficialSearchInterestIds(ids, knownIds).slice(
+    0,
+    MAX_SEARCH_INTEREST_IDS,
+  );
+}
+
+/** Adding a 13th independent official ID is not allowed. Deselect is always ok. */
+export function canAddSearchInterest(
+  currentIds: readonly string[],
+  candidateId: string,
+  knownIds?: ReadonlySet<string>,
+): boolean {
+  if (!isOfficialSearchInterestId(candidateId, knownIds)) return false;
+  const current = keepOfficialSearchInterestIds(currentIds, knownIds);
+  if (current.includes(candidateId)) return true;
+  return current.length < MAX_SEARCH_INTEREST_IDS;
 }
 
 /** Deduplicate preserving first-seen order. */
@@ -110,7 +159,31 @@ export function validateInterestIds(
   if (deduped.length !== ids.length) {
     reasons.push('interest-ids-not-unique');
   }
+  if (deduped.length > MAX_SEARCH_INTEREST_IDS) {
+    reasons.push(INTEREST_IDS_OVER_MAX_REASON);
+  }
   return reasons.length === 0 ? { ok: true } : { ok: false, reasons };
+}
+
+/**
+ * Drop unofficial IDs, then reject a 13th official selection before persist.
+ * Empty `interestIds` remains valid (no filter).
+ */
+export function prepareSearchPreferencesForPersist(
+  prefs: VisibilitySearchPreferences,
+  knownIds?: ReadonlySet<string>,
+): PreparedSearchPreferences {
+  const official = keepOfficialSearchInterestIds(prefs.interestIds, knownIds);
+  if (official.length > MAX_SEARCH_INTEREST_IDS) {
+    return { ok: false, reasons: [INTEREST_IDS_OVER_MAX_REASON] };
+  }
+  const next: VisibilitySearchPreferences = {
+    ...prefs,
+    interestIds: official,
+  };
+  const check = validateSearchPreferences(next, knownIds);
+  if (check.ok === false) return check;
+  return { ok: true, prefs: next };
 }
 
 export function validateSearchPreferences(

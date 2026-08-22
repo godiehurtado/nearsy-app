@@ -4,6 +4,7 @@
 
 import {
   createDefaultSearchPreferencesByMode,
+  sanitizeSearchInterestIds,
   validateSearchPreferences,
 } from './preferences';
 import type {
@@ -15,6 +16,7 @@ import type {
 export function parseSearchPreferencesFromUserDoc(
   data: Record<string, unknown> | null | undefined,
   unit: DistanceDisplayUnit,
+  knownIds?: ReadonlySet<string>,
 ): VisibilitySearchPreferencesByMode {
   const defaults = createDefaultSearchPreferencesByMode(unit, Date.now());
   const raw = data?.searchPreferences;
@@ -23,14 +25,15 @@ export function parseSearchPreferencesFromUserDoc(
   }
   const bag = raw as Record<string, unknown>;
   return {
-    personal: parseOne(bag.personal, defaults.personal),
-    professional: parseOne(bag.professional, defaults.professional),
+    personal: parseOne(bag.personal, defaults.personal, knownIds),
+    professional: parseOne(bag.professional, defaults.professional, knownIds),
   };
 }
 
 function parseOne(
   value: unknown,
   fallback: VisibilitySearchPreferences,
+  knownIds?: ReadonlySet<string>,
 ): VisibilitySearchPreferences {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return fallback;
@@ -51,14 +54,17 @@ function parseOne(
         ? v.maxDistanceMeters
         : fallback.maxDistanceMeters,
     interestIds: Array.isArray(v.interestIds)
-      ? v.interestIds.filter((id): id is string => typeof id === 'string')
+      ? sanitizeSearchInterestIds(
+          v.interestIds.filter((id): id is string => typeof id === 'string'),
+          knownIds,
+        )
       : fallback.interestIds,
     updatedAt:
       typeof v.updatedAt === 'number' && Number.isFinite(v.updatedAt)
         ? v.updatedAt
         : fallback.updatedAt,
   };
-  const check = validateSearchPreferences(prefs);
+  const check = validateSearchPreferences(prefs, knownIds);
   return check.ok ? prefs : fallback;
 }
 

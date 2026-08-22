@@ -27,6 +27,8 @@ import { ref, deleteObject } from 'firebase/storage';
 import { GalleryPhoto } from '../types/profile';
 import { uploadGalleryImage } from '../services/storageService';
 import TopHeader from '../components/TopHeader';
+import { buildGetDiscoveryProfileRequest } from '../visibility';
+import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 
 type ProfileMode = 'personal' | 'professional';
 
@@ -80,10 +82,29 @@ export default function GalleryScreen({ route, navigation }: any) {
         if (!targetUid) throw new Error('User not authenticated.');
 
         setOwnerUid(targetUid);
-        setIsOwn(!!myUid && myUid === targetUid);
+        const own = !!myUid && myUid === targetUid;
+        setIsOwn(own);
 
         const effectiveRouteMode: ProfileMode =
           routeMode === 'professional' ? 'professional' : 'personal';
+
+        if (!own) {
+          const client = await getVisibilityDiscoveryClient();
+          const response = await client.getDiscoveryProfile(
+            buildGetDiscoveryProfileRequest(targetUid),
+          );
+          setTopBarColor('#3B5A85');
+          setTopBarMode('color');
+          setTopBarImage(null);
+          setProfileImage(response.profile.profileImage);
+          setMode(response.profile.mode);
+          setPhotos(
+            response.gallery
+              .filter((p) => !!p?.url)
+              .map((p) => ({ url: p.url, path: '', createdAt: 0 })),
+          );
+          return;
+        }
 
         const snap = await getDoc(doc(firestoreDb, 'users', targetUid));
 

@@ -49,6 +49,41 @@ describe('visibility orchestration helpers (pure)', () => {
     assert.notDeepEqual(byMode.personal, byMode.professional);
   });
 
+  it('caps stored search interest ids at 12 and drops unofficial ids', () => {
+    const knownIds = new Set(
+      Array.from({ length: 14 }, (_, i) => `official_${i + 1}`),
+    );
+    const thirteen = Array.from({ length: 13 }, (_, i) => `official_${i + 1}`);
+    const byMode = parseSearchPreferencesFromUserDoc(
+      {
+        searchPreferences: {
+          personal: {
+            ageMin: 18,
+            ageMax: 99,
+            maxDistanceMeters: 30,
+            interestIds: [...thirteen, 'custom_sports_x_1'],
+            updatedAt: 1,
+          },
+          professional: {
+            ageMin: 18,
+            ageMax: 99,
+            maxDistanceMeters: 30,
+            interestIds: [],
+            updatedAt: 2,
+          },
+        },
+      },
+      'm',
+      knownIds,
+    );
+    assert.equal(byMode.personal.interestIds.length, 12);
+    assert.deepEqual(
+      byMode.personal.interestIds,
+      thirteen.slice(0, 12),
+    );
+    assert.deepEqual(byMode.professional.interestIds, []);
+  });
+
   it('falls back to defaults when prefs missing', () => {
     const byMode = parseSearchPreferencesFromUserDoc(null, 'ft');
     assert.equal(

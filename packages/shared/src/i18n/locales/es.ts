@@ -859,6 +859,8 @@ const es: TranslationResources = {
     discovery: {
       title: 'Descubrimiento',
       cta: 'Ver quién está cerca',
+      maxInterestsTitle: 'Límite de intereses',
+      maxInterests: 'Puedes seleccionar hasta 12 intereses.',
     },
   },
   nearby: {

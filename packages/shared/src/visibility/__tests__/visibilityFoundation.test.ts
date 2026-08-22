@@ -10,20 +10,25 @@ import {
   DISTANCE_STEP_FEET,
   DISTANCE_STEP_METERS,
   FEET_PER_METER,
+  INTEREST_IDS_OVER_MAX_REASON,
   LOCATION_TTL_MS,
   MAX_DISTANCE_FEET,
   MAX_DISTANCE_METERS,
   MAX_DISTANCE_METERS_UI,
   MAX_LOCATION_ACCURACY_METERS,
+  MAX_GALLERY_ITEMS,
+  MAX_SEARCH_INTEREST_IDS,
   MAX_VISIBILITY_AGE,
   MIN_DISTANCE_FEET,
   MIN_DISTANCE_METERS,
   MIN_DISTANCE_METERS_UI,
   MIN_VISIBILITY_AGE,
   SCHEMA_VERSION,
+  canAddSearchInterest,
   canonicalDistancesEqual,
   canonicalFromDisplayDistance,
   compareCandidatesByDistanceThenUid,
+  createDefaultSearchPreferences,
   createDefaultSearchPreferencesByMode,
   dedupeInterestIds,
   evaluateLocationAvailability,
@@ -36,6 +41,7 @@ import {
   isLocationFresh,
   isVisibilityAgeInBounds,
   isWithinMaxDistance,
+  keepOfficialSearchInterestIds,
   metersToFeet,
   presentDistanceFromCanonical,
   resetPreferencesForMode,
@@ -47,8 +53,11 @@ import {
   stateFromForegroundPermission,
   updatePreferencesForMode,
   validateAgeRange,
+  validateInterestIds,
   validateSearchPreferences,
   withDedupedInterestIds,
+  prepareSearchPreferencesForPersist,
+  sanitizeSearchInterestIds,
 } from '../index';
 
 describe('visibility constants', () => {
@@ -65,6 +74,8 @@ describe('visibility constants', () => {
     assert.equal(DEFAULT_US_DISTANCE_FEET, 200);
     assert.equal(DEFAULT_METRIC_DISTANCE_METERS, 60);
     assert.equal(CANONICAL_DISTANCE_EPSILON_METERS, 0.01);
+    assert.equal(MAX_SEARCH_INTEREST_IDS, 12);
+    assert.equal(MAX_GALLERY_ITEMS, 12);
   });
 });
 
@@ -239,6 +250,61 @@ describe('interests', () => {
     assert.equal(interestsMatchOr([], ['a']), true);
     assert.equal(interestsMatchOr(['a'], ['b', 'a']), true);
     assert.equal(interestsMatchOr(['a'], ['b', 'c']), false);
+  });
+
+  it('accepts 0 and 12 official IDs and rejects a 13th', () => {
+    const knownIds = new Set(
+      Array.from({ length: 14 }, (_, i) => `official_${i + 1}`),
+    );
+    const twelve = Array.from({ length: 12 }, (_, i) => `official_${i + 1}`);
+    const thirteen = [...twelve, 'official_13'];
+    const base = createDefaultSearchPreferences('m', 1);
+
+    assert.equal(validateInterestIds([], knownIds).ok, true);
+    assert.equal(validateInterestIds(twelve, knownIds).ok, true);
+    const over = validateInterestIds(thirteen, knownIds);
+    assert.equal(over.ok, false);
+    if (!over.ok) {
+      assert.ok(over.reasons.includes(INTEREST_IDS_OVER_MAX_REASON));
+    }
+
+    const persist0 = prepareSearchPreferencesForPersist(
+      { ...base, interestIds: [] },
+      knownIds,
+    );
+    assert.equal(persist0.ok, true);
+    if (persist0.ok) assert.deepEqual(persist0.prefs.interestIds, []);
+
+    const persist12 = prepareSearchPreferencesForPersist(
+      { ...base, interestIds: twelve },
+      knownIds,
+    );
+    assert.equal(persist12.ok, true);
+    if (persist12.ok) assert.deepEqual(persist12.prefs.interestIds, twelve);
+
+    const persist13 = prepareSearchPreferencesForPersist(
+      { ...base, interestIds: thirteen },
+      knownIds,
+    );
+    assert.equal(persist13.ok, false);
+    if (!persist13.ok) {
+      assert.ok(persist13.reasons.includes(INTEREST_IDS_OVER_MAX_REASON));
+    }
+
+    assert.equal(canAddSearchInterest([], 'official_1', knownIds), true);
+    assert.equal(canAddSearchInterest(twelve, 'official_13', knownIds), false);
+    assert.equal(canAddSearchInterest(twelve, 'official_1', knownIds), true);
+    assert.deepEqual(
+      keepOfficialSearchInterestIds(
+        [...twelve, 'custom_sports_outdoors_x_1', 'unknown'],
+        knownIds,
+      ),
+      twelve,
+    );
+    assert.deepEqual(
+      sanitizeSearchInterestIds(thirteen, knownIds),
+      twelve,
+    );
   });
 });
 
