@@ -1,6 +1,6 @@
 /**
- * Visibility Journey — pure client foundation (V3.2A) + callable contracts (V3.3A).
- * No screens, permissions, or productive Firebase wiring in this module.
+ * Visibility Journey — pure domain + callable contracts.
+ * iOS composition / orchestration: import from dedicated entry files.
  */
 
 export * from './constants';
@@ -11,3 +11,4 @@ export * from './freshness';
 export * from './filters';
 export * from './states';
 export * from './callables';
+export * from './searchPreferencesParse';

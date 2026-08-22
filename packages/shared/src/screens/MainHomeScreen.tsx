@@ -1,5 +1,5 @@
-// src/screens/MainHomeScreen.tsx ✅ Hybrid (Auth RNFirebase + Firestore Web SDK)
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+// MainHomeScreen — Visibility & Discovery entry (Nearsy 2.0 MVP)
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -13,20 +13,50 @@ import {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Location from 'expo-location';
+import * as Localization from 'expo-localization';
 
 import TopHeader from '../components/TopHeader';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
-import { updateUserProfilePartial } from '../services/firestoreService';
-
-// 👇 servicio de contactos
 import {
   setContactsSyncEnabled,
-  syncContactsSafe,
 } from '../services/contactsSync';
-
-// ✅ Web SDK Firestore listener
 import { doc, onSnapshot } from 'firebase/firestore';
+import { useTranslation } from '../i18n';
+import { useAppTheme } from '../theme';
+import {
+  activateVisibilityFlow,
+  deactivateVisibilityFlow,
+  reconcileVisibilityWithForegroundPermission,
+} from '../visibility/orchestration';
+import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
+import {
+  parseSearchPreferencesFromUserDoc,
+  presentDistanceFromCanonical,
+  canonicalFromDisplayDistance,
+  resolveCanonicalAfterDisplayClose,
+  resolveDistanceDisplayUnit,
+  selectPreferencesForMode,
+  type VisibilitySearchPreferences,
+  type VisibilitySearchPreferencesByMode,
+  type DistanceDisplayUnit,
+  MIN_DISTANCE_FEET,
+  MAX_DISTANCE_FEET,
+  MIN_DISTANCE_METERS_UI,
+  MAX_DISTANCE_METERS_UI,
+  DISTANCE_STEP_FEET,
+  DISTANCE_STEP_METERS,
+  isVisibilityDiscoveryClientError,
+} from '../visibility';
+import { persistSearchPreferencesForMode } from '../visibility/searchPreferencesStore';
+import {
+  resolveActiveMode,
+  type ProfileMode,
+} from '../profile/profileModeFields';
+import { flattenCatalogInterestItems } from '../interests/onboardingInterestCatalog';
+import {
+  startBackgroundLocation,
+  stopBackgroundLocation,
+} from '../services/backgroundLocation';
 
 type ProfileDoc = {
   profileImage?: string | null;
@@ -35,20 +65,73 @@ type ProfileDoc = {
   visibility?: boolean;
   topBarImage?: string | null;
   topBarMode?: 'color' | 'image';
-
-  // opcional (pero lo estás usando en updateUserProfilePartial)
-  location?: { lat: number; lng: number; updatedAt?: number };
+  mode?: ProfileMode;
+  searchPreferences?: unknown;
+  profiles?: unknown;
 };
 
 type Props = NativeStackScreenProps<any>;
 
-// flag local para saber si ya mostramos el diálogo de contactos
 const CONTACTS_ASKED_KEY = 'NEARSY_CONTACTS_ASKED';
 
+function localeUnit(): DistanceDisplayUnit {
+  const tag = Localization.getLocales()?.[0]?.languageTag ?? 'en';
+  return resolveDistanceDisplayUnit(tag);
+}
+
+function Stepper({
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  color,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (n: number) => void;
+  color: string;
+}) {
+  return (
+    <View style={styles.stepper}>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Decrease"
+        onPress={() => onChange(Math.max(min, value - step))}
+        style={[styles.stepBtn, { borderColor: color }]}
+      >
+        <Text style={{ color, fontWeight: '700' }}>−</Text>
+      </TouchableOpacity>
+      <Text style={styles.stepValue}>{value}</Text>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Increase"
+        onPress={() => onChange(Math.min(max, value + step))}
+        style={[styles.stepBtn, { borderColor: color }]}
+      >
+        <Text style={{ color, fontWeight: '700' }}>+</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 export default function MainHomeScreen({ navigation }: Props) {
+  const { t } = useTranslation();
+  const { palette } = useAppTheme();
+  const unit = useMemo(() => localeUnit(), []);
+
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<ProfileDoc>({});
   const [statusUpdating, setStatusUpdating] = useState(false);
+  const [prefs, setPrefs] = useState<VisibilitySearchPreferencesByMode>(() =>
+    parseSearchPreferencesFromUserDoc(null, unit),
+  );
+  const [savingPrefs, setSavingPrefs] = useState(false);
+
+  const mode: ProfileMode = resolveActiveMode(profile) ?? 'personal';
+  const activePrefs = selectPreferencesForMode(prefs, mode);
 
   const firstName = useMemo(() => {
     const rn = (profile.realName || '').trim();
@@ -57,7 +140,11 @@ export default function MainHomeScreen({ navigation }: Props) {
     return first || 'Unnamed';
   }, [profile.realName]);
 
-  // ✅ Suscripción al perfil (Web SDK)
+  const displayDistance = presentDistanceFromCanonical(
+    activePrefs.maxDistanceMeters,
+    unit,
+  );
+
   useEffect(() => {
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) {
@@ -66,161 +153,175 @@ export default function MainHomeScreen({ navigation }: Props) {
     }
 
     const ref = doc(firestoreDb, 'users', uid);
-
     const unsub = onSnapshot(
       ref,
       (snap) => {
         if (snap.exists()) {
-          setProfile((snap.data() as ProfileDoc) ?? {});
+          const data = (snap.data() as ProfileDoc) ?? {};
+          setProfile(data);
+          setPrefs(
+            parseSearchPreferencesFromUserDoc(
+              data as Record<string, unknown>,
+              unit,
+            ),
+          );
         }
         setLoading(false);
       },
-      (error) => {
-        if (__DEV__) {
-          console.error('[MainHome] Error fetching profile data:', error);
-        }
-        Alert.alert('Error', 'Could not load your profile.');
+      () => {
+        Alert.alert(t('home.visibility.inactive'), t('nearby.emptyWithLocation'));
         setLoading(false);
       },
     );
 
     return () => unsub();
-  }, []);
+  }, [t, unit]);
 
-  // 👉 Soft-prompt para contactos (solo una vez)
   useEffect(() => {
     (async () => {
       const asked = await AsyncStorage.getItem(CONTACTS_ASKED_KEY);
       if (asked === '1') return;
-
-      // No mostramos ningún diálogo automático.
-      // Apple prefiere que el permiso se pida solo cuando el usuario inicia la acción.
       await AsyncStorage.setItem(CONTACTS_ASKED_KEY, '1');
       await setContactsSyncEnabled(false);
     })();
   }, []);
 
-  // 🔄 Refresca ubicación cuando vuelves a esta pantalla (solo si está ACTIVE)
+  // Reconcile permission vs remote visibility; start/stop BG tracking
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-
       (async () => {
+        const uid = firebaseAuth.currentUser?.uid;
+        if (!uid || loading) return;
         try {
-          if (!profile.visibility) return;
-
-          const uid = firebaseAuth.currentUser?.uid;
-          if (!uid) return;
-
-          const perm = await Location.getForegroundPermissionsAsync();
-          if (perm.status !== 'granted') return;
-
-          const pos = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Highest,
-          });
-
+          const client = await getVisibilityDiscoveryClient();
+          const remote = !!profile.visibility;
+          const result = await reconcileVisibilityWithForegroundPermission(
+            remote,
+            client,
+          );
           if (cancelled) return;
-
-          await updateUserProfilePartial(uid, {
-            location: {
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude,
-              updatedAt: Date.now(),
-              accuracy: pos.coords.accuracy ?? null,
-            },
-          });
+          if (result.reconciled) {
+            setProfile((p) => ({ ...p, visibility: false }));
+            await stopBackgroundLocation().catch(() => {});
+            return;
+          }
+          if (result.visibility) {
+            await startBackgroundLocation({ uid }).catch(() => {});
+          } else {
+            await stopBackgroundLocation().catch(() => {});
+          }
         } catch {
-          // silencio
+          // best-effort
         }
       })();
-
       return () => {
         cancelled = true;
       };
-    }, [profile.visibility]),
+    }, [profile.visibility, loading]),
   );
 
-  const updateLocationInBackground = (uid: string) => {
-    (async () => {
-      try {
-        let perm = await Location.getForegroundPermissionsAsync();
-        if (perm.status !== 'granted') {
-          perm = await Location.requestForegroundPermissionsAsync();
-          if (perm.status !== 'granted') {
-            if (__DEV__)
-              console.warn('[MainHome] Location permission not granted');
-            return;
-          }
-        }
-
-        const pos = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Highest,
-        });
-
-        await updateUserProfilePartial(uid, {
-          location: {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            updatedAt: Date.now(),
-            accuracy: pos.coords.accuracy ?? null,
-          },
-        });
-
-        if (__DEV__) console.log('[MainHome] Location updated in background');
-      } catch (err) {
-        if (__DEV__)
-          console.warn(
-            '[MainHome] Failed to update location in background',
-            err,
-          );
-      }
-    })();
+  const savePrefs = async (next: VisibilitySearchPreferences) => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid || savingPrefs) return;
+    setSavingPrefs(true);
+    try {
+      const updated = await persistSearchPreferencesForMode(
+        uid,
+        prefs,
+        mode,
+        next,
+      );
+      setPrefs(updated);
+    } catch {
+      Alert.alert('Error', 'Could not save preferences.');
+    } finally {
+      setSavingPrefs(false);
+    }
   };
 
   const handleToggleActive = async () => {
     if (statusUpdating) return;
-
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) return;
 
     const goingActive = !profile.visibility;
-
+    setStatusUpdating(true);
     try {
-      setStatusUpdating(true);
-
-      // 1) Cambio rápido en Firestore SOLO de visibility
-      await updateUserProfilePartial(uid, { visibility: goingActive });
-
-      // 2) UI inmediata
-      setProfile((p) => ({ ...p, visibility: goingActive }));
-    } catch (e) {
-      if (__DEV__) console.error('[MainHome] Error toggling visibility', e);
-      Alert.alert('Error', 'Could not update your status.');
-      return;
+      const client = await getVisibilityDiscoveryClient();
+      if (goingActive) {
+        const outcome = await activateVisibilityFlow(client);
+        if (outcome.ok === false) {
+          if (outcome.kind === 'permission-denied') {
+            Alert.alert(
+              t('home.visibility.inactive'),
+              t('nearby.hintWithoutLocation'),
+            );
+          } else if (outcome.kind === 'invalid-accuracy') {
+            Alert.alert(
+              t('home.visibility.inactive'),
+              'Location accuracy is too low. Move outdoors and try again.',
+            );
+          } else if (outcome.error?.retryable) {
+            Alert.alert('Retry', 'Activation failed. Please try again.');
+          } else {
+            Alert.alert('Error', 'Could not activate Visibility.');
+          }
+          return;
+        }
+        setProfile((p) => ({ ...p, visibility: true }));
+        await startBackgroundLocation({ uid }).catch(() => {});
+      } else {
+        const outcome = await deactivateVisibilityFlow(client);
+        if (outcome.ok === false) {
+          if (outcome.error?.retryable) {
+            Alert.alert('Retry', 'Deactivation failed. Please try again.');
+          } else {
+            Alert.alert('Error', 'Could not deactivate Visibility.');
+          }
+          return;
+        }
+        setProfile((p) => ({ ...p, visibility: false }));
+        await stopBackgroundLocation().catch(() => {});
+      }
+    } catch (err) {
+      if (isVisibilityDiscoveryClientError(err) && err.retryable) {
+        Alert.alert('Retry', 'Please try again.');
+      } else {
+        Alert.alert('Error', 'Could not update Visibility.');
+      }
     } finally {
       setStatusUpdating(false);
     }
+  };
 
-    // 3) Si activamos, actualiza ubicación en background
-    if (goingActive) {
-      updateLocationInBackground(uid);
-    }
+  const interestCatalog = useMemo(() => flattenCatalogInterestItems(), []);
+  const selectedIds = new Set(activePrefs.interestIds);
+
+  const toggleInterest = (id: string) => {
+    const nextIds = selectedIds.has(id)
+      ? activePrefs.interestIds.filter((x) => x !== id)
+      : [...activePrefs.interestIds, id];
+    void savePrefs({ ...activePrefs, interestIds: nextIds });
   };
 
   if (loading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color="#2B3A42" />
+        <ActivityIndicator size="large" color={palette.primary} />
       </View>
     );
   }
 
-  const topColor = profile.topBarColor || '#3B5A85';
+  const topColor = profile.topBarColor || palette.primary;
   const canSearch = !!profile.visibility;
+  const distMin = unit === 'ft' ? MIN_DISTANCE_FEET : MIN_DISTANCE_METERS_UI;
+  const distMax = unit === 'ft' ? MAX_DISTANCE_FEET : MAX_DISTANCE_METERS_UI;
+  const distStep = unit === 'ft' ? DISTANCE_STEP_FEET : DISTANCE_STEP_METERS;
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: '#fff' }}
+      style={{ flex: 1, backgroundColor: palette.background }}
       contentContainerStyle={{ paddingBottom: 80 }}
     >
       <TopHeader
@@ -234,10 +335,22 @@ export default function MainHomeScreen({ navigation }: Props) {
       />
 
       <View style={styles.container}>
-        <Text style={styles.name}>{firstName}</Text>
-        <Text style={styles.subtle}>Your account is</Text>
+        <Text style={[styles.name, { color: palette.textPrimary }]}>
+          {t('home.greeting', { name: firstName })}
+        </Text>
+        <Text style={[styles.subtle, { color: palette.textMuted }]}>
+          {profile.visibility
+            ? t('home.visibility.activeHint')
+            : t('home.visibility.inactiveHint')}
+        </Text>
 
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={
+            profile.visibility
+              ? t('home.visibility.active')
+              : t('home.visibility.inactive')
+          }
           activeOpacity={0.8}
           onPress={handleToggleActive}
           disabled={statusUpdating}
@@ -249,45 +362,120 @@ export default function MainHomeScreen({ navigation }: Props) {
         >
           <Text
             style={[
-              styles.activeDot,
-              profile.visibility ? styles.dotOn : styles.dotOff,
-            ]}
-          >
-            ✓
-          </Text>
-          <Text
-            style={[
               styles.activeText,
               { color: profile.visibility ? '#0F5132' : '#6B7280' },
             ]}
           >
             {statusUpdating
-              ? profile.visibility
-                ? 'UPDATING...'
-                : 'ACTIVATING...'
+              ? '…'
               : profile.visibility
-                ? 'ACTIVE'
-                : 'INACTIVE'}
+                ? t('home.visibility.active')
+                : t('home.visibility.inactive')}
           </Text>
         </TouchableOpacity>
 
-        <Text style={styles.footerNote}>
-          You control when you're visible to others.
+        <Text style={[styles.sectionTitle, { color: palette.textPrimary }]}>
+          {mode === 'personal' ? 'Personal' : 'Professional'} preferences
         </Text>
 
-        <Text style={styles.sectionTitle}>Find interesting people nearby?</Text>
-        <Text style={styles.paragraph}>
-          Browse temporary profiles of others to facilitate meaningful in-person
-          connections.
+        <Text style={[styles.prefLabel, { color: palette.textMuted }]}>
+          Age {activePrefs.ageMin}–{activePrefs.ageMax}
+        </Text>
+        <View style={styles.row}>
+          <Text style={{ color: palette.textPrimary }}>Min</Text>
+          <Stepper
+            value={activePrefs.ageMin}
+            min={18}
+            max={activePrefs.ageMax}
+            step={1}
+            onChange={(ageMin) => void savePrefs({ ...activePrefs, ageMin })}
+            color={palette.primary}
+          />
+        </View>
+        <View style={styles.row}>
+          <Text style={{ color: palette.textPrimary }}>Max</Text>
+          <Stepper
+            value={activePrefs.ageMax}
+            min={activePrefs.ageMin}
+            max={99}
+            step={1}
+            onChange={(ageMax) => void savePrefs({ ...activePrefs, ageMax })}
+            color={palette.primary}
+          />
+        </View>
+
+        <Text style={[styles.prefLabel, { color: palette.textMuted }]}>
+          Distance {displayDistance} {unit}
+        </Text>
+        <Stepper
+          value={displayDistance}
+          min={distMin}
+          max={distMax}
+          step={distStep}
+          onChange={(v) => {
+            const canonical = resolveCanonicalAfterDisplayClose(
+              activePrefs.maxDistanceMeters,
+              v,
+              unit,
+            );
+            void savePrefs({
+              ...activePrefs,
+              maxDistanceMeters: canonicalFromDisplayDistance(
+                presentDistanceFromCanonical(canonical, unit),
+                unit,
+              ),
+            });
+          }}
+          color={palette.primary}
+        />
+
+        <Text style={[styles.prefLabel, { color: palette.textMuted }]}>
+          Interests (empty = anyone)
+        </Text>
+        <View style={styles.chips}>
+          {interestCatalog.slice(0, 24).map((item) => {
+            const on = selectedIds.has(item.id);
+            return (
+              <TouchableOpacity
+                key={item.id}
+                onPress={() => toggleInterest(item.id)}
+                style={[
+                  styles.chip,
+                  {
+                    backgroundColor: on ? palette.primary : palette.surface,
+                    borderColor: palette.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={{
+                    color: on ? '#fff' : palette.textPrimary,
+                    fontSize: 12,
+                  }}
+                >
+                  {item.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: palette.textPrimary }]}>
+          {t('home.discovery.title')}
+        </Text>
+        <Text style={[styles.paragraph, { color: palette.textMuted }]}>
+          {t('home.discovery.cta')}
         </Text>
 
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={t('home.discovery.title')}
           activeOpacity={canSearch ? 0.85 : 1}
           disabled={!canSearch}
           onPress={() => navigation.navigate('NearbySearch')}
           style={[
             styles.searchBtn,
-            { backgroundColor: canSearch ? '#3B5A85' : '#9CA3AF' },
+            { backgroundColor: canSearch ? palette.primary : '#9CA3AF' },
             !canSearch && { opacity: 0.6 },
           ]}
         >
@@ -297,15 +485,8 @@ export default function MainHomeScreen({ navigation }: Props) {
               style={{ width: 70, height: 70, resizeMode: 'contain' }}
             />
           </View>
-          <Text style={styles.searchText}>Discovery</Text>
+          <Text style={styles.searchText}>{t('home.discovery.title')}</Text>
         </TouchableOpacity>
-
-        {!canSearch && (
-          <Text style={{ color: '#6B7280', textAlign: 'center', marginTop: 8 }}>
-            Turn your account <Text style={{ fontWeight: '700' }}>ACTIVE</Text>{' '}
-            to use Discovery.
-          </Text>
-        )}
       </View>
     </ScrollView>
   );
@@ -317,12 +498,11 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     alignItems: 'center',
   },
-  name: { fontSize: 26, fontWeight: '800', color: '#1F2937' },
-  subtle: { marginTop: 4, color: '#6B7280' },
+  name: { fontSize: 26, fontWeight: '800' },
+  subtle: { marginTop: 4, textAlign: 'center' },
   activePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 999,
@@ -338,37 +518,53 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
-  activeDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    textAlign: 'center',
-    textAlignVertical: 'center' as any,
-    fontWeight: '700',
-  },
-  dotOn: {
-    backgroundColor: '#A8BDDA',
-    color: '#3B5A85',
-  },
-  dotOff: {
-    backgroundColor: '#E5E7EB',
-    color: '#6B7280',
-  },
-  activeText: {
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
+  activeText: { fontWeight: '700', letterSpacing: 0.5 },
   sectionTitle: {
-    marginTop: 40,
+    marginTop: 28,
     fontWeight: '700',
     fontSize: 16,
-    color: '#1F2937',
     textAlign: 'center',
+    alignSelf: 'stretch',
   },
-  paragraph: {
-    marginTop: 6,
-    color: '#334155',
+  paragraph: { marginTop: 6, textAlign: 'center' },
+  prefLabel: { marginTop: 12, alignSelf: 'flex-start', fontWeight: '600' },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'stretch',
+  },
+  chips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+    alignSelf: 'stretch',
+  },
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  stepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  stepBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepValue: {
+    minWidth: 48,
     textAlign: 'center',
+    fontWeight: '700',
+    fontSize: 16,
   },
   searchBtn: {
     marginTop: 14,
@@ -376,9 +572,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     paddingVertical: 5,
     borderRadius: 16,
-    backgroundColor: '#EEF2FF',
-    borderWidth: 1,
-    borderColor: '#E0E7FF',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -391,14 +584,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  searchText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  footerNote: {
-    marginTop: 8,
-    color: '#6B7280',
-    textAlign: 'center',
-  },
+  searchText: { fontSize: 18, fontWeight: '700', color: '#ffffff' },
 });

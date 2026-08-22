@@ -119,12 +119,12 @@ export function validateSearchPreferences(
 ): ValidationResult {
   const reasons: string[] = [];
   const age = validateAgeRange(prefs.ageMin, prefs.ageMax);
-  if (!age.ok) reasons.push(...age.reasons);
+  if (age.ok === false) reasons.push(...age.reasons);
   if (!isCanonicalDistanceInRange(prefs.maxDistanceMeters)) {
     reasons.push('maxDistanceMeters-out-of-range');
   }
   const interests = validateInterestIds(prefs.interestIds, knownIds);
-  if (!interests.ok) reasons.push(...interests.reasons);
+  if (interests.ok === false) reasons.push(...interests.reasons);
   if (!Number.isFinite(prefs.updatedAt) || prefs.updatedAt < 0) {
     reasons.push('updatedAt-invalid');
   }
