@@ -47,3 +47,25 @@ export const DEFAULT_US_DISTANCE_METERS = DEFAULT_US_DISTANCE_FEET / FEET_PER_ME
 
 /** Absolute epsilon for comparing canonical meter values (locale open/close). */
 export const CANONICAL_DISTANCE_EPSILON_METERS = 0.01;
+
+/** Discovery MVP list/detail limits (aligned with backend f2855a1). */
+export const DEFAULT_DISCOVERY_LIMIT = 50;
+export const MAX_DISCOVERY_LIMIT = 50;
+export const MAX_GALLERY_ITEMS = 12;
+
+/** Keys forbidden on any client-facing Visibility/Discovery DTO. */
+export const FORBIDDEN_CLIENT_DTO_KEYS = [
+  'latitude',
+  'longitude',
+  'lat',
+  'lng',
+  'geohash',
+  'email',
+  'phone',
+  'blockedContacts',
+  'blockedUids',
+  'searchPreferences',
+  'ageMin',
+  'ageMax',
+  'maxDistanceMeters',
+] as const;

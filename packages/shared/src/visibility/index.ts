@@ -1,6 +1,6 @@
 /**
- * Visibility Journey — pure client foundation (V3.2A).
- * No screens, Firebase, permissions, or callables.
+ * Visibility Journey — pure client foundation (V3.2A) + callable contracts (V3.3A).
+ * No screens, permissions, or productive Firebase wiring in this module.
  */
 
 export * from './constants';
@@ -10,3 +10,4 @@ export * from './preferences';
 export * from './freshness';
 export * from './filters';
 export * from './states';
+export * from './callables';
