@@ -216,6 +216,8 @@ function printTunnelDevClientQr(tunnelHttpsUrl) {
 
 function pickLanIpv4() {
   const nets = os.networkInterfaces();
+  /** @type {string[]} */
+  const candidates = [];
   for (const entries of Object.values(nets)) {
     if (!entries) continue;
     for (const entry of entries) {
@@ -225,11 +227,26 @@ function pickLanIpv4() {
         !entry.internal &&
         typeof entry.address === 'string'
       ) {
-        return entry.address;
+        candidates.push(entry.address);
       }
     }
   }
-  return null;
+
+  // Prefer typical Wi‑Fi/LAN ranges; skip APIPA and common Hyper-V/Docker bridges.
+  const preferred = candidates.find(
+    (ip) =>
+      !ip.startsWith('169.254.') &&
+      (ip.startsWith('192.168.') || ip.startsWith('10.')),
+  );
+  if (preferred) return preferred;
+
+  const nonVirtual = candidates.find((ip) => {
+    if (ip.startsWith('169.254.')) return false;
+    if (!ip.startsWith('172.')) return true;
+    const second = Number(ip.split('.')[1]);
+    return Number.isFinite(second) && (second < 16 || second > 31);
+  });
+  return nonVirtual || candidates.find((ip) => !ip.startsWith('169.254.')) || null;
 }
 
 function findFreePort(startPort) {
