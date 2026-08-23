@@ -32,12 +32,12 @@ import {
   useAppTheme,
 } from '../theme';
 import { cardShadow } from '../theme/shadows';
-import { pressScale } from '../theme/motion';
 import {
   activateVisibilityFlow,
   deactivateVisibilityFlow,
   reconcileVisibilityWithForegroundPermission,
 } from '../visibility/orchestration';
+import { pressTransformStyle } from '../visibility/pressTransformStyle';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 import {
   parseSearchPreferencesFromUserDoc,
@@ -134,7 +134,6 @@ export default function MainHomeScreen({ navigation }: Props) {
   const [prefs, setPrefs] = useState<VisibilitySearchPreferencesByMode>(() =>
     parseSearchPreferencesFromUserDoc(null, unit),
   );
-  const [savingPrefs, setSavingPrefs] = useState(false);
   const [interestLimitMessage, setInterestLimitMessage] = useState<
     string | null
   >(null);
@@ -284,7 +283,7 @@ export default function MainHomeScreen({ navigation }: Props) {
 
   const savePrefs = async (next: VisibilitySearchPreferences) => {
     const uid = firebaseAuth.currentUser?.uid;
-    if (!uid || savingPrefs) return;
+    if (!uid) return;
     const prepared = prepareSearchPreferencesForPersist(
       next,
       officialInterestIds,
@@ -295,7 +294,10 @@ export default function MainHomeScreen({ navigation }: Props) {
       }
       return;
     }
-    setSavingPrefs(true);
+    // Optimistic update so chips/counter appear before network round-trip.
+    const optimistic = { ...prefs, [mode]: prepared.prefs };
+    setPrefs(optimistic);
+    setInterestLimitMessage(null);
     try {
       const updated = await persistSearchPreferencesForMode(
         uid,
@@ -304,16 +306,14 @@ export default function MainHomeScreen({ navigation }: Props) {
         prepared.prefs,
       );
       setPrefs(updated);
-      setInterestLimitMessage(null);
     } catch (err) {
+      setPrefs(prefs);
       const text = err instanceof Error ? err.message : '';
       if (text.includes(INTEREST_IDS_OVER_MAX_REASON)) {
         announceInterestLimit();
       } else {
         Alert.alert(t('home.errors.title'), t('home.errors.generic'));
       }
-    } finally {
-      setSavingPrefs(false);
     }
   };
 
@@ -423,7 +423,7 @@ export default function MainHomeScreen({ navigation }: Props) {
       contentContainerStyle={{
         paddingBottom: 96 + insets.bottom,
       }}
-      keyboardShouldPersistTaps="handled"
+      keyboardShouldPersistTaps="always"
     >
       <View style={[styles.brandRow, { paddingTop: insets.top + spacing.lg }]}>
         <View
@@ -476,7 +476,7 @@ export default function MainHomeScreen({ navigation }: Props) {
               backgroundColor: pillColors.bg,
               borderColor: pillColors.border,
               opacity: statusUpdating ? 0.7 : 1,
-              transform: pressed ? [{ scale: pressScale }] : undefined,
+              ...pressTransformStyle(pressed),
             },
           ]}
         >
@@ -639,7 +639,7 @@ export default function MainHomeScreen({ navigation }: Props) {
             style={({ pressed }) => [
               styles.discoveryBtn,
               cardShadow,
-              pressed ? { transform: [{ scale: pressScale }] } : null,
+              pressTransformStyle(pressed),
             ]}
           >
             <LinearGradient

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -32,6 +32,9 @@ type Props = {
   onLimitReached: () => void;
 };
 
+/** Delay blur so a result tap can fire before results unmount. */
+const BLUR_HIDE_MS = 180;
+
 export function InterestMatchSelector({
   officialIds,
   selectedIds,
@@ -45,6 +48,14 @@ export function InterestMatchSelector({
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [focused, setFocused] = useState(false);
+  const blurHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectingRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (blurHideTimer.current) clearTimeout(blurHideTimer.current);
+    };
+  }, []);
 
   const labels = useMemo(
     () => ({
@@ -86,14 +97,31 @@ export function InterestMatchSelector({
 
   const showResults = focused && query.trim().length > 0;
 
+  const clearBlurHideTimer = () => {
+    if (blurHideTimer.current) {
+      clearTimeout(blurHideTimer.current);
+      blurHideTimer.current = null;
+    }
+  };
+
   const handleSelect = (id: string) => {
-    if (selectedSet.has(id)) return;
-    if (atLimit) {
-      onLimitReached();
+    selectingRef.current = true;
+    clearBlurHideTimer();
+    setFocused(true);
+
+    if (selectedSet.has(id)) {
+      selectingRef.current = false;
       return;
     }
+    if (atLimit) {
+      onLimitReached();
+      selectingRef.current = false;
+      return;
+    }
+
     onAdd(id);
     setQuery('');
+    selectingRef.current = false;
   };
 
   return (
@@ -155,8 +183,17 @@ export function InterestMatchSelector({
         <TextInput
           value={query}
           onChangeText={setQuery}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onFocus={() => {
+            clearBlurHideTimer();
+            setFocused(true);
+          }}
+          onBlur={() => {
+            if (selectingRef.current) return;
+            clearBlurHideTimer();
+            blurHideTimer.current = setTimeout(() => {
+              if (!selectingRef.current) setFocused(false);
+            }, BLUR_HIDE_MS);
+          }}
           placeholder={t('home.discovery.interestsSearchPlaceholder')}
           placeholderTextColor={palette.placeholder}
           style={[styles.searchInput, { color: palette.textPrimary }]}
@@ -185,7 +222,7 @@ export function InterestMatchSelector({
           ]}
         >
           <ScrollView
-            keyboardShouldPersistTaps="handled"
+            keyboardShouldPersistTaps="always"
             nestedScrollEnabled
             style={styles.resultsScroll}
           >
@@ -205,24 +242,33 @@ export function InterestMatchSelector({
                     <Pressable
                       key={entry.id}
                       accessibilityRole="button"
+                      accessibilityLabel={entry.itemLabel}
+                      onPressIn={() => {
+                        selectingRef.current = true;
+                        clearBlurHideTimer();
+                      }}
                       onPress={() => handleSelect(entry.id)}
                       style={({ pressed }) => [
                         styles.resultRow,
-                        pressed && { backgroundColor: palette.chipBg },
+                        pressed ? { backgroundColor: palette.chipBg } : undefined,
                       ]}
                     >
-                      <InterestChip
-                        name={entry.itemLabel}
-                        icon={entry.icon}
-                        iconColor={entry.iconColor}
-                        selected={false}
-                      />
+                      {/* pointerEvents none: avoid nested Pressable swallowing the tap */}
+                      <View pointerEvents="none">
+                        <InterestChip
+                          name={entry.itemLabel}
+                          icon={entry.icon}
+                          iconColor={entry.iconColor}
+                          selected={false}
+                        />
+                      </View>
                       {entry.groupLabel ? (
                         <Text
                           style={[
                             styles.resultMeta,
                             { color: palette.textMuted },
                           ]}
+                          pointerEvents="none"
                         >
                           {entry.groupLabel}
                         </Text>

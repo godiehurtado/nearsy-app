@@ -27,6 +27,13 @@ import {
   resolveDistanceDisplayUnit,
 } from '../searchPreferencesParse';
 import { ratioToValue, snapValue, valueToRatio } from '../sliderMath';
+import {
+  pressTransformStyle,
+  styleAssignsNullTransform,
+} from '../pressTransformStyle';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const identityLabels = {
   category: (_key: string, fallback: string) => fallback,
@@ -174,5 +181,58 @@ describe('slider math', () => {
   it('converts ratios back to stepped values', () => {
     assert.equal(valueToRatio(50, 18, 99).toFixed(2), (32 / 81).toFixed(2));
     assert.equal(ratioToValue(0.5, 20, 200, 5), 110);
+  });
+});
+
+describe('press transform Fabric safety', () => {
+  it('omits transform when not pressed and never assigns null', () => {
+    const idle = pressTransformStyle(false);
+    assert.equal(Object.prototype.hasOwnProperty.call(idle, 'transform'), false);
+    assert.equal(styleAssignsNullTransform(idle), false);
+
+    const pressed = pressTransformStyle(true, 0.975);
+    assert.deepEqual(pressed.transform, [{ scale: 0.975 }]);
+    assert.equal(styleAssignsNullTransform(pressed), false);
+
+    assert.deepEqual(pressTransformStyle(true, Number.NaN), {});
+  });
+
+  it('finds soccer in CRJ catalog for physical QA path', () => {
+    const officialIds = officialCatalogInterestIdSet();
+    const entries = buildInterestSearchEntries(officialIds, identityLabels);
+    const results = searchInterestEntries(entries, 'soccer', new Set());
+    const flat = results.flatMap((group) => group.items);
+    assert.ok(flat.some((item) => item.id === 'sports_soccer'));
+  });
+
+  it('visibility UI modules do not assign transform: null', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const roots = [
+      join(here, '../../screens/MainHomeScreen.tsx'),
+      join(here, '../../components/visibility/InterestMatchSelector.tsx'),
+      join(here, '../../components/visibility/VisibilityRangeSlider.tsx'),
+      join(here, '../../components/visibility/VisibilityCard.tsx'),
+      join(here, '../pressTransformStyle.ts'),
+    ];
+    for (const file of roots) {
+      const source = readFileSync(file, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/gm, '');
+      assert.equal(
+        /transform\s*:\s*null\b/.test(source),
+        false,
+        `${file} must not assign transform: null`,
+      );
+      assert.equal(
+        /transform\s*:\s*[^,\n}]*\?\s*[^:]+\s*:\s*null\b/.test(source),
+        false,
+        `${file} must not use transform ternary ending in null`,
+      );
+      assert.equal(
+        /transform\s*:\s*pressed\s*\?\s*.+\s*:\s*undefined/.test(source),
+        false,
+        `${file} must not assign transform: undefined via ternary`,
+      );
+    }
   });
 });
