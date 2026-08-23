@@ -1,5 +1,5 @@
 /**
- * Non-iOS stub — Visibility callables are composed on iOS via RNFB.
+ * Non-iOS stub — Visibility callables are composed on iOS via JS Auth HTTP.
  */
 
 import type { VisibilityDiscoveryClient } from './callables';

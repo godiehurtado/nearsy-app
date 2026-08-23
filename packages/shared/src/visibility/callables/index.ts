@@ -11,3 +11,4 @@ export * from './parse';
 export * from './port';
 export * from './callableAdapter';
 export * from './fakeClient';
+export * from './visibilityCallableHttp';

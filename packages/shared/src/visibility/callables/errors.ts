@@ -148,7 +148,8 @@ export function normalizeFirebaseErrorCode(
   const text = String(raw ?? '')
     .trim()
     .replace(/^functions\//i, '')
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/_/g, '-');
   if (KNOWN_CODES.has(text)) {
     return text as VisibilityFirebaseErrorCode;
   }
