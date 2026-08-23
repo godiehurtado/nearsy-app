@@ -850,17 +850,58 @@ const es: TranslationResources = {
   },
   home: {
     greeting: 'Hola, {{name}}',
+    brand: 'Nearsy',
+    accountStatus: 'Tu cuenta está',
+    controlHint: 'Tú decides cuándo eres visible para otros.',
+    findPeopleTitle: '¿Encontrar personas interesantes cerca?',
+    findPeopleBody:
+      'Explora perfiles temporales de otras personas para facilitar conexiones presenciales significativas.',
+    modePreferences: 'Preferencias {{mode}}',
+    modePersonal: 'Personal',
+    modeProfessional: 'Profesional',
     visibility: {
       active: 'Activo',
       inactive: 'Inactivo',
       activeHint: 'Eres visible para usuarios cercanos',
       inactiveHint: 'Estás oculto para usuarios cercanos',
     },
+    preferences: {
+      ageRange: 'Rango de edad',
+      ageRangeHint:
+        'Elige el rango de edad de las personas que quieres descubrir.',
+      ageValue: '{{min}}–{{max}}',
+      distanceRange: 'Rango de búsqueda',
+      distanceValueFt: 'hasta {{value}} ft',
+      distanceValueM: 'hasta {{value}} m',
+    },
     discovery: {
       title: 'Descubrimiento',
       cta: 'Ver quién está cerca',
+      disabledReason: 'Activa Visibilidad para iniciar Descubrimiento.',
       maxInterestsTitle: 'Límite de intereses',
       maxInterests: 'Puedes seleccionar hasta 12 intereses.',
+      interestsTitle: 'Intereses para coincidir',
+      interestsHint: 'Solo muestra personas que compartan lo que elijas.',
+      interestsCounter: '{{count}}/{{max}}',
+      anyInterest: 'Cualquier interés',
+      interestsSearchPlaceholder: 'Buscar intereses, categorías…',
+      clearSearch: 'Borrar búsqueda',
+      interestsNoResults: 'Ningún interés coincide con tu búsqueda.',
+    },
+    errors: {
+      title: 'Visibilidad',
+      generic: 'No se pudo actualizar Visibilidad. Inténtalo de nuevo.',
+      retry: 'La activación falló. Actualiza e inténtalo de nuevo.',
+      profileIncomplete:
+        'Completa tu perfil antes de activar Visibilidad.',
+      invalidLocation:
+        'La precisión de ubicación es baja. Sal al exterior e inténtalo de nuevo.',
+      unauthenticated: 'Inicia sesión de nuevo para usar Visibilidad.',
+      permissionDenied: 'Se requiere permiso de ubicación para Visibilidad.',
+      visibilityInactive:
+        'Visibilidad está desactivada. Actívala para descubrir personas cercanas.',
+      networkUnavailable:
+        'Red no disponible. Comprueba tu conexión e inténtalo de nuevo.',
     },
   },
   nearby: {
