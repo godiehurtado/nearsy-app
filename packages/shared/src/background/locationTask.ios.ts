@@ -1,8 +1,7 @@
-// src/background/locationTask.ios.ts — Firebase Web SDK
+// src/background/locationTask.ios.ts — publishLocation via Visibility callables
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { dbSetUserMerge } from '../services/db';
 
 export const BG_LOCATION_TASK = 'nearsy-bg-location';
 
@@ -28,18 +27,26 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
 
     const fix = locations[locations.length - 1];
     const { latitude, longitude, accuracy } = fix.coords;
-    const now = Date.now();
+    const accuracyMeters =
+      typeof accuracy === 'number' && Number.isFinite(accuracy) ? accuracy : 999;
 
-    await dbSetUserMerge(uid, {
-      location: {
-        lat: latitude,
-        lng: longitude,
-        updatedAt: now,
-        accuracy: accuracy ?? null,
-      },
-      updatedAt: now,
-      lastBgUpdateAt: now,
-    });
+    try {
+      const { getVisibilityDiscoveryClient } = await import(
+        '../visibility/iosVisibilityFoundation'
+      );
+      const { publishLocationFlow } = await import(
+        '../visibility/orchestration'
+      );
+      const client = await getVisibilityDiscoveryClient();
+      await publishLocationFlow(client, {
+        latitude,
+        longitude,
+        accuracyMeters,
+        observedAt: Date.now(),
+      });
+    } catch (e) {
+      if (__DEV__) console.warn('[BG Task iOS] publishLocation error:', e);
+    }
   } catch (e) {
     if (__DEV__) console.warn('[BG Task iOS] persist error:', e);
   }

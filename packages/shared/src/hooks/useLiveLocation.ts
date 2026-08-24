@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
 import { AppState, AppStateStatus, Platform } from 'react-native';
-import { dbSetUserMerge } from '../services/db';
 
 type Options = {
   enabled?: boolean;
@@ -177,9 +176,32 @@ async function upsertLocation(
   lng: number,
   accuracy?: number | null,
 ) {
-  const now = Date.now();
-  await dbSetUserMerge(uid, {
-    location: { lat, lng, updatedAt: now, accuracy: accuracy ?? null },
-    updatedAt: now,
-  });
+  const accuracyMeters =
+    typeof accuracy === 'number' && Number.isFinite(accuracy) ? accuracy : 999;
+  try {
+    const { getVisibilityDiscoveryClient } = await import(
+      '../visibility/iosVisibilityFoundation'
+    );
+    const { publishLocationFlow } = await import(
+      '../visibility/orchestration'
+    );
+    const client = await getVisibilityDiscoveryClient();
+    const outcome = await publishLocationFlow(client, {
+      latitude: lat,
+      longitude: lng,
+      accuracyMeters,
+      observedAt: Date.now(),
+    });
+    if (outcome.ok === true) return;
+    if (__DEV__) {
+      console.warn(
+        '[useLiveLocation] publishLocation failed',
+        outcome.ok === false ? outcome.kind : 'unknown',
+      );
+    }
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[useLiveLocation] publishLocation error', err);
+    }
+  }
 }

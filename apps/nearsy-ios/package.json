@@ -9,6 +9,7 @@
     "validate:firebase-appdelegate": "node ./scripts/validate-firebase-appdelegate.cjs",
     "start": "expo start",
     "start:dev-client": "node ./scripts/start-dev-client.cjs",
+    "start:dev-client:lan": "node ./scripts/start-dev-client.cjs --lan",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "build": "eas build --platform ios",

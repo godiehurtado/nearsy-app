@@ -7,6 +7,7 @@
     "typecheck:android": "pnpm --filter nearsy-android run typecheck",
     "typecheck:ios": "pnpm --filter nearsy-ios run typecheck",
     "validate": "pnpm typecheck",
+    "test:visibility": "tsx --test --test-concurrency=1 packages/shared/src/visibility/__tests__/visibilityFoundation.test.ts packages/shared/src/visibility/__tests__/visibilityCallables.test.ts packages/shared/src/visibility/__tests__/visibilityMvp.test.ts packages/shared/src/visibility/__tests__/visibilityCallableHttp.test.ts packages/shared/src/visibility/__tests__/visibilityHomeUi.test.ts packages/shared/src/visibility/__tests__/visibilityDraftNearby.test.ts",
     "android:start": "pnpm --filter nearsy-android start",
     "android:ios": "pnpm --filter nearsy-android ios",
     "android:android": "pnpm --filter nearsy-android android",
@@ -30,6 +31,7 @@
   },
   "devDependencies": {
     "babel-plugin-module-resolver": "^5.0.2",
-    "patch-package": "^8.0.1"
+    "patch-package": "^8.0.1",
+    "tsx": "^4.20.5"
   }
 }

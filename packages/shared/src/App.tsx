@@ -209,7 +209,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
 
         if (actorUid && navigationRef.isReady()) {
           (navigationRef as any).navigate('Home', {
-            screen: 'ProfileDetail',
+            screen: 'DiscoveryProfile',
             params: { uid: actorUid },
           });
         }

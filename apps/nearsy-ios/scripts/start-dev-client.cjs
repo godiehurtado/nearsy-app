@@ -1,15 +1,19 @@
 /**
- * Start Expo Dev Client with EAS development env and an interactive-ish Metro
- * session that always prints the tunnel Development Client URL + QR.
+ * Start Expo Dev Client with EAS development env.
+ *
+ * Modes:
+ *   (default) tunnel — `expo start --dev-client --tunnel` + QR for tunnel URL
+ *   --lan            — `expo start --dev-client --lan` (same EAS env, no ngrok)
+ *
+ * Optional (not committed): NEARSY_DEV_CLIENT_LAN_HOST=<IPv4> overrides NIC detection for LAN QR.
  *
  * Why not `eas env:exec … expo start` alone?
  * eas env:exec captures child stdout as `[stdout]` lines and hides the QR.
  *
  * This script:
  * 1) briefly uses eas env:exec to dump env keys to a temp JSON (deleted after)
- * 2) spawns `expo start --dev-client --tunnel` with those env vars
- * 3) forwards Metro output and, once the tunnel is ready, prints the
- *    exp+… development-client deep link (tunnel host, not LAN) + ASCII QR
+ * 2) spawns expo with those env vars
+ * 3) forwards Metro output; tunnel mode also prints the exp+ deep link + QR
  *
  * Does not write .env files or log secret values.
  */
@@ -17,12 +21,20 @@ const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const http = require('http');
 const net = require('net');
+const os = require('os');
 const path = require('path');
 
 const APP_ROOT = path.join(__dirname, '..');
 const DUMP_REL = './scripts/_dump-eas-env.cjs';
 const OUT_REL = './.nearsy-eas-env-dump.tmp.json';
 const APP_SLUG = 'nearsy-ios';
+const DEFAULT_REGION = 'us-central1';
+
+function parseNetworkMode(argv) {
+  if (argv.includes('--lan')) return 'lan';
+  if (argv.includes('--tunnel')) return 'tunnel';
+  return 'tunnel';
+}
 
 function loadEasDevelopmentEnv() {
   const outFile = path.join(APP_ROOT, OUT_REL);
@@ -79,6 +91,56 @@ function loadEasDevelopmentEnv() {
   }
 }
 
+function stripEmulatorVars(env) {
+  delete env.EXPO_PUBLIC_FUNCTIONS_EMULATOR_HOST;
+  delete env.EXPO_PUBLIC_FUNCTIONS_EMULATOR_PORT;
+  delete env.FUNCTIONS_EMULATOR_HOST;
+  delete env.FUNCTIONS_EMULATOR_PORT;
+}
+
+function printSafeRuntimeSummary(childEnv, networkMode) {
+  const environment = String(
+    childEnv.EXPO_PUBLIC_NEARSY_FIREBASE_ENV || '',
+  ).trim();
+  const projectId = String(
+    childEnv.EXPO_PUBLIC_FIREBASE_PROJECT_ID || '',
+  ).trim();
+  const region = String(
+    childEnv.EXPO_PUBLIC_FIREBASE_FUNCTIONS_REGION || DEFAULT_REGION,
+  ).trim();
+  const emulatorHost = String(
+    childEnv.EXPO_PUBLIC_FUNCTIONS_EMULATOR_HOST || '',
+  ).trim();
+  const functionsMode = emulatorHost ? 'emulator' : 'cloud';
+
+  console.log(`[start-dev-client] environment=${environment || '(missing)'}`);
+  console.log(`[start-dev-client] projectId=${projectId || '(missing)'}`);
+  console.log(`[start-dev-client] region=${region || '(missing)'}`);
+  console.log(`[start-dev-client] functionsMode=${functionsMode}`);
+  console.log(`[start-dev-client] networkMode=${networkMode}`);
+
+  if (environment !== 'development') {
+    throw new Error(
+      `Refusing to start: EXPO_PUBLIC_NEARSY_FIREBASE_ENV must be development (got ${environment || 'empty'}).`,
+    );
+  }
+  if (projectId !== 'nearsy-dev') {
+    throw new Error(
+      `Refusing to start: EXPO_PUBLIC_FIREBASE_PROJECT_ID must be nearsy-dev (got ${projectId || 'empty'}).`,
+    );
+  }
+  if (region !== DEFAULT_REGION) {
+    throw new Error(
+      `Refusing to start: Functions region must be ${DEFAULT_REGION} (got ${region}).`,
+    );
+  }
+  if (functionsMode !== 'cloud') {
+    throw new Error(
+      'Refusing to start: Emulator host is set; physical QA requires cloud Functions.',
+    );
+  }
+}
+
 function fetchNgrokHttpsUrl() {
   return new Promise((resolve) => {
     const req = http.get('http://127.0.0.1:4040/api/tunnels', (res) => {
@@ -90,7 +152,9 @@ function fetchNgrokHttpsUrl() {
         try {
           const parsed = JSON.parse(body);
           const https = (parsed.tunnels || []).find(
-            (t) => typeof t.public_url === 'string' && t.public_url.startsWith('https://'),
+            (t) =>
+              typeof t.public_url === 'string' &&
+              t.public_url.startsWith('https://'),
           );
           resolve(https ? https.public_url.replace(/\/$/, '') : null);
         } catch {
@@ -116,37 +180,104 @@ async function waitForTunnelUrl(timeoutMs = 90_000) {
   return null;
 }
 
-function printTunnelDevClientQr(tunnelHttpsUrl) {
-  if (/10\.0\.0\.86/.test(tunnelHttpsUrl)) {
-    console.error(
-      '[start-dev-client] Refusing LAN address in tunnel URL:',
-      tunnelHttpsUrl,
-    );
-    return;
-  }
-
+function printDevClientQr(metroHttpUrl, label) {
   const deepLink = `exp+${APP_SLUG}://expo-development-client/?url=${encodeURIComponent(
-    tunnelHttpsUrl,
+    metroHttpUrl,
   )}`;
 
   console.log('');
   console.log(`› Metro waiting on ${deepLink}`);
-  console.log('› Scan the QR code below with the Development Client (tunnel).');
+  console.log(`› Scan the QR code below with the Development Client (${label}).`);
   console.log('');
 
   try {
     const qrcode = require('qrcode-terminal');
     qrcode.generate(deepLink, { small: true });
-  } catch (err) {
+  } catch {
     console.warn(
       '[start-dev-client] qrcode-terminal unavailable; open the deep link manually.',
     );
   }
 
   console.log('');
-  console.log(`[start-dev-client] tunnelHost=${new URL(tunnelHttpsUrl).host}`);
-  console.log('[start-dev-client] development-client URL uses tunnel (not LAN).');
+  console.log(`[start-dev-client] metroUrl=${metroHttpUrl}`);
+  console.log(`[start-dev-client] development-client URL uses ${label}.`);
   console.log('');
+}
+
+function isRfc1918OrLinkLocalIpv4(ip) {
+  if (typeof ip !== 'string' || net.isIP(ip) !== 4) return false;
+  if (ip.startsWith('10.') || ip.startsWith('192.168.') || ip.startsWith('169.254.')) {
+    return true;
+  }
+  if (!ip.startsWith('172.')) return false;
+  const second = Number(ip.split('.')[1]);
+  return Number.isFinite(second) && second >= 16 && second <= 31;
+}
+
+function printTunnelDevClientQr(tunnelHttpsUrl) {
+  try {
+    const host = new URL(tunnelHttpsUrl).hostname;
+    if (isRfc1918OrLinkLocalIpv4(host)) {
+      console.error(
+        '[start-dev-client] Refusing private/LAN address in tunnel URL:',
+        tunnelHttpsUrl,
+      );
+      return;
+    }
+  } catch {
+    /* ignore parse errors; still print QR below */
+  }
+  printDevClientQr(tunnelHttpsUrl, 'tunnel');
+}
+
+/**
+ * Prefer NEARSY_DEV_CLIENT_LAN_HOST (IPv4, not committed) when set; otherwise
+ * pick a non-internal IPv4 from the host NICs (typical LAN ranges first).
+ */
+function pickLanIpv4() {
+  const fromEnv = String(process.env.NEARSY_DEV_CLIENT_LAN_HOST || '').trim();
+  if (fromEnv) {
+    if (net.isIP(fromEnv) === 4 && !fromEnv.startsWith('127.')) {
+      return fromEnv;
+    }
+    console.warn(
+      '[start-dev-client] Ignoring invalid NEARSY_DEV_CLIENT_LAN_HOST; falling back to NIC detection.',
+    );
+  }
+
+  const nets = os.networkInterfaces();
+  /** @type {string[]} */
+  const candidates = [];
+  for (const entries of Object.values(nets)) {
+    if (!entries) continue;
+    for (const entry of entries) {
+      if (
+        entry &&
+        entry.family === 'IPv4' &&
+        !entry.internal &&
+        typeof entry.address === 'string'
+      ) {
+        candidates.push(entry.address);
+      }
+    }
+  }
+
+  // Prefer common LAN prefixes; skip link-local and RFC1918 172.16/12 bridges.
+  const preferred = candidates.find(
+    (ip) =>
+      !ip.startsWith('169.254.') &&
+      (ip.startsWith('192.168.') || ip.startsWith('10.')),
+  );
+  if (preferred) return preferred;
+
+  const nonVirtual = candidates.find((ip) => {
+    if (ip.startsWith('169.254.')) return false;
+    if (!ip.startsWith('172.')) return true;
+    const second = Number(ip.split('.')[1]);
+    return Number.isFinite(second) && (second < 16 || second > 31);
+  });
+  return nonVirtual || candidates.find((ip) => !ip.startsWith('169.254.')) || null;
 }
 
 function findFreePort(startPort) {
@@ -158,7 +289,8 @@ function findFreePort(startPort) {
     });
     server.listen(startPort, '127.0.0.1', () => {
       const address = server.address();
-      const port = typeof address === 'object' && address ? address.port : startPort;
+      const port =
+        typeof address === 'object' && address ? address.port : startPort;
       server.close((err) => {
         if (err) reject(err);
         else resolve(port);
@@ -168,6 +300,7 @@ function findFreePort(startPort) {
 }
 
 async function main() {
+  const networkMode = parseNetworkMode(process.argv.slice(2));
   const easEnv = loadEasDevelopmentEnv();
   const childEnv = {
     ...process.env,
@@ -179,18 +312,35 @@ async function main() {
     childEnv.EXPO_PUBLIC_NEARSY_FIREBASE_ENV = 'development';
   }
   if (!childEnv.EXPO_PUBLIC_FIREBASE_FUNCTIONS_REGION) {
-    childEnv.EXPO_PUBLIC_FIREBASE_FUNCTIONS_REGION = 'us-central1';
+    childEnv.EXPO_PUBLIC_FIREBASE_FUNCTIONS_REGION = DEFAULT_REGION;
   }
 
-  // Avoid Expo's interactive "use another port?" prompt in non-TTY shells.
+  // Physical QA must hit cloud Functions on nearsy-dev — never inherit emulator.
+  stripEmulatorVars(childEnv);
+  printSafeRuntimeSummary(childEnv, networkMode);
+
   const port = await findFreePort(8081);
+  const networkFlag = networkMode === 'lan' ? '--lan' : '--tunnel';
   console.log(
-    `[start-dev-client] Starting Metro (dev-client + tunnel) on port ${port} with EAS development env.`,
+    `[start-dev-client] Starting Metro (dev-client + ${networkMode}) on port ${port} with EAS development env.`,
   );
+  if (networkMode === 'lan') {
+    console.log(
+      '[start-dev-client] Require iPhone and PC on the same Wi‑Fi. If the device cannot connect, allow inbound TCP on the Metro port in Windows Firewall.',
+    );
+  }
 
   const child = spawn(
     'pnpm',
-    ['exec', 'expo', 'start', '--dev-client', '--tunnel', '--port', String(port)],
+    [
+      'exec',
+      'expo',
+      'start',
+      '--dev-client',
+      networkFlag,
+      '--port',
+      String(port),
+    ],
     {
       cwd: APP_ROOT,
       env: childEnv,
@@ -199,14 +349,16 @@ async function main() {
     },
   );
 
-  let tunnelAnnounceStarted = false;
+  let announced = false;
 
   const onChunk = (buf, stream) => {
     const text = buf.toString('utf8');
     stream.write(buf);
 
-    if (!tunnelAnnounceStarted && /Tunnel ready/i.test(text)) {
-      tunnelAnnounceStarted = true;
+    if (announced) return;
+
+    if (networkMode === 'tunnel' && /Tunnel ready/i.test(text)) {
+      announced = true;
       void (async () => {
         const tunnelUrl = await waitForTunnelUrl();
         if (!tunnelUrl) {
@@ -217,6 +369,23 @@ async function main() {
         }
         printTunnelDevClientQr(tunnelUrl);
       })();
+      return;
+    }
+
+    if (networkMode === 'lan') {
+      const expMatch = text.match(/exp:\/\/([0-9.]+):(\d+)/);
+      if (expMatch) {
+        announced = true;
+        printDevClientQr(`http://${expMatch[1]}:${expMatch[2]}`, 'lan');
+        return;
+      }
+      if (/Metro waiting|Welcome to Expo|Starting Metro Bundler/i.test(text)) {
+        const lanIp = pickLanIpv4();
+        if (lanIp) {
+          announced = true;
+          printDevClientQr(`http://${lanIp}:${port}`, 'lan');
+        }
+      }
     }
   };
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, Text, StyleSheet } from 'react-native';
+import { Pressable, Text, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../theme/ThemeContext';
 import { radius } from '../theme/radius';
@@ -42,25 +42,8 @@ export function InterestChip({
       ? '#FFFFFF'
       : iconColor || palette.primary;
 
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={[
-        styles.pill,
-        isOther
-          ? {
-              backgroundColor: selected ? palette.chipBg : 'transparent',
-              borderColor: selected ? palette.primary : palette.accentBorder,
-              borderWidth: selected ? 1.5 : 1,
-            }
-          : {
-              backgroundColor: selected ? palette.primary : palette.chipBg,
-              borderColor: selected ? palette.primary : palette.border,
-            },
-      ]}
-    >
+  const content = (
+    <>
       {icon ? (
         <Ionicons name={icon as any} size={16} color={resolvedIconColor} />
       ) : emoji ? (
@@ -81,6 +64,44 @@ export function InterestChip({
       >
         {name}
       </Text>
+    </>
+  );
+
+  const pillStyle = [
+    styles.pill,
+    isOther
+      ? {
+          backgroundColor: selected ? palette.chipBg : 'transparent',
+          borderColor: selected ? palette.primary : palette.accentBorder,
+          borderWidth: selected ? 1.5 : 1,
+        }
+      : {
+          backgroundColor: selected ? palette.primary : palette.chipBg,
+          borderColor: selected ? palette.primary : palette.border,
+        },
+  ];
+
+  // Avoid nested Pressable stealing taps when used as a display-only chip.
+  if (!onPress) {
+    return (
+      <View
+        accessibilityRole="text"
+        accessibilityState={{ selected }}
+        style={pillStyle}
+      >
+        {content}
+      </View>
+    );
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={pillStyle}
+    >
+      {content}
     </Pressable>
   );
 }
