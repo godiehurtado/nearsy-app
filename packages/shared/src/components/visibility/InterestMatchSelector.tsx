@@ -6,6 +6,7 @@ import {
   Pressable,
   StyleSheet,
   ScrollView,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../../theme/ThemeContext';
@@ -121,6 +122,8 @@ export function InterestMatchSelector({
 
     onAdd(id);
     setQuery('');
+    setFocused(false);
+    Keyboard.dismiss();
     selectingRef.current = false;
   };
 

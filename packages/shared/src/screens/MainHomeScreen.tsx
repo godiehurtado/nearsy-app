@@ -1,5 +1,5 @@
 // MainHomeScreen — Visibility & Discovery (final UI)
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Pressable,
   Alert,
   AccessibilityInfo,
+  Keyboard,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -59,7 +60,6 @@ import {
   MAX_DISTANCE_METERS_UI,
   DISTANCE_STEP_FEET,
   DISTANCE_STEP_METERS,
-  type VisibilitySearchPreferences,
   type VisibilitySearchPreferencesByMode,
   type DistanceDisplayUnit,
 } from '../visibility';
@@ -67,6 +67,11 @@ import {
   officialCatalogInterestIdSet,
   persistSearchPreferencesForMode,
 } from '../visibility/searchPreferencesStore';
+import {
+  applyModeFieldPatch,
+  shouldApplyRemotePreferences,
+  type PrefsFieldPatch,
+} from '../visibility/preferenceDraft';
 import {
   resolveActiveMode,
   resolveActivePresentation,
@@ -134,6 +139,17 @@ export default function MainHomeScreen({ navigation }: Props) {
   const [prefs, setPrefs] = useState<VisibilitySearchPreferencesByMode>(() =>
     parseSearchPreferencesFromUserDoc(null, unit),
   );
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
+  const inFlightWritesRef = useRef(0);
+  const localEpochRef = useRef(0);
+  const appliedEpochRef = useRef(0);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
+  const [ageVisual, setAgeVisual] = useState<{
+    ageMin: number;
+    ageMax: number;
+  } | null>(null);
+  const [distanceVisual, setDistanceVisual] = useState<number | null>(null);
   const [interestLimitMessage, setInterestLimitMessage] = useState<
     string | null
   >(null);
@@ -151,10 +167,11 @@ export default function MainHomeScreen({ navigation }: Props) {
   const profileImage =
     presentation.profileImage ?? profile.profileImage ?? null;
 
-  const displayDistance = presentDistanceFromCanonical(
-    activePrefs.maxDistanceMeters,
-    unit,
-  );
+  const displayDistance =
+    distanceVisual ??
+    presentDistanceFromCanonical(activePrefs.maxDistanceMeters, unit);
+  const displayAgeMin = ageVisual?.ageMin ?? activePrefs.ageMin;
+  const displayAgeMax = ageVisual?.ageMax ?? activePrefs.ageMax;
 
   const distMin = unit === 'ft' ? MIN_DISTANCE_FEET : MIN_DISTANCE_METERS_UI;
   const distMax = unit === 'ft' ? MAX_DISTANCE_FEET : MAX_DISTANCE_METERS_UI;
@@ -202,13 +219,36 @@ export default function MainHomeScreen({ navigation }: Props) {
         if (snap.exists()) {
           const data = (snap.data() as ProfileDoc) ?? {};
           setProfile(data);
-          setPrefs(
-            parseSearchPreferencesFromUserDoc(
+          // After any local edit, draft owns the truth until remount.
+          // While writes are in flight, never rehydrate prefs from snapshots.
+          if (
+            inFlightWritesRef.current === 0 &&
+            localEpochRef.current === 0
+          ) {
+            const remote = parseSearchPreferencesFromUserDoc(
               data as Record<string, unknown>,
               unit,
               officialInterestIds,
-            ),
-          );
+            );
+            prefsRef.current = remote;
+            setPrefs(remote);
+            appliedEpochRef.current = 0;
+          } else if (
+            shouldApplyRemotePreferences({
+              inFlightWrites: inFlightWritesRef.current,
+              localEpoch: localEpochRef.current,
+              appliedEpoch: appliedEpochRef.current,
+            })
+          ) {
+            const remote = parseSearchPreferencesFromUserDoc(
+              data as Record<string, unknown>,
+              unit,
+              officialInterestIds,
+            );
+            prefsRef.current = remote;
+            setPrefs(remote);
+            appliedEpochRef.current = localEpochRef.current;
+          }
         }
         setLoading(false);
       },
@@ -273,49 +313,68 @@ export default function MainHomeScreen({ navigation }: Props) {
     Alert.alert(presentation.title, presentation.userMessage);
   };
 
-  const announceInterestLimit = () => {
+  const announceInterestLimit = useCallback(() => {
     const title = t('home.discovery.maxInterestsTitle');
     const message = t('home.discovery.maxInterests');
     setInterestLimitMessage(message);
     AccessibilityInfo.announceForAccessibility(message);
     Alert.alert(title, message);
-  };
+  }, [t]);
 
-  const savePrefs = async (next: VisibilitySearchPreferences) => {
-    const uid = firebaseAuth.currentUser?.uid;
-    if (!uid) return;
-    const prepared = prepareSearchPreferencesForPersist(
-      next,
-      officialInterestIds,
-    );
-    if (prepared.ok === false) {
-      if (prepared.reasons.includes(INTEREST_IDS_OVER_MAX_REASON)) {
-        announceInterestLimit();
-      }
-      return;
-    }
-    // Optimistic update so chips/counter appear before network round-trip.
-    const optimistic = { ...prefs, [mode]: prepared.prefs };
-    setPrefs(optimistic);
-    setInterestLimitMessage(null);
-    try {
-      const updated = await persistSearchPreferencesForMode(
-        uid,
-        prefs,
-        mode,
-        prepared.prefs,
+  const patchAndPersist = useCallback(
+    async (patch: PrefsFieldPatch) => {
+      const uid = firebaseAuth.currentUser?.uid;
+      if (!uid) return;
+
+      const draft = applyModeFieldPatch(prefsRef.current, mode, patch);
+      const prepared = prepareSearchPreferencesForPersist(
+        draft[mode],
+        officialInterestIds,
       );
-      setPrefs(updated);
-    } catch (err) {
-      setPrefs(prefs);
-      const text = err instanceof Error ? err.message : '';
-      if (text.includes(INTEREST_IDS_OVER_MAX_REASON)) {
-        announceInterestLimit();
-      } else {
-        Alert.alert(t('home.errors.title'), t('home.errors.generic'));
+      if (prepared.ok === false) {
+        if (prepared.reasons.includes(INTEREST_IDS_OVER_MAX_REASON)) {
+          announceInterestLimit();
+        }
+        return;
       }
-    }
-  };
+
+      const optimistic: VisibilitySearchPreferencesByMode = {
+        ...draft,
+        [mode]: prepared.prefs,
+      };
+      localEpochRef.current += 1;
+      const epoch = localEpochRef.current;
+      prefsRef.current = optimistic;
+      setPrefs(optimistic);
+      setInterestLimitMessage(null);
+
+      inFlightWritesRef.current += 1;
+      try {
+        const updated = await persistSearchPreferencesForMode(
+          uid,
+          optimistic,
+          mode,
+          prepared.prefs,
+        );
+        if (epoch === localEpochRef.current) {
+          prefsRef.current = updated;
+          setPrefs(updated);
+          appliedEpochRef.current = epoch;
+        }
+      } catch (err) {
+        if (epoch === localEpochRef.current) {
+          Alert.alert(t('home.errors.title'), t('home.errors.generic'));
+        }
+        const text = err instanceof Error ? err.message : '';
+        if (text.includes(INTEREST_IDS_OVER_MAX_REASON)) {
+          announceInterestLimit();
+        }
+      } finally {
+        inFlightWritesRef.current = Math.max(0, inFlightWritesRef.current - 1);
+      }
+    },
+    [announceInterestLimit, mode, officialInterestIds, t],
+  );
 
   const handleToggleActive = async () => {
     if (statusUpdating) return;
@@ -381,23 +440,24 @@ export default function MainHomeScreen({ navigation }: Props) {
     activePrefs.interestIds.length >= MAX_SEARCH_INTEREST_IDS;
 
   const addInterest = (id: string) => {
-    if (
-      !canAddSearchInterest(activePrefs.interestIds, id, officialInterestIds)
-    ) {
+    const current = selectPreferencesForMode(prefsRef.current, mode);
+    if (!canAddSearchInterest(current.interestIds, id, officialInterestIds)) {
       announceInterestLimit();
       return;
     }
-    void savePrefs({
-      ...activePrefs,
-      interestIds: [...activePrefs.interestIds, id],
+    Keyboard.dismiss();
+    void patchAndPersist({
+      kind: 'interests',
+      interestIds: [...current.interestIds, id],
     });
   };
 
   const removeInterest = (id: string) => {
     setInterestLimitMessage(null);
-    void savePrefs({
-      ...activePrefs,
-      interestIds: activePrefs.interestIds.filter((x) => x !== id),
+    const current = selectPreferencesForMode(prefsRef.current, mode);
+    void patchAndPersist({
+      kind: 'interests',
+      interestIds: current.interestIds.filter((x) => x !== id),
     });
   };
 
@@ -424,6 +484,7 @@ export default function MainHomeScreen({ navigation }: Props) {
         paddingBottom: 96 + insets.bottom,
       }}
       keyboardShouldPersistTaps="always"
+      scrollEnabled={scrollEnabled}
     >
       <View style={[styles.brandRow, { paddingTop: insets.top + spacing.lg }]}>
         <View
@@ -542,8 +603,8 @@ export default function MainHomeScreen({ navigation }: Props) {
             </Text>
             <Text style={[styles.prefValue, { color: palette.textPrimary }]}>
               {t('home.preferences.ageValue', {
-                min: activePrefs.ageMin,
-                max: activePrefs.ageMax,
+                min: displayAgeMin,
+                max: displayAgeMax,
               })}
             </Text>
           </View>
@@ -555,11 +616,16 @@ export default function MainHomeScreen({ navigation }: Props) {
             min={MIN_VISIBILITY_AGE}
             max={MAX_VISIBILITY_AGE}
             step={1}
-            low={activePrefs.ageMin}
-            high={activePrefs.ageMax}
+            low={displayAgeMin}
+            high={displayAgeMax}
             accessibilityLabel={t('home.preferences.ageRange')}
+            onDragStateChange={(dragging) => setScrollEnabled(!dragging)}
             onChange={(ageMin, ageMax) => {
-              void savePrefs({ ...activePrefs, ageMin, ageMax });
+              setAgeVisual({ ageMin, ageMax });
+            }}
+            onChangeEnd={(ageMin, ageMax) => {
+              setAgeVisual(null);
+              void patchAndPersist({ kind: 'age', ageMin, ageMax });
             }}
           />
           <View style={styles.sliderBounds}>
@@ -593,14 +659,23 @@ export default function MainHomeScreen({ navigation }: Props) {
               step={distStep}
               value={displayDistance}
               accessibilityLabel={t('home.preferences.distanceRange')}
+              onDragStateChange={(dragging) => setScrollEnabled(!dragging)}
               onChange={(nextDisplay) => {
+                setDistanceVisual(nextDisplay);
+              }}
+              onChangeEnd={(nextDisplay) => {
+                setDistanceVisual(null);
+                const current = selectPreferencesForMode(
+                  prefsRef.current,
+                  mode,
+                );
                 const canonical = resolveCanonicalAfterDisplayClose(
-                  activePrefs.maxDistanceMeters,
+                  current.maxDistanceMeters,
                   nextDisplay,
                   unit,
                 );
-                void savePrefs({
-                  ...activePrefs,
+                void patchAndPersist({
+                  kind: 'distance',
                   maxDistanceMeters: canonicalFromDisplayDistance(
                     presentDistanceFromCanonical(canonical, unit),
                     unit,
