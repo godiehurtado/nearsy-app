@@ -5,6 +5,8 @@
  *   (default) tunnel — `expo start --dev-client --tunnel` + QR for tunnel URL
  *   --lan            — `expo start --dev-client --lan` (same EAS env, no ngrok)
  *
+ * Optional (not committed): NEARSY_DEV_CLIENT_LAN_HOST=<IPv4> overrides NIC detection for LAN QR.
+ *
  * Why not `eas env:exec … expo start` alone?
  * eas env:exec captures child stdout as `[stdout]` lines and hides the QR.
  *
@@ -203,18 +205,47 @@ function printDevClientQr(metroHttpUrl, label) {
   console.log('');
 }
 
+function isRfc1918OrLinkLocalIpv4(ip) {
+  if (typeof ip !== 'string' || net.isIP(ip) !== 4) return false;
+  if (ip.startsWith('10.') || ip.startsWith('192.168.') || ip.startsWith('169.254.')) {
+    return true;
+  }
+  if (!ip.startsWith('172.')) return false;
+  const second = Number(ip.split('.')[1]);
+  return Number.isFinite(second) && second >= 16 && second <= 31;
+}
+
 function printTunnelDevClientQr(tunnelHttpsUrl) {
-  if (/10\.0\.0\.86/.test(tunnelHttpsUrl)) {
-    console.error(
-      '[start-dev-client] Refusing LAN address in tunnel URL:',
-      tunnelHttpsUrl,
-    );
-    return;
+  try {
+    const host = new URL(tunnelHttpsUrl).hostname;
+    if (isRfc1918OrLinkLocalIpv4(host)) {
+      console.error(
+        '[start-dev-client] Refusing private/LAN address in tunnel URL:',
+        tunnelHttpsUrl,
+      );
+      return;
+    }
+  } catch {
+    /* ignore parse errors; still print QR below */
   }
   printDevClientQr(tunnelHttpsUrl, 'tunnel');
 }
 
+/**
+ * Prefer NEARSY_DEV_CLIENT_LAN_HOST (IPv4, not committed) when set; otherwise
+ * pick a non-internal IPv4 from the host NICs (typical LAN ranges first).
+ */
 function pickLanIpv4() {
+  const fromEnv = String(process.env.NEARSY_DEV_CLIENT_LAN_HOST || '').trim();
+  if (fromEnv) {
+    if (net.isIP(fromEnv) === 4 && !fromEnv.startsWith('127.')) {
+      return fromEnv;
+    }
+    console.warn(
+      '[start-dev-client] Ignoring invalid NEARSY_DEV_CLIENT_LAN_HOST; falling back to NIC detection.',
+    );
+  }
+
   const nets = os.networkInterfaces();
   /** @type {string[]} */
   const candidates = [];
@@ -232,7 +263,7 @@ function pickLanIpv4() {
     }
   }
 
-  // Prefer typical Wi‑Fi/LAN ranges; skip APIPA and common Hyper-V/Docker bridges.
+  // Prefer common LAN prefixes; skip link-local and RFC1918 172.16/12 bridges.
   const preferred = candidates.find(
     (ip) =>
       !ip.startsWith('169.254.') &&
