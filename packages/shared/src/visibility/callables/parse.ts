@@ -22,6 +22,7 @@ import type {
   DiscoveryProfileSummary,
   GetDiscoveryProfileResponse,
   PublishLocationResponse,
+  SetActiveProfileModeResponse,
 } from './wireTypes';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -397,6 +398,46 @@ export function parseGetDiscoveryProfileResponse(
     // Temporal compat: missing field → []; present-but-invalid → invalid-response.
     socialLinks: parseDiscoverySocialLinks(data.socialLinks),
     affiliations: parseDiscoveryAffiliations(data.affiliations),
+    serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
+  };
+}
+
+function parseProfileMode(value: unknown): 'personal' | 'professional' {
+  if (value !== 'personal' && value !== 'professional') {
+    throw createContractResponseError(
+      'mode must be personal|professional',
+      value,
+    );
+  }
+  return value;
+}
+
+function requireBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw createContractResponseError(`Invalid boolean for ${field}`, value);
+  }
+  return value;
+}
+
+export function parseSetActiveProfileModeResponse(
+  data: unknown,
+): SetActiveProfileModeResponse {
+  if (!isPlainObject(data)) {
+    throw createContractResponseError(
+      'setActiveProfileMode response must be an object',
+      data,
+    );
+  }
+  assertNoForbiddenKeys(data, 'setActiveProfileMode');
+  return {
+    contractVersion: requireContractVersion(data.contractVersion),
+    mode: parseProfileMode(data.mode),
+    visibility: requireBoolean(data.visibility, 'visibility'),
+    targetProfileComplete: requireBoolean(
+      data.targetProfileComplete,
+      'targetProfileComplete',
+    ),
+    discoverySynced: requireBoolean(data.discoverySynced, 'discoverySynced'),
     serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
   };
 }

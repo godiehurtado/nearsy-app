@@ -41,9 +41,16 @@ import {
 
 import {
   getUserProfile,
-  updateUserMode,
   updateUserProfilePartial,
 } from '../services/firestoreService';
+
+import { useTranslation } from '../i18n';
+import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
+import {
+  applyActiveProfileModeResponseToUserDoc,
+  createActiveProfileModeSwitchSession,
+  presentActiveProfileModeError,
+} from '../visibility/activeProfileModeSync';
 
 import {
   uploadProfileImage,
@@ -178,8 +185,11 @@ const COMPLETE_PROFILE_GUIDE_AUDIO: (number | undefined)[] = [
 export default function CompleteProfileScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const isLargeText = PixelRatio.getFontScale() >= 1.2;
+  const { t } = useTranslation();
 
   const scrollRef = useRef<ScrollView | null>(null);
+  const modeSwitchSessionRef = useRef(createActiveProfileModeSwitchSession());
+  const mountedRef = useRef(true);
 
   const realNameInputRef = useRef<RNTextInput | null>(null);
   const occupationInputRef = useRef<RNTextInput | null>(null);
@@ -243,6 +253,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
   // UI state
   const [isLoading, setIsLoading] = useState(false);
+  const [modeSwitchLoading, setModeSwitchLoading] = useState(false);
   const [isNewProfile, setIsNewProfile] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [guideStep, setGuideStep] = useState(0);
@@ -448,7 +459,11 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   // Cada vez que la pantalla gana foco, recargamos el perfil
   useFocusEffect(
     useCallback(() => {
+      mountedRef.current = true;
       loadProfile();
+      return () => {
+        mountedRef.current = false;
+      };
     }, [loadProfile]),
   );
 
@@ -586,21 +601,71 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   };
 
   const handleToggleMode = async () => {
-    const nextMode: ProfileMode =
-      (mode ?? 'personal') === 'personal' ? 'professional' : 'personal';
+    const confirmedMode: ProfileMode =
+      (mode ?? 'personal') === 'professional' ? 'professional' : 'personal';
+    const targetMode: ProfileMode =
+      confirmedMode === 'personal' ? 'professional' : 'personal';
 
-    // Switch UI to the other mode's independent presentation — never copy fields.
-    setMode(nextMode);
-    applyModeFields(profileDoc, nextMode);
+    if (modeSwitchLoading || modeSwitchSessionRef.current.isBusy()) {
+      return;
+    }
 
+    const uid = getUid();
+    if (!uid) return;
+
+    setModeSwitchLoading(true);
     try {
-      const uid = getUid();
-      if (!uid) return;
-      await updateUserMode(uid, nextMode);
-      setProfileDoc((prev) => (prev ? { ...prev, mode: nextMode } : prev));
+      const client = await getVisibilityDiscoveryClient();
+      const result = await modeSwitchSessionRef.current.switchMode(targetMode, {
+        client,
+        confirmedMode,
+        uid,
+      });
+
+      if (!mountedRef.current || getUid() !== uid) {
+        return;
+      }
+
+      if ('kind' in result) {
+        return;
+      }
+
+      if (result.ok === false) {
+        const presentation = presentActiveProfileModeError(t, result.error);
+        Alert.alert(presentation.title, presentation.userMessage);
+        return;
+      }
+
+      if (!mountedRef.current || getUid() !== uid) {
+        return;
+      }
+
+      const { response } = result;
+      const nextDoc = applyActiveProfileModeResponseToUserDoc(
+        profileDoc ?? {},
+        response,
+      );
+      setMode(response.mode);
+      applyModeFields(nextDoc, response.mode);
+      setProfileDoc(nextDoc);
+
+      if (!response.targetProfileComplete) {
+        Alert.alert(
+          t('activeProfileMode.errors.title'),
+          t('activeProfileMode.incomplete.message'),
+        );
+      }
     } catch (e) {
       if (__DEV__) {
-        console.error('[CompleteProfile] Error updating mode', e);
+        console.error('[CompleteProfile] Error switching mode', e);
+      }
+      Alert.alert(
+        t('activeProfileMode.errors.title'),
+        t('activeProfileMode.errors.generic'),
+      );
+    } finally {
+      if (mountedRef.current) {
+        setModeSwitchLoading(false);
       }
     }
   };
@@ -695,6 +760,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
           company: activeMode === 'professional' ? company : undefined,
         },
         projectActiveToTopLevel: true,
+        includeModeInPatch: false,
       });
 
       // Top-bar + completion flag only. Do NOT set visibility (Home Active toggle).
@@ -1316,11 +1382,17 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 mode={(mode || 'personal') as 'personal' | 'professional'}
                 topBarColor={'#3B5A85'}
                 onToggle={() => {
-                  if (!guideAllows(7)) return;
+                  if (!guideAllows(7) || modeSwitchLoading) return;
                   handleToggleMode();
                 }}
                 compact={isLargeText}
               />
+              {modeSwitchLoading ? (
+                <ActivityIndicator
+                  style={{ marginTop: 8 }}
+                  accessibilityLabel={t('common.loading')}
+                />
+              ) : null}
             </View>
 
             {/* Campos adicionales (professional) */}

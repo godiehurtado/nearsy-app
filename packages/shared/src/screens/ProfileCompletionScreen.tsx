@@ -54,8 +54,12 @@ import { firebaseAuth } from '../config/firebaseConfig';
 import {
   getUserProfile,
   updateUserProfilePartial,
-  updateUserMode,
 } from '../services/firestoreService';
+import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
+import {
+  applyActiveProfileModeResponseToUserDoc,
+  setActiveProfileModeFlow,
+} from '../visibility/activeProfileModeSync';
 import { uploadProfileImage, uploadAffiliationImage, uploadGalleryImage, deleteGalleryStorageObject } from '../services/storageService';
 import {
   commitPendingSocialNamePrefill,
@@ -671,7 +675,21 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
 
   async function persistType() {
     if (!uid || !mode) return;
-    await updateUserMode(uid, mode);
+    const existing = await getUserProfile(uid);
+    if (!existing) {
+      throw new Error('User profile shell is not ready yet.');
+    }
+    const client = await getVisibilityDiscoveryClient();
+    const outcome = await setActiveProfileModeFlow(client, mode, uid);
+    if (outcome.ok === false) {
+      throw outcome.error;
+    }
+    setShellData((prev) =>
+      applyActiveProfileModeResponseToUserDoc(
+        { ...(prev ?? {}), mode: outcome.response.mode },
+        outcome.response,
+      ),
+    );
   }
 
   async function persistName() {
@@ -683,6 +701,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         lastName: lastName.trim(),
       },
       projectActiveToTopLevel: true,
+      includeModeInPatch: false,
     });
     await updateUserProfilePartial(uid, {
       ...patch,
@@ -710,6 +729,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         profileImage: imageUrl,
       },
       projectActiveToTopLevel: true,
+      includeModeInPatch: false,
     });
 
     await updateUserProfilePartial(uid, {
@@ -745,6 +765,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         company,
       }),
       projectActiveToTopLevel: true,
+      includeModeInPatch: false,
     });
     await updateUserProfilePartial(uid, {
       ...patch,
@@ -979,7 +1000,6 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       // profileSetupCompleted is the only completion flag for this gate.
       await updateUserProfilePartial(uid, {
         profileSetupCompleted: true,
-        mode,
         ...(firstName.trim() ? { realName: firstName.trim() } : {}),
         ...(lastName.trim() ? { lastName: lastName.trim() } : {}),
       });

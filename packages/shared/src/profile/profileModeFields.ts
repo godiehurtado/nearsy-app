@@ -126,6 +126,11 @@ export type ActiveProfileSaveInput = {
   presentation: ModePresentation;
   /** When true (default), also project active face to top-level for current readers. */
   projectActiveToTopLevel?: boolean;
+  /**
+   * When false, omits top-level `mode` from the patch (mode changes use setActiveProfileMode).
+   * Default true for Android / legacy callers.
+   */
+  includeModeInPatch?: boolean;
 };
 
 /**
@@ -139,7 +144,8 @@ export function buildActiveProfileSavePatch(
 ): Record<string, unknown> {
   const { mode, presentation } = input;
   const project = input.projectActiveToTopLevel !== false;
-  const flat: Record<string, unknown> = { mode };
+  const includeMode = input.includeModeInPatch !== false;
+  const flat: Record<string, unknown> = includeMode ? { mode } : {};
 
   const nestedEntries: [string, unknown][] = [];
 

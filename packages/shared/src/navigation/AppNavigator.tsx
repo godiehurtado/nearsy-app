@@ -23,6 +23,7 @@ import AffiliationsScreen from '../screens/AffiliationsScreen';
 import RootTabs from './RootTabs';
 import { RootStackParamList } from './types';
 import { useAppTheme } from '../theme/ThemeContext';
+import { clearActiveProfileModeConfirmation } from '../visibility/activeProfileModeSync';
 
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
@@ -89,6 +90,7 @@ export default function AppNavigator() {
     const unsubscribe = firebaseAuth.onAuthStateChanged(async (user) => {
       try {
         if (!user) {
+          clearActiveProfileModeConfirmation();
           setUid(null);
           setUserEmail(null);
           setNeedsCompleteProfile(false);

@@ -46,6 +46,20 @@ export type GetDiscoveryProfileRequest = {
   candidateUid: string;
 };
 
+export type SetActiveProfileModeRequest = {
+  contractVersion: VisibilityContractVersion;
+  mode: ProfileMode;
+};
+
+export type SetActiveProfileModeResponse = {
+  contractVersion: VisibilityContractVersion;
+  mode: ProfileMode;
+  visibility: boolean;
+  targetProfileComplete: boolean;
+  discoverySynced: boolean;
+  serverTime: number;
+};
+
 /**
  * Public Discovery card summary.
  * No profile `status`. Age is not part of the public UI model (legacy wire

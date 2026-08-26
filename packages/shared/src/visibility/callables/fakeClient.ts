@@ -16,6 +16,8 @@ import type {
   GetDiscoveryProfileResponse,
   PublishLocationRequest,
   PublishLocationResponse,
+  SetActiveProfileModeRequest,
+  SetActiveProfileModeResponse,
 } from './wireTypes';
 
 const DEFAULT_PROFILE: DiscoveryProfileSummary = {
@@ -48,6 +50,9 @@ export type FakeVisibilityDiscoveryHandlers = Partial<{
   getDiscoveryProfile: (
     request: GetDiscoveryProfileRequest,
   ) => Promise<GetDiscoveryProfileResponse>;
+  setActiveProfileMode: (
+    request: SetActiveProfileModeRequest,
+  ) => Promise<SetActiveProfileModeResponse>;
 }>;
 
 export type FakeVisibilityDiscoveryClient = VisibilityDiscoveryClient & {
@@ -135,6 +140,20 @@ export function createFakeVisibilityDiscoveryClient(
         gallery: [],
         socialLinks: [],
         affiliations: [],
+        serverTime: serverNow,
+      };
+    },
+    async setActiveProfileMode(request) {
+      calls.push({ name: 'setActiveProfileMode', request });
+      if (handlers.setActiveProfileMode) {
+        return handlers.setActiveProfileMode(request);
+      }
+      return {
+        contractVersion: CONTRACT_VERSION,
+        mode: request.mode,
+        visibility: false,
+        targetProfileComplete: false,
+        discoverySynced: false,
         serverTime: serverNow,
       };
     },

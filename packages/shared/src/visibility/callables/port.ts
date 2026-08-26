@@ -13,6 +13,8 @@ import type {
   GetDiscoveryProfileResponse,
   PublishLocationRequest,
   PublishLocationResponse,
+  SetActiveProfileModeRequest,
+  SetActiveProfileModeResponse,
 } from './wireTypes';
 
 export type VisibilityDiscoveryClient = {
@@ -31,4 +33,7 @@ export type VisibilityDiscoveryClient = {
   getDiscoveryProfile(
     request: GetDiscoveryProfileRequest,
   ): Promise<GetDiscoveryProfileResponse>;
+  setActiveProfileMode(
+    request: SetActiveProfileModeRequest,
+  ): Promise<SetActiveProfileModeResponse>;
 };

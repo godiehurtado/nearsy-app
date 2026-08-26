@@ -39,6 +39,9 @@ import {
   reconcileVisibilityWithForegroundPermission,
 } from '../visibility/orchestration';
 import { pressTransformStyle } from '../visibility/pressTransformStyle';
+import {
+  reconcileUserDocWithActiveProfileMode,
+} from '../visibility/activeProfileModeReconciliation';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 import {
   parseSearchPreferencesFromUserDoc,
@@ -217,7 +220,10 @@ export default function MainHomeScreen({ navigation }: Props) {
       ref,
       (snap) => {
         if (snap.exists()) {
-          const data = (snap.data() as ProfileDoc) ?? {};
+          const data = reconcileUserDocWithActiveProfileMode(
+            (snap.data() as ProfileDoc) ?? {},
+            uid,
+          );
           setProfile(data);
           // After any local edit, draft owns the truth until remount.
           // While writes are in flight, never rehydrate prefs from snapshots.

@@ -1023,6 +1023,17 @@ const es: TranslationResources = {
       interestNearby: 'Interés compartido cercano',
     },
   },
+  activeProfileMode: {
+    errors: {
+      title: 'Perfil',
+      generic: 'No pudimos cambiar de perfil. Inténtalo de nuevo.',
+      networkUnavailable:
+        'No pudimos cambiar de perfil. Revisa tu conexión e inténtalo de nuevo.',
+    },
+    incomplete: {
+      message: 'Completa este perfil antes de volver a estar visible.',
+    },
+  },
   settings: {
     title: 'Más',
     backgroundVisibility: {
