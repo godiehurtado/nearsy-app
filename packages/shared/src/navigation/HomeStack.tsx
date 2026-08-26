@@ -18,6 +18,8 @@ export type HomeStackParamList = {
     mode?: 'personal' | 'professional';
     urls?: { url: string }[];
     displayName?: string;
+    /** 0-based index into gallery URLs. */
+    initialIndex?: number;
   };
 };
 

@@ -47,15 +47,71 @@ export function resolveInterestChip(
 export function resolveInterestChips(
   ids: readonly string[],
   translateItem: (nameKey: string, fallback: string) => string,
-  limit = 3,
+  /** Optional cap. Nearby icons-only should omit this and use layout overflow. */
+  limit?: number,
 ): ResolvedInterestChip[] {
   const out: ResolvedInterestChip[] = [];
+  const max =
+    typeof limit === 'number' && Number.isFinite(limit) && limit >= 0
+      ? Math.floor(limit)
+      : Number.POSITIVE_INFINITY;
   for (const id of ids) {
-    if (out.length >= limit) break;
+    if (out.length >= max) break;
     const chip = resolveInterestChip(id, translateItem);
     if (chip) out.push(chip);
   }
   return out;
+}
+
+export type NearbyInterestIconLayout = {
+  visibleCount: number;
+  overflowCount: number;
+};
+
+/**
+ * How many circular interest icons fit in a Nearby card row.
+ * When not all fit, reserves room for a `+N` chip.
+ */
+export function planNearbyInterestIconLayout(
+  totalCount: number,
+  containerWidth: number,
+  options?: {
+    iconSize?: number;
+    gap?: number;
+    plusWidth?: number;
+  },
+): NearbyInterestIconLayout {
+  const total = Math.max(0, Math.floor(totalCount));
+  if (total === 0) return { visibleCount: 0, overflowCount: 0 };
+
+  const iconSize = options?.iconSize ?? 28;
+  const gap = options?.gap ?? 6;
+  const plusWidth = options?.plusWidth ?? 28;
+  const width = Math.max(0, containerWidth);
+  if (width <= 0) {
+    // Before first layout: show a conservative row; overflow refined onLayout.
+    const provisional = Math.min(total, 6);
+    return {
+      visibleCount: provisional,
+      overflowCount: Math.max(0, total - provisional),
+    };
+  }
+
+  const unit = iconSize + gap;
+  const maxWithoutPlus = Math.max(0, Math.floor((width + gap) / unit));
+  if (total <= maxWithoutPlus) {
+    return { visibleCount: total, overflowCount: 0 };
+  }
+
+  const maxWithPlus = Math.max(
+    1,
+    Math.floor((width - plusWidth + gap) / unit),
+  );
+  const visibleCount = Math.min(total - 1, maxWithPlus);
+  return {
+    visibleCount,
+    overflowCount: Math.max(0, total - visibleCount),
+  };
 }
 
 /** Count shared interest IDs between viewer filter and candidate profile. */

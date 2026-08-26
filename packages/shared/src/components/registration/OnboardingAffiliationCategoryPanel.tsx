@@ -41,7 +41,13 @@ import {
   LOGO_DEV_PUBLISHABLE_KEY_ENV,
   readLogoDevPublishableKey,
 } from '../../affiliations/affiliationLogoDevConfig';
-import { resolveAffiliationLogoPresentation } from '../../affiliations/affiliationLogo';
+import {
+  AFFILIATION_RESULT_LOGO_RADIUS,
+  AFFILIATION_RESULT_LOGO_SIZE,
+  AFFILIATION_SELECTED_LOGO_RADIUS,
+  AFFILIATION_SELECTED_LOGO_SIZE,
+} from '../../affiliations/affiliationLogo';
+import { AffiliationLogoMark } from '../../affiliations/AffiliationLogoMark';
 
 type Props = {
   categoryId: OnboardingAffiliationCategoryId;
@@ -53,8 +59,6 @@ type Props = {
 };
 
 const SEARCH_DEBOUNCE_MS = 300;
-const RESULT_TILE_RADIUS = 12;
-const SELECTED_TILE_RADIUS = 18;
 const QUERY_MAX = 40;
 
 function readClientPublishableKey(): string | undefined {
@@ -70,86 +74,6 @@ function readClientPublishableKey(): string | undefined {
     return undefined;
   }
   return undefined;
-}
-
-function AffiliationLogo({
-  name,
-  categoryId,
-  logoUrl,
-  size,
-  borderRadius: tileRadius,
-}: {
-  name: string;
-  categoryId: OnboardingAffiliationCategoryId;
-  logoUrl?: string | null;
-  size: number;
-  borderRadius: number;
-}) {
-  const { palette } = useAppTheme();
-  const [remoteFailed, setRemoteFailed] = useState(false);
-  const presentation = resolveAffiliationLogoPresentation({
-    name,
-    categoryId,
-    logoUrl: remoteFailed ? null : logoUrl,
-  });
-
-  if (presentation.kind === 'remote' && presentation.logoUrl) {
-    return (
-      <Image
-        source={{ uri: presentation.logoUrl }}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: tileRadius,
-          backgroundColor: palette.chipBg,
-        }}
-        onError={() => setRemoteFailed(true)}
-      />
-    );
-  }
-
-  if (presentation.kind === 'initials') {
-    return (
-      <View
-        style={{
-          width: size,
-          height: size,
-          borderRadius: tileRadius,
-          backgroundColor: presentation.avatarColor,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Text
-          style={{
-            color: '#fff',
-            fontSize: size * 0.32,
-            fontWeight: fontWeight.extrabold,
-            letterSpacing: -0.4,
-          }}
-        >
-          {presentation.initials}
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: tileRadius,
-        backgroundColor: palette.chipBg,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <Text style={{ fontSize: size * 0.36 }}>
-        {getOnboardingAffiliationCategory(categoryId).emoji}
-      </Text>
-    </View>
-  );
 }
 
 export function OnboardingAffiliationCategoryPanel({
@@ -441,12 +365,12 @@ export function OnboardingAffiliationCategoryPanel({
               {selectedInCategory.map((item) => (
                 <View key={item.id} style={styles.selectedTile}>
                   <View>
-                    <AffiliationLogo
+                    <AffiliationLogoMark
                       name={item.name}
-                      categoryId={item.categoryId}
+                      type={item.categoryId}
                       logoUrl={displayLogoUrl(item)}
-                      size={64}
-                      borderRadius={SELECTED_TILE_RADIUS}
+                      size={AFFILIATION_SELECTED_LOGO_SIZE}
+                      borderRadius={AFFILIATION_SELECTED_LOGO_RADIUS}
                     />
                     <Pressable
                       accessibilityRole="button"
@@ -620,12 +544,12 @@ export function OnboardingAffiliationCategoryPanel({
                       },
                     ]}
                   >
-                    <AffiliationLogo
+                    <AffiliationLogoMark
                       name={result.name}
-                      categoryId={categoryId}
+                      type={categoryId}
                       logoUrl={displayLogoUrl(result)}
-                      size={40}
-                      borderRadius={RESULT_TILE_RADIUS}
+                      size={AFFILIATION_RESULT_LOGO_SIZE}
+                      borderRadius={AFFILIATION_RESULT_LOGO_RADIUS}
                     />
                     <Text
                       style={[
@@ -855,9 +779,9 @@ const styles = StyleSheet.create({
     marginTop: 11,
   },
   uploadThumb: {
-    width: 40,
-    height: 40,
-    borderRadius: RESULT_TILE_RADIUS,
+    width: AFFILIATION_RESULT_LOGO_SIZE,
+    height: AFFILIATION_RESULT_LOGO_SIZE,
+    borderRadius: AFFILIATION_RESULT_LOGO_RADIUS,
   },
   duplicate: {
     marginTop: spacing.sm,

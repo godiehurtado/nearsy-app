@@ -9,6 +9,8 @@ import {
   MAX_DISCOVERY_LIMIT,
   MAX_GALLERY_ITEMS,
 } from '../constants';
+import { parseDiscoveryAffiliations } from '../discoveryAffiliations';
+import { parseDiscoverySocialLinks } from '../discoverySocialLinks';
 import { createContractResponseError } from './errors';
 import type {
   ActivateVisibilityResponse,
@@ -110,6 +112,19 @@ function assertRejectedProfileKeys(
   }
 }
 
+/**
+ * Temporal age privacy bridge:
+ * - legacy backends may still send ageYears → validate then discard
+ * - new backends omit ageYears → OK
+ * Public UI model never receives age.
+ */
+function consumeLegacyAgeYears(value: Record<string, unknown>): void {
+  if (!Object.prototype.hasOwnProperty.call(value, 'ageYears')) {
+    return;
+  }
+  requireFiniteNumber(value.ageYears, 'profile.ageYears');
+}
+
 function parseSummaryFields(
   value: Record<string, unknown>,
 ): DiscoveryProfileSummary {
@@ -125,7 +140,7 @@ function parseSummaryFields(
     value.displayName,
     'profile.displayName',
   );
-  const ageYears = requireFiniteNumber(value.ageYears, 'profile.ageYears');
+  consumeLegacyAgeYears(value);
   const interestIds = parseInterestIds(value.interestIds);
 
   if (typeof value.occupation !== 'string') {
@@ -153,7 +168,6 @@ function parseSummaryFields(
     profileImage,
     occupation: value.occupation,
     interestIds,
-    ageYears,
   };
 }
 
@@ -171,6 +185,9 @@ export function parseDiscoveryProfileSummary(
     'status',
     'company',
     'bio',
+    'birthDate',
+    'birthYear',
+    'dateOfBirth',
   ]);
   return parseSummaryFields(value);
 }
@@ -187,6 +204,9 @@ export function parseDiscoveryProfileDetail(
     'photoUrl',
     'age',
     'status',
+    'birthDate',
+    'birthYear',
+    'dateOfBirth',
   ]);
   const summary = parseSummaryFields(value);
   if (typeof value.company !== 'string') {
@@ -374,6 +394,9 @@ export function parseGetDiscoveryProfileResponse(
     ),
     profile: parseDiscoveryProfileDetail(data.profile),
     gallery: parseGallery(data.gallery),
+    // Temporal compat: missing field → []; present-but-invalid → invalid-response.
+    socialLinks: parseDiscoverySocialLinks(data.socialLinks),
+    affiliations: parseDiscoveryAffiliations(data.affiliations),
     serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
   };
 }

@@ -10,6 +10,7 @@ import {
 import {
   countSharedInterestIds,
   matchesNearbyLocalQuery,
+  planNearbyInterestIconLayout,
   resolveInterestChip,
 } from '../interestDisplay';
 import { createDefaultSearchPreferencesByMode } from '../preferences';
@@ -109,6 +110,26 @@ describe('nearby interest display', () => {
     assert.ok(chip);
     assert.equal(chip!.label, 'Networking');
     assert.notEqual(chip!.label, 'business_networking');
+  });
+
+  it('plans Nearby icon layout with +N overflow without hard-capping at 3', () => {
+    const allFit = planNearbyInterestIconLayout(4, 200, {
+      iconSize: 28,
+      gap: 6,
+      plusWidth: 28,
+    });
+    assert.equal(allFit.visibleCount, 4);
+    assert.equal(allFit.overflowCount, 0);
+
+    const tight = planNearbyInterestIconLayout(8, 120, {
+      iconSize: 28,
+      gap: 6,
+      plusWidth: 28,
+    });
+    assert.ok(tight.visibleCount >= 1);
+    assert.ok(tight.visibleCount < 8);
+    assert.equal(tight.overflowCount, 8 - tight.visibleCount);
+    assert.ok(tight.visibleCount + tight.overflowCount === 8);
   });
 
   it('filters locally by name/occupation/interest labels', () => {

@@ -12,3 +12,7 @@ export * from './filters';
 export * from './states';
 export * from './callables';
 export * from './searchPreferencesParse';
+export * from './profileExploration';
+export * from './discoverySocialLinks';
+export * from './discoveryAffiliations';
+export * from './interestDisplay';
