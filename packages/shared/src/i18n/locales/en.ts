@@ -1,5 +1,6 @@
 import authentication from '../resources/authentication';
 import common from '../resources/common';
+import discoveryProfile from '../resources/discoveryProfile';
 import home from '../resources/home';
 import nearby from '../resources/nearby';
 import notifications from '../resources/notifications';
@@ -16,6 +17,7 @@ const en = {
   home,
   nearby,
   profile,
+  discoveryProfile,
   notifications,
   settings,
 } as const;

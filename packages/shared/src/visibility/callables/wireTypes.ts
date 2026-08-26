@@ -7,6 +7,8 @@
 
 import { CONTRACT_VERSION } from '../constants';
 import type { ProfileMode } from '../types';
+import type { DiscoveryPublicAffiliation } from '../discoveryAffiliations';
+import type { DiscoveryPublicSocialLink } from '../discoverySocialLinks';
 
 export type VisibilityContractVersion = typeof CONTRACT_VERSION;
 
@@ -46,7 +48,8 @@ export type GetDiscoveryProfileRequest = {
 
 /**
  * Public Discovery card summary.
- * No profile `status` (removed from Nearsy 2.0).
+ * No profile `status`. Age is not part of the public UI model (legacy wire
+ * may still send ageYears; parser validates + discards).
  */
 export type DiscoveryProfileSummary = {
   mode: ProfileMode;
@@ -54,7 +57,6 @@ export type DiscoveryProfileSummary = {
   profileImage: string | null;
   occupation: string;
   interestIds: string[];
-  ageYears: number;
 };
 
 /** Profile Detail wire profile = Summary + company + bio. */
@@ -113,5 +115,9 @@ export type GetDiscoveryProfileResponse = {
   distanceMeters: number;
   profile: DiscoveryProfileDetail;
   gallery: DiscoveryGalleryItem[];
+  /** Active-profile public links only; absent on older backends → parse to []. */
+  socialLinks: DiscoveryPublicSocialLink[];
+  /** Active-profile public affiliations; absent on older backends → parse to []. */
+  affiliations: DiscoveryPublicAffiliation[];
   serverTime: number;
 };

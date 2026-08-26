@@ -150,6 +150,12 @@ describe('visibility callable response parsing', () => {
     assert.equal(detail.gallery.length, 1);
     assert.equal(detail.profile.company, 'Nearsy');
     assert.equal(detail.profile.bio, 'Hello');
+    assert.deepEqual(detail.socialLinks, []);
+    assert.deepEqual(detail.affiliations, []);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(detail.profile, 'ageYears'),
+      false,
+    );
   });
 
   it('rejects profile status and gallery path', () => {

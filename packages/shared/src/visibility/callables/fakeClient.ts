@@ -24,7 +24,6 @@ const DEFAULT_PROFILE: DiscoveryProfileSummary = {
   profileImage: null,
   occupation: '',
   interestIds: ['sports_outdoors_soccer'],
-  ageYears: 28,
 };
 
 const DEFAULT_DETAIL = {
@@ -134,6 +133,8 @@ export function createFakeVisibilityDiscoveryClient(
         distanceMeters: 12.5,
         profile: DEFAULT_DETAIL,
         gallery: [],
+        socialLinks: [],
+        affiliations: [],
         serverTime: serverNow,
       };
     },

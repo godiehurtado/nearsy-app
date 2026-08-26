@@ -32,6 +32,7 @@ import {
   useAppTheme,
 } from '../theme';
 import { subtleShadow } from '../theme/shadows';
+import { NearbyInterestIconRow } from '../components/visibility/NearbyInterestIconRow';
 import {
   buildDiscoverNearbyRequest,
   isVisibilityDiscoveryClientError,
@@ -204,8 +205,10 @@ export default function NearbySearchScreen() {
 
   const renderCard = ({ item }: { item: DiscoverNearbyResult }) => {
     const p = item.profile;
-    const chips = resolveInterestChips(p.interestIds, translateItem, 3);
+    const chips = resolveInterestChips(p.interestIds, translateItem);
     const shared = countSharedInterestIds(viewerInterestIds, p.interestIds);
+    const metaParts = [p.occupation?.trim() || null, formatDistance(item.distanceMeters)]
+      .filter(Boolean);
     return (
       <Pressable
         accessibilityRole="button"
@@ -265,32 +268,9 @@ export default function NearbySearchScreen() {
               style={[styles.cardMeta, { color: palette.textSecondary }]}
               numberOfLines={1}
             >
-              {[p.occupation, p.ageYears ? String(p.ageYears) : null]
-                .filter(Boolean)
-                .join(' · ')}
-              {` · ${formatDistance(item.distanceMeters)}`}
+              {metaParts.join(' · ')}
             </Text>
-            {chips.length > 0 ? (
-              <View style={styles.chipRow}>
-                {chips.map((chip) => (
-                  <View
-                    key={chip.id}
-                    style={[styles.chip, { backgroundColor: palette.chipBg }]}
-                  >
-                    <Ionicons
-                      name={chip.icon as any}
-                      size={12}
-                      color={chip.iconColor || palette.primary}
-                    />
-                    <Text
-                      style={[styles.chipLabel, { color: palette.chipText }]}
-                    >
-                      {chip.label}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            ) : null}
+            <NearbyInterestIconRow chips={chips} />
           </View>
         </View>
       </Pressable>
@@ -570,21 +550,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontSize: fontSize.sm,
   },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 5,
-    marginTop: spacing.sm,
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderRadius: radius.pill,
-  },
-  chipLabel: { fontSize: fontSize.xs },
   emptyWrap: {
     alignItems: 'center',
     paddingTop: 60,
