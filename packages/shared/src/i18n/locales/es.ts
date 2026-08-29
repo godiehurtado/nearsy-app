@@ -964,9 +964,12 @@ const es: TranslationResources = {
     sharedInterests: 'Intereses compartidos',
     affiliations: 'Afiliaciones',
     compatibility: 'Compatibilidad',
+    compatibilityMatch: '{{score}}% Match',
     compatibilityBody:
       'Basado en sus intereses compartidos y cosas en común.',
+    compatibilityUnavailable: 'Estamos preparando la compatibilidad.',
     compatibilityDemo: 'Indicador de compatibilidad',
+    a11yCompatibilityMatch: '{{score}} por ciento de compatibilidad',
     sharedInterestsCount: '{{count}} intereses en común',
     sharedInterestsCount_one: '{{count}} interés en común',
     noSharedInterests: 'Aún no hay intereses en común',

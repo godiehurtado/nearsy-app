@@ -12,9 +12,12 @@ export default {
   sharedInterests: 'Shared interests',
   affiliations: 'Affiliations',
   compatibility: 'Compatibility',
+  compatibilityMatch: '{{score}}% Match',
   compatibilityBody:
     'Based on your shared interests and things in common.',
+  compatibilityUnavailable: 'Match score is being prepared.',
   compatibilityDemo: 'Compatibility indicator',
+  a11yCompatibilityMatch: '{{score}} percent match',
   sharedInterestsCount: '{{count}} shared interests',
   sharedInterestsCount_one: '{{count}} shared interest',
   noSharedInterests: 'No shared interests yet',

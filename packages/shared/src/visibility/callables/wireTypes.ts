@@ -8,6 +8,7 @@
 import { CONTRACT_VERSION } from '../constants';
 import type { ProfileMode } from '../types';
 import type { DiscoveryPublicAffiliation } from '../discoveryAffiliations';
+import type { DiscoveryCompatibility } from '../discoveryCompatibility';
 import type { DiscoveryPublicSocialLink } from '../discoverySocialLinks';
 
 export type VisibilityContractVersion = typeof CONTRACT_VERSION;
@@ -133,5 +134,7 @@ export type GetDiscoveryProfileResponse = {
   socialLinks: DiscoveryPublicSocialLink[];
   /** Active-profile public affiliations; absent on older backends → parse to []. */
   affiliations: DiscoveryPublicAffiliation[];
+  /** Matching V1 compatibility; absent on older backends → undefined. */
+  compatibility?: DiscoveryCompatibility;
   serverTime: number;
 };

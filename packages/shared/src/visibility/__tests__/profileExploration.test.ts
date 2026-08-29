@@ -583,6 +583,15 @@ describe('profile exploration i18n EN/ES', () => {
       es.discoveryProfile.compatibilityBody,
       'Basado en sus intereses compartidos y cosas en común.',
     );
+    assert.equal(enDiscovery.compatibilityMatch, '{{score}}% Match');
+    assert.equal(
+      enDiscovery.compatibilityUnavailable,
+      'Match score is being prepared.',
+    );
+    assert.equal(
+      es.discoveryProfile.compatibilityUnavailable,
+      'Estamos preparando la compatibilidad.',
+    );
     assert.ok(enDiscovery.sharedInterests);
     assert.ok(es.discoveryProfile.sharedInterests);
     assert.ok(enDiscovery.compatibilityDemo);
@@ -668,12 +677,12 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.match(screenSrc, /InterestChip/);
   });
 
-  it('does not invent a numeric compatibility percent in the demo shell', () => {
-    assert.doesNotMatch(compatSrc, /\b8[0-9]%\b/);
-    assert.doesNotMatch(compatSrc, /\b9[0-9]%\b/);
-    assert.match(compatSrc, /percentGlyph/);
-    assert.match(compatSrc, />\s*%\s*</);
-    assert.match(screenSrc, /<DiscoveryCompatibilityCard\s*\/>/);
+  it('wires backend compatibility score into DiscoveryCompatibilityCard', () => {
+    assert.match(screenSrc, /DiscoveryCompatibilityCard/);
+    assert.match(screenSrc, /compatibility=\{data\.compatibility\}/);
+    assert.match(compatSrc, /compatibility\.available/);
+    assert.match(compatSrc, /discoveryProfile\.compatibilityMatch/);
+    assert.doesNotMatch(compatSrc, /percentGlyph/);
   });
 
   it('omits Social Media when empty and wires response.socialLinks', () => {

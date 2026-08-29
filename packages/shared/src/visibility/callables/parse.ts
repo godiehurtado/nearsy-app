@@ -10,6 +10,7 @@ import {
   MAX_GALLERY_ITEMS,
 } from '../constants';
 import { parseDiscoveryAffiliations } from '../discoveryAffiliations';
+import { parseDiscoveryCompatibility } from '../discoveryCompatibility';
 import { parseDiscoverySocialLinks } from '../discoverySocialLinks';
 import { createContractResponseError } from './errors';
 import type {
@@ -386,6 +387,9 @@ export function parseGetDiscoveryProfileResponse(
     );
   }
   assertNoForbiddenKeys(data, 'getDiscoveryProfile');
+  const compatibility = Object.prototype.hasOwnProperty.call(data, 'compatibility')
+    ? parseDiscoveryCompatibility(data.compatibility)
+    : undefined;
   return {
     contractVersion: requireContractVersion(data.contractVersion),
     uid: requireNonEmptyString(data.uid, 'uid'),
@@ -399,6 +403,7 @@ export function parseGetDiscoveryProfileResponse(
     socialLinks: parseDiscoverySocialLinks(data.socialLinks),
     affiliations: parseDiscoveryAffiliations(data.affiliations),
     serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
+    ...(compatibility !== undefined ? { compatibility } : {}),
   };
 }
 

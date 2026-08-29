@@ -1,12 +1,12 @@
 /**
- * Compatibility card — visual shell matching Claude (ring + copy).
- * Does not invent a numeric percentage. Optional percent reserved for later.
- * Uses View rings (no react-native-svg dependency).
+ * Compatibility card — ring + localized match score or unavailable copy.
+ * Score comes from backend only; iOS never recalculates.
  */
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { useTranslation } from '../../i18n';
+import type { DiscoveryCompatibility } from '../../visibility/discoveryCompatibility';
 import {
   fontSize,
   fontWeight,
@@ -17,22 +17,93 @@ import {
 import { cardShadow } from '../../theme/shadows';
 
 type Props = {
-  /** Future real score 0–100. When absent, only the % glyph is shown (demo shell). */
-  percent?: number | null;
+  /** Absent during rollout — card hidden (least intrusive for older backends). */
+  compatibility?: DiscoveryCompatibility;
 };
 
 const SIZE = 54;
 const STROKE = 6;
 
-export function DiscoveryCompatibilityCard({ percent }: Props) {
+export function DiscoveryCompatibilityCard({ compatibility }: Props) {
   const { palette } = useAppTheme();
   const { t } = useTranslation();
 
-  const hasScore =
-    typeof percent === 'number' &&
-    Number.isFinite(percent) &&
-    percent >= 0 &&
-    percent <= 100;
+  if (!compatibility) {
+    return null;
+  }
+
+  if (compatibility.available) {
+    const score = compatibility.score;
+    const matchLabel = t('discoveryProfile.compatibilityMatch', { score });
+    const a11yLabel = t('discoveryProfile.a11yCompatibilityMatch', { score });
+
+    return (
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: palette.panel,
+            borderColor: palette.border,
+          },
+          cardShadow,
+        ]}
+        accessibilityRole="summary"
+        accessibilityLabel={a11yLabel}
+      >
+        <View
+          style={[
+            styles.ring,
+            {
+              borderColor: palette.border,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.ringAccent,
+              {
+                borderColor: palette.primary,
+                borderTopColor: palette.primary,
+                borderRightColor: palette.primary,
+                borderBottomColor: palette.primary,
+                borderLeftColor: 'transparent',
+              },
+            ]}
+          />
+          <View style={styles.ringLabel} pointerEvents="none">
+            <Text
+              style={[styles.percentText, { color: palette.primary }]}
+              maxFontSizeMultiplier={1.5}
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            >
+              {`${score}%`}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.copy}>
+          <Text
+            style={[styles.title, { color: palette.textPrimary }]}
+            maxFontSizeMultiplier={1.5}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          >
+            {matchLabel}
+          </Text>
+          <Text
+            style={[styles.body, { color: palette.textSecondary }]}
+            maxFontSizeMultiplier={1.5}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          >
+            {t('discoveryProfile.compatibilityBody')}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  const unavailableCopy = t('discoveryProfile.compatibilityUnavailable');
 
   return (
     <View
@@ -45,7 +116,7 @@ export function DiscoveryCompatibilityCard({ percent }: Props) {
         cardShadow,
       ]}
       accessibilityRole="summary"
-      accessibilityLabel={t('discoveryProfile.compatibility')}
+      accessibilityLabel={unavailableCopy}
     >
       <View
         style={[
@@ -57,41 +128,27 @@ export function DiscoveryCompatibilityCard({ percent }: Props) {
       >
         <View
           style={[
-            styles.ringAccent,
-            {
-              borderColor: palette.primary,
-              // Demo shell: partial accent ring (not a calculated score).
-              borderTopColor: hasScore ? palette.primary : palette.primary,
-              borderRightColor: hasScore ? palette.primary : palette.primary,
-              borderBottomColor: hasScore ? palette.primary : 'transparent',
-              borderLeftColor: 'transparent',
-            },
+            styles.ringInner,
+            { backgroundColor: palette.background },
           ]}
         />
-        <View style={styles.ringLabel} pointerEvents="none">
-          {hasScore ? (
-            <Text
-              style={[styles.percentText, { color: palette.primary }]}
-              accessibilityLabel={`${Math.round(percent)} percent`}
-            >
-              {`${Math.round(percent)}%`}
-            </Text>
-          ) : (
-            <Text
-              style={[styles.percentGlyph, { color: palette.primary }]}
-              accessibilityLabel={t('discoveryProfile.compatibilityDemo')}
-            >
-              %
-            </Text>
-          )}
-        </View>
       </View>
       <View style={styles.copy}>
-        <Text style={[styles.title, { color: palette.textPrimary }]}>
+        <Text
+          style={[styles.title, { color: palette.textPrimary }]}
+          maxFontSizeMultiplier={1.5}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+        >
           {t('discoveryProfile.compatibility')}
         </Text>
-        <Text style={[styles.body, { color: palette.textSecondary }]}>
-          {t('discoveryProfile.compatibilityBody')}
+        <Text
+          style={[styles.body, { color: palette.textSecondary }]}
+          maxFontSizeMultiplier={1.5}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+        >
+          {unavailableCopy}
         </Text>
       </View>
     </View>
@@ -121,14 +178,15 @@ const styles = StyleSheet.create({
     borderRadius: SIZE / 2,
     borderWidth: STROKE,
   },
+  ringInner: {
+    width: SIZE - STROKE * 2,
+    height: SIZE - STROKE * 2,
+    borderRadius: (SIZE - STROKE * 2) / 2,
+  },
   ringLabel: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  percentGlyph: {
-    fontSize: 18,
-    fontWeight: fontWeight.bold,
   },
   percentText: {
     fontSize: 14,
@@ -138,10 +196,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: fontSize.md,
     fontWeight: fontWeight.extrabold,
+    flexShrink: 1,
   },
   body: {
     marginTop: 3,
     fontSize: fontSize.sm,
     lineHeight: 20,
+    flexShrink: 1,
   },
 });

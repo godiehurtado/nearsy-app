@@ -391,8 +391,8 @@ export default function DiscoveryProfileScreen() {
           {/* 3. Social Media — omitted when DTO has no public links */}
           <DiscoverySocialMediaRow links={publicSocialLinks} />
 
-          {/* 4. Compatibility — no shared-interest pills */}
-          <DiscoveryCompatibilityCard />
+          {/* 4. Compatibility — backend score when available */}
+          <DiscoveryCompatibilityCard compatibility={data.compatibility} />
 
           {/* 5. Profile information + shared interests */}
           <View

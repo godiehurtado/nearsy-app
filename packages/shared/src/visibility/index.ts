@@ -15,6 +15,7 @@ export * from './searchPreferencesParse';
 export * from './profileExploration';
 export * from './discoverySocialLinks';
 export * from './discoveryAffiliations';
+export * from './discoveryCompatibility';
 export * from './interestDisplay';
 export * from './activeProfileModeSync';
 export * from './activeProfileModeReconciliation';
