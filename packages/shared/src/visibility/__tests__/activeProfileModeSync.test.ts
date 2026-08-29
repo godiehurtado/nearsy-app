@@ -198,6 +198,203 @@ describe('setActiveProfileModeFlow', () => {
   });
 });
 
+function resolveLocale(locale: typeof en | typeof es) {
+  return ((key: string) => {
+    const parts = key.split('.');
+    let cur: any = locale;
+    for (const part of parts) {
+      cur = cur?.[part];
+    }
+    return typeof cur === 'string' ? cur : key;
+  }) as any;
+}
+
+describe('CRJ type-step Active Mode error presentation (I1.2)', () => {
+  const INTERNAL_TRANSPORT = 'Visibility callable failed.';
+
+  it('network/unavailable → connection copy EN', () => {
+    const err = {
+      kind: 'VisibilityDiscoveryClientError' as const,
+      name: 'VisibilityDiscoveryClientError',
+      message: INTERNAL_TRANSPORT,
+      code: 'unavailable' as const,
+      reason: { kind: 'none' as const },
+      retryable: true,
+    };
+    const presentation = presentActiveProfileModeError(resolveLocale(en), err);
+    assert.equal(
+      presentation.userMessage,
+      en.activeProfileMode.errors.networkUnavailable,
+    );
+    assert.equal(
+      presentation.userMessage,
+      'Unable to switch profiles. Check your connection and try again.',
+    );
+    assert.doesNotMatch(presentation.userMessage, /Visibility callable failed/i);
+    assert.doesNotMatch(presentation.title, /Visibility callable failed/i);
+  });
+
+  it('network/unavailable → connection copy ES', () => {
+    const err = {
+      kind: 'VisibilityDiscoveryClientError' as const,
+      name: 'VisibilityDiscoveryClientError',
+      message: INTERNAL_TRANSPORT,
+      code: 'unavailable' as const,
+      reason: { kind: 'none' as const },
+      retryable: true,
+    };
+    const presentation = presentActiveProfileModeError(resolveLocale(es), err);
+    assert.equal(
+      presentation.userMessage,
+      es.activeProfileMode.errors.networkUnavailable,
+    );
+    assert.equal(
+      presentation.userMessage,
+      'No pudimos cambiar de perfil. Revisa tu conexión e inténtalo de nuevo.',
+    );
+    assert.doesNotMatch(presentation.userMessage, /Visibility callable failed/i);
+  });
+
+  it('permission-denied / internal → generic copy EN', () => {
+    for (const code of ['permission-denied', 'internal'] as const) {
+      const err = {
+        kind: 'VisibilityDiscoveryClientError' as const,
+        name: 'VisibilityDiscoveryClientError',
+        message: INTERNAL_TRANSPORT,
+        code,
+        reason: { kind: 'none' as const },
+        retryable: false,
+      };
+      const presentation = presentActiveProfileModeError(resolveLocale(en), err);
+      assert.equal(
+        presentation.userMessage,
+        "We couldn't switch profiles. Please try again.",
+      );
+      assert.doesNotMatch(
+        presentation.userMessage,
+        /Visibility callable failed/i,
+      );
+    }
+  });
+
+  it('generic/permission/internal → generic copy ES', () => {
+    for (const code of ['permission-denied', 'internal', 'failed-precondition'] as const) {
+      const err = {
+        kind: 'VisibilityDiscoveryClientError' as const,
+        name: 'VisibilityDiscoveryClientError',
+        message: INTERNAL_TRANSPORT,
+        code,
+        reason: { kind: 'none' as const },
+        retryable: false,
+      };
+      const presentation = presentActiveProfileModeError(resolveLocale(es), err);
+      assert.equal(
+        presentation.userMessage,
+        'No pudimos cambiar de perfil. Inténtalo de nuevo.',
+      );
+      assert.doesNotMatch(
+        presentation.userMessage,
+        /Visibility callable failed/i,
+      );
+    }
+  });
+
+  it('ProfileCompletion type step presents via presentActiveProfileModeError only', () => {
+    const src = readShared('screens/ProfileCompletionScreen.tsx');
+    assert.match(src, /presentActiveProfileModeError/);
+    assert.match(src, /isVisibilityDiscoveryClientError/);
+    const goNext = src.slice(
+      src.indexOf('async function goNext()'),
+      src.indexOf('function goBack()'),
+    );
+    assert.match(
+      goNext,
+      /step\.kind === 'type' && isVisibilityDiscoveryClientError/,
+    );
+    assert.match(goNext, /presentActiveProfileModeError\(t,/);
+    assert.doesNotMatch(
+      goNext,
+      /step\.kind === 'type'[\s\S]{0,200}e\?\.message/,
+    );
+    // Other CRJ steps keep legacy save-error Alert body
+    assert.match(
+      goNext,
+      /onboarding\.profileCompletion\.saveErrorTitle/,
+    );
+    assert.match(
+      goNext,
+      /e\?\.message \|\| t\('onboarding\.profileCompletion\.saveErrorMessage'\)/,
+    );
+  });
+
+  it('type-step Alert never uses raw transport message or saveErrorTitle for mode errors', () => {
+    const src = readShared('screens/ProfileCompletionScreen.tsx');
+    const goNext = src.slice(
+      src.indexOf('async function goNext()'),
+      src.indexOf('function goBack()'),
+    );
+    const modeBranch = goNext.slice(
+      goNext.indexOf("step.kind === 'type' && isVisibilityDiscoveryClientError"),
+      goNext.indexOf('} else {'),
+    );
+    assert.match(modeBranch, /presentation\.title/);
+    assert.match(modeBranch, /presentation\.userMessage/);
+    assert.doesNotMatch(modeBranch, /e\?\.message/);
+    assert.doesNotMatch(modeBranch, /saveErrorTitle/);
+    assert.doesNotMatch(modeBranch, /Visibility callable failed/);
+  });
+
+  it('persistType success paths do not Alert; incomplete is still success', () => {
+    const src = readShared('screens/ProfileCompletionScreen.tsx');
+    const persistType = src.slice(
+      src.indexOf('async function persistType()'),
+      src.indexOf('async function persistName()'),
+    );
+    assert.doesNotMatch(persistType, /Alert\.alert/);
+    assert.match(persistType, /setActiveProfileModeFlow/);
+    assert.match(persistType, /outcome\.ok === false/);
+    // incomplete is ok:true from flow — no special incomplete Alert in CRJ type step
+    assert.doesNotMatch(persistType, /targetProfileComplete/);
+    assert.doesNotMatch(persistType, /incomplete/);
+  });
+
+  it('identity and later CRJ steps keep legacy e.message save errors', () => {
+    const src = readShared('screens/ProfileCompletionScreen.tsx');
+    const goNext = src.slice(
+      src.indexOf('async function goNext()'),
+      src.indexOf('function goBack()'),
+    );
+    assert.match(goNext, /step\.kind === 'identity'/);
+    assert.match(goNext, /step\.kind === 'photo'/);
+    assert.match(goNext, /step\.kind === 'details'/);
+    // Only one presenter call site — type-step mode errors
+    const presenterHits = goNext.match(/presentActiveProfileModeError/g) ?? [];
+    assert.equal(presenterHits.length, 1);
+  });
+
+  it('CompleteProfile still uses presenter (post-CRJ unchanged by this fix scope)', () => {
+    const src = readShared('screens/CompleteProfileScreen.tsx');
+    assert.match(src, /presentActiveProfileModeError/);
+  });
+
+  it('no private payload / uid logging added in ProfileCompletion type path', () => {
+    const src = readShared('screens/ProfileCompletionScreen.tsx');
+    const persistType = src.slice(
+      src.indexOf('async function persistType()'),
+      src.indexOf('async function persistName()'),
+    );
+    const goNext = src.slice(
+      src.indexOf('async function goNext()'),
+      src.indexOf('function goBack()'),
+    );
+    for (const chunk of [persistType, goNext]) {
+      assert.doesNotMatch(chunk, /console\.(log|info|debug|warn|error)/);
+      assert.doesNotMatch(chunk, /JSON\.stringify/);
+      assert.doesNotMatch(chunk, /causeForLog/);
+    }
+  });
+});
+
 describe('createActiveProfileModeSwitchSession', () => {
   it('blocks second concurrent request while loading', async () => {
     const session = createActiveProfileModeSwitchSession();

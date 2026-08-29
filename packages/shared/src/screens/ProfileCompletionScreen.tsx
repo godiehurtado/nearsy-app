@@ -56,8 +56,10 @@ import {
   updateUserProfilePartial,
 } from '../services/firestoreService';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
+import { isVisibilityDiscoveryClientError } from '../visibility/callables';
 import {
   applyActiveProfileModeResponseToUserDoc,
+  presentActiveProfileModeError,
   setActiveProfileModeFlow,
 } from '../visibility/activeProfileModeSync';
 import { uploadProfileImage, uploadAffiliationImage, uploadGalleryImage, deleteGalleryStorageObject } from '../services/storageService';
@@ -1167,10 +1169,15 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         await finishOnboarding();
       }
     } catch (e: any) {
-      Alert.alert(
-        t('onboarding.profileCompletion.saveErrorTitle'),
-        e?.message || t('onboarding.profileCompletion.saveErrorMessage'),
-      );
+      if (step.kind === 'type' && isVisibilityDiscoveryClientError(e)) {
+        const presentation = presentActiveProfileModeError(t, e);
+        Alert.alert(presentation.title, presentation.userMessage);
+      } else {
+        Alert.alert(
+          t('onboarding.profileCompletion.saveErrorTitle'),
+          e?.message || t('onboarding.profileCompletion.saveErrorMessage'),
+        );
+      }
     } finally {
       setSubmitting(false);
     }
