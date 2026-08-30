@@ -239,21 +239,7 @@ export default function NearbySearchScreen() {
           },
         ]}
       >
-        {showAlignmentRing && alignment ? (
-          <View style={styles.alignmentCorner} pointerEvents="none">
-            <AlignmentScoreRing score={alignment.score} variant="compact" />
-            {shouldShowNearbyTierBadge(alignment.tier) ? (
-              <Text
-                style={[styles.alignmentBadge, { color: palette.primary }]}
-                numberOfLines={2}
-                maxFontSizeMultiplier={1.4}
-              >
-                {alignmentTierLabel(t, alignment.tier)}
-              </Text>
-            ) : null}
-          </View>
-        ) : null}
-        <View style={styles.cardRow}>
+        <View style={styles.cardTopRow}>
           <View style={styles.avatarWrap}>
             {p.profileImage ? (
               <Image source={{ uri: p.profileImage }} style={styles.avatar} />
@@ -298,9 +284,23 @@ export default function NearbySearchScreen() {
             >
               {metaParts.join(' · ')}
             </Text>
-            <NearbyInterestIconRow chips={chips} />
           </View>
+          {showAlignmentRing && alignment ? (
+            <View style={styles.alignmentColumn} pointerEvents="none">
+              <AlignmentScoreRing score={alignment.score} variant="compact" />
+              {shouldShowNearbyTierBadge(alignment.tier) ? (
+                <Text
+                  style={[styles.alignmentBadge, { color: palette.primary }]}
+                  numberOfLines={2}
+                  maxFontSizeMultiplier={1.35}
+                >
+                  {alignmentTierLabel(t, alignment.tier)}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
         </View>
+        <NearbyInterestIconRow chips={chips} />
       </Pressable>
     );
   };
@@ -536,28 +536,30 @@ const styles = StyleSheet.create({
   },
   loadingText: { fontSize: fontSize.sm },
   card: {
-    position: 'relative',
     borderWidth: 1,
     borderRadius: radius.lg,
     padding: spacing.md,
   },
-  alignmentCorner: {
-    position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
-    alignItems: 'flex-end',
-    zIndex: 1,
-    gap: 2,
-    maxWidth: 96,
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  alignmentColumn: {
+    width: 88,
+    flexShrink: 0,
+    alignItems: 'center',
+    gap: 4,
   },
   alignmentBadge: {
     fontSize: fontSize.xs,
     fontWeight: fontWeight.semibold,
-    textAlign: 'right',
+    textAlign: 'center',
     lineHeight: 14,
+    flexShrink: 1,
+    alignSelf: 'stretch',
   },
-  cardRow: { flexDirection: 'row', gap: spacing.md },
-  avatarWrap: { position: 'relative' },
+  avatarWrap: { position: 'relative', flexShrink: 0 },
   avatar: {
     width: 60,
     height: 60,
@@ -589,6 +591,7 @@ const styles = StyleSheet.create({
   sharedBadge: {
     fontSize: fontSize.sm,
     fontWeight: fontWeight.bold,
+    flexShrink: 0,
   },
   cardMeta: {
     marginTop: 2,

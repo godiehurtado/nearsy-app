@@ -4,7 +4,11 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { AlignmentScoreRing } from '../alignment/AlignmentScoreRing';
+import {
+  AlignmentScoreRing,
+  ALIGNMENT_RING_DETAIL_SIZE,
+  ALIGNMENT_RING_DETAIL_STROKE,
+} from '../alignment/AlignmentScoreRing';
 import { useTranslation } from '../../i18n';
 import {
   alignmentAccessibilityLabel,
@@ -129,8 +133,6 @@ export function DiscoveryCompatibilityCard({ compatibility }: Props) {
   );
 }
 
-const PLACEHOLDER = 54;
-
 const styles = StyleSheet.create({
   card: {
     marginTop: spacing.lg,
@@ -139,15 +141,20 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.lg,
   },
   ringPlaceholder: {
-    width: PLACEHOLDER,
-    height: PLACEHOLDER,
-    borderRadius: PLACEHOLDER / 2,
-    borderWidth: 6,
+    width: ALIGNMENT_RING_DETAIL_SIZE,
+    height: ALIGNMENT_RING_DETAIL_SIZE,
+    borderRadius: ALIGNMENT_RING_DETAIL_SIZE / 2,
+    borderWidth: ALIGNMENT_RING_DETAIL_STROKE,
+    flexShrink: 0,
   },
-  copy: { flex: 1, minWidth: 0 },
+  copy: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
   title: {
     fontSize: fontSize.md,
     fontWeight: fontWeight.extrabold,
