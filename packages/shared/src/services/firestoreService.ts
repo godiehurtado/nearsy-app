@@ -279,6 +279,10 @@ export const updateUserMode = async (
   uid: string,
   mode: 'personal' | 'professional',
 ) => {
+  /**
+   * @deprecated iOS must use setActiveProfileMode callable (activeProfileModeSync).
+   * Retained for Android until that platform migrates.
+   */
   try {
     const ref = doc(firestoreDb, 'users', uid);
 

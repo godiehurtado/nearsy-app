@@ -950,6 +950,18 @@ const es: TranslationResources = {
       title: 'Redes sociales',
     },
   },
+  alignment: {
+    title: 'Alineación',
+    unavailable: 'Estamos preparando la alineación.',
+    tiers: {
+      weak: 'Algo en común',
+      partial: 'Puntos en común',
+      strong: 'Muy alineados',
+      full: 'Alineación excepcional',
+    },
+    a11yScoreOnly: '{{score}} por ciento de alineación',
+    a11yWithTier: '{{score}} por ciento de alineación, {{tier}}',
+  },
   discoveryProfile: {
     title: 'Perfil',
     back: 'Atrás',
@@ -964,9 +976,12 @@ const es: TranslationResources = {
     sharedInterests: 'Intereses compartidos',
     affiliations: 'Afiliaciones',
     compatibility: 'Compatibilidad',
+    compatibilityMatch: '{{score}}% Match',
     compatibilityBody:
       'Basado en sus intereses compartidos y cosas en común.',
+    compatibilityUnavailable: 'Estamos preparando la compatibilidad.',
     compatibilityDemo: 'Indicador de compatibilidad',
+    a11yCompatibilityMatch: '{{score}} por ciento de compatibilidad',
     sharedInterestsCount: '{{count}} intereses en común',
     sharedInterestsCount_one: '{{count}} interés en común',
     noSharedInterests: 'Aún no hay intereses en común',
@@ -1021,6 +1036,17 @@ const es: TranslationResources = {
     kinds: {
       contactNearby: 'Contacto cercano',
       interestNearby: 'Interés compartido cercano',
+    },
+  },
+  activeProfileMode: {
+    errors: {
+      title: 'Perfil',
+      generic: 'No pudimos cambiar de perfil. Inténtalo de nuevo.',
+      networkUnavailable:
+        'No pudimos cambiar de perfil. Revisa tu conexión e inténtalo de nuevo.',
+    },
+    incomplete: {
+      message: 'Completa este perfil antes de volver a estar visible.',
     },
   },
   settings: {

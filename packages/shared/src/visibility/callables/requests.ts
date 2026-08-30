@@ -3,12 +3,14 @@
  */
 
 import { CONTRACT_VERSION } from '../constants';
+import type { ProfileMode } from '../types';
 import type {
   ActivateVisibilityRequest,
   DeactivateVisibilityRequest,
   DiscoverNearbyRequest,
   GetDiscoveryProfileRequest,
   PublishLocationRequest,
+  SetActiveProfileModeRequest,
   VisibilityLocationPayload,
 } from './wireTypes';
 
@@ -73,6 +75,15 @@ export function buildGetDiscoveryProfileRequest(
   };
 }
 
+export function buildSetActiveProfileModeRequest(
+  mode: ProfileMode,
+): SetActiveProfileModeRequest {
+  return {
+    contractVersion: CONTRACT_VERSION,
+    mode,
+  };
+}
+
 /** Plain JSON-serializable body for callable invoke. */
 export function serializeVisibilityRequest(
   request:
@@ -80,7 +91,8 @@ export function serializeVisibilityRequest(
     | PublishLocationRequest
     | DeactivateVisibilityRequest
     | DiscoverNearbyRequest
-    | GetDiscoveryProfileRequest,
+    | GetDiscoveryProfileRequest
+    | SetActiveProfileModeRequest,
 ): Record<string, unknown> {
   return { ...request } as Record<string, unknown>;
 }

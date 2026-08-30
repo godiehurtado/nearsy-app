@@ -8,6 +8,7 @@ export const VISIBILITY_CALLABLE_NAMES = {
   deactivateVisibility: 'deactivateVisibility',
   discoverNearby: 'discoverNearby',
   getDiscoveryProfile: 'getDiscoveryProfile',
+  setActiveProfileMode: 'setActiveProfileMode',
 } as const;
 
 export type VisibilityCallableName =

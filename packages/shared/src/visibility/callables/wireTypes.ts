@@ -8,6 +8,7 @@
 import { CONTRACT_VERSION } from '../constants';
 import type { ProfileMode } from '../types';
 import type { DiscoveryPublicAffiliation } from '../discoveryAffiliations';
+import type { DiscoveryCompatibility } from '../discoveryCompatibility';
 import type { DiscoveryPublicSocialLink } from '../discoverySocialLinks';
 
 export type VisibilityContractVersion = typeof CONTRACT_VERSION;
@@ -46,6 +47,20 @@ export type GetDiscoveryProfileRequest = {
   candidateUid: string;
 };
 
+export type SetActiveProfileModeRequest = {
+  contractVersion: VisibilityContractVersion;
+  mode: ProfileMode;
+};
+
+export type SetActiveProfileModeResponse = {
+  contractVersion: VisibilityContractVersion;
+  mode: ProfileMode;
+  visibility: boolean;
+  targetProfileComplete: boolean;
+  discoverySynced: boolean;
+  serverTime: number;
+};
+
 /**
  * Public Discovery card summary.
  * No profile `status`. Age is not part of the public UI model (legacy wire
@@ -74,6 +89,8 @@ export type DiscoverNearbyResult = {
   uid: string;
   distanceMeters: number;
   profile: DiscoveryProfileSummary;
+  /** Matching M4A alignment wire; absent on older backends → no Nearby ring. */
+  compatibility?: DiscoveryCompatibility;
 };
 
 export type ActivateVisibilityResponse = {
@@ -119,5 +136,7 @@ export type GetDiscoveryProfileResponse = {
   socialLinks: DiscoveryPublicSocialLink[];
   /** Active-profile public affiliations; absent on older backends → parse to []. */
   affiliations: DiscoveryPublicAffiliation[];
+  /** Matching V1 compatibility; absent on older backends → undefined. */
+  compatibility?: DiscoveryCompatibility;
   serverTime: number;
 };

@@ -12,6 +12,7 @@ import {
   parseDiscoverNearbyResponse,
   parseGetDiscoveryProfileResponse,
   parsePublishLocationResponse,
+  parseSetActiveProfileModeResponse,
 } from './parse';
 import { serializeVisibilityRequest } from './requests';
 import type {
@@ -20,6 +21,7 @@ import type {
   DiscoverNearbyRequest,
   GetDiscoveryProfileRequest,
   PublishLocationRequest,
+  SetActiveProfileModeRequest,
 } from './wireTypes';
 
 export type VisibilityCallableInvoker = (
@@ -89,6 +91,13 @@ export function createVisibilityDiscoveryCallableClient(
         VISIBILITY_CALLABLE_NAMES.getDiscoveryProfile,
         serializeVisibilityRequest(request),
         parseGetDiscoveryProfileResponse,
+      );
+    },
+    setActiveProfileMode(request: SetActiveProfileModeRequest) {
+      return callParsed(
+        VISIBILITY_CALLABLE_NAMES.setActiveProfileMode,
+        serializeVisibilityRequest(request),
+        parseSetActiveProfileModeResponse,
       );
     },
   };

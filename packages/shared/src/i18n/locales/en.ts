@@ -1,3 +1,5 @@
+import alignment from '../resources/alignment';
+import activeProfileMode from '../resources/activeProfileMode';
 import authentication from '../resources/authentication';
 import common from '../resources/common';
 import discoveryProfile from '../resources/discoveryProfile';
@@ -18,6 +20,8 @@ const en = {
   nearby,
   profile,
   discoveryProfile,
+  alignment,
+  activeProfileMode,
   notifications,
   settings,
 } as const;

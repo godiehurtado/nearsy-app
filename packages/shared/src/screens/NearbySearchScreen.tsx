@@ -33,13 +33,20 @@ import {
 } from '../theme';
 import { subtleShadow } from '../theme/shadows';
 import { NearbyInterestIconRow } from '../components/visibility/NearbyInterestIconRow';
+import { AlignmentScoreRing } from '../components/alignment/AlignmentScoreRing';
 import {
   buildDiscoverNearbyRequest,
   isVisibilityDiscoveryClientError,
   metersToFeet,
   resolveDistanceDisplayUnit,
+  toAlignment,
   type DiscoverNearbyResult,
 } from '../visibility';
+import {
+  alignmentAccessibilityLabel,
+  alignmentTierLabel,
+  shouldShowNearbyTierBadge,
+} from '../visibility/alignmentPresentation';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 import {
   countSharedInterestIds,
@@ -209,9 +216,16 @@ export default function NearbySearchScreen() {
     const shared = countSharedInterestIds(viewerInterestIds, p.interestIds);
     const metaParts = [p.occupation?.trim() || null, formatDistance(item.distanceMeters)]
       .filter(Boolean);
+    const alignment = toAlignment(item.compatibility);
+    const showAlignmentRing = alignment?.available === true;
+    const cardA11y =
+      showAlignmentRing && alignment
+        ? `${p.displayName}, ${alignmentAccessibilityLabel(t, alignment)}`
+        : p.displayName;
     return (
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={cardA11y}
         onPress={() =>
           navigation.navigate('DiscoveryProfile', { uid: item.uid })
         }
@@ -225,7 +239,7 @@ export default function NearbySearchScreen() {
           },
         ]}
       >
-        <View style={styles.cardRow}>
+        <View style={styles.cardTopRow}>
           <View style={styles.avatarWrap}>
             {p.profileImage ? (
               <Image source={{ uri: p.profileImage }} style={styles.avatar} />
@@ -270,9 +284,23 @@ export default function NearbySearchScreen() {
             >
               {metaParts.join(' · ')}
             </Text>
-            <NearbyInterestIconRow chips={chips} />
           </View>
+          {showAlignmentRing && alignment ? (
+            <View style={styles.alignmentColumn} pointerEvents="none">
+              <AlignmentScoreRing score={alignment.score} variant="compact" />
+              {shouldShowNearbyTierBadge(alignment.tier) ? (
+                <Text
+                  style={[styles.alignmentBadge, { color: palette.primary }]}
+                  numberOfLines={2}
+                  maxFontSizeMultiplier={1.35}
+                >
+                  {alignmentTierLabel(t, alignment.tier)}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
         </View>
+        <NearbyInterestIconRow chips={chips} />
       </Pressable>
     );
   };
@@ -512,8 +540,26 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.md,
   },
-  cardRow: { flexDirection: 'row', gap: spacing.md },
-  avatarWrap: { position: 'relative' },
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  alignmentColumn: {
+    width: 78,
+    flexShrink: 0,
+    alignItems: 'center',
+    gap: 4,
+  },
+  alignmentBadge: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+    textAlign: 'center',
+    lineHeight: 14,
+    flexShrink: 1,
+    alignSelf: 'stretch',
+  },
+  avatarWrap: { position: 'relative', flexShrink: 0 },
   avatar: {
     width: 60,
     height: 60,
@@ -545,6 +591,7 @@ const styles = StyleSheet.create({
   sharedBadge: {
     fontSize: fontSize.sm,
     fontWeight: fontWeight.bold,
+    flexShrink: 0,
   },
   cardMeta: {
     marginTop: 2,

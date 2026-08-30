@@ -10,6 +10,7 @@ import {
   MAX_GALLERY_ITEMS,
 } from '../constants';
 import { parseDiscoveryAffiliations } from '../discoveryAffiliations';
+import { parseDiscoveryCompatibility } from '../discoveryCompatibility';
 import { parseDiscoverySocialLinks } from '../discoverySocialLinks';
 import { createContractResponseError } from './errors';
 import type {
@@ -22,6 +23,7 @@ import type {
   DiscoveryProfileSummary,
   GetDiscoveryProfileResponse,
   PublishLocationResponse,
+  SetActiveProfileModeResponse,
 } from './wireTypes';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -233,6 +235,9 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
     throw createContractResponseError('result must be an object', value);
   }
   assertNoForbiddenKeys(value, 'result');
+  const compatibility = Object.prototype.hasOwnProperty.call(value, 'compatibility')
+    ? parseDiscoveryCompatibility(value.compatibility)
+    : undefined;
   return {
     uid: requireNonEmptyString(value.uid, 'result.uid'),
     distanceMeters: requireNonNegativeNumber(
@@ -240,6 +245,7 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
       'result.distanceMeters',
     ),
     profile: parseDiscoveryProfileSummary(value.profile),
+    ...(compatibility !== undefined ? { compatibility } : {}),
   };
 }
 
@@ -385,6 +391,9 @@ export function parseGetDiscoveryProfileResponse(
     );
   }
   assertNoForbiddenKeys(data, 'getDiscoveryProfile');
+  const compatibility = Object.prototype.hasOwnProperty.call(data, 'compatibility')
+    ? parseDiscoveryCompatibility(data.compatibility)
+    : undefined;
   return {
     contractVersion: requireContractVersion(data.contractVersion),
     uid: requireNonEmptyString(data.uid, 'uid'),
@@ -397,6 +406,47 @@ export function parseGetDiscoveryProfileResponse(
     // Temporal compat: missing field → []; present-but-invalid → invalid-response.
     socialLinks: parseDiscoverySocialLinks(data.socialLinks),
     affiliations: parseDiscoveryAffiliations(data.affiliations),
+    serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
+    ...(compatibility !== undefined ? { compatibility } : {}),
+  };
+}
+
+function parseProfileMode(value: unknown): 'personal' | 'professional' {
+  if (value !== 'personal' && value !== 'professional') {
+    throw createContractResponseError(
+      'mode must be personal|professional',
+      value,
+    );
+  }
+  return value;
+}
+
+function requireBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw createContractResponseError(`Invalid boolean for ${field}`, value);
+  }
+  return value;
+}
+
+export function parseSetActiveProfileModeResponse(
+  data: unknown,
+): SetActiveProfileModeResponse {
+  if (!isPlainObject(data)) {
+    throw createContractResponseError(
+      'setActiveProfileMode response must be an object',
+      data,
+    );
+  }
+  assertNoForbiddenKeys(data, 'setActiveProfileMode');
+  return {
+    contractVersion: requireContractVersion(data.contractVersion),
+    mode: parseProfileMode(data.mode),
+    visibility: requireBoolean(data.visibility, 'visibility'),
+    targetProfileComplete: requireBoolean(
+      data.targetProfileComplete,
+      'targetProfileComplete',
+    ),
+    discoverySynced: requireBoolean(data.discoverySynced, 'discoverySynced'),
     serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
   };
 }
