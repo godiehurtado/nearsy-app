@@ -546,7 +546,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   alignmentColumn: {
-    width: 88,
+    width: 78,
     flexShrink: 0,
     alignItems: 'center',
     gap: 4,

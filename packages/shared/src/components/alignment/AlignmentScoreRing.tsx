@@ -1,6 +1,6 @@
 /**
  * Shared alignment score ring — compact (Nearby) and detail (Profile).
- * Geometrically circular progress via clipped half-rings (no SVG dependency).
+ * Proportional progress via two semicircle half-clips (no SVG dependency).
  * Uses primary accent neutrally; never encodes low scores as negative.
  */
 import React from 'react';
@@ -8,14 +8,22 @@ import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import { formatAlignmentPercent } from '../../visibility/alignmentPresentation';
 import { fontWeight, useAppTheme } from '../../theme';
+import {
+  computeAlignmentRingGeometry,
+  type AlignmentRingGeometry,
+} from './alignmentRingGeometry';
 
 export type AlignmentScoreRingVariant = 'compact' | 'detail';
+export {
+  computeAlignmentRingGeometry,
+  type AlignmentRingGeometry,
+} from './alignmentRingGeometry';
 
 /** Fixed square sizes — do not flex or scale with Dynamic Type. */
 export const ALIGNMENT_RING_DETAIL_SIZE = 76;
-export const ALIGNMENT_RING_COMPACT_SIZE = 56;
+export const ALIGNMENT_RING_COMPACT_SIZE = 48;
 export const ALIGNMENT_RING_DETAIL_STROKE = 7;
-export const ALIGNMENT_RING_COMPACT_STROKE = 5;
+export const ALIGNMENT_RING_COMPACT_STROKE = 4;
 
 type Props = {
   score: number;
@@ -25,72 +33,77 @@ type Props = {
   importantForAccessibility?: 'auto' | 'yes' | 'no' | 'no-hide-descendants';
 };
 
-function clampScore(score: number): number {
-  if (!Number.isFinite(score)) return 0;
-  return Math.max(0, Math.min(100, Math.round(score)));
-}
-
 /**
- * Progress arc: two overflow-clipped half-circles, same center/radius as track.
- * Container is rotated -90deg so progress starts at 12 o'clock.
+ * Two half-clips + 180° semicircle borders (not a full colored ring).
+ * Outer -90deg starts the arc at 12 o'clock; positive rotation is clockwise.
  */
 function ProgressArc({
   size,
   stroke,
-  progress,
+  geometry,
   color,
 }: {
   size: number;
   stroke: number;
-  progress: number;
+  geometry: AlignmentRingGeometry;
   color: string;
 }) {
-  if (progress <= 0) {
+  if (geometry.isEmpty || geometry.totalDegrees <= 0) {
     return null;
   }
 
   const half = size / 2;
-  const degrees = (progress / 100) * 360;
-  const firstHalf = Math.min(degrees, 180);
-  const secondHalf = Math.max(degrees - 180, 0);
+  const { firstHalfDegrees, secondHalfDegrees, isFull } = geometry;
 
-  const fullRing = {
+  const semiBase = {
     width: size,
     height: size,
     borderRadius: half,
     borderWidth: stroke,
-    borderColor: color,
+    borderColor: 'transparent' as const,
+    position: 'absolute' as const,
+    top: 0,
   };
 
   return (
     <View
       style={[styles.progressRoot, { width: size, height: size }]}
       pointerEvents="none"
+      // Test hooks: score 66 must not set isFull; only 100 does.
+      {...(isFull ? { testID: 'alignment-ring-progress-full' } : null)}
     >
-      {/* First 0–50%: right half-clip */}
-      <View style={[styles.halfClip, { width: half, height: size, left: half }]}>
+      {/* First 0–50%: right half-clip, max 180° via top+right semicircle */}
+      <View
+        style={[styles.halfClip, { width: half, height: size, left: half }]}
+        collapsable={false}
+      >
         <View
           style={[
-            fullRing,
-            styles.absolute,
+            semiBase,
             {
               left: -half,
-              transform: [{ rotate: `${firstHalf - 180}deg` }],
+              borderTopColor: color,
+              borderRightColor: color,
+              transform: [{ rotate: `${firstHalfDegrees - 180}deg` }],
             },
           ]}
         />
       </View>
 
-      {/* Second 50–100%: left half-clip */}
-      {degrees > 180 ? (
-        <View style={[styles.halfClip, { width: half, height: size, left: 0 }]}>
+      {/* Second 50–100%: left half-clip paints only the excess over 180° */}
+      {secondHalfDegrees > 0 ? (
+        <View
+          style={[styles.halfClip, { width: half, height: size, left: 0 }]}
+          collapsable={false}
+        >
           <View
             style={[
-              fullRing,
-              styles.absolute,
+              semiBase,
               {
                 left: 0,
-                transform: [{ rotate: `${secondHalf - 180}deg` }],
+                borderBottomColor: color,
+                borderLeftColor: color,
+                transform: [{ rotate: `${secondHalfDegrees - 180}deg` }],
               },
             ]}
           />
@@ -114,8 +127,8 @@ export function AlignmentScoreRing({
   const stroke = isCompact
     ? ALIGNMENT_RING_COMPACT_STROKE
     : ALIGNMENT_RING_DETAIL_STROKE;
-  const fontSizePx = isCompact ? 12 : 16;
-  const progress = clampScore(score);
+  const fontSizePx = isCompact ? 14 : 16;
+  const geometry = computeAlignmentRingGeometry(score);
   const half = size / 2;
 
   return (
@@ -130,7 +143,7 @@ export function AlignmentScoreRing({
       accessibilityElementsHidden={accessibilityElementsHidden}
       importantForAccessibility={importantForAccessibility}
     >
-      {/* Track — same center and radius as progress */}
+      {/* Track — full 360°, same center/radius/stroke as progress */}
       <View
         style={[
           styles.track,
@@ -148,7 +161,7 @@ export function AlignmentScoreRing({
       <ProgressArc
         size={size}
         stroke={stroke}
-        progress={progress}
+        geometry={geometry}
         color={palette.primary}
       />
 
@@ -157,6 +170,7 @@ export function AlignmentScoreRing({
         <Text
           style={[
             styles.percentText,
+            isCompact ? styles.percentCompact : null,
             {
               color: palette.primary,
               fontSize: fontSizePx,
@@ -167,9 +181,9 @@ export function AlignmentScoreRing({
           maxFontSizeMultiplier={1.35}
           numberOfLines={1}
           adjustsFontSizeToFit
-          minimumFontScale={0.7}
+          minimumFontScale={0.65}
         >
-          {formatAlignmentPercent(progress)}
+          {formatAlignmentPercent(geometry.score)}
         </Text>
       </View>
     </View>
@@ -187,22 +201,21 @@ const styles = StyleSheet.create({
   },
   progressRoot: {
     ...StyleSheet.absoluteFillObject,
+    // Start at 12 o'clock; halves advance clockwise.
     transform: [{ rotate: '-90deg' }],
+    zIndex: 1,
   },
   halfClip: {
     position: 'absolute',
     top: 0,
     overflow: 'hidden',
   },
-  absolute: {
-    position: 'absolute',
-    top: 0,
-  },
   label: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 2,
+    paddingHorizontal: 1,
+    zIndex: 2,
   },
   percentText: {
     fontWeight: fontWeight.bold,
@@ -210,5 +223,8 @@ const styles = StyleSheet.create({
     ...(Platform.OS === 'android'
       ? { includeFontPadding: false, textAlignVertical: 'center' as const }
       : null),
+  },
+  percentCompact: {
+    fontWeight: fontWeight.semibold,
   },
 });
