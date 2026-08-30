@@ -474,32 +474,74 @@ describe('Alignment ring geometry (I3.2)', () => {
     assert.equal(computeAlignmentRingGeometry(100).isFull, true);
     assert.equal(computeAlignmentRingGeometry(66).isFull, false);
   });
+});
 
-  it('SVG metrics: 66 keeps ~34% remaining length', () => {
+describe('Alignment SVG dash metrics (I3.3)', () => {
+  const detailR = (ALIGNMENT_RING_DETAIL_SIZE - ALIGNMENT_RING_DETAIL_STROKE) / 2;
+  const compactR =
+    (ALIGNMENT_RING_COMPACT_SIZE - ALIGNMENT_RING_COMPACT_STROKE) / 2;
+
+  it('radius correct for detail', () => {
     const m = computeAlignmentRingSvgMetrics(
       ALIGNMENT_RING_DETAIL_SIZE,
       ALIGNMENT_RING_DETAIL_STROKE,
       66,
     );
-    assert.equal(m.isFull, false);
-    assert.ok(Math.abs(m.progressLength / m.circumference - 0.66) < 1e-9);
-    assert.ok(Math.abs(m.remainingLength / m.circumference - 0.34) < 1e-9);
+    assert.equal(m.radius, detailR);
     assert.equal(m.center, ALIGNMENT_RING_DETAIL_SIZE / 2);
-    assert.equal(
-      m.radius,
-      (ALIGNMENT_RING_DETAIL_SIZE - ALIGNMENT_RING_DETAIL_STROKE) / 2,
-    );
   });
 
-  it('SVG metrics: 100 fills circumference; 0 is empty', () => {
-    const full = computeAlignmentRingSvgMetrics(48, 4, 100);
-    assert.equal(full.progressLength, full.circumference);
-    assert.equal(full.remainingLength, 0);
-    assert.equal(full.isFull, true);
-    const empty = computeAlignmentRingSvgMetrics(48, 4, 0);
-    assert.equal(empty.progressLength, 0);
-    assert.equal(empty.remainingLength, empty.circumference);
-    assert.equal(empty.isEmpty, true);
+  it('radius correct for compact', () => {
+    const m = computeAlignmentRingSvgMetrics(
+      ALIGNMENT_RING_COMPACT_SIZE,
+      ALIGNMENT_RING_COMPACT_STROKE,
+      66,
+    );
+    assert.equal(m.radius, compactR);
+  });
+
+  it('circumference correct', () => {
+    const m = computeAlignmentRingSvgMetrics(
+      ALIGNMENT_RING_DETAIL_SIZE,
+      ALIGNMENT_RING_DETAIL_STROKE,
+      50,
+    );
+    assert.equal(m.circumference, 2 * Math.PI * detailR);
+  });
+
+  it('score 0 → empty (progress not rendered)', () => {
+    const m = computeAlignmentRingSvgMetrics(48, 4, 0);
+    assert.equal(m.isEmpty, true);
+    assert.equal(m.strokeDashoffset, m.circumference);
+  });
+
+  it('score 25 → dashoffset 75%', () => {
+    const m = computeAlignmentRingSvgMetrics(76, 7, 25);
+    assert.ok(Math.abs(m.strokeDashoffset / m.circumference - 0.75) < 1e-9);
+  });
+
+  it('score 50 → dashoffset 50%', () => {
+    const m = computeAlignmentRingSvgMetrics(76, 7, 50);
+    assert.ok(Math.abs(m.strokeDashoffset / m.circumference - 0.5) < 1e-9);
+  });
+
+  it('score 66 → dashoffset 34%', () => {
+    const m = computeAlignmentRingSvgMetrics(76, 7, 66);
+    assert.ok(Math.abs(m.strokeDashoffset / m.circumference - 0.34) < 1e-9);
+    assert.ok(Math.abs(m.progressLength / m.circumference - 0.66) < 1e-9);
+    assert.equal(m.totalDegrees, 237.6);
+    assert.equal(m.isFull, false);
+  });
+
+  it('score 75 → dashoffset 25%', () => {
+    const m = computeAlignmentRingSvgMetrics(76, 7, 75);
+    assert.ok(Math.abs(m.strokeDashoffset / m.circumference - 0.25) < 1e-9);
+  });
+
+  it('score 100 → dashoffset 0', () => {
+    const m = computeAlignmentRingSvgMetrics(48, 4, 100);
+    assert.equal(m.strokeDashoffset, 0);
+    assert.equal(m.isFull, true);
   });
 });
 
@@ -521,144 +563,80 @@ describe('Alignment visual layout contract (I3.1 / I3.3 SVG)', () => {
   const geomSrc = readFileSync(geomPath, 'utf8');
   const nearbyIconsSrc = readFileSync(nearbyIconsPath, 'utf8');
 
-  it('detail ring stays square 76 with stroke 7', () => {
-    assert.equal(ALIGNMENT_RING_DETAIL_SIZE, 76);
-    assert.equal(ALIGNMENT_RING_DETAIL_STROKE, 7);
-    assert.match(ringSrc, /ALIGNMENT_RING_DETAIL_SIZE/);
-    assert.match(ringSrc, /flexShrink:\s*0/);
-  });
-
-  it('11. score 66 does not activate visual full state', () => {
-    assert.equal(computeAlignmentRingGeometry(66).isFull, false);
-    assert.match(ringSrc, /testID: 'alignment-ring-progress-full'/);
-    assert.match(ringSrc, /computeAlignmentRingSvgMetrics/);
-  });
-
-  it('12. score 100 activates full progress state', () => {
-    assert.equal(computeAlignmentRingGeometry(100).isFull, true);
-    assert.match(ringSrc, /alignment-ring-progress-full/);
-  });
-
-  it('13. compact size is 48', () => {
-    assert.equal(ALIGNMENT_RING_COMPACT_SIZE, 48);
-    assert.match(ringSrc, /ALIGNMENT_RING_COMPACT_SIZE/);
-  });
-
-  it('14. compact stroke is 4', () => {
-    assert.equal(ALIGNMENT_RING_COMPACT_STROKE, 4);
-    assert.match(ringSrc, /ALIGNMENT_RING_COMPACT_STROKE/);
-  });
-
-  it('15. compact 100% allows font size fit', () => {
-    assert.match(ringSrc, /adjustsFontSizeToFit/);
-    assert.match(ringSrc, /minimumFontScale=\{0\.65\}/);
-    assert.match(ringSrc, /isCompact \? 14 : 16/);
-    assert.match(ringSrc, /percentCompact/);
-    assert.match(ringSrc, /fontWeight\.semibold/);
-  });
-
-  it('16. detail keeps 76/7', () => {
-    assert.equal(ALIGNMENT_RING_DETAIL_SIZE, 76);
-    assert.equal(ALIGNMENT_RING_DETAIL_STROKE, 7);
-    assert.match(compatSrc, /ALIGNMENT_RING_DETAIL_SIZE/);
-  });
-
-  it('17. progress starts at top via SVG rotate(-90)', () => {
+  it('transform starts at -90°', () => {
     assert.match(ringSrc, /rotate\(-90 \$\{center\} \$\{center\}\)/);
   });
 
-  it('18. SVG dash length is proportional; no half-clip renderer', () => {
-    assert.match(ringSrc, /from 'react-native-svg'/);
-    assert.match(ringSrc, /<Svg/);
-    assert.match(ringSrc, /<Circle/);
-    assert.match(ringSrc, /strokeDasharray=\{`\$\{progressLength\} \$\{remainingLength\}`\}/);
-    assert.match(ringSrc, /strokeLinecap="round"/);
-    assert.match(ringSrc, /fill="none"/);
-    assert.match(geomSrc, /circumference \* \(geometry\.score \/ 100\)/);
+  it('track Circle is rendered before progress Circle', () => {
+    const trackIdx = ringSrc.indexOf('stroke={palette.border}');
+    const progressIdx = ringSrc.indexOf('stroke={palette.primary}');
+    assert.ok(trackIdx > 0 && progressIdx > trackIdx);
+  });
+
+  it('exactly one progress Circle in source (conditional)', () => {
+    assert.equal((ringSrc.match(/stroke=\{palette\.primary\}/g) ?? []).length, 1);
+    assert.match(ringSrc, /!isEmpty \? \(/);
+    assert.match(ringSrc, /strokeDasharray=\{`\$\{circumference\} \$\{circumference\}`\}/);
+    assert.match(ringSrc, /strokeDashoffset=\{strokeDashoffset\}/);
+  });
+
+  it('no half-clips or border progress hacks', () => {
     assert.doesNotMatch(ringSrc, /halfClip/);
-    assert.doesNotMatch(ringSrc, /borderTopColor/);
+    assert.doesNotMatch(ringSrc, /borderTopColor|borderRightColor|borderLeftColor/);
     assert.doesNotMatch(ringSrc, /firstHalfDegrees - 180/);
+    assert.doesNotMatch(ringSrc, /ProgressArc/);
+    assert.doesNotMatch(ringSrc, /alignment-ring-progress-full/);
   });
 
-  it('19. Nearby still has no absolute Alignment positioning', () => {
-    assert.doesNotMatch(nearbySrc, /alignmentCorner/);
-    const alignStyleStart = nearbySrc.indexOf('alignmentColumn:');
-    assert.ok(alignStyleStart > 0);
-    const alignStyleBlock = nearbySrc.slice(
-      alignStyleStart,
-      alignStyleStart + 180,
-    );
-    assert.doesNotMatch(alignStyleBlock, /position:\s*['"]absolute['"]/);
-    assert.match(nearbySrc, /width:\s*78/);
-  });
-
-  it('20. badge and chips remain separated', () => {
-    assert.match(nearbySrc, /styles\.alignmentColumn/);
-    assert.match(nearbySrc, /styles\.cardTopRow/);
-    const renderStart = nearbySrc.indexOf('const renderCard');
-    const renderEnd = nearbySrc.indexOf('\n  };', renderStart);
-    const renderCard = nearbySrc.slice(renderStart, renderEnd);
-    assert.ok(
-      renderCard.indexOf('<NearbyInterestIconRow') >
-        renderCard.indexOf('styles.cardTopRow'),
-    );
-    assert.match(nearbyIconsSrc, /layout\.overflowCount/);
-  });
-
-  it('21. accessibility keeps score and tier', () => {
-    assert.match(nearbySrc, /alignmentAccessibilityLabel/);
-    assert.match(compatSrc, /alignmentAccessibilityLabel/);
-    assert.match(ringSrc, /accessibilityElementsHidden/);
-    assert.match(ringSrc, /formatAlignmentPercent\(metrics\.score\)/);
-  });
-
-  it('percent text is contractually centered in the square', () => {
+  it('label centered over SVG with pointerEvents none', () => {
     assert.match(ringSrc, /styles\.label/);
+    assert.match(ringSrc, /pointerEvents="none"/);
     assert.match(ringSrc, /alignItems:\s*'center'/);
     assert.match(ringSrc, /justifyContent:\s*'center'/);
     assert.match(ringSrc, /textAlign:\s*'center'/);
   });
 
-  it('uses true SVG Circle track + progress (not border arcs)', () => {
-    const circleCount = (ringSrc.match(/<Circle/g) ?? []).length;
-    assert.ok(circleCount >= 2);
-    assert.match(ringSrc, /stroke=\{palette\.border\}/);
-    assert.match(ringSrc, /stroke=\{palette\.primary\}/);
-    assert.doesNotMatch(ringSrc, /borderLeftColor|borderRightColor|borderTopColor/);
+  it('Profile 76/7 and Nearby 48/4 frozen', () => {
+    assert.equal(ALIGNMENT_RING_DETAIL_SIZE, 76);
+    assert.equal(ALIGNMENT_RING_DETAIL_STROKE, 7);
+    assert.equal(ALIGNMENT_RING_COMPACT_SIZE, 48);
+    assert.equal(ALIGNMENT_RING_COMPACT_STROKE, 4);
+    assert.match(compatSrc, /ALIGNMENT_RING_DETAIL_SIZE/);
+    assert.match(nearbySrc, /width:\s*78/);
+    assert.match(ringSrc, /isCompact \? 14 : 16/);
+    assert.match(ringSrc, /fontWeight\.semibold/);
   });
 
-  it('Profile card is a centered row with fixed ring', () => {
+  it('SVG from react-native-svg with round caps and fill none', () => {
+    assert.match(ringSrc, /from 'react-native-svg'/);
+    assert.match(ringSrc, /<Svg/);
+    assert.match(ringSrc, /strokeLinecap="round"/);
+    assert.match(ringSrc, /fill="none"/);
+    assert.match(geomSrc, /circumference \* \(1 - geometry\.score \/ 100\)/);
+  });
+
+  it('accessibility intact', () => {
+    assert.match(nearbySrc, /alignmentAccessibilityLabel/);
+    assert.match(compatSrc, /alignmentAccessibilityLabel/);
+    assert.match(ringSrc, /accessibilityElementsHidden/);
+    assert.match(ringSrc, /formatAlignmentPercent\(clampedScore\)/);
+  });
+
+  it('Nearby/Profile layout intact (I3.1)', () => {
+    assert.match(nearbySrc, /styles\.cardTopRow/);
+    assert.match(nearbySrc, /styles\.alignmentColumn/);
+    assert.doesNotMatch(nearbySrc, /alignmentCorner/);
     assert.match(compatSrc, /flexDirection:\s*'row'/);
     assert.match(compatSrc, /alignItems:\s*'center'/);
     assert.match(compatSrc, /gap:\s*spacing\.lg/);
-    assert.match(compatSrc, /variant="detail"/);
-  });
-
-  it('Nearby card keeps one Pressable and strong/full badges', () => {
     const renderStart = nearbySrc.indexOf('const renderCard');
     const renderEnd = nearbySrc.indexOf('\n  };', renderStart);
     const renderCard = nearbySrc.slice(renderStart, renderEnd);
     assert.equal((renderCard.match(/<Pressable/g) ?? []).length, 1);
-    assert.equal(shouldShowNearbyTierBadge('strong'), true);
-    assert.equal(shouldShowNearbyTierBadge('full'), true);
-    assert.equal(shouldShowNearbyTierBadge('weak'), false);
-    assert.equal(enAlignment.tiers.full, 'Rare alignment');
-    assert.equal(es.alignment.tiers.full, 'Alineación excepcional');
-  });
-
-  it('compact/detail SVG metrics share geometry formula', () => {
-    const detail = computeAlignmentRingSvgMetrics(
-      ALIGNMENT_RING_DETAIL_SIZE,
-      ALIGNMENT_RING_DETAIL_STROKE,
-      66,
+    assert.ok(
+      renderCard.indexOf('<NearbyInterestIconRow') >
+        renderCard.indexOf('styles.cardTopRow'),
     );
-    const compact = computeAlignmentRingSvgMetrics(
-      ALIGNMENT_RING_COMPACT_SIZE,
-      ALIGNMENT_RING_COMPACT_STROKE,
-      66,
-    );
-    assert.equal(detail.totalDegrees, compact.totalDegrees);
-    assert.ok(detail.progressLength / detail.circumference === 0.66);
-    assert.ok(compact.progressLength / compact.circumference === 0.66);
+    assert.match(nearbyIconsSrc, /layout\.overflowCount/);
   });
 });

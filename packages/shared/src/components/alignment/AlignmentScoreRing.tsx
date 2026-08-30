@@ -56,10 +56,10 @@ export function AlignmentScoreRing({
   const {
     center,
     radius,
-    progressLength,
-    remainingLength,
+    circumference,
+    strokeDashoffset,
     isEmpty,
-    isFull,
+    score: clampedScore,
   } = metrics;
 
   return (
@@ -73,7 +73,6 @@ export function AlignmentScoreRing({
       ]}
       accessibilityElementsHidden={accessibilityElementsHidden}
       importantForAccessibility={importantForAccessibility}
-      {...(isFull ? { testID: 'alignment-ring-progress-full' } : null)}
     >
       <Svg
         width={size}
@@ -81,7 +80,7 @@ export function AlignmentScoreRing({
         style={styles.svg}
         pointerEvents="none"
       >
-        {/* Track — full circumference, same center/radius/stroke as progress */}
+        {/* Track first — full circumference */}
         <Circle
           cx={center}
           cy={center}
@@ -90,7 +89,7 @@ export function AlignmentScoreRing({
           strokeWidth={strokeWidth}
           fill="none"
         />
-        {/* Progress — continuous arc from 12 o'clock, clockwise */}
+        {/* Progress on top — omit at 0 to avoid round-cap dot */}
         {!isEmpty ? (
           <Circle
             cx={center}
@@ -100,14 +99,13 @@ export function AlignmentScoreRing({
             strokeWidth={strokeWidth}
             fill="none"
             strokeLinecap="round"
-            strokeDasharray={`${progressLength} ${remainingLength}`}
-            // Start at 12 o'clock; SVG default is 3 o'clock → rotate -90 around center (clockwise progress).
+            strokeDasharray={`${circumference} ${circumference}`}
+            strokeDashoffset={strokeDashoffset}
             transform={`rotate(-90 ${center} ${center})`}
           />
         ) : null}
       </Svg>
 
-      {/* Label centered in the fixed square — above the SVG */}
       <View style={styles.label} pointerEvents="none">
         <Text
           style={[
@@ -125,7 +123,7 @@ export function AlignmentScoreRing({
           adjustsFontSizeToFit
           minimumFontScale={0.65}
         >
-          {formatAlignmentPercent(metrics.score)}
+          {formatAlignmentPercent(clampedScore)}
         </Text>
       </View>
     </View>

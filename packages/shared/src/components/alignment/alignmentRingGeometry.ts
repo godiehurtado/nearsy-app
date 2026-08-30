@@ -1,5 +1,5 @@
 /**
- * Pure geometry for AlignmentScoreRing progress arcs.
+ * Pure geometry for AlignmentScoreRing (tests + SVG dash metrics).
  * Score is authoritative (0–100); UI never invents tiers or rounds 66→100.
  */
 
@@ -14,11 +14,8 @@ export type AlignmentRingGeometry = {
   score: number;
   /** Exact progress arc in degrees: (score * 360) / 100 */
   totalDegrees: number;
-  /** Progress in the first 180° sector (legacy half-metrics / tests). */
   firstHalfDegrees: number;
-  /** Progress in the second 180° sector (legacy half-metrics / tests). */
   secondHalfDegrees: number;
-  /** Degrees of gray track that must remain visible. */
   trackRemainingDegrees: number;
   isEmpty: boolean;
   isFull: boolean;
@@ -29,10 +26,15 @@ export type AlignmentRingSvgMetrics = AlignmentRingGeometry & {
   radius: number;
   strokeWidth: number;
   circumference: number;
-  /** Arc length of the progress stroke. */
+  /** progressLength = circumference * (score / 100) */
   progressLength: number;
-  /** Arc length of the undrawn remainder (visible track). */
+  /** remainingLength = circumference - progressLength */
   remainingLength: number;
+  /**
+   * SVG strokeDashoffset for dasharray `${circumference} ${circumference}`:
+   * circumference * (1 - score / 100)
+   */
+  strokeDashoffset: number;
 };
 
 function clampAlignmentScore(score: number): number {
@@ -41,17 +43,15 @@ function clampAlignmentScore(score: number): number {
 }
 
 /**
- * Authoritative ring geometry for an integer alignment score.
+ * Semantic geometry for an integer alignment score (tests / degrees).
  * 66 → 237.6° blue / 122.4° track — never a full circle.
  */
 export function computeAlignmentRingGeometry(
   score: number,
 ): AlignmentRingGeometry {
   const clamped = clampAlignmentScore(score);
-  // Prefer (score * 360) / 100 over score * 3.6 to avoid float noise (66 → 237.6).
   const totalDegrees = (clamped * 360) / 100;
   const firstHalfDegrees = Math.min(totalDegrees, 180);
-  // Derive second half from score remainder so 66 → 57.6 exactly.
   const secondHalfDegrees =
     clamped <= 50 ? 0 : ((clamped - 50) * 360) / 100;
   return {
@@ -66,8 +66,7 @@ export function computeAlignmentRingGeometry(
 }
 
 /**
- * SVG stroke-dash metrics for a square ring of `size` with `strokeWidth`.
- * Track and progress share center + radius; progress length is proportional to score.
+ * SVG dash metrics — dash is computed directly from score (not half-clips).
  */
 export function computeAlignmentRingSvgMetrics(
   size: number,
@@ -80,6 +79,7 @@ export function computeAlignmentRingSvgMetrics(
   const circumference = 2 * Math.PI * radius;
   const progressLength = circumference * (geometry.score / 100);
   const remainingLength = circumference - progressLength;
+  const strokeDashoffset = circumference * (1 - geometry.score / 100);
   return {
     ...geometry,
     center,
@@ -88,5 +88,6 @@ export function computeAlignmentRingSvgMetrics(
     circumference,
     progressLength,
     remainingLength,
+    strokeDashoffset,
   };
 }
