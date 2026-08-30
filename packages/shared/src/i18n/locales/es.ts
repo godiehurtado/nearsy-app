@@ -950,6 +950,18 @@ const es: TranslationResources = {
       title: 'Redes sociales',
     },
   },
+  alignment: {
+    title: 'Alineación',
+    unavailable: 'Estamos preparando la alineación.',
+    tiers: {
+      weak: 'Algo en común',
+      partial: 'Puntos en común',
+      strong: 'Muy alineados',
+      full: 'Alineación excepcional',
+    },
+    a11yScoreOnly: '{{score}} por ciento de alineación',
+    a11yWithTier: '{{score}} por ciento de alineación, {{tier}}',
+  },
   discoveryProfile: {
     title: 'Perfil',
     back: 'Atrás',

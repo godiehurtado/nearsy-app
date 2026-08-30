@@ -44,6 +44,7 @@ import {
 import { createDefaultSearchPreferencesByMode } from '../preferences';
 import { metersToFeet } from '../distance';
 import { resolveDistanceDisplayUnit } from '../searchPreferencesParse';
+import enAlignment from '../../i18n/resources/alignment';
 import enDiscovery from '../../i18n/resources/discoveryProfile';
 import es from '../../i18n/locales/es';
 
@@ -574,28 +575,13 @@ describe('profile exploration block shape', () => {
 });
 
 describe('profile exploration i18n EN/ES', () => {
-  it('keeps Compatibility and Social-related copy complete', () => {
-    assert.equal(
-      enDiscovery.compatibilityBody,
-      'Based on your shared interests and things in common.',
-    );
-    assert.equal(
-      es.discoveryProfile.compatibilityBody,
-      'Basado en sus intereses compartidos y cosas en común.',
-    );
-    assert.equal(enDiscovery.compatibilityMatch, '{{score}}% Match');
-    assert.equal(
-      enDiscovery.compatibilityUnavailable,
-      'Match score is being prepared.',
-    );
-    assert.equal(
-      es.discoveryProfile.compatibilityUnavailable,
-      'Estamos preparando la compatibilidad.',
-    );
+  it('keeps Alignment and Social-related copy complete', () => {
+    assert.equal(enAlignment.title, 'Alignment');
+    assert.equal(enAlignment.tiers.strong, 'Closely aligned');
+    assert.equal(es.alignment.title, 'Alineación');
+    assert.equal(es.alignment.tiers.full, 'Alineación excepcional');
     assert.ok(enDiscovery.sharedInterests);
     assert.ok(es.discoveryProfile.sharedInterests);
-    assert.ok(enDiscovery.compatibilityDemo);
-    assert.ok(es.discoveryProfile.compatibilityDemo);
     assert.ok(enDiscovery.openLinkError);
     assert.ok(es.discoveryProfile.openLinkError);
     assert.ok(enDiscovery.platformLinkedin);
@@ -653,6 +639,12 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     );
   });
 
+  it('Nearby list renders alignment ring from result compatibility', () => {
+    assert.match(nearbySrc, /AlignmentScoreRing/);
+    assert.match(nearbySrc, /item\.compatibility/);
+    assert.doesNotMatch(nearbySrc, /getDiscoveryProfile/);
+  });
+
   it('Nearby and Profile Exploration hide public age', () => {
     assert.doesNotMatch(nearbySrc, /ageYears/);
     assert.doesNotMatch(screenSrc, /discoveryProfile\.ageYears/);
@@ -677,12 +669,13 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.match(screenSrc, /InterestChip/);
   });
 
-  it('wires backend compatibility score into DiscoveryCompatibilityCard', () => {
+  it('wires backend alignment into DiscoveryCompatibilityCard', () => {
     assert.match(screenSrc, /DiscoveryCompatibilityCard/);
     assert.match(screenSrc, /compatibility=\{data\.compatibility\}/);
-    assert.match(compatSrc, /compatibility\.available/);
-    assert.match(compatSrc, /discoveryProfile\.compatibilityMatch/);
-    assert.doesNotMatch(compatSrc, /percentGlyph/);
+    assert.match(compatSrc, /toAlignment/);
+    assert.match(compatSrc, /alignmentTitleLabel/);
+    assert.match(compatSrc, /AlignmentScoreRing/);
+    assert.doesNotMatch(compatSrc, /compatibilityMatch/);
   });
 
   it('omits Social Media when empty and wires response.socialLinks', () => {

@@ -33,13 +33,20 @@ import {
 } from '../theme';
 import { subtleShadow } from '../theme/shadows';
 import { NearbyInterestIconRow } from '../components/visibility/NearbyInterestIconRow';
+import { AlignmentScoreRing } from '../components/alignment/AlignmentScoreRing';
 import {
   buildDiscoverNearbyRequest,
   isVisibilityDiscoveryClientError,
   metersToFeet,
   resolveDistanceDisplayUnit,
+  toAlignment,
   type DiscoverNearbyResult,
 } from '../visibility';
+import {
+  alignmentAccessibilityLabel,
+  alignmentTierLabel,
+  shouldShowNearbyTierBadge,
+} from '../visibility/alignmentPresentation';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 import {
   countSharedInterestIds,
@@ -209,9 +216,16 @@ export default function NearbySearchScreen() {
     const shared = countSharedInterestIds(viewerInterestIds, p.interestIds);
     const metaParts = [p.occupation?.trim() || null, formatDistance(item.distanceMeters)]
       .filter(Boolean);
+    const alignment = toAlignment(item.compatibility);
+    const showAlignmentRing = alignment?.available === true;
+    const cardA11y =
+      showAlignmentRing && alignment
+        ? `${p.displayName}, ${alignmentAccessibilityLabel(t, alignment)}`
+        : p.displayName;
     return (
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={cardA11y}
         onPress={() =>
           navigation.navigate('DiscoveryProfile', { uid: item.uid })
         }
@@ -225,6 +239,20 @@ export default function NearbySearchScreen() {
           },
         ]}
       >
+        {showAlignmentRing && alignment ? (
+          <View style={styles.alignmentCorner} pointerEvents="none">
+            <AlignmentScoreRing score={alignment.score} variant="compact" />
+            {shouldShowNearbyTierBadge(alignment.tier) ? (
+              <Text
+                style={[styles.alignmentBadge, { color: palette.primary }]}
+                numberOfLines={2}
+                maxFontSizeMultiplier={1.4}
+              >
+                {alignmentTierLabel(t, alignment.tier)}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
         <View style={styles.cardRow}>
           <View style={styles.avatarWrap}>
             {p.profileImage ? (
@@ -508,9 +536,25 @@ const styles = StyleSheet.create({
   },
   loadingText: { fontSize: fontSize.sm },
   card: {
+    position: 'relative',
     borderWidth: 1,
     borderRadius: radius.lg,
     padding: spacing.md,
+  },
+  alignmentCorner: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    alignItems: 'flex-end',
+    zIndex: 1,
+    gap: 2,
+    maxWidth: 96,
+  },
+  alignmentBadge: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+    textAlign: 'right',
+    lineHeight: 14,
   },
   cardRow: { flexDirection: 'row', gap: spacing.md },
   avatarWrap: { position: 'relative' },

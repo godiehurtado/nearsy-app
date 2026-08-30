@@ -89,6 +89,8 @@ export type DiscoverNearbyResult = {
   uid: string;
   distanceMeters: number;
   profile: DiscoveryProfileSummary;
+  /** Matching M4A alignment wire; absent on older backends → no Nearby ring. */
+  compatibility?: DiscoveryCompatibility;
 };
 
 export type ActivateVisibilityResponse = {

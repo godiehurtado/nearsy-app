@@ -235,6 +235,9 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
     throw createContractResponseError('result must be an object', value);
   }
   assertNoForbiddenKeys(value, 'result');
+  const compatibility = Object.prototype.hasOwnProperty.call(value, 'compatibility')
+    ? parseDiscoveryCompatibility(value.compatibility)
+    : undefined;
   return {
     uid: requireNonEmptyString(value.uid, 'result.uid'),
     distanceMeters: requireNonNegativeNumber(
@@ -242,6 +245,7 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
       'result.distanceMeters',
     ),
     profile: parseDiscoveryProfileSummary(value.profile),
+    ...(compatibility !== undefined ? { compatibility } : {}),
   };
 }
 
