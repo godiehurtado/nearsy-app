@@ -27,6 +27,7 @@ export type RootStackParamList = {
 
   Interests: any;
   Gallery: any;
+  ProfileGallery: any;
   Affiliations: any;
   SocialMedia: any;
 };

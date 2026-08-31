@@ -14,6 +14,7 @@ interface InterestChipProps {
   selected?: boolean;
   /** other = Other placeholder; keeps icon colored even when active. */
   variant?: 'default' | 'other';
+  accessibilityLabel?: string;
   onPress?: () => void;
 }
 
@@ -25,6 +26,7 @@ export function InterestChip({
   iconColor,
   selected = false,
   variant = 'default',
+  accessibilityLabel,
   onPress,
 }: InterestChipProps) {
   const { palette } = useAppTheme();
@@ -97,6 +99,7 @@ export function InterestChip({
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? name}
       accessibilityState={{ selected }}
       onPress={onPress}
       style={pillStyle}

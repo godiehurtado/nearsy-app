@@ -422,24 +422,28 @@ export function selectedInterestsToLabelList(
   return out;
 }
 
-export type CrjInterestPersistencePatch = {
+/** Field-only interest bags — never includes lifecycle keys. */
+export type InterestFieldPersistencePatch = {
   personalInterests?: string[];
   professionalInterests?: string[];
   personalOnboardingInterests?: Record<string, string | boolean>[];
   professionalOnboardingInterests?: Record<string, string | boolean>[];
+};
+
+export type CrjInterestPersistencePatch = InterestFieldPersistencePatch & {
   profileSetupCompleted: false;
 };
 
 /**
- * Minimal CRJ write for matching compatibility.
- * Writes labels for active mode only; never contaminates the opposite mode;
- * never invents legacy InterestAffiliations.
+ * Pure field builder for one mode's interest bags.
+ * Writes labels + onboarding rows for the active mode only; never contaminates
+ * the opposite mode; never invents InterestAffiliations; never touches lifecycle.
  * Detailed rows are sanitized so Firestore never receives undefined keys.
  */
-export function buildCrjInterestPersistencePatch(
+export function buildInterestFieldPersistencePatch(
   mode: 'personal' | 'professional',
   selected: OnboardingSelectedInterest[],
-): CrjInterestPersistencePatch {
+): InterestFieldPersistencePatch {
   const labels = selectedInterestsToLabelList(selected);
   const detailed = selected
     .filter(
@@ -451,16 +455,39 @@ export function buildCrjInterestPersistencePatch(
 
   if (mode === 'personal') {
     return {
-      profileSetupCompleted: false,
       personalInterests: labels,
       personalOnboardingInterests: detailed,
     };
   }
   return {
-    profileSetupCompleted: false,
     professionalInterests: labels,
     professionalOnboardingInterests: detailed,
   };
+}
+
+/**
+ * CRJ write — field bags + explicit mid-wizard lifecycle.
+ * Callers: ProfileCompletionScreen only.
+ */
+export function buildCrjInterestPersistencePatch(
+  mode: 'personal' | 'professional',
+  selected: OnboardingSelectedInterest[],
+): CrjInterestPersistencePatch {
+  return {
+    ...buildInterestFieldPersistencePatch(mode, selected),
+    profileSetupCompleted: false,
+  };
+}
+
+/**
+ * Post-CRJ Own Profile interest editor write.
+ * Same bags as CRJ fields; never includes profileSetupCompleted / mode / visibility.
+ */
+export function buildPostCrjInterestPersistencePatch(
+  mode: 'personal' | 'professional',
+  selected: OnboardingSelectedInterest[],
+): InterestFieldPersistencePatch {
+  return buildInterestFieldPersistencePatch(mode, selected);
 }
 
 /** True when a selection retained hierarchical group context. */

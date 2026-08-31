@@ -32,6 +32,7 @@ type Props = {
   /** Required for hierarchical categories — owned by ProfileCompletionScreen. */
   activeGroupId?: string;
   onActiveGroupChange?: (groupId: string) => void;
+  customRemoveAccessibilityLabel?: (name: string) => string;
 };
 
 function toggleInList(
@@ -49,6 +50,7 @@ export function OnboardingInterestCategoryPanel({
   onChangeSelected,
   activeGroupId,
   onActiveGroupChange,
+  customRemoveAccessibilityLabel,
 }: Props) {
   const { palette } = useAppTheme();
   const { t } = useTranslation();
@@ -280,6 +282,11 @@ export function OnboardingInterestCategoryPanel({
                 icon={s.icon}
                 iconColor={s.iconColor}
                 selected
+                accessibilityLabel={
+                  customRemoveAccessibilityLabel
+                    ? customRemoveAccessibilityLabel(s.name)
+                    : s.name
+                }
                 onPress={() =>
                   onChangeSelected(selected.filter((x) => x.id !== s.id))
                 }

@@ -1,5 +1,5 @@
 // apps/nearsy-ios/index.ts
-import 'react-native-reanimated';
+import './runtimePrelude';
 import 'react-native-gesture-handler';
 
 import { registerRootComponent } from 'expo';

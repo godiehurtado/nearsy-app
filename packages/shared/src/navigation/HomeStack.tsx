@@ -20,6 +20,8 @@ export type HomeStackParamList = {
     displayName?: string;
     /** 0-based index into gallery URLs. */
     initialIndex?: number;
+    /** Own Profile editor passes the full stored gallery (no client cap). */
+    fullGallery?: boolean;
   };
 };
 

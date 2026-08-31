@@ -1,238 +1,164 @@
-// src/components/ProfileQuickActions.tsx
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  useWindowDimensions,
+  PixelRatio,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useAppTheme } from '../theme/ThemeContext';
+import { radius } from '../theme/radius';
+import { spacing, screenPadding } from '../theme/spacing';
+import { fontSize, fontWeight } from '../theme/typography';
+import { cardShadow } from '../theme/shadows';
+import { shouldUseSingleColumnQuickActions } from './profile/profileQuickActionsLayout';
 
-type Props = {
-  onOpenInterests: () => void;
-  onOpenSocial: () => void;
-  onOpenGallery: () => void;
-  onOpenAffiliations: () => void;
-  stats?: {
-    interestsCount?: number;
-    socialCount?: number;
-    photosCount?: number;
-    affiliationsCount?: number;
-  };
-  compact?: boolean; // 👈 responsive
-  affiliationsRef?: (ref: View | null) => void;
-  interestsRef?: (ref: View | null) => void;
-  socialRef?: (ref: View | null) => void;
-  galleryRef?: (ref: View | null) => void;
-  affiliationsGuideHighlight?: boolean;
-  interestsGuideHighlight?: boolean;
-  socialGuideHighlight?: boolean;
-  galleryGuideHighlight?: boolean;
-  affiliationsGuideDimmed?: boolean;
-  interestsGuideDimmed?: boolean;
-  socialGuideDimmed?: boolean;
-  galleryGuideDimmed?: boolean;
-};
+type QuickActionId = 'interests' | 'affiliations' | 'social' | 'gallery';
 
-function GuideTileSlot({
-  slotRef,
-  highlight,
-  dimmed,
-  compact,
-  children,
-}: {
-  slotRef?: (ref: View | null) => void;
-  highlight?: boolean;
-  dimmed?: boolean;
-  compact?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <View
-      ref={slotRef}
-      style={[styles.tileSlot, compact && styles.tileSlotCompact]}
-    >
-      <View style={[styles.tileSlotInner, dimmed && styles.tileDimmed]}>
-        {children}
-      </View>
-      {highlight ? (
-        <View style={styles.guideHighlightOverlay} pointerEvents="none" />
-      ) : null}
-    </View>
-  );
-}
-
-export default function ProfileQuickActions({
-  onOpenInterests,
-  onOpenSocial,
-  onOpenGallery,
-  onOpenAffiliations,
-  stats,
-  compact,
-  affiliationsRef,
-  interestsRef,
-  socialRef,
-  galleryRef,
-  affiliationsGuideHighlight,
-  interestsGuideHighlight,
-  socialGuideHighlight,
-  galleryGuideHighlight,
-  affiliationsGuideDimmed,
-  interestsGuideDimmed,
-  socialGuideDimmed,
-  galleryGuideDimmed,
-}: Props) {
-  return (
-    <View style={styles.wrap}>
-      <Text style={styles.title}>Quick actions</Text>
-
-      <View style={[styles.grid, compact && styles.gridCompact]}>
-        <GuideTileSlot
-          slotRef={affiliationsRef}
-          highlight={affiliationsGuideHighlight}
-          dimmed={affiliationsGuideDimmed}
-          compact={compact}
-        >
-          <Tile
-            icon="sparkles-outline"
-            title="Affiliations"
-            subtitle={`${stats?.affiliationsCount ?? 0} selected`}
-            onPress={onOpenAffiliations}
-            compact={compact}
-          />
-        </GuideTileSlot>
-        <GuideTileSlot
-          slotRef={interestsRef}
-          highlight={interestsGuideHighlight}
-          dimmed={interestsGuideDimmed}
-          compact={compact}
-        >
-          <Tile
-            icon="sparkles-outline"
-            title="Interests"
-            subtitle={`${stats?.interestsCount ?? 0} selected`}
-            onPress={onOpenInterests}
-            compact={compact}
-          />
-        </GuideTileSlot>
-        <GuideTileSlot
-          slotRef={socialRef}
-          highlight={socialGuideHighlight}
-          dimmed={socialGuideDimmed}
-          compact={compact}
-        >
-          <Tile
-            icon="share-social-outline"
-            title="Social media"
-            subtitle={`${stats?.socialCount ?? 0} connected`}
-            onPress={onOpenSocial}
-            compact={compact}
-          />
-        </GuideTileSlot>
-        <GuideTileSlot
-          slotRef={galleryRef}
-          highlight={galleryGuideHighlight}
-          dimmed={galleryGuideDimmed}
-          compact={compact}
-        >
-          <Tile
-            icon="images-outline"
-            title="Gallery"
-            subtitle={`${stats?.photosCount ?? 0} photos`}
-            onPress={onOpenGallery}
-            compact={compact}
-          />
-        </GuideTileSlot>
-      </View>
-    </View>
-  );
-}
-
-function Tile({
-  icon,
-  title,
-  subtitle,
-  onPress,
-  compact,
-}: {
+type ActionConfig = {
+  id: QuickActionId;
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
-  subtitle?: string;
+  subtitle: string;
+  accessibilityLabel: string;
   onPress: () => void;
-  compact?: boolean;
-}) {
+};
+
+type Props = {
+  sectionTitle: string;
+  actions: ActionConfig[];
+};
+
+export default function ProfileQuickActions({
+  sectionTitle,
+  actions,
+}: Props) {
+  const { palette } = useAppTheme();
+  const { width } = useWindowDimensions();
+  const singleColumn = shouldUseSingleColumnQuickActions(
+    width,
+    PixelRatio.getFontScale(),
+  );
+
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.tile,
-        compact && styles.tileCompact,
-        pressed && styles.pressed,
-      ]}
-    >
-      <Ionicons name={icon} size={22} color="#FFFFFF" />
-      <View style={{ flex: 1 }}>
-        <Text style={styles.tileTitle}>{title}</Text>
-        {!!subtitle && <Text style={styles.tileSubtitle}>{subtitle}</Text>}
+    <View style={styles.wrap}>
+      <Text style={[styles.title, { color: palette.textPrimary }]}>
+        {sectionTitle}
+      </Text>
+      <View style={[styles.grid, singleColumn && styles.gridSingle]}>
+        {actions.map((action) => (
+          <Pressable
+            key={action.id}
+            accessibilityRole="button"
+            accessibilityLabel={action.accessibilityLabel}
+            accessibilityHint={action.subtitle}
+            onPress={action.onPress}
+            style={({ pressed }) => [
+              styles.card,
+              singleColumn ? styles.cardSingle : styles.cardHalf,
+              {
+                backgroundColor: palette.panel,
+                borderColor: palette.border,
+              },
+              cardShadow,
+              pressed && styles.pressed,
+            ]}
+          >
+            <View
+              style={[
+                styles.iconWrap,
+                { backgroundColor: palette.chipBg },
+              ]}
+            >
+              <Ionicons name={action.icon} size={20} color={palette.primary} />
+            </View>
+            <View style={styles.textCol}>
+              <Text style={[styles.cardTitle, { color: palette.textPrimary }]}>
+                {action.title}
+              </Text>
+              <Text
+                style={[styles.cardSubtitle, { color: palette.textSecondary }]}
+              >
+                {action.subtitle}
+              </Text>
+            </View>
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={palette.textMuted}
+              style={styles.chevron}
+            />
+          </Pressable>
+        ))}
       </View>
-      <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
-    </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginTop: 18, gap: 10 },
+  wrap: {
+    marginTop: spacing.lg,
+    marginHorizontal: screenPadding.horizontal,
+    gap: spacing.md,
+    marginBottom: spacing.xxl,
+  },
   title: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-    paddingHorizontal: 4,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
+    paddingHorizontal: spacing.xxs,
   },
   grid: {
     flexDirection: 'row',
-    gap: 10,
     flexWrap: 'wrap',
+    gap: spacing.sm,
   },
-  gridCompact: {
+  gridSingle: {
     flexDirection: 'column',
     flexWrap: 'nowrap',
   },
-  /** Fixed grid cell — sizing lives here so guide overlay does not shift layout. */
-  tileSlot: {
-    position: 'relative',
-    minWidth: '47%',
-    flexGrow: 1,
-  },
-  tileSlotCompact: {
-    minWidth: '100%',
-    alignSelf: 'stretch',
-  },
-  tileSlotInner: {
-    width: '100%',
-  },
-  tileDimmed: {
-    opacity: 0.45,
-  },
-  guideHighlightOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: '#3B5A85',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  tile: {
+  card: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#3B5A85',
-    padding: 12,
-    borderRadius: 14,
+    gap: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+    minHeight: 72,
+  },
+  cardHalf: {
+    width: '48%',
+    flexGrow: 1,
+  },
+  cardSingle: {
     width: '100%',
   },
-  tileCompact: {
-    alignSelf: 'stretch',
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  tileTitle: { fontWeight: '700', color: '#FFFFFF' },
-  tileSubtitle: { color: '#E0E7FF', fontSize: 12 },
-  pressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
+  textCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: spacing.xxs,
+  },
+  chevron: {
+    flexShrink: 0,
+  },
+  cardTitle: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
+  },
+  cardSubtitle: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.medium,
+  },
+  pressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.99 }],
+  },
 });

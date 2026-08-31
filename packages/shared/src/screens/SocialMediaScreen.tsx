@@ -1,583 +1,885 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TextInput,
-  ScrollView,
   ActivityIndicator,
   Alert,
-  TouchableOpacity,
+  ScrollView,
+  Pressable,
+  TextInput,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { firebaseAuth } from '../config/firebaseConfig';
-import TopHeader from '../components/TopHeader';
-import type { SocialLinks } from '../types/profile';
-import { getUserProfile } from '../services/firestoreService';
+import { getUserProfile, updateUserProfilePartial } from '../services/firestoreService';
+import { useTranslation } from '../i18n';
+import { useAppTheme } from '../theme/ThemeContext';
+import { spacing, screenPadding } from '../theme/spacing';
+import { fontSize, fontWeight } from '../theme/typography';
+import { radius } from '../theme/radius';
+import { cardShadow } from '../theme/shadows';
 import {
-  getSocialLinks,
-  setSocialLinks,
-  type ProfileMode,
-} from '../services/profileExtras';
-import { useHelpAudio } from '../hooks/useHelpAudio';
+  getCrjSocialPlatform,
+  type CrjSocialPlatform,
+  type CrjSocialPlatformId,
+} from '../social/onboardingSocialCatalog';
+import {
+  buildPostCrjSocialLinksPersistencePatch,
+  countValidPostCrjSocialConnections,
+  emptyPostCrjSocialConnectedState,
+  isPostCrjSocialEditorDirty,
+  parsePostCrjSocialEditorParams,
+  POST_CRJ_SOCIAL_CARD_ORDER,
+  readPostCrjSocialEditorDraft,
+  validatePostCrjSocialDraftForSave,
+  buildValuesForPostCrjSocialSave,
+  type PostCrjSocialCardId,
+  type PostCrjSocialEditorDraft,
+} from '../social/postCrjSocialEditor';
+import type { ProfileMode } from '../profile/profileModeFields';
+import type { CrjSocialFieldErrors } from '../social/socialLinkNormalize';
 
 type RouteParams = {
   uid?: string;
   mode?: ProfileMode;
 };
 
-type SocialFieldKey = Exclude<keyof SocialLinks, 'custom'>;
+type LoadState = 'loading' | 'ready' | 'error' | 'blocked';
 
-type SocialIconSet = 'ionicons' | 'fontawesome6';
+function PlatformGlyph({
+  platform,
+}: {
+  platform:
+    | CrjSocialPlatform
+    | {
+        ionicon: string;
+        iconSet: 'ionicons' | 'fontawesome6';
+        color: string;
+        id: string;
+      };
+}) {
+  const isLightMark = platform.id === 'snapchat';
+  return (
+    <View
+      style={[
+        styles.glyph,
+        {
+          backgroundColor: platform.color,
+          borderColor:
+            platform.id === 'x' || platform.id === 'tiktok'
+              ? 'rgba(255,255,255,0.12)'
+              : 'transparent',
+        },
+      ]}
+    >
+      {platform.iconSet === 'fontawesome6' ? (
+        <FontAwesome6
+          name={
+            platform.ionicon as React.ComponentProps<typeof FontAwesome6>['name']
+          }
+          size={16}
+          color={isLightMark ? '#111111' : '#FFFFFF'}
+        />
+      ) : (
+        <Ionicons
+          name={
+            platform.ionicon as React.ComponentProps<typeof Ionicons>['name']
+          }
+          size={18}
+          color={isLightMark ? '#111111' : '#FFFFFF'}
+        />
+      )}
+    </View>
+  );
+}
 
-const SOCIAL_ICON_COLOR = '#1E3A8A';
-
-const SOCIAL_HELP_AUDIO: Partial<Record<SocialFieldKey, number>> = {
-  linkedin: require('../assets/audio/Linkedin.mp3'),
-  instagram: require('../assets/audio/Instagram.mp3'),
-  facebook: require('../assets/audio/Facebook.mp3'),
-  youtube: require('../assets/audio/youtube.mp3'),
-  twitter: require('../assets/audio/X.mp3'),
-  tiktok: require('../assets/audio/TikTok.mp3'),
-  snapchat: require('../assets/audio/Snapchat.mp3'),
-  website: require('../assets/audio/Website.mp3'),
+const WEBSITE_PLATFORM = {
+  id: 'website',
+  ionicon: 'globe-outline',
+  iconSet: 'ionicons' as const,
+  color: '#64748B',
 };
 
-const SOCIAL_FIELDS: {
-  key: SocialFieldKey;
-  label: string;
-  iconSet?: SocialIconSet;
-  icon: React.ComponentProps<typeof Ionicons>['name'] | 'x-twitter';
-  placeholder: string;
-}[] = [
-  {
-    key: 'linkedin',
-    label: 'LinkedIn',
-    icon: 'logo-linkedin',
-    placeholder: 'https://www.linkedin.com/in/username',
-  },
-  {
-    key: 'instagram',
-    label: 'Instagram',
-    icon: 'logo-instagram',
-    placeholder: 'https://www.instagram.com/username',
-  },
-  {
-    key: 'facebook',
-    label: 'Facebook',
-    icon: 'logo-facebook',
-    placeholder: 'https://www.facebook.com/username',
-  },
-  {
-    key: 'youtube',
-    label: 'YouTube',
-    icon: 'logo-youtube',
-    placeholder: 'https://www.youtube.com/@username',
-  },
-  {
-    key: 'twitter',
-    label: 'X',
-    iconSet: 'fontawesome6',
-    icon: 'x-twitter',
-    placeholder: 'https://twitter.com/username',
-  },
-  {
-    key: 'tiktok',
-    label: 'TikTok',
-    icon: 'logo-tiktok',
-    placeholder: 'https://www.tiktok.com/@username',
-  },
-  {
-    key: 'snapchat',
-    label: 'Snapchat',
-    icon: 'logo-snapchat',
-    placeholder: 'https://www.snapchat.com/add/username',
-  },
-  {
-    key: 'website',
-    label: 'Website',
-    icon: 'globe-outline',
-    placeholder: 'https://yourdomain.com',
-  },
-];
-
 export default function SocialMediaScreen() {
-  const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const routeMode: ProfileMode | undefined = (route?.params as RouteParams)
-    ?.mode;
-  const routeUid: string | undefined = (route?.params as RouteParams)?.uid;
-
+  const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const { play: playHelpAudio } = useHelpAudio();
+  const { t } = useTranslation();
+  const { palette } = useAppTheme();
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [isSetupMode, setIsSetupMode] = useState(false);
-  const [setupGuideDismissed, setSetupGuideDismissed] = useState(false);
-
-  const [mode, setMode] = useState<ProfileMode>('personal');
-
-  const [topBarColor, setTopBarColor] = useState('#3B5A85');
-  const [topBarMode, setTopBarMode] = useState<'color' | 'image'>('color');
-  const [topBarImage, setTopBarImage] = useState<string | null>(null);
-
-  const [profileImage, setProfileImage] = useState<string | null>(null);
-  const [links, setLinks] = useState<SocialLinks>({});
-
-  const setupGuideVisible =
-    isSetupMode &&
-    Platform.OS === 'ios' &&
-    !setupGuideDismissed &&
-    !loading;
-
-  const dismissSetupGuide = useCallback(() => {
-    setSetupGuideDismissed(true);
-  }, []);
-
-  const playFieldHelp = useCallback(
-    (key: SocialFieldKey) => {
-      const source = SOCIAL_HELP_AUDIO[key];
-      if (source != null) {
-        void playHelpAudio(source);
-      }
-    },
-    [playHelpAudio],
+  const params = (route.params ?? {}) as RouteParams;
+  const parsed = parsePostCrjSocialEditorParams(
+    params as Record<string, unknown>,
+    firebaseAuth.currentUser?.uid ?? null,
   );
 
-  useEffect(() => {
-    let cancelled = false;
+  const lockedModeRef = useRef<ProfileMode | null>(
+    parsed.ok ? parsed.params.mode : null,
+  );
+  const lockedUidRef = useRef<string | null>(
+    parsed.ok ? parsed.params.uid : null,
+  );
+  const editorMode = lockedModeRef.current;
+  const editorUid = lockedUidRef.current;
 
+  const [loadState, setLoadState] = useState<LoadState>(
+    parsed.ok ? 'loading' : 'blocked',
+  );
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState<PostCrjSocialEditorDraft>(() => ({
+    values: readPostCrjSocialEditorDraft(null, 'personal').values,
+    website: '',
+    custom: [],
+    connected: emptyPostCrjSocialConnectedState(),
+  }));
+  const snapshotRef = useRef<PostCrjSocialEditorDraft>(draft);
+  const [fieldErrors, setFieldErrors] = useState<
+    CrjSocialFieldErrors & { website?: string }
+  >({});
+  const inputRefs = useRef<
+    Partial<Record<PostCrjSocialCardId, TextInput | null>>
+  >({});
+
+  const isDirty = isPostCrjSocialEditorDirty(snapshotRef.current, draft);
+  const validConnectionCount = countValidPostCrjSocialConnections(draft);
+
+  const screenTitle =
+    editorMode === 'professional'
+      ? t('profile.social.professionalTitle')
+      : t('profile.social.personalTitle');
+
+  const connectedCountLabel =
+    validConnectionCount === 1
+      ? t('profile.social.connectedCountOne')
+      : t('profile.social.connectedCount', { count: validConnectionCount });
+
+  const saveButtonLabel =
+    validConnectionCount === 1
+      ? t('profile.social.saveConnectionsOne')
+      : t('profile.social.saveConnections', { count: validConnectionCount });
+
+  const confirmDiscard = useCallback(
+    (onDiscard: () => void) => {
+      Alert.alert(
+        t('profile.social.discard.title'),
+        t('profile.social.discard.body'),
+        [
+          { text: t('profile.social.discard.stay'), style: 'cancel' },
+          {
+            text: t('profile.social.discard.discard'),
+            style: 'destructive',
+            onPress: onDiscard,
+          },
+        ],
+      );
+    },
+    [t],
+  );
+
+  const handleBack = useCallback(() => {
+    if (isDirty) {
+      confirmDiscard(() => navigation.goBack());
+      return;
+    }
+    navigation.goBack();
+  }, [confirmDiscard, isDirty, navigation]);
+
+  useEffect(() => {
+    if (!parsed.ok || !editorUid || !editorMode) {
+      setLoadState('blocked');
+      return;
+    }
+
+    let cancelled = false;
     (async () => {
       try {
-        const uid = routeUid || firebaseAuth.currentUser?.uid;
-        if (!uid) throw new Error('User not authenticated.');
-
-        const profile = await getUserProfile(uid);
+        setLoadState('loading');
+        const existing = await getUserProfile(editorUid);
         if (cancelled) return;
 
-        if (!profile) {
-          setIsSetupMode(true);
-          const effectiveMode: ProfileMode = routeMode ?? 'personal';
-
-          setTopBarColor('#3B5A85');
-          setTopBarMode('color');
-          setTopBarImage(null);
-          setProfileImage(null);
-          setMode(effectiveMode);
-          setLinks({});
+        if (!existing || existing.profileSetupCompleted !== true) {
+          setLoadState('blocked');
           return;
         }
 
-        setIsSetupMode(profile.profileSetupCompleted !== true);
-
-        setTopBarColor(profile?.topBarColor ?? '#3B5A85');
-        setTopBarMode(
-          (profile as any)?.topBarMode ??
-            ((profile as any)?.topBarImage ? 'image' : 'color'),
+        const loaded = readPostCrjSocialEditorDraft(
+          existing as Record<string, unknown>,
+          editorMode,
         );
-        setTopBarImage((profile as any)?.topBarImage ?? null);
-        setProfileImage(profile?.profileImage ?? null);
-
-        const effectiveMode: ProfileMode =
-          routeMode ?? ((profile as any)?.mode as ProfileMode) ?? 'personal';
-
-        setMode(effectiveMode);
-
-        const initial = await getSocialLinks(uid, effectiveMode);
-        if (cancelled) return;
-
-        setLinks(initial ?? {});
-      } catch (e: any) {
-        if (__DEV__) {
-          console.error('[SocialMediaScreen] Error loading social links', e);
+        snapshotRef.current = loaded;
+        setDraft(loaded);
+        setLoadState('ready');
+      } catch {
+        if (!cancelled) {
+          setLoadState('error');
         }
-
-        const effectiveMode: ProfileMode = routeMode ?? 'personal';
-
-        setTopBarColor('#3B5A85');
-        setTopBarMode('color');
-        setTopBarImage(null);
-        setProfileImage(null);
-        setMode(effectiveMode);
-        setLinks({});
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [routeMode, routeUid]);
+  }, [editorMode, editorUid, parsed.ok]);
 
-  const onChangeLink = (key: SocialFieldKey, val: string) =>
-    setLinks((p) => ({ ...p, [key]: val }));
+  const connectPlatform = (id: PostCrjSocialCardId) => {
+    setDraft((prev) => ({
+      ...prev,
+      connected: { ...prev.connected, [id]: true },
+    }));
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      delete next[id as CrjSocialPlatformId];
+      if (id === 'website') delete next.website;
+      return next;
+    });
+    setTimeout(() => {
+      inputRefs.current[id]?.focus();
+    }, 50);
+  };
+
+  const disconnectPlatform = (id: PostCrjSocialCardId) => {
+    setDraft((prev) => {
+      const nextConnected = { ...prev.connected, [id]: false };
+      if (id === 'website') {
+        return {
+          ...prev,
+          connected: nextConnected,
+          website: '',
+        };
+      }
+      return {
+        ...prev,
+        connected: nextConnected,
+        values: { ...prev.values, [id]: '' },
+      };
+    });
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      delete next[id as CrjSocialPlatformId];
+      if (id === 'website') delete next.website;
+      return next;
+    });
+  };
+
+  const updatePlatformValue = (id: CrjSocialPlatformId, text: string) => {
+    setDraft((prev) => ({
+      ...prev,
+      values: { ...prev.values, [id]: text },
+    }));
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const updateWebsite = (text: string) => {
+    setDraft((prev) => ({ ...prev, website: text }));
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      delete next.website;
+      return next;
+    });
+  };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (!editorUid || !editorMode || saving) return;
+
+    const validation = validatePostCrjSocialDraftForSave(draft, {
+      requiredWhenConnected: t('profile.social.requiredWhenConnected'),
+      invalidValue: t('profile.social.invalidValue'),
+    });
+    if (validation.ok === false) {
+      setFieldErrors(validation.errors);
+      return;
+    }
 
     try {
       setSaving(true);
-
-      const uid = routeUid || firebaseAuth.currentUser?.uid;
-      if (!uid) throw new Error('User not authenticated.');
-
-      await setSocialLinks(uid, mode, links);
-
-      Alert.alert('Saved', 'Your social media has been updated.', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
+      const valuesForSave = buildValuesForPostCrjSocialSave(draft);
+      const patch = buildPostCrjSocialLinksPersistencePatch(
+        editorMode,
+        valuesForSave,
+        draft.custom,
+        {
+          website: draft.connected.website ? draft.website : '',
+        },
+      );
+      await updateUserProfilePartial(editorUid, patch);
+      snapshotRef.current = draft;
+      Keyboard.dismiss();
+      navigation.goBack();
     } catch (e: any) {
-      if (__DEV__) {
-        console.error('[SocialMediaScreen] Error saving social links', e);
-      }
-
-      Alert.alert('Error', e?.message || 'Could not save.');
+      Alert.alert(
+        t('common.error'),
+        e?.message || t('profile.social.saveError'),
+      );
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) {
+  const bottomBarInset =
+    insets.bottom > 0 ? insets.bottom + spacing.sm : spacing.lg;
+
+  const cardConfigs = useMemo(
+    () =>
+      POST_CRJ_SOCIAL_CARD_ORDER.map((id) => {
+        if (id === 'website') {
+          return {
+            id,
+            platform: WEBSITE_PLATFORM,
+            label: t('profile.social.platforms.website'),
+            placeholder: t('profile.social.placeholders.website'),
+          };
+        }
+        const platform = getCrjSocialPlatform(id);
+        return {
+          id,
+          platform,
+          label: t(
+            `onboarding.profileCompletion.socialMedia.platforms.${platform.nameKey}` as any,
+          ),
+          placeholder: t(
+            `onboarding.profileCompletion.socialMedia.placeholders.${platform.placeholderKey}` as any,
+          ),
+        };
+      }),
+    [t],
+  );
+
+  if (!parsed.ok || loadState === 'blocked') {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#2B3A42" />
+      <View style={[styles.root, { backgroundColor: palette.background }]}>
+        <View style={[styles.centered, { paddingTop: insets.top + spacing.xl }]}>
+          <Text style={[styles.errorText, { color: palette.textSecondary }]}>
+            {t('profile.social.loadError')}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('profile.social.backA11y')}
+            onPress={() => navigation.goBack()}
+            style={({ pressed }) => [
+              styles.backBtn,
+              {
+                borderColor: palette.borderStrong,
+                backgroundColor: palette.panel,
+              },
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={[styles.backBtnText, { color: palette.textPrimary }]}>
+              {t('profile.social.backA11y')}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  if (loadState === 'loading') {
+    return (
+      <View style={[styles.root, { backgroundColor: palette.background }]}>
+        <View
+          style={[styles.centered, { paddingTop: insets.top + spacing.xl }]}
+          accessibilityLiveRegion="polite"
+          accessibilityLabel={t('profile.social.loading')}
+        >
+          <ActivityIndicator size="large" color={palette.primary} />
+          <Text style={[styles.loadingText, { color: palette.textSecondary }]}>
+            {t('profile.social.loading')}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (loadState === 'error') {
+    return (
+      <View style={[styles.root, { backgroundColor: palette.background }]}>
+        <View style={[styles.centered, { paddingTop: insets.top + spacing.xl }]}>
+          <Text
+            accessibilityRole="alert"
+            style={[styles.errorText, { color: palette.textSecondary }]}
+          >
+            {t('profile.social.loadError')}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('profile.social.backA11y')}
+            onPress={() => navigation.goBack()}
+            style={({ pressed }) => [
+              styles.backBtn,
+              {
+                borderColor: palette.borderStrong,
+                backgroundColor: palette.panel,
+              },
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={[styles.backBtnText, { color: palette.textPrimary }]}>
+              {t('profile.social.backA11y')}
+            </Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+    <View style={[styles.root, { backgroundColor: palette.background }]}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={insets.top + 20}
       >
-        <View style={{ flex: 1 }}>
-          <ScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={{
-              paddingBottom: insets.bottom + 120,
-              paddingTop: setupGuideVisible ? 120 : 0,
-            }}
-            keyboardShouldPersistTaps="handled"
-          >
-            <TopHeader
-              topBarMode={topBarMode}
-              topBarColor={topBarColor}
-              topBarImage={topBarImage}
-              profileImage={profileImage}
-              leftIcon="chevron-back"
-              onLeftPress={() => navigation.goBack()}
-              showAvatar
-            />
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={{
+            paddingTop: insets.top + spacing.md,
+            paddingBottom: 120 + bottomBarInset,
+          }}
+          keyboardShouldPersistTaps="handled"
+          scrollIndicatorInsets={{ top: insets.top }}
+        >
+          <View style={styles.headerRow}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.social.backA11y')}
+              onPress={handleBack}
+              hitSlop={8}
+              style={({ pressed }) => [
+                styles.headerBack,
+                {
+                  backgroundColor: palette.panel,
+                  borderColor: palette.border,
+                },
+                pressed && styles.pressed,
+              ]}
+            >
+              <Ionicons
+                name="chevron-back"
+                size={22}
+                color={palette.textPrimary}
+              />
+            </Pressable>
 
-            <View style={styles.container}>
-              <Text style={styles.title}>
-                Your Social Media ·{' '}
-                {mode === 'personal' ? 'Personal' : 'Professional'}
+            <View style={styles.headerTextCol}>
+              <Text
+                accessibilityRole="header"
+                style={[styles.title, { color: palette.textPrimary }]}
+              >
+                {screenTitle}
               </Text>
-              <Text style={styles.subtitle}>Connect your profiles</Text>
-
-              <Text style={styles.sectionTitle}>Links</Text>
-              <View style={styles.card}>
-                {SOCIAL_FIELDS.map((field) => (
-                  <SocialInput
-                    key={field.key}
-                    label={field.label}
-                    iconSet={field.iconSet}
-                    icon={field.icon}
-                    value={links[field.key] ?? ''}
-                    onChangeText={(v) => onChangeLink(field.key, v)}
-                    placeholder={field.placeholder}
-                    onInfoPress={() => playFieldHelp(field.key)}
-                  />
-                ))}
-              </View>
+              <Text
+                style={[
+                  styles.connectedSubtitle,
+                  { color: palette.textSecondary },
+                ]}
+              >
+                {connectedCountLabel}
+              </Text>
             </View>
-          </ScrollView>
 
-          <View
-            style={[
-              styles.bottomBar,
-              { paddingBottom: Math.max(insets.bottom, 16) },
+            <View
+              accessibilityLabel={connectedCountLabel}
+              accessibilityRole="text"
+              style={[
+                styles.countBadge,
+                { backgroundColor: palette.chipBg },
+              ]}
+            >
+              <Text style={[styles.countBadgeText, { color: palette.primary }]}>
+                {validConnectionCount}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={[styles.description, { color: palette.textSecondary }]}>
+            {t('profile.social.description')}
+          </Text>
+
+          <View style={styles.cards}>
+            {cardConfigs.map((card) => {
+              const connected = draft.connected[card.id];
+              const error =
+                card.id === 'website'
+                  ? fieldErrors.website
+                  : fieldErrors[card.id as CrjSocialPlatformId];
+              const value =
+                card.id === 'website'
+                  ? draft.website
+                  : draft.values[card.id as CrjSocialPlatformId];
+
+              return (
+                <View
+                  key={card.id}
+                  style={[
+                    styles.card,
+                    {
+                      backgroundColor: palette.panel,
+                      borderColor: connected ? palette.primary : palette.border,
+                      borderWidth: connected ? 1.5 : 1,
+                    },
+                  ]}
+                >
+                  <View style={styles.cardTopRow}>
+                    <PlatformGlyph platform={{ ...card.platform, id: card.id }} />
+                    <View style={styles.cardTextCol}>
+                      <Text
+                        style={[
+                          styles.platformName,
+                          { color: palette.textPrimary },
+                        ]}
+                      >
+                        {card.label}
+                      </Text>
+                      {connected ? (
+                        <View style={styles.connectedRow}>
+                          <View
+                            style={[
+                              styles.connectedDot,
+                              { backgroundColor: palette.success },
+                            ]}
+                            accessibilityElementsHidden
+                            importantForAccessibility="no"
+                          />
+                          <Text
+                            style={[
+                              styles.connectedLabel,
+                              { color: palette.success },
+                            ]}
+                          >
+                            {t('profile.social.connected')}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text
+                          style={[
+                            styles.notConnected,
+                            { color: palette.textMuted },
+                          ]}
+                        >
+                          {t('profile.social.notConnected')}
+                        </Text>
+                      )}
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        connected
+                          ? t('profile.social.disconnectA11y', {
+                              platform: card.label,
+                            })
+                          : t('profile.social.connectA11y', {
+                              platform: card.label,
+                            })
+                      }
+                      accessibilityState={{ selected: connected }}
+                      onPress={() =>
+                        connected
+                          ? disconnectPlatform(card.id)
+                          : connectPlatform(card.id)
+                      }
+                      style={({ pressed }) => [
+                        styles.toggleBtn,
+                        connected
+                          ? {
+                              backgroundColor: 'transparent',
+                              borderColor: palette.danger,
+                            }
+                          : {
+                              backgroundColor: palette.primary,
+                              borderColor: palette.primary,
+                            },
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.toggleText,
+                          {
+                            color: connected ? palette.danger : palette.surface,
+                          },
+                        ]}
+                      >
+                        {connected
+                          ? t('profile.social.disconnect')
+                          : t('profile.social.connect')}
+                      </Text>
+                    </Pressable>
+                  </View>
+
+                  {connected ? (
+                    <>
+                      <TextInput
+                        ref={(ref) => {
+                          inputRefs.current[card.id] = ref;
+                        }}
+                        value={value}
+                        onChangeText={(text) =>
+                          card.id === 'website'
+                            ? updateWebsite(text)
+                            : updatePlatformValue(
+                                card.id as CrjSocialPlatformId,
+                                text,
+                              )
+                        }
+                        placeholder={card.placeholder}
+                        placeholderTextColor={palette.placeholder}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        keyboardType="url"
+                        accessibilityLabel={t('profile.social.inputA11y', {
+                          platform: card.label,
+                        })}
+                        style={[
+                          styles.input,
+                          {
+                            color: palette.textPrimary,
+                            borderColor: error ? palette.danger : palette.border,
+                            backgroundColor: palette.surface,
+                          },
+                        ]}
+                      />
+                      {error ? (
+                        <Text
+                          accessibilityRole="alert"
+                          style={[styles.fieldError, { color: palette.danger }]}
+                        >
+                          {error}
+                        </Text>
+                      ) : null}
+                    </>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        <View
+          style={[
+            styles.bottomBar,
+            {
+              backgroundColor: palette.surface,
+              borderTopColor: palette.border,
+              paddingBottom: bottomBarInset,
+            },
+            cardShadow,
+          ]}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={saveButtonLabel}
+            accessibilityState={{ disabled: saving, busy: saving }}
+            disabled={saving}
+            onPress={handleSave}
+            style={({ pressed }) => [
+              styles.saveBtn,
+              { backgroundColor: palette.primary },
+              saving && styles.disabled,
+              pressed && !saving && styles.pressed,
             ]}
           >
-            <TouchableOpacity
-              style={[styles.bottomSaveBtn, saving && { opacity: 0.7 }]}
-              onPress={handleSave}
-              disabled={saving}
-              activeOpacity={0.85}
-            >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="save-outline" size={18} color="#fff" />
-                  <Text style={styles.bottomSaveText}>Save social links</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
+            {saving ? (
+              <ActivityIndicator color={palette.surface} />
+            ) : (
+              <Text style={[styles.saveText, { color: palette.surface }]}>
+                {saveButtonLabel}
+              </Text>
+            )}
+          </Pressable>
         </View>
       </KeyboardAvoidingView>
 
-      {setupGuideVisible ? (
-        <Animated.View
-          entering={FadeInDown.duration(350)}
-          style={[styles.setupGuideCard, { top: insets.top + 10 }]}
-          pointerEvents="box-none"
-        >
-          <View style={styles.setupGuideHeader}>
-            <Text style={styles.setupGuideTitle}>Social links</Text>
-            <TouchableOpacity onPress={dismissSetupGuide}>
-              <Text style={styles.setupGuideSkip}>Skip guide</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.setupGuideDescription}>
-            Add the links for the social profiles you want to show on your
-            profile. Tap the info icon if you need help finding a link.
-          </Text>
-
-          <TouchableOpacity
-            style={styles.setupGuideGotItBtn}
-            onPress={dismissSetupGuide}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.setupGuideGotItText}>Got it</Text>
-          </TouchableOpacity>
-        </Animated.View>
-      ) : null}
-    </View>
-  );
-}
-
-function SocialFieldIcon({
-  iconSet = 'ionicons',
-  icon,
-}: {
-  iconSet?: SocialIconSet;
-  icon: React.ComponentProps<typeof Ionicons>['name'] | 'x-twitter';
-}) {
-  if (iconSet === 'fontawesome6') {
-    return (
-      <FontAwesome6
-        name={icon as React.ComponentProps<typeof FontAwesome6>['name']}
-        size={18}
-        color={SOCIAL_ICON_COLOR}
-      />
-    );
-  }
-
-  return (
-    <Ionicons
-      name={icon as React.ComponentProps<typeof Ionicons>['name']}
-      size={18}
-      color={SOCIAL_ICON_COLOR}
-    />
-  );
-}
-
-function SocialInput({
-  label,
-  iconSet,
-  icon,
-  value,
-  onChangeText,
-  placeholder,
-  onInfoPress,
-}: {
-  label: string;
-  iconSet?: SocialIconSet;
-  icon: React.ComponentProps<typeof Ionicons>['name'] | 'x-twitter';
-  value: string;
-  onChangeText: (v: string) => void;
-  placeholder?: string;
-  onInfoPress?: () => void;
-}) {
-  return (
-    <View style={{ marginBottom: 10 }}>
-      <View style={styles.labelRow}>
-        <View style={styles.labelLeft}>
-          <SocialFieldIcon iconSet={iconSet} icon={icon} />
-          <Text style={styles.labelText}>{label}</Text>
-        </View>
-        {onInfoPress ? (
-          <TouchableOpacity
-            onPress={onInfoPress}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityRole="button"
-            accessibilityLabel={`Help for ${label}`}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name="information-circle-outline"
-              size={20}
-              color="#6B7280"
-            />
-          </TouchableOpacity>
-        ) : null}
-      </View>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="url"
-        style={[styles.input, styles.inputEditing]}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.statusBarOverlay,
+          {
+            height: insets.top,
+            backgroundColor: palette.background,
+          },
+        ]}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
-  container: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
+  root: { flex: 1 },
+  flex: { flex: 1 },
+  statusBarOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1,
   },
-
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1F2937',
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+    paddingHorizontal: screenPadding.horizontal,
+  },
+  loadingText: { fontSize: fontSize.md },
+  errorText: {
+    fontSize: fontSize.md,
     textAlign: 'center',
+    lineHeight: fontSize.md * 1.4,
   },
-  subtitle: { color: '#6B7280', textAlign: 'center', marginBottom: 16 },
-
-  sectionTitle: {
-    fontWeight: '700',
-    fontSize: 16,
-    color: '#1F2937',
-    marginBottom: 8,
-    marginTop: 10,
+  backBtn: {
+    minHeight: 44,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backBtnText: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: screenPadding.horizontal,
+    marginBottom: spacing.sm,
+  },
+  headerBack: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTextCol: { flex: 1, minWidth: 0 },
+  title: {
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.extrabold,
+  },
+  connectedSubtitle: {
+    fontSize: fontSize.sm,
+    marginTop: 2,
+  },
+  countBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countBadgeText: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.extrabold,
+  },
+  description: {
+    fontSize: fontSize.base,
+    lineHeight: fontSize.base * 1.5,
+    paddingHorizontal: screenPadding.horizontal,
+    marginBottom: spacing.lg,
+  },
+  cards: {
+    gap: spacing.sm,
+    paddingHorizontal: screenPadding.horizontal,
   },
   card: {
-    backgroundColor: '#F9FAFB',
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  glyph: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 14,
-    padding: 12,
   },
-  labelRow: {
+  cardTextCol: { flex: 1, minWidth: 0 },
+  platformName: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.extrabold,
+  },
+  connectedRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
+    gap: 6,
+    marginTop: 2,
   },
-  labelLeft: {
-    flexDirection: 'row',
+  connectedDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  connectedLabel: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+  },
+  notConnected: {
+    fontSize: fontSize.xs,
+    marginTop: 2,
+  },
+  toggleBtn: {
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
     alignItems: 'center',
-    gap: 8,
-    flex: 1,
+    justifyContent: 'center',
   },
-  labelText: {
-    fontWeight: '600',
-    color: '#111827',
+  toggleText: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
   },
   input: {
-    backgroundColor: '#fff',
+    minHeight: 44,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.semibold,
   },
-  inputEditing: {
-    borderWidth: 1.5,
-    borderColor: '#3B5A85',
-    backgroundColor: '#EEF2FF',
+  fieldError: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
   },
-
   bottomBar: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.96)',
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: spacing.sm,
+    paddingHorizontal: screenPadding.horizontal,
   },
-  bottomSaveBtn: {
-    height: 50,
-    borderRadius: 999,
-    backgroundColor: '#3B5A85',
-    flexDirection: 'row',
+  saveBtn: {
+    minHeight: 48,
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+    paddingHorizontal: spacing.md,
   },
-  bottomSaveText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
+  saveText: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
   },
-
-  setupGuideCard: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    backgroundColor: 'rgba(255,255,255,0.98)',
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.14,
-    shadowRadius: 14,
-    elevation: 10,
-  },
-  setupGuideHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  setupGuideTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#1F2937',
-  },
-  setupGuideSkip: {
-    color: '#6B7280',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  setupGuideDescription: {
-    fontSize: 13,
-    color: '#4B5563',
-    lineHeight: 18,
-  },
-  setupGuideGotItBtn: {
-    marginTop: 12,
-    alignSelf: 'flex-end',
-    backgroundColor: '#3B5A85',
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 999,
-  },
-  setupGuideGotItText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
-  },
+  pressed: { opacity: 0.9 },
+  disabled: { opacity: 0.55 },
 });
