@@ -1,4 +1,3 @@
-// src/screens/CompleteProfileScreen.tsx  ✅ RNFirebase-only
 import React, {
   useState,
   useCallback,
@@ -9,71 +8,73 @@ import React, {
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { firebaseAuth } from '../config/firebaseConfig';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
-import { Audio } from 'expo-av';
-import { Ionicons } from '@expo/vector-icons';
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
-  TouchableOpacity,
   Alert,
   ActivityIndicator,
   ScrollView,
-  Switch,
-  PixelRatio,
   KeyboardAvoidingView,
   Platform,
-  TextInput as RNTextInput,
+  Keyboard,
 } from 'react-native';
 
-import ModeSwitch from '../components/ModeSwitch';
 import ProfileQuickActions from '../components/ProfileQuickActions';
-import TopHeader from '../components/TopHeader';
-import ColorPickerModal from '../components/ColorPickerModal';
+import OwnProfileHero from '../components/profile/OwnProfileHero';
+import OwnProfileDetails from '../components/profile/OwnProfileDetails';
+import OwnProfileSaveBar from '../components/profile/OwnProfileSaveBar';
 import {
   InterestAffiliations,
   SocialLinks,
   GalleryPhoto,
 } from '../types/profile';
-
 import {
   getUserProfile,
   updateUserProfilePartial,
 } from '../services/firestoreService';
-
 import { useTranslation } from '../i18n';
+import { useAppTheme } from '../theme/ThemeContext';
+import { spacing, screenPadding } from '../theme/spacing';
+import { fontSize, fontWeight } from '../theme/typography';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 import {
   applyActiveProfileModeResponseToUserDoc,
   createActiveProfileModeSwitchSession,
   presentActiveProfileModeError,
 } from '../visibility/activeProfileModeSync';
-
-import {
-  uploadProfileImage,
-  uploadTopBarImage,
-} from '../services/storageService';
+import { uploadProfileImage } from '../services/storageService';
 import {
   consumePendingSocialProfilePrefill,
   clearPendingSocialProfilePrefill,
   mergeCompleteProfilePrefill,
 } from '../authentication/social';
+import { resolveModePresentation, type ProfileMode } from '../profile/profileModeFields';
 import {
-  buildActiveProfileSavePatch,
-  resolveModePresentation,
-  type ProfileMode,
-} from '../profile/profileModeFields';
+  buildOwnProfileSavePatch,
+  buildPersistedOwnProfileDraftAfterUpload,
+  classifyOwnProfileLoadResult,
+  createOwnProfileDraftFromPresentation,
+  createOwnProfileSnapshot,
+  decideDirtyNavigationGuard,
+  isLocalProfileImageUri,
+  isOwnProfileDraftDirty,
+  isOwnProfileEditorWritable,
+  isOwnProfileSaveAuthorized,
+  validateOwnProfileDraft,
+  type OwnProfileDraft,
+  type OwnProfileLifecycleAuth,
+  type OwnProfileValidationField,
+} from '../profile/ownProfileEditorState';
+import { extractOwnProfileInterestSummaryCounts } from '../interests/postCrjInterestEditor';
+import { extractOwnProfileAffiliationSummaryCounts } from '../affiliations/postCrjAffiliationEditor';
+import { extractOwnProfileSocialSummaryCounts } from '../social/postCrjSocialEditor';
+import { extractOwnProfileGallerySummaryCounts } from '../gallery/postCrjGalleryEditor';
 
-type TopBarMode = 'color' | 'image';
-
-// límites de caracteres
 const NAME_MAX = 40;
 const OCCUPATION_MAX = 60;
 const COMPANY_MAX = 60;
-const STATUS_MAX = 50;
 const BIO_MAX = 200;
 
 const BLOCKED_WORDS = [
@@ -107,132 +108,35 @@ function containsObjectionableContent(value: string) {
   return BLOCKED_WORDS.some((word) => normalized.includes(word));
 }
 
-const COMPLETE_PROFILE_GUIDE_STEPS = [
-  {
-    title: 'Open profile visuals',
-    description: 'Tap the camera button to open your profile visual options.',
-  },
-  {
-    title: 'Add your profile photo',
-    description:
-      'Tap Change profile photo and choose a photo for your profile.',
-  },
-  {
-    title: 'Choose your top bar style',
-    description: 'Use Color or Image to personalize the top of your profile.',
-  },
-  {
-    title: 'Enter your name',
-    description: 'Use your real name so your profile feels trustworthy.',
-  },
-  {
-    title: 'Add your occupation',
-    description: 'Tell others what you do or what describes you best.',
-  },
-  {
-    title: 'Write a short status',
-    description: 'Add a quick phrase that represents you today.',
-  },
-  {
-    title: 'Write your biography',
-    description: 'Share a short intro about yourself.',
-  },
-  {
-    title: 'Choose your profile mode',
-    description:
-      'Select Social or Professional depending on how you want to connect.',
-  },
-  {
-    title: 'Tap Affiliations',
-    description:
-      'Tap Affiliations to add teams, schools, hometowns, or organizations.',
-  },
-  {
-    title: 'Tap Interests',
-    description: 'Tap Interests to choose topics that represent you.',
-  },
-  {
-    title: 'Go to Social Media',
-    description: 'Open Social media to connect your profiles.',
-  },
-  {
-    title: 'Add photos',
-    description: 'Add photos to personalize your profile.',
-  },
-  {
-    title: 'Save your profile',
-    description: 'Tap Save changes to finish your profile.',
-  },
-];
-
-/** Guide step index → audio asset (iOS guide; replicate on Android later). */
-const COMPLETE_PROFILE_GUIDE_AUDIO: (number | undefined)[] = [
-  require('../assets/audio/CompleteProfile_Step1.mp3'),
-  require('../assets/audio/CompleteProfile_Step2.mp3'),
-  require('../assets/audio/CompleteProfile_Step3.mp3'),
-  require('../assets/audio/CompleteProfile_Step4.mp3'),
-  require('../assets/audio/CompleteProfile_Step5.mp3'),
-  require('../assets/audio/CompleteProfile_Step6.mp3'),
-  require('../assets/audio/CompleteProfile_Step7.mp3'),
-  require('../assets/audio/CompleteProfile_Step8.mp3'),
-  require('../assets/audio/CompleteProfile_TabAffiliations.mp3'),
-  require('../assets/audio/CompleteProfile_TabInterests.mp3'),
-  require('../assets/audio/CompleteProfile_GoToSocialMedia.mp3'),
-  undefined,
-  require('../assets/audio/CompleteProfile_Step10.mp3'),
-];
-
 export default function CompleteProfileScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
-  const isLargeText = PixelRatio.getFontScale() >= 1.2;
   const { t } = useTranslation();
+  const { palette } = useAppTheme();
 
   const scrollRef = useRef<ScrollView | null>(null);
   const modeSwitchSessionRef = useRef(createActiveProfileModeSwitchSession());
   const mountedRef = useRef(true);
 
-  const realNameInputRef = useRef<RNTextInput | null>(null);
-  const occupationInputRef = useRef<RNTextInput | null>(null);
-  const statusInputRef = useRef<RNTextInput | null>(null);
-  const bioInputRef = useRef<RNTextInput | null>(null);
-
-  const guideYPositions = useRef<Record<number, number>>({});
-  const guideFieldRefs = useRef<Record<number, View | null>>({});
-  const guideSoundRef = useRef<Audio.Sound | null>(null);
-  const guideAudioModeReadyRef = useRef(false);
-
-  // ✅ Helper para obtener el UID (por route.params o por RNFirebase)
   const getUid = () =>
     route?.params?.uid ?? firebaseAuth.currentUser?.uid ?? null;
 
-  // Perfil
   const [realName, setRealName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [bio, setBio] = useState('');
-  const [status, setStatus] = useState('');
   const [mode, setMode] = useState<'personal' | 'professional' | null>(null);
   const [occupation, setOccupation] = useState('');
   const [company, setCompany] = useState('');
   const [profileImage, setProfileImage] = useState<string | null>(null);
 
-  // Top visuals
-  const [topBarColor, setTopBarColor] = useState('#3B5A85');
-  const [topBarImage, setTopBarImage] = useState<string | null>(null);
-  const [topBarMode, setTopBarMode] = useState<TopBarMode>('color');
-
-  // Intereses
   const [personalAff, setPersonalAff] = useState<InterestAffiliations>({});
   const [professionalAff, setProfessionalAff] = useState<InterestAffiliations>(
     {},
   );
-
-  // Social links por modo
   const [socialLinksPersonal, setsocialLinksPersonal] = useState<SocialLinks>(
     {},
   );
   const [socialLinksProfessional, setsocialLinksProfessional] =
     useState<SocialLinks>({});
-
-  // Gallery por modo
   const [personalGallery, setPersonalGallery] = useState<GalleryPhoto[]>([]);
   const [professionalGallery, setProfessionalGallery] = useState<
     GalleryPhoto[]
@@ -250,54 +154,136 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const [professionalAffiliations, setProfessionalAffiliations] = useState<
     AffiliationItem[]
   >([]);
+  const [personalInterestsSummaryCount, setPersonalInterestsSummaryCount] =
+    useState(0);
+  const [professionalInterestsSummaryCount, setProfessionalInterestsSummaryCount] =
+    useState(0);
+  const [personalAffiliationsSummaryCount, setPersonalAffiliationsSummaryCount] =
+    useState(0);
+  const [professionalAffiliationsSummaryCount, setProfessionalAffiliationsSummaryCount] =
+    useState(0);
+  const [personalSocialSummaryCount, setPersonalSocialSummaryCount] = useState(0);
+  const [professionalSocialSummaryCount, setProfessionalSocialSummaryCount] =
+    useState(0);
+  const [personalGallerySummaryCount, setPersonalGallerySummaryCount] =
+    useState(0);
+  const [professionalGallerySummaryCount, setProfessionalGallerySummaryCount] =
+    useState(0);
 
-  // UI state
   const [isLoading, setIsLoading] = useState(false);
   const [modeSwitchLoading, setModeSwitchLoading] = useState(false);
-  const [isNewProfile, setIsNewProfile] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [guideStep, setGuideStep] = useState(0);
-  const [guideDismissed, setGuideDismissed] = useState(false);
-
-  // Campo actualmente en edición
-  type FieldId =
-    | 'realName'
-    | 'occupation'
-    | 'status'
-    | 'bio'
-    | 'company'
-    | null;
-  const [activeField, setActiveField] = useState<FieldId>(null);
-
-  // Mostrar bloque de cámara + topbar
-  const [showTopBarControls, setShowTopBarControls] = useState(false);
-
-  // (compat)
-  const [interestAffiliations] = useState<InterestAffiliations>({});
-  /** Latest Firestore shell for mode-switch reloads (new dual-profile model). */
   const [profileDoc, setProfileDoc] = useState<Record<string, unknown> | null>(
     null,
   );
+  const [lifecycleAuth, setLifecycleAuth] =
+    useState<OwnProfileLifecycleAuth>('unresolved');
+  const bypassDirtyNavigationRef = useRef(false);
+
+  const applyDraftToForm = useCallback((draft: OwnProfileDraft) => {
+    setRealName(draft.realName);
+    setLastName(draft.lastName);
+    setOccupation(draft.occupation);
+    setBio(draft.bio);
+    setCompany(draft.company);
+    setProfileImage(draft.profileImage);
+  }, []);
 
   const applyModeFields = useCallback(
     (data: Record<string, unknown> | null | undefined, nextMode: ProfileMode) => {
       const presentation = resolveModePresentation(data, nextMode);
-      setOccupation(presentation.occupation ?? '');
-      setStatus(presentation.status ?? '');
-      setBio(presentation.bio ?? '');
-      setCompany(presentation.company ?? '');
-      setProfileImage(presentation.profileImage ?? null);
+      applyDraftToForm(createOwnProfileDraftFromPresentation(presentation));
     },
-    [],
+    [applyDraftToForm],
   );
 
-  // Cargar perfil existente (+ one-shot Google prefill for empty fields)
+  const [savedSnapshot, setSavedSnapshot] = useState<OwnProfileDraft | null>(
+    null,
+  );
+  const savedSnapshotRef = useRef<OwnProfileDraft | null>(null);
+  const isDirtyRef = useRef(false);
+
+  const commitSnapshot = useCallback((draft: OwnProfileDraft) => {
+    const snapshot = createOwnProfileSnapshot(draft);
+    savedSnapshotRef.current = snapshot;
+    setSavedSnapshot(snapshot);
+  }, []);
+
+  const editorDraft = useMemo<OwnProfileDraft>(
+    () => ({
+      realName,
+      lastName,
+      profileImage,
+      occupation,
+      bio,
+      company,
+    }),
+    [realName, lastName, profileImage, occupation, bio, company],
+  );
+
+  const isDirty = isOwnProfileDraftDirty(editorDraft, savedSnapshot, mode);
+  if (!bypassDirtyNavigationRef.current) {
+    isDirtyRef.current = isDirty;
+  }
+  const editorWritable = isOwnProfileEditorWritable(lifecycleAuth);
+  const draftValidation = validateOwnProfileDraft(editorDraft, mode);
+  const saveDisabled =
+    !isDirty || isLoading || draftValidation.ok === false || !editorWritable;
+
+  const restoreSavedSnapshot = useCallback(() => {
+    const snapshot = savedSnapshotRef.current;
+    if (!snapshot) return;
+    applyDraftToForm(snapshot);
+  }, [applyDraftToForm]);
+
+  const confirmDiscardChanges = useCallback(
+    (onDiscard: () => void) => {
+      Alert.alert(t('profile.discard.title'), t('profile.discard.body'), [
+        { text: t('profile.discard.stay'), style: 'cancel' },
+        {
+          text: t('profile.discard.discard'),
+          style: 'destructive',
+          onPress: () => {
+            isDirtyRef.current = false;
+            restoreSavedSnapshot();
+            onDiscard();
+          },
+        },
+      ]);
+    },
+    [restoreSavedSnapshot, t],
+  );
+
+  const redirectIncompleteToCrj = useCallback(
+    (uid: string) => {
+      const names = navigation.getState?.()?.routeNames ?? [];
+      if (names.includes('ProfileCompletion')) {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'ProfileCompletion', params: { uid } }],
+        });
+        return true;
+      }
+      const parent = navigation.getParent?.();
+      const parentNames = parent?.getState?.()?.routeNames ?? [];
+      if (parentNames.includes('ProfileCompletion')) {
+        parent.reset({
+          index: 0,
+          routes: [{ name: 'ProfileCompletion', params: { uid } }],
+        });
+        return true;
+      }
+      return false;
+    },
+    [navigation],
+  );
+
   const loadProfile = useCallback(async () => {
     const uid = getUid();
     if (!uid) return;
 
     try {
       setIsLoading(true);
+      setLifecycleAuth('unresolved');
       const existing = await getUserProfile(uid);
       let socialPrefill = null;
       try {
@@ -306,224 +292,237 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         socialPrefill = null;
       }
 
-      setProfileDoc(existing ? (existing as any) : null);
+      const classified = classifyOwnProfileLoadResult({
+        phase: 'success',
+        doc: existing,
+      });
 
-      // Prefer trimmed realName from the registration shell so email wizard
-      // handoff does not ask the user to retype an already-persisted name.
-      const existingRealName = String(existing?.realName ?? '').trim();
-
-      if (existing && existingRealName) {
-        let nextRealName = existingRealName;
-        const currentMode: ProfileMode =
-          existing.mode === 'professional' ? 'professional' : 'personal';
-        let presentation = resolveModePresentation(
-          existing as any,
-          currentMode,
-        );
-        let nextProfileImage = presentation.profileImage ?? null;
-
-        if (socialPrefill) {
-          try {
-            const merged = mergeCompleteProfilePrefill(
-              {
-                realName: nextRealName,
-                profileImage: nextProfileImage,
-                email: (existing as any).email ?? null,
-              },
-              socialPrefill,
-            );
-            nextRealName = merged.realName ?? nextRealName;
-            nextProfileImage = merged.profileImage ?? nextProfileImage;
-          } catch {
-            // Fail-soft: keep Firestore values.
-          }
+      if (classified.kind === 'redirect_incomplete') {
+        setLifecycleAuth('incomplete');
+        const redirected = redirectIncompleteToCrj(uid);
+        if (!redirected) {
+          setLifecycleAuth('blocked');
         }
+        return;
+      }
 
-        setRealName(nextRealName);
-        setMode(currentMode);
-        applyModeFields(
-          {
-            ...(existing as any),
-            profiles: {
-              ...((existing as any).profiles ?? {}),
-              [currentMode]: {
-                ...presentation,
-                profileImage: nextProfileImage,
-              },
+      if (classified.kind !== 'allow' || !existing) {
+        setLifecycleAuth('blocked');
+        return;
+      }
+
+      setLifecycleAuth('allowed');
+      setProfileDoc(existing as any);
+
+      const currentMode: ProfileMode =
+        existing.mode === 'professional' ? 'professional' : 'personal';
+      let presentation = resolveModePresentation(existing as any, currentMode);
+      let nextRealName = presentation.realName ?? '';
+      let nextProfileImage = presentation.profileImage ?? null;
+
+      if (socialPrefill) {
+        try {
+          const merged = mergeCompleteProfilePrefill(
+            {
+              realName: nextRealName,
+              profileImage: nextProfileImage,
+              email: (existing as any).email ?? null,
             },
-          },
-          currentMode,
-        );
-        if (nextProfileImage) {
-          setProfileImage(nextProfileImage);
-        }
-
-        setTopBarColor(existing.topBarColor ?? '#3B5A85');
-        setTopBarImage((existing as any).topBarImage ?? null);
-        setTopBarMode(
-          (existing as any).topBarMode ??
-            ((existing as any).topBarImage ? 'image' : 'color'),
-        );
-
-        const normalizeAff = (aff: any): InterestAffiliations =>
-          Object.fromEntries(
-            Object.entries(aff ?? {}).map(([k, v]) => [
-              k,
-              Array.isArray(v) ? v : [],
-            ]),
-          ) as InterestAffiliations;
-
-        setPersonalAff(
-          normalizeAff((existing as any).personalInterestAffiliations),
-        );
-        setProfessionalAff(
-          normalizeAff((existing as any).professionalInterestAffiliations),
-        );
-
-        // Social links por modo
-        setsocialLinksPersonal((existing as any).socialLinksPersonal ?? {});
-        setsocialLinksProfessional(
-          (existing as any).socialLinksProfessional ?? {},
-        );
-
-        // Gallery por modo
-        setPersonalGallery(
-          Array.isArray((existing as any).personalGallery)
-            ? (existing as any).personalGallery
-            : [],
-        );
-        setProfessionalGallery(
-          Array.isArray((existing as any).professionalGallery)
-            ? (existing as any).professionalGallery
-            : [],
-        );
-
-        // Affiliations por modo
-        setPersonalAffiliations(
-          Array.isArray((existing as any).personalAffiliations)
-            ? (existing as any).personalAffiliations
-            : [],
-        );
-        setProfessionalAffiliations(
-          Array.isArray((existing as any).professionalAffiliations)
-            ? (existing as any).professionalAffiliations
-            : [],
-        );
-
-        setIsNewProfile(false);
-        setActiveField(null);
-      } else {
-        setMode('personal');
-        setIsNewProfile(true);
-        setActiveField('realName');
-
-        // Shell may exist with empty/whitespace name; never wipe a known value.
-        if (existingRealName) {
-          setRealName(existingRealName);
-        }
-
-        if (existing) {
-          const currentMode: ProfileMode =
-            existing.mode === 'professional' ? 'professional' : 'personal';
-          applyModeFields(existing as any, currentMode);
-        }
-
-        if (socialPrefill) {
-          try {
-            const merged = mergeCompleteProfilePrefill(
-              {
-                realName: existingRealName,
-                profileImage: null,
-                email: (existing as any)?.email ?? null,
-              },
-              socialPrefill,
-            );
-            if (merged.realName) {
-              setRealName(merged.realName);
-            }
-            if (merged.profileImage) {
-              setProfileImage(merged.profileImage);
-            }
-          } catch {
-            // Fail-soft: leave form empty.
-          }
+            socialPrefill,
+          );
+          nextRealName = merged.realName ?? nextRealName;
+          nextProfileImage = merged.profileImage ?? nextProfileImage;
+        } catch {
+          // Fail-soft: keep Firestore values.
         }
       }
+
+      const loadedDoc = {
+        ...(existing as any),
+        profiles: {
+          ...((existing as any).profiles ?? {}),
+          [currentMode]: {
+            ...presentation,
+            realName: nextRealName,
+            profileImage: nextProfileImage,
+          },
+        },
+      };
+
+      setMode(currentMode);
+      applyModeFields(loadedDoc, currentMode);
+
+      const loadedDraft = createOwnProfileDraftFromPresentation({
+        ...presentation,
+        realName: nextRealName,
+        profileImage: nextProfileImage,
+      });
+      applyDraftToForm(loadedDraft);
+      commitSnapshot(loadedDraft);
+
+      const normalizeAff = (aff: any): InterestAffiliations =>
+        Object.fromEntries(
+          Object.entries(aff ?? {}).map(([k, v]) => [
+            k,
+            Array.isArray(v) ? v : [],
+          ]),
+        ) as InterestAffiliations;
+
+      setPersonalAff(
+        normalizeAff((existing as any).personalInterestAffiliations),
+      );
+      setProfessionalAff(
+        normalizeAff((existing as any).professionalInterestAffiliations),
+      );
+      setsocialLinksPersonal((existing as any).socialLinksPersonal ?? {});
+      setsocialLinksProfessional(
+        (existing as any).socialLinksProfessional ?? {},
+      );
+      setPersonalGallery(
+        Array.isArray((existing as any).personalGallery)
+          ? (existing as any).personalGallery
+          : [],
+      );
+      setProfessionalGallery(
+        Array.isArray((existing as any).professionalGallery)
+          ? (existing as any).professionalGallery
+          : [],
+      );
+      setPersonalAffiliations(
+        Array.isArray((existing as any).personalAffiliations)
+          ? (existing as any).personalAffiliations
+          : [],
+      );
+      setProfessionalAffiliations(
+        Array.isArray((existing as any).professionalAffiliations)
+          ? (existing as any).professionalAffiliations
+          : [],
+      );
+
+      const doc = existing as Record<string, unknown>;
+      const interestCounts = extractOwnProfileInterestSummaryCounts(doc);
+      setPersonalInterestsSummaryCount(interestCounts.personal);
+      setProfessionalInterestsSummaryCount(interestCounts.professional);
+      const affiliationCounts = extractOwnProfileAffiliationSummaryCounts(doc);
+      setPersonalAffiliationsSummaryCount(affiliationCounts.personal);
+      setProfessionalAffiliationsSummaryCount(affiliationCounts.professional);
+      const socialCounts = extractOwnProfileSocialSummaryCounts(doc);
+      setPersonalSocialSummaryCount(socialCounts.personal);
+      setProfessionalSocialSummaryCount(socialCounts.professional);
+      const galleryCounts = extractOwnProfileGallerySummaryCounts(doc);
+      setPersonalGallerySummaryCount(galleryCounts.personal);
+      setProfessionalGallerySummaryCount(galleryCounts.professional);
     } catch {
-      // opcional: Alert
+      setLifecycleAuth('error');
     } finally {
       setIsLoading(false);
     }
-  }, [route?.params?.uid, applyModeFields]);
+  }, [
+    route?.params?.uid,
+    applyModeFields,
+    applyDraftToForm,
+    commitSnapshot,
+    redirectIncompleteToCrj,
+  ]);
 
-  // Cada vez que la pantalla gana foco, recargamos el perfil
+  const refreshProfileSummaries = useCallback(async () => {
+    const uid = getUid();
+    if (!uid) return;
+
+    try {
+      const existing = await getUserProfile(uid);
+      if (!existing) return;
+      const doc = existing as Record<string, unknown>;
+      const interestCounts = extractOwnProfileInterestSummaryCounts(doc);
+      const affiliationCounts = extractOwnProfileAffiliationSummaryCounts(doc);
+      const socialCounts = extractOwnProfileSocialSummaryCounts(doc);
+      const galleryCounts = extractOwnProfileGallerySummaryCounts(doc);
+      if (!mountedRef.current) return;
+      setPersonalInterestsSummaryCount(interestCounts.personal);
+      setProfessionalInterestsSummaryCount(interestCounts.professional);
+      setPersonalAffiliationsSummaryCount(affiliationCounts.personal);
+      setProfessionalAffiliationsSummaryCount(affiliationCounts.professional);
+      setPersonalSocialSummaryCount(socialCounts.personal);
+      setProfessionalSocialSummaryCount(socialCounts.professional);
+      setPersonalGallerySummaryCount(galleryCounts.personal);
+      setProfessionalGallerySummaryCount(galleryCounts.professional);
+    } catch {
+      // Fail-soft: keep prior summary counts.
+    }
+  }, [route?.params?.uid]);
+
   useFocusEffect(
     useCallback(() => {
       mountedRef.current = true;
-      loadProfile();
+      if (!isDirtyRef.current) {
+        void loadProfile();
+      } else {
+        void refreshProfileSummaries();
+      }
       return () => {
         mountedRef.current = false;
       };
-    }, [loadProfile]),
+    }, [loadProfile, refreshProfileSummaries]),
   );
 
-  const countAff = (aff?: InterestAffiliations) =>
-    Object.values(aff ?? {}).reduce(
-      (acc, arr) => acc + (Array.isArray(arr) && arr.length > 0 ? 1 : 0),
-      0,
+  useEffect(() => {
+    const unsubscribe = navigation.addListener(
+      'beforeRemove',
+      (e: { preventDefault: () => void; data: { action: unknown } }) => {
+        const decision = decideDirtyNavigationGuard({
+          isDirty: isDirtyRef.current,
+          bypass: bypassDirtyNavigationRef.current,
+        });
+        if (decision === 'allow') return;
+        e.preventDefault();
+        confirmDiscardChanges(() => {
+          bypassDirtyNavigationRef.current = true;
+          isDirtyRef.current = false;
+          navigation.dispatch(e.data.action as never);
+          setTimeout(() => {
+            bypassDirtyNavigationRef.current = false;
+          }, 0);
+        });
+      },
     );
-
-  const personalInterestsCount = React.useMemo(
-    () => countAff(personalAff),
-    [personalAff],
-  );
-  const professionalInterestsCount = React.useMemo(
-    () => countAff(professionalAff),
-    [professionalAff],
-  );
-
-  const canEditField = (field: Exclude<FieldId, null>) =>
-    isNewProfile || activeField === field;
-
-  const isEditingAny =
-    isNewProfile || activeField !== null || showTopBarControls;
+    return unsubscribe;
+  }, [navigation, confirmDiscardChanges]);
 
   const interestsCount =
     (mode ?? 'personal') === 'professional'
-      ? professionalInterestsCount
-      : personalInterestsCount;
+      ? professionalInterestsSummaryCount
+      : personalInterestsSummaryCount;
 
-  const currentLinks =
+  const socialCount =
     (mode ?? 'personal') === 'professional'
-      ? socialLinksProfessional
-      : socialLinksPersonal;
-
-  const socialCount = React.useMemo(
-    () =>
-      Object.values(currentLinks || {}).reduce(
-        (acc, v) => acc + (typeof v === 'string' && v.trim() ? 1 : 0),
-        0,
-      ),
-    [currentLinks, mode],
-  );
+      ? professionalSocialSummaryCount
+      : personalSocialSummaryCount;
 
   const photosCount =
     (mode ?? 'personal') === 'professional'
-      ? professionalGallery.length
-      : personalGallery.length;
+      ? professionalGallerySummaryCount
+      : personalGallerySummaryCount;
 
   const affiliationsCount =
     (mode ?? 'personal') === 'professional'
-      ? professionalAffiliations.length
-      : personalAffiliations.length;
+      ? professionalAffiliationsSummaryCount
+      : personalAffiliationsSummaryCount;
+
+  const summaryForCount = useCallback(
+    (count: number) =>
+      count > 0
+        ? t('profile.quickActions.configured', { count })
+        : t('profile.quickActions.empty'),
+    [t],
+  );
 
   const pickImage = async () => {
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
         Alert.alert(
-          'Permission required',
-          'Permission to access photos is required.',
+          t('profile.permission.required'),
+          t('profile.photo.permissionPhotos'),
         );
         return;
       }
@@ -537,7 +536,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         setProfileImage(result.assets[0].uri);
       }
     } catch {
-      Alert.alert('Error', 'Could not pick image.');
+      Alert.alert(t('common.error'), t('profile.errors.pickImage'));
     }
   };
 
@@ -546,61 +545,35 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
         Alert.alert(
-          'Permission required',
-          'Permission to use the camera is required.',
+          t('profile.permission.required'),
+          t('profile.photo.permissionCamera'),
         );
         return;
       }
-
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
       });
-
       if (!result.canceled && result.assets.length > 0) {
         setProfileImage(result.assets[0].uri);
       }
     } catch {
-      Alert.alert('Error', 'Could not open camera.');
+      Alert.alert(t('common.error'), t('profile.errors.openCamera'));
     }
   };
 
   const openProfileImageOptions = () => {
-    Alert.alert(
-      'Profile photo',
-      'Choose how you want to add your profile photo.',
-      [
-        { text: 'Take photo', onPress: takeProfilePhoto },
-        { text: 'Choose from library', onPress: pickImage },
-        { text: 'Cancel', style: 'cancel' },
-      ],
-    );
+    if (!editorWritable) return;
+    Alert.alert(t('profile.photo.title'), t('profile.photo.body'), [
+      { text: t('profile.photo.take'), onPress: takeProfilePhoto },
+      { text: t('profile.photo.library'), onPress: pickImage },
+      { text: t('common.cancel'), style: 'cancel' },
+    ]);
   };
 
-  const pickTopBarImage = async () => {
-    try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert('Permission required', 'We need access to your photos.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [3, 1],
-        quality: 0.85,
-      });
-      if (!result.canceled && result.assets.length > 0) {
-        setTopBarImage(result.assets[0].uri);
-      }
-    } catch {
-      Alert.alert('Error', 'Could not pick the header image.');
-    }
-  };
-
-  const handleToggleMode = async () => {
+  const runModeSwitch = async () => {
     const confirmedMode: ProfileMode =
       (mode ?? 'personal') === 'professional' ? 'professional' : 'personal';
     const targetMode: ProfileMode =
@@ -648,6 +621,11 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       setMode(response.mode);
       applyModeFields(nextDoc, response.mode);
       setProfileDoc(nextDoc);
+      commitSnapshot(
+        createOwnProfileDraftFromPresentation(
+          resolveModePresentation(nextDoc, response.mode),
+        ),
+      );
 
       if (!response.targetProfileComplete) {
         Alert.alert(
@@ -670,22 +648,48 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     }
   };
 
-  const handleSave = async () => {
-    await handleContinue();
+  const handleToggleMode = () => {
+    if (!editorWritable) return;
+    if (modeSwitchLoading || modeSwitchSessionRef.current.isBusy()) {
+      return;
+    }
+    if (isDirtyRef.current) {
+      confirmDiscardChanges(() => {
+        void runModeSwitch();
+      });
+      return;
+    }
+    void runModeSwitch();
+  };
 
-    if (!isNewProfile) {
-      setActiveField(null);
-      setShowTopBarControls(false);
+  const validationMessage = (field: OwnProfileValidationField) => {
+    switch (field) {
+      case 'realName':
+        return t('profile.validation.realName');
+      case 'lastName':
+        return t('profile.validation.lastName');
+      case 'profileImage':
+        return t('profile.validation.profileImage');
+      case 'occupation':
+        return t('profile.validation.occupation');
+      case 'bio':
+        return t('profile.validation.biography');
+      case 'company':
+        return t('profile.validation.company');
+      case 'mode':
+        return t('profile.validation.mode');
+      default:
+        return t('profile.errors.saveFailed');
     }
   };
 
   const validateModerationFields = () => {
     const fieldsToCheck = [
-      { label: 'Name', value: realName },
-      { label: 'Occupation', value: occupation },
-      { label: 'Status', value: status },
-      { label: 'Biography', value: bio },
-      { label: 'Company', value: company },
+      { label: t('profile.fields.realName'), value: realName },
+      { label: t('profile.fields.lastName'), value: lastName },
+      { label: t('profile.fields.occupation'), value: occupation },
+      { label: t('profile.fields.biography'), value: bio },
+      { label: t('profile.fields.company'), value: company },
     ];
 
     const offendingField = fieldsToCheck.find(
@@ -694,8 +698,10 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
     if (offendingField) {
       Alert.alert(
-        'Content not allowed',
-        `${offendingField.label} contains language that is not allowed. Please remove inappropriate or offensive content.`,
+        t('common.error'),
+        t('profile.validation.contentNotAllowed', {
+          field: offendingField.label,
+        }),
       );
       return false;
     }
@@ -703,26 +709,25 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     return true;
   };
 
-  const isLocalUri = (value?: string | null) =>
-    !!value && /^(file|content|ph|assets-library):/i.test(value);
-
-  const handleContinue = async () => {
+  const persistOwnProfile = async () => {
     try {
-      if (!realName.trim()) {
-        Alert.alert('Validation', 'Real name is required.');
-        return;
-      }
-      if (!mode) {
-        Alert.alert('Validation', 'Please select a mode.');
+      if (!isOwnProfileSaveAuthorized(lifecycleAuth)) {
+        if (lifecycleAuth === 'incomplete') {
+          const uid = getUid();
+          if (uid) {
+            const redirected = redirectIncompleteToCrj(uid);
+            if (!redirected) setLifecycleAuth('blocked');
+          }
+        }
         return;
       }
 
-      // Photo: required only when none is set for the active mode yet.
-      // Empty overwrite of an existing photo is never performed.
-      if (!profileImage) {
-        Alert.alert('Validation', 'Profile photo is required.');
+      const validation = validateOwnProfileDraft(editorDraft, mode);
+      if (validation.ok === false) {
+        Alert.alert(t('common.error'), validationMessage(validation.field));
         return;
       }
+      if (!mode) return;
 
       if (!validateModerationFields()) {
         return;
@@ -732,109 +737,99 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       const uid = getUid();
       if (!uid) throw new Error('User not authenticated.');
 
-      // subir imagen de header si es local
-      let uploadedTopBarUrl: string | null = null;
-      if (isLocalUri(topBarImage)) {
-        uploadedTopBarUrl = await uploadTopBarImage(uid, topBarImage!);
-      } else {
-        uploadedTopBarUrl = topBarImage ?? null;
-      }
-
-      // subir imagen de perfil si es local
       let uploadedImageUrl: string | null = null;
-      if (isLocalUri(profileImage)) {
+      if (isLocalProfileImageUri(profileImage)) {
         uploadedImageUrl = await uploadProfileImage(uid, profileImage!);
       } else {
         uploadedImageUrl = profileImage ?? null;
       }
 
-      const activeMode: ProfileMode = mode;
-      const modePatch = buildActiveProfileSavePatch({
-        mode: activeMode,
-        realName: realName.trim(),
-        presentation: {
-          profileImage: uploadedImageUrl,
-          occupation,
-          status,
-          bio,
-          company: activeMode === 'professional' ? company : undefined,
-        },
-        projectActiveToTopLevel: true,
-        includeModeInPatch: false,
+      if (!uploadedImageUrl || isLocalProfileImageUri(uploadedImageUrl)) {
+        throw new Error(t('profile.validation.profileImage'));
+      }
+
+      const persistedDraft = buildPersistedOwnProfileDraftAfterUpload(
+        editorDraft,
+        uploadedImageUrl,
+      );
+      const modePatch = buildOwnProfileSavePatch({
+        mode,
+        draft: persistedDraft,
       });
 
-      // Top-bar + completion flag only. Do NOT set visibility (Home Active toggle).
-      // Do NOT write blank company into the other mode.
-      await updateUserProfilePartial(uid, {
-        ...modePatch,
-        ...(uploadedTopBarUrl
-          ? { topBarImage: uploadedTopBarUrl }
-          : topBarImage === null
-            ? {}
-            : {}),
-        topBarColor,
-        topBarMode,
-        profileSetupCompleted: true,
-      });
+      await updateUserProfilePartial(uid, modePatch);
+
+      applyDraftToForm(persistedDraft);
+      commitSnapshot(persistedDraft);
 
       setProfileDoc((prev) => ({
         ...(prev ?? {}),
         ...modePatch,
-        mode: activeMode,
-        realName: realName.trim(),
-        profileSetupCompleted: true,
         profiles: {
           ...((prev?.profiles as any) ?? {}),
-          [activeMode]: {
-            profileImage: uploadedImageUrl,
-            occupation: occupation.trim() || undefined,
-            status: status.trim() || undefined,
-            bio: bio.trim() || undefined,
-            ...(activeMode === 'professional'
-              ? { company: company.trim() || undefined }
+          [mode]: {
+            ...(((prev?.profiles as any)?.[mode] as object) ?? {}),
+            realName: persistedDraft.realName,
+            lastName: persistedDraft.lastName,
+            profileImage: persistedDraft.profileImage,
+            occupation: persistedDraft.occupation,
+            bio: persistedDraft.bio,
+            ...(mode === 'professional'
+              ? { company: persistedDraft.company }
               : {}),
           },
         },
       }));
 
       clearPendingSocialProfilePrefill();
-
-      setIsNewProfile(false);
-      setActiveField(null);
-      setShowTopBarControls(false);
-      setGuideDismissed(true);
-
-      navigation.replace('MainTabs');
+      Keyboard.dismiss();
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Could not save profile.');
+      Alert.alert(
+        t('common.error'),
+        e?.message || t('profile.errors.saveFailed'),
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleSave = async () => {
+    await persistOwnProfile();
+  };
+
+  const handleCancel = () => {
+    if (!isDirtyRef.current) return;
+    confirmDiscardChanges(() => {});
+  };
+
+  const goToGallery = () => {
+    const uid = getUid();
+    if (!uid) return;
+
+    navigation.navigate('Gallery', {
+      uid,
+      mode: mode ?? 'personal',
+    });
+  };
+
   const goToProfileExtraScreen = (
-    screen: 'Interests' | 'Gallery' | 'Affiliations' | 'SocialMedia',
+    screen: 'Interests',
   ) => {
     const uid = getUid();
     if (!uid) return;
 
-    const params = {
-      uid,
-      mode: mode ?? 'personal',
-      personalAff,
-      professionalAff,
-    };
+    const activeMode = (mode ?? 'personal') as 'personal' | 'professional';
 
     const currentRouteNames = navigation.getState?.()?.routeNames ?? [];
 
     if (currentRouteNames.includes(screen)) {
-      navigation.navigate(screen, params);
+      navigation.navigate(screen, { uid, mode: activeMode });
       return;
     }
 
     navigation.getParent?.()?.navigate('Profile', {
       screen,
-      params,
+      params: { uid, mode: activeMode },
     });
   };
 
@@ -858,1120 +853,255 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     });
   };
 
-  const nonPasswordInputProps = {
-    secureTextEntry: false,
-    autoComplete: 'off' as const,
-    textContentType: 'oneTimeCode' as const,
-    importantForAutofill: 'no' as const,
-    keyboardType: 'default' as const,
-  };
+  const activeMode = (mode ?? 'personal') as 'personal' | 'professional';
+  const modeContextLabel =
+    activeMode === 'professional'
+      ? t('profile.mode.contextProfessional')
+      : t('profile.mode.contextPersonal');
 
-  const profileGuideVisible = isNewProfile && !isLoading && !guideDismissed;
+  const lifecycleMessage =
+    lifecycleAuth === 'error'
+      ? t('profile.lifecycle.loadError')
+      : lifecycleAuth === 'blocked'
+        ? t('profile.lifecycle.blocked')
+        : null;
 
-  const unloadGuideAudio = useCallback(async () => {
-    const sound = guideSoundRef.current;
-    guideSoundRef.current = null;
-    if (!sound) return;
-    try {
-      await sound.stopAsync();
-      await sound.unloadAsync();
-    } catch {
-      // non-blocking
-    }
-  }, []);
+  const showInitialLoading = lifecycleAuth === 'unresolved';
+  const showContent = editorWritable && !showInitialLoading;
+  const bottomBarInset =
+    insets.bottom > 0 ? insets.bottom + spacing.sm : spacing.lg;
 
-  useEffect(() => {
-    if (!profileGuideVisible || Platform.OS !== 'ios') {
-      void unloadGuideAudio();
-      return;
-    }
-
-    const source = COMPLETE_PROFILE_GUIDE_AUDIO[guideStep];
-    if (!source) {
-      void unloadGuideAudio();
-      return;
-    }
-
-    let cancelled = false;
-
-    (async () => {
-      try {
-        if (!guideAudioModeReadyRef.current) {
-          await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-          guideAudioModeReadyRef.current = true;
-        }
-
-        await unloadGuideAudio();
-        if (cancelled) return;
-
-        const { sound } = await Audio.Sound.createAsync(source, {
-          shouldPlay: true,
-          isLooping: false,
-        });
-
-        if (cancelled) {
-          await sound.unloadAsync();
-          return;
-        }
-
-        guideSoundRef.current = sound;
-      } catch {
-        // non-blocking
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [guideStep, profileGuideVisible, unloadGuideAudio]);
-
-  useEffect(() => {
-    return () => {
-      void unloadGuideAudio();
-    };
-  }, [unloadGuideAudio]);
-
-  const setGuideFieldRef =
-    (step: number) =>
-    (ref: View | null): void => {
-      guideFieldRefs.current[step] = ref;
-    };
-
-  useEffect(() => {
-    if (!profileGuideVisible) return;
-
-    const inputRefs: Record<number, React.RefObject<RNTextInput | null>> = {
-      3: realNameInputRef,
-      4: occupationInputRef,
-      5: statusInputRef,
-      6: bioInputRef,
-    };
-
-    const centerStep = () => {
-      const target = guideFieldRefs.current[guideStep];
-
-      if (!target || !scrollRef.current) return;
-
-      target.measureLayout(
-        scrollRef.current as any,
-        (_x, y, _width, height) => {
-          const guideCardReservedHeight = 190;
-          const bottomReservedHeight =
-            guideStep >= 3 && guideStep <= 6
-              ? 320
-              : guideStep >= 8 && guideStep <= 11
-                ? 120
-                : 80;
-
-          const availableHeight =
-            760 - guideCardReservedHeight - bottomReservedHeight;
-
-          const centeredY =
-            y - guideCardReservedHeight - availableHeight / 2 + height / 2;
-
-          const finalY = Math.max(centeredY - 20, 0);
-
-          scrollRef.current?.scrollTo({
-            y: finalY,
-            animated: true,
-          });
-        },
-        () => {},
-      );
-    };
-
-    const firstScroll = setTimeout(centerStep, 120);
-
-    const focusTimeout = setTimeout(() => {
-      inputRefs[guideStep]?.current?.focus();
-    }, 320);
-
-    const secondScroll = setTimeout(centerStep, 750);
-
-    const thirdScroll = setTimeout(centerStep, 1050);
-
-    return () => {
-      clearTimeout(firstScroll);
-      clearTimeout(focusTimeout);
-      clearTimeout(secondScroll);
-      clearTimeout(thirdScroll);
-    };
-  }, [guideStep, profileGuideVisible]);
-
-  const isProfileGuideActive = (step: number) =>
-    profileGuideVisible && guideStep === step;
-
-  const goNextGuideStep = () => {
-    setGuideStep((prev) => {
-      if (prev === 0) {
-        setShowTopBarControls(true);
-      }
-
-      return Math.min(prev + 1, COMPLETE_PROFILE_GUIDE_STEPS.length - 1);
-    });
-  };
-
-  const goBackGuideStep = () => {
-    setGuideStep((prev) => Math.max(prev - 1, 0));
-  };
-
-  const skipProfileGuide = () => {
-    setGuideDismissed(true);
-    setGuideStep(0);
-  };
-
-  const guideAllows = (step: number) =>
-    !profileGuideVisible || guideStep === step;
+  const quickActions = [
+    {
+      id: 'interests' as const,
+      icon: 'sparkles-outline' as const,
+      title: t('profile.quickActions.interests'),
+      subtitle: summaryForCount(interestsCount),
+      accessibilityLabel: t('profile.quickActions.openA11y', {
+        section: t('profile.quickActions.interests'),
+      }),
+      onPress: () => goToProfileExtraScreen('Interests'),
+    },
+    {
+      id: 'affiliations' as const,
+      icon: 'ribbon-outline' as const,
+      title: t('profile.quickActions.affiliations'),
+      subtitle: summaryForCount(affiliationsCount),
+      accessibilityLabel: t('profile.quickActions.openA11y', {
+        section: t('profile.quickActions.affiliations'),
+      }),
+      onPress: () => goToAffiliations(),
+    },
+    {
+      id: 'social' as const,
+      icon: 'share-social-outline' as const,
+      title: t('profile.quickActions.socialMedia'),
+      subtitle: summaryForCount(socialCount),
+      accessibilityLabel: t('profile.quickActions.openA11y', {
+        section: t('profile.quickActions.socialMedia'),
+      }),
+      onPress: () => goToSocialMedia(),
+    },
+    {
+      id: 'gallery' as const,
+      icon: 'images-outline' as const,
+      title: t('profile.quickActions.gallery'),
+      subtitle: summaryForCount(photosCount),
+      accessibilityLabel: t('profile.quickActions.openA11y', {
+        section: t('profile.quickActions.gallery'),
+      }),
+      onPress: () => goToGallery(),
+    },
+  ];
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+    <View style={[styles.root, { backgroundColor: palette.background }]}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
         <ScrollView
-          style={{ flex: 1 }}
+          ref={scrollRef}
+          style={styles.flex}
           contentContainerStyle={{
-            paddingTop: profileGuideVisible ? 150 : 0,
-            paddingBottom: profileGuideVisible ? 110 : isEditingAny ? 110 : 40,
+            paddingTop: insets.top + spacing.md,
+            paddingBottom: isDirty ? 120 + bottomBarInset : spacing.xxxl,
           }}
           keyboardShouldPersistTaps="handled"
-          ref={scrollRef}
+          scrollIndicatorInsets={{ top: insets.top }}
         >
-          <TopHeader
-            topBarMode={topBarMode}
-            topBarColor={topBarColor}
-            topBarImage={topBarImage}
-            profileImage={profileImage}
-            onLeftPress={() => navigation.goBack()}
-            showAvatar
-          />
+          <Text
+            accessibilityRole="header"
+            style={[styles.screenTitle, { color: palette.textPrimary }]}
+          >
+            {t('profile.myProfileTitle')}
+          </Text>
 
-          <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
+          {showInitialLoading ? (
             <View
-              ref={setGuideFieldRef(0)}
-              style={[
-                styles.profileHeaderRow,
-                profileGuideVisible &&
-                  !isProfileGuideActive(0) &&
-                  styles.guideInactiveField,
-                isProfileGuideActive(0) && styles.guideActiveField,
-              ]}
+              style={styles.centered}
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={t('profile.lifecycle.loading')}
             >
-              <View style={styles.profileHeaderInner}>
-                <Text style={styles.title}>Your Profile</Text>
-                <TouchableOpacity
-                  style={[
-                    styles.profileCameraBtn,
-                    showTopBarControls && styles.profileCameraBtnActive,
-                  ]}
-                  onPress={() => {
-                    if (!guideAllows(0)) return;
-                    setShowTopBarControls(true);
-                    setGuideStep(1);
-                  }}
-                  disabled={!guideAllows(0)}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons
-                    name={showTopBarControls ? 'close' : 'camera'}
-                    size={18}
-                    color="#fff"
-                  />
-                </TouchableOpacity>
-              </View>
+              <ActivityIndicator size="large" color={palette.primary} />
+              <Text
+                style={[styles.lifecycleText, { color: palette.textSecondary }]}
+              >
+                {t('profile.lifecycle.loading')}
+              </Text>
             </View>
-
-            {showTopBarControls && (
-              <View style={styles.topBarControls}>
-                <Text style={styles.topBarSectionTitle}>Profile visuals</Text>
-
-                <View
-                  ref={setGuideFieldRef(1)}
-                  style={[
-                    isProfileGuideActive(1) && styles.guideActiveField,
-                    profileGuideVisible &&
-                      !isProfileGuideActive(1) &&
-                      styles.guideInactiveField,
-                  ]}
-                >
-                  <TouchableOpacity
-                    onPress={() => {
-                      if (!guideAllows(1)) return;
-                      openProfileImageOptions();
-                    }}
-                    style={styles.inlinePhotoBtn}
-                    activeOpacity={0.85}
-                    disabled={!guideAllows(1)}
-                  >
-                    <Ionicons name="camera" size={16} color="#fff" />
-                    <Text style={styles.inlinePhotoText}>
-                      Change profile photo
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View
-                  ref={setGuideFieldRef(2)}
-                  style={[
-                    styles.topBarModeRow,
-                    isProfileGuideActive(2) && styles.guideActiveField,
-                    profileGuideVisible &&
-                      !isProfileGuideActive(2) &&
-                      styles.guideInactiveField,
-                  ]}
-                >
-                  <Text style={styles.topBarLabel}>Top bar style</Text>
-
-                  <View style={styles.topBarSwitchRow}>
-                    <Text style={styles.topBarSwitchText}>Color</Text>
-                    <Switch
-                      value={topBarMode === 'image'}
-                      onValueChange={(value) => {
-                        if (!guideAllows(2)) return;
-                        setTopBarMode(value ? 'image' : 'color');
-                      }}
-                      disabled={!guideAllows(2)}
-                      trackColor={{ false: '#CBD5F5', true: '#CBD5F5' }}
-                      thumbColor="#3B5A85"
-                    />
-                    <Text style={styles.topBarSwitchText}>Image</Text>
-                  </View>
-                </View>
-
-                {topBarMode === 'color' ? (
-                  <TouchableOpacity
-                    style={styles.topBarActionBtn}
-                    onPress={() => {
-                      if (!guideAllows(2)) return;
-                      setPickerOpen(true);
-                    }}
-                    activeOpacity={0.85}
-                    disabled={!guideAllows(2)}
-                  >
-                    <Ionicons name="color-palette" size={16} color="#1F2937" />
-                    <Text style={styles.topBarActionText}>
-                      Pick top bar color
-                    </Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.topBarActionBtn}
-                    onPress={() => {
-                      if (!guideAllows(2)) return;
-                      pickTopBarImage();
-                    }}
-                    onLongPress={() => {
-                      if (!guideAllows(2)) return;
-                      setTopBarImage(null);
-                    }}
-                    activeOpacity={0.85}
-                    disabled={!guideAllows(2)}
-                  >
-                    <Ionicons name="image" size={16} color="#1F2937" />
-                    <Text style={styles.topBarActionText}>
-                      Pick header image
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-
-            {/* Name */}
-            <View
-              ref={setGuideFieldRef(3)}
-              style={[
-                styles.fieldGroup,
-                profileGuideVisible &&
-                  !isProfileGuideActive(3) &&
-                  styles.guideInactiveField,
-                isProfileGuideActive(3) && styles.guideActiveField,
-              ]}
-            >
-              <View style={styles.labelRow}>
-                <Text style={styles.label}>Name</Text>
-                <TouchableOpacity
-                  onPress={() => setActiveField('realName')}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name="pencil"
-                    size={16}
-                    color={canEditField('realName') ? '#3B5A85' : '#9CA3AF'}
-                  />
-                </TouchableOpacity>
-              </View>
-              <TextInput
-                key="real-name-input"
-                style={[
-                  styles.input,
-                  canEditField('realName') && styles.inputEditing,
-                ]}
-                placeholder="Real Name"
-                placeholderTextColor="#9CA3AF"
-                value={realName}
-                onChangeText={setRealName}
-                editable={canEditField('realName') && guideAllows(3)}
-                maxLength={NAME_MAX}
-                ref={realNameInputRef}
-                autoCapitalize="words"
-                autoCorrect={false}
-                {...nonPasswordInputProps}
+          ) : lifecycleMessage ? (
+            <View style={styles.centered} accessibilityRole="alert">
+              <Text
+                style={[styles.lifecycleText, { color: palette.textSecondary }]}
+              >
+                {lifecycleMessage}
+              </Text>
+            </View>
+          ) : showContent ? (
+            <>
+              <OwnProfileHero
+                profileImage={profileImage}
+                realName={realName}
+                lastName={lastName}
+                mode={activeMode}
+                modeContextLabel={modeContextLabel}
+                personalLabel={t('profile.mode.personal')}
+                professionalLabel={t('profile.mode.professional')}
+                changePhotoLabel={t('profile.changePhoto')}
+                changePhotoA11y={t('profile.changePhotoA11y')}
+                modeSwitchA11y={t('profile.mode.switchA11y')}
+                editorWritable={editorWritable}
+                modeSwitchLoading={modeSwitchLoading}
+                onChangePhoto={openProfileImageOptions}
+                onToggleMode={handleToggleMode}
               />
-            </View>
 
-            {/* Occupation */}
-            <View
-              ref={setGuideFieldRef(4)}
-              style={[
-                styles.fieldGroup,
-                profileGuideVisible &&
-                  !isProfileGuideActive(4) &&
-                  styles.guideInactiveField,
-                isProfileGuideActive(4) && styles.guideActiveField,
-              ]}
-            >
-              <View style={styles.labelRow}>
-                <Text style={styles.label}>Occupation</Text>
-                <TouchableOpacity
-                  onPress={() => setActiveField('occupation')}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name="pencil"
-                    size={16}
-                    color={canEditField('occupation') ? '#3B5A85' : '#9CA3AF'}
-                  />
-                </TouchableOpacity>
-              </View>
-              <TextInput
-                key="occupation-input"
-                style={[
-                  styles.input,
-                  canEditField('occupation') && styles.inputEditing,
-                ]}
-                placeholder="Occupation"
-                placeholderTextColor="#9CA3AF"
-                ref={occupationInputRef}
-                value={occupation}
-                onChangeText={setOccupation}
-                editable={canEditField('occupation') && guideAllows(4)}
-                maxLength={OCCUPATION_MAX}
-                autoCapitalize="words"
-                autoCorrect={false}
-                {...nonPasswordInputProps}
-              />
-            </View>
-
-            {/* Status */}
-            <View
-              ref={setGuideFieldRef(5)}
-              style={[
-                styles.fieldGroup,
-                profileGuideVisible &&
-                  !isProfileGuideActive(5) &&
-                  styles.guideInactiveField,
-                isProfileGuideActive(5) && styles.guideActiveField,
-              ]}
-            >
-              <View style={styles.labelRow}>
-                <Text style={styles.label}>Status</Text>
-                <View
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
-                >
-                  <Text style={styles.charCounter}>
-                    {status.length}/{STATUS_MAX}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => setActiveField('status')}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons
-                      name="pencil"
-                      size={16}
-                      color={canEditField('status') ? '#3B5A85' : '#9CA3AF'}
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-              <TextInput
-                key="status-input"
-                style={[
-                  styles.input,
-                  canEditField('status') && styles.inputEditing,
-                ]}
-                placeholder="Short status (e.g. '🇺🇸 Open to meet new people')"
-                placeholderTextColor="#9CA3AF"
-                ref={statusInputRef}
-                value={status}
-                onChangeText={setStatus}
-                editable={canEditField('status') && guideAllows(5)}
-                maxLength={STATUS_MAX}
-                autoCapitalize="sentences"
-                autoCorrect={true}
-                {...nonPasswordInputProps}
-              />
-            </View>
-
-            {/* Biography */}
-            <View
-              ref={setGuideFieldRef(6)}
-              style={[
-                styles.fieldGroup,
-                profileGuideVisible &&
-                  !isProfileGuideActive(6) &&
-                  styles.guideInactiveField,
-                isProfileGuideActive(6) && styles.guideActiveField,
-              ]}
-            >
-              <View style={styles.labelRow}>
-                <Text style={styles.label}>Biography</Text>
-                <View
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
-                >
-                  <Text style={styles.charCounter}>
-                    {bio.length}/{BIO_MAX}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => setActiveField('bio')}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons
-                      name="pencil"
-                      size={16}
-                      color={canEditField('bio') ? '#3B5A85' : '#9CA3AF'}
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-              <TextInput
-                key="bio-input"
-                style={[
-                  styles.input,
-                  styles.textArea,
-                  canEditField('bio') && styles.inputEditing,
-                ]}
-                placeholder="Short Biography (e.g. '🇺🇸 From USA · Likes coffee · Marketing · Study ...')"
-                placeholderTextColor="#9CA3AF"
-                ref={bioInputRef}
-                value={bio}
-                onChangeText={setBio}
-                multiline
-                numberOfLines={4}
-                editable={canEditField('bio') && guideAllows(6)}
-                maxLength={BIO_MAX}
-                autoCapitalize="sentences"
-                autoCorrect={true}
-                {...nonPasswordInputProps}
-              />
-            </View>
-
-            {/* Switch de modo */}
-            <View
-              ref={setGuideFieldRef(7)}
-              style={[
-                styles.switchWrap,
-                profileGuideVisible &&
-                  !isProfileGuideActive(7) &&
-                  styles.guideInactiveField,
-                isProfileGuideActive(7) && styles.guideActiveField,
-              ]}
-            >
-              <ModeSwitch
-                mode={(mode || 'personal') as 'personal' | 'professional'}
-                topBarColor={'#3B5A85'}
-                onToggle={() => {
-                  if (!guideAllows(7) || modeSwitchLoading) return;
-                  handleToggleMode();
+              <OwnProfileDetails
+                mode={activeMode}
+                values={{
+                  realName,
+                  lastName,
+                  occupation,
+                  bio,
+                  company,
                 }}
-                compact={isLargeText}
+                labels={{
+                  sectionTitle: t('profile.sections.details'),
+                  realName: t('profile.fields.realName'),
+                  lastName: t('profile.fields.lastName'),
+                  occupation: t('profile.fields.occupation'),
+                  biography: t('profile.fields.biography'),
+                  company: t('profile.fields.company'),
+                }}
+                placeholders={{
+                  realName: t('profile.placeholders.realName'),
+                  lastName: t('profile.placeholders.lastName'),
+                  occupation: t('profile.placeholders.occupation'),
+                  biography: t('profile.placeholders.biography'),
+                  company: t('profile.placeholders.company'),
+                }}
+                editorWritable={editorWritable}
+                bioMaxLength={BIO_MAX}
+                realNameMaxLength={NAME_MAX}
+                lastNameMaxLength={NAME_MAX}
+                occupationMaxLength={OCCUPATION_MAX}
+                companyMaxLength={COMPANY_MAX}
+                onChangeRealName={setRealName}
+                onChangeLastName={setLastName}
+                onChangeOccupation={setOccupation}
+                onChangeBio={setBio}
+                onChangeCompany={setCompany}
               />
-              {modeSwitchLoading ? (
-                <ActivityIndicator
-                  style={{ marginTop: 8 }}
-                  accessibilityLabel={t('common.loading')}
-                />
-              ) : null}
-            </View>
 
-            {/* Campos adicionales (professional) */}
-            {mode === 'professional' && (
-              <View style={styles.professionalContainer}>
-                <View style={styles.fieldGroup}>
-                  <View style={styles.labelRow}>
-                    <Text style={styles.label}>Company</Text>
-                    <TouchableOpacity
-                      onPress={() => setActiveField('company')}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons
-                        name="pencil"
-                        size={16}
-                        color={canEditField('company') ? '#3B5A85' : '#9CA3AF'}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                  <TextInput
-                    key="company-input"
-                    style={[
-                      styles.input,
-                      canEditField('company') && styles.inputEditing,
-                    ]}
-                    placeholder="Company"
-                    placeholderTextColor="#9CA3AF"
-                    value={company}
-                    onChangeText={setCompany}
-                    editable={canEditField('company')}
-                    maxLength={COMPANY_MAX}
-                    autoCapitalize="words"
-                    autoCorrect={false}
-                    {...nonPasswordInputProps}
-                  />
-                </View>
-              </View>
-            )}
-
-            {/* Quick Actions */}
-            <View>
               <ProfileQuickActions
-                stats={{
-                  interestsCount,
-                  socialCount,
-                  photosCount,
-                  affiliationsCount,
-                }}
-                affiliationsRef={setGuideFieldRef(8)}
-                interestsRef={setGuideFieldRef(9)}
-                socialRef={setGuideFieldRef(10)}
-                galleryRef={setGuideFieldRef(11)}
-                affiliationsGuideHighlight={isProfileGuideActive(8)}
-                interestsGuideHighlight={isProfileGuideActive(9)}
-                socialGuideHighlight={isProfileGuideActive(10)}
-                galleryGuideHighlight={isProfileGuideActive(11)}
-                affiliationsGuideDimmed={
-                  profileGuideVisible && !isProfileGuideActive(8)
-                }
-                interestsGuideDimmed={
-                  profileGuideVisible && !isProfileGuideActive(9)
-                }
-                socialGuideDimmed={
-                  profileGuideVisible && !isProfileGuideActive(10)
-                }
-                galleryGuideDimmed={
-                  profileGuideVisible && !isProfileGuideActive(11)
-                }
-                onOpenInterests={() => {
-                  if (!guideAllows(9)) return;
-                  goToProfileExtraScreen('Interests');
-                }}
-                onOpenSocial={() => {
-                  if (!guideAllows(10)) return;
-                  goToSocialMedia();
-                }}
-                onOpenGallery={() => {
-                  if (!guideAllows(11)) return;
-                  goToProfileExtraScreen('Gallery');
-                }}
-                onOpenAffiliations={() => {
-                  if (!guideAllows(8)) return;
-                  goToProfileExtraScreen('Affiliations');
-                }}
-                compact={isLargeText}
+                sectionTitle={t('profile.sections.content')}
+                actions={quickActions}
               />
-            </View>
-          </View>
-
-          {isLoading && (
-            <View style={styles.loadingOverlay} pointerEvents="auto">
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#2B3A42" />
-                <Text style={styles.loadingText}>Saving your profile...</Text>
-              </View>
-            </View>
-          )}
+            </>
+          ) : null}
         </ScrollView>
 
-        {isEditingAny && (
+        <OwnProfileSaveBar
+          visible={editorWritable && isDirty}
+          saveLabel={t('profile.save')}
+          cancelLabel={t('profile.cancel')}
+          saving={isLoading}
+          saveDisabled={saveDisabled}
+          cancelDisabled={isLoading}
+          bottomInset={insets.bottom}
+          onSave={handleSave}
+          onCancel={handleCancel}
+        />
+
+        {isLoading && lifecycleAuth === 'allowed' ? (
           <View
-            onLayout={(event) => {
-              guideYPositions.current[12] = event.nativeEvent.layout.y;
-            }}
-            style={[
-              styles.bottomBar,
-              { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 16 },
-            ]}
+            style={[styles.savingOverlay, { backgroundColor: palette.background }]}
+            pointerEvents="auto"
+            accessibilityLiveRegion="polite"
+            accessibilityLabel={t('profile.saving')}
           >
-            <TouchableOpacity
-              style={[
-                styles.bottomSaveBtn,
-                isLoading && { opacity: 0.7 },
-                isProfileGuideActive(12) && styles.guideActiveButton,
-              ]}
-              onPress={handleSave}
-              disabled={isLoading || !guideAllows(12)}
-              activeOpacity={0.85}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="save-outline" size={18} color="#fff" />
-                  <Text style={styles.bottomSaveText}>Save changes</Text>
-                </>
-              )}
-            </TouchableOpacity>
+            <ActivityIndicator size="large" color={palette.primary} />
+            <Text style={[styles.savingText, { color: palette.textSecondary }]}>
+              {t('profile.saving')}
+            </Text>
           </View>
-        )}
+        ) : null}
       </KeyboardAvoidingView>
-      {profileGuideVisible && (
-        <Animated.View
-          entering={FadeInDown.duration(350)}
-          style={[styles.floatingGuideCard, { top: insets.top + 10 }]}
-        >
-          <View style={styles.guideHeader}>
-            <View style={styles.guideBadge}>
-              <Text style={styles.guideBadgeText}>
-                {guideStep + 1}/{COMPLETE_PROFILE_GUIDE_STEPS.length}
-              </Text>
-            </View>
-
-            <TouchableOpacity onPress={skipProfileGuide}>
-              <Text style={styles.guideSkip}>Skip guide</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.guideTitle}>
-            {COMPLETE_PROFILE_GUIDE_STEPS[guideStep].title}
-          </Text>
-
-          <Text style={styles.guideDescription}>
-            {COMPLETE_PROFILE_GUIDE_STEPS[guideStep].description}
-          </Text>
-
-          <View style={styles.guideActionsRow}>
-            <TouchableOpacity
-              style={[
-                styles.guideNavButton,
-                guideStep === 0 && styles.guideNavButtonDisabled,
-              ]}
-              onPress={goBackGuideStep}
-              disabled={guideStep === 0}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.guideNavButtonText}>Back</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.guideNavButtonPrimary}
-              onPress={
-                guideStep === COMPLETE_PROFILE_GUIDE_STEPS.length - 1
-                  ? skipProfileGuide
-                  : goNextGuideStep
-              }
-              activeOpacity={0.85}
-            >
-              <Text style={styles.guideNavButtonPrimaryText}>
-                {guideStep === COMPLETE_PROFILE_GUIDE_STEPS.length - 1
-                  ? 'Got it'
-                  : 'Next'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
-      )}
-      <ColorPickerModal
-        visible={pickerOpen}
-        initialColor={topBarColor}
-        onClose={() => setPickerOpen(false)}
-        onSelect={(color) => {
-          setTopBarColor(color);
-          setPickerOpen(false);
-        }}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.statusBarOverlay,
+          {
+            height: insets.top,
+            backgroundColor: palette.background,
+          },
+        ]}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  floatingControlsWrap: {
-    position: 'absolute',
-    right: 8,
-    zIndex: 5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  root: {
+    flex: 1,
   },
-  modePillWrap: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(243,244,246,0.95)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    overflow: 'hidden',
+  flex: {
+    flex: 1,
   },
-  modePillOpt: { paddingHorizontal: 8, paddingVertical: 4 },
-  modePillOptActive: { backgroundColor: '#3B5A85' },
-  modePillText: { color: '#374151', fontWeight: '600' },
-  modePillTextActive: { color: '#fff' },
-  headerTinyBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(58,89,133,0.95)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.5)',
-  },
-
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1F2937',
-    textAlign: 'center',
-    marginTop: 30,
-    marginBottom: 16,
-  },
-
-  profileHeaderRow: {
-    width: '100%',
-    alignItems: 'center',
-    marginTop: 0,
-    marginBottom: 12,
-  },
-  profileHeaderInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  profileCameraBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#3B5A85',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  profileCameraBtnActive: {
-    backgroundColor: '#EF4444',
-  },
-
-  topBarControls: {
-    width: '100%',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  topBarSectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  inlinePhotoBtn: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#3B5A85',
-    marginBottom: 10,
-    gap: 6,
-  },
-  inlinePhotoText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 12,
-  },
-  topBarModeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  topBarLabel: {
-    fontSize: 13,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  topBarSwitchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  topBarSwitchText: {
-    fontSize: 12,
-    color: '#4B5563',
-  },
-  topBarActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#E5E7EB',
-    alignSelf: 'flex-start',
-    marginTop: 4,
-  },
-  topBarActionText: {
-    fontSize: 13,
-    color: '#111827',
-    fontWeight: '500',
-  },
-
-  fieldGroup: {
-    width: '100%',
-    marginBottom: 12,
-  },
-
-  labelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginBottom: 4,
-  },
-
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    marginLeft: 2,
-  },
-
-  charCounter: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-
-  input: {
-    width: '100%',
-    backgroundColor: '#F1F1F1',
-    color: '#1F2937',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-
-  inputEditing: {
-    borderColor: '#3B5A85',
-    backgroundColor: '#EEF2FF',
-  },
-
-  textArea: {
-    height: 100,
-    textAlignVertical: 'top',
-  },
-
-  professionalContainer: {
-    width: '100%',
-    marginTop: 10,
-  },
-
-  changePhotoBtn: {
-    alignSelf: 'center',
-    marginTop: 8,
-    backgroundColor: '#3B5A85',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  changePhotoText: { color: '#fff', fontWeight: '700', fontSize: 12 },
-
-  loadingOverlay: {
+  statusBarOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    justifyContent: 'center',
+    zIndex: 1,
+  },
+  screenTitle: {
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.extrabold,
+    paddingHorizontal: screenPadding.horizontal,
+    marginBottom: spacing.sm,
+  },
+  centered: {
+    paddingHorizontal: screenPadding.horizontal,
+    paddingVertical: spacing.xxxl,
     alignItems: 'center',
-    zIndex: 10,
+    gap: spacing.md,
   },
-  loadingContainer: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 10,
-    alignItems: 'center',
+  lifecycleText: {
+    fontSize: fontSize.md,
+    textAlign: 'center',
+    fontWeight: fontWeight.medium,
   },
-  loadingText: { marginTop: 10, fontSize: 16, color: '#2B3A42' },
-
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalCard: {
-    width: '85%',
-    maxWidth: 420,
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 16,
-    alignItems: 'center',
-  },
-  colorGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  colorSwatch: { width: 44, height: 44, borderRadius: 22, borderWidth: 2 },
-  closeBtn: {
-    backgroundColor: '#2B3A42',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  switchWrap: {
-    alignItems: 'center',
-    marginVertical: 8,
-    width: '100%',
-  },
-
-  bottomBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.96)',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  bottomSaveBtn: {
-    height: 50,
-    borderRadius: 999,
-    backgroundColor: '#3B5A85',
-    flexDirection: 'row',
+  savingOverlay: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+    opacity: 0.92,
+    gap: spacing.md,
   },
-  bottomSaveText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  floatingGuideCard: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    zIndex: 50,
-    backgroundColor: '#EEF4FA',
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#ADCBE3',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 14,
-    elevation: 10,
-  },
-  guideHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  guideBadge: {
-    backgroundColor: '#3B5A85',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  guideBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  guideSkip: {
-    color: '#3B5A85',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  guideTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#1F2937',
-    marginBottom: 4,
-  },
-  guideDescription: {
-    fontSize: 13,
-    color: '#4B5563',
-    lineHeight: 18,
-  },
-  guideActiveField: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 10,
-    borderWidth: 2,
-    borderColor: '#3B5A85',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.14,
-    shadowRadius: 14,
-    elevation: 8,
-  },
-  guideInactiveField: {
-    opacity: 0.45,
-  },
-  guideActiveButton: {
-    borderWidth: 2,
-    borderColor: '#ADCBE3',
-  },
-  guideActionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 12,
-    gap: 10,
-  },
-  guideNavButton: {
-    flex: 1,
-    backgroundColor: '#E5E7EB',
-    paddingVertical: 9,
-    borderRadius: 999,
-    alignItems: 'center',
-  },
-  guideNavButtonDisabled: {
-    opacity: 0.45,
-  },
-  guideNavButtonText: {
-    color: '#374151',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  guideNavButtonPrimary: {
-    flex: 1,
-    backgroundColor: '#3B5A85',
-    paddingVertical: 9,
-    borderRadius: 999,
-    alignItems: 'center',
-  },
-  guideNavButtonPrimaryText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
+  savingText: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
   },
 });

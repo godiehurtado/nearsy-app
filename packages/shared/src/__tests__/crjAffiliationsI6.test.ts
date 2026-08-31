@@ -315,7 +315,7 @@ describe('CRJ-I6 Claude visual structure', () => {
     );
   });
 
-  it('panel uses topic chips, search panel, Add, upload, selected tiles', () => {
+  it('panel uses topic chips, search panel, Add, upload, AffiliationLogoMark', () => {
     const panel = readSharedSource(
       'components/registration/OnboardingAffiliationCategoryPanel.tsx',
     );
@@ -323,8 +323,10 @@ describe('CRJ-I6 Claude visual structure', () => {
     assert.ok(panel.includes('searchPanel'));
     assert.ok(panel.includes('addFromSearch'));
     assert.ok(panel.includes('Upload a logo instead') || panel.includes('affiliations.upload'));
-    assert.ok(panel.includes('SELECTED_TILE_RADIUS = 18'));
-    assert.ok(panel.includes('RESULT_TILE_RADIUS = 12'));
+    assert.ok(panel.includes('AffiliationLogoMark'));
+    assert.ok(panel.includes('AFFILIATION_SELECTED_LOGO_RADIUS'));
+    assert.ok(panel.includes('AFFILIATION_RESULT_LOGO_RADIUS'));
+    assert.ok(!panel.includes('SELECTED_TILE_RADIUS = 18'));
     assert.ok(!panel.includes('ActivityIndicator'));
   });
 });

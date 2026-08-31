@@ -23,6 +23,10 @@ import {
   CRJ_GALLERY_UX_CAP,
   type CrjGalleryItem,
 } from '../../gallery/onboardingGalleryPersistence';
+import {
+  GALLERY_GRID_GAP,
+  GALLERY_TILE_RADIUS,
+} from '../../gallery/galleryGridTokens';
 
 type Props = {
   items: CrjGalleryItem[];
@@ -34,7 +38,6 @@ type Props = {
 };
 
 const COLS = 3;
-const GAP = 10;
 
 export function OnboardingGalleryStep({
   items,
@@ -48,7 +51,7 @@ export function OnboardingGalleryStep({
   const { t } = useTranslation();
   const reduceMotion = useReducedMotion();
   const { width } = useWindowDimensions();
-  const tileSize = Math.floor((width - 44 - GAP * 2) / COLS);
+  const tileSize = Math.floor((width - 44 - GALLERY_GRID_GAP * 2) / COLS);
 
   const readyCount = items.filter((item) => item.status === 'ready').length;
   const atCap = items.length >= CRJ_GALLERY_UX_CAP;
@@ -265,10 +268,10 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: GAP,
+    gap: GALLERY_GRID_GAP,
   },
   tile: {
-    borderRadius: 12,
+    borderRadius: GALLERY_TILE_RADIUS,
     borderWidth: 1,
     overflow: 'hidden',
   },

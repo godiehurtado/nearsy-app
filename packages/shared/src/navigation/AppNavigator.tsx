@@ -19,6 +19,7 @@ import WelcomeScreen from '../screens/WelcomeScreen';
 import InterestsScreen from '../screens/InterestsScreen';
 import SocialMediaScreen from '../screens/SocialMediaScreen';
 import GalleryScreen from '../screens/GalleryScreen';
+import ProfileGalleryScreen from '../screens/ProfileGalleryScreen';
 import AffiliationsScreen from '../screens/AffiliationsScreen';
 import RootTabs from './RootTabs';
 import { RootStackParamList } from './types';
@@ -228,6 +229,7 @@ export default function AppNavigator() {
         <Stack.Screen name="MainTabs" component={RootTabs} />
         <Stack.Screen name="Interests" component={InterestsScreen} />
         <Stack.Screen name="Gallery" component={GalleryScreen} />
+        <Stack.Screen name="ProfileGallery" component={ProfileGalleryScreen} />
         <Stack.Screen name="Affiliations" component={AffiliationsScreen} />
         <Stack.Screen name="SocialMedia" component={SocialMediaScreen} />
       </Stack.Navigator>
@@ -255,6 +257,7 @@ export default function AppNavigator() {
         <Stack.Screen name="MainTabs" component={RootTabs} />
         <Stack.Screen name="Interests" component={InterestsScreen} />
         <Stack.Screen name="Gallery" component={GalleryScreen} />
+        <Stack.Screen name="ProfileGallery" component={ProfileGalleryScreen} />
         <Stack.Screen name="Affiliations" component={AffiliationsScreen} />
         <Stack.Screen name="SocialMedia" component={SocialMediaScreen} />
       </Stack.Navigator>
@@ -271,6 +274,7 @@ export default function AppNavigator() {
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Interests" component={InterestsScreen} />
       <Stack.Screen name="Gallery" component={GalleryScreen} />
+      <Stack.Screen name="ProfileGallery" component={ProfileGalleryScreen} />
       <Stack.Screen name="Affiliations" component={AffiliationsScreen} />
       <Stack.Screen name="SocialMedia" component={SocialMediaScreen} />
     </Stack.Navigator>

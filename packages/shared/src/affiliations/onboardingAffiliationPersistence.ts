@@ -5,11 +5,15 @@ import {
 } from './onboardingAffiliationCatalog';
 import { isEphemeralProviderLogoUrl } from './affiliationLogoDev';
 
-export type CrjAffiliationPersistencePatch = {
+/** Field-only affiliation bags — never includes lifecycle keys. */
+export type AffiliationFieldPersistencePatch = {
   personalAffiliations?: AffiliationItem[];
   professionalAffiliations?: AffiliationItem[];
   personalOnboardingAffiliations?: Record<string, string>[];
   professionalOnboardingAffiliations?: Record<string, string>[];
+};
+
+export type CrjAffiliationPersistencePatch = AffiliationFieldPersistencePatch & {
   profileSetupCompleted: false;
 };
 
@@ -53,28 +57,51 @@ export function onboardingAffiliationsToLegacy(
 }
 
 /**
- * CRJ-I6 write — rich onboarding rows + legacy compatibility list.
- * Active mode only; never contaminates opposite mode.
+ * Pure field builder — onboarding bag + intentional legacy bridge for one mode.
+ * Never contaminates the opposite mode; never touches lifecycle.
  */
-export function buildCrjAffiliationPersistencePatch(
+export function buildAffiliationFieldPersistencePatch(
   mode: 'personal' | 'professional',
   selected: OnboardingSelectedAffiliation[],
-): CrjAffiliationPersistencePatch {
+): AffiliationFieldPersistencePatch {
   const detailed = selected.map(sanitizeOnboardingAffiliationForPersistence);
   const legacy = onboardingAffiliationsToLegacy(selected);
 
   if (mode === 'personal') {
     return {
-      profileSetupCompleted: false,
       personalAffiliations: legacy,
       personalOnboardingAffiliations: detailed,
     };
   }
   return {
-    profileSetupCompleted: false,
     professionalAffiliations: legacy,
     professionalOnboardingAffiliations: detailed,
   };
+}
+
+/**
+ * CRJ-I6 write — field bags + explicit mid-wizard lifecycle.
+ * Callers: ProfileCompletionScreen only.
+ */
+export function buildCrjAffiliationPersistencePatch(
+  mode: 'personal' | 'professional',
+  selected: OnboardingSelectedAffiliation[],
+): CrjAffiliationPersistencePatch {
+  return {
+    ...buildAffiliationFieldPersistencePatch(mode, selected),
+    profileSetupCompleted: false,
+  };
+}
+
+/**
+ * Post-CRJ Own Profile affiliation editor write.
+ * Same bags as CRJ fields (canonical + bridge); never includes lifecycle keys.
+ */
+export function buildPostCrjAffiliationPersistencePatch(
+  mode: 'personal' | 'professional',
+  selected: OnboardingSelectedAffiliation[],
+): AffiliationFieldPersistencePatch {
+  return buildAffiliationFieldPersistencePatch(mode, selected);
 }
 
 /** After final affiliation category — CRJ-I7 Social Media. */

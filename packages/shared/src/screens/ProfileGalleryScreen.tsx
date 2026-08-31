@@ -48,6 +48,11 @@ import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundat
 
 type GalleryPhoto = { url: string };
 
+/** Hosted on HomeStack (Discovery) and ProfileStack (Own Profile Gallery). */
+type ProfileGalleryHostParamList = {
+  ProfileGallery: HomeStackParamList['ProfileGallery'];
+};
+
 const GALLERY_DARK = '#0C1936';
 const GALLERY_DARK_ALT = '#12203D';
 const THUMB = 56;
@@ -55,10 +60,10 @@ const THUMB_GAP = 8;
 
 export default function ProfileGalleryScreen() {
   type NavProp = NativeStackNavigationProp<
-    HomeStackParamList,
+    ProfileGalleryHostParamList,
     'ProfileGallery'
   >;
-  type RouteProps = RouteProp<HomeStackParamList, 'ProfileGallery'>;
+  type RouteProps = RouteProp<ProfileGalleryHostParamList, 'ProfileGallery'>;
 
   const route = useRoute<RouteProps>();
   const navigation = useNavigation<NavProp>();
@@ -71,6 +76,7 @@ export default function ProfileGalleryScreen() {
   const paramUrls = route.params?.urls;
   const displayNameParam = route.params?.displayName;
   const routeInitial = route.params?.initialIndex ?? 0;
+  const fullGallery = route.params?.fullGallery === true;
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -100,9 +106,9 @@ export default function ProfileGalleryScreen() {
           if (cancelled) return;
           const next = urls
             .map((item) => ({ url: item.url }))
-            .filter((item) => typeof item.url === 'string' && !!item.url)
-            .slice(0, 12);
-          setPhotos(next);
+            .filter((item) => typeof item.url === 'string' && !!item.url);
+          const capped = fullGallery ? next : next.slice(0, 12);
+          setPhotos(capped);
           setIndex(clampGalleryIndex(routeInitial, next.length));
           if (name) setDisplayName(name);
         };
@@ -135,7 +141,7 @@ export default function ProfileGalleryScreen() {
     return () => {
       cancelled = true;
     };
-  }, [viewedUid, paramUrls, displayNameParam, routeInitial]);
+  }, [viewedUid, paramUrls, displayNameParam, routeInitial, fullGallery]);
 
   const goTo = useCallback(
     (next: number, animated = true) => {

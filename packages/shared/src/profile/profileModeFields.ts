@@ -167,10 +167,7 @@ export function buildActiveProfileSavePatch(
     const v = nonEmptyString(presentation.occupation);
     if (v) nestedEntries.push(['occupation', v]);
   }
-  if (presentation.status !== undefined) {
-    const v = nonEmptyString(presentation.status);
-    if (v) nestedEntries.push(['status', v]);
-  }
+  // Status is product-removed. Keep ModePresentation.status for legacy reads only.
   if (presentation.bio !== undefined) {
     const v = nonEmptyString(presentation.bio);
     if (v) nestedEntries.push(['bio', v]);

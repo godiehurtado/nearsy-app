@@ -11,10 +11,28 @@ import {
   validateCustomNetworkName,
 } from './socialLinkNormalize';
 
-export type CrjSocialPersistencePatch = {
+/** Field-only social bags — never includes lifecycle keys. */
+export type SocialLinksFieldPersistencePatch = {
   socialLinksPersonal?: SocialLinks;
   socialLinksProfessional?: SocialLinks;
+};
+
+export type CrjSocialPersistencePatch = SocialLinksFieldPersistencePatch & {
   profileSetupCompleted: false;
+};
+
+export type SocialLinksFieldWebsiteMode = 'preserve-existing' | 'draft';
+
+export type BuildSocialLinksFieldInput = {
+  values: CrjSocialDraftValues;
+  custom: SocialCustomLink[];
+  /**
+   * `preserve-existing` — CRJ: keep `existing.website` (Website not in wizard).
+   * `draft` — post-CRJ: normalize `websiteDraft` as editable Website.
+   */
+  websiteMode: SocialLinksFieldWebsiteMode;
+  websiteDraft?: string;
+  existing?: SocialLinks | null;
 };
 
 function omitUndefinedDeep<T>(value: T): T {
@@ -61,10 +79,59 @@ function sanitizeCustom(
   return out.length > 0 ? out : undefined;
 }
 
+function buildSocialLinksObject(input: BuildSocialLinksFieldInput): SocialLinks {
+  const links: SocialLinks = {};
+
+  if (input.websiteMode === 'preserve-existing') {
+    const website = input.existing?.website?.trim();
+    if (website) links.website = website;
+  } else {
+    const result = normalizeCustomNetworkUrl(input.websiteDraft ?? '');
+    if (result.ok && result.url) {
+      links.website = result.url;
+    }
+  }
+
+  for (const platform of CRJ_SOCIAL_PLATFORMS) {
+    const result = normalizeSocialInput(
+      platform.id,
+      input.values[platform.id] ?? '',
+    );
+    if (result.ok && result.url) {
+      links[platform.storageKey] = result.url;
+    }
+  }
+
+  const customLinks = sanitizeCustom(input.custom);
+  if (customLinks) links.custom = customLinks;
+
+  const sanitized = omitUndefinedDeep(links);
+  if (payloadContainsUndefined(sanitized)) {
+    throw new Error('Social links field patch contained undefined');
+  }
+  return sanitized;
+}
+
 /**
- * Build the active-mode SocialLinks write. Reuses production keys.
- * Preserves `website` from existing data (not shown in CRJ).
- * Never writes the opposite mode, visibility, or profileSetupCompleted=true.
+ * Pure field builder for one mode's SocialLinks bag.
+ * Never contaminates the opposite mode; never touches lifecycle.
+ */
+export function buildSocialLinksFieldPersistencePatch(
+  mode: 'personal' | 'professional',
+  input: BuildSocialLinksFieldInput,
+): SocialLinksFieldPersistencePatch {
+  const sanitized = buildSocialLinksObject(input);
+
+  if (mode === 'personal') {
+    return { socialLinksPersonal: sanitized };
+  }
+  return { socialLinksProfessional: sanitized };
+}
+
+/**
+ * CRJ write — field bag + explicit mid-wizard lifecycle.
+ * Preserves `existing.website` (Website not shown in CRJ).
+ * Callers: ProfileCompletionScreen only.
  */
 export function buildCrjSocialLinksPersistencePatch(
   mode: 'personal' | 'professional',
@@ -72,36 +139,39 @@ export function buildCrjSocialLinksPersistencePatch(
   custom: SocialCustomLink[],
   existing?: SocialLinks | null,
 ): CrjSocialPersistencePatch {
-  const links: SocialLinks = {};
-
-  const website = existing?.website?.trim();
-  if (website) links.website = website;
-
-  for (const platform of CRJ_SOCIAL_PLATFORMS) {
-    const result = normalizeSocialInput(platform.id, values[platform.id] ?? '');
-    if (result.ok && result.url) {
-      links[platform.storageKey] = result.url;
-    }
-  }
-
-  const customLinks = sanitizeCustom(custom);
-  if (customLinks) links.custom = customLinks;
-
-  const sanitized = omitUndefinedDeep(links);
-  if (payloadContainsUndefined(sanitized)) {
-    throw new Error('CRJ social patch contained undefined');
-  }
-
-  if (mode === 'personal') {
-    return {
-      profileSetupCompleted: false,
-      socialLinksPersonal: sanitized,
-    };
-  }
   return {
+    ...buildSocialLinksFieldPersistencePatch(mode, {
+      values,
+      custom,
+      websiteMode: 'preserve-existing',
+      existing,
+    }),
     profileSetupCompleted: false,
-    socialLinksProfessional: sanitized,
   };
+}
+
+/**
+ * Post-CRJ Own Profile social editor write.
+ * Website is editable via `website` (normalized HTTPS).
+ * `custom` is the complete replacement set for this save (omit/empty clears).
+ * Never includes lifecycle keys.
+ */
+export function buildPostCrjSocialLinksPersistencePatch(
+  mode: 'personal' | 'professional',
+  values: CrjSocialDraftValues,
+  custom: SocialCustomLink[],
+  options?: {
+    website?: string;
+    existing?: SocialLinks | null;
+  },
+): SocialLinksFieldPersistencePatch {
+  return buildSocialLinksFieldPersistencePatch(mode, {
+    values,
+    custom,
+    websiteMode: 'draft',
+    websiteDraft: options?.website,
+    existing: options?.existing,
+  });
 }
 
 export function readCrjSocialDraft(

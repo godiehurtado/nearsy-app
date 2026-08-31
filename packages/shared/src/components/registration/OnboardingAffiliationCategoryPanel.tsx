@@ -56,6 +56,7 @@ type Props = {
   onSearchUiChange?: (ui: AffiliationSearchUiSnapshot) => void;
   searchAddRef?: React.MutableRefObject<(() => void) | null>;
   contentScrollRef?: React.RefObject<ScrollView | null>;
+  removeAffiliationAccessibilityLabel?: (name: string) => string;
 };
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -83,6 +84,7 @@ export function OnboardingAffiliationCategoryPanel({
   onSearchUiChange,
   searchAddRef,
   contentScrollRef,
+  removeAffiliationAccessibilityLabel,
 }: Props) {
   const { palette } = useAppTheme();
   const { t } = useTranslation();
@@ -374,10 +376,14 @@ export function OnboardingAffiliationCategoryPanel({
                     />
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel={t(
-                        'onboarding.profileCompletion.affiliations.removeA11y' as any,
-                        { name: item.name },
-                      )}
+                      accessibilityLabel={
+                        removeAffiliationAccessibilityLabel
+                          ? removeAffiliationAccessibilityLabel(item.name)
+                          : t(
+                              'onboarding.profileCompletion.affiliations.removeA11y' as any,
+                              { name: item.name },
+                            )
+                      }
                       hitSlop={8}
                       onPress={() => removeAffiliation(item.id)}
                       style={[
