@@ -21,7 +21,7 @@ export type RootStackParamList = {
   MainTabs: undefined;
   PhoneVerification: {
     uid: string;
-    phone: string;
+    phone?: string;
     from?: string;
   };
 

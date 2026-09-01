@@ -139,7 +139,7 @@ const es: TranslationResources = {
       countryModalTitle: 'Selecciona el código de país',
       phoneHelper:
         'Opcional por ahora. Selecciona tu país e ingresa un número móvil válido.',
-      ageHelper: 'Debes tener 18 años o más para registrarte.',
+      ageHelper: 'Debes tener entre 18 y 99 años para registrarte.',
       termsPrefix: 'Acepto los',
       termsLink: 'términos y condiciones',
       wizard: {
@@ -155,6 +155,8 @@ const es: TranslationResources = {
             ageOk: 'Tienes {{age}} años',
             ageTooYoung:
               'Debes tener 18 años o más para crear una cuenta.',
+            ageTooOld:
+              'Debes tener {{age}} años o menos para crear una cuenta.',
             futureDate:
               'Ingresa una fecha de nacimiento que no esté en el futuro.',
             invalidDate: 'Ingresa una fecha de nacimiento válida.',
@@ -172,6 +174,11 @@ const es: TranslationResources = {
             title: '¿Cuál es tu número móvil?',
             subtitle:
               'Obligatorio para tu cuenta. La verificación del teléfono se hará más adelante — aún no se envía ningún código.',
+          },
+          terms: {
+            title: 'Términos y condiciones',
+            subtitle:
+              'Revisa y acepta los términos para crear tu cuenta. La verificación del teléfono viene después.',
           },
         },
         fields: {
@@ -205,6 +212,8 @@ const es: TranslationResources = {
             'Ingresa una fecha de nacimiento que no esté en el futuro.',
           birthMinimumAge:
             'Debes tener 18 años o más para crear una cuenta.',
+          birthMaximumAge:
+            'Debes tener {{age}} años o menos para crear una cuenta.',
           email: 'Ingresa un correo electrónico válido',
           password:
             'Usa al menos 8 caracteres con letras y números',
@@ -298,6 +307,8 @@ const es: TranslationResources = {
         birthYearRequiredMessage: 'Selecciona tu año de nacimiento.',
         minimumAgeTitle: 'Edad mínima',
         minimumAgeMessage: 'Debes tener 18 años o más para crear una cuenta.',
+        maximumAgeMessage:
+          'Debes tener {{age}} años o menos para crear una cuenta.',
         invalidEmailTitle: 'Correo inválido',
         emailMismatchTitle: 'Los correos no coinciden',
         invalidPhoneTitle: 'Número inválido',
@@ -307,12 +318,8 @@ const es: TranslationResources = {
       },
     },
     otp: {
-      title: 'Aún no disponible',
-      subtitle:
-        'La verificación por SMS solo está disponible en Android en esta versión beta.',
-      comingSoonTitle: 'Próximamente',
-      comingSoonMessage:
-        'Habilitaremos la verificación por teléfono en iOS en una actualización futura.',
+      title: 'Verifica tu teléfono',
+      subtitle: 'Confirma tu número móvil con un código SMS de un solo uso.',
       goBack: 'Volver',
     },
     errors: {
@@ -1369,6 +1376,104 @@ const es: TranslationResources = {
     contacts: {
       title: 'Contactos',
       enable: 'Usar contactos para alertas familiares',
+    },
+  },
+  phoneOtp: {
+    title: 'Verifica tu teléfono',
+    subtitle: 'Enviaremos un código único por SMS para confirmar tu número.',
+    phoneStep: {
+      title: 'Tu número móvil',
+      subtitle: 'Ingresa el número donde puedes recibir SMS.',
+      countryA11y: 'Seleccionar código de país',
+      phoneLabel: 'Número de teléfono',
+      phonePlaceholder: 'Número móvil',
+      continue: 'Continuar',
+    },
+    confirmStep: {
+      title: 'Confirma tu número',
+      subtitle: 'Enviaremos un código de verificación a:',
+      sendCode: 'Enviar código',
+      changeNumber: 'Cambiar número',
+    },
+    codeStep: {
+      title: 'Ingresa el código',
+      subtitle: 'Enviamos un código a {{maskedPhone}}.',
+      codeLabel: 'Código de seis dígitos',
+      codePlaceholder: '000000',
+      verify: 'Verificar',
+      resend: 'Reenviar código',
+      resendIn: 'Reenviar en {{seconds}}s',
+      attemptsRemaining: '{{count}} intentos restantes',
+      changeNumber: 'Cambiar número',
+      cancel: 'Cancelar verificación',
+    },
+    success: {
+      title: 'Teléfono verificado',
+      subtitle: 'Tu número fue confirmado. Continuando con el perfil.',
+      continue: 'Continuar',
+    },
+    states: {
+      sending: 'Enviando código…',
+      checking: 'Verificando…',
+      loading: 'Cargando…',
+      featureDisabledTitle: 'Verificación no disponible',
+      featureDisabledMessage:
+        'La verificación por teléfono no está disponible temporalmente. Inténtalo más tarde.',
+      expiredTitle: 'Código expirado',
+      expiredMessage: 'Solicita un nuevo código para continuar.',
+      lockedTitle: 'Demasiados intentos',
+      lockedMessage: 'Solicita un nuevo código para intentar de nuevo.',
+      cancelledTitle: 'Verificación cancelada',
+      cancelledMessage: 'Puedes ingresar tu número de nuevo para reiniciar.',
+      failedTitle: 'Algo salió mal',
+      failedMessage: 'Por favor, inténtalo de nuevo.',
+      retryBootstrap: 'Intentar de nuevo',
+    },
+    signOut: {
+      label: 'Cerrar sesión',
+      signingOut: 'Cerrando sesión…',
+      failed: 'No se pudo cerrar sesión. Inténtalo de nuevo.',
+    },
+    errors: {
+      invalidPhone: 'Ingresa un número móvil internacional válido.',
+      invalidCode: 'Ingresa el código de seis dígitos.',
+      phoneNotAllowed: 'Este número no es elegible para verificación.',
+      landlineBlocked: 'Los números fijos no pueden recibir SMS.',
+      challengeNotFound:
+        'No se encontró la sesión de verificación. Solicita un nuevo código.',
+      codeMismatch: 'El código es incorrecto. Inténtalo de nuevo.',
+      challengeExpired: 'El código expiró. Solicita uno nuevo.',
+      challengeLocked: 'Demasiados intentos. Solicita un nuevo código.',
+      challengeCancelled: 'La verificación fue cancelada. Solicita un nuevo código.',
+      challengeFailed:
+        'La verificación ya no está disponible. Solicita un nuevo código.',
+      claimConflict:
+        'Este número ya está verificado en otra cuenta.',
+      verificationNotAuthorized:
+        'No se pudo verificar esta sesión. Inicia sesión e inténtalo de nuevo.',
+      rateLimited: 'Demasiados envíos. Inténtalo más tarde.',
+      cooldown: 'Espera antes de solicitar otro código.',
+      operationInProgress:
+        'Ya hay una verificación en curso. Por favor espera.',
+      featureDisabled:
+        'La verificación por teléfono no está disponible temporalmente.',
+      authRequired: 'Debes iniciar sesión para verificar tu teléfono.',
+      appCheckFailed:
+        'No se pudo verificar este dispositivo. Reinicia la app e inténtalo de nuevo.',
+      providerUnavailable:
+        'No se pudo completar la verificación ahora. Inténtalo de nuevo.',
+      configMissing:
+        'La verificación por teléfono no está configurada. Inténtalo más tarde.',
+      network: 'Error de red. Revisa tu conexión e inténtalo de nuevo.',
+      generic: 'Algo salió mal. Inténtalo de nuevo.',
+      genericRetryable: 'Algo salió mal. Inténtalo de nuevo en un momento.',
+    },
+    a11y: {
+      codeInput: 'Código de verificación',
+      resendButton: 'Reenviar código de verificación',
+      changeNumberButton: 'Cambiar número de teléfono',
+      countrySelector: 'Código telefónico del país',
+      signOutButton: 'Cerrar sesión y volver al inicio de sesión',
     },
   },
 };

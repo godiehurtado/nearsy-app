@@ -2,6 +2,8 @@
 
 /** Productive minimum age for registration (do not change without product approval). */
 export const MIN_REGISTRATION_AGE = 18;
+/** Productive maximum age for registration and onboarding (do not change without product approval). */
+export const MAX_REGISTRATION_AGE = 99;
 
 export type BirthDateParts = {
   day: number | null;
@@ -101,6 +103,26 @@ export function meetsMinimumRegistrationAge(
 ): boolean {
   const age = ageFromBirthDate(b, asOf);
   return age !== null && age >= MIN_REGISTRATION_AGE;
+}
+
+/** Exact calendar age gate: turns 99 today → allowed; turns 100 today → blocked. */
+export function meetsMaximumRegistrationAge(
+  b: BirthDateParts,
+  asOf: Date = new Date(),
+): boolean {
+  const age = ageFromBirthDate(b, asOf);
+  return age !== null && age <= MAX_REGISTRATION_AGE;
+}
+
+/** Registration/onboarding age window (18–99 inclusive), using full birth date. */
+export function meetsRegistrationAgeRange(
+  b: BirthDateParts,
+  asOf: Date = new Date(),
+): boolean {
+  return (
+    meetsMinimumRegistrationAge(b, asOf) &&
+    meetsMaximumRegistrationAge(b, asOf)
+  );
 }
 
 /** Persistable ISO date `YYYY-MM-DD` for new registrations. */
@@ -302,6 +324,25 @@ export function maxAdultBirthDate(asOf: Date = new Date()): BirthDateParts {
     month: today.getMonth() + 1,
     day: today.getDate(),
   };
+}
+
+/**
+ * Earliest birth date still within the 99-year registration window.
+ * Civil rule: day after (asOf − 100 years), not asOf − 99 years.
+ */
+export function minRegistrationBirthDate(asOf: Date = new Date()): BirthDateParts {
+  const today = startOfLocalDay(asOf);
+  const centennial = new Date(
+    today.getFullYear() - (MAX_REGISTRATION_AGE + 1),
+    today.getMonth(),
+    today.getDate(),
+  );
+  const minimum = new Date(
+    centennial.getFullYear(),
+    centennial.getMonth(),
+    centennial.getDate() + 1,
+  );
+  return localDateToBirthParts(minimum);
 }
 
 /** Reasonable adult default for an empty calendar (today − 25 years). */

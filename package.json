@@ -8,6 +8,7 @@
     "typecheck:ios": "pnpm --filter nearsy-ios run typecheck",
     "validate": "pnpm typecheck",
     "test:visibility": "tsx --test --test-concurrency=1 packages/shared/src/visibility/__tests__/visibilityFoundation.test.ts packages/shared/src/visibility/__tests__/visibilityCallables.test.ts packages/shared/src/visibility/__tests__/visibilityMvp.test.ts packages/shared/src/visibility/__tests__/visibilityCallableHttp.test.ts packages/shared/src/visibility/__tests__/visibilityHomeUi.test.ts packages/shared/src/visibility/__tests__/visibilityDraftNearby.test.ts",
+    "test:phone-otp": "tsx --test --test-concurrency=1 packages/shared/src/phoneOtp/__tests__/phoneOtp.test.ts packages/shared/src/phoneOtp/__tests__/registerNavigation.test.ts packages/shared/src/__tests__/emailRegisterSteps.test.ts",
     "test:profile-exploration": "tsx --test --test-concurrency=1 packages/shared/src/visibility/__tests__/profileExploration.test.ts",
     "test:matching-compatibility": "tsx --test --test-concurrency=1 packages/shared/src/visibility/__tests__/discoveryCompatibility.test.ts",
     "test:active-profile-mode": "tsx --test --test-concurrency=1 packages/shared/src/visibility/__tests__/activeProfileModeSync.test.ts",

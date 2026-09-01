@@ -9,6 +9,7 @@ import notifications from '../resources/notifications';
 import onboarding from '../resources/onboarding';
 import profile from '../resources/profile';
 import settings from '../resources/settings';
+import phoneOtp from '../resources/phoneOtp';
 import validation from '../resources/validation';
 
 const en = {
@@ -24,6 +25,7 @@ const en = {
   activeProfileMode,
   notifications,
   settings,
+  phoneOtp,
 } as const;
 
 export default en;

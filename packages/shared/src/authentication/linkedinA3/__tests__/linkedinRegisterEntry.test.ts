@@ -33,7 +33,7 @@ describe('LinkedIn register-entry wiring', () => {
     assert.doesNotMatch(welcome, /linkedinAuthStart|linkedinAuthExchange/);
     assert.match(hook, /if \(submitting\) return/);
     assert.match(hook, /signInWithLinkedInA3\(\)/);
-    assert.match(hook, /resetNavigationAfterLinkedInA3SignIn/);
+    assert.match(hook, /applyPostAuthNavigation/);
   });
 
   it('busy state includes LinkedIn and blocks double tap with Google/Apple', () => {

@@ -1,13 +1,10 @@
 /**
- * Registration wizard — auth phase only (Email → Password → Birth → Phone+Terms).
+ * Registration wizard — auth phase only (Email → Password → Birth → Terms).
  *
- * TEMPORARY BYPASS (documented):
- *   Phone → (OTP pending — not implemented) → Firebase Email Authentication
- * Phone is mandatory and persisted with phoneVerified: false.
- * No SMS is sent; the UI must not claim a code was delivered.
+ * Phone capture and OTP verification happen after account creation via the
+ * central onboarding gate (PhoneVerificationScreen).
  *
  * Identity (Name / Last Name) is collected after Profile Type in ProfileCompletion.
- * Progress shows a visual bar only — never n/N step counts.
  */
 import React, { useMemo, useState } from 'react';
 import {
@@ -34,7 +31,6 @@ import { RegistrationLayout } from '../components/registration/RegistrationLayou
 import { RegistrationProgress } from '../components/registration/RegistrationProgress';
 import { RegistrationFadeSlideIn } from '../components/registration/RegistrationFadeSlideIn';
 import { FormInput } from '../components/registration/FormInput';
-import { REGISTRATION_COUNTRIES } from '../components/registration/countries';
 import { authPhaseProgress } from '../components/registration/crjProgress';
 import {
   EMAIL_REGISTER_STEPS,
@@ -58,8 +54,9 @@ import {
   isCompleteBirthDate,
   localDateToBirthParts,
   maxAdultBirthDate,
-  meetsMinimumRegistrationAge,
-  minBirthDateParts,
+  meetsRegistrationAgeRange,
+  MAX_REGISTRATION_AGE,
+  minRegistrationBirthDate,
   MIN_REGISTRATION_AGE,
   resolveBirthDateOrder,
   resolveCalendarInitialBirthDate,
@@ -79,27 +76,11 @@ type FormState = {
   birthDigits: string;
   email: string;
   password: string;
-  countryDial: string;
-  phone: string;
 };
 
 function isStrongPassword(value: string) {
   if (value.length < 8) return false;
   return /[A-Za-z]/.test(value) && /\d/.test(value);
-}
-
-function sanitizePhoneNumber(value: string) {
-  return value.replace(/\D/g, '');
-}
-
-function buildFullPhoneNumber(dialCode: string, localPhone: string): string {
-  const cleanDialCode = dialCode.replace(/\D/g, '');
-  const cleanLocalPhone = sanitizePhoneNumber(localPhone);
-  return `+${cleanDialCode}${cleanLocalPhone}`;
-}
-
-function isValidPhone(fullPhone: string) {
-  return /^\+[1-9]\d{7,14}$/.test(fullPhone);
 }
 
 function isValidEmail(value: string) {
@@ -140,7 +121,6 @@ export default function RegisterScreen({ navigation }: Props) {
   );
 
   const [stepIndex, setStepIndex] = useState(0);
-  const [showCountries, setShowCountries] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -150,8 +130,6 @@ export default function RegisterScreen({ navigation }: Props) {
     birthDigits: '',
     email: '',
     password: '',
-    countryDial: REGISTRATION_COUNTRIES[0].dial,
-    phone: '',
   });
 
   const step: Step = EMAIL_REGISTER_STEPS[stepIndex];
@@ -188,8 +166,16 @@ export default function RegisterScreen({ navigation }: Props) {
   );
   const age = useMemo(() => ageFromBirthDate(birthParts), [birthParts]);
   const ageOk = useMemo(
-    () => meetsMinimumRegistrationAge(birthParts),
+    () => meetsRegistrationAgeRange(birthParts),
     [birthParts],
+  );
+  const ageTooOld = useMemo(
+    () =>
+      birthComplete &&
+      !birthFuture &&
+      age !== null &&
+      age > MAX_REGISTRATION_AGE,
+    [birthComplete, birthFuture, age],
   );
   const birthDigitsFull = form.birthDigits.length === 8;
   const calendarMaxDate = useMemo(
@@ -197,7 +183,7 @@ export default function RegisterScreen({ navigation }: Props) {
     [],
   );
   const calendarMinDate = useMemo(
-    () => birthPartsToLocalDate(minBirthDateParts()) as Date,
+    () => birthPartsToLocalDate(minRegistrationBirthDate()) as Date,
     [],
   );
 
@@ -231,14 +217,6 @@ export default function RegisterScreen({ navigation }: Props) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  function isPhoneValid(): boolean {
-    const full = buildFullPhoneNumber(
-      form.countryDial,
-      sanitizePhoneNumber(form.phone),
-    );
-    return isValidPhone(full);
-  }
-
   function isStepValid(): boolean {
     switch (step) {
       case 'birth':
@@ -247,8 +225,8 @@ export default function RegisterScreen({ navigation }: Props) {
         return isValidEmail(form.email);
       case 'password':
         return isStrongPassword(form.password);
-      case 'phone':
-        return isPhoneValid() && acceptedTerms;
+      case 'terms':
+        return acceptedTerms;
     }
   }
 
@@ -265,15 +243,17 @@ export default function RegisterScreen({ navigation }: Props) {
         if (age !== null && age < MIN_REGISTRATION_AGE) {
           return t('authentication.register.wizard.validation.birthMinimumAge');
         }
+        if (ageTooOld) {
+          return t('authentication.register.wizard.validation.birthMaximumAge', {
+            age: MAX_REGISTRATION_AGE,
+          });
+        }
         return t('authentication.register.wizard.validation.birthIncomplete');
       case 'email':
         return t('authentication.register.wizard.validation.email');
       case 'password':
         return t('authentication.register.wizard.validation.password');
-      case 'phone':
-        if (!isPhoneValid()) {
-          return t('authentication.register.wizard.validation.phone');
-        }
+      case 'terms':
         if (!acceptedTerms) {
           return t('authentication.register.wizard.validation.terms');
         }
@@ -288,7 +268,6 @@ export default function RegisterScreen({ navigation }: Props) {
       navigation.navigate('Welcome');
       return;
     }
-    setShowCountries(false);
     setStepIndex((i) => i - 1);
   }
 
@@ -303,15 +282,17 @@ export default function RegisterScreen({ navigation }: Props) {
       return;
     }
 
-    const localPhone = sanitizePhoneNumber(form.phone);
-    const normalizedPhone = buildFullPhoneNumber(form.countryDial, localPhone);
     const isoBirthDate = birthDateToIso(birthParts);
     const year = birthParts.year;
 
-    if (!isoBirthDate || year == null || !meetsMinimumRegistrationAge(birthParts)) {
+    if (!isoBirthDate || year == null || !meetsRegistrationAgeRange(birthParts)) {
       Alert.alert(
         t('authentication.register.alerts.birthDateRequiredTitle'),
-        t('authentication.register.alerts.minimumAgeMessage'),
+        ageTooOld
+          ? t('authentication.register.alerts.maximumAgeMessage', {
+              age: MAX_REGISTRATION_AGE,
+            })
+          : t('authentication.register.alerts.minimumAgeMessage'),
       );
       return;
     }
@@ -327,31 +308,14 @@ export default function RegisterScreen({ navigation }: Props) {
         email: form.email.trim(),
         birthYear: year,
         birthDate: isoBirthDate,
-        phone: normalizedPhone,
+        phone: null,
         phoneVerified: false,
         phoneVerifiedAt: null,
         acceptedTerms: true,
         acceptedTermsAt: new Date().toISOString(),
-        // TEMPORARY BYPASS: Phone → OTP pending → Firebase Auth (this call).
-        // No SMS is sent in this sprint.
       });
 
       Keyboard.dismiss();
-      setTimeout(() => {
-        navigation.reset({
-          index: 0,
-          routes: [
-            {
-              name: 'ProfileCompletion',
-              params: {
-                uid: user.uid,
-                email: user.email ?? form.email.trim(),
-                inputNonce: Date.now(),
-              },
-            },
-          ],
-        });
-      }, 150);
     } catch (e: any) {
       const code = e?.code as string | undefined;
       let message = t('authentication.errors.default');
@@ -370,24 +334,19 @@ export default function RegisterScreen({ navigation }: Props) {
 
   async function goNext() {
     if (!isStepValid() || submitting) return;
-    if (step === 'phone') {
+    if (step === 'terms') {
       await submitRegistration();
       return;
     }
-    setShowCountries(false);
     setStepIndex((i) => i + 1);
   }
-
-  const selectedCountry =
-    REGISTRATION_COUNTRIES.find((c) => c.dial === form.countryDial) ??
-    REGISTRATION_COUNTRIES[0];
 
   return (
     <RegistrationLayout
       footer={
         <PrimaryButton
           label={
-            step === 'phone'
+            step === 'terms'
               ? t('authentication.register.wizard.createAccount')
               : t('authentication.register.wizard.continue')
           }
@@ -494,15 +453,22 @@ export default function RegisterScreen({ navigation }: Props) {
                   style={[
                     styles.ageNote,
                     {
-                      color: ageOk ? palette.textSecondary : palette.danger,
+                      color:
+                        ageOk && !ageTooOld
+                          ? palette.textSecondary
+                          : palette.danger,
                     },
                   ]}
                 >
-                  {ageOk
-                    ? t('authentication.register.wizard.steps.birth.ageOk', {
-                        age,
+                  {ageTooOld
+                    ? t('authentication.register.wizard.steps.birth.ageTooOld', {
+                        age: MAX_REGISTRATION_AGE,
                       })
-                    : t('authentication.register.wizard.steps.birth.ageTooYoung')}
+                    : ageOk
+                      ? t('authentication.register.wizard.steps.birth.ageOk', {
+                          age,
+                        })
+                      : t('authentication.register.wizard.steps.birth.ageTooYoung')}
                 </Text>
               ) : null}
             </>
@@ -554,98 +520,14 @@ export default function RegisterScreen({ navigation }: Props) {
             </>
           )}
 
-          {step === 'phone' && (
+          {step === 'terms' && (
             <>
               <Text style={[styles.title, { color: palette.textPrimary }]}>
-                {t('authentication.register.wizard.steps.phone.title')}
+                {t('authentication.register.wizard.steps.terms.title')}
               </Text>
               <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
-                {t('authentication.register.wizard.steps.phone.subtitle')}
+                {t('authentication.register.wizard.steps.terms.subtitle')}
               </Text>
-              <View style={styles.phoneRow}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t(
-                    'authentication.register.wizard.selectCountryA11y',
-                  )}
-                  onPress={() => setShowCountries((v) => !v)}
-                  style={[
-                    styles.dialBtn,
-                    {
-                      borderColor: palette.borderStrong,
-                      backgroundColor: palette.surface,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={{
-                      color: palette.textPrimary,
-                      fontSize: fontSize.md,
-                      fontWeight: fontWeight.bold,
-                    }}
-                  >
-                    {selectedCountry.flag} {form.countryDial}
-                  </Text>
-                </Pressable>
-                <View style={styles.phoneField}>
-                  <FormInput
-                    placeholder={t(
-                      'authentication.register.wizard.placeholders.phone',
-                    )}
-                    keyboardType="phone-pad"
-                    value={form.phone}
-                    onChangeText={(v) =>
-                      update('phone', v.replace(/[^\d]/g, ''))
-                    }
-                  />
-                </View>
-              </View>
-              {showCountries ? (
-                <View
-                  style={[
-                    styles.countryList,
-                    {
-                      borderColor: palette.border,
-                      backgroundColor: palette.panel,
-                    },
-                  ]}
-                >
-                  <ScrollView
-                    style={{ maxHeight: 220 }}
-                    nestedScrollEnabled
-                    keyboardShouldPersistTaps="handled"
-                  >
-                    {REGISTRATION_COUNTRIES.map((c) => (
-                      <Pressable
-                        key={`${c.iso2}-${c.dial}`}
-                        onPress={() => {
-                          update('countryDial', c.dial);
-                          setShowCountries(false);
-                        }}
-                        style={styles.countryRow}
-                      >
-                        <Text
-                          style={{
-                            color: palette.textPrimary,
-                            fontSize: fontSize.base,
-                          }}
-                        >
-                          {c.flag} {c.name}
-                        </Text>
-                        <Text
-                          style={{
-                            color: palette.textSecondary,
-                            fontSize: fontSize.sm,
-                          }}
-                        >
-                          {c.dial}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                </View>
-              ) : null}
-
               <View style={styles.termsRow}>
                 <TouchableOpacity
                   style={styles.checkbox}
@@ -843,34 +725,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontWeight: fontWeight.semibold,
     marginTop: spacing.md,
-  },
-  phoneRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.xxl,
-    alignItems: 'flex-start',
-  },
-  dialBtn: {
-    paddingVertical: 15,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderRadius: radius.lg,
-    minHeight: 50,
-    justifyContent: 'center',
-  },
-  phoneField: { flex: 1 },
-  countryList: {
-    marginTop: spacing.md,
-    borderWidth: 1,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-  },
-  countryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 13,
-    paddingHorizontal: 14,
   },
   termsRow: {
     flexDirection: 'row',

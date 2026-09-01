@@ -21,10 +21,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { firebaseAuth } from '../config/firebaseConfig';
 import { loginWithEmail, sendPasswordReset } from '../services/authService';
-import {
-  isProfileComplete,
-  getUserProfile,
-} from '../services/firestoreService';
 import { useTranslation } from '../i18n';
 import { authGradients, authRadius, authTypography } from '../theme/authTokens';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -38,6 +34,7 @@ import { shouldShowLinkedInA3DevSmokePanel } from '../authentication/linkedinA3/
 import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
 import { useAppleSignInFlow } from '../hooks/useAppleSignInFlow';
 import { useLinkedInSignInFlow } from '../hooks/useLinkedInSignInFlow';
+import { applyPostAuthNavigation } from '../phoneOtp/applyPostAuthNavigation';
 import Constants from 'expo-constants';
 
 export default function LoginScreen({ navigation }: any) {
@@ -153,52 +150,12 @@ export default function LoginScreen({ navigation }: any) {
         return;
       }
 
-      const profile: any = await getUserProfile(user.uid);
-
-      if (!profile) {
-        Keyboard.dismiss();
-        setTimeout(() => {
-          navigation.reset({
-            index: 0,
-            routes: [
-              {
-                name: 'ProfileCompletion',
-                params: {
-                  uid: user.uid,
-                  email: user.email ?? trimmedEmail,
-                },
-              },
-            ],
-          });
-        }, 150);
-        return;
-      }
-
-      const complete = await isProfileComplete(user.uid);
-
       Keyboard.dismiss();
-
       setTimeout(() => {
-        if (complete) {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'MainTabs' }],
-          });
-        } else {
-          navigation.reset({
-            index: 0,
-            routes: [
-              {
-                name: 'ProfileCompletion',
-                params: {
-                  uid: user.uid,
-                  email: user.email ?? trimmedEmail,
-                  inputNonce: Date.now(),
-                },
-              },
-            ],
-          });
-        }
+        void applyPostAuthNavigation(navigation, {
+          uid: user.uid,
+          email: user.email ?? trimmedEmail,
+        });
       }, 150);
     } catch (e: any) {
       const msg = getAuthErrorMessage(e?.code);
