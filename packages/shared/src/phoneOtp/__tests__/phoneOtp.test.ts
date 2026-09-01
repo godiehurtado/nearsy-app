@@ -23,6 +23,11 @@ import { createPhoneOtpController } from '../phoneOtpController';
 import { buildPostAuthResetRoutes } from '../postAuthNavigation';
 import { performPhoneOtpOnboardingLogout } from '../onboardingLogout';
 import {
+  createPhoneOtpSignOutPressHandler,
+  resetAuthNavigationToLogin,
+  runPhoneOtpScreenSignOut,
+} from '../phoneOtpSignOut';
+import {
   ageFromBirthDate,
   birthPartsFromIso,
   birthPartsToLocalDate,
@@ -660,6 +665,106 @@ describe('onboarding OTP logout helper', () => {
     };
     await Promise.all([run(), run()]);
     assert.equal(signOutCalls, 1);
+  });
+});
+
+describe('phone OTP screen sign-out wiring', () => {
+  it('resetAuthNavigationToLogin prefers parent navigator reset', () => {
+    let parentReset = 0;
+    let selfReset = 0;
+    resetAuthNavigationToLogin({
+      getParent: () => ({
+        reset: () => {
+          parentReset += 1;
+        },
+      }),
+      reset: () => {
+        selfReset += 1;
+      },
+    });
+    assert.equal(parentReset, 1);
+    assert.equal(selfReset, 0);
+  });
+
+  it('runPhoneOtpScreenSignOut resets navigation only after success', async () => {
+    let navResets = 0;
+    const fail = await runPhoneOtpScreenSignOut({
+      controller: null,
+      signOut: async () => {
+        throw new Error('network');
+      },
+      resetNavigationToLogin: () => {
+        navResets += 1;
+      },
+      clearSocialPrefill: () => {},
+    });
+    assert.equal(fail.ok, false);
+    assert.equal(navResets, 0);
+
+    const ok = await runPhoneOtpScreenSignOut({
+      controller: null,
+      signOut: async () => {},
+      resetNavigationToLogin: () => {
+        navResets += 1;
+      },
+      clearSocialPrefill: () => {},
+    });
+    assert.equal(ok.ok, true);
+    assert.equal(navResets, 1);
+  });
+
+  it('createPhoneOtpSignOutPressHandler invokes runSignOut and blocks double tap', async () => {
+    let signingOut = false;
+    let runCalls = 0;
+    const handler = createPhoneOtpSignOutPressHandler({
+      isSigningOut: () => signingOut,
+      setSigningOut: (next) => {
+        signingOut = next;
+      },
+      setSignOutError: () => {},
+      translate: (key) => key,
+      isMounted: () => true,
+      runSignOut: async () => {
+        runCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return { ok: true };
+      },
+    });
+
+    await Promise.all([handler(), handler()]);
+    assert.equal(runCalls, 1);
+    assert.equal(signingOut, false);
+  });
+
+  it('createPhoneOtpSignOutPressHandler surfaces failure and allows retry', async () => {
+    let signingOut = false;
+    let error: string | null = null;
+    let shouldFail = true;
+    const handler = createPhoneOtpSignOutPressHandler({
+      isSigningOut: () => signingOut,
+      setSigningOut: (next) => {
+        signingOut = next;
+      },
+      setSignOutError: (message) => {
+        error = message;
+      },
+      translate: (key) => key,
+      isMounted: () => true,
+      runSignOut: async () => {
+        if (shouldFail) {
+          return { ok: false, messageKey: 'phoneOtp.signOut.failed' };
+        }
+        return { ok: true };
+      },
+    });
+
+    await handler();
+    assert.equal(error, 'phoneOtp.signOut.failed');
+    assert.equal(signingOut, false);
+
+    shouldFail = false;
+    await handler();
+    assert.equal(signingOut, false);
   });
 });
 

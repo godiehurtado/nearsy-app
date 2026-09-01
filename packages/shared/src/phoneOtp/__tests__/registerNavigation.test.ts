@@ -38,10 +38,19 @@ describe('register and phone OTP integration', () => {
     assert.doesNotMatch(screen, /PhoneAuthProvider/);
     assert.doesNotMatch(screen, /signInWithPhoneNumber/);
     assert.doesNotMatch(screen, /AsyncStorage/);
-    assert.match(screen, /performPhoneOtpOnboardingLogout/);
-    assert.match(screen, /phoneOtp\.signOut\.label/);
-    assert.match(screen, /signOutError/);
-    assert.match(screen, /result\.messageKey/);
+    assert.match(screen, /runPhoneOtpScreenSignOut/);
+    assert.match(screen, /createPhoneOtpSignOutPressHandler/);
+    assert.match(screen, /resetAuthNavigationToLogin/);
+    assert.match(screen, /handleSignOutPress/);
+    assert.match(screen, /clearPendingSocialProfilePrefill/);
+    assert.match(screen, /styles\.header/);
+    assert.match(screen, /styles\.stepScroll/);
+    assert.doesNotMatch(screen, /flexGrow:\s*1/);
+    assert.match(screen, /SecondaryButton/);
+    assert.match(screen, /OtpContextualAction/);
+    assert.match(screen, /OtpSignOutFooter/);
+    assert.match(screen, /styles\.actionSection/);
+    assert.match(screen, /styles\.actionStack/);
     assert.match(screen, /textContentType="oneTimeCode"/);
   });
 
