@@ -1218,11 +1218,30 @@ const es: TranslationResources = {
     platformWebsite: 'Sitio web',
   },
   notifications: {
-    title: 'Alertas',
-    empty: 'No hay alertas por ahora',
+    title: 'Notificaciones',
+    loading: 'Cargando notificaciones…',
     pullToRefresh: 'Desliza para actualizar',
+    empty: {
+      title: 'No hay alertas cercanas',
+      body: 'Desliza para actualizar y comprobar de nuevo.',
+    },
+    inactive: {
+      title: 'Visibilidad desactivada',
+      body: 'Activa tu cuenta para descubrir personas cercanas.',
+    },
+    messages: {
+      interestNearby:
+        '{{name}} está cerca y compartís intereses{{interests}}.',
+      interestsSuffix: ' ({{interests}})',
+      nearbyOnly: '{{name}} está cerca.',
+    },
+    time: {
+      minutes: '{{count}}m',
+      hours: '{{count}}h',
+    },
+    distance: '{{count}} ft',
     kinds: {
-      contactNearby: 'Contacto cercano',
+      contactNearby: 'Persona cercana',
       interestNearby: 'Interés compartido cercano',
     },
   },

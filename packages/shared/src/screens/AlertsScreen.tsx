@@ -1,40 +1,57 @@
 /**
  * Alerts — discoverNearby only; opens DiscoveryProfile (no peer user docs).
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
   FlatList,
   Image,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
+
 import type { RootTabsParamList } from '../navigation/RootTabs';
-
 import { registerPushToken } from '../services/pushTokens';
-import { useNearbyAlerts } from '../hooks/useNearbyAlerts';
-
-const NEARBY_RADIUS_FT = 200;
-
-const timeAgo = (ms: number) => {
-  const diff = Math.max(1, Math.round((Date.now() - ms) / 60000));
-  if (diff < 60) return `${diff}m`;
-  const h = Math.round(diff / 60);
-  return `${h}h`;
-};
+import { useNearbyAlerts, type AlertItem } from '../hooks/useNearbyAlerts';
+import { useTranslation } from '../i18n';
+import {
+  fontSize,
+  fontWeight,
+  radius,
+  screenPadding,
+  spacing,
+  useAppTheme,
+} from '../theme';
+import {
+  buildAlertRowMessage,
+  formatAlertDistance,
+  formatAlertRelativeTime,
+  NOTIFICATION_AVATAR_SIZE,
+} from './alertsPresentation';
 
 export default function AlertsScreen() {
   const navigation =
     useNavigation<BottomTabNavigationProp<RootTabsParamList>>();
-  const { loading, alerts, topColor, me, refresh } = useNearbyAlerts();
+  const { loading, alerts, me, refresh } = useNearbyAlerts();
   const [refreshing, setRefreshing] = useState(false);
   const insets = useSafeAreaInsets();
+  const { palette } = useAppTheme();
+  const { t } = useTranslation();
+
+  const translateItem = useCallback(
+    (nameKey: string, fallback: string) =>
+      t(`onboarding.profileCompletion.interests.items.${nameKey}` as any, {
+        defaultValue: fallback,
+      }),
+    [t],
+  );
 
   useEffect(() => {
     registerPushToken().catch(() => {});
@@ -49,157 +66,340 @@ export default function AlertsScreen() {
     }
   }, [refresh]);
 
-  const renderMsg = (a: (typeof alerts)[number]) => {
-    const tags = (a.sharedInterests ?? []).slice(0, 2).join(', ');
-    const inContactsLabel = a.fromContacts ? ' (in your contacts)' : '';
+  const inactive = !me?.visibility;
 
-    if (a.sharedInterests && a.sharedInterests.length > 0) {
-      return `${a.name}${inContactsLabel} is near you and you share interests${
-        tags ? ` (${tags})` : ''
-      }.`;
-    }
+  const rowMessage = useCallback(
+    (item: AlertItem) => buildAlertRowMessage(item, t, translateItem),
+    [t, translateItem],
+  );
 
-    return `${a.name}${inContactsLabel} is near you.`;
-  };
+  const listBottomPad = useMemo(
+    () => 96 + insets.bottom,
+    [insets.bottom],
+  );
+
+  const openDiscoveryProfile = useCallback(
+    (uid: string | undefined) => {
+      if (!uid) return;
+      navigation.navigate('Home', {
+        screen: 'DiscoveryProfile',
+        params: { uid },
+      });
+    },
+    [navigation],
+  );
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#2B3A42" />
+      <View
+        style={[styles.centered, { backgroundColor: palette.background }]}
+        accessibilityLiveRegion="polite"
+        accessibilityLabel={t('notifications.loading')}
+      >
+        <ActivityIndicator size="large" color={palette.primary} />
+        <Text style={[styles.loadingText, { color: palette.textSecondary }]}>
+          {t('notifications.loading')}
+        </Text>
       </View>
     );
   }
 
-  const inactive = !me?.visibility;
+  const renderItem = ({ item }: { item: AlertItem }) => {
+    const message = rowMessage(item);
+    const distanceLabel = formatAlertDistance(item.distanceFt, t);
+    const timeLabel = formatAlertRelativeTime(item.at, Date.now(), t);
+
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={message}
+        onPress={() => openDiscoveryProfile(item.uid)}
+        style={({ pressed }) => [
+          styles.row,
+          { opacity: pressed ? 0.88 : 1 },
+        ]}
+      >
+        {item.avatar ? (
+          <Image
+            source={{ uri: item.avatar }}
+            style={[
+              styles.avatar,
+              {
+                backgroundColor: palette.panel,
+                borderColor: palette.border,
+              },
+            ]}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          />
+        ) : (
+          <View
+            style={[
+              styles.avatar,
+              styles.avatarPlaceholder,
+              {
+                backgroundColor: palette.panel,
+                borderColor: palette.border,
+              },
+            ]}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <Ionicons name="person" size={18} color={palette.textMuted} />
+          </View>
+        )}
+
+        <View style={styles.textCol}>
+          <Text
+            style={[styles.message, { color: palette.textPrimary }]}
+            numberOfLines={2}
+          >
+            {message}
+          </Text>
+          {distanceLabel ? (
+            <Text style={[styles.distance, { color: palette.textMuted }]}>
+              {distanceLabel}
+            </Text>
+          ) : null}
+        </View>
+
+        <Text style={[styles.time, { color: palette.textMuted }]}>
+          {timeLabel}
+        </Text>
+      </Pressable>
+    );
+  };
+
+  const emptyContent = inactive ? (
+    <View style={styles.emptyWrap}>
+      <View
+        style={[
+          styles.emptyIcon,
+          {
+            backgroundColor: palette.panel,
+            borderColor: palette.border,
+          },
+        ]}
+      >
+        <Ionicons
+          name="eye-off-outline"
+          size={22}
+          color={palette.textMuted}
+        />
+      </View>
+      <Text style={[styles.emptyTitle, { color: palette.textPrimary }]}>
+        {t('notifications.inactive.title')}
+      </Text>
+      <Text style={[styles.emptyBody, { color: palette.textSecondary }]}>
+        {t('notifications.inactive.body')}
+      </Text>
+    </View>
+  ) : (
+    <View style={styles.emptyWrap}>
+      <View
+        style={[
+          styles.emptyIcon,
+          {
+            backgroundColor: palette.panel,
+            borderColor: palette.border,
+          },
+        ]}
+      >
+        <Ionicons
+          name="notifications-outline"
+          size={22}
+          color={palette.textMuted}
+        />
+      </View>
+      <Text style={[styles.emptyTitle, { color: palette.textPrimary }]}>
+        {t('notifications.empty.title')}
+      </Text>
+      <Text style={[styles.emptyBody, { color: palette.textSecondary }]}>
+        {t('notifications.empty.body')}
+      </Text>
+    </View>
+  );
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff', paddingTop: insets.top }}>
-      <View style={[styles.topBar, { backgroundColor: topColor }]}>
-        <Image
-          source={require('../assets/icon_white.png')}
-          style={{
-            width: 26,
-            height: 26,
-            resizeMode: 'contain',
-            marginRight: 8,
-          }}
-        />
-        <Text style={styles.brandText}>Nearsy</Text>
-      </View>
-
+    <View style={[styles.root, { backgroundColor: palette.background }]}>
       <FlatList
         data={alerts}
-        keyExtractor={(it) => it.id}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={palette.primary}
+          />
         }
         ListHeaderComponent={
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>Alerts (real-time)</Text>
-            <Text
-              style={{ textAlign: 'center', color: '#6B7280', marginTop: 6 }}
-            >
-              Showing only users within {NEARBY_RADIUS_FT} ft right now.
-            </Text>
-            {inactive && (
-              <Text
-                style={{ textAlign: 'center', color: '#6B7280', marginTop: 6 }}
-              >
-                Turn your account ACTIVE to receive nearby alerts.
-              </Text>
-            )}
-          </View>
-        }
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            accessibilityLabel={renderMsg(item)}
-            onPress={() => {
-              if (!item.uid) return;
-              navigation.navigate('Home', {
-                screen: 'DiscoveryProfile',
-                params: { uid: item.uid },
-              });
-            }}
+          <View
+            style={[
+              styles.header,
+              { paddingTop: insets.top + spacing.md },
+            ]}
           >
-            <View style={styles.row}>
-              {item.avatar ? (
-                <Image source={{ uri: item.avatar }} style={styles.avatar} />
-              ) : (
-                <View style={[styles.avatar, { backgroundColor: '#E5E7EB' }]} />
-              )}
-              <View style={styles.textCol}>
-                <Text style={styles.msg} numberOfLines={2}>
-                  {renderMsg(item)}
-                </Text>
-                <View style={styles.metaRow}>
-                  {typeof item.distanceFt === 'number' && (
-                    <Text style={styles.meta}>{item.distanceFt} ft</Text>
-                  )}
-                  <Text style={styles.dot}>•</Text>
-                  <Text style={styles.meta}>{timeAgo(item.at)}</Text>
-                </View>
-              </View>
-            </View>
-          </TouchableOpacity>
-        )}
-        ItemSeparatorComponent={() => <View style={styles.sep} />}
-        contentContainerStyle={{ paddingBottom: 32 }}
-        ListEmptyComponent={
-          <View style={{ alignItems: 'center', marginTop: 24 }}>
-            <Text style={{ color: '#64748B' }}>
-              No nearby alerts right now. Pull to refresh.
+            <Text
+              accessibilityRole="header"
+              style={[styles.screenTitle, { color: palette.textPrimary }]}
+            >
+              {t('notifications.title')}
             </Text>
+            {inactive ? (
+              <View
+                style={[
+                  styles.inactiveBanner,
+                  {
+                    backgroundColor: palette.chipBg,
+                    borderColor: palette.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.inactiveBannerText, { color: palette.chipText }]}
+                >
+                  {t('notifications.inactive.body')}
+                </Text>
+              </View>
+            ) : null}
           </View>
         }
+        ItemSeparatorComponent={() => (
+          <View
+            style={[
+              styles.separator,
+              {
+                backgroundColor: palette.border,
+                marginLeft:
+                  screenPadding.horizontal +
+                  NOTIFICATION_AVATAR_SIZE +
+                  spacing.md,
+              },
+            ]}
+          />
+        )}
+        contentContainerStyle={[
+          styles.listContent,
+          {
+            paddingBottom: listBottomPad,
+            flexGrow: 1,
+          },
+        ]}
+        ListEmptyComponent={emptyContent}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
-  topBar: {
-    height: 52,
-    width: '100%',
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
-    flexDirection: 'row',
+  root: {
+    flex: 1,
+  },
+  centered: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
+    gap: spacing.md,
+    paddingHorizontal: screenPadding.horizontal,
   },
-  brandText: { color: '#fff', fontWeight: '800', fontSize: 18 },
-
-  header: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1F2937',
+  loadingText: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.medium,
     textAlign: 'center',
-    marginBottom: 8,
   },
-
+  header: {
+    paddingHorizontal: screenPadding.horizontal,
+    paddingBottom: spacing.md,
+  },
+  screenTitle: {
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.extrabold,
+    marginBottom: spacing.sm,
+  },
+  inactiveBanner: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  inactiveBannerText: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.medium,
+    lineHeight: fontSize.sm * 1.45,
+  },
+  listContent: {
+    paddingTop: spacing.xxs,
+  },
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    alignItems: 'flex-start',
+    paddingHorizontal: screenPadding.horizontal,
+    paddingVertical: spacing.sm + 2,
+    minHeight: 56,
   },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
+    width: NOTIFICATION_AVATAR_SIZE,
+    height: NOTIFICATION_AVATAR_SIZE,
+    borderRadius: radius.md,
+    borderWidth: 1,
   },
-  textCol: { flex: 1, marginLeft: 12 },
-  msg: { color: '#111827', fontSize: 15, fontWeight: '600' },
-
-  metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  meta: { color: '#6B7280', fontSize: 12 },
-  dot: { color: '#9CA3AF', marginHorizontal: 6 },
-
-  sep: { height: 1, backgroundColor: '#F3F4F6', marginLeft: 84 },
+  avatarPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textCol: {
+    flex: 1,
+    marginLeft: spacing.md,
+    marginRight: spacing.sm,
+    paddingTop: 1,
+  },
+  message: {
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.semibold,
+    lineHeight: fontSize.base * 1.35,
+  },
+  distance: {
+    marginTop: spacing.xxs,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.medium,
+  },
+  time: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.medium,
+    minWidth: 28,
+    textAlign: 'right',
+    paddingTop: 2,
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+  },
+  emptyWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: screenPadding.horizontal,
+    paddingTop: spacing.xxxl,
+    gap: spacing.sm,
+  },
+  emptyIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
+  emptyTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.bold,
+    textAlign: 'center',
+  },
+  emptyBody: {
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.medium,
+    textAlign: 'center',
+    lineHeight: fontSize.base * 1.45,
+  },
 });
