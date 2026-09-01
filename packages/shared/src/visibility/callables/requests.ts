@@ -8,6 +8,7 @@ import type {
   ActivateVisibilityRequest,
   DeactivateVisibilityRequest,
   DiscoverNearbyRequest,
+  GetBlockedPeopleRequest,
   GetDiscoveryProfileRequest,
   PublishLocationRequest,
   SetActiveProfileModeRequest,
@@ -84,6 +85,10 @@ export function buildSetActiveProfileModeRequest(
   };
 }
 
+export function buildGetBlockedPeopleRequest(): GetBlockedPeopleRequest {
+  return { contractVersion: CONTRACT_VERSION };
+}
+
 /** Plain JSON-serializable body for callable invoke. */
 export function serializeVisibilityRequest(
   request:
@@ -92,7 +97,8 @@ export function serializeVisibilityRequest(
     | DeactivateVisibilityRequest
     | DiscoverNearbyRequest
     | GetDiscoveryProfileRequest
-    | SetActiveProfileModeRequest,
+    | SetActiveProfileModeRequest
+    | GetBlockedPeopleRequest,
 ): Record<string, unknown> {
   return { ...request } as Record<string, unknown>;
 }

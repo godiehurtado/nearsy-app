@@ -1,26 +1,34 @@
-// src/screens/MoreScreen.tsx ✅ Hybrid (Auth RNFirebase + Firestore Web SDK)
-import React, { useEffect, useMemo, useState } from 'react';
+﻿/**
+ * Settings hub — Nearsy 2.0 More tab (Unit 2A).
+ */
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ScrollView,
   ActivityIndicator,
-  Switch,
-  Platform,
+  Alert,
+  FlatList,
   KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
-  FlatList,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import * as Localization from 'expo-localization';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
-import TopHeader from '../components/TopHeader';
+import { SettingsSection } from '../components/settings/SettingsSection';
+import { SettingsRow } from '../components/settings/SettingsRow';
+import { SettingsToggleRow } from '../components/settings/SettingsToggleRow';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import {
   changeAppLanguage,
@@ -28,47 +36,63 @@ import {
   useTranslation,
   type SupportedLanguage,
 } from '../i18n';
-
+import type { MoreStackParamList } from '../navigation/MoreStack';
 import {
   startBackgroundLocation,
   stopBackgroundLocation,
 } from '../services/backgroundLocation';
-
-// 👇 contactos
 import {
-  isContactsSyncEnabled,
-  setContactsSyncEnabled,
-  syncContactsSafe,
-  disableContactsSyncAndPurge,
-} from '../services/contactsSync';
-
-// ✅ Firestore Web SDK
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+  ageFromBirthDate,
+  applyBirthDateTextChange,
+  birthDatePlaceholderForOrder,
+  birthPartsFromDigits,
+  birthPartsFromIso,
+  birthPartsToLocalDate,
+  formatBirthDateDigits,
+  isBirthDateInFuture,
+  isCompleteBirthDate,
+  localDateToBirthParts,
+  maxAdultBirthDate,
+  minBirthDateParts,
+  resolveBirthDateOrder,
+  resolveCalendarInitialBirthDate,
+} from '../utils/birthDate';
+import {
+  buildBirthDatePersistencePatch,
+  buildPhoneSavePatch,
+  formatVisibilityAgeSummary,
+  SETTINGS_MAX_AGE,
+  SETTINGS_MIN_AGE,
+  validateSettingsBirthDate,
+  validateVisibilityAgeRange,
+} from '../settings/settingsContracts';
+import {
+  AMERICA_COUNTRIES,
+  birthDigitsFromParts,
+  buildFullPhoneNumber,
+  sanitizePhoneNumber,
+  splitStoredPhone,
+  type CountryPhoneOption,
+} from '../settings/settingsPhoneCountries';
+import {
+  fontSize,
+  fontWeight,
+  radius,
+  screenPadding,
+  spacing,
+  useAppTheme,
+} from '../theme';
 
 type ProfileDoc = {
-  profileImage?: string | null;
-  topBarColor?: string;
-  topBarImage?: string | null;
-  topBarMode?: 'color' | 'image';
-
-  phone?: string;
-  birthYear?: number;
+  phone?: string | null;
+  birthDate?: string | null;
+  birthYear?: number | null;
   visibleToMinAge?: number | null;
   visibleToMaxAge?: number | null;
-  blockedContacts?: string[];
   bgVisible?: boolean;
-
-  phoneVerified?: boolean;
 };
 
-type FieldId = 'phone' | 'birthYear' | 'visibilityAges' | 'blocked';
-
-type CountryPhoneOption = {
-  code: string;
-  name: string;
-  dialCode: string;
-  flag: string;
-};
+type EditorKind = 'phone' | 'birthDate' | 'visibilityAge' | null;
 
 const LANGUAGE_OPTIONS: Array<{
   code: SupportedLanguage;
@@ -78,407 +102,382 @@ const LANGUAGE_OPTIONS: Array<{
   { code: 'es', labelKey: 'settings.language.spanish' },
 ];
 
-const AMERICA_COUNTRIES: CountryPhoneOption[] = [
-  { code: 'CA', name: 'Canada', dialCode: '+1', flag: '🇨🇦' },
-  { code: 'US', name: 'United States', dialCode: '+1', flag: '🇺🇸' },
-  { code: 'MX', name: 'Mexico', dialCode: '+52', flag: '🇲🇽' },
-  { code: 'GT', name: 'Guatemala', dialCode: '+502', flag: '🇬🇹' },
-  { code: 'BZ', name: 'Belize', dialCode: '+501', flag: '🇧🇿' },
-  { code: 'SV', name: 'El Salvador', dialCode: '+503', flag: '🇸🇻' },
-  { code: 'HN', name: 'Honduras', dialCode: '+504', flag: '🇭🇳' },
-  { code: 'NI', name: 'Nicaragua', dialCode: '+505', flag: '🇳🇮' },
-  { code: 'CR', name: 'Costa Rica', dialCode: '+506', flag: '🇨🇷' },
-  { code: 'PA', name: 'Panama', dialCode: '+507', flag: '🇵🇦' },
-  { code: 'CU', name: 'Cuba', dialCode: '+53', flag: '🇨🇺' },
-  { code: 'DO', name: 'Dominican Republic', dialCode: '+1', flag: '🇩🇴' },
-  { code: 'HT', name: 'Haiti', dialCode: '+509', flag: '🇭🇹' },
-  { code: 'JM', name: 'Jamaica', dialCode: '+1', flag: '🇯🇲' },
-  { code: 'TT', name: 'Trinidad and Tobago', dialCode: '+1', flag: '🇹🇹' },
-  { code: 'BS', name: 'Bahamas', dialCode: '+1', flag: '🇧🇸' },
-  { code: 'BB', name: 'Barbados', dialCode: '+1', flag: '🇧🇧' },
-  { code: 'AG', name: 'Antigua and Barbuda', dialCode: '+1', flag: '🇦🇬' },
-  { code: 'DM', name: 'Dominica', dialCode: '+1', flag: '🇩🇲' },
-  { code: 'GD', name: 'Grenada', dialCode: '+1', flag: '🇬🇩' },
-  { code: 'KN', name: 'Saint Kitts and Nevis', dialCode: '+1', flag: '🇰🇳' },
-  { code: 'LC', name: 'Saint Lucia', dialCode: '+1', flag: '🇱🇨' },
-  {
-    code: 'VC',
-    name: 'Saint Vincent and the Grenadines',
-    dialCode: '+1',
-    flag: '🇻🇨',
-  },
-  { code: 'AR', name: 'Argentina', dialCode: '+54', flag: '🇦🇷' },
-  { code: 'BO', name: 'Bolivia', dialCode: '+591', flag: '🇧🇴' },
-  { code: 'BR', name: 'Brazil', dialCode: '+55', flag: '🇧🇷' },
-  { code: 'CL', name: 'Chile', dialCode: '+56', flag: '🇨🇱' },
-  { code: 'CO', name: 'Colombia', dialCode: '+57', flag: '🇨🇴' },
-  { code: 'EC', name: 'Ecuador', dialCode: '+593', flag: '🇪🇨' },
-  { code: 'GY', name: 'Guyana', dialCode: '+592', flag: '🇬🇾' },
-  { code: 'PY', name: 'Paraguay', dialCode: '+595', flag: '🇵🇾' },
-  { code: 'PE', name: 'Peru', dialCode: '+51', flag: '🇵🇪' },
-  { code: 'SR', name: 'Suriname', dialCode: '+597', flag: '🇸🇷' },
-  { code: 'UY', name: 'Uruguay', dialCode: '+598', flag: '🇺🇾' },
-  { code: 'VE', name: 'Venezuela', dialCode: '+58', flag: '🇻🇪' },
-];
+type NativeDateTimePickerProps = {
+  value: Date;
+  mode?: 'date' | 'time' | 'datetime';
+  display?: 'default' | 'spinner' | 'compact' | 'inline';
+  maximumDate?: Date;
+  minimumDate?: Date;
+  locale?: string;
+  themeVariant?: 'light' | 'dark';
+  accentColor?: string;
+  style?: StyleProp<ViewStyle>;
+  onChange?: (event: { type?: string }, date?: Date) => void;
+};
 
-function sanitizePhoneNumber(value: string) {
-  return value.replace(/\D/g, '');
+function loadIosDateTimePicker(): React.ComponentType<NativeDateTimePickerProps> | null {
+  if (Platform.OS !== 'ios') return null;
+  try {
+    return require('@react-native-community/datetimepicker')
+      .default as React.ComponentType<NativeDateTimePickerProps>;
+  } catch {
+    return null;
+  }
 }
 
-function buildFullPhoneNumber(dialCode: string, localPhone: string): string {
-  const cleanDialCode = dialCode.replace(/\D/g, '');
-  const cleanLocalPhone = sanitizePhoneNumber(localPhone);
-  return `+${cleanDialCode}${cleanLocalPhone}`;
+function formatBirthDisplay(
+  birthDate: string | null | undefined,
+  localeTag: string,
+  notSet: string,
+): string {
+  if (!birthDate) return notSet;
+  const parts = birthPartsFromIso(birthDate);
+  const date = parts ? birthPartsToLocalDate(parts) : null;
+  if (!date) return notSet;
+  try {
+    return date.toLocaleDateString(localeTag, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  } catch {
+    return birthDate;
+  }
 }
 
-function isValidE164Phone(fullPhone: string) {
-  if (!fullPhone) return false;
-  return /^\+[1-9]\d{7,14}$/.test(fullPhone);
-}
-
-function splitStoredPhone(value?: string | null): {
-  country: CountryPhoneOption;
-  localPhone: string;
-} {
-  const fallback =
-    AMERICA_COUNTRIES.find((c) => c.code === 'US') || AMERICA_COUNTRIES[0];
-
-  if (!value) {
-    return { country: fallback, localPhone: '' };
-  }
-
-  const normalized = value.replace(/\s+/g, '');
-
-  if (normalized.startsWith('+1')) {
-    const usCountry =
-      AMERICA_COUNTRIES.find((c) => c.code === 'US') || fallback;
-
-    return {
-      country: usCountry,
-      localPhone: normalized.slice(2),
-    };
-  }
-
-  const sorted = [...AMERICA_COUNTRIES].sort(
-    (a, b) => b.dialCode.length - a.dialCode.length,
-  );
-
-  const match = sorted.find((c) => normalized.startsWith(c.dialCode));
-
-  if (!match) {
-    return { country: fallback, localPhone: normalized.replace(/^\+/, '') };
-  }
-
+function minAge99BirthDate(asOf: Date = new Date()) {
   return {
-    country: match,
-    localPhone: normalized.slice(match.dialCode.length),
+    year: asOf.getFullYear() - SETTINGS_MAX_AGE,
+    month: asOf.getMonth() + 1,
+    day: asOf.getDate(),
   };
 }
 
 export default function MoreScreen() {
-  const navigation = useNavigation<any>();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<MoreStackParamList>>();
   const insets = useSafeAreaInsets();
+  const { palette, theme } = useAppTheme();
   const { t, i18n } = useTranslation();
+  const { height: windowHeight } = useWindowDimensions();
+  const NativeDateTimePicker = useMemo(() => loadIosDateTimePicker(), []);
+  const inlinePickerHeight = Math.min(
+    380,
+    Math.max(300, Math.round(windowHeight * 0.42)),
+  );
+
+  const deviceLocaleTag =
+    Localization.getLocales()?.[0]?.languageTag ?? 'en-US';
+  const birthOrder = useMemo(
+    () => resolveBirthDateOrder(deviceLocaleTag),
+    [deviceLocaleTag],
+  );
 
   const currentLanguage: SupportedLanguage = isSupportedLanguage(i18n.language)
     ? i18n.language
     : 'en';
-
   const currentLanguageLabel =
     currentLanguage === 'es'
       ? t('settings.language.spanish')
       : t('settings.language.english');
 
-  // top visuals
-  const [topBarColor, setTopBarColor] = useState('#3B5A85');
-  const [topBarMode, setTopBarMode] = useState<'color' | 'image'>('color');
-  const [topBarImage, setTopBarImage] = useState<string | null>(null);
-  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
+  const [storedPhone, setStoredPhone] = useState<string | null>(null);
+  const [birthDateIso, setBirthDateIso] = useState<string | null>(null);
+  const [visibleToMinAge, setVisibleToMinAge] = useState<number | null>(null);
+  const [visibleToMaxAge, setVisibleToMaxAge] = useState<number | null>(null);
+  const [bgVisible, setBgVisible] = useState(false);
+  const [bgChanging, setBgChanging] = useState(false);
 
-  // user email
-  const [userEmail, setUserEmail] = useState<string>('');
+  const [editor, setEditor] = useState<EditorKind>(null);
+  const [languageModalOpen, setLanguageModalOpen] = useState(false);
+  const [languageChanging, setLanguageChanging] = useState(false);
+  const [countryModalOpen, setCountryModalOpen] = useState(false);
 
-  // phone actual en Firestore (para detectar cambios)
-  const [originalPhone, setOriginalPhone] = useState('');
-
-  // phone UI
   const [selectedCountry, setSelectedCountry] = useState<CountryPhoneOption>(
     AMERICA_COUNTRIES.find((c) => c.code === 'US') || AMERICA_COUNTRIES[0],
   );
-  const [countryModalOpen, setCountryModalOpen] = useState(false);
+  const [phoneLocal, setPhoneLocal] = useState('');
+  const [birthDigits, setBirthDigits] = useState('');
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarDraft, setCalendarDraft] = useState<Date | null>(null);
+  const [draftMinAge, setDraftMinAge] = useState('');
+  const [draftMaxAge, setDraftMaxAge] = useState('');
 
-  // data editable
-  const [phone, setPhone] = useState('');
-  const [birthYear, setBirthYear] = useState<string>('');
-  const [visibleToMinAge, setVisibleToMinAge] = useState<string>('');
-  const [visibleToMaxAge, setVisibleToMaxAge] = useState<string>('');
-  const [blockedContacts, setBlockedContacts] = useState<string[]>([]);
-  const [newBlocked, setNewBlocked] = useState('');
+  const birthVisible = useMemo(
+    () => formatBirthDateDigits(birthDigits, birthOrder),
+    [birthDigits, birthOrder],
+  );
+  const birthParts = useMemo(
+    () => birthPartsFromDigits(birthDigits, birthOrder),
+    [birthDigits, birthOrder],
+  );
+  const birthComplete = useMemo(
+    () => isCompleteBirthDate(birthParts),
+    [birthParts],
+  );
+  const birthFuture = useMemo(
+    () => isBirthDateInFuture(birthParts),
+    [birthParts],
+  );
+  const birthAge = useMemo(() => ageFromBirthDate(birthParts), [birthParts]);
+  const birthValidation = useMemo(
+    () => validateSettingsBirthDate(birthParts),
+    [birthParts],
+  );
 
-  // ui
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  // field editing
-  const [activeField, setActiveField] = useState<FieldId | null>(null);
-  const isFieldActive = (f: FieldId) => activeField === f;
-  const isEditingAny = activeField !== null;
-
-  // BG location toggle
-  const [bgVisible, setBgVisible] = useState<boolean>(false);
-  const [bgChanging, setBgChanging] = useState<boolean>(false);
-
-  // contactos
-  const [contactsEnabled, setContactsEnabled] = useState<boolean>(false);
-  const [contactsChanging, setContactsChanging] = useState<boolean>(false);
-
-  // language
-  const [languageModalOpen, setLanguageModalOpen] = useState(false);
-  const [languageChanging, setLanguageChanging] = useState(false);
-
-  const currentYear = useMemo(() => new Date().getFullYear(), []);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const uid = firebaseAuth.currentUser?.uid;
-        if (!uid) return;
-
-        setUserEmail(firebaseAuth.currentUser?.email ?? '');
-
-        const snap = await getDoc(doc(firestoreDb, 'users', uid));
-
-        if (snap.exists()) {
-          const data = snap.data() as ProfileDoc;
-
-          // top bar
-          setTopBarColor(data.topBarColor ?? '#3B5A85');
-          setTopBarMode(
-            data.topBarMode ?? (data.topBarImage ? 'image' : 'color'),
-          );
-          setTopBarImage(data.topBarImage ?? null);
-          setProfileImage(data.profileImage ?? null);
-
-          // phone
-          const phoneFromDb = data.phone ?? '';
-          setOriginalPhone(phoneFromDb);
-
-          const splitPhone = splitStoredPhone(phoneFromDb);
-          setSelectedCountry(splitPhone.country);
-          setPhone(splitPhone.localPhone);
-
-          // birth year
-          setBirthYear(
-            typeof data.birthYear === 'number' && data.birthYear > 1900
-              ? String(data.birthYear)
-              : '',
-          );
-
-          // age visibility
-          setVisibleToMinAge(
-            typeof data.visibleToMinAge === 'number'
-              ? String(data.visibleToMinAge)
-              : '',
-          );
-          setVisibleToMaxAge(
-            typeof data.visibleToMaxAge === 'number'
-              ? String(data.visibleToMaxAge)
-              : '',
-          );
-
-          // blocked contacts
-          setBlockedContacts(
-            Array.isArray(data.blockedContacts) ? data.blockedContacts : [],
-          );
-
-          // bg visibility
-          setBgVisible(!!data.bgVisible);
-        }
-
-        const enabled = await isContactsSyncEnabled();
-        setContactsEnabled(enabled);
-      } catch (e: any) {
-        Alert.alert('Error', e?.message || 'Could not load settings.');
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const calendarMaxDate = useMemo(
+    () => birthPartsToLocalDate(maxAdultBirthDate()) as Date,
+    [],
+  );
+  const calendarMinDate = useMemo(() => {
+    const capped = minAge99BirthDate();
+    const absolute = minBirthDateParts();
+    const use = capped.year > absolute.year ? capped : absolute;
+    return birthPartsToLocalDate(use) as Date;
   }, []);
 
-  const isValidEmail = (value: string) =>
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-
-  const validateAndParse = () => {
-    const localPhone = sanitizePhoneNumber(phone);
-    const fullPhone = localPhone
-      ? buildFullPhoneNumber(selectedCountry.dialCode, localPhone)
-      : '';
-
-    // ✅ Teléfono opcional en TODAS las plataformas
-    if (fullPhone && !isValidE164Phone(fullPhone)) {
-      throw new Error(
-        'If you set a phone number, it must be valid. Please select your country and enter a valid mobile number.',
-      );
-    }
-
-    const by = birthYear.trim() ? Number(birthYear.trim()) : undefined;
-    if (birthYear.trim()) {
-      if (isNaN(by!) || by! < 1900 || by! > currentYear) {
-        throw new Error('Birth year must be a valid year.');
-      }
-    }
-
-    const minA = visibleToMinAge.trim()
-      ? Number(visibleToMinAge.trim())
-      : undefined;
-    const maxA = visibleToMaxAge.trim()
-      ? Number(visibleToMaxAge.trim())
-      : undefined;
-
-    if (minA !== undefined && (isNaN(minA) || minA < 13 || minA > 120))
-      throw new Error('Min age must be between 13 and 120.');
-    if (maxA !== undefined && (isNaN(maxA) || maxA < 13 || maxA > 120))
-      throw new Error('Max age must be between 13 and 120.');
-
-    if (minA !== undefined && maxA !== undefined && minA > maxA)
-      throw new Error('Min age cannot be greater than max age.');
-
-    return {
-      phone: fullPhone || null,
-      birthYear: by,
-      visibleToMinAge: minA ?? null,
-      visibleToMaxAge: maxA ?? null,
-      blockedContacts,
-    };
-  };
-
-  const handleToggleBg = async (next: boolean) => {
+  const reloadProfile = useCallback(async () => {
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) {
-      Alert.alert('Auth', 'Please log in again.');
+      setLoading(false);
       return;
     }
-
-    if (Platform.OS === 'web') {
-      Alert.alert(
-        'Unsupported',
-        'Background location is not available on web.',
-      );
+    setUserEmail(firebaseAuth.currentUser?.email ?? '');
+    const snap = await getDoc(doc(firestoreDb, 'users', uid));
+    if (!snap.exists()) {
+      setLoading(false);
       return;
     }
+    const data = snap.data() as ProfileDoc;
+    setStoredPhone(data.phone ?? null);
+    const split = splitStoredPhone(data.phone ?? null);
+    setSelectedCountry(split.country);
+    setPhoneLocal(split.localPhone);
+    setBirthDateIso(
+      typeof data.birthDate === 'string' && data.birthDate
+        ? data.birthDate
+        : null,
+    );
+    setVisibleToMinAge(
+      typeof data.visibleToMinAge === 'number' ? data.visibleToMinAge : null,
+    );
+    setVisibleToMaxAge(
+      typeof data.visibleToMaxAge === 'number' ? data.visibleToMaxAge : null,
+    );
+    setBgVisible(!!data.bgVisible);
+    setLoading(false);
+  }, []);
 
-    try {
-      setBgChanging(true);
+  useEffect(() => {
+    reloadProfile().catch((e: any) => {
+      Alert.alert(t('common.error'), e?.message || t('settings.loadError'));
+      setLoading(false);
+    });
+  }, [reloadProfile, t]);
 
-      await setDoc(
-        doc(firestoreDb, 'users', uid),
-        { bgVisible: next, updatedAt: Date.now() },
-        { merge: true },
-      );
+  const closeEditor = () => setEditor(null);
 
-      if (next) {
-        await startBackgroundLocation({ uid });
-        setBgVisible(true);
-        Alert.alert(
-          'Enabled',
-          'You will stay visible to nearby users in background.',
-        );
-      } else {
-        await stopBackgroundLocation();
-        setBgVisible(false);
-        Alert.alert('Disabled', 'Background visibility is now off.');
-      }
-    } catch (e: any) {
-      setBgVisible(!next);
-      const msg = e?.message || 'Could not update background location.';
-      Alert.alert('Error', msg);
-    } finally {
-      setBgChanging(false);
-    }
+  const openPhoneEditor = () => {
+    const split = splitStoredPhone(storedPhone);
+    setSelectedCountry(split.country);
+    setPhoneLocal(split.localPhone);
+    setEditor('phone');
   };
 
-  const handleToggleContacts = async (next: boolean) => {
-    try {
-      setContactsChanging(true);
-
-      if (next) {
-        const ok = await syncContactsSafe();
-
-        if (!ok) {
-          await setContactsSyncEnabled(false);
-          setContactsEnabled(false);
-
-          Alert.alert(
-            'Contacts permission',
-            'If you want Nearsy to use contacts, you can enable Contacts access in Settings.',
-          );
-          return;
-        }
-
-        await setContactsSyncEnabled(true);
-        setContactsEnabled(true);
-
-        Alert.alert(
-          'Contacts enabled',
-          'Nearsy can now highlight familiar people in nearby alerts.',
-        );
-      } else {
-        await disableContactsSyncAndPurge();
-        await setContactsSyncEnabled(false);
-        setContactsEnabled(false);
-
-        Alert.alert(
-          'Contacts disabled',
-          'Nearsy will no longer use your contacts for nearby alerts.',
-        );
-      }
-    } catch (e: any) {
-      setContactsEnabled((prev) => prev);
-      Alert.alert(
-        'Error',
-        e?.message || 'Could not update contacts permission.',
-      );
-    } finally {
-      setContactsChanging(false);
+  const openBirthEditor = () => {
+    if (birthDateIso) {
+      const parts = birthPartsFromIso(birthDateIso);
+      setBirthDigits(parts ? birthDigitsFromParts(parts, birthOrder) : '');
+    } else {
+      setBirthDigits('');
     }
+    setEditor('birthDate');
   };
 
-  const handleSave = async () => {
+  const openVisibilityEditor = () => {
+    setDraftMinAge(
+      typeof visibleToMinAge === 'number' ? String(visibleToMinAge) : '',
+    );
+    setDraftMaxAge(
+      typeof visibleToMaxAge === 'number' ? String(visibleToMaxAge) : '',
+    );
+    setEditor('visibilityAge');
+  };
+
+  const savePhone = async () => {
     try {
       setSaving(true);
-      const parsed = validateAndParse();
       const uid = firebaseAuth.currentUser?.uid;
-      if (!uid) throw new Error('User not authenticated.');
-
-      const updateData: any = {
-        phone: parsed.phone,
-        birthYear: parsed.birthYear,
-        visibleToMinAge: parsed.visibleToMinAge,
-        visibleToMaxAge: parsed.visibleToMaxAge,
-        blockedContacts: parsed.blockedContacts,
+      if (!uid) throw new Error(t('settings.backgroundVisibility.authRequired'));
+      const local = sanitizePhoneNumber(phoneLocal);
+      const full = local
+        ? buildFullPhoneNumber(selectedCountry.dialCode, local)
+        : null;
+      const patch = buildPhoneSavePatch({
+        previousPhone: storedPhone,
+        nextPhone: full,
+      });
+      const updateData: Record<string, unknown> = {
+        phone: patch.phone,
         updatedAt: Date.now(),
       };
-
+      if (patch.verification) {
+        updateData.phoneVerified = patch.verification.phoneVerified;
+        updateData.phoneVerifiedAt = patch.verification.phoneVerifiedAt;
+      }
       await setDoc(doc(firestoreDb, 'users', uid), updateData, { merge: true });
-
-      setOriginalPhone(parsed.phone ?? '');
-      Alert.alert('Saved', 'Your settings have been updated.');
-      setActiveField(null);
+      setStoredPhone(patch.phone);
+      Alert.alert(t('common.appName'), t('settings.phone.saved'));
+      closeEditor();
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Could not save.');
+      if (e?.message === 'INVALID_PHONE') {
+        Alert.alert(t('common.error'), t('settings.phone.invalid'));
+      } else {
+        Alert.alert(t('common.error'), e?.message || t('settings.saveError'));
+      }
     } finally {
       setSaving(false);
     }
   };
 
+  const saveBirthDate = async () => {
+    try {
+      setSaving(true);
+      const uid = firebaseAuth.currentUser?.uid;
+      if (!uid) throw new Error(t('settings.backgroundVisibility.authRequired'));
+      const validated = validateSettingsBirthDate(birthParts);
+      if (validated.ok === false) {
+        const msg =
+          validated.reason === 'too_young'
+            ? t('settings.birthDate.tooYoung', { age: SETTINGS_MIN_AGE })
+            : validated.reason === 'too_old'
+              ? t('settings.birthDate.tooOld', { age: SETTINGS_MAX_AGE })
+              : validated.reason === 'incomplete'
+                ? t('settings.birthDate.incomplete')
+                : t('settings.birthDate.invalid');
+        Alert.alert(t('common.error'), msg);
+        return;
+      }
+      const persistence = buildBirthDatePersistencePatch(birthParts);
+      await setDoc(
+        doc(firestoreDb, 'users', uid),
+        {
+          birthDate: persistence.birthDate,
+          birthYear: persistence.birthYear,
+          updatedAt: Date.now(),
+        },
+        { merge: true },
+      );
+      setBirthDateIso(persistence.birthDate);
+      Alert.alert(t('common.appName'), t('settings.birthDate.saved'));
+      closeEditor();
+    } catch (e: any) {
+      Alert.alert(t('common.error'), e?.message || t('settings.saveError'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveVisibilityAge = async () => {
+    try {
+      setSaving(true);
+      const uid = firebaseAuth.currentUser?.uid;
+      if (!uid) throw new Error(t('settings.backgroundVisibility.authRequired'));
+      const validated = validateVisibilityAgeRange(draftMinAge, draftMaxAge);
+      if (validated.ok === false) {
+        const msg =
+          validated.reason === 'order'
+            ? t('settings.visibilityAge.order')
+            : validated.reason === 'min_bounds'
+              ? t('settings.visibilityAge.minBounds', {
+                  min: SETTINGS_MIN_AGE,
+                  max: SETTINGS_MAX_AGE,
+                })
+              : t('settings.visibilityAge.maxBounds', {
+                  min: SETTINGS_MIN_AGE,
+                  max: SETTINGS_MAX_AGE,
+                });
+        Alert.alert(t('common.error'), msg);
+        return;
+      }
+      await setDoc(
+        doc(firestoreDb, 'users', uid),
+        {
+          visibleToMinAge: validated.min,
+          visibleToMaxAge: validated.max,
+          updatedAt: Date.now(),
+        },
+        { merge: true },
+      );
+      setVisibleToMinAge(validated.min);
+      setVisibleToMaxAge(validated.max);
+      Alert.alert(t('common.appName'), t('settings.visibilityAge.saved'));
+      closeEditor();
+    } catch (e: any) {
+      Alert.alert(t('common.error'), e?.message || t('settings.saveError'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleBg = async (next: boolean) => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) {
+      Alert.alert(
+        t('common.error'),
+        t('settings.backgroundVisibility.authRequired'),
+      );
+      return;
+    }
+    if (Platform.OS === 'web') {
+      Alert.alert(
+        t('common.error'),
+        t('settings.backgroundVisibility.unsupported'),
+      );
+      return;
+    }
+    try {
+      setBgChanging(true);
+      await setDoc(
+        doc(firestoreDb, 'users', uid),
+        { bgVisible: next, updatedAt: Date.now() },
+        { merge: true },
+      );
+      if (next) {
+        await startBackgroundLocation({ uid });
+        setBgVisible(true);
+        Alert.alert(
+          t('common.appName'),
+          t('settings.backgroundVisibility.enabled'),
+        );
+      } else {
+        await stopBackgroundLocation();
+        setBgVisible(false);
+        Alert.alert(
+          t('common.appName'),
+          t('settings.backgroundVisibility.disabled'),
+        );
+      }
+    } catch (e: any) {
+      setBgVisible(!next);
+      Alert.alert(
+        t('common.error'),
+        e?.message || t('settings.backgroundVisibility.error'),
+      );
+    } finally {
+      setBgChanging(false);
+    }
+  };
+
   const handleSelectLanguage = async (language: SupportedLanguage) => {
     if (!isSupportedLanguage(language)) return;
-
     if (language === currentLanguage) {
       setLanguageModalOpen(false);
       return;
     }
-
     try {
       setLanguageChanging(true);
       await changeAppLanguage(language);
@@ -498,468 +497,593 @@ export default function MoreScreen() {
       );
       clearPendingSocialProfilePrefill();
       await firebaseAuth.signOut();
-
-      const parent = navigation.getParent?.();
-
-      if (parent) {
-        parent.reset({
-          index: 0,
-          routes: [{ name: 'Login' }],
-        });
+      const parent = navigation.getParent?.() as any;
+      if (parent?.reset) {
+        parent.reset({ index: 0, routes: [{ name: 'Login' }] });
       } else {
-        navigation.reset({
+        (navigation as any).reset({
           index: 0,
           routes: [{ name: 'Login' }],
         });
       }
     } catch (error: any) {
-      Alert.alert('Logout error', error?.message ?? 'Unknown error');
-    }
-  };
-
-  const addBlocked = () => {
-    if (!isFieldActive('blocked')) return;
-
-    const v = newBlocked.trim();
-    if (!v) return;
-
-    const isEmail = isValidEmail(v);
-    const isPhoneVal = isValidE164Phone(v.replace(/\s+/g, ''));
-
-    if (!isEmail && !isPhoneVal) {
       Alert.alert(
-        'Invalid contact',
-        'Please enter a valid email address or phone number.',
+        t('common.error'),
+        error?.message ?? t('settings.logout.error'),
       );
-      return;
     }
-
-    const norm = isEmail ? v.toLowerCase() : v.replace(/\s+/g, '');
-
-    if (blockedContacts.includes(norm)) {
-      Alert.alert('Notice', 'This contact is already in your blocked list.');
-      return;
-    }
-
-    setBlockedContacts((prev) => [norm, ...prev]);
-    setNewBlocked('');
   };
 
-  const removeBlocked = (value: string) => {
-    if (!isFieldActive('blocked')) return;
-    setBlockedContacts((prev) => prev.filter((x) => x !== value));
+  const openCalendar = () => {
+    const initial = resolveCalendarInitialBirthDate(birthParts);
+    setCalendarDraft(birthPartsToLocalDate(initial));
+    setCalendarOpen(true);
+  };
+
+  const confirmCalendar = () => {
+    if (!calendarDraft) {
+      setCalendarOpen(false);
+      return;
+    }
+    setBirthDigits(
+      birthDigitsFromParts(localDateToBirthParts(calendarDraft), birthOrder),
+    );
+    setCalendarOpen(false);
   };
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#2B3A42" />
+      <View
+        style={[styles.centered, { backgroundColor: palette.background }]}
+        accessibilityLiveRegion="polite"
+        accessibilityLabel={t('common.loading')}
+      >
+        <ActivityIndicator size="large" color={palette.primary} />
       </View>
     );
   }
 
+  const phoneDisplay = storedPhone || t('settings.birthDate.notSet');
+  const dobDisplay = formatBirthDisplay(
+    birthDateIso,
+    deviceLocaleTag,
+    t('settings.birthDate.notSet'),
+  );
+  const visibilityDisplay = formatVisibilityAgeSummary(
+    visibleToMinAge,
+    visibleToMaxAge,
+    t('settings.visibilityAge.notSet'),
+  );
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
+    <View style={[styles.root, { backgroundColor: palette.background }]}>
+      <ScrollView
+        contentContainerStyle={{
+          paddingTop: insets.top + spacing.md,
+          paddingBottom: 48 + insets.bottom,
+        }}
+        keyboardShouldPersistTaps="handled"
       >
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{
-            paddingBottom: isEditingAny ? 110 : 40,
-          }}
+        <Text
+          accessibilityRole="header"
+          style={[styles.screenTitle, { color: palette.textPrimary }]}
         >
-          <TopHeader
-            topBarMode={topBarMode}
-            topBarColor={topBarColor}
-            topBarImage={topBarImage}
-            profileImage={profileImage}
-            leftIcon="chevron-back"
-            onLeftPress={() => navigation.goBack()}
-            showAvatar
+          {t('settings.title')}
+        </Text>
+
+        <SettingsSection title={t('settings.sections.account')}>
+          <SettingsRow
+            icon="mail-outline"
+            title={t('settings.email.title')}
+            value={userEmail || t('settings.email.missing')}
+            showChevron={false}
           />
+          <SettingsRow
+            icon="call-outline"
+            title={t('settings.phone.title')}
+            value={phoneDisplay}
+            onPress={openPhoneEditor}
+            accessibilityHint={t('settings.editor.edit')}
+          />
+          <SettingsRow
+            icon="calendar-outline"
+            title={t('settings.birthDate.title')}
+            value={dobDisplay}
+            onPress={openBirthEditor}
+            accessibilityHint={t('settings.editor.edit')}
+            isLast
+          />
+        </SettingsSection>
 
-          <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
-            <View style={styles.emailPill}>
-              <Text style={styles.emailText}>
-                {userEmail || 'No email available'}
-              </Text>
-            </View>
+        <SettingsSection title={t('settings.sections.privacy')}>
+          <SettingsRow
+            icon="people-outline"
+            title={t('settings.visibilityAge.title')}
+            value={visibilityDisplay}
+            onPress={openVisibilityEditor}
+            accessibilityHint={t('settings.editor.edit')}
+          />
+          <SettingsToggleRow
+            icon="locate-outline"
+            title={t('settings.backgroundVisibility.title')}
+            description={t('settings.backgroundVisibility.description')}
+            value={bgVisible}
+            onValueChange={handleToggleBg}
+            disabled={bgChanging}
+          />
+          <SettingsRow
+            icon="hand-left-outline"
+            title={t('settings.blockedPeople.title')}
+            onPress={() => navigation.navigate('BlockedPeople')}
+            accessibilityHint={t('settings.blockedPeople.openHint')}
+            isLast
+          />
+        </SettingsSection>
 
-            {/* Phone */}
-            <View style={styles.card}>
-              <View style={styles.labelRow}>
-                <Text style={styles.cardTitle}>Phone number</Text>
-                <TouchableOpacity
-                  onPress={() =>
-                    setActiveField((prev) =>
-                      prev === 'phone' ? null : 'phone',
-                    )
-                  }
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name="pencil"
-                    size={16}
-                    color={isFieldActive('phone') ? '#3B5A85' : '#9CA3AF'}
-                  />
-                </TouchableOpacity>
-              </View>
+        <Text
+          style={[
+            styles.bgHint,
+            {
+              color: palette.textMuted,
+              paddingHorizontal: screenPadding.horizontal,
+            },
+          ]}
+        >
+          {t('settings.backgroundVisibility.hint')}
+        </Text>
 
-              <View style={styles.phoneContainer}>
-                <TouchableOpacity
-                  style={[
-                    styles.countrySelector,
-                    isFieldActive('phone') && styles.countrySelectorEditing,
-                    !isFieldActive('phone') && styles.inputDisabled,
-                  ]}
-                  activeOpacity={isFieldActive('phone') ? 0.8 : 1}
-                  onPress={() =>
-                    isFieldActive('phone') && setCountryModalOpen(true)
-                  }
-                  disabled={!isFieldActive('phone')}
-                >
-                  <Text style={styles.countryFlag}>{selectedCountry.flag}</Text>
-                  <Text style={styles.countryDialCode}>
-                    {selectedCountry.dialCode}
-                  </Text>
-                  {isFieldActive('phone') && (
-                    <Ionicons name="chevron-down" size={16} color="#475569" />
-                  )}
-                </TouchableOpacity>
+        <SettingsSection title={t('settings.sections.preferences')}>
+          <SettingsRow
+            icon="language-outline"
+            title={t('settings.language.title')}
+            value={currentLanguageLabel}
+            onPress={() => setLanguageModalOpen(true)}
+            isLast
+          />
+        </SettingsSection>
 
-                <TextInput
-                  style={[
-                    styles.phoneInput,
-                    isFieldActive('phone') && styles.inputEditing,
-                    !isFieldActive('phone') && styles.inputDisabled,
-                  ]}
-                  placeholder="Phone number (optional)"
-                  value={phone}
-                  onChangeText={(value) =>
-                    setPhone(value.replace(/[^\d]/g, ''))
-                  }
-                  editable={isFieldActive('phone')}
-                  keyboardType="phone-pad"
-                />
-              </View>
-
-              <Text style={styles.hint}>
-                Optional. This phone is used for contact purposes inside Nearsy
-                and is not public.
-              </Text>
-            </View>
-
-            {/* Birth year */}
-            <View style={styles.card}>
-              <View style={styles.labelRow}>
-                <Text style={styles.cardTitle}>Year of birth</Text>
-                <TouchableOpacity
-                  onPress={() =>
-                    setActiveField((prev) =>
-                      prev === 'birthYear' ? null : 'birthYear',
-                    )
-                  }
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name="pencil"
-                    size={16}
-                    color={isFieldActive('birthYear') ? '#3B5A85' : '#9CA3AF'}
-                  />
-                </TouchableOpacity>
-              </View>
-              <TextInput
-                style={[
-                  styles.input,
-                  isFieldActive('birthYear') && styles.inputEditing,
-                  !isFieldActive('birthYear') && styles.inputDisabled,
-                ]}
-                placeholder="1995"
-                value={birthYear}
-                onChangeText={setBirthYear}
-                editable={isFieldActive('birthYear')}
-                keyboardType="number-pad"
-                maxLength={4}
-              />
-            </View>
-
-            {/* Age visibility */}
-            <View style={styles.card}>
-              <View style={styles.labelRow}>
-                <Text style={styles.cardTitle}>Visibility by age</Text>
-                <TouchableOpacity
-                  onPress={() =>
-                    setActiveField((prev) =>
-                      prev === 'visibilityAges' ? null : 'visibilityAges',
-                    )
-                  }
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name="pencil"
-                    size={16}
-                    color={
-                      isFieldActive('visibilityAges') ? '#3B5A85' : '#9CA3AF'
-                    }
-                  />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.label}>Hide me from users younger than</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  isFieldActive('visibilityAges') && styles.inputEditing,
-                  !isFieldActive('visibilityAges') && styles.inputDisabled,
-                ]}
-                placeholder="e.g., 18"
-                value={visibleToMinAge}
-                onChangeText={setVisibleToMinAge}
-                editable={isFieldActive('visibilityAges')}
-                keyboardType="number-pad"
-                maxLength={3}
-              />
-              <Text style={[styles.label, { marginTop: 8 }]}>
-                Hide me from users older than
-              </Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  isFieldActive('visibilityAges') && styles.inputEditing,
-                  !isFieldActive('visibilityAges') && styles.inputDisabled,
-                ]}
-                placeholder="e.g., 65"
-                value={visibleToMaxAge}
-                onChangeText={setVisibleToMaxAge}
-                editable={isFieldActive('visibilityAges')}
-                keyboardType="number-pad"
-                maxLength={3}
-              />
-              <Text style={styles.hint}>
-                Leave blank any of them if you don’t want to set that limit.
-              </Text>
-            </View>
-
-            {/* Background visibility */}
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Stay visible in background</Text>
-
-              <View style={styles.row}>
-                <Text style={{ flex: 1, color: '#374151' }}>
-                  Keep your location updated so others can discover you nearby
-                  even when the app is closed.
-                </Text>
-
-                <Switch
-                  value={bgVisible}
-                  onValueChange={handleToggleBg}
-                  disabled={bgChanging}
-                />
-              </View>
-
-              <Text style={styles.hint}>
-                Requires “Always” location permission. On iOS, a blue indicator
-                may appear while Nearsy updates your location in background.
-              </Text>
-
-              {bgVisible && (
-                <Text
-                  style={{
-                    marginTop: 8,
-                    color: '#065F46',
-                    fontSize: 12,
-                    fontWeight: '600',
-                  }}
-                >
-                  Background visibility is ON.
-                </Text>
-              )}
-            </View>
-
-            {/* Contacts card */}
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>
-                Use phone contacts for alerts
-              </Text>
-
-              <View style={styles.row}>
-                <Text style={{ flex: 1, color: '#374151' }}>
-                  Sync your phone contacts to highlight familiar people in
-                  nearby alerts.
-                </Text>
-
-                <Switch
-                  value={contactsEnabled}
-                  onValueChange={handleToggleContacts}
-                  disabled={contactsChanging}
-                />
-              </View>
-
-              <Text style={styles.hint}>
-                This is optional. We only store minimal identifiers (no contact
-                names or messages are sent to your contacts).
-              </Text>
-            </View>
-
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>{t('settings.language.title')}</Text>
-
-              <Text style={[styles.hint, { marginBottom: 12 }]}>
-                {t('settings.language.description')}
-              </Text>
-
-              <Text style={styles.hint}>
-                {t('settings.language.current', {
-                  language: currentLanguageLabel,
-                })}
-              </Text>
-
-              <TouchableOpacity
-                style={styles.languageSelectorBtn}
-                onPress={() => setLanguageModalOpen(true)}
-                disabled={languageChanging}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.languageSelectorBtnText}>
-                  {currentLanguageLabel}
-                </Text>
-                <Ionicons name="chevron-forward" size={18} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Blocked contacts */}
-            <View style={styles.card}>
-              <View style={styles.labelRow}>
-                <Text style={styles.cardTitle}>Blocked contacts</Text>
-                <TouchableOpacity
-                  onPress={() =>
-                    setActiveField((prev) =>
-                      prev === 'blocked' ? null : 'blocked',
-                    )
-                  }
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name="pencil"
-                    size={16}
-                    color={isFieldActive('blocked') ? '#3B5A85' : '#9CA3AF'}
-                  />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.row}>
-                <TextInput
-                  style={[
-                    styles.input,
-                    styles.flex1,
-                    isFieldActive('blocked') && styles.inputEditing,
-                    !isFieldActive('blocked') && styles.inputDisabled,
-                  ]}
-                  placeholder="Email or phone to block"
-                  value={newBlocked}
-                  onChangeText={setNewBlocked}
-                  editable={isFieldActive('blocked')}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="default"
-                />
-                <TouchableOpacity
-                  onPress={addBlocked}
-                  disabled={!isFieldActive('blocked') || !newBlocked.trim()}
-                  style={[
-                    styles.addBtn,
-                    (!isFieldActive('blocked') || !newBlocked.trim()) && {
-                      opacity: 0.6,
-                    },
-                  ]}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons name="add" size={20} color="#fff" />
-                </TouchableOpacity>
-              </View>
-
-              {blockedContacts.length > 0 ? (
-                <View style={styles.chipsWrap}>
-                  {blockedContacts.map((v) => (
-                    <View key={v} style={styles.chip}>
-                      <Text style={styles.chipText}>{v}</Text>
-                      {isFieldActive('blocked') && (
-                        <TouchableOpacity
-                          onPress={() => removeBlocked(v)}
-                          style={styles.chipRemove}
-                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                        >
-                          <Text style={{ color: '#fff', fontWeight: '800' }}>
-                            ✕
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <Text style={styles.hint}>
-                  You can block contacts by email or phone number.
-                </Text>
-              )}
-            </View>
-
-            <TouchableOpacity
-              style={styles.logoutBtn}
-              onPress={handleLogout}
-              activeOpacity={0.9}
-            >
-              <Text style={styles.logoutText}>Log out</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={{
-                marginTop: 14,
-                backgroundColor: '#B91C1C',
-                paddingVertical: 14,
-                borderRadius: 12,
-                alignItems: 'center',
-              }}
-              activeOpacity={0.9}
-              onPress={() => navigation.navigate('DeleteAccount')}
-            >
-              <Text style={{ color: '#fff', fontWeight: '800' }}>
-                Delete account
-              </Text>
-            </TouchableOpacity>
-
-            <View style={{ height: 12 + insets.bottom }} />
-          </View>
-        </ScrollView>
-
-        {isEditingAny && (
-          <View
-            style={[
-              styles.bottomBar,
-              { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 16 },
+        <View style={styles.actions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('settings.logout.title')}
+            onPress={handleLogout}
+            style={({ pressed }) => [
+              styles.logoutBtn,
+              {
+                backgroundColor: palette.dangerBg,
+                borderColor: palette.danger,
+                opacity: pressed ? 0.88 : 1,
+              },
             ]}
           >
-            <TouchableOpacity
-              style={[styles.bottomSaveBtn, saving && { opacity: 0.7 }]}
-              onPress={handleSave}
+            <Text style={[styles.logoutText, { color: palette.danger }]}>
+              {t('settings.logout.title')}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('settings.deleteAccount.title')}
+            onPress={() => navigation.navigate('DeleteAccount')}
+            style={({ pressed }) => [
+              styles.deleteBtn,
+              { backgroundColor: palette.danger, opacity: pressed ? 0.88 : 1 },
+            ]}
+          >
+            <Text style={styles.deleteText}>
+              {t('settings.deleteAccount.title')}
+            </Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+
+      <Modal
+        visible={editor === 'phone'}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeEditor}
+      >
+        <KeyboardAvoidingView
+          style={[styles.editorRoot, { backgroundColor: palette.background }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View
+            style={[
+              styles.editorHeader,
+              { paddingTop: spacing.lg, borderBottomColor: palette.border },
+            ]}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('settings.editor.cancel')}
+              onPress={closeEditor}
+              hitSlop={8}
+            >
+              <Text style={{ color: palette.textSecondary, fontWeight: '600' }}>
+                {t('settings.editor.cancel')}
+              </Text>
+            </Pressable>
+            <Text
+              style={[styles.editorTitle, { color: palette.textPrimary }]}
+              numberOfLines={1}
+            >
+              {t('settings.phone.title')}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('settings.editor.save')}
+              onPress={savePhone}
               disabled={saving}
-              activeOpacity={0.85}
+              hitSlop={8}
             >
               {saving ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={palette.primary} />
               ) : (
-                <>
-                  <Ionicons name="save-outline" size={18} color="#fff" />
-                  <Text style={styles.bottomSaveText}>Save settings</Text>
-                </>
+                <Text style={{ color: palette.primary, fontWeight: '700' }}>
+                  {t('settings.editor.save')}
+                </Text>
               )}
-            </TouchableOpacity>
+            </Pressable>
           </View>
-        )}
-      </KeyboardAvoidingView>
+          <ScrollView
+            contentContainerStyle={styles.editorBody}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.phoneRow}>
+              <Pressable
+                onPress={() => setCountryModalOpen(true)}
+                style={[
+                  styles.countryBtn,
+                  {
+                    backgroundColor: palette.panel,
+                    borderColor: palette.border,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={t('settings.phone.selectCountry')}
+              >
+                <Text style={{ fontSize: 18 }}>{selectedCountry.flag}</Text>
+                <Text style={[styles.dialCode, { color: palette.textPrimary }]}>
+                  {selectedCountry.dialCode}
+                </Text>
+                <Ionicons
+                  name="chevron-down"
+                  size={16}
+                  color={palette.textMuted}
+                />
+              </Pressable>
+              <TextInput
+                style={[
+                  styles.phoneInput,
+                  {
+                    color: palette.textPrimary,
+                    backgroundColor: palette.panel,
+                    borderColor: palette.border,
+                  },
+                ]}
+                placeholder={t('settings.phone.placeholder')}
+                placeholderTextColor={palette.placeholder}
+                value={phoneLocal}
+                onChangeText={(v) => setPhoneLocal(v.replace(/[^\d]/g, ''))}
+                keyboardType="phone-pad"
+                accessibilityLabel={t('settings.phone.title')}
+              />
+            </View>
+            <Text style={[styles.hint, { color: palette.textMuted }]}>
+              {t('settings.phone.hint')}
+            </Text>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={editor === 'birthDate'}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeEditor}
+      >
+        <KeyboardAvoidingView
+          style={[styles.editorRoot, { backgroundColor: palette.background }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View
+            style={[
+              styles.editorHeader,
+              { paddingTop: spacing.lg, borderBottomColor: palette.border },
+            ]}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('settings.editor.cancel')}
+              onPress={closeEditor}
+              hitSlop={8}
+            >
+              <Text style={{ color: palette.textSecondary, fontWeight: '600' }}>
+                {t('settings.editor.cancel')}
+              </Text>
+            </Pressable>
+            <Text
+              style={[styles.editorTitle, { color: palette.textPrimary }]}
+              numberOfLines={1}
+            >
+              {t('settings.birthDate.title')}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('settings.editor.save')}
+              onPress={saveBirthDate}
+              disabled={saving}
+              hitSlop={8}
+            >
+              {saving ? (
+                <ActivityIndicator color={palette.primary} />
+              ) : (
+                <Text style={{ color: palette.primary, fontWeight: '700' }}>
+                  {t('settings.editor.save')}
+                </Text>
+              )}
+            </Pressable>
+          </View>
+          <ScrollView
+            contentContainerStyle={styles.editorBody}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.birthRow}>
+              <TextInput
+                style={[
+                  styles.birthInput,
+                  {
+                    color: palette.textPrimary,
+                    backgroundColor: palette.panel,
+                    borderColor: palette.border,
+                  },
+                ]}
+                placeholder={birthDatePlaceholderForOrder(birthOrder)}
+                placeholderTextColor={palette.placeholder}
+                keyboardType="number-pad"
+                maxLength={10}
+                value={birthVisible}
+                onChangeText={(v) =>
+                  setBirthDigits(
+                    applyBirthDateTextChange(birthVisible, v, birthOrder),
+                  )
+                }
+                accessibilityLabel={t('settings.birthDate.title')}
+              />
+              {NativeDateTimePicker ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t(
+                    'authentication.register.wizard.a11y.birthDateCalendar',
+                  )}
+                  onPress={openCalendar}
+                  style={[
+                    styles.calendarBtn,
+                    {
+                      backgroundColor: palette.panel,
+                      borderColor: palette.borderStrong,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="calendar-outline"
+                    size={22}
+                    color={palette.textPrimary}
+                  />
+                </Pressable>
+              ) : null}
+            </View>
+            <Text style={[styles.hint, { color: palette.textMuted }]}>
+              {t('settings.birthDate.hint')}
+            </Text>
+            {birthComplete && birthFuture ? (
+              <Text style={[styles.hint, { color: palette.danger }]}>
+                {t('settings.birthDate.invalid')}
+              </Text>
+            ) : null}
+            {birthDigits.length === 8 && !birthComplete ? (
+              <Text style={[styles.hint, { color: palette.danger }]}>
+                {t('settings.birthDate.invalid')}
+              </Text>
+            ) : null}
+            {birthAge != null && !birthFuture
+              ? (() => {
+                  const validation = birthValidation;
+                  let message: string;
+                  let okColor = false;
+                  if (validation.ok === false) {
+                    if (validation.reason === 'too_young') {
+                      message = t('settings.birthDate.tooYoung', {
+                        age: SETTINGS_MIN_AGE,
+                      });
+                    } else if (validation.reason === 'too_old') {
+                      message = t('settings.birthDate.tooOld', {
+                        age: SETTINGS_MAX_AGE,
+                      });
+                    } else {
+                      message = t('settings.birthDate.invalid');
+                    }
+                  } else {
+                    okColor = true;
+                    message = String(birthAge);
+                  }
+                  return (
+                    <Text
+                      style={[
+                        styles.hint,
+                        {
+                          color: okColor
+                            ? palette.textSecondary
+                            : palette.danger,
+                        },
+                      ]}
+                    >
+                      {message}
+                    </Text>
+                  );
+                })()
+              : null}
+          </ScrollView>
+
+          {NativeDateTimePicker && calendarOpen && calendarDraft ? (
+            <View style={styles.calendarOverlay}>
+              <Pressable
+                style={StyleSheet.absoluteFill}
+                onPress={() => setCalendarOpen(false)}
+              />
+              <View
+                style={[
+                  styles.calendarSheet,
+                  {
+                    backgroundColor: palette.surface,
+                    borderColor: palette.border,
+                  },
+                ]}
+              >
+                <View style={styles.calendarHeader}>
+                  <Pressable onPress={() => setCalendarOpen(false)} hitSlop={8}>
+                    <Text style={{ color: palette.textSecondary }}>
+                      {t('common.cancel')}
+                    </Text>
+                  </Pressable>
+                  <Pressable onPress={confirmCalendar} hitSlop={8}>
+                    <Text style={{ color: palette.primary, fontWeight: '700' }}>
+                      {t('authentication.register.wizard.calendarDone')}
+                    </Text>
+                  </Pressable>
+                </View>
+                <View style={{ height: inlinePickerHeight }}>
+                  <NativeDateTimePicker
+                    value={calendarDraft}
+                    mode="date"
+                    display="inline"
+                    locale={deviceLocaleTag}
+                    themeVariant={theme === 'dark' ? 'dark' : 'light'}
+                    accentColor={palette.primary}
+                    style={{ width: '100%', height: inlinePickerHeight }}
+                    maximumDate={calendarMaxDate}
+                    minimumDate={calendarMinDate}
+                    onChange={(event, date) => {
+                      if (event.type === 'dismissed') {
+                        setCalendarOpen(false);
+                        return;
+                      }
+                      if (date) setCalendarDraft(date);
+                    }}
+                  />
+                </View>
+              </View>
+            </View>
+          ) : null}
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={editor === 'visibilityAge'}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeEditor}
+      >
+        <KeyboardAvoidingView
+          style={[styles.editorRoot, { backgroundColor: palette.background }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View
+            style={[
+              styles.editorHeader,
+              { paddingTop: spacing.lg, borderBottomColor: palette.border },
+            ]}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('settings.editor.cancel')}
+              onPress={closeEditor}
+              hitSlop={8}
+            >
+              <Text style={{ color: palette.textSecondary, fontWeight: '600' }}>
+                {t('settings.editor.cancel')}
+              </Text>
+            </Pressable>
+            <Text
+              style={[styles.editorTitle, { color: palette.textPrimary }]}
+              numberOfLines={1}
+            >
+              {t('settings.visibilityAge.title')}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('settings.editor.save')}
+              onPress={saveVisibilityAge}
+              disabled={saving}
+              hitSlop={8}
+            >
+              {saving ? (
+                <ActivityIndicator color={palette.primary} />
+              ) : (
+                <Text style={{ color: palette.primary, fontWeight: '700' }}>
+                  {t('settings.editor.save')}
+                </Text>
+              )}
+            </Pressable>
+          </View>
+          <ScrollView
+            contentContainerStyle={styles.editorBody}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={[styles.fieldLabel, { color: palette.textSecondary }]}>
+              {t('settings.visibilityAge.minLabel')}
+            </Text>
+            <TextInput
+              style={[
+                styles.fieldInput,
+                {
+                  color: palette.textPrimary,
+                  backgroundColor: palette.panel,
+                  borderColor: palette.border,
+                },
+              ]}
+              value={draftMinAge}
+              onChangeText={(v) => setDraftMinAge(v.replace(/[^\d]/g, ''))}
+              keyboardType="number-pad"
+              maxLength={3}
+              placeholder={`${SETTINGS_MIN_AGE}`}
+              placeholderTextColor={palette.placeholder}
+              accessibilityLabel={t('settings.visibilityAge.minLabel')}
+            />
+            <Text
+              style={[
+                styles.fieldLabel,
+                { color: palette.textSecondary, marginTop: spacing.md },
+              ]}
+            >
+              {t('settings.visibilityAge.maxLabel')}
+            </Text>
+            <TextInput
+              style={[
+                styles.fieldInput,
+                {
+                  color: palette.textPrimary,
+                  backgroundColor: palette.panel,
+                  borderColor: palette.border,
+                },
+              ]}
+              value={draftMaxAge}
+              onChangeText={(v) => setDraftMaxAge(v.replace(/[^\d]/g, ''))}
+              keyboardType="number-pad"
+              maxLength={3}
+              placeholder={`${SETTINGS_MAX_AGE}`}
+              placeholderTextColor={palette.placeholder}
+              accessibilityLabel={t('settings.visibilityAge.maxLabel')}
+            />
+            <Text style={[styles.hint, { color: palette.textMuted }]}>
+              {t('settings.visibilityAge.hint', {
+                min: SETTINGS_MIN_AGE,
+                max: SETTINGS_MAX_AGE,
+              })}
+            </Text>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <Modal
         visible={countryModalOpen}
@@ -971,48 +1095,53 @@ export default function MoreScreen() {
           style={styles.modalBackdrop}
           onPress={() => setCountryModalOpen(false)}
         >
-          <Pressable style={styles.countryModalCard}>
-            <Text style={styles.modalTitle}>Select country code</Text>
-
+          <Pressable
+            style={[styles.modalCard, { backgroundColor: palette.surface }]}
+          >
+            <Text style={[styles.modalTitle, { color: palette.textPrimary }]}>
+              {t('settings.phone.selectCountry')}
+            </Text>
             <FlatList
               data={AMERICA_COUNTRIES}
               keyExtractor={(item) => item.code}
-              showsVerticalScrollIndicator={false}
-              style={{ width: '100%' }}
+              style={{ maxHeight: 360 }}
               renderItem={({ item }) => {
-                const isSelected = item.code === selectedCountry.code;
-
+                const selected = item.code === selectedCountry.code;
                 return (
-                  <TouchableOpacity
+                  <Pressable
                     style={[
                       styles.countryOption,
-                      isSelected && styles.countryOptionSelected,
+                      selected && { backgroundColor: palette.chipBg },
                     ]}
                     onPress={() => {
                       setSelectedCountry(item);
                       setCountryModalOpen(false);
                     }}
                   >
-                    <View style={styles.countryOptionLeft}>
-                      <Text style={styles.countryOptionFlag}>{item.flag}</Text>
-                      <View>
-                        <Text style={styles.countryOptionName}>
-                          {item.name}
-                        </Text>
-                        <Text style={styles.countryOptionDialCode}>
-                          {item.dialCode}
-                        </Text>
-                      </View>
+                    <Text style={{ fontSize: 20, marginRight: 10 }}>
+                      {item.flag}
+                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={{
+                          color: palette.textPrimary,
+                          fontWeight: '600',
+                        }}
+                      >
+                        {item.name}
+                      </Text>
+                      <Text style={{ color: palette.textMuted }}>
+                        {item.dialCode}
+                      </Text>
                     </View>
-
-                    {isSelected ? (
+                    {selected ? (
                       <Ionicons
                         name="checkmark-circle"
                         size={22}
-                        color="#3B5A85"
+                        color={palette.primary}
                       />
                     ) : null}
-                  </TouchableOpacity>
+                  </Pressable>
                 );
               }}
             />
@@ -1030,53 +1159,54 @@ export default function MoreScreen() {
           style={styles.modalBackdrop}
           onPress={() => setLanguageModalOpen(false)}
         >
-          <Pressable style={styles.countryModalCard}>
-            <Text style={styles.modalTitle}>
+          <Pressable
+            style={[styles.modalCard, { backgroundColor: palette.surface }]}
+          >
+            <Text style={[styles.modalTitle, { color: palette.textPrimary }]}>
               {t('settings.language.title')}
             </Text>
-
-            <Text style={[styles.hint, { marginBottom: 12 }]}>
+            <Text style={[styles.hint, { color: palette.textMuted }]}>
               {t('settings.language.description')}
             </Text>
-
             {LANGUAGE_OPTIONS.map((option) => {
-              const isSelected = option.code === currentLanguage;
-
+              const selected = option.code === currentLanguage;
               return (
-                <TouchableOpacity
+                <Pressable
                   key={option.code}
                   style={[
                     styles.countryOption,
-                    isSelected && styles.countryOptionSelected,
+                    selected && { backgroundColor: palette.chipBg },
                   ]}
                   onPress={() => handleSelectLanguage(option.code)}
                   disabled={languageChanging}
                 >
-                  <Text style={styles.countryOptionName}>
+                  <Text
+                    style={{
+                      color: palette.textPrimary,
+                      fontWeight: '600',
+                      flex: 1,
+                    }}
+                  >
                     {t(option.labelKey)}
                   </Text>
-
-                  {isSelected ? (
+                  {selected ? (
                     <Ionicons
                       name="checkmark-circle"
                       size={22}
-                      color="#3B5A85"
+                      color={palette.primary}
                     />
                   ) : null}
-                </TouchableOpacity>
+                </Pressable>
               );
             })}
-
-            <TouchableOpacity
-              style={styles.languageModalCloseBtn}
+            <Pressable
+              style={[styles.closeBtn, { backgroundColor: palette.chipBg }]}
               onPress={() => setLanguageModalOpen(false)}
-              disabled={languageChanging}
-              activeOpacity={0.85}
             >
-              <Text style={styles.languageModalCloseBtnText}>
+              <Text style={{ color: palette.chipText, fontWeight: '700' }}>
                 {t('common.buttons.close')}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1085,182 +1215,119 @@ export default function MoreScreen() {
 }
 
 const styles = StyleSheet.create({
-  center: {
-    flex: 1,
+  root: { flex: 1 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  screenTitle: {
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.extrabold,
+    paddingHorizontal: screenPadding.horizontal,
+    marginBottom: spacing.lg,
+  },
+  bgHint: {
+    fontSize: fontSize.xs,
+    marginTop: -spacing.md,
+    marginBottom: spacing.lg,
+    lineHeight: fontSize.xs * 1.45,
+  },
+  actions: {
+    paddingHorizontal: screenPadding.horizontal,
+    gap: spacing.md,
+    marginTop: spacing.sm,
+  },
+  logoutBtn: {
+    minHeight: 50,
+    borderRadius: radius.lg,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
   },
-
-  emailPill: {
-    alignSelf: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginBottom: 16,
+  logoutText: { fontSize: fontSize.md, fontWeight: fontWeight.bold },
+  deleteBtn: {
+    minHeight: 50,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  emailText: {
-    fontSize: 15,
-    color: '#111827',
-    fontWeight: '600',
+  deleteText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
   },
-
-  card: {
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 10,
-  },
-  labelRow: {
+  editorRoot: { flex: 1 },
+  editorHeader: {
+    minHeight: 52,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
+    gap: spacing.sm,
   },
-  label: { fontSize: 13, color: '#374151', marginBottom: 6 },
-
-  input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+  editorTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
   },
-  inputDisabled: { opacity: 0.7 },
-  inputEditing: {
-    borderWidth: 1.5,
-    borderColor: '#3B5A85',
-    backgroundColor: '#EEF2FF',
+  editorBody: {
+    padding: screenPadding.horizontal,
+    paddingTop: spacing.lg,
   },
-
-  phoneContainer: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  countrySelector: {
+  phoneRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center' },
+  countryBtn: {
+    minHeight: 48,
     minWidth: 110,
-    height: 46,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: '#fff',
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    paddingHorizontal: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 6,
   },
-  countrySelectorEditing: {
-    borderWidth: 1.5,
-    borderColor: '#3B5A85',
-    backgroundColor: '#EEF2FF',
-  },
-  countryFlag: {
-    fontSize: 18,
-    marginRight: 6,
-  },
-  countryDialCode: {
-    fontSize: 14,
-    color: '#111827',
-    fontWeight: '600',
-    marginRight: 6,
-  },
+  dialCode: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
   phoneInput: {
     flex: 1,
-    backgroundColor: '#fff',
+    minHeight: 48,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    minHeight: 46,
+    paddingHorizontal: spacing.md,
+    fontSize: fontSize.base,
   },
-
-  hint: { color: '#6B7280', marginTop: 8, fontSize: 12 },
-
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  flex1: { flex: 1 },
-  addBtn: {
-    backgroundColor: '#3B5A85',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+  birthRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center' },
+  birthInput: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    fontSize: fontSize.base,
   },
-
-  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E5E7EB',
-    borderRadius: 999,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-  },
-  chipText: { color: '#111827' },
-  chipRemove: {
-    marginLeft: 8,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+  calendarBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  logoutBtn: {
-    marginTop: 10,
-    backgroundColor: '#EF4444',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 10,
-    alignItems: 'center',
+  fieldLabel: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.medium,
+    marginBottom: spacing.xs,
   },
-  logoutText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-
-  bottomBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.96)',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    paddingHorizontal: 16,
-    paddingTop: 8,
+  fieldInput: {
+    minHeight: 48,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    fontSize: fontSize.base,
   },
-  bottomSaveBtn: {
-    height: 50,
-    borderRadius: 999,
-    backgroundColor: '#3B5A85',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+  hint: {
+    marginTop: spacing.md,
+    fontSize: fontSize.sm,
+    lineHeight: fontSize.sm * 1.4,
   },
-  bottomSaveText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
@@ -1268,79 +1335,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 24,
   },
-  countryModalCard: {
+  modalCard: {
     width: '100%',
     maxWidth: 420,
-    maxHeight: '70%',
-    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
   },
   modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 8,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
+    marginBottom: spacing.sm,
   },
   countryOption: {
-    width: '100%',
-    minHeight: 58,
+    minHeight: 56,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
   },
-  countryOptionSelected: {
-    backgroundColor: '#EEF4FA',
-  },
-  countryOptionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  countryOptionFlag: {
-    fontSize: 22,
-    marginRight: 12,
-  },
-  countryOptionName: {
-    fontSize: 15,
-    color: '#111827',
-    fontWeight: '600',
-  },
-  countryOptionDialCode: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  languageSelectorBtn: {
-    marginTop: 12,
-    minHeight: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#F9FAFB',
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  languageSelectorBtnText: {
-    fontSize: 15,
-    color: '#111827',
-    fontWeight: '600',
-  },
-  languageModalCloseBtn: {
-    marginTop: 12,
+  closeBtn: {
+    marginTop: spacing.md,
     minHeight: 44,
     borderRadius: 12,
-    backgroundColor: '#EEF4FA',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  languageModalCloseBtnText: {
-    color: '#3B5A85',
-    fontWeight: '700',
-    fontSize: 15,
+  calendarOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+  },
+  calendarSheet: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingBottom: 24,
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
 });

@@ -6,6 +6,7 @@
 import {
   CONTRACT_VERSION,
   FORBIDDEN_CLIENT_DTO_KEYS,
+  MAX_BLOCKED_PEOPLE_LIMIT,
   MAX_DISCOVERY_LIMIT,
   MAX_GALLERY_ITEMS,
 } from '../constants';
@@ -15,12 +16,14 @@ import { parseDiscoverySocialLinks } from '../discoverySocialLinks';
 import { createContractResponseError } from './errors';
 import type {
   ActivateVisibilityResponse,
+  BlockedPerson,
   DeactivateVisibilityResponse,
   DiscoverNearbyResponse,
   DiscoverNearbyResult,
   DiscoveryGalleryItem,
   DiscoveryProfileDetail,
   DiscoveryProfileSummary,
+  GetBlockedPeopleResponse,
   GetDiscoveryProfileResponse,
   PublishLocationResponse,
   SetActiveProfileModeResponse,
@@ -447,6 +450,74 @@ export function parseSetActiveProfileModeResponse(
       'targetProfileComplete',
     ),
     discoverySynced: requireBoolean(data.discoverySynced, 'discoverySynced'),
+    serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
+  };
+}
+
+function parseBlockedPerson(value: unknown): BlockedPerson {
+  if (!isPlainObject(value)) {
+    throw createContractResponseError('blocked person must be an object', value);
+  }
+  assertNoForbiddenKeys(value, 'people[]');
+  const uid = requireNonEmptyString(value.uid, 'people[].uid');
+  if (value.available === false) {
+    const allowed = ['uid', 'available'];
+    for (const key of Object.keys(value)) {
+      if (!allowed.includes(key)) {
+        throw createContractResponseError(
+          `unavailable person must only include ${allowed.join(',')}`,
+          value,
+        );
+      }
+    }
+    return { uid, available: false };
+  }
+  if (value.available !== true) {
+    throw createContractResponseError(
+      'people[].available must be boolean',
+      value.available,
+    );
+  }
+  const profileImage =
+    value.profileImage === null
+      ? null
+      : requireNonEmptyString(value.profileImage, 'people[].profileImage');
+  return {
+    uid,
+    available: true,
+    displayName: requireNonEmptyString(value.displayName, 'people[].displayName'),
+    profileImage,
+    mode: parseProfileMode(value.mode),
+  };
+}
+
+export function parseGetBlockedPeopleResponse(
+  data: unknown,
+): GetBlockedPeopleResponse {
+  if (!isPlainObject(data)) {
+    throw createContractResponseError(
+      'getBlockedPeople response must be an object',
+      data,
+    );
+  }
+  assertNoForbiddenKeys(data, 'getBlockedPeople');
+  if (!Array.isArray(data.people)) {
+    throw createContractResponseError('people must be an array', data.people);
+  }
+  if (data.people.length > MAX_BLOCKED_PEOPLE_LIMIT) {
+    throw createContractResponseError(
+      `people exceed max ${MAX_BLOCKED_PEOPLE_LIMIT}`,
+      data.people.length,
+    );
+  }
+  const people = data.people.map(parseBlockedPerson);
+  const uids = people.map((p) => p.uid);
+  if (new Set(uids).size !== uids.length) {
+    throw createContractResponseError('duplicate blocked UIDs', uids);
+  }
+  return {
+    contractVersion: requireContractVersion(data.contractVersion),
+    people,
     serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
   };
 }

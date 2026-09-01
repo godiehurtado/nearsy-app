@@ -52,6 +52,11 @@ export type SetActiveProfileModeRequest = {
   mode: ProfileMode;
 };
 
+/** Owner Settings — no target UIDs; backend derives from caller's blockedUsers. */
+export type GetBlockedPeopleRequest = {
+  contractVersion: VisibilityContractVersion;
+};
+
 export type SetActiveProfileModeResponse = {
   contractVersion: VisibilityContractVersion;
   mode: ProfileMode;
@@ -138,5 +143,24 @@ export type GetDiscoveryProfileResponse = {
   affiliations: DiscoveryPublicAffiliation[];
   /** Matching V1 compatibility; absent on older backends → undefined. */
   compatibility?: DiscoveryCompatibility;
+  serverTime: number;
+};
+
+export type BlockedPerson =
+  | {
+      uid: string;
+      available: false;
+    }
+  | {
+      uid: string;
+      available: true;
+      displayName: string;
+      profileImage: string | null;
+      mode: ProfileMode;
+    };
+
+export type GetBlockedPeopleResponse = {
+  contractVersion: VisibilityContractVersion;
+  people: BlockedPerson[];
   serverTime: number;
 };

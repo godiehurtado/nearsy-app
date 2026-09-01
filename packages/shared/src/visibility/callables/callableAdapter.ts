@@ -10,6 +10,7 @@ import {
   parseActivateVisibilityResponse,
   parseDeactivateVisibilityResponse,
   parseDiscoverNearbyResponse,
+  parseGetBlockedPeopleResponse,
   parseGetDiscoveryProfileResponse,
   parsePublishLocationResponse,
   parseSetActiveProfileModeResponse,
@@ -19,6 +20,7 @@ import type {
   ActivateVisibilityRequest,
   DeactivateVisibilityRequest,
   DiscoverNearbyRequest,
+  GetBlockedPeopleRequest,
   GetDiscoveryProfileRequest,
   PublishLocationRequest,
   SetActiveProfileModeRequest,
@@ -98,6 +100,13 @@ export function createVisibilityDiscoveryCallableClient(
         VISIBILITY_CALLABLE_NAMES.setActiveProfileMode,
         serializeVisibilityRequest(request),
         parseSetActiveProfileModeResponse,
+      );
+    },
+    getBlockedPeople(request: GetBlockedPeopleRequest) {
+      return callParsed(
+        VISIBILITY_CALLABLE_NAMES.getBlockedPeople,
+        serializeVisibilityRequest(request),
+        parseGetBlockedPeopleResponse,
       );
     },
   };

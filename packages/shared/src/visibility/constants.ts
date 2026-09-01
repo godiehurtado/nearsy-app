@@ -53,6 +53,10 @@ export const DEFAULT_DISCOVERY_LIMIT = 50;
 export const MAX_DISCOVERY_LIMIT = 50;
 export const MAX_GALLERY_ITEMS = 12;
 
+/** Owner Blocked People Settings list cap (aligned with backend). */
+export const DEFAULT_BLOCKED_PEOPLE_LIMIT = 50;
+export const MAX_BLOCKED_PEOPLE_LIMIT = 50;
+
 /** Max independent search-interest IDs per profile face. Empty = no filter. */
 export const MAX_SEARCH_INTEREST_IDS = 12;
 

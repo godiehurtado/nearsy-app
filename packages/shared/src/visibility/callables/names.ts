@@ -9,6 +9,7 @@ export const VISIBILITY_CALLABLE_NAMES = {
   discoverNearby: 'discoverNearby',
   getDiscoveryProfile: 'getDiscoveryProfile',
   setActiveProfileMode: 'setActiveProfileMode',
+  getBlockedPeople: 'getBlockedPeople',
 } as const;
 
 export type VisibilityCallableName =

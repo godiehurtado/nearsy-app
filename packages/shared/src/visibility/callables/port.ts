@@ -9,6 +9,8 @@ import type {
   DeactivateVisibilityResponse,
   DiscoverNearbyRequest,
   DiscoverNearbyResponse,
+  GetBlockedPeopleRequest,
+  GetBlockedPeopleResponse,
   GetDiscoveryProfileRequest,
   GetDiscoveryProfileResponse,
   PublishLocationRequest,
@@ -36,4 +38,7 @@ export type VisibilityDiscoveryClient = {
   setActiveProfileMode(
     request: SetActiveProfileModeRequest,
   ): Promise<SetActiveProfileModeResponse>;
+  getBlockedPeople(
+    request: GetBlockedPeopleRequest,
+  ): Promise<GetBlockedPeopleResponse>;
 };
