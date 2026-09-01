@@ -12,6 +12,8 @@ import type {
   DiscoverNearbyRequest,
   DiscoverNearbyResponse,
   DiscoveryProfileSummary,
+  GetBlockedPeopleRequest,
+  GetBlockedPeopleResponse,
   GetDiscoveryProfileRequest,
   GetDiscoveryProfileResponse,
   PublishLocationRequest,
@@ -53,6 +55,9 @@ export type FakeVisibilityDiscoveryHandlers = Partial<{
   setActiveProfileMode: (
     request: SetActiveProfileModeRequest,
   ) => Promise<SetActiveProfileModeResponse>;
+  getBlockedPeople: (
+    request: GetBlockedPeopleRequest,
+  ) => Promise<GetBlockedPeopleResponse>;
 }>;
 
 export type FakeVisibilityDiscoveryClient = VisibilityDiscoveryClient & {
@@ -154,6 +159,17 @@ export function createFakeVisibilityDiscoveryClient(
         visibility: false,
         targetProfileComplete: false,
         discoverySynced: false,
+        serverTime: serverNow,
+      };
+    },
+    async getBlockedPeople(request) {
+      calls.push({ name: 'getBlockedPeople', request });
+      if (handlers.getBlockedPeople) {
+        return handlers.getBlockedPeople(request);
+      }
+      return {
+        contractVersion: CONTRACT_VERSION,
+        people: [],
         serverTime: serverNow,
       };
     },

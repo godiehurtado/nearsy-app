@@ -1183,7 +1183,7 @@ const es: TranslationResources = {
     block: 'Bloquear',
     blockConfirmTitle: '¿Bloquear a {{name}}?',
     blockConfirmBody:
-      'No verán tu perfil ni aparecerán cerca. Podrás gestionar bloqueos más adelante en ajustes cuando esté disponible.',
+      'No verán tu perfil ni aparecerán cerca. Puedes gestionar a las personas bloqueadas en Ajustes.',
     blockConfirmAction: 'Bloquear',
     cancel: 'Cancelar',
     blocking: 'Bloqueando…',
@@ -1257,15 +1257,58 @@ const es: TranslationResources = {
     },
   },
   settings: {
-    title: 'Más',
+    title: 'Ajustes',
+    sections: {
+      account: 'Cuenta',
+      privacy: 'Privacidad y descubrimiento',
+      preferences: 'Preferencias',
+      actions: 'Acciones de la cuenta',
+    },
+    email: {
+      title: 'Correo electrónico',
+      missing: 'No hay correo disponible',
+    },
+    phone: {
+      title: 'Número de teléfono',
+      placeholder: 'Número de teléfono (opcional)',
+      hint: 'Opcional. Se usa para contacto dentro de Nearsy y no es público.',
+      invalid:
+        'Introduce un número móvil válido con el código de tu país.',
+      selectCountry: 'Selecciona el código de país',
+      saved: 'Número de teléfono actualizado',
+    },
+    birthDate: {
+      title: 'Fecha de nacimiento',
+      notSet: 'Sin definir',
+      hint: 'Tu fecha de nacimiento se usa para el descubrimiento por edad. Debes tener entre 18 y 99 años.',
+      incomplete: 'Introduce una fecha de nacimiento completa.',
+      invalid: 'Introduce una fecha válida.',
+      tooYoung: 'Debes tener al menos {{age}} años.',
+      tooOld: 'La edad debe ser {{age}} o menor.',
+      saved: 'Fecha de nacimiento actualizada',
+    },
+    visibilityAge: {
+      title: 'Quién puede encontrarme por edad',
+      notSet: 'Sin límite de edad',
+      minLabel: 'Ocultarme de usuarios menores de',
+      maxLabel: 'Ocultarme de usuarios mayores de',
+      hint: 'Déjalo en blanco para omitir un límite. El rango permitido es {{min}}–{{max}}.',
+      minBounds: 'La edad mínima debe estar entre {{min}} y {{max}}.',
+      maxBounds: 'La edad máxima debe estar entre {{min}} y {{max}}.',
+      order: 'La edad mínima no puede ser mayor que la máxima.',
+      saved: 'Rango de edad de visibilidad actualizado',
+    },
     backgroundVisibility: {
       title: 'Permanecer visible en segundo plano',
+      description:
+        'Mantén tu ubicación actualizada para que otros puedan descubrirte cerca aunque la app esté cerrada.',
+      hint: 'Requiere permiso de ubicación Siempre. En iOS puede aparecer un indicador azul mientras Nearsy actualiza tu ubicación en segundo plano.',
       enabled: 'La visibilidad en segundo plano está activada',
       disabled: 'La visibilidad en segundo plano está desactivada',
-    },
-    contacts: {
-      title: 'Contactos',
-      enable: 'Usar contactos para alertas familiares',
+      unsupported:
+        'La ubicación en segundo plano no está disponible en la web.',
+      authRequired: 'Vuelve a iniciar sesión.',
+      error: 'No se pudo actualizar la ubicación en segundo plano.',
     },
     language: {
       title: 'Idioma',
@@ -1275,9 +1318,57 @@ const es: TranslationResources = {
       current: 'Actual: {{language}}',
       changeSuccess: 'Idioma actualizado',
     },
+    logout: {
+      title: 'Cerrar sesión',
+      error: 'No se pudo cerrar la sesión.',
+    },
     deleteAccount: {
       title: 'Eliminar cuenta',
       confirm: 'Esta acción no se puede deshacer',
+      body: 'Escribe DELETE para confirmar. Se eliminarán tus datos de perfil y fotos.',
+      placeholder: 'Escribe DELETE',
+      permanently: 'Eliminar permanentemente',
+      alertTitle: 'Eliminar cuenta',
+      alertBody:
+        'Esto eliminará permanentemente tu cuenta y los datos asociados. Esta acción no se puede deshacer.',
+      alertCancel: 'Cancelar',
+      alertConfirm: 'Eliminar',
+      done: 'Tu cuenta ha sido eliminada.',
+      error: 'No se pudo eliminar la cuenta.',
+      reauthBody:
+        'Por seguridad, confirma tu contraseña para continuar.',
+      passwordPlaceholder: 'Contraseña',
+      reauthConfirm: 'Confirmar contraseña y eliminar',
+      reauthError: 'No se pudo confirmar la contraseña.',
+    },
+    blockedPeople: {
+      title: 'Personas bloqueadas',
+      openHint: 'Ver y desbloquear personas que has bloqueado',
+      back: 'Atrás',
+      loading: 'Cargando personas bloqueadas…',
+      empty: 'No has bloqueado a nadie.',
+      unavailable: 'Usuario no disponible',
+      loadError: 'No se pudieron cargar las personas bloqueadas.',
+      retry: 'Reintentar',
+      unblock: 'Desbloquear',
+      cancel: 'Cancelar',
+      unblockConfirmTitle: '¿Desbloquear a {{name}}?',
+      unblockConfirmTitleUnavailable: '¿Desbloquear a este usuario?',
+      unblockConfirmBody:
+        'Pueden volver a aparecer en Cerca si cumplen tus ajustes de descubrimiento.',
+      unblockError:
+        'No se pudo desbloquear a esta persona. Inténtalo de nuevo.',
+    },
+    editor: {
+      save: 'Guardar',
+      cancel: 'Cancelar',
+      edit: 'Editar',
+    },
+    loadError: 'No se pudieron cargar los ajustes.',
+    saveError: 'No se pudo guardar.',
+    contacts: {
+      title: 'Contactos',
+      enable: 'Usar contactos para alertas familiares',
     },
   },
 };

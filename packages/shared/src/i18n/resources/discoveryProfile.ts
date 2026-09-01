@@ -31,7 +31,7 @@ export default {
   block: 'Block',
   blockConfirmTitle: 'Block {{name}}?',
   blockConfirmBody:
-    'They won’t see your profile or appear nearby. You can manage blocked people later in settings when available.',
+    'They won’t see your profile or appear nearby. You can manage blocked people in Settings.',
   blockConfirmAction: 'Block',
   cancel: 'Cancel',
   blocking: 'Blocking…',
