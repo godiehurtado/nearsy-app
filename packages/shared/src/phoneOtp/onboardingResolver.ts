@@ -1,9 +1,5 @@
 /**
  * Central onboarding route resolver for authenticated users.
- *
- * DOB social blocker: `needsDateOfBirth` is exposed for a future DOB screen.
- * Until that screen ships, navigation may still route social users without DOB
- * to ProfileCompletion — see `resolveAuthenticatedStackInitialRoute`.
  */
 
 import { isProfileDocumentComplete } from '../utils/profileDocumentComplete';
@@ -13,6 +9,10 @@ import {
   isCompleteBirthDate,
   type BirthDateParts,
 } from '../utils/birthDate';
+import {
+  normalizeBirthDateIsoValue,
+  normalizeOnboardingProfileSnapshot,
+} from './onboardingProfileSnapshot';
 
 export const ONBOARDING_MIN_AGE = 18;
 export const ONBOARDING_MAX_AGE = 99;
@@ -37,10 +37,9 @@ export type OnboardingProfileSnapshot = {
 export function extractOnboardingBirthParts(
   profile: OnboardingProfileSnapshot | null | undefined,
 ): BirthDateParts | null {
-  if (!profile || typeof profile.birthDate !== 'string' || !profile.birthDate.trim()) {
-    return null;
-  }
-  return birthPartsFromIso(profile.birthDate.trim());
+  const iso = normalizeBirthDateIsoValue(profile?.birthDate);
+  if (!iso) return null;
+  return birthPartsFromIso(iso);
 }
 
 export function hasValidOnboardingBirthDate(
@@ -61,7 +60,7 @@ export function resolveOnboardingRoute(
     return { kind: 'complete' };
   }
 
-  const snapshot = (profile ?? {}) as OnboardingProfileSnapshot;
+  const snapshot = normalizeOnboardingProfileSnapshot(profile);
 
   if (!hasValidOnboardingBirthDate(snapshot, asOf)) {
     return { kind: 'needsDateOfBirth' };
@@ -74,11 +73,8 @@ export function resolveOnboardingRoute(
   return { kind: 'needsProfileCompletion' };
 }
 
-/**
- * Stack initial route for incomplete onboarding.
- * Preserves legacy ProfileCompletion entry for missing DOB (social blocker).
- */
 export type AuthenticatedOnboardingStackRoute =
+  | 'OnboardingBirthDate'
   | 'PhoneVerification'
   | 'ProfileCompletion';
 
@@ -87,17 +83,23 @@ export function resolveAuthenticatedStackInitialRoute(
   asOf: Date = new Date(),
 ): AuthenticatedOnboardingStackRoute {
   const route = resolveOnboardingRoute(profile, asOf);
-  if (route.kind === 'needsPhoneVerification') {
-    return 'PhoneVerification';
+  switch (route.kind) {
+    case 'needsDateOfBirth':
+      return 'OnboardingBirthDate';
+    case 'needsPhoneVerification':
+      return 'PhoneVerification';
+    case 'needsProfileCompletion':
+      return 'ProfileCompletion';
+    default:
+      return 'ProfileCompletion';
   }
-  return 'ProfileCompletion';
 }
 
-/**
- * Post-auth navigation target for hooks / login.
- * `needsDateOfBirth` maps to ProfileCompletion until the DOB front ships.
- */
-export type PostAuthNavigationTarget = 'MainTabs' | 'PhoneVerification' | 'ProfileCompletion';
+export type PostAuthNavigationTarget =
+  | 'MainTabs'
+  | 'OnboardingBirthDate'
+  | 'PhoneVerification'
+  | 'ProfileCompletion';
 
 export function resolvePostAuthNavigationTarget(
   profile: unknown,
@@ -107,19 +109,13 @@ export function resolvePostAuthNavigationTarget(
   switch (route.kind) {
     case 'complete':
       return 'MainTabs';
+    case 'needsDateOfBirth':
+      return 'OnboardingBirthDate';
     case 'needsPhoneVerification':
       return 'PhoneVerification';
-    case 'needsDateOfBirth':
     case 'needsProfileCompletion':
       return 'ProfileCompletion';
     default:
       return 'ProfileCompletion';
   }
 }
-
-/**
- * Integration seam — future DOB screen should call this after persisting birthDate.
- * Not implemented in this branch.
- */
-export const ONBOARDING_DOB_INTEGRATION_SEAM =
-  'packages/shared/src/phoneOtp/onboardingResolver.ts — consume needsDateOfBirth before OTP.';

@@ -236,15 +236,140 @@ describe('onboarding resolver', () => {
     );
   });
 
-  it('social missing DOB never routes to phone verification', () => {
+  it('social missing DOB routes to OnboardingBirthDate not CRJ or OTP', () => {
     assert.equal(
       resolveOnboardingRoute({ phoneVerified: false }).kind,
       'needsDateOfBirth',
     );
     assert.equal(
       resolveAuthenticatedStackInitialRoute({ phoneVerified: false }),
+      'OnboardingBirthDate',
+    );
+    assert.equal(
+      resolvePostAuthNavigationTarget({ phoneVerified: false }),
+      'OnboardingBirthDate',
+    );
+  });
+});
+
+describe('social auth onboarding chain', () => {
+  const validDob = {
+    birthDate: '1995-06-15',
+    phoneVerified: false,
+    profileSetupCompleted: false,
+  };
+
+  it('Google new without DOB routes to dedicated birth screen', () => {
+    assert.equal(resolvePostAuthNavigationTarget({}), 'OnboardingBirthDate');
+    assert.equal(
+      buildPostAuthResetRoutes('OnboardingBirthDate', { uid: 'google-new' })
+        .routes[0]?.name,
+      'OnboardingBirthDate',
+    );
+  });
+
+  it('Apple new without DOB routes to dedicated birth screen', () => {
+    assert.equal(
+      resolvePostAuthNavigationTarget({ birthYear: 1990 }),
+      'OnboardingBirthDate',
+    );
+  });
+
+  it('LinkedIn new without DOB routes to dedicated birth screen', () => {
+    assert.equal(
+      resolvePostAuthNavigationTarget({ phoneVerified: false, email: 'a@b.com' }),
+      'OnboardingBirthDate',
+    );
+  });
+
+  it('social with valid DOB and phoneVerified false routes to OTP', () => {
+    assert.equal(resolvePostAuthNavigationTarget(validDob), 'PhoneVerification');
+    assert.equal(resolveOnboardingRoute(validDob).kind, 'needsPhoneVerification');
+  });
+
+  it('social with valid DOB and phoneVerified true routes to CRJ', () => {
+    assert.equal(
+      resolvePostAuthNavigationTarget({ ...validDob, phoneVerified: true }),
       'ProfileCompletion',
     );
+  });
+
+  it('email-equivalent incomplete profile never reaches CRJ before OTP', () => {
+    assert.notEqual(resolvePostAuthNavigationTarget(validDob), 'ProfileCompletion');
+    assert.equal(
+      resolveAuthenticatedStackInitialRoute(validDob),
+      'PhoneVerification',
+    );
+  });
+
+  it('profileSetupCompleted false cannot navigate to CRJ before OTP', () => {
+    const incomplete = {
+      birthDate: '1990-01-01',
+      phoneVerified: false,
+      profileSetupCompleted: false,
+    };
+    assert.equal(resolveOnboardingRoute(incomplete).kind, 'needsPhoneVerification');
+    assert.notEqual(resolvePostAuthNavigationTarget(incomplete), 'ProfileCompletion');
+  });
+
+  it('completed profile does not reopen onboarding after settings phone invalidation', () => {
+    assert.equal(
+      resolvePostAuthNavigationTarget({
+        profileSetupCompleted: true,
+        phoneVerified: false,
+      }),
+      'MainTabs',
+    );
+    assert.equal(
+      resolveAuthenticatedStackInitialRoute({
+        profileSetupCompleted: true,
+        phoneVerified: false,
+      }),
+      'ProfileCompletion',
+    );
+  });
+
+  it('incomplete social login resumes at DOB when birthDate missing', () => {
+    assert.equal(
+      resolveAuthenticatedStackInitialRoute({ phoneVerified: false }),
+      'OnboardingBirthDate',
+    );
+  });
+
+  it('email new user with register DOB routes OTP then CRJ', () => {
+    const afterRegister = {
+      birthDate: '1993-11-22',
+      birthYear: 1993,
+      phoneVerified: false,
+      profileSetupCompleted: false,
+    };
+    assert.equal(resolvePostAuthNavigationTarget(afterRegister), 'PhoneVerification');
+    assert.equal(
+      resolvePostAuthNavigationTarget({ ...afterRegister, phoneVerified: true }),
+      'ProfileCompletion',
+    );
+  });
+
+  it('reload during DOB keeps OnboardingBirthDate as stack entry', () => {
+    assert.equal(
+      resolveAuthenticatedStackInitialRoute({
+        phoneVerified: false,
+        profileSetupCompleted: false,
+      }),
+      'OnboardingBirthDate',
+    );
+  });
+
+  it('reload during OTP keeps PhoneVerification as stack entry', () => {
+    assert.equal(
+      resolveAuthenticatedStackInitialRoute(validDob),
+      'PhoneVerification',
+    );
+  });
+
+  it('reload after DOB save targets PhoneVerification on next resolver pass', () => {
+    const afterDob = { birthDate: '1992-03-10', phoneVerified: false };
+    assert.equal(resolvePostAuthNavigationTarget(afterDob), 'PhoneVerification');
   });
 });
 
@@ -780,5 +905,10 @@ describe('post auth navigation routes', () => {
   it('routes phone pending to PhoneVerification', () => {
     const routes = buildPostAuthResetRoutes('PhoneVerification', { uid: 'u1' });
     assert.equal(routes.routes[0]?.name, 'PhoneVerification');
+  });
+
+  it('routes missing DOB to OnboardingBirthDate', () => {
+    const routes = buildPostAuthResetRoutes('OnboardingBirthDate', { uid: 'u1' });
+    assert.equal(routes.routes[0]?.name, 'OnboardingBirthDate');
   });
 });

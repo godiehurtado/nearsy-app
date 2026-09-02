@@ -13,6 +13,7 @@ import RegisterScreen from '../screens/RegisterScreen';
 import CompleteProfileScreen from '../screens/CompleteProfileScreen';
 import ProfileCompletionScreen from '../screens/ProfileCompletionScreen';
 import PhoneVerificationScreen from '../screens/PhoneVerificationScreen';
+import OnboardingBirthDateScreen from '../screens/OnboardingBirthDateScreen';
 import IntroVideoScreen from '../screens/IntroVideoScreen';
 import ThemeSelectionScreen from '../screens/ThemeSelectionScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
@@ -231,6 +232,10 @@ export default function AppNavigator() {
           component={CompleteProfileScreen}
         />
         <Stack.Screen
+          name="OnboardingBirthDate"
+          component={OnboardingBirthDateScreen}
+        />
+        <Stack.Screen
           name="PhoneVerification"
           component={PhoneVerificationScreen}
         />
@@ -248,10 +253,15 @@ export default function AppNavigator() {
     return (
       <Stack.Navigator
         id="RootAuthenticatedComplete"
-        key={`auth-complete-${uid}-${onboardingInitialRoute}`}
+        key={`auth-complete-${uid}`}
         initialRouteName={onboardingInitialRoute}
         screenOptions={{ headerShown: false }}
       >
+        <Stack.Screen
+          name="OnboardingBirthDate"
+          component={OnboardingBirthDateScreen}
+          initialParams={{ uid, email: userEmail, inputNonce: Date.now() }}
+        />
         <Stack.Screen
           name="PhoneVerification"
           component={PhoneVerificationScreen}

@@ -27,6 +27,8 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+firebase-debug.log
+firebase-debug.*.log
 
 # macOS
 .DS_Store
@@ -67,6 +69,8 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+firebase-debug.log
+firebase-debug.*.log
 
 # macOS
 .DS_Store

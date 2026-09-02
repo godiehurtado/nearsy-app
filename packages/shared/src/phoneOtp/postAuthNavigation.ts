@@ -13,6 +13,21 @@ export function buildPostAuthResetRoutes(
   if (target === 'MainTabs') {
     return { index: 0, routes: [{ name: 'MainTabs' }] };
   }
+  if (target === 'OnboardingBirthDate') {
+    return {
+      index: 0,
+      routes: [
+        {
+          name: 'OnboardingBirthDate',
+          params: {
+            uid: params.uid,
+            email: params.email ?? '',
+            inputNonce: params.inputNonce ?? Date.now(),
+          },
+        },
+      ],
+    };
+  }
   if (target === 'PhoneVerification') {
     return {
       index: 0,

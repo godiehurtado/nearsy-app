@@ -17,6 +17,7 @@ import { RegistrationLayout } from '../components/registration/RegistrationLayou
 import { RegistrationProgress } from '../components/registration/RegistrationProgress';
 import { RegistrationFadeSlideIn } from '../components/registration/RegistrationFadeSlideIn';
 import { FormInput } from '../components/registration/FormInput';
+import { OtpSixDigitInput } from '../components/phoneOtp/OtpSixDigitInput';
 import { REGISTRATION_COUNTRIES } from '../components/registration/countries';
 import { authPhaseProgress } from '../components/registration/crjProgress';
 import { PrimaryButton, SecondaryButton } from '../components/PrimaryButton';
@@ -372,6 +373,10 @@ export default function PhoneVerificationScreen() {
     <View style={styles.actionSection}>{content}</View>
   );
 
+  const primaryAction = (button: React.ReactNode) => (
+    <View style={styles.primaryActionSection}>{button}</View>
+  );
+
   return (
     <RegistrationLayout>
       <View style={styles.header}>
@@ -456,12 +461,14 @@ export default function PhoneVerificationScreen() {
                 {errorMessage ? (
                   <Text style={[styles.error, { color: palette.danger }]}>{errorMessage}</Text>
                 ) : null}
-                <PrimaryButton
-                  label={t('phoneOtp.phoneStep.continue')}
-                  onPress={onContinueCapture}
-                  disabled={!isValidPhone(fullPhone) || busy}
-                  loading={busy}
-                />
+                {primaryAction(
+                  <PrimaryButton
+                    label={t('phoneOtp.phoneStep.continue')}
+                    onPress={onContinueCapture}
+                    disabled={!isValidPhone(fullPhone) || busy}
+                    loading={busy}
+                  />,
+                )}
                 {afterPrimaryActions(signOutFooter)}
               </>
             )}
@@ -480,12 +487,14 @@ export default function PhoneVerificationScreen() {
                 {errorMessage ? (
                   <Text style={[styles.error, { color: palette.danger }]}>{errorMessage}</Text>
                 ) : null}
-                <PrimaryButton
-                  label={t('phoneOtp.confirmStep.sendCode')}
-                  onPress={onSendCode}
-                  disabled={busy}
-                  loading={busy}
-                />
+                {primaryAction(
+                  <PrimaryButton
+                    label={t('phoneOtp.confirmStep.sendCode')}
+                    onPress={onSendCode}
+                    disabled={busy}
+                    loading={busy}
+                  />,
+                )}
                 {afterPrimaryActions(
                   <>
                     <SecondaryButton
@@ -509,21 +518,6 @@ export default function PhoneVerificationScreen() {
                     maskedPhone: view.maskedPhone ?? '••••',
                   })}
                 </Text>
-                <FormInput
-                  label={t('phoneOtp.codeStep.codeLabel')}
-                  placeholder={t('phoneOtp.codeStep.codePlaceholder')}
-                  keyboardType="number-pad"
-                  textContentType="oneTimeCode"
-                  autoComplete="sms-otp"
-                  value={view.code}
-                  onChangeText={(v) => {
-                    const controller = controllerRef.current;
-                    if (!controller) return;
-                    syncView(controller.setCode(v));
-                  }}
-                  maxLength={6}
-                  accessibilityLabel={t('phoneOtp.a11y.codeInput')}
-                />
                 {view.attemptsRemaining != null ? (
                   <Text style={[styles.hint, { color: palette.textSecondary }]}>
                     {t('phoneOtp.codeStep.attemptsRemaining', {
@@ -532,14 +526,33 @@ export default function PhoneVerificationScreen() {
                   </Text>
                 ) : null}
                 {errorMessage ? (
-                  <Text style={[styles.error, { color: palette.danger }]}>{errorMessage}</Text>
+                  <Text
+                    style={[styles.error, { color: palette.danger }]}
+                    accessibilityRole="alert"
+                  >
+                    {errorMessage}
+                  </Text>
                 ) : null}
-                <PrimaryButton
-                  label={t('phoneOtp.codeStep.verify')}
-                  onPress={onVerify}
-                  disabled={busy || view.code.length !== 6}
-                  loading={busy || view.phase === 'checking'}
+                <OtpSixDigitInput
+                  value={view.code}
+                  onChangeText={(v) => {
+                    const controller = controllerRef.current;
+                    if (!controller) return;
+                    syncView(controller.setCode(v));
+                  }}
+                  label={t('phoneOtp.codeStep.codeLabel')}
+                  accessibilityLabel={t('phoneOtp.a11y.codeInput')}
+                  hasError={!!errorMessage}
+                  disabled={busy}
                 />
+                {primaryAction(
+                  <PrimaryButton
+                    label={t('phoneOtp.codeStep.verify')}
+                    onPress={onVerify}
+                    disabled={busy || view.code.length !== 6}
+                    loading={busy || view.phase === 'checking'}
+                  />,
+                )}
                 {afterPrimaryActions(
                   <>
                     <View style={styles.actionStack}>
@@ -690,11 +703,17 @@ const styles = StyleSheet.create({
   phoneConfirm: {
     fontSize: fontSize.lg,
     fontWeight: fontWeight.bold,
-    marginBottom: spacing.lg,
     textAlign: 'center',
   },
-  hint: { fontSize: fontSize.sm, marginBottom: spacing.sm },
-  error: { fontSize: fontSize.sm, marginBottom: spacing.md },
+  hint: { fontSize: fontSize.sm, marginTop: spacing.sm },
+  error: {
+    fontSize: fontSize.sm,
+    marginTop: spacing.sm,
+    lineHeight: fontSize.sm * 1.45,
+  },
+  primaryActionSection: {
+    marginTop: spacing.lg,
+  },
   actionSection: {
     marginTop: spacing.lg,
     gap: spacing.md,

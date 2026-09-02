@@ -1,5 +1,6 @@
 import { getUserProfile } from '../services/firestoreService';
 import { resolvePostAuthNavigationTarget } from './onboardingResolver';
+import { mergeOnboardingProfileSnapshots } from './onboardingProfileSnapshot';
 import { buildPostAuthResetRoutes } from './postAuthNavigation';
 
 export type NavigationReset = {
@@ -9,15 +10,24 @@ export type NavigationReset = {
   }) => void;
 };
 
+export type ApplyPostAuthNavigationInput = {
+  uid: string;
+  email?: string | null;
+  /** Fresh fields just persisted — merged over the Firestore read for resolver accuracy. */
+  profileSnapshot?: Record<string, unknown> | null;
+};
+
 /**
  * Central post-auth navigation for all providers.
- * DOB social blocker: `needsDateOfBirth` routes to ProfileCompletion until the DOB front ships.
  */
 export async function applyPostAuthNavigation(
   navigation: NavigationReset,
-  input: { uid: string; email?: string | null },
+  input: ApplyPostAuthNavigationInput,
 ): Promise<void> {
-  const profile = await getUserProfile(input.uid);
+  const remote = await getUserProfile(input.uid);
+  const profile = input.profileSnapshot
+    ? mergeOnboardingProfileSnapshots(remote, input.profileSnapshot)
+    : remote;
   const target = resolvePostAuthNavigationTarget(profile);
   navigation.reset(
     buildPostAuthResetRoutes(target, {

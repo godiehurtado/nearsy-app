@@ -50,8 +50,13 @@ describe('register and phone OTP integration', () => {
     assert.match(screen, /OtpContextualAction/);
     assert.match(screen, /OtpSignOutFooter/);
     assert.match(screen, /styles\.actionSection/);
+    assert.match(screen, /styles\.primaryActionSection/);
+    assert.match(screen, /marginTop:\s*spacing\.lg/);
     assert.match(screen, /styles\.actionStack/);
-    assert.match(screen, /textContentType="oneTimeCode"/);
+    assert.match(screen, /OtpSixDigitInput/);
+    const otpComponent = readSharedSource('components/phoneOtp/OtpSixDigitInput.tsx');
+    assert.match(otpComponent, /textContentType="oneTimeCode"/);
+    assert.match(otpComponent, /autoComplete="sms-otp"/);
   });
 
   it('Android phone screen unchanged by iOS OTP work', () => {
@@ -66,11 +71,33 @@ describe('register and phone OTP integration', () => {
     );
   });
 
-  it('AppNavigator wires PhoneVerification in authenticated incomplete stack', () => {
+  it('OnboardingBirthDate screen persists DOB then re-runs central navigation', () => {
+    const dob = readSharedSource('screens/OnboardingBirthDateScreen.ios.tsx');
+    assert.match(dob, /buildBirthDatePersistencePatch/);
+    assert.match(dob, /profileSnapshot/);
+    assert.match(dob, /applyPostAuthNavigation/);
+    assert.doesNotMatch(dob, /profileSetupCompleted:\s*true/);
+    assert.doesNotMatch(dob, /ProfileCompletion/);
+  });
+
+  it('AppNavigator wires OnboardingBirthDate and PhoneVerification in incomplete stack', () => {
     const nav = readSharedSource('navigation/AppNavigator.tsx');
     assert.match(nav, /resolveAuthenticatedStackInitialRoute/);
+    assert.match(nav, /name="OnboardingBirthDate"/);
     assert.match(nav, /name="PhoneVerification"/);
     assert.match(nav, /initialRouteName=\{onboardingInitialRoute\}/);
+  });
+
+  it('post-auth resolver maps needsDateOfBirth to OnboardingBirthDate', () => {
+    const resolver = readSharedSource('phoneOtp/onboardingResolver.ts');
+    assert.match(
+      resolver,
+      /case 'needsDateOfBirth':\s*\n\s*return 'OnboardingBirthDate'/,
+    );
+    assert.doesNotMatch(
+      resolver,
+      /case 'needsDateOfBirth':[\s\S]{0,80}return 'ProfileCompletion'/,
+    );
   });
 
   it('hooks converge on applyPostAuthNavigation', () => {
