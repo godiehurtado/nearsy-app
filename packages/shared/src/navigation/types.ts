@@ -21,8 +21,13 @@ export type RootStackParamList = {
   MainTabs: undefined;
   PhoneVerification: {
     uid: string;
-    phone: string;
+    phone?: string;
     from?: string;
+  };
+  OnboardingBirthDate: {
+    uid: string;
+    email?: string | null;
+    inputNonce?: number;
   };
 
   Interests: any;

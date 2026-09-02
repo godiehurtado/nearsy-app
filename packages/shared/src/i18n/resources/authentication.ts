@@ -101,7 +101,7 @@ export default {
     birthDateModalTitle: 'Select your date of birth',
     countryModalTitle: 'Select country code',
     phoneHelper: 'Optional for now. Select your country and enter a valid mobile number.',
-    ageHelper: 'You must be 18+ to register.',
+    ageHelper: 'You must be 18–99 to register.',
     termsPrefix: 'I agree to the',
     termsLink: 'terms and conditions',
     wizard: {
@@ -115,6 +115,7 @@ export default {
           subtitle: 'Your profile shows your age, not your birth date.',
           ageOk: "You're {{age}}",
           ageTooYoung: 'You must be 18+ to create an account.',
+          ageTooOld: 'You must be {{age}} or younger to create an account.',
           futureDate: 'Enter a date of birth that is not in the future.',
           invalidDate: 'Enter a valid date of birth.',
         },
@@ -131,6 +132,11 @@ export default {
           title: "What's your mobile number?",
           subtitle:
             'Required for your account. Phone verification will happen later — no code is sent yet.',
+        },
+        terms: {
+          title: 'Terms and conditions',
+          subtitle:
+            'Review and accept the terms to create your account. Phone verification comes next.',
         },
       },
       fields: {
@@ -162,6 +168,7 @@ export default {
         birthInvalid: 'Enter a valid date of birth.',
         birthFuture: 'Enter a date of birth that is not in the future.',
         birthMinimumAge: 'You must be 18+ to create an account.',
+        birthMaximumAge: 'You must be {{age}} or younger to create an account.',
         email: 'Enter a valid email address',
         password:
           'Use at least 8 characters with letters and numbers',
@@ -250,6 +257,7 @@ export default {
       birthYearRequiredMessage: 'Please select your birth year.',
       minimumAgeTitle: 'Minimum age',
       minimumAgeMessage: 'You must be 18+ to create an account.',
+      maximumAgeMessage: 'You must be {{age}} or younger to create an account.',
       invalidEmailTitle: 'Invalid email',
       emailMismatchTitle: 'Email mismatch',
       invalidPhoneTitle: 'Invalid phone number',
@@ -259,12 +267,8 @@ export default {
     },
   },
   otp: {
-    title: 'Not available yet',
-    subtitle:
-      'Phone verification via SMS is currently only available on Android in this beta version.',
-    comingSoonTitle: 'Coming soon',
-    comingSoonMessage:
-      'We will enable iOS phone verification in a future update.',
+    title: 'Verify your phone',
+    subtitle: 'Confirm your mobile number with a one-time SMS code.',
     goBack: 'Go back',
   },
   errors: {

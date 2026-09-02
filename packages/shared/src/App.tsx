@@ -14,7 +14,7 @@ import {
   isLinkedInA3SignInEnabledForRuntime,
 } from './authentication/linkedinA3/authenticateWithLinkedIn';
 import { getLinkedInA3CallableClient } from './authentication/linkedinA3/iosLinkedInA3Foundation';
-import { resetNavigationAfterLinkedInA3SignIn } from './authentication/linkedinA3/linkedinA3Navigation';
+import { applyPostAuthNavigation } from './phoneOtp/applyPostAuthNavigation';
 import { getSharedLinkedInA3DurableStore } from './authentication/linkedinA3/runtimeDurableStore';
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -111,13 +111,16 @@ function LinkedInA3ResumeBridge() {
         Keyboard.dismiss();
         setTimeout(() => {
           if (cancelled || !navigationRef.isReady()) return;
-          resetNavigationAfterLinkedInA3SignIn(
+          void applyPostAuthNavigation(
             {
               reset: (state) => {
                 (navigationRef as any).reset(state);
               },
             },
-            finalized,
+            {
+              uid: finalized.session.uid,
+              email: finalized.email ?? finalized.session.email ?? '',
+            },
           );
         }, 150);
       },

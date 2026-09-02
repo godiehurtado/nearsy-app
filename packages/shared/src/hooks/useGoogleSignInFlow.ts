@@ -7,13 +7,13 @@ import {
   SocialAuthError,
   sanitizeSocialErrorForLog,
 } from '../authentication/social';
+import { applyPostAuthNavigation } from '../phoneOtp/applyPostAuthNavigation';
 
 const authenticateWithGoogle = createDefaultAuthenticateWithGoogle();
 
 /**
- * Shared Google sign-in → Firebase → existing profile routing.
+ * Shared Google sign-in → Firebase → central onboarding routing.
  * Used by Login and Welcome — does not reimplement Google Auth.
- * Incomplete profiles enter ProfileCompletion (CRJ), not MainTabs.
  */
 export function useGoogleSignInFlow() {
   const navigation = useNavigation<any>();
@@ -36,27 +36,9 @@ export function useGoogleSignInFlow() {
 
       Keyboard.dismiss();
       setTimeout(() => {
-        if (result.profileRoute === 'MainTabs') {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'MainTabs' }],
-          });
-          return;
-        }
-
-        const emailForProfile = result.email ?? result.session.email ?? '';
-        navigation.reset({
-          index: 0,
-          routes: [
-            {
-              name: 'ProfileCompletion',
-              params: {
-                uid: result.session.uid,
-                email: emailForProfile,
-                inputNonce: Date.now(),
-              },
-            },
-          ],
+        void applyPostAuthNavigation(navigation, {
+          uid: result.session.uid,
+          email: result.email ?? result.session.email ?? '',
         });
       }, 150);
     } catch (err) {

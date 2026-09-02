@@ -14,6 +14,9 @@ import {
 import {
   birthDateToIso,
   meetsMinimumRegistrationAge,
+  meetsRegistrationAgeRange,
+  minRegistrationBirthDate,
+  MAX_REGISTRATION_AGE,
   MIN_REGISTRATION_AGE,
   type BirthDateParts,
 } from '../utils/birthDate';
@@ -34,12 +37,12 @@ describe('email register wizard order', () => {
     );
   });
 
-  it('B — order is email → password → birth → phone', () => {
+  it('B — order is email → password → birth → terms', () => {
     assert.deepEqual([...EMAIL_REGISTER_STEPS], [
       'email',
       'password',
       'birth',
-      'phone',
+      'terms',
     ]);
   });
 
@@ -48,16 +51,16 @@ describe('email register wizard order', () => {
     assert.equal(previousEmailRegisterStep(birthIndex), 'password');
   });
 
-  it('D — Back from Phone returns Birth Date', () => {
-    const phoneIndex = EMAIL_REGISTER_STEPS.indexOf('phone');
-    assert.equal(previousEmailRegisterStep(phoneIndex), 'birth');
+  it('D — Back from Terms returns Birth Date', () => {
+    const termsIndex = EMAIL_REGISTER_STEPS.indexOf('terms');
+    assert.equal(previousEmailRegisterStep(termsIndex), 'birth');
   });
 
-  it('forward: Email Continue → Password, Password Continue → Birth, Birth Continue → Phone', () => {
+  it('forward: Email Continue → Password, Password Continue → Birth, Birth Continue → Terms', () => {
     assert.equal(emailRegisterStepAt(0), 'email');
     assert.equal(nextEmailRegisterStep(0), 'password');
     assert.equal(nextEmailRegisterStep(1), 'birth');
-    assert.equal(nextEmailRegisterStep(2), 'phone');
+    assert.equal(nextEmailRegisterStep(2), 'terms');
     assert.equal(nextEmailRegisterStep(3), 'submit');
   });
 
@@ -72,6 +75,27 @@ describe('email register wizard order', () => {
     const seventeen: BirthDateParts = { day: 14, month: 8, year: 2008 };
     assert.equal(meetsMinimumRegistrationAge(eighteen, asOf), true);
     assert.equal(meetsMinimumRegistrationAge(seventeen, asOf), false);
+  });
+
+  it('E2 — registration age window is 18–99 inclusive', () => {
+    const asOf = new Date(2026, 8, 1);
+    assert.equal(MAX_REGISTRATION_AGE, 99);
+    assert.equal(
+      meetsRegistrationAgeRange({ day: 1, month: 9, year: 1927 }, asOf),
+      true,
+    );
+    assert.equal(
+      meetsRegistrationAgeRange({ day: 1, month: 9, year: 1926 }, asOf),
+      false,
+    );
+    const register = readSharedSource('screens/RegisterScreen.tsx');
+    assert.match(register, /meetsRegistrationAgeRange/);
+    assert.match(register, /minRegistrationBirthDate/);
+    assert.deepEqual(minRegistrationBirthDate(asOf), {
+      year: 1926,
+      month: 9,
+      day: 2,
+    });
   });
 
   it('F — canonical YYYY-MM-DD persistence unchanged', () => {
@@ -118,7 +142,7 @@ describe('email register wizard order', () => {
     );
     assert.match(
       register,
-      /Email → Password → Birth → Phone\+Terms/,
+      /Email → Password → Birth → Terms/,
     );
   });
 

@@ -1,6 +1,9 @@
 /**
  * Email-registration wizard order. Birth Date appears exactly once,
- * after Password and before Phone + Terms.
+ * after Password and before Terms acceptance.
+ *
+ * Phone capture + OTP verification happen after account creation via the
+ * central onboarding gate (PhoneVerificationScreen).
  *
  * Social auth does not use this sequence.
  */
@@ -8,7 +11,7 @@ export const EMAIL_REGISTER_STEPS = [
   'email',
   'password',
   'birth',
-  'phone',
+  'terms',
 ] as const;
 
 export type EmailRegisterStep = (typeof EMAIL_REGISTER_STEPS)[number];

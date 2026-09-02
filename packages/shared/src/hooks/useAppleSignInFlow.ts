@@ -7,10 +7,8 @@ import {
   SocialAuthError,
   sanitizeSocialErrorForLog,
 } from '../authentication/social';
-import {
-  resolveAppleAuthNavigationTarget,
-  shouldSuppressAppleSignInAlert,
-} from '../authentication/social/application/appleSignInUiPolicy';
+import { applyPostAuthNavigation } from '../phoneOtp/applyPostAuthNavigation';
+import { shouldSuppressAppleSignInAlert } from '../authentication/social/application/appleSignInUiPolicy';
 
 const authenticateWithApple = createDefaultAuthenticateWithApple();
 
@@ -44,28 +42,9 @@ export function useAppleSignInFlow() {
 
       Keyboard.dismiss();
       setTimeout(() => {
-        const screen = resolveAppleAuthNavigationTarget(result.profileRoute);
-        if (screen === 'MainTabs') {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'MainTabs' }],
-          });
-          return;
-        }
-
-        const emailForProfile = result.email ?? result.session.email ?? '';
-        navigation.reset({
-          index: 0,
-          routes: [
-            {
-              name: 'ProfileCompletion',
-              params: {
-                uid: result.session.uid,
-                email: emailForProfile,
-                inputNonce: Date.now(),
-              },
-            },
-          ],
+        void applyPostAuthNavigation(navigation, {
+          uid: result.session.uid,
+          email: result.email ?? result.session.email ?? '',
         });
       }, 150);
     } catch (err) {
