@@ -19,8 +19,19 @@ import {
   type AffiliationEntitySearchRequest,
 } from './affiliationEntitySearchContract';
 
-export const AFFILIATION_CALLABLE_HTTP_PROJECT = 'nearsy-dev' as const;
+export const AFFILIATION_CALLABLE_HTTP_PROJECTS = [
+  'nearsy-dev',
+  'nearsy-pj',
+] as const;
 export const AFFILIATION_CALLABLE_HTTP_REGION = 'us-central1' as const;
+
+function isAllowedAffiliationCallableProject(
+  project: string,
+): project is (typeof AFFILIATION_CALLABLE_HTTP_PROJECTS)[number] {
+  return (AFFILIATION_CALLABLE_HTTP_PROJECTS as readonly string[]).includes(
+    project,
+  );
+}
 
 export type AffiliationCallableHttpDeps = InvokeFirebaseCallableHttpDeps;
 
@@ -32,10 +43,10 @@ export function buildAffiliationSearchCallableUrl(
   const project = projectId.trim().toLowerCase();
   const regionNorm = region.trim().toLowerCase();
   const name = functionName.trim();
-  if (project !== AFFILIATION_CALLABLE_HTTP_PROJECT) {
+  if (!isAllowedAffiliationCallableProject(project)) {
     throw new AffiliationEntitySearchClientError(
       'FAILED_PRECONDITION',
-      'Affiliation search callable is Development / nearsy-dev only.',
+      'Affiliation search callable requires a known Firebase project.',
     );
   }
   if (regionNorm !== AFFILIATION_CALLABLE_HTTP_REGION) {
