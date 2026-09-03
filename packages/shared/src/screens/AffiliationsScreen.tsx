@@ -26,6 +26,7 @@ import { cardShadow } from '../theme/shadows';
 import { OnboardingAffiliationCategoryPanel } from '../components/registration/OnboardingAffiliationCategoryPanel';
 import {
   listOnboardingAffiliationCategoryIds,
+  type OnboardingAffiliationCategoryId,
   type OnboardingSelectedAffiliation,
 } from '../affiliations/onboardingAffiliationCatalog';
 import { buildPostCrjAffiliationPersistencePatch } from '../affiliations/onboardingAffiliationPersistence';
@@ -34,6 +35,10 @@ import {
   parsePostCrjAffiliationEditorParams,
   readAffiliationsForPostCrjEditor,
 } from '../affiliations/postCrjAffiliationEditor';
+import {
+  resolvePendingAffiliationSearchUi,
+  type AffiliationSearchUiSnapshot,
+} from '../affiliations/affiliationSearchInteraction';
 import type { ProfileMode } from '../profile/profileModeFields';
 
 type RouteParams = {
@@ -70,8 +75,36 @@ export default function AffiliationsScreen() {
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<OnboardingSelectedAffiliation[]>([]);
   const snapshotRef = useRef<OnboardingSelectedAffiliation[]>([]);
+  const [searchUiByCategory, setSearchUiByCategory] = useState<
+    Partial<Record<OnboardingAffiliationCategoryId, AffiliationSearchUiSnapshot>>
+  >({});
+  const addByCategoryRef = useRef<
+    Partial<
+      Record<
+        OnboardingAffiliationCategoryId,
+        React.MutableRefObject<(() => void) | null>
+      >
+    >
+  >({});
+
+  const getAddRef = (
+    categoryId: OnboardingAffiliationCategoryId,
+  ): React.MutableRefObject<(() => void) | null> => {
+    const existing = addByCategoryRef.current[categoryId];
+    if (existing) return existing;
+    const created: React.MutableRefObject<(() => void) | null> = {
+      current: null,
+    };
+    addByCategoryRef.current[categoryId] = created;
+    return created;
+  };
 
   const categoryIds = useMemo(() => listOnboardingAffiliationCategoryIds(), []);
+  const pendingSearch = resolvePendingAffiliationSearchUi(
+    searchUiByCategory,
+    categoryIds,
+  );
+  const showAddCta = Boolean(pendingSearch);
   const selectedCount = selected.length;
   const isDirty = isPostCrjAffiliationEditorDirty(snapshotRef.current, selected);
 
@@ -142,6 +175,11 @@ export default function AffiliationsScreen() {
       cancelled = true;
     };
   }, [editorMode, editorUid, parsed.ok]);
+
+  const handleAddPending = () => {
+    if (!pendingSearch || saving) return;
+    addByCategoryRef.current[pendingSearch.categoryId]?.current?.();
+  };
 
   const handleSave = async () => {
     if (!editorUid || !editorMode || saving) return;
@@ -300,6 +338,13 @@ export default function AffiliationsScreen() {
                   categoryId={categoryId}
                   selected={selected}
                   onChangeSelected={setSelected}
+                  onSearchUiChange={(ui) => {
+                    setSearchUiByCategory((prev) => ({
+                      ...prev,
+                      [categoryId]: ui,
+                    }));
+                  }}
+                  searchAddRef={getAddRef(categoryId)}
                   contentScrollRef={scrollRef}
                   removeAffiliationAccessibilityLabel={(name) =>
                     t('profile.affiliations.removeA11y', { name })
@@ -323,10 +368,19 @@ export default function AffiliationsScreen() {
         >
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t('profile.affiliations.saveA11y')}
+            accessibilityLabel={
+              showAddCta
+                ? pendingSearch?.ui.addName
+                  ? t(
+                      'onboarding.profileCompletion.affiliations.addA11y' as any,
+                      { name: pendingSearch.ui.addName },
+                    )
+                  : t('onboarding.profileCompletion.affiliations.add' as any)
+                : t('profile.affiliations.saveA11y')
+            }
             accessibilityState={{ disabled: saving, busy: saving }}
             disabled={saving}
-            onPress={handleSave}
+            onPress={showAddCta ? handleAddPending : handleSave}
             style={({ pressed }) => [
               styles.saveBtn,
               { backgroundColor: palette.primary },
@@ -338,9 +392,15 @@ export default function AffiliationsScreen() {
               <ActivityIndicator color={palette.surface} />
             ) : (
               <>
-                <Ionicons name="save-outline" size={18} color={palette.surface} />
+                <Ionicons
+                  name={showAddCta ? 'add' : 'save-outline'}
+                  size={18}
+                  color={palette.surface}
+                />
                 <Text style={[styles.saveText, { color: palette.surface }]}>
-                  {t('profile.affiliations.save')}
+                  {showAddCta
+                    ? t('onboarding.profileCompletion.affiliations.add' as any)
+                    : t('profile.affiliations.save')}
                 </Text>
               </>
             )}

@@ -19,6 +19,7 @@ import { radius } from '../../theme/radius';
 import { useTranslation } from '../../i18n';
 import {
   resolveAffiliationSearchUi,
+  resolveInMemorySelectedLogoUrl,
   type AffiliationSearchUiSnapshot,
 } from '../../affiliations/affiliationSearchInteraction';
 import {
@@ -299,7 +300,13 @@ export function OnboardingAffiliationCategoryPanel({
       source: isCustom ? 'custom' : 'provider',
       ...(isCustom ? {} : { providerId: matched!.providerId }),
       ...(!isCustom && matched?.provider ? { provider: matched.provider } : {}),
-      ...(draftImage ? { logoUrl: draftImage } : {}),
+      ...(() => {
+        const logoUrl = resolveInMemorySelectedLogoUrl(
+          draftImage,
+          isCustom ? undefined : matched?.logoUrl,
+        );
+        return logoUrl ? { logoUrl } : {};
+      })(),
       ...(!isCustom && matched?.website ? { website: matched.website } : {}),
       ...(activeTopic ? { topic: activeTopic.label } : {}),
     };

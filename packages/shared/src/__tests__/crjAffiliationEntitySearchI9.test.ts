@@ -250,8 +250,9 @@ describe('CRJ-I9 panel wiring / custom fallback', () => {
     assert.ok(panel.includes('searchGenerationRef'));
     assert.ok(panel.includes('explicitlyPicked'));
     assert.ok(panel.includes('suggestionsUnavailable'));
-    assert.ok(panel.includes('draftImage ? { logoUrl: draftImage }'));
-    assert.ok(!panel.includes('matched.logoUrl'));
+    assert.ok(panel.includes('resolveInMemorySelectedLogoUrl'));
+    assert.ok(panel.includes('matched?.logoUrl'));
+    assert.ok(!panel.includes('draftImage ? { logoUrl: draftImage }'));
     assert.ok(!panel.includes('api.logo.dev'));
     assert.ok(!panel.includes('api.brandfetch.io'));
     assert.ok(!panel.includes('ActivityIndicator'));

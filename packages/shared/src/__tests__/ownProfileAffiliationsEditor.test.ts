@@ -143,6 +143,27 @@ describe('post-CRJ Affiliations editor screen contract', () => {
     assert.match(saveBlock, /Keyboard\.dismiss\(\)/);
   });
 
+  it('persists canonical provenance and strips tokenized Logo.dev logoUrl', () => {
+    const withCdnLogo: OnboardingSelectedAffiliation = {
+      ...providerRow,
+      logoUrl: 'https://img.logo.dev/miami.edu?token=pk_test_placeholder',
+    };
+    const patch = buildPostCrjAffiliationPersistencePatch('personal', [
+      withCdnLogo,
+    ]);
+    const row = patch.personalOnboardingAffiliations![0]!;
+    assert.equal(row.id, 'fixture:um');
+    assert.equal(row.name, 'University of Miami');
+    assert.equal(row.categoryId, 'education');
+    assert.equal(row.source, 'provider');
+    assert.equal(row.providerId, 'fixture:um');
+    assert.equal(row.provider, 'logo_dev');
+    assert.equal(row.website, 'https://miami.edu');
+    assert.equal(row.topic, 'Universities');
+    assert.equal(row.logoUrl, undefined);
+    assert.equal(patch.personalAffiliations![0]!.imageUrl, null);
+  });
+
   it('entity search reuses runtime provider via category panel', () => {
     const panel = readShared(
       'components/registration/OnboardingAffiliationCategoryPanel.tsx',
