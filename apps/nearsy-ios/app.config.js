@@ -259,7 +259,7 @@ module.exports = ({ config }) => {
       EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME:
         process.env.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME ??
         config.extra?.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME,
-      EXPO_PUBLIC_LINKEDIN_AUTH_ENABLED: 'false',
+      EXPO_PUBLIC_LINKEDIN_AUTH_ENABLED: 'true',
       NEARSY_LINKEDIN_APP_RETURN_URL: 'nearsy://linkedin-auth',
     };
 

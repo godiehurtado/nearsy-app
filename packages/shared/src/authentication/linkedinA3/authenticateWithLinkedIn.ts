@@ -47,7 +47,7 @@ function readFirebaseEnvRaw(): string | undefined {
 export function isLinkedInA3SignInEnabledForRuntime(): boolean {
   try {
     const env = resolveNearsyFirebaseEnvironment(readFirebaseEnvRaw());
-    return env.environment === 'development' && env.linkedInAuthEnabled;
+    return env.linkedInAuthEnabled;
   } catch {
     return false;
   }

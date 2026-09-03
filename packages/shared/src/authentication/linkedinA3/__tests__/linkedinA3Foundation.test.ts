@@ -27,10 +27,10 @@ describe('nearsyFirebaseEnvironment', () => {
     assert.equal(env.googleServicesFile, './GoogleService-Info.development.plist');
   });
 
-  it('selects production → nearsy-pj with LinkedIn disabled', () => {
+  it('selects production → nearsy-pj with LinkedIn enabled', () => {
     const env = resolveNearsyFirebaseEnvironment('production');
     assert.equal(env.firebaseProjectId, 'nearsy-pj');
-    assert.equal(env.linkedInAuthEnabled, false);
+    assert.equal(env.linkedInAuthEnabled, true);
     assert.equal(env.appCheckProvider, 'production_pending');
     assert.equal(isDebugAppCheckAllowed('production'), false);
   });
@@ -317,7 +317,7 @@ describe('createLinkedInA3CallableClient', () => {
     );
   });
 
-  it('keeps production LinkedIn disabled', async () => {
+  it('rejects when LinkedIn is explicitly disabled on the environment config', async () => {
     const appCheck = createAppCheckBootstrap({
       port: {
         async initialize() {},
@@ -327,7 +327,10 @@ describe('createLinkedInA3CallableClient', () => {
     });
     await appCheck.initialize();
     const client = createLinkedInA3CallableClient({
-      environment: resolveNearsyFirebaseEnvironment('production'),
+      environment: {
+        ...resolveNearsyFirebaseEnvironment('production'),
+        linkedInAuthEnabled: false,
+      },
       appCheck,
       getNativeProjectId: () => 'nearsy-pj',
       getJsProjectId: () => 'nearsy-pj',

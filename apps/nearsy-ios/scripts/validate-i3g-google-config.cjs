@@ -207,8 +207,8 @@ function main() {
   if (prodConfig.ios?.googleServicesFile !== './GoogleService-Info.plist') {
     fail('Prod googleServicesFile unexpected');
   }
-  if (pextra.EXPO_PUBLIC_LINKEDIN_AUTH_ENABLED !== 'false') {
-    fail('LinkedIn should be disabled in Production');
+  if (pextra.EXPO_PUBLIC_LINKEDIN_AUTH_ENABLED !== 'true') {
+    fail('LinkedIn should be enabled in Production');
   }
   if (pextra.NEARSY_APP_CHECK_DEBUG_TOKEN) {
     fail('Production must not inject App Check debug token');

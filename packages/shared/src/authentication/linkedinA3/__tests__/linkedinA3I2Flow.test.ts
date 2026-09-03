@@ -150,9 +150,9 @@ describe('shouldShowLinkedInA3DevSmokePanel I2 gate', () => {
     );
   });
 
-  it('Production LinkedIn stays disabled', () => {
+  it('Production LinkedIn is enabled for MVP', () => {
     const env = resolveNearsyFirebaseEnvironment('production');
-    assert.equal(env.linkedInAuthEnabled, false);
+    assert.equal(env.linkedInAuthEnabled, true);
   });
 });
 
