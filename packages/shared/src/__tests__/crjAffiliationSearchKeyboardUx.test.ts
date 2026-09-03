@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import {
   IDLE_AFFILIATION_SEARCH_UI,
   resolveAffiliationSearchUi,
+  resolveInMemorySelectedLogoUrl,
+  resolvePendingAffiliationSearchUi,
 } from '../affiliations/affiliationSearchInteraction';
 import { resolveAffiliationLogoPresentation } from '../affiliations/affiliationLogo';
 import { buildCrjAffiliationPersistencePatch } from '../affiliations/onboardingAffiliationPersistence';
@@ -95,6 +97,44 @@ describe('CRJ-I9-C Search Mode keyboard UX', () => {
     assert.equal(ui.hideJourneyFooter, true);
   });
 
+  it('E2 — in-memory selected logo keeps search HTTPS logoUrl; draft wins', () => {
+    assert.equal(
+      resolveInMemorySelectedLogoUrl(
+        null,
+        'https://img.logo.dev/microsoft.com?token=pk_test_placeholder',
+      ),
+      'https://img.logo.dev/microsoft.com?token=pk_test_placeholder',
+    );
+    assert.equal(
+      resolveInMemorySelectedLogoUrl(
+        'file://draft.png',
+        'https://img.logo.dev/microsoft.com?token=pk_test_placeholder',
+      ),
+      'file://draft.png',
+    );
+  });
+
+  it('E3 — persistence still strips ephemeral Logo.dev token URLs', () => {
+    const selected = {
+      id: 'logo.dev:microsoft.com',
+      name: 'Microsoft',
+      categoryId: 'professional' as const,
+      source: 'provider' as const,
+      providerId: 'logo.dev:microsoft.com',
+      provider: 'logo.dev',
+      logoUrl: 'https://img.logo.dev/microsoft.com?token=pk_test_placeholder',
+      website: 'https://microsoft.com',
+    };
+    const personal = buildCrjAffiliationPersistencePatch('personal', [selected]);
+    const row = personal.personalOnboardingAffiliations?.[0];
+    assert.equal(row?.name, 'Microsoft');
+    assert.equal(row?.providerId, 'logo.dev:microsoft.com');
+    assert.equal(row?.website, 'https://microsoft.com');
+    assert.equal(row?.logoUrl, undefined);
+    const legacy = personal.personalAffiliations?.[0];
+    assert.equal(legacy?.imageUrl, null);
+  });
+
   it('F — selection is not persistence; Add still required', () => {
     const panel = readSharedSource(
       'components/registration/OnboardingAffiliationCategoryPanel.tsx',
@@ -107,6 +147,8 @@ describe('CRJ-I9-C Search Mode keyboard UX', () => {
     assert.ok(!pickBody.includes('buildCrjAffiliationPersistencePatch'));
     assert.ok(panel.includes('function addFromSearch()'));
     assert.ok(panel.includes('onChangeSelected([...selected, next])'));
+    assert.ok(panel.includes('resolveInMemorySelectedLogoUrl'));
+    assert.ok(panel.includes('matched?.logoUrl'));
   });
 
   it('G — Add remains the only persist path for the search candidate', () => {
@@ -276,5 +318,47 @@ describe('CRJ-I9-C Search Mode keyboard UX', () => {
       ),
     );
     assert.ok(!panel.includes('ActivityIndicator'));
+  });
+});
+
+describe('Own Profile Affiliations Search Mode wiring', () => {
+  it('AffiliationsScreen wires onSearchUiChange and searchAddRef', () => {
+    const screen = readSharedSource('screens/AffiliationsScreen.tsx');
+    assert.ok(screen.includes('onSearchUiChange'));
+    assert.ok(screen.includes('searchAddRef'));
+    assert.ok(screen.includes('resolvePendingAffiliationSearchUi'));
+    assert.ok(screen.includes('handleAddPending'));
+    assert.ok(screen.includes('showAddCta'));
+    assert.ok(
+      screen.includes('onPress={showAddCta ? handleAddPending : handleSave}'),
+    );
+    assert.ok(
+      screen.includes('onboarding.profileCompletion.affiliations.add'),
+    );
+    assert.ok(screen.includes('profile.affiliations.saveA11y'));
+  });
+
+  it('pending category with showAddCta wins over idle siblings', () => {
+    const pending = resolvePendingAffiliationSearchUi(
+      {
+        education: IDLE_AFFILIATION_SEARCH_UI,
+        professional: {
+          phase: 'selected',
+          hideJourneyFooter: true,
+          showAddCta: true,
+          addName: 'Microsoft',
+        },
+      },
+      ['education', 'professional', 'community'] as const,
+    );
+    assert.equal(pending?.categoryId, 'professional');
+    assert.equal(pending?.ui.addName, 'Microsoft');
+    assert.equal(
+      resolvePendingAffiliationSearchUi(
+        { education: IDLE_AFFILIATION_SEARCH_UI },
+        ['education'] as const,
+      ),
+      null,
+    );
   });
 });

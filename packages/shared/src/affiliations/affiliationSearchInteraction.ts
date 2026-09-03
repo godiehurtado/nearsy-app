@@ -69,3 +69,29 @@ export function resolveAffiliationSearchUi(input: {
     addName: null,
   };
 }
+
+/**
+ * In-memory selected-tile logo. Draft upload wins; otherwise keep the search
+ * HTTPS logoUrl. Persistence still strips ephemeral Logo.dev token URLs.
+ */
+export function resolveInMemorySelectedLogoUrl(
+  draftImage?: string | null,
+  matchedLogoUrl?: string | null,
+): string | undefined {
+  const draft = typeof draftImage === 'string' ? draftImage.trim() : '';
+  if (draft) return draft;
+  const matched = typeof matchedLogoUrl === 'string' ? matchedLogoUrl.trim() : '';
+  if (matched) return matched;
+  return undefined;
+}
+
+export function resolvePendingAffiliationSearchUi<T extends string>(
+  snapshots: Partial<Record<T, AffiliationSearchUiSnapshot>>,
+  categoryOrder: readonly T[],
+): { categoryId: T; ui: AffiliationSearchUiSnapshot } | null {
+  for (const categoryId of categoryOrder) {
+    const ui = snapshots[categoryId];
+    if (ui?.showAddCta) return { categoryId, ui };
+  }
+  return null;
+}
