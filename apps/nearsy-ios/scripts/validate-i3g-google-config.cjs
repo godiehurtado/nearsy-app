@@ -169,12 +169,11 @@ function main() {
     }),
   );
 
-  // Production config evaluation (clear Dev Google, Logo.dev, and debug token)
+  // Production config evaluation (clear Dev Google + debug token; keep publishable Logo.dev pk_)
   for (const k of Object.keys(loaded)) {
     if (
       k.startsWith('EXPO_PUBLIC_GOOGLE_') ||
-      k === 'FIREBASE_APP_CHECK_DEBUG_TOKEN' ||
-      k === 'EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY'
+      k === 'FIREBASE_APP_CHECK_DEBUG_TOKEN'
     ) {
       delete process.env[k];
     }
@@ -190,6 +189,10 @@ function main() {
     'EXPO_PUBLIC_FIREBASE_APP_ID',
   ]) {
     delete process.env[k];
+  }
+  // Store builds need the same publishable pk_ as development (never sk_).
+  if (!String(process.env.EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY || '').trim()) {
+    process.env.EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY = logoDevKey;
   }
 
   let prodConfig;
@@ -213,15 +216,19 @@ function main() {
   if (pextra.NEARSY_APP_CHECK_DEBUG_TOKEN) {
     fail('Production must not inject App Check debug token');
   }
-  if (pextra.EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY) {
-    fail('Production extra must not receive the Development Logo.dev key');
+  const prodLogo = String(pextra.EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY || '').trim();
+  if (!prodLogo) {
+    fail('Production extra missing Logo.dev publishable key');
+  }
+  if (prodLogo.startsWith('sk_') || !prodLogo.startsWith('pk_')) {
+    fail('Production extra Logo.dev key is not a publishable pk_ value');
   }
   // Production may use Ops Google from app.json — ensure not Dev project number alone as sole check
   const prodScheme = String(pextra.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME || '');
   if (prodScheme && !prodScheme.includes(OPS_PREFIX)) {
     // Soft note only — Ops clients are expected for production
   }
-  ok('Production Expo config: nearsy-pj + no Dev Google env + LinkedIn off + no debug token');
+  ok('Production Expo config: nearsy-pj + Logo.dev pk_ + LinkedIn + no debug token + no sk_');
 
   // restore
   Object.keys(process.env).forEach((k) => {

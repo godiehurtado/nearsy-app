@@ -30,7 +30,7 @@ function resolveLogoDevPublishableKey(raw, options = {}) {
   if (!trimmed) {
     if (required) {
       throw new Error(
-        `[app.config] Missing required environment variable for development: ${LOGO_DEV_PUBLISHABLE_KEY_ENV}`,
+        `[app.config] Missing required environment variable: ${LOGO_DEV_PUBLISHABLE_KEY_ENV}`,
       );
     }
     return undefined;

@@ -99,6 +99,32 @@ export default function AffiliationsScreen() {
     return created;
   };
 
+  const aboveCategoriesHeightRef = useRef(0);
+  const categoryLocalYRef = useRef(
+    {} as Partial<Record<OnboardingAffiliationCategoryId, number>>,
+  );
+  const scrollAnchorByCategoryRef = useRef(
+    {} as Partial<
+      Record<OnboardingAffiliationCategoryId, React.MutableRefObject<number>>
+    >,
+  );
+
+  const getScrollAnchorRef = (
+    categoryId: OnboardingAffiliationCategoryId,
+  ): React.MutableRefObject<number> => {
+    const existing = scrollAnchorByCategoryRef.current[categoryId];
+    if (existing) return existing;
+    const created: React.MutableRefObject<number> = { current: 0 };
+    scrollAnchorByCategoryRef.current[categoryId] = created;
+    return created;
+  };
+
+  const syncScrollAnchor = (categoryId: OnboardingAffiliationCategoryId) => {
+    getScrollAnchorRef(categoryId).current =
+      aboveCategoriesHeightRef.current +
+      (categoryLocalYRef.current[categoryId] ?? 0);
+  };
+
   const categoryIds = useMemo(() => listOnboardingAffiliationCategoryIds(), []);
   const pendingSearch = resolvePendingAffiliationSearchUi(
     searchUiByCategory,
@@ -292,48 +318,65 @@ export default function AffiliationsScreen() {
           keyboardShouldPersistTaps="handled"
           scrollIndicatorInsets={{ top: insets.top }}
         >
-          <View style={styles.headerRow}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('profile.affiliations.backA11y')}
-              onPress={handleBack}
-              hitSlop={8}
-              style={({ pressed }) => [
-                styles.headerBack,
-                { backgroundColor: palette.panel, borderColor: palette.border },
-                pressed && styles.pressed,
-              ]}
-            >
-              <Ionicons
-                name="chevron-back"
-                size={22}
-                color={palette.textPrimary}
-              />
-            </Pressable>
-          </View>
-
-          <Text
-            accessibilityRole="header"
-            style={[styles.title, { color: palette.textPrimary }]}
+          <View
+            onLayout={(e) => {
+              aboveCategoriesHeightRef.current = e.nativeEvent.layout.height;
+              for (const id of categoryIds) {
+                syncScrollAnchor(id);
+              }
+            }}
           >
-            {screenTitle}
-          </Text>
-          <Text style={[styles.description, { color: palette.textSecondary }]}>
-            {t('profile.affiliations.description')}
-          </Text>
-          <Text style={[styles.selectedSummary, { color: palette.textMuted }]}>
-            {t('profile.affiliations.selectedCount', { count: selectedCount })}
-          </Text>
+            <View style={styles.headerRow}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('profile.affiliations.backA11y')}
+                onPress={handleBack}
+                hitSlop={8}
+                style={({ pressed }) => [
+                  styles.headerBack,
+                  { backgroundColor: palette.panel, borderColor: palette.border },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Ionicons
+                  name="chevron-back"
+                  size={22}
+                  color={palette.textPrimary}
+                />
+              </Pressable>
+            </View>
 
-          {selectedCount === 0 ? (
-            <Text style={[styles.emptyHint, { color: palette.textSecondary }]}>
-              {t('profile.affiliations.empty')}
+            <Text
+              accessibilityRole="header"
+              style={[styles.title, { color: palette.textPrimary }]}
+            >
+              {screenTitle}
             </Text>
-          ) : null}
+            <Text style={[styles.description, { color: palette.textSecondary }]}>
+              {t('profile.affiliations.description')}
+            </Text>
+            <Text style={[styles.selectedSummary, { color: palette.textMuted }]}>
+              {t('profile.affiliations.selectedCount', { count: selectedCount })}
+            </Text>
+
+            {selectedCount === 0 ? (
+              <Text style={[styles.emptyHint, { color: palette.textSecondary }]}>
+                {t('profile.affiliations.empty')}
+              </Text>
+            ) : null}
+          </View>
 
           <View style={styles.categories}>
             {categoryIds.map((categoryId) => (
-              <View key={categoryId} style={styles.categorySection}>
+              <View
+                key={categoryId}
+                style={styles.categorySection}
+                onLayout={(e) => {
+                  categoryLocalYRef.current[categoryId] =
+                    e.nativeEvent.layout.y;
+                  syncScrollAnchor(categoryId);
+                }}
+              >
                 <OnboardingAffiliationCategoryPanel
                   categoryId={categoryId}
                   selected={selected}
@@ -346,6 +389,7 @@ export default function AffiliationsScreen() {
                   }}
                   searchAddRef={getAddRef(categoryId)}
                   contentScrollRef={scrollRef}
+                  scrollAnchorYRef={getScrollAnchorRef(categoryId)}
                   removeAffiliationAccessibilityLabel={(name) =>
                     t('profile.affiliations.removeA11y', { name })
                   }
