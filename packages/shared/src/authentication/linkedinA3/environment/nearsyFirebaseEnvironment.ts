@@ -5,7 +5,7 @@
 
 export type NearsyFirebaseEnvironmentName = 'development' | 'production';
 
-export type AppCheckProviderKind = 'debug' | 'production_pending';
+export type AppCheckProviderKind = 'debug' | 'production';
 
 export type NearsyFirebaseEnvironmentConfig = {
   environment: NearsyFirebaseEnvironmentName;
@@ -45,7 +45,7 @@ const ENVIRONMENT_TABLE: Record<
     environment: 'production',
     firebaseProjectId: 'nearsy-pj',
     functionsRegion: FUNCTIONS_REGION,
-    appCheckProvider: 'production_pending',
+    appCheckProvider: 'production',
     linkedInAuthEnabled: true,
     linkedInAppReturnUrl: LINKEDIN_APP_RETURN_URL,
     googleServicesFile: PRODUCTION_GOOGLE_SERVICES_FILE,

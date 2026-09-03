@@ -104,5 +104,27 @@ export function assertEnvironmentConsistency(
     };
   }
 
+  if (
+    input.environment === 'production' &&
+    input.appCheckProvider !== 'production'
+  ) {
+    return {
+      ok: false,
+      code: 'ENV_APP_CHECK_PROVIDER_INVALID',
+      message: 'Production App Check must use the native production provider.',
+    };
+  }
+
+  if (
+    input.environment === 'development' &&
+    input.appCheckProvider !== 'debug'
+  ) {
+    return {
+      ok: false,
+      code: 'ENV_APP_CHECK_PROVIDER_INVALID',
+      message: 'Development App Check must use the debug provider.',
+    };
+  }
+
   return { ok: true };
 }
