@@ -21,12 +21,18 @@ import {
   setActiveProfileModeFlow,
 } from '../activeProfileModeSync';
 import {
+  isActiveFaceIncomplete,
+  resolveGlobalVisibilityFromModeSwitchResponse,
+  shouldCallDeactivateVisibilityAfterModeSwitch,
+} from '../setActiveProfileModeClientSemantics';
+import {
   ACTIVE_PROFILE_MODE_CONFIRMATION_TTL_MS,
   clearActiveProfileModeConfirmation,
   reconcileUserDocWithActiveProfileMode,
   recordActiveProfileModeConfirmation,
   resetActiveProfileModeConfirmationForTests,
 } from '../activeProfileModeReconciliation';
+import { attemptInitialVisibilityAfterCrjCompletion } from '../initialCrjVisibilityActivation';
 import { buildActiveProfileSavePatch } from '../../profile/profileModeFields';
 import en from '../../i18n/locales/en';
 import es from '../../i18n/locales/es';
@@ -143,7 +149,35 @@ describe('setActiveProfileModeFlow', () => {
     }
   });
 
-  it('incomplete success applies visibility false', async () => {
+  it('incomplete success preserves GLOBAL visibility true (Unit 4A)', async () => {
+    const fake = createFakeVisibilityDiscoveryClient({
+      setActiveProfileMode: async () => ({
+        contractVersion: 1,
+        mode: 'professional',
+        visibility: true,
+        targetProfileComplete: false,
+        discoverySynced: false,
+        serverTime: 3,
+      }),
+    });
+    const outcome = await setActiveProfileModeFlow(fake, 'professional', UID_A);
+    assert.equal(outcome.ok, true);
+    if (outcome.ok) {
+      assert.equal(outcome.response.targetProfileComplete, false);
+      assert.equal(outcome.response.visibility, true);
+      assert.equal(
+        resolveGlobalVisibilityFromModeSwitchResponse(outcome.response),
+        true,
+      );
+      assert.equal(isActiveFaceIncomplete(outcome.response), true);
+      assert.equal(
+        shouldCallDeactivateVisibilityAfterModeSwitch(outcome.response),
+        false,
+      );
+    }
+  });
+
+  it('incomplete success may still report visibility false when already Off', async () => {
     const fake = createFakeVisibilityDiscoveryClient({
       setActiveProfileMode: async () => ({
         contractVersion: 1,
@@ -159,6 +193,10 @@ describe('setActiveProfileModeFlow', () => {
     if (outcome.ok) {
       assert.equal(outcome.response.targetProfileComplete, false);
       assert.equal(outcome.response.visibility, false);
+      assert.equal(
+        shouldCallDeactivateVisibilityAfterModeSwitch(outcome.response),
+        false,
+      );
     }
   });
 
@@ -555,20 +593,20 @@ describe('snapshot reconciliation', () => {
 });
 
 describe('applyActiveProfileModeResponseToUserDoc', () => {
-  it('updates mode and visibility from response', () => {
+  it('updates mode and GLOBAL visibility independently of completeness', () => {
     const next = applyActiveProfileModeResponseToUserDoc(
       { mode: 'personal', visibility: true, realName: 'Alex' },
       {
         contractVersion: 1,
         mode: 'professional',
-        visibility: false,
+        visibility: true,
         targetProfileComplete: false,
         discoverySynced: false,
         serverTime: 1,
       },
     );
     assert.equal(next.mode, 'professional');
-    assert.equal(next.visibility, false);
+    assert.equal(next.visibility, true);
     assert.equal(next.realName, 'Alex');
   });
 });
@@ -630,12 +668,18 @@ describe('static integration guards (I1)', () => {
     assert.match(src, /reconcileUserDocWithActiveProfileMode\([\s\S]*uid/);
   });
 
-  it('finishOnboarding omits mode write', () => {
+  it('finishOnboarding omits mode write and attempts initial visibility activation', () => {
     const src = readShared('screens/ProfileCompletionScreen.tsx');
     assert.match(src, /profileSetupCompleted: true/);
+    assert.match(src, /attemptInitialVisibilityAfterCrjCompletion/);
     assert.doesNotMatch(
       src,
       /finishOnboarding[\s\S]{0,400}profileSetupCompleted: true[\s\S]{0,120}mode,/,
+    );
+    // Mode-switch path must not gain activateVisibility.
+    assert.doesNotMatch(
+      src,
+      /runModeSwitch[\s\S]{0,800}activateVisibility/,
     );
   });
 
@@ -646,5 +690,210 @@ describe('static integration guards (I1)', () => {
     const cp = readShared('screens/CompleteProfileScreen.tsx');
     assert.doesNotMatch(pe, /updateUserMode/);
     assert.doesNotMatch(cp, /updateUserMode/);
+  });
+});
+
+describe('Unit 4B — visibility reconciliation semantics', () => {
+  it('incomplete mode switch preserves prior global true via apply helper', () => {
+    const next = applyActiveProfileModeResponseToUserDoc(
+      { mode: 'personal', visibility: true },
+      {
+        contractVersion: 1,
+        mode: 'professional',
+        visibility: true,
+        targetProfileComplete: false,
+        discoverySynced: false,
+        serverTime: 9,
+      },
+    );
+    assert.equal(next.visibility, true);
+    assert.equal(next.mode, 'professional');
+  });
+
+  it('switch-back sequence ends with global visibility true', async () => {
+    const responses = [
+      {
+        contractVersion: 1 as const,
+        mode: 'professional' as const,
+        visibility: true,
+        targetProfileComplete: false,
+        discoverySynced: false,
+        serverTime: 1,
+      },
+      {
+        contractVersion: 1 as const,
+        mode: 'personal' as const,
+        visibility: true,
+        targetProfileComplete: true,
+        discoverySynced: true,
+        serverTime: 2,
+      },
+    ];
+    let i = 0;
+    const fake = createFakeVisibilityDiscoveryClient({
+      setActiveProfileMode: async () => responses[i++]!,
+    });
+
+    let doc: Record<string, unknown> = {
+      mode: 'personal',
+      visibility: true,
+    };
+
+    const toPro = await setActiveProfileModeFlow(fake, 'professional', UID_A);
+    assert.equal(toPro.ok, true);
+    if (toPro.ok) {
+      doc = applyActiveProfileModeResponseToUserDoc(doc, toPro.response);
+      assert.equal(doc.visibility, true);
+      assert.equal(toPro.response.targetProfileComplete, false);
+      assert.equal(
+        shouldCallDeactivateVisibilityAfterModeSwitch(toPro.response),
+        false,
+      );
+    }
+
+    const toPersonal = await setActiveProfileModeFlow(fake, 'personal', UID_A);
+    assert.equal(toPersonal.ok, true);
+    if (toPersonal.ok) {
+      doc = applyActiveProfileModeResponseToUserDoc(doc, toPersonal.response);
+      assert.equal(doc.visibility, true);
+      assert.equal(doc.mode, 'personal');
+      assert.equal(toPersonal.response.targetProfileComplete, true);
+    }
+  });
+
+  it('explicit Off is preserved across complete-face mode switches', async () => {
+    const fake = createFakeVisibilityDiscoveryClient({
+      setActiveProfileMode: async ({ mode }) => ({
+        contractVersion: 1,
+        mode,
+        visibility: false,
+        targetProfileComplete: true,
+        discoverySynced: false,
+        serverTime: 1,
+      }),
+    });
+
+    let doc: Record<string, unknown> = {
+      mode: 'personal',
+      visibility: false,
+    };
+    const outcome = await setActiveProfileModeFlow(fake, 'professional', UID_A);
+    assert.equal(outcome.ok, true);
+    if (outcome.ok) {
+      doc = applyActiveProfileModeResponseToUserDoc(doc, outcome.response);
+      assert.equal(doc.visibility, false);
+      assert.equal(
+        shouldCallDeactivateVisibilityAfterModeSwitch(outcome.response),
+        false,
+      );
+    }
+    assert.equal(
+      fake.calls.some((c) => c.name === 'activateVisibility'),
+      false,
+    );
+    assert.equal(
+      fake.calls.some((c) => c.name === 'deactivateVisibility'),
+      false,
+    );
+  });
+
+  it('both profiles complete: mode switch preserves backend visibility', async () => {
+    const fake = createFakeVisibilityDiscoveryClient({
+      setActiveProfileMode: async ({ mode }) => ({
+        contractVersion: 1,
+        mode,
+        visibility: true,
+        targetProfileComplete: true,
+        discoverySynced: true,
+        serverTime: 1,
+      }),
+    });
+    const outcome = await setActiveProfileModeFlow(fake, 'professional', UID_A);
+    assert.equal(outcome.ok, true);
+    if (outcome.ok) {
+      const next = applyActiveProfileModeResponseToUserDoc(
+        { mode: 'personal', visibility: true },
+        outcome.response,
+      );
+      assert.equal(next.visibility, true);
+      assert.equal(next.mode, 'professional');
+    }
+  });
+
+  it('CRJ completion + usable location → activateVisibility called', async () => {
+    let activated = 0;
+    const fake = createFakeVisibilityDiscoveryClient({
+      activateVisibility: async () => ({
+        contractVersion: 1,
+        visibility: true as const,
+        serverTime: 1,
+      }),
+    });
+    const result = await attemptInitialVisibilityAfterCrjCompletion({
+      getClient: async () => fake,
+      activate: async (client) => {
+        activated += 1;
+        const response = await client.activateVisibility({
+          contractVersion: 1,
+          location: {
+            latitude: 1,
+            longitude: 2,
+            accuracyMeters: 5,
+            observedAt: 1,
+          },
+        } as any);
+        return { ok: true, response };
+      },
+    });
+    assert.equal(result.activated, true);
+    assert.equal(activated, 1);
+  });
+
+  it('CRJ completion + permission denied → no activation, onboarding safe', async () => {
+    const result = await attemptInitialVisibilityAfterCrjCompletion({
+      getClient: async () => createFakeVisibilityDiscoveryClient(),
+      activate: async () => ({ ok: false, kind: 'permission-denied' }),
+    });
+    assert.equal(result.activated, false);
+    if (result.activated === false) {
+      assert.equal(result.reason, 'permission-denied');
+    }
+  });
+
+  it('CRJ completion + location acquisition failure → onboarding safe', async () => {
+    const result = await attemptInitialVisibilityAfterCrjCompletion({
+      getClient: async () => createFakeVisibilityDiscoveryClient(),
+      activate: async () => ({ ok: false, kind: 'unavailable' }),
+    });
+    assert.equal(result.activated, false);
+    if (result.activated === false) {
+      assert.equal(result.reason, 'unavailable');
+    }
+  });
+
+  it('CRJ activateVisibility backend failure does not throw', async () => {
+    const result = await attemptInitialVisibilityAfterCrjCompletion({
+      getClient: async () => createFakeVisibilityDiscoveryClient(),
+      activate: async () => {
+        throw new Error('callable boom');
+      },
+    });
+    assert.equal(result.activated, false);
+    if (result.activated === false) {
+      assert.equal(result.reason, 'callable');
+    }
+  });
+
+  it('targetProfileComplete is independent from visibility', () => {
+    const response = {
+      contractVersion: 1 as const,
+      mode: 'professional' as const,
+      visibility: true,
+      targetProfileComplete: false,
+      discoverySynced: false,
+      serverTime: 1,
+    };
+    assert.equal(resolveGlobalVisibilityFromModeSwitchResponse(response), true);
+    assert.equal(isActiveFaceIncomplete(response), true);
   });
 });

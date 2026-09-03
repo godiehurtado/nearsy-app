@@ -20,3 +20,5 @@ export * from './alignmentPresentation';
 export * from './interestDisplay';
 export * from './activeProfileModeSync';
 export * from './activeProfileModeReconciliation';
+export * from './setActiveProfileModeClientSemantics';
+export * from './initialCrjVisibilityActivation';
