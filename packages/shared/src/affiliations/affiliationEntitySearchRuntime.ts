@@ -24,30 +24,51 @@ export function resolveAffiliationEntitySearchProviderKind(
   return value === 'firebase' ? 'firebase' : 'fixture';
 }
 
+const AFFILIATION_LIVE_PROJECT_BY_ENV = {
+  development: 'nearsy-dev',
+  production: 'nearsy-pj',
+} as const;
+
+function readExplicitAffiliationFirebaseEnv(
+  firebaseEnv?: string | null,
+): keyof typeof AFFILIATION_LIVE_PROJECT_BY_ENV | null {
+  const raw = String(firebaseEnv ?? '')
+    .trim()
+    .toLowerCase();
+  // Empty is production in the shared env table; affiliations require an
+  // explicit name so a missing env cannot silently pick a live project.
+  if (!raw) return null;
+  try {
+    return parseNearsyFirebaseEnvironmentName(raw);
+  } catch {
+    return null;
+  }
+}
+
+function readAffiliationProjectId(projectId?: string | null): string {
+  const explicit = String(projectId ?? '')
+    .trim()
+    .toLowerCase();
+  if (explicit) return explicit;
+  return String(process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID ?? '')
+    .trim()
+    .toLowerCase();
+}
+
 /**
- * Live Firebase provider is Development / nearsy-dev only.
- * Empty or production env stays on fixture.
+ * Live Firebase provider is allowlisted:
+ * development / nearsy-dev and production / nearsy-pj.
+ * Crossed, empty, or unknown pairs stay on fixture.
  */
 export function resolveAffiliationEntitySearchProviderKindFromEnvironment(
   firebaseEnv?: string | null,
   projectId?: string | null,
 ): AffiliationEntitySearchProviderKind {
-  try {
-    const environment = parseNearsyFirebaseEnvironmentName(firebaseEnv);
-    if (environment !== 'development') return 'fixture';
-  } catch {
-    return 'fixture';
-  }
-  const project = String(projectId ?? '')
-    .trim()
-    .toLowerCase();
-  if (project && project !== 'nearsy-dev') return 'fixture';
-  if (!project) {
-    const fromProcess = String(process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID ?? '')
-      .trim()
-      .toLowerCase();
-    if (fromProcess && fromProcess !== 'nearsy-dev') return 'fixture';
-  }
+  const environment = readExplicitAffiliationFirebaseEnv(firebaseEnv);
+  if (!environment) return 'fixture';
+  const expected = AFFILIATION_LIVE_PROJECT_BY_ENV[environment];
+  const project = readAffiliationProjectId(projectId);
+  if (!project || project !== expected) return 'fixture';
   return 'firebase';
 }
 

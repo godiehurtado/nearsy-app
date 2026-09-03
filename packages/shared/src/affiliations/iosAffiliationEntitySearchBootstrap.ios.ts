@@ -3,9 +3,9 @@
  * plus the existing RNFB App Check path used by LinkedIn A3.
  *
  * RNFB Auth is shimmed on iOS (Firebase JS owns sessions). RNFB
- * httpsCallable therefore cannot populate request.auth. Development
- * uses the callable HTTP protocol instead. Never talks to Logo.dev
- * from the client. Never logs tokens.
+ * httpsCallable therefore cannot populate request.auth. Live search
+ * uses the callable HTTP protocol on the allowlisted Firebase project.
+ * Never talks to Logo.dev from the client. Never logs tokens.
  */
 
 import Constants from 'expo-constants';
@@ -62,17 +62,18 @@ async function buildInvoke(): Promise<AffiliationEntitySearchCallable> {
   }
 
   const environment = resolveNearsyFirebaseEnvironment(firebaseEnv);
-  if (environment.firebaseProjectId !== 'nearsy-dev') {
-    throw new Error('Affiliation search live provider requires nearsy-dev.');
+  const resolvedProjectId = environment.firebaseProjectId;
+  if (resolvedProjectId !== 'nearsy-dev' && resolvedProjectId !== 'nearsy-pj') {
+    throw new Error('Affiliation search live provider requires a known Firebase project.');
   }
-  if (projectId && projectId !== 'nearsy-dev') {
-    throw new Error('Affiliation search live provider requires nearsy-dev.');
+  if (projectId && projectId !== resolvedProjectId) {
+    throw new Error('Affiliation search live provider project mismatch.');
   }
 
   const { port, getNativeProjectId } = await createNativeAppCheckPort();
   const nativeProjectId = getNativeProjectId();
-  if (nativeProjectId && nativeProjectId !== 'nearsy-dev') {
-    throw new Error('Affiliation search live provider requires nearsy-dev.');
+  if (nativeProjectId && nativeProjectId !== resolvedProjectId) {
+    throw new Error('Affiliation search live provider project mismatch.');
   }
 
   const appCheck = createAppCheckBootstrap({ port });
@@ -80,7 +81,7 @@ async function buildInvoke(): Promise<AffiliationEntitySearchCallable> {
 
   if (typeof __DEV__ !== 'undefined' && __DEV__) {
     console.warn(
-      '[AFFILIATION_SEARCH] bootstrap_ready provider=firebase project=nearsy-dev region=us-central1 appCheck=ready',
+      `[AFFILIATION_SEARCH] bootstrap_ready provider=firebase project=${resolvedProjectId} region=us-central1 appCheck=ready`,
     );
   }
 
@@ -117,7 +118,7 @@ async function buildInvoke(): Promise<AffiliationEntitySearchCallable> {
     }
     const payload = await port.withToken((appCheckToken) =>
       invokeAffiliationSearchCallableHttp({
-        projectId: 'nearsy-dev',
+        projectId: resolvedProjectId,
         region: environment.functionsRegion,
         functionName: name,
         idToken,

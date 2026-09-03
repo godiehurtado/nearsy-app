@@ -294,19 +294,19 @@ describe('CRJ-I9-C environment / production safety', () => {
     assert.equal(rows[0]!.provider, 'logo.dev');
   });
 
-  it('B — Production does not silently select firebase even with a callable', () => {
+  it('B — Production selects firebase when callable is registered', () => {
     registerAffiliationEntitySearchCallable(async () => ({ results: [] }));
     const provider = getAffiliationEntitySearchProvider(undefined, {
       firebaseEnv: 'production',
       projectId: 'nearsy-pj',
     });
-    assert.equal(provider.id, 'fixture');
+    assert.equal(provider.id, 'firebase');
     assert.equal(
       resolveAffiliationEntitySearchProviderKindFromEnvironment(
         'production',
         'nearsy-pj',
       ),
-      'fixture',
+      'firebase',
     );
   });
 
@@ -318,11 +318,32 @@ describe('CRJ-I9-C environment / production safety', () => {
     assert.equal(provider.id, 'fixture');
   });
 
-  it('rejects nearsy-pj even if env says development', () => {
+  it('rejects crossed and unknown environment/project pairs', () => {
     assert.equal(
       resolveAffiliationEntitySearchProviderKindFromEnvironment(
         'development',
         'nearsy-pj',
+      ),
+      'fixture',
+    );
+    assert.equal(
+      resolveAffiliationEntitySearchProviderKindFromEnvironment(
+        'production',
+        'nearsy-dev',
+      ),
+      'fixture',
+    );
+    assert.equal(
+      resolveAffiliationEntitySearchProviderKindFromEnvironment(
+        'staging',
+        'nearsy-pj',
+      ),
+      'fixture',
+    );
+    assert.equal(
+      resolveAffiliationEntitySearchProviderKindFromEnvironment(
+        'production',
+        'unknown-project',
       ),
       'fixture',
     );
@@ -487,6 +508,8 @@ describe('CRJ-I9 isolation', () => {
     assert.ok(bootstrap.includes('SEARCH_AFFILIATION_ENTITIES_FUNCTION'));
     assert.ok(bootstrap.includes('invokeAffiliationSearchCallableHttp'));
     assert.ok(bootstrap.includes('environment.functionsRegion'));
+    assert.ok(bootstrap.includes('projectId: resolvedProjectId'));
+    assert.ok(!bootstrap.includes("projectId: 'nearsy-dev'"));
     assert.ok(bootstrap.includes('appCheck.ensureReady()'));
     assert.ok(bootstrap.includes('firebaseAuth.currentUser'));
     assert.ok(!bootstrap.includes('@react-native-firebase/functions'));
@@ -535,7 +558,7 @@ describe('CRJ-I9 isolation', () => {
 });
 
 describe('CRJ-I9-C callable HTTP protocol (JS Auth + App Check)', () => {
-  it('builds the Development callable URL only for nearsy-dev', () => {
+  it('builds allowlisted callable URLs and rejects unknown projects', () => {
     assert.equal(
       buildAffiliationSearchCallableUrl(
         'nearsy-dev',
@@ -544,10 +567,18 @@ describe('CRJ-I9-C callable HTTP protocol (JS Auth + App Check)', () => {
       ),
       'https://us-central1-nearsy-dev.cloudfunctions.net/searchAffiliationEntities',
     );
+    assert.equal(
+      buildAffiliationSearchCallableUrl(
+        'nearsy-pj',
+        'us-central1',
+        'searchAffiliationEntities',
+      ),
+      'https://us-central1-nearsy-pj.cloudfunctions.net/searchAffiliationEntities',
+    );
     assert.throws(
       () =>
         buildAffiliationSearchCallableUrl(
-          'nearsy-pj',
+          'unknown-project',
           'us-central1',
           'searchAffiliationEntities',
         ),
