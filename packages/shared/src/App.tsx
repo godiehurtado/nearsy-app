@@ -21,9 +21,9 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
   NavigationContainer,
-  createNavigationContainerRef,
 } from '@react-navigation/native';
 import AppNavigator, { buildNavigationTheme } from './navigation/AppNavigator';
+import { navigationRef } from './navigation/rootNavigationRef';
 import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 
 import * as Notifications from 'expo-notifications';
@@ -59,7 +59,7 @@ async function ensureAndroidChannel() {
   });
 }
 
-export const navigationRef = createNavigationContainerRef();
+export { navigationRef } from './navigation/rootNavigationRef';
 
 function LinkedInA3ResumeBridge() {
   const { t } = useTranslation();

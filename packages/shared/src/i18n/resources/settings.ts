@@ -75,10 +75,25 @@ export default {
     alertConfirm: 'Delete',
     done: 'Your account has been deleted.',
     error: 'Could not delete account.',
+    permissionError:
+      'Could not delete your account data. Please try again while signed in.',
+    networkError: 'Network error. Check your connection and try again.',
     reauthBody: 'For security, please confirm your password to continue.',
+    reauthBodyGoogle:
+      'For security, continue with Google to confirm it’s you before deleting this account.',
+    reauthBodyApple:
+      'For security, continue with Apple to confirm it’s you before deleting this account.',
     passwordPlaceholder: 'Password',
     reauthConfirm: 'Confirm password and delete',
+    reauthContinueGoogle: 'Continue with Google and delete',
+    reauthContinueApple: 'Continue with Apple and delete',
     reauthError: 'Could not confirm password.',
+    reauthFailed: 'Could not confirm your identity. Your account was not deleted.',
+    reauthCancelled: 'Sign-in was cancelled. Your account was not deleted.',
+    reauthMismatch:
+      'That account does not match the one signed in to Nearsy. Your account was not deleted.',
+    reauthUnavailable:
+      'Account deletion for this sign-in method is temporarily unavailable in the app. Please contact Nearsy support for help.',
   },
   blockedPeople: {
     title: 'Blocked People',

@@ -1342,11 +1342,29 @@ const es: TranslationResources = {
       alertConfirm: 'Eliminar',
       done: 'Tu cuenta ha sido eliminada.',
       error: 'No se pudo eliminar la cuenta.',
+      permissionError:
+        'No se pudieron eliminar los datos de tu cuenta. Inténtalo de nuevo mientras la sesión esté activa.',
+      networkError:
+        'Error de red. Revisa tu conexión e inténtalo de nuevo.',
       reauthBody:
         'Por seguridad, confirma tu contraseña para continuar.',
+      reauthBodyGoogle:
+        'Por seguridad, continúa con Google para confirmar tu identidad antes de eliminar esta cuenta.',
+      reauthBodyApple:
+        'Por seguridad, continúa con Apple para confirmar tu identidad antes de eliminar esta cuenta.',
       passwordPlaceholder: 'Contraseña',
       reauthConfirm: 'Confirmar contraseña y eliminar',
+      reauthContinueGoogle: 'Continuar con Google y eliminar',
+      reauthContinueApple: 'Continuar con Apple y eliminar',
       reauthError: 'No se pudo confirmar la contraseña.',
+      reauthFailed:
+        'No se pudo confirmar tu identidad. Tu cuenta no fue eliminada.',
+      reauthCancelled:
+        'Se canceló el inicio de sesión. Tu cuenta no fue eliminada.',
+      reauthMismatch:
+        'Esa cuenta no coincide con la sesión de Nearsy. Tu cuenta no fue eliminada.',
+      reauthUnavailable:
+        'La eliminación de cuenta para este método de acceso no está disponible temporalmente en la app. Contacta a soporte de Nearsy para obtener ayuda.',
     },
     blockedPeople: {
       title: 'Personas bloqueadas',
