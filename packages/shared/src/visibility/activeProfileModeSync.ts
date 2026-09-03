@@ -80,6 +80,7 @@ export function applyActiveProfileModeResponseToUserDoc<
   return {
     ...doc,
     mode: response.mode,
+    // GLOBAL visibility intent from Unit 4A — independent of face completeness.
     visibility: response.visibility,
   };
 }

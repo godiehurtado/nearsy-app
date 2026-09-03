@@ -761,11 +761,12 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.match(gallerySrc, /getDiscoveryProfile/);
   });
 
-  it('wires Coming soon for Connect and Report without writing reports', () => {
-    assert.match(screenSrc, /comingSoon/);
-    assert.match(screenSrc, /requestToConnect/);
-    assert.doesNotMatch(screenSrc, /collection\([^)]*'reports'/);
+  it('hides Connect CTA in Free MVP while keeping Report/Block wiring', () => {
+    assert.match(screenSrc, /MVP_FREE_SHOW_PROFILE_CONNECT_CTA/);
+    assert.match(screenSrc, /MVP_FREE_SHOW_PROFILE_CONNECT_CTA \? \(/);
+    assert.match(screenSrc, /showComingSoon/);
     assert.match(screenSrc, /blockCandidateUser/);
+    assert.doesNotMatch(screenSrc, /collection\([^)]*'reports'/);
   });
 
   it('does not render profile.status', () => {

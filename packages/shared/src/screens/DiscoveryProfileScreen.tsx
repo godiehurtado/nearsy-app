@@ -28,6 +28,7 @@ import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { useTranslation } from '../i18n';
 import { InterestChip } from '../components/InterestChip';
+import { MVP_FREE_SHOW_PROFILE_CONNECT_CTA } from '../product/mvpFreePresentation';
 import { DiscoveryAffiliationsCard } from '../components/profileExploration/DiscoveryAffiliationsCard';
 import { DiscoveryCompatibilityCard } from '../components/profileExploration/DiscoveryCompatibilityCard';
 import { DiscoverySocialMediaRow } from '../components/profileExploration/DiscoverySocialMediaRow';
@@ -632,19 +633,20 @@ export default function DiscoveryProfileScreen() {
             </View>
           )}
 
-          {/* 7. Request to Connect */}
-          <Pressable
-            onPress={showComingSoon}
-            accessibilityRole="button"
-            accessibilityLabel={t('discoveryProfile.a11yConnect')}
-            style={[styles.connectBtn, { backgroundColor: palette.primary }]}
-          >
-            <Text style={styles.connectText}>
-              {t('discoveryProfile.requestToConnect')}
-            </Text>
-          </Pressable>
+          {MVP_FREE_SHOW_PROFILE_CONNECT_CTA ? (
+            <Pressable
+              onPress={showComingSoon}
+              accessibilityRole="button"
+              accessibilityLabel={t('discoveryProfile.a11yConnect')}
+              style={[styles.connectBtn, { backgroundColor: palette.primary }]}
+            >
+              <Text style={styles.connectText}>
+                {t('discoveryProfile.requestToConnect')}
+              </Text>
+            </Pressable>
+          ) : null}
 
-          {/* 8. Report / Block */}
+          {/* Report / Block */}
           <View style={styles.actionsRow}>
             <Pressable
               onPress={showComingSoon}

@@ -142,16 +142,28 @@ describe('Settings background / language / logout / delete preservation', () => 
     assert.match(screen, /navigate\('DeleteAccount'\)/);
   });
 
-  it('delete screen resets to Login after success and leaves service untouched', () => {
+  it('delete screen finalizes guest Login after success and cleans up before Auth', () => {
     const screen = readShared('screens/DeleteAccountScreen.tsx');
     assert.match(screen, /deleteAccountAndData/);
-    assert.match(screen, /navigateToLogin/);
-    assert.match(screen, /routes: \[\{ name: 'Login' \}\]/);
+    assert.match(screen, /finalizePostAccountDeletionSession/);
+    assert.match(screen, /navigationRef/);
+    assert.doesNotMatch(screen, /navigateToLogin/);
     assert.doesNotMatch(screen, /TopHeader/);
     assert.match(screen, /useAppTheme/);
 
+    const session = readShared('services/accountDeletionSession.ts');
+    assert.match(session, /routes: \[\{ name: 'Login' \}\]/);
+
     const service = readShared('services/accountDeletion.ts');
-    assert.match(service, /deleteFirestoreSubcollection\(uid, 'contactHashes'\)/);
+    assert.match(service, /deleteContactHashes/);
+    assert.match(service, /deleteUserStorage/);
+    assert.match(service, /deleteUserDocument/);
+    assert.match(service, /auth-delete/);
+    const authIdx = service.indexOf("onStep?.('auth-delete')");
+    const hashesIdx = service.indexOf(
+      "onStep?.('cleanup-firestore-contactHashes')",
+    );
+    assert.ok(hashesIdx >= 0 && authIdx > hashesIdx);
   });
 });
 

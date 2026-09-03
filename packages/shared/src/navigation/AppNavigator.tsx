@@ -26,6 +26,7 @@ import RootTabs from './RootTabs';
 import { RootStackParamList } from './types';
 import { useAppTheme } from '../theme/ThemeContext';
 import { clearActiveProfileModeConfirmation } from '../visibility/activeProfileModeSync';
+import { isAccountDeletionSessionActive } from '../services/accountDeletionSession';
 
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
@@ -152,12 +153,24 @@ export default function AppNavigator() {
     const unsubscribe = onSnapshot(
       userRef,
       async (snap) => {
+        if (!snap.exists() && isAccountDeletionSessionActive()) {
+          // users/{uid} is removed before Auth delete. Do not remount into
+          // CompleteProfile and tear down DeleteAccount mid-flow.
+          setNeedsCompleteProfile(false);
+          setProfileLoading(false);
+          return;
+        }
         const data = snap.exists() ? (snap.data() as any) : null;
         setNeedsCompleteProfile(!isProfileDocumentComplete(data));
         setOnboardingInitialRoute(resolveAuthenticatedStackInitialRoute(data));
         setProfileLoading(false);
       },
       async () => {
+        if (isAccountDeletionSessionActive()) {
+          setNeedsCompleteProfile(false);
+          setProfileLoading(false);
+          return;
+        }
         try {
           const snap = await getDoc(userRef);
           const data = snap.exists() ? (snap.data() as any) : null;

@@ -94,6 +94,7 @@ import {
 import { VisibilityCard } from '../components/visibility/VisibilityCard';
 import { VisibilityRangeSlider } from '../components/visibility/VisibilityRangeSlider';
 import { InterestMatchSelector } from '../components/visibility/InterestMatchSelector';
+import { MVP_FREE_SHOW_INTEREST_SEARCH_FILTER } from '../product/mvpFreePresentation';
 
 type ProfileDoc = {
   profileImage?: string | null;
@@ -701,15 +702,17 @@ export default function MainHomeScreen({ navigation }: Props) {
             </View>
           </View>
 
-          <InterestMatchSelector
-            officialIds={officialInterestIds}
-            selectedIds={activePrefs.interestIds}
-            atLimit={atInterestLimit}
-            limitMessage={interestLimitMessage}
-            onAdd={addInterest}
-            onRemove={removeInterest}
-            onLimitReached={announceInterestLimit}
-          />
+          {MVP_FREE_SHOW_INTEREST_SEARCH_FILTER ? (
+            <InterestMatchSelector
+              officialIds={officialInterestIds}
+              selectedIds={activePrefs.interestIds}
+              atLimit={atInterestLimit}
+              limitMessage={interestLimitMessage}
+              onAdd={addInterest}
+              onRemove={removeInterest}
+              onLimitReached={announceInterestLimit}
+            />
+          ) : null}
         </VisibilityCard>
 
         {canSearch ? (

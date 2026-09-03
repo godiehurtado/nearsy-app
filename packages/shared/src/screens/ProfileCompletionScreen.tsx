@@ -62,6 +62,7 @@ import {
   presentActiveProfileModeError,
   setActiveProfileModeFlow,
 } from '../visibility/activeProfileModeSync';
+import { attemptInitialVisibilityAfterCrjCompletion } from '../visibility/initialCrjVisibilityActivation';
 import { uploadProfileImage, uploadAffiliationImage, uploadGalleryImage, deleteGalleryStorageObject } from '../services/storageService';
 import {
   commitPendingSocialNamePrefill,
@@ -998,14 +999,26 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     if (!uid || !mode || submitting) return;
     try {
       setSubmitting(true);
-      // visibility stays false until the user enables Active on Home.
-      // profileSetupCompleted is the only completion flag for this gate.
+      // profileSetupCompleted is the completion gate for CRJ.
       await updateUserProfilePartial(uid, {
         profileSetupCompleted: true,
         ...(firstName.trim() ? { realName: firstName.trim() } : {}),
         ...(lastName.trim() ? { lastName: lastName.trim() } : {}),
       });
       clearPendingSocialProfilePrefill();
+
+      // First-time onboarding only: attempt GLOBAL visibility ON when
+      // foreground location is usable. Failures must not reopen CRJ.
+      // Explicit Off later is owned by Home deactivateVisibility — not here.
+      const activation = await attemptInitialVisibilityAfterCrjCompletion({
+        getClient: getVisibilityDiscoveryClient,
+      });
+      if (__DEV__ && activation.activated === false) {
+        console.warn('[CRJ] initial visibility activation skipped', {
+          reason: activation.reason,
+        });
+      }
+
       navigation.reset({
         index: 0,
         routes: [{ name: 'MainTabs' }],
