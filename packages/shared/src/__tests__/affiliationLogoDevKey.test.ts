@@ -3,6 +3,7 @@ import { afterEach, describe, it } from 'node:test';
 
 import {
   buildLogoDevImageUrl,
+  domainFromAffiliationFields,
   isLogoDevPublishableKey,
 } from '../affiliations/affiliationLogoDev';
 import {
@@ -48,6 +49,41 @@ describe('Logo.dev publishable key runtime', () => {
     assert.equal(isLogoDevPublishableKey(PLACEHOLDER_SK), false);
     assert.equal(readLogoDevPublishableKey(), undefined);
     assert.equal(buildLogoDevImageUrl('microsoft.com', PLACEHOLDER_SK), undefined);
+  });
+
+  it('reconstructs HTTPS img.logo.dev URL for persisted affiliation without logoUrl (DEV/PROD)', () => {
+    process.env[LOGO_DEV_PUBLISHABLE_KEY_ENV] = PLACEHOLDER_PK;
+    const domain = domainFromAffiliationFields({
+      website: 'https://microsoft.com',
+      providerId: 'logo.dev:microsoft.com',
+    });
+    const url = buildLogoDevImageUrl(domain, readLogoDevPublishableKey());
+    assert.equal(
+      url,
+      `https://img.logo.dev/microsoft.com?token=${PLACEHOLDER_PK}`,
+    );
+  });
+
+  it('reconstructs from providerId domain when website missing', () => {
+    process.env[LOGO_DEV_PUBLISHABLE_KEY_ENV] = PLACEHOLDER_PK;
+    const domain = domainFromAffiliationFields({
+      providerId: 'microsoft.com',
+    });
+    assert.equal(
+      buildLogoDevImageUrl(domain, readLogoDevPublishableKey()),
+      `https://img.logo.dev/microsoft.com?token=${PLACEHOLDER_PK}`,
+    );
+  });
+
+  it('falls back safely when publishable key is missing', () => {
+    delete process.env[LOGO_DEV_PUBLISHABLE_KEY_ENV];
+    const domain = domainFromAffiliationFields({
+      website: 'https://microsoft.com',
+    });
+    assert.equal(
+      buildLogoDevImageUrl(domain, readLogoDevPublishableKey()),
+      undefined,
+    );
   });
 
   it('descriptor never includes the key value or token=', () => {

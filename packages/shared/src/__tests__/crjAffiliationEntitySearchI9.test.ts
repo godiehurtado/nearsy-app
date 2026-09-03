@@ -643,7 +643,7 @@ describe('CRJ-I9 isolation', () => {
     assert.equal(functionsDirMissing, true);
   });
 
-  it('production app.config extra never receives the Logo.dev publishable key', () => {
+  it('production and development app.config extra both receive the Logo.dev publishable key', () => {
     const config = readFileSync(
       join(here, '../../../../apps/nearsy-ios/app.config.js'),
       'utf8',
@@ -652,14 +652,28 @@ describe('CRJ-I9 isolation', () => {
       join(here, '../../../../apps/nearsy-ios/scripts/_dump-eas-env.cjs'),
       'utf8',
     );
+    const keyHelper = readFileSync(
+      join(here, '../../../../apps/nearsy-ios/scripts/logoDevPublishableKey.cjs'),
+      'utf8',
+    );
+    const eas = readFileSync(
+      join(here, '../../../../apps/nearsy-ios/eas.json'),
+      'utf8',
+    );
     const prodChunk = config.split('} else {')[1] ?? '';
     assert.ok(config.includes('resolveLogoDevPublishableKey('));
     assert.ok(config.includes('{ required: true }'));
     assert.ok(dump.includes("'EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY'"));
     assert.ok(prodChunk.includes("EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'production'"));
-    assert.ok(!prodChunk.includes('EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY'));
+    assert.ok(prodChunk.includes('EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY'));
+    assert.ok(prodChunk.includes('resolveLogoDevPublishableKey('));
+    assert.ok(prodChunk.includes('{ required: true }'));
     assert.ok(!config.includes('LOGO_DEV_SECRET_KEY'));
     assert.ok(!config.includes('Bearer'));
+    assert.ok(!eas.includes('sk_'));
+    assert.ok(eas.includes('"environment": "production"'));
+    assert.ok(keyHelper.includes("must be a publishable pk_ key, not a secret"));
+    assert.ok(keyHelper.includes("must start with pk_"));
   });
 });
 

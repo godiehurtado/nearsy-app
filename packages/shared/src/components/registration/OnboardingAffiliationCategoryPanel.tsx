@@ -57,6 +57,13 @@ type Props = {
   onSearchUiChange?: (ui: AffiliationSearchUiSnapshot) => void;
   searchAddRef?: React.MutableRefObject<(() => void) | null>;
   contentScrollRef?: React.RefObject<ScrollView | null>;
+  /**
+   * Content-offset Y of this panel within the parent ScrollView.
+   * Multi-panel screens (Own Profile) must set this so search focus
+   * scrolls to the active category instead of y=0.
+   * CRJ single-panel may omit it (falls back to y=0).
+   */
+  scrollAnchorYRef?: React.RefObject<number>;
   removeAffiliationAccessibilityLabel?: (name: string) => string;
 };
 
@@ -85,6 +92,7 @@ export function OnboardingAffiliationCategoryPanel({
   onSearchUiChange,
   searchAddRef,
   contentScrollRef,
+  scrollAnchorYRef,
   removeAffiliationAccessibilityLabel,
 }: Props) {
   const { palette } = useAppTheme();
@@ -197,8 +205,13 @@ export function OnboardingAffiliationCategoryPanel({
   }, [searchUi, onSearchUiChange]);
 
   function scrollSearchIntoView() {
+    const anchor = scrollAnchorYRef?.current;
+    const y =
+      typeof anchor === 'number' && Number.isFinite(anchor)
+        ? Math.max(0, anchor)
+        : 0;
     contentScrollRef?.current?.scrollTo({
-      y: 0,
+      y,
       animated: !reduceMotion,
     });
   }

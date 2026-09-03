@@ -261,6 +261,12 @@ module.exports = ({ config }) => {
         config.extra?.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME,
       EXPO_PUBLIC_LINKEDIN_AUTH_ENABLED: 'true',
       NEARSY_LINKEDIN_APP_RETURN_URL: 'nearsy://linkedin-auth',
+      // Publishable pk_ only — required so Store builds can reconstruct
+      // persisted affiliation logos via img.logo.dev (never sk_).
+      EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY: resolveLogoDevPublishableKey(
+        process.env.EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY,
+        { required: true },
+      ),
     };
 
     if (extraBase.EXPO_PUBLIC_FIREBASE_PROJECT_ID !== 'nearsy-pj') {

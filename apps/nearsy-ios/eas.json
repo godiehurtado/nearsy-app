@@ -21,6 +21,7 @@
     },
     "production": {
       "autoIncrement": true,
+      "environment": "production",
       "env": {
         "EXPO_PUBLIC_NEARSY_FIREBASE_ENV": "production"
       }

@@ -310,6 +310,7 @@ describe('CRJ-I9-C Search Mode keyboard UX', () => {
     assert.ok(panel.includes('keyboardShouldPersistTaps="handled"'));
     assert.ok(panel.includes('onFocus'));
     assert.ok(panel.includes('scrollTo'));
+    assert.ok(panel.includes('scrollAnchorYRef'));
     assert.ok(panel.includes('useReducedMotion'));
     assert.ok(screen.includes('searchAddRef'));
     assert.ok(
@@ -318,6 +319,9 @@ describe('CRJ-I9-C Search Mode keyboard UX', () => {
       ),
     );
     assert.ok(!panel.includes('ActivityIndicator'));
+    // CRJ single-panel omits scrollAnchorYRef → falls back to y=0
+    assert.ok(screen.includes('contentScrollRef={stepScrollRef}'));
+    assert.ok(!screen.includes('scrollAnchorYRef'));
   });
 });
 
@@ -336,6 +340,34 @@ describe('Own Profile Affiliations Search Mode wiring', () => {
       screen.includes('onboarding.profileCompletion.affiliations.add'),
     );
     assert.ok(screen.includes('profile.affiliations.saveA11y'));
+  });
+
+  it('multi-panel search scroll targets active category anchor, not hard-coded y=0', () => {
+    const screen = readSharedSource('screens/AffiliationsScreen.tsx');
+    const panel = readSharedSource(
+      'components/registration/OnboardingAffiliationCategoryPanel.tsx',
+    );
+    assert.ok(screen.includes('scrollAnchorYRef={getScrollAnchorRef(categoryId)}'));
+    assert.ok(screen.includes('syncScrollAnchor'));
+    assert.ok(screen.includes('aboveCategoriesHeightRef'));
+    assert.ok(panel.includes('scrollAnchorYRef?.current'));
+    assert.ok(panel.includes('Math.max(0, anchor)'));
+    // Must not hard-code scrollTo({ y: 0 }) as the only path
+    assert.ok(!panel.includes('scrollTo({\n      y: 0,'));
+    assert.ok(!panel.includes('scrollTo({ y: 0'));
+  });
+
+  it('focus active category keeps results usable (Add/Save wiring intact)', () => {
+    const screen = readSharedSource('screens/AffiliationsScreen.tsx');
+    const panel = readSharedSource(
+      'components/registration/OnboardingAffiliationCategoryPanel.tsx',
+    );
+    assert.ok(panel.includes('displayLogoUrl(result)'));
+    assert.ok(panel.includes('displayLogoUrl(item)'));
+    assert.ok(panel.includes('resolveInMemorySelectedLogoUrl'));
+    assert.ok(screen.includes('scrollAnchorYRef'));
+    assert.ok(screen.includes('handleAddPending'));
+    assert.ok(screen.includes('handleSave'));
   });
 
   it('pending category with showAddCta wins over idle siblings', () => {
