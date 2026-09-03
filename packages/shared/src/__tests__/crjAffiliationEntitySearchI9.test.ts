@@ -23,6 +23,7 @@ import {
   registerAffiliationEntitySearchCallable,
   resolveAffiliationEntitySearchProviderKind,
   resolveAffiliationEntitySearchProviderKindFromEnvironment,
+  setAffiliationExpoExtraForTests,
 } from '../affiliations/affiliationEntitySearchRuntime';
 import {
   buildLogoDevImageUrl,
@@ -48,6 +49,9 @@ function readSharedSource(relativeFromSharedSrc: string): string {
 
 afterEach(() => {
   registerAffiliationEntitySearchCallable(null);
+  setAffiliationExpoExtraForTests(null);
+  delete process.env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV;
+  delete process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID;
 });
 
 describe('CRJ-I9 client contract', () => {
@@ -360,6 +364,107 @@ describe('CRJ-I9-C environment / production safety', () => {
       projectId: 'nearsy-pj',
     });
     assert.equal(provider.id, 'fixture');
+  });
+});
+
+describe('CRJ-I9-C Build 48 Store config regression', () => {
+  it('Store process.env + Constants.extra selects firebase and invokes callable', async () => {
+    // Exact Build 48 Store shape: EAS profile inlines only FIREBASE_ENV;
+    // PROJECT_ID lives in expoConfig.extra from app.json / app.config.js.
+    delete process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID;
+    process.env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV = 'production';
+    setAffiliationExpoExtraForTests({
+      EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'production',
+      EXPO_PUBLIC_FIREBASE_PROJECT_ID: 'nearsy-pj',
+    });
+
+    let invokedName: string | null = null;
+    let invokedQuery: string | null = null;
+    registerAffiliationEntitySearchCallable(async (name, data) => {
+      invokedName = name;
+      invokedQuery = data.query;
+      return {
+        results: [
+          {
+            id: 'logo.dev:microsoft.com',
+            name: 'Microsoft',
+            provider: 'logo.dev',
+            domain: 'microsoft.com',
+          },
+        ],
+      };
+    });
+
+    // Panel path: no explicit context argument.
+    const provider = getAffiliationEntitySearchProvider();
+    assert.equal(provider.id, 'firebase');
+    assert.notEqual(provider.id, 'fixture');
+
+    const rows = await provider.search('Microsoft', 'professional');
+    assert.equal(invokedName, SEARCH_AFFILIATION_ENTITIES_FUNCTION);
+    assert.equal(invokedQuery, 'Microsoft');
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.provider, 'logo.dev');
+    assert.equal(rows[0]!.name, 'Microsoft');
+  });
+
+  it('DEV Constants.extra selects firebase without explicit context', () => {
+    delete process.env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV;
+    delete process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID;
+    setAffiliationExpoExtraForTests({
+      EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'development',
+      EXPO_PUBLIC_FIREBASE_PROJECT_ID: 'nearsy-dev',
+    });
+    registerAffiliationEntitySearchCallable(async () => ({ results: [] }));
+    assert.equal(getAffiliationEntitySearchProvider().id, 'firebase');
+  });
+
+  it('crossed env/project from Constants.extra stays fail-closed', () => {
+    delete process.env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV;
+    delete process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID;
+    setAffiliationExpoExtraForTests({
+      EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'production',
+      EXPO_PUBLIC_FIREBASE_PROJECT_ID: 'nearsy-dev',
+    });
+    registerAffiliationEntitySearchCallable(async () => ({ results: [] }));
+    assert.equal(getAffiliationEntitySearchProvider().id, 'fixture');
+
+    setAffiliationExpoExtraForTests({
+      EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'development',
+      EXPO_PUBLIC_FIREBASE_PROJECT_ID: 'nearsy-pj',
+    });
+    assert.equal(getAffiliationEntitySearchProvider().id, 'fixture');
+  });
+});
+
+describe('CRJ-I9-C shared panel surfaces (CRJ + AffiliationsScreen)', () => {
+  it('CRJ ProfileCompletionScreen and AffiliationsScreen share the corrected search path', () => {
+    const panel = readSharedSource(
+      'components/registration/OnboardingAffiliationCategoryPanel.tsx',
+    );
+    const crj = readSharedSource('screens/ProfileCompletionScreen.tsx');
+    const own = readSharedSource('screens/AffiliationsScreen.tsx');
+
+    assert.ok(panel.includes('getAffiliationEntitySearchProvider()'));
+    assert.ok(panel.includes('trimmedQuery.length < 2'));
+    assert.ok(panel.includes('SEARCH_DEBOUNCE_MS = 300'));
+    assert.ok(
+      !panel.includes('getAffiliationEntitySearchProvider(undefined'),
+      'panel must call runtime without explicit context',
+    );
+
+    assert.ok(crj.includes('OnboardingAffiliationCategoryPanel'));
+    assert.ok(own.includes('OnboardingAffiliationCategoryPanel'));
+    assert.ok(
+      !crj.includes('getAffiliationEntitySearchProvider'),
+      'CRJ must not bypass the shared panel provider',
+    );
+    assert.ok(
+      !own.includes('getAffiliationEntitySearchProvider'),
+      'AffiliationsScreen must not bypass the shared panel provider',
+    );
+    assert.ok(!crj.includes('fixtureAffiliationEntitySearchProvider'));
+    assert.ok(!own.includes('fixtureAffiliationEntitySearchProvider'));
   });
 });
 

@@ -15,6 +15,15 @@ export type AffiliationEntitySearchRuntimeContext = {
 
 let registeredCallable: AffiliationEntitySearchCallable | null = null;
 
+/** Test-only: simulate Constants.expoConfig.extra without loading RN. */
+let expoExtraForTests: Record<string, unknown> | null = null;
+
+export function setAffiliationExpoExtraForTests(
+  extra: Record<string, unknown> | null,
+): void {
+  expoExtraForTests = extra;
+}
+
 export function resolveAffiliationEntitySearchProviderKind(
   raw?: string | null,
 ): AffiliationEntitySearchProviderKind {
@@ -50,7 +59,7 @@ function readAffiliationProjectId(projectId?: string | null): string {
     .trim()
     .toLowerCase();
   if (explicit) return explicit;
-  return String(process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID ?? '')
+  return (pickExpoPublicConfigValue('EXPO_PUBLIC_FIREBASE_PROJECT_ID') ?? '')
     .trim()
     .toLowerCase();
 }
@@ -82,10 +91,45 @@ export function getRegisteredAffiliationEntitySearchCallable(): AffiliationEntit
   return registeredCallable;
 }
 
+function readExpoConfigExtra(): Record<string, unknown> {
+  if (expoExtraForTests) return expoExtraForTests;
+  try {
+    // Dynamic require: Node tests must not load expo-constants / RN.
+    const Constants = require('expo-constants').default as {
+      expoConfig?: { extra?: Record<string, unknown> };
+      manifest2?: { extra?: Record<string, unknown> };
+    };
+    return (
+      (Constants.expoConfig?.extra as Record<string, unknown> | undefined) ??
+      (Constants.manifest2?.extra as Record<string, unknown> | undefined) ??
+      {}
+    );
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Same precedence as firebaseConfig.ios / affiliation bootstrap pick():
+ * Constants.expoConfig.extra → process.env.
+ */
+function pickExpoPublicConfigValue(name: string): string | null {
+  const extra = readExpoConfigExtra();
+  const fromExtra = extra?.[name];
+  if (typeof fromExtra === 'string' && fromExtra.trim().length > 0) {
+    return fromExtra.trim();
+  }
+  const fromProcess = process.env[name];
+  if (typeof fromProcess === 'string' && fromProcess.trim().length > 0) {
+    return fromProcess.trim();
+  }
+  return null;
+}
+
 function readRuntimeContext(): AffiliationEntitySearchRuntimeContext {
   return {
-    firebaseEnv: process.env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV ?? null,
-    projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID ?? null,
+    firebaseEnv: pickExpoPublicConfigValue('EXPO_PUBLIC_NEARSY_FIREBASE_ENV'),
+    projectId: pickExpoPublicConfigValue('EXPO_PUBLIC_FIREBASE_PROJECT_ID'),
   };
 }
 
