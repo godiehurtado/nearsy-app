@@ -31,7 +31,7 @@ describe('nearsyFirebaseEnvironment', () => {
     const env = resolveNearsyFirebaseEnvironment('production');
     assert.equal(env.firebaseProjectId, 'nearsy-pj');
     assert.equal(env.linkedInAuthEnabled, true);
-    assert.equal(env.appCheckProvider, 'production_pending');
+    assert.equal(env.appCheckProvider, 'production');
     assert.equal(isDebugAppCheckAllowed('production'), false);
   });
 
@@ -64,7 +64,7 @@ describe('assertEnvironmentConsistency', () => {
       nativeProjectId: 'nearsy-dev',
       jsProjectId: 'nearsy-pj',
       functionsRegion: 'us-central1',
-      appCheckProvider: 'production_pending',
+      appCheckProvider: 'production',
     });
     assert.equal(result.ok, false);
     if (!result.ok) {
@@ -110,6 +110,18 @@ describe('assertEnvironmentConsistency', () => {
       jsProjectId: 'nearsy-dev',
       functionsRegion: 'us-central1',
       appCheckProvider: 'debug',
+    });
+    assert.equal(result.ok, true);
+  });
+
+  it('accepts aligned production config with native App Check', () => {
+    const result = assertEnvironmentConsistency({
+      environment: 'production',
+      expectedProjectId: 'nearsy-pj',
+      nativeProjectId: 'nearsy-pj',
+      jsProjectId: 'nearsy-pj',
+      functionsRegion: 'us-central1',
+      appCheckProvider: 'production',
     });
     assert.equal(result.ok, true);
   });

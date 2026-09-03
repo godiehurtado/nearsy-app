@@ -12,6 +12,10 @@ import {
   type NearsyFirebaseEnvironmentConfig,
 } from '../environment/nearsyFirebaseEnvironment';
 import { LinkedInA3ClientError } from '../sanitize';
+import {
+  AppleAppCheckProviderConfigError,
+  resolveAppleAppCheckProviderConfig,
+} from './appleAppCheckProviderConfig';
 import type { AppCheckBootstrapPort } from './appCheckBootstrap';
 import {
   buildAppCheckFailureDiagnostic,
@@ -157,30 +161,31 @@ export async function createNativeAppCheckPort(options?: {
       }
       if (!sharedInitializePromise) {
         sharedInitializePromise = (async () => {
-          if (env.appCheckProvider !== 'debug') {
-            throw new LinkedInA3ClientError(
-              'LINKEDIN_DISABLED',
-              'LinkedIn App Check is not enabled for this environment.',
-            );
-          }
-
-          const debugToken = readDebugToken();
-          if (!debugToken) {
-            throwDiagnosed(
-              new Error('Debug provider token missing from runtime config'),
-              'read_debug_token',
-              retryNumber,
-            );
+          let appleConfig;
+          try {
+            appleConfig = resolveAppleAppCheckProviderConfig({
+              appCheckProvider: env.appCheckProvider,
+              debugToken: readDebugToken(),
+            });
+          } catch (err) {
+            if (err instanceof AppleAppCheckProviderConfigError) {
+              if (err.code === 'APP_CHECK_DEBUG_TOKEN_MISSING') {
+                throwDiagnosed(
+                  new Error('Debug provider token missing from runtime config'),
+                  'read_debug_token',
+                  retryNumber,
+                );
+              }
+              throw new LinkedInA3ClientError('APP_CHECK_FAILED', err.message);
+            }
+            throw err;
           }
 
           let provider: InstanceType<typeof ReactNativeFirebaseAppCheckProvider>;
           try {
             provider = new ReactNativeFirebaseAppCheckProvider();
             provider.configure({
-              apple: {
-                provider: 'debug',
-                debugToken,
-              },
+              apple: appleConfig,
             });
           } catch (err) {
             throwDiagnosed(err, 'configure_provider', retryNumber);
