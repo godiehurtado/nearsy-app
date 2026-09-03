@@ -10,7 +10,7 @@ import { LinkedInA3ClientError } from '../authentication/linkedinA3/sanitize';
 import { applyPostAuthNavigation } from '../phoneOtp/applyPostAuthNavigation';
 
 /**
- * iOS Development LinkedIn A3 → Firebase session → profile routing.
+ * iOS LinkedIn A3 → Firebase session → profile routing.
  * Mirrors useGoogleSignInFlow / useAppleSignInFlow navigation.
  * Does not modify ProfileCompletion / registration screens.
  */

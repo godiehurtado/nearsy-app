@@ -103,11 +103,11 @@ describe('environment gates Development vs Production', () => {
     assert.equal(env.linkedInAuthEnabled, true);
   });
 
-  it('Production/Preview maps to nearsy-pj + non-debug + LinkedIn disabled', () => {
+  it('Production/Preview maps to nearsy-pj + non-debug + LinkedIn enabled', () => {
     const env = resolveNearsyFirebaseEnvironment('production');
     assert.equal(env.firebaseProjectId, 'nearsy-pj');
     assert.equal(env.appCheckProvider, 'production_pending');
     assert.notEqual(env.appCheckProvider, 'debug');
-    assert.equal(env.linkedInAuthEnabled, false);
+    assert.equal(env.linkedInAuthEnabled, true);
   });
 });

@@ -46,7 +46,7 @@ const ENVIRONMENT_TABLE: Record<
     firebaseProjectId: 'nearsy-pj',
     functionsRegion: FUNCTIONS_REGION,
     appCheckProvider: 'production_pending',
-    linkedInAuthEnabled: false,
+    linkedInAuthEnabled: true,
     linkedInAppReturnUrl: LINKEDIN_APP_RETURN_URL,
     googleServicesFile: PRODUCTION_GOOGLE_SERVICES_FILE,
     bundleIdentifier: IOS_BUNDLE_IDENTIFIER,

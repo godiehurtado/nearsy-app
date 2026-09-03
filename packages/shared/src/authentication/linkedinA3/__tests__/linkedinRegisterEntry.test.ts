@@ -91,10 +91,10 @@ describe('LinkedIn register-entry wiring', () => {
     assert.equal(calls[1]?.routes[0]?.name, 'ProfileCompletion');
   });
 
-  it('Production environment does not enable LinkedIn A3', () => {
+  it('Production environment enables LinkedIn A3 for MVP', () => {
     const resolved = resolveNearsyFirebaseEnvironment('production');
     assert.equal(resolved.environment, 'production');
-    assert.equal(resolved.linkedInAuthEnabled, false);
+    assert.equal(resolved.linkedInAuthEnabled, true);
     const hook = readSharedSource('hooks/useLinkedInSignInFlow.ios.ts');
     assert.match(hook, /isLinkedInA3SignInEnabledForRuntime\(\)/);
     assert.match(

@@ -68,7 +68,7 @@
       "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "557470198780-8ls8o304sfcf8va409va90o6rar3vc5a.apps.googleusercontent.com",
       "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "557470198780-ttslt825t6lmoma0d8e9nce1q6l1tm8c.apps.googleusercontent.com",
       "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.557470198780-ttslt825t6lmoma0d8e9nce1q6l1tm8c",
-      "EXPO_PUBLIC_LINKEDIN_AUTH_ENABLED": "false",
+      "EXPO_PUBLIC_LINKEDIN_AUTH_ENABLED": "true",
       "eas": {
         "projectId": "06702f76-5fb1-4426-a1f9-df42b4491c63"
       }
