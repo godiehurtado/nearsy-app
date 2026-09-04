@@ -1,14 +1,12 @@
 /**
  * Registration wizard — nearsy-rn-v3 design parity (steps 1–5 of 10).
  *
- * TEMPORARY BYPASS (documented):
- *   Phone → (OTP pending — not implemented) → Firebase Email Authentication
  * Phone is mandatory and persisted with phoneVerified: false.
- * No SMS is sent; the UI must not claim a code was delivered.
+ * SMS OTP is enforced post-auth by the Phone OTP gate (J03) — this screen
+ * must not claim a code was delivered and must never self-mark the phone as verified.
  *
- * Terms: explicit checkbox required before account creation (same legal
- * behavior as the previous Register screen). acceptedTerms is only written
- * true after the user checks the box.
+ * Terms: explicit checkbox required before account creation.
+ * acceptedTerms is only written true after the user checks the box.
  */
 import React, { useMemo, useState } from 'react';
 import {
@@ -253,26 +251,10 @@ export default function RegisterScreen({ navigation }: Props) {
         phone: normalizedPhone,
         phoneVerified: false,
         acceptedTerms: true,
-        // TEMPORARY BYPASS: Phone → OTP pending → Firebase Auth (this call).
-        // No SMS is sent in this sprint.
       });
 
+      // Auth state + profile gate route to Phone OTP / CRJ (do not local-reset past OTP).
       Keyboard.dismiss();
-      setTimeout(() => {
-        navigation.reset({
-          index: 0,
-          routes: [
-            {
-              name: 'ProfileCompletion',
-              params: {
-                uid: user.uid,
-                email: user.email ?? form.email.trim(),
-                inputNonce: Date.now(),
-              },
-            },
-          ],
-        });
-      }, 150);
     } catch (e: any) {
       const code = e?.code as string | undefined;
       let message = t('authentication.errors.default');

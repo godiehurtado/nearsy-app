@@ -1,7 +1,10 @@
 /**
  * Shared profile gate resolution for AppNavigator.
  * Fail-closed: read errors never map to "complete" or "missing".
+ * Incomplete profiles use onboarding resolver (DOB → OTP → CRJ).
  */
+
+import { resolveOnboardingRoute } from '../phoneOtp/onboardingResolver.ts';
 
 export type ProfileGatePhase =
   | 'loading'
@@ -13,8 +16,8 @@ export type ProfileReadErrorReason = 'permission_denied' | 'transient';
 
 export type ProfileGateStatus =
   | { phase: 'loading' }
-  | { phase: 'profile_missing_or_incomplete' }
-  | { phase: 'profile_complete' }
+  | { phase: 'profile_missing_or_incomplete'; data: unknown }
+  | { phase: 'profile_complete'; data: unknown }
   | { phase: 'profile_read_error'; reason: ProfileReadErrorReason };
 
 /** Keep aligned with utils/profileDocumentComplete.ts (profileSetupCompleted === true). */
@@ -93,7 +96,11 @@ export function createProfileGateController(deps: {
       (data) => {
         if (gen !== generation) return;
         const phase = statusFromProfileDocument(data);
-        onStatus({ phase });
+        onStatus(
+          phase === 'profile_complete'
+            ? { phase, data }
+            : { phase, data },
+        );
       },
       (listenErr) => {
         void (async () => {
@@ -102,10 +109,13 @@ export function createProfileGateController(deps: {
             const data = await deps.get(uid);
             if (gen !== generation) return;
             const phase = statusFromProfileDocument(data);
-            onStatus({ phase });
+            onStatus(
+              phase === 'profile_complete'
+                ? { phase, data }
+                : { phase, data },
+            );
           } catch (getErr) {
             if (gen !== generation) return;
-            // Prefer classifying the get failure; fall back to listen error.
             const reason = classifyProfileReadError(getErr ?? listenErr);
             onStatus({ phase: 'profile_read_error', reason });
           }
@@ -127,6 +137,7 @@ export function createProfileGateController(deps: {
 /** Destinations the authenticated shell may show (shared by all auth providers). */
 export type AuthenticatedProfileFlow =
   | { kind: 'loading' }
+  | { kind: 'PhoneVerification' }
   | { kind: 'ProfileCompletion' }
   | { kind: 'MainTabs' }
   | { kind: 'profile_read_error'; reason: ProfileReadErrorReason };
@@ -145,12 +156,25 @@ export function resolveAuthenticatedProfileFlow(
   switch (status.phase) {
     case 'loading':
       return { kind: 'loading' };
-    case 'profile_missing_or_incomplete':
-      return { kind: 'ProfileCompletion' };
     case 'profile_complete':
       return { kind: 'MainTabs' };
     case 'profile_read_error':
       return { kind: 'profile_read_error', reason: status.reason };
+    case 'profile_missing_or_incomplete': {
+      const route = resolveOnboardingRoute(status.data);
+      switch (route.kind) {
+        case 'complete':
+          return { kind: 'MainTabs' };
+        case 'needsPhoneVerification':
+          return { kind: 'PhoneVerification' };
+        case 'needsDateOfBirth':
+        case 'needsProfileCompletion':
+          // Full DOB / CRJ parity is J04 — reuse existing ProfileCompletion shell.
+          return { kind: 'ProfileCompletion' };
+        default:
+          return { kind: 'ProfileCompletion' };
+      }
+    }
   }
 }
 

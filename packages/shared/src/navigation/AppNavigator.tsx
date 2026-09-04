@@ -208,6 +208,7 @@ export default function AppNavigator() {
 
   // Guests must not wait on profile-gate loading (no uid → no profile to load).
   const profileLoading = isAuthenticatedProfileLoading(uid, profileFlow.kind);
+  const needsPhoneVerification = profileFlow.kind === 'PhoneVerification';
   const needsCompleteProfile = profileFlow.kind === 'ProfileCompletion';
   const profileReadError =
     profileFlow.kind === 'profile_read_error' ? profileFlow : null;
@@ -220,6 +221,7 @@ export default function AppNavigator() {
       return 'loading';
     if (!uid) return 'guest';
     if (profileReadError) return `auth-error-${uid}`;
+    if (needsPhoneVerification) return `auth-phone-${uid}`;
     if (needsCompleteProfile) return `auth-complete-${uid}`;
     return `auth-main-${uid}`;
   }, [
@@ -228,6 +230,7 @@ export default function AppNavigator() {
     hydrating,
     welcomeHydrating,
     uid,
+    needsPhoneVerification,
     needsCompleteProfile,
     profileReadError,
   ]);
@@ -296,8 +299,37 @@ export default function AppNavigator() {
     );
   }
 
-  // J02 routing foundation: incomplete → ProfileCompletion (existing CRJ screens).
-  // Phone OTP (J03) / full DOB-CRJ (J04) remain downstream — do not fake Home.
+  // J03: phone OTP gate — cannot navigate around to MainTabs while unverified.
+  // DOB missing still lands on ProfileCompletion until J04 OnboardingBirthDate.
+  if (needsPhoneVerification) {
+    return (
+      <Stack.Navigator
+        id="RootAuthenticatedPhone"
+        key={`auth-phone-${uid}`}
+        screenOptions={{ headerShown: false }}
+      >
+        <Stack.Screen
+          name="PhoneVerification"
+          component={PhoneVerificationScreen}
+          initialParams={{ uid, from: 'onboarding' }}
+        />
+        <Stack.Screen
+          name="ProfileCompletion"
+          component={ProfileCompletionScreen}
+          initialParams={{ uid, email: userEmail }}
+        />
+        <Stack.Screen
+          name="CompleteProfile"
+          component={CompleteProfileScreen}
+          initialParams={{ uid, email: userEmail }}
+        />
+        <Stack.Screen name="Login" component={LoginScreen} />
+      </Stack.Navigator>
+    );
+  }
+
+  // Incomplete profile after OTP (or DOB pending) → ProfileCompletion / CRJ shell.
+  // Phone OTP (J03) is enforced above; full DOB-CRJ parity remains J04.
   if (needsCompleteProfile) {
     return (
       <Stack.Navigator
@@ -314,6 +346,11 @@ export default function AppNavigator() {
           name="CompleteProfile"
           component={CompleteProfileScreen}
           initialParams={{ uid, email: userEmail }}
+        />
+        <Stack.Screen
+          name="PhoneVerification"
+          component={PhoneVerificationScreen}
+          initialParams={{ uid, from: 'onboarding' }}
         />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="MainTabs" component={RootTabs} />

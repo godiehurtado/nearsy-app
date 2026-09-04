@@ -1,508 +1,762 @@
-// src/screens/PhoneVerificationScreen.android.tsx ✅ RNFirebase-only
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+// PhoneVerificationScreen.android — Identity backend OTP (not Firebase PhoneAuth)
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TextInput,
-  TouchableOpacity,
+  ScrollView,
+  Pressable,
+  AppState,
   ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTranslation } from 'react-i18next';
 
+import { RegistrationLayout } from '../components/registration/RegistrationLayout';
+import { RegistrationProgress } from '../components/registration/RegistrationProgress';
+import { RegistrationFadeSlideIn } from '../components/registration/RegistrationFadeSlideIn';
+import { FormInput } from '../components/registration/FormInput';
+import { OtpSixDigitInput } from '../components/phoneOtp/OtpSixDigitInput';
+import { REGISTRATION_COUNTRIES } from '../components/registration/countries';
+import { authPhaseProgress } from '../components/registration/crjProgress';
+import { PrimaryButton, SecondaryButton } from '../components/PrimaryButton';
+import { useAppTheme } from '../theme/ThemeContext';
+import { fontSize, fontWeight } from '../theme/typography';
+import { spacing } from '../theme/spacing';
+import { radius } from '../theme/radius';
+import { useTranslation } from '../i18n';
 import { firebaseAuth } from '../config/firebaseConfig';
-import { PhoneAuthProvider, PhoneAuthState } from '@react-native-firebase/auth';
+import { buildFullPhoneNumber, sanitizePhoneNumber } from '../settings/settingsPhoneCountries';
+import { isValidE164Phone, normalizeCanonicalPhone } from '../settings/settingsContracts';
+import { getPhoneOtpClient } from '../phoneOtp/phoneOtpFoundation';
+import { clearPendingSocialProfilePrefill } from '../authentication/social';
 import {
-  isProfileComplete,
-  updateUserProfilePartial,
-} from '../services/firestoreService';
+  createPhoneOtpSignOutPressHandler,
+  resetAuthNavigationToLogin,
+  runPhoneOtpScreenSignOut,
+} from '../phoneOtp/phoneOtpSignOut';
+import {
+  createPhoneOtpController,
+  type PhoneOtpController,
+  type PhoneOtpViewState,
+} from '../phoneOtp/phoneOtpController';
 
-type RouteParams = {
-  uid: string;
-  phone: string;
+type ScreenPhase = 'capture' | 'confirm' | 'code' | 'success' | 'terminal';
+
+function isValidPhone(fullPhone: string) {
+  return isValidE164Phone(normalizeCanonicalPhone(fullPhone));
+}
+
+type OtpContextualActionProps = {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  accessibilityLabel?: string;
+  palette: ReturnType<typeof useAppTheme>['palette'];
 };
 
-export default function PhoneVerificationScreen() {
-  const insets = useSafeAreaInsets();
-  const navigation = useNavigation<any>();
-  const route = useRoute<any>();
-  const { t } = useTranslation();
-
-  const { uid, phone } = (route.params || {}) as RouteParams;
-
-  const [verificationId, setVerificationId] = useState<string | null>(null);
-  const [code, setCode] = useState('');
-  const [sending, setSending] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [resendTimer, setResendTimer] = useState(0);
-
-  // Guardamos el listener object para poder limpiar y no acumular listeners
-  const phoneListenerRef = useRef<any>(null);
-
-  // Timer para reintento de envío de SMS
-  useEffect(() => {
-    if (resendTimer <= 0) return;
-    const id = setInterval(() => setResendTimer((prev) => prev - 1), 1000);
-    return () => clearInterval(id);
-  }, [resendTimer]);
-
-  // Cleanup listener al salir
-  useEffect(() => {
-    return () => {
-      if (phoneListenerRef.current) {
-        try {
-          if (
-            typeof phoneListenerRef.current.removeAllListeners === 'function'
-          ) {
-            phoneListenerRef.current.removeAllListeners('state_changed');
-          } else if (typeof phoneListenerRef.current.off === 'function') {
-            phoneListenerRef.current.off('state_changed');
-          }
-        } catch {
-          // ignore
-        }
-        phoneListenerRef.current = null;
-      }
-    };
-  }, []);
-
-  const maskedPhone = useMemo(() => {
-    const trimmed = (phone || '').trim();
-    if (trimmed.length < 4) return trimmed;
-    return trimmed.slice(0, -2).replace(/./g, '•') + trimmed.slice(-2);
-  }, [phone]);
-
-  const getPhoneErrorMessage = (code?: string) => {
-    switch (code) {
-      case 'auth/invalid-verification-code':
-        return t('authentication.otp.errors.invalidCode');
-      case 'auth/missing-verification-code':
-        return t('authentication.otp.errors.missingCode');
-      case 'auth/code-expired':
-        return t('authentication.otp.errors.codeExpired');
-      case 'auth/too-many-requests':
-        return t('authentication.otp.errors.tooManyRequests');
-      case 'auth/credential-already-in-use':
-        return t('authentication.otp.errors.credentialAlreadyInUse');
-      case 'auth/provider-already-linked':
-        return t('authentication.otp.errors.providerAlreadyLinked');
-      default:
-        return '';
-    }
-  };
-
-  const handleVerifyInternal = async (vId: string, c: string) => {
-    const currentUser = firebaseAuth.currentUser;
-    if (!currentUser) {
-      throw new Error(t('authentication.otp.errors.noAuthenticatedUser'));
-    }
-
-    // Seguridad: validar que el uid de route coincida con el user actual
-    if (uid && currentUser.uid !== uid) {
-      throw new Error(t('authentication.otp.errors.sessionMismatch'));
-    }
-
-    const credential = PhoneAuthProvider.credential(vId, c.trim());
-
-    // ✅ Primero intentamos link, si ya existe provider ligado usamos updatePhoneNumber
-    try {
-      await currentUser.linkWithCredential(credential);
-    } catch (err: any) {
-      const errCode = err?.code;
-      if (
-        errCode === 'auth/provider-already-linked' ||
-        errCode === 'auth/credential-already-in-use'
-      ) {
-        await currentUser.updatePhoneNumber(credential);
-      } else {
-        throw err;
-      }
-    }
-
-    // ✅ Guardamos en Firestore (y marcamos verificado)
-    await updateUserProfilePartial(currentUser.uid, {
-      phoneVerified: true,
-      phoneVerifiedAt: new Date().toISOString(),
-      phone: phone.trim(),
-    });
-
-    return currentUser;
-  };
-
-  const sendCode = async () => {
-    if (!phone?.trim()) {
-      Alert.alert(
-        t('authentication.otp.alerts.phoneRequiredTitle'),
-        t('authentication.otp.alerts.phoneRequiredMessage'),
-      );
-      return;
-    }
-
-    // 🔹 Por ahora desactivamos verificación por SMS en iOS
-    if (Platform.OS === 'ios') {
-      Alert.alert(
-        t('authentication.otp.alerts.notAvailableTitle'),
-        t('authentication.otp.alerts.notAvailableMessage'),
-      );
-      return;
-    }
-
-    try {
-      setSending(true);
-
-      const currentUser = firebaseAuth.currentUser;
-      if (!currentUser) {
-        throw new Error(t('authentication.otp.errors.noAuthenticatedUser'));
-      }
-
-      // ✅ evita múltiples listeners
-      if (phoneListenerRef.current) {
-        try {
-          if (
-            typeof phoneListenerRef.current.removeAllListeners === 'function'
-          ) {
-            phoneListenerRef.current.removeAllListeners('state_changed');
-          } else if (typeof phoneListenerRef.current.off === 'function') {
-            phoneListenerRef.current.off('state_changed');
-          }
-        } catch {
-          // ignore
-        }
-        phoneListenerRef.current = null;
-      }
-
-      const phoneAuthListener = firebaseAuth.verifyPhoneNumber(phone);
-      phoneListenerRef.current = phoneAuthListener;
-
-      phoneAuthListener.on('state_changed', async (phoneAuthSnapshot: any) => {
-        const state = phoneAuthSnapshot.state;
-
-        if (state === PhoneAuthState.CODE_SENT) {
-          setVerificationId(phoneAuthSnapshot.verificationId ?? null);
-          setResendTimer(60);
-          Alert.alert(
-            t('authentication.otp.alerts.codeSentTitle'),
-            t('authentication.otp.alerts.codeSentMessage', {
-              phone: maskedPhone,
-            }),
-          );
-          return;
-        }
-
-        // ✅ A veces Android auto-verifica
-        if (state === PhoneAuthState.AUTO_VERIFIED) {
-          try {
-            const vId = phoneAuthSnapshot.verificationId;
-            const sms = (phoneAuthSnapshot as any)?.code; // no siempre viene
-            if (vId && sms) {
-              setVerificationId(vId);
-              setCode(String(sms));
-              await handleVerifyInternal(vId, String(sms));
-            }
-          } catch {
-            // si falla, el usuario puede ingresar el código manual
-          }
-          return;
-        }
-
-        if (state === PhoneAuthState.AUTO_VERIFY_TIMEOUT) {
-          // Dejamos el verificationId si está disponible
-          if (phoneAuthSnapshot.verificationId) {
-            setVerificationId(phoneAuthSnapshot.verificationId);
-          }
-          return;
-        }
-
-        if (state === PhoneAuthState.ERROR) {
-          const errCode = phoneAuthSnapshot.error?.code;
-          Alert.alert(
-            t('authentication.otp.alerts.errorTitle'),
-            getPhoneErrorMessage(errCode) ||
-              phoneAuthSnapshot.error?.message ||
-              t('authentication.otp.alerts.sendFailed'),
-          );
-          return;
-        }
-      });
-    } catch (e: any) {
-      Alert.alert(
-        t('authentication.otp.alerts.errorTitle'),
-        getPhoneErrorMessage(e?.code) ||
-          e?.message ||
-          t('authentication.otp.alerts.sendFailed'),
-      );
-    } finally {
-      setSending(false);
-    }
-  };
-
-  // Envía el SMS automáticamente al entrar
-  useEffect(() => {
-    sendCode();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleVerify = async () => {
-    if (Platform.OS === 'ios') {
-      Alert.alert(
-        t('authentication.otp.alerts.notAvailableTitle'),
-        t('authentication.otp.alerts.notAvailableMessage'),
-      );
-      return;
-    }
-
-    if (!verificationId) {
-      Alert.alert(
-        t('authentication.otp.alerts.noCodeSentTitle'),
-        t('authentication.otp.alerts.noCodeSentMessage'),
-      );
-      return;
-    }
-
-    if (!code.trim()) {
-      Alert.alert(
-        t('authentication.otp.alerts.codeRequiredTitle'),
-        t('authentication.otp.alerts.codeRequiredMessage'),
-      );
-      return;
-    }
-
-    try {
-      setVerifying(true);
-
-      const currentUser = await handleVerifyInternal(verificationId, code);
-
-      Alert.alert(
-        t('authentication.otp.alerts.phoneVerifiedTitle'),
-        t('authentication.otp.alerts.phoneVerifiedMessage'),
-        [
-          {
-            text: t('common.actions.continue'),
-            onPress: async () => {
-              try {
-                const complete = await isProfileComplete(currentUser.uid);
-
-                navigation.reset({
-                  index: 0,
-                  routes: [
-                    {
-                      name: complete ? 'MainTabs' : 'CompleteProfile',
-                      params: complete
-                        ? undefined
-                        : { uid: currentUser.uid, email: currentUser.email },
-                    },
-                  ],
-                });
-              } catch {
-                navigation.reset({
-                  index: 0,
-                  routes: [
-                    {
-                      name: 'CompleteProfile',
-                      params: {
-                        uid: currentUser.uid,
-                        email: currentUser.email,
-                      },
-                    },
-                  ],
-                });
-              }
-            },
-          },
-        ],
-      );
-    } catch (e: any) {
-      Alert.alert(
-        t('authentication.otp.alerts.errorTitle'),
-        getPhoneErrorMessage(e?.code) ||
-          e?.message ||
-          t('authentication.otp.alerts.verifyFailed'),
-      );
-    } finally {
-      setVerifying(false);
-    }
-  };
-
+/** Secondary contextual action (resend countdown, try again). */
+function OtpContextualAction({
+  label,
+  onPress,
+  disabled = false,
+  accessibilityLabel,
+  palette,
+}: OtpContextualActionProps) {
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={insets.top + 20}
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled }}
+      style={({ pressed }) => [
+        styles.actionControl,
+        {
+          borderColor: disabled ? palette.border : palette.socialBorder,
+          backgroundColor: pressed && !disabled ? palette.socialPressed : 'transparent',
+          opacity: disabled ? 0.72 : 1,
+        },
+      ]}
+    >
+      <Text
+        style={[
+          styles.actionControlLabel,
+          { color: disabled ? palette.textMuted : palette.primary },
+        ]}
       >
-        <View
-          style={[
-            styles.container,
-            {
-              paddingTop: insets.top + 40,
-              paddingBottom: insets.bottom + 20,
-            },
-          ]}
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+type OtpSignOutFooterProps = {
+  signingOut: boolean;
+  signOutError: string | null;
+  onSignOut: () => void;
+  palette: ReturnType<typeof useAppTheme>['palette'];
+  signingOutLabel: string;
+  signOutLabel: string;
+  signOutA11y: string;
+};
+
+function OtpSignOutFooter({
+  signingOut,
+  signOutError,
+  onSignOut,
+  palette,
+  signingOutLabel,
+  signOutLabel,
+  signOutA11y,
+}: OtpSignOutFooterProps) {
+  return (
+    <View
+      style={[
+        styles.signOutSection,
+        { borderTopColor: palette.border },
+      ]}
+    >
+      {signOutError ? (
+        <Text
+          style={[styles.error, { color: palette.danger }]}
+          accessibilityRole="alert"
         >
-          <Text style={styles.title}>{t('authentication.otp.title')}</Text>
-          <Text style={styles.subtitle}>
-            {t('authentication.otp.subtitlePrefix')}{' '}
-            <Text style={styles.phoneText}>{maskedPhone}</Text>
-          </Text>
-
-          <Text style={styles.label}>{t('authentication.otp.codeLabel')}</Text>
-          <View style={styles.codeRow}>
-            <Ionicons
-              name="key-outline"
-              size={20}
-              color="#6B7280"
-              style={{ marginRight: 8 }}
-            />
-            <TextInput
-              style={styles.codeInput}
-              keyboardType="number-pad"
-              placeholder={t('authentication.otp.codePlaceholder')}
-              placeholderTextColor="#9CA3AF"
-              value={code}
-              onChangeText={setCode}
-              maxLength={6}
-            />
-          </View>
-
-          <TouchableOpacity
-            style={[styles.verifyButton, verifying && { opacity: 0.7 }]}
-            onPress={handleVerify}
-            disabled={verifying}
-            activeOpacity={0.85}
-          >
-            {verifying ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons
-                  name="checkmark-circle-outline"
-                  size={20}
-                  color="#fff"
-                />
-                <Text style={styles.verifyButtonText}>
-                  {t('authentication.otp.verifyButton')}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.resendRow}>
-            <Text style={styles.resendText}>
-              {t('authentication.otp.didNotReceive')}
-            </Text>
-            <TouchableOpacity
-              onPress={sendCode}
-              disabled={sending || resendTimer > 0}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.resendLink,
-                  (sending || resendTimer > 0) && { opacity: 0.6 },
-                ]}
-              >
-                {resendTimer > 0
-                  ? t('authentication.otp.resendIn', { seconds: resendTimer })
-                  : t('authentication.otp.resendCode')}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {sending && (
-            <View style={{ marginTop: 16, alignItems: 'center' }}>
-              <ActivityIndicator />
-              <Text style={{ marginTop: 6, color: '#6B7280', fontSize: 12 }}>
-                {t('authentication.otp.sendingSms')}
-              </Text>
-            </View>
-          )}
-        </View>
-      </KeyboardAvoidingView>
+          {signOutError}
+        </Text>
+      ) : null}
+      <Pressable
+        onPress={onSignOut}
+        disabled={signingOut}
+        accessibilityRole="button"
+        accessibilityLabel={signOutA11y}
+        accessibilityState={{ disabled: signingOut, busy: signingOut }}
+        style={({ pressed }) => [
+          styles.signOutControl,
+          {
+            borderColor: palette.danger,
+            backgroundColor: pressed && !signingOut ? `${palette.danger}14` : 'transparent',
+            opacity: signingOut ? 0.72 : 1,
+          },
+        ]}
+      >
+        <Text style={[styles.signOutText, { color: palette.danger }]}>
+          {signingOut ? signingOutLabel : signOutLabel}
+        </Text>
+      </Pressable>
     </View>
   );
 }
 
+export default function PhoneVerificationScreen() {
+  const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
+  const { palette } = useAppTheme();
+  const { t, i18n } = useTranslation();
+
+  const controllerRef = useRef<PhoneOtpController | null>(null);
+  const aliveRef = useRef(true);
+  const signingOutRef = useRef(false);
+  const [view, setView] = useState<PhoneOtpViewState | null>(null);
+  const [countryDial, setCountryDial] = useState(REGISTRATION_COUNTRIES[0].dial);
+  const [localPhone, setLocalPhone] = useState('');
+  const [showCountries, setShowCountries] = useState(false);
+  const [tick, setTick] = useState(0);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
+
+  const locale = i18n.language === 'es' ? 'es' : 'en';
+
+  const syncView = useCallback((next: PhoneOtpViewState) => {
+    if (!aliveRef.current) return next;
+    setView(next);
+    return next;
+  }, []);
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    signingOutRef.current = signingOut;
+  }, [signingOut]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const client = await getPhoneOtpClient();
+        if (!alive) return;
+        const controller = createPhoneOtpController({ client, locale });
+        controllerRef.current = controller;
+        const boot = await controller.bootstrap();
+        if (!alive) return;
+        syncView(boot);
+        if (boot.phase === 'verified') {
+          navigation.replace('ProfileCompletion', {
+            uid: firebaseAuth.currentUser?.uid,
+            email: firebaseAuth.currentUser?.email,
+            inputNonce: Date.now(),
+          });
+        }
+      } catch {
+        if (!alive) return;
+        syncView({
+          phase: 'failed',
+          challengeId: null,
+          maskedPhone: null,
+          expiresAt: null,
+          resendAvailableAt: null,
+          attemptsRemaining: null,
+          sendsRemaining30m: null,
+          sendsRemaining24h: null,
+          phoneE164InMemory: null,
+          code: '',
+          lastError: null,
+          operationInFlight: false,
+          bootstrapComplete: true,
+        });
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [locale, navigation, syncView]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' || !controllerRef.current) return;
+      void controllerRef.current.onForeground().then(syncView);
+    });
+    return () => sub.remove();
+  }, [syncView]);
+
+  useEffect(() => {
+    if (!view?.resendAvailableAt) return;
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [view?.resendAvailableAt]);
+
+  const fullPhone = useMemo(() => {
+    const local = sanitizePhoneNumber(localPhone);
+    return local ? buildFullPhoneNumber(countryDial, local) : '';
+  }, [countryDial, localPhone]);
+
+  const screenPhase: ScreenPhase = useMemo(() => {
+    if (!view) return 'capture';
+    if (view.phase === 'verified') return 'success';
+    if (
+      view.phase === 'feature_disabled' ||
+      view.phase === 'expired' ||
+      view.phase === 'locked' ||
+      view.phase === 'cancelled' ||
+      view.phase === 'app_check_failure' ||
+      view.phase === 'auth_failure'
+    ) {
+      return 'terminal';
+    }
+    if (view.phase === 'confirm') return 'confirm';
+    if (
+      view.phase === 'pending' ||
+      view.phase === 'checking' ||
+      view.phase === 'sending'
+    ) {
+      return 'code';
+    }
+    return 'capture';
+  }, [view]);
+
+  const errorMessage = useMemo(() => {
+    if (!view?.lastError) return null;
+    const key = view.lastError.messageKey;
+    return t(key as any);
+  }, [view?.lastError, t]);
+
+  const resendSeconds = useMemo(() => {
+    void tick;
+    return controllerRef.current?.resendSecondsRemaining() ?? 0;
+  }, [tick, view?.resendAvailableAt]);
+
+  const canResend = controllerRef.current?.canResend() ?? false;
+
+  const handleSignOutPress = useMemo(
+    () =>
+      createPhoneOtpSignOutPressHandler({
+        isSigningOut: () => signingOutRef.current,
+        setSigningOut,
+        setSignOutError,
+        translate: (key) => t(key),
+        isMounted: () => aliveRef.current,
+        runSignOut: () =>
+          runPhoneOtpScreenSignOut({
+            controller: controllerRef.current,
+            signOut: () => firebaseAuth.signOut(),
+            clearSocialPrefill: () => clearPendingSocialProfilePrefill(),
+            clearSensitiveLocalState: () => {
+              setLocalPhone('');
+              setShowCountries(false);
+              controllerRef.current = null;
+            },
+            resetNavigationToLogin: () =>
+              resetAuthNavigationToLogin(navigation),
+          }),
+      }),
+    [navigation, t],
+  );
+
+  async function onContinueCapture() {
+    const controller = controllerRef.current;
+    if (!controller || !isValidPhone(fullPhone)) return;
+    syncView(controller.setPhoneE164(normalizeCanonicalPhone(fullPhone)));
+  }
+
+  async function onSendCode() {
+    const controller = controllerRef.current;
+    if (!controller || !fullPhone) return;
+    syncView(await controller.startVerification(normalizeCanonicalPhone(fullPhone)));
+  }
+
+  async function onVerify() {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    const next = await controller.checkCode();
+    syncView(next);
+    if (next.phase === 'verified') {
+      navigation.replace('ProfileCompletion', {
+        uid: firebaseAuth.currentUser?.uid,
+        email: firebaseAuth.currentUser?.email,
+        inputNonce: Date.now(),
+      });
+    }
+  }
+
+  async function onResend() {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    syncView(await controller.resend());
+  }
+
+  async function onChangeNumber() {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    setLocalPhone('');
+    syncView(await controller.changePhone());
+  }
+
+  async function onRetryBootstrap() {
+    const controller = controllerRef.current;
+    if (!controller || signingOut || view?.operationInFlight) return;
+    syncView(await controller.bootstrap());
+  }
+
+  const busy = (view?.operationInFlight ?? false) || signingOut;
+
+  const signOutFooter = (
+    <OtpSignOutFooter
+      signingOut={signingOut}
+      signOutError={signOutError}
+      onSignOut={() => {
+        void handleSignOutPress();
+      }}
+      palette={palette}
+      signingOutLabel={t('phoneOtp.signOut.signingOut')}
+      signOutLabel={t('phoneOtp.signOut.label')}
+      signOutA11y={t('phoneOtp.a11y.signOutButton')}
+    />
+  );
+
+  const afterPrimaryActions = (content: React.ReactNode) => (
+    <View style={styles.actionSection}>{content}</View>
+  );
+
+  const primaryAction = (button: React.ReactNode) => (
+    <View style={styles.primaryActionSection}>{button}</View>
+  );
+
+  return (
+    <RegistrationLayout>
+      <View style={styles.header}>
+        <RegistrationProgress
+          progress={authPhaseProgress(3, 4)}
+          stepLabel="3/4"
+        />
+      </View>
+
+      <ScrollView
+        style={styles.stepScroll}
+        contentContainerStyle={[
+          styles.stepBody,
+          { paddingBottom: insets.bottom + spacing.xl },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {!view ? (
+          <View style={styles.loadingBlock}>
+            <ActivityIndicator size="large" color={palette.primary} />
+            <Text style={[styles.hint, { color: palette.textSecondary }]}>
+              {t('phoneOtp.states.loading')}
+            </Text>
+            {afterPrimaryActions(signOutFooter)}
+          </View>
+        ) : (
+          <RegistrationFadeSlideIn animKey={screenPhase}>
+            {screenPhase === 'capture' && (
+              <>
+                <Text style={[styles.title, { color: palette.textPrimary }]}>
+                  {t('phoneOtp.phoneStep.title')}
+                </Text>
+                <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
+                  {t('phoneOtp.phoneStep.subtitle')}
+                </Text>
+                <View style={styles.phoneRow}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t('phoneOtp.a11y.countrySelector')}
+                    onPress={() => setShowCountries((v) => !v)}
+                    style={[
+                      styles.dialBtn,
+                      {
+                        borderColor: palette.borderStrong,
+                        backgroundColor: palette.surface,
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: palette.textPrimary, fontWeight: fontWeight.bold }}>
+                      {countryDial}
+                    </Text>
+                  </Pressable>
+                  <View style={styles.phoneField}>
+                    <FormInput
+                      placeholder={t('phoneOtp.phoneStep.phonePlaceholder')}
+                      keyboardType="phone-pad"
+                      value={localPhone}
+                      onChangeText={(v) => setLocalPhone(v.replace(/[^\d]/g, ''))}
+                    />
+                  </View>
+                </View>
+                {showCountries ? (
+                  <View
+                    style={[
+                      styles.countryList,
+                      { borderColor: palette.border, backgroundColor: palette.panel },
+                    ]}
+                  >
+                    {REGISTRATION_COUNTRIES.map((c) => (
+                      <Pressable
+                        key={`${c.iso2}-${c.dial}`}
+                        onPress={() => {
+                          setCountryDial(c.dial);
+                          setShowCountries(false);
+                        }}
+                        style={styles.countryRow}
+                      >
+                        <Text style={{ color: palette.textPrimary }}>{c.flag} {c.name}</Text>
+                        <Text style={{ color: palette.textSecondary }}>{c.dial}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+                {errorMessage ? (
+                  <Text style={[styles.error, { color: palette.danger }]}>{errorMessage}</Text>
+                ) : null}
+                {primaryAction(
+                  <PrimaryButton
+                    label={t('phoneOtp.phoneStep.continue')}
+                    onPress={onContinueCapture}
+                    disabled={!isValidPhone(fullPhone) || busy}
+                    loading={busy}
+                  />,
+                )}
+                {afterPrimaryActions(signOutFooter)}
+              </>
+            )}
+
+            {screenPhase === 'confirm' && (
+              <>
+                <Text style={[styles.title, { color: palette.textPrimary }]}>
+                  {t('phoneOtp.confirmStep.title')}
+                </Text>
+                <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
+                  {t('phoneOtp.confirmStep.subtitle')}
+                </Text>
+                <Text style={[styles.phoneConfirm, { color: palette.textPrimary }]}>
+                  {fullPhone}
+                </Text>
+                {errorMessage ? (
+                  <Text style={[styles.error, { color: palette.danger }]}>{errorMessage}</Text>
+                ) : null}
+                {primaryAction(
+                  <PrimaryButton
+                    label={t('phoneOtp.confirmStep.sendCode')}
+                    onPress={onSendCode}
+                    disabled={busy}
+                    loading={busy}
+                  />,
+                )}
+                {afterPrimaryActions(
+                  <>
+                    <SecondaryButton
+                      label={t('phoneOtp.confirmStep.changeNumber')}
+                      onPress={onChangeNumber}
+                      disabled={busy}
+                    />
+                    {signOutFooter}
+                  </>,
+                )}
+              </>
+            )}
+
+            {screenPhase === 'code' && (
+              <>
+                <Text style={[styles.title, { color: palette.textPrimary }]}>
+                  {t('phoneOtp.codeStep.title')}
+                </Text>
+                <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
+                  {t('phoneOtp.codeStep.subtitle', {
+                    maskedPhone: view.maskedPhone ?? '••••',
+                  })}
+                </Text>
+                {view.attemptsRemaining != null ? (
+                  <Text style={[styles.hint, { color: palette.textSecondary }]}>
+                    {t('phoneOtp.codeStep.attemptsRemaining', {
+                      count: view.attemptsRemaining,
+                    })}
+                  </Text>
+                ) : null}
+                {errorMessage ? (
+                  <Text
+                    style={[styles.error, { color: palette.danger }]}
+                    accessibilityRole="alert"
+                  >
+                    {errorMessage}
+                  </Text>
+                ) : null}
+                <OtpSixDigitInput
+                  value={view.code}
+                  onChangeText={(v) => {
+                    const controller = controllerRef.current;
+                    if (!controller) return;
+                    syncView(controller.setCode(v));
+                  }}
+                  label={t('phoneOtp.codeStep.codeLabel')}
+                  accessibilityLabel={t('phoneOtp.a11y.codeInput')}
+                  hasError={!!errorMessage}
+                  disabled={busy}
+                />
+                {primaryAction(
+                  <PrimaryButton
+                    label={t('phoneOtp.codeStep.verify')}
+                    onPress={onVerify}
+                    disabled={busy || view.code.length !== 6}
+                    loading={busy || view.phase === 'checking'}
+                  />,
+                )}
+                {afterPrimaryActions(
+                  <>
+                    <View style={styles.actionStack}>
+                      <OtpContextualAction
+                        label={
+                          canResend
+                            ? t('phoneOtp.codeStep.resend')
+                            : t('phoneOtp.codeStep.resendIn', { seconds: resendSeconds })
+                        }
+                        onPress={onResend}
+                        disabled={!canResend || busy}
+                        accessibilityLabel={t('phoneOtp.a11y.resendButton')}
+                        palette={palette}
+                      />
+                      <SecondaryButton
+                        label={t('phoneOtp.codeStep.changeNumber')}
+                        onPress={onChangeNumber}
+                        disabled={busy}
+                      />
+                    </View>
+                    {signOutFooter}
+                  </>,
+                )}
+              </>
+            )}
+
+            {screenPhase === 'terminal' && (
+              <>
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={40}
+                  color={palette.primary}
+                  style={styles.icon}
+                />
+                <Text style={[styles.title, { color: palette.textPrimary }]}>
+                  {view.phase === 'feature_disabled'
+                    ? t('phoneOtp.states.featureDisabledTitle')
+                    : view.phase === 'expired'
+                      ? t('phoneOtp.states.expiredTitle')
+                      : view.phase === 'locked'
+                        ? t('phoneOtp.states.lockedTitle')
+                        : view.phase === 'cancelled'
+                          ? t('phoneOtp.states.cancelledTitle')
+                          : t('phoneOtp.states.failedTitle')}
+                </Text>
+                <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
+                  {errorMessage ??
+                    (view.phase === 'feature_disabled'
+                      ? t('phoneOtp.states.featureDisabledMessage')
+                      : t('phoneOtp.states.failedMessage'))}
+                </Text>
+                <PrimaryButton
+                  label={t('phoneOtp.confirmStep.changeNumber')}
+                  onPress={onChangeNumber}
+                />
+                {afterPrimaryActions(
+                  <>
+                    <OtpContextualAction
+                      label={t('phoneOtp.states.retryBootstrap')}
+                      onPress={() => {
+                        void onRetryBootstrap();
+                      }}
+                      disabled={busy}
+                      palette={palette}
+                    />
+                    {signOutFooter}
+                  </>,
+                )}
+              </>
+            )}
+
+            {screenPhase === 'success' && (
+              <>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={48}
+                  color={palette.primary}
+                  style={styles.icon}
+                />
+                <Text style={[styles.title, { color: palette.textPrimary }]}>
+                  {t('phoneOtp.success.title')}
+                </Text>
+                <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
+                  {t('phoneOtp.success.subtitle')}
+                </Text>
+                {afterPrimaryActions(signOutFooter)}
+              </>
+            )}
+          </RegistrationFadeSlideIn>
+        )}
+      </ScrollView>
+    </RegistrationLayout>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
+  header: {
+    marginBottom: spacing.xl,
+  },
+  stepScroll: {
     flex: 1,
-    paddingHorizontal: 30,
+  },
+  stepBody: {
+    paddingBottom: spacing.xl,
+  },
+  loadingBlock: {
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingTop: spacing.lg,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#111827',
-    marginBottom: 8,
-    textAlign: 'center',
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.extrabold,
+    letterSpacing: -0.3,
+    lineHeight: fontSize.xl * 1.2,
   },
   subtitle: {
-    fontSize: 14,
-    color: '#4B5563',
-    marginBottom: 24,
+    fontSize: fontSize.base,
+    lineHeight: fontSize.base * 1.5,
+    marginTop: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  phoneRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  dialBtn: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    justifyContent: 'center',
+    minHeight: 52,
+  },
+  phoneField: { flex: 1 },
+  countryList: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    marginBottom: spacing.md,
+    maxHeight: 220,
+  },
+  countryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  phoneConfirm: {
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.bold,
     textAlign: 'center',
   },
-  phoneText: {
-    fontWeight: '700',
-    color: '#111827',
+  hint: { fontSize: fontSize.sm, marginTop: spacing.sm },
+  error: {
+    fontSize: fontSize.sm,
+    marginTop: spacing.sm,
+    lineHeight: fontSize.sm * 1.45,
   },
-  label: {
-    fontSize: 13,
-    color: '#4B5563',
-    marginBottom: 6,
-    fontWeight: '500',
+  primaryActionSection: {
+    marginTop: spacing.lg,
   },
-  codeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 14,
+  actionSection: {
+    marginTop: spacing.lg,
+    gap: spacing.md,
+  },
+  actionStack: {
+    gap: spacing.md,
+  },
+  actionControl: {
+    minHeight: 44,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#F9FAFB',
-    marginBottom: 20,
-  },
-  codeInput: {
-    flex: 1,
-    fontSize: 18,
-    letterSpacing: 4,
-    color: '#111827',
-    paddingVertical: 4,
-  },
-  verifyButton: {
-    height: 48,
-    borderRadius: 999,
-    backgroundColor: '#3B5A85',
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    marginBottom: 16,
   },
-  verifyButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
+  actionControlLabel: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.extrabold,
+    letterSpacing: -0.15,
+    textAlign: 'center',
   },
-  resendRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+  signOutSection: {
+    marginTop: spacing.xl,
+    gap: spacing.md,
+    paddingTop: spacing.xl,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  signOutControl: {
+    minHeight: 44,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
   },
-  resendText: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginRight: 4,
+  signOutText: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
   },
-  resendLink: {
-    fontSize: 13,
-    color: '#2563EB',
-    fontWeight: '600',
-  },
+  icon: { alignSelf: 'center', marginBottom: spacing.md },
 });
