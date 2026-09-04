@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 
 import { firebaseAuth, firestoreDb } from './config/firebaseConfig';
 import { ensureAppCheckInitialized } from './config/appCheckBootstrap';
+import { startAffiliationEntitySearchBootstrap } from './affiliations/iosAffiliationEntitySearchBootstrap';
 import { initI18n } from './i18n';
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -211,6 +212,14 @@ export default function App() {
           console.warn('[App] App Check bootstrap unexpected error:', e);
         }
       });
+    // CRJ Affiliations live search (searchAffiliationEntities) — after App Check path.
+    try {
+      startAffiliationEntitySearchBootstrap();
+    } catch (e) {
+      if (__DEV__) {
+        console.warn('[App] Affiliation search bootstrap error:', e);
+      }
+    }
     return () => {
       cancelled = true;
     };

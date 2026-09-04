@@ -20,12 +20,16 @@ function readSharedSource(relativeFromSharedSrc: string): string {
 }
 
 describe('Android register and phone OTP integration', () => {
-  it('Register persists phone with phoneVerified false (no OTP bypass as verified)', () => {
+  it('Register creates account without phone; phoneVerified stays false until J03 OTP', () => {
     const register = readSharedSource('screens/RegisterScreen.tsx');
+    assert.match(register, /EMAIL_REGISTER_STEPS/);
+    assert.match(register, /phone:\s*null/);
     assert.match(register, /phoneVerified:\s*false/);
     assert.doesNotMatch(register, /phoneVerified:\s*true\s*[,}]/);
     assert.doesNotMatch(register, /TEMPORARY BYPASS/);
     assert.doesNotMatch(register, /navigation\.reset\(/);
+    assert.doesNotMatch(register, /case 'phone'/);
+    assert.doesNotMatch(register, /case 'name'/);
   });
 
   it('Android OTP screen uses Identity backend — not Firebase PhoneAuth', () => {
@@ -50,11 +54,14 @@ describe('Android register and phone OTP integration', () => {
     assert.doesNotMatch(foundation, /fixture|fakeOtp|hardcoded/i);
   });
 
-  it('AppNavigator enforces PhoneVerification gate stack', () => {
+  it('AppNavigator includes PhoneVerification in authoritative onboarding stack', () => {
     const nav = readSharedSource('navigation/AppNavigator.tsx');
-    assert.match(nav, /needsPhoneVerification/);
-    assert.match(nav, /RootAuthenticatedPhone/);
+    assert.match(nav, /needsOnboarding/);
+    assert.match(nav, /RootAuthenticatedComplete/);
+    assert.match(nav, /name="OnboardingBirthDate"/);
     assert.match(nav, /name="PhoneVerification"/);
+    assert.match(nav, /initialRouteName=\{onboardingInitialRoute\}/);
+    assert.doesNotMatch(nav, /RootAuthenticatedPhone/);
     assert.doesNotMatch(nav, /PhoneAuthProvider/);
   });
 

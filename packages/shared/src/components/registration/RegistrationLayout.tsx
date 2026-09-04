@@ -7,8 +7,8 @@ import {
   ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAppTheme } from '../../theme/ThemeContext';
-import { screenPadding } from '../../theme/spacing';
+import { useAppTheme } from '../../theme/ThemeContext.tsx';
+import { screenPadding } from '../../theme/spacing.ts';
 
 interface Props {
   children: React.ReactNode;

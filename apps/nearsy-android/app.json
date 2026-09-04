@@ -59,6 +59,7 @@
       "expo-web-browser",
       "react-native-edge-to-edge",
       "expo-localization",
+      "@react-native-community/datetimepicker",
       "@react-native-google-signin/google-signin",
       [
         "expo-secure-store",

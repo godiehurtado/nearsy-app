@@ -137,6 +137,7 @@ export function createProfileGateController(deps: {
 /** Destinations the authenticated shell may show (shared by all auth providers). */
 export type AuthenticatedProfileFlow =
   | { kind: 'loading' }
+  | { kind: 'OnboardingBirthDate' }
   | { kind: 'PhoneVerification' }
   | { kind: 'ProfileCompletion' }
   | { kind: 'MainTabs' }
@@ -165,11 +166,11 @@ export function resolveAuthenticatedProfileFlow(
       switch (route.kind) {
         case 'complete':
           return { kind: 'MainTabs' };
+        case 'needsDateOfBirth':
+          return { kind: 'OnboardingBirthDate' };
         case 'needsPhoneVerification':
           return { kind: 'PhoneVerification' };
-        case 'needsDateOfBirth':
         case 'needsProfileCompletion':
-          // Full DOB / CRJ parity is J04 — reuse existing ProfileCompletion shell.
           return { kind: 'ProfileCompletion' };
         default:
           return { kind: 'ProfileCompletion' };
