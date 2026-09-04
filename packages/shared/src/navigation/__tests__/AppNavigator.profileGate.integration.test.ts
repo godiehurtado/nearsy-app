@@ -14,6 +14,7 @@ import { describe, it } from 'node:test';
 import { onboardingTranslations } from '../../i18n/resources/onboarding.ts';
 import {
   createAuthenticatedProfileGate,
+  isAuthenticatedProfileLoading,
   PROFILE_GATE_I18N_KEYS,
   resolveAuthenticatedProfileFlow,
   type AuthenticatedProfileFlow,
@@ -237,5 +238,22 @@ describe('AppNavigator authenticated profile gate (integration)', () => {
       assert.equal(flows.at(-1)?.kind, 'MainTabs');
       gate.stop();
     }
+  });
+});
+
+describe('AppNavigator guest loader gate', () => {
+  it('guest (!uid) is never blocked by profileFlow loading', () => {
+    assert.equal(isAuthenticatedProfileLoading(null, 'loading'), false);
+    assert.equal(isAuthenticatedProfileLoading(undefined, 'loading'), false);
+    assert.equal(isAuthenticatedProfileLoading('', 'loading'), false);
+  });
+
+  it('authenticated uid + loading still blocks until profile gate resolves', () => {
+    assert.equal(isAuthenticatedProfileLoading('uid-1', 'loading'), true);
+    assert.equal(
+      isAuthenticatedProfileLoading('uid-1', 'ProfileCompletion'),
+      false,
+    );
+    assert.equal(isAuthenticatedProfileLoading('uid-1', 'MainTabs'), false);
   });
 });

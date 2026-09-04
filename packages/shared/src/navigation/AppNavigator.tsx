@@ -37,6 +37,7 @@ import { dbGetUser, dbOnUserSnapshot } from '../services/db';
 import { loadHasSeenWelcome } from '../onboarding/welcomeStorage';
 import {
   createAuthenticatedProfileGate,
+  isAuthenticatedProfileLoading,
   PROFILE_GATE_I18N_KEYS,
   type AuthenticatedProfileFlow,
 } from './profileGate';
@@ -205,7 +206,8 @@ export default function AppNavigator() {
     gateRef.current.retry(uid, setProfileFlow);
   };
 
-  const profileLoading = profileFlow.kind === 'loading';
+  // Guests must not wait on profile-gate loading (no uid → no profile to load).
+  const profileLoading = isAuthenticatedProfileLoading(uid, profileFlow.kind);
   const needsCompleteProfile = profileFlow.kind === 'ProfileCompletion';
   const profileReadError =
     profileFlow.kind === 'profile_read_error' ? profileFlow : null;
@@ -294,6 +296,8 @@ export default function AppNavigator() {
     );
   }
 
+  // J02 routing foundation: incomplete → ProfileCompletion (existing CRJ screens).
+  // Phone OTP (J03) / full DOB-CRJ (J04) remain downstream — do not fake Home.
   if (needsCompleteProfile) {
     return (
       <Stack.Navigator

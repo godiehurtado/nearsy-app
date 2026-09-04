@@ -41,7 +41,8 @@ import {
   birthPartsFromStrings,
   isBirthDateInFuture,
   isCompleteBirthDate,
-  meetsMinimumRegistrationAge,
+  meetsRegistrationAgeRange,
+  MAX_REGISTRATION_AGE,
   MIN_REGISTRATION_AGE,
 } from '../utils/birthDate';
 import { registerWithEmail } from '../services/authService';
@@ -128,7 +129,7 @@ export default function RegisterScreen({ navigation }: Props) {
   );
   const age = useMemo(() => ageFromBirthDate(birthParts), [birthParts]);
   const ageOk = useMemo(
-    () => meetsMinimumRegistrationAge(birthParts),
+    () => meetsRegistrationAgeRange(birthParts),
     [birthParts],
   );
 
@@ -179,6 +180,11 @@ export default function RegisterScreen({ navigation }: Props) {
         if (age !== null && age < MIN_REGISTRATION_AGE) {
           return t('authentication.register.wizard.validation.birthMinimumAge');
         }
+        if (age !== null && age > MAX_REGISTRATION_AGE) {
+          return t('authentication.register.wizard.validation.birthMaximumAge', {
+            age: MAX_REGISTRATION_AGE,
+          });
+        }
         return t('authentication.register.wizard.validation.birthIncomplete');
       case 'email':
         return t('authentication.register.wizard.validation.email');
@@ -222,7 +228,7 @@ export default function RegisterScreen({ navigation }: Props) {
     const isoBirthDate = birthDateToIso(birthParts);
     const year = birthParts.year;
 
-    if (!isoBirthDate || year == null || !meetsMinimumRegistrationAge(birthParts)) {
+    if (!isoBirthDate || year == null || !meetsRegistrationAgeRange(birthParts)) {
       Alert.alert(
         t('authentication.register.alerts.birthDateRequiredTitle'),
         t('authentication.register.alerts.minimumAgeMessage'),
@@ -451,7 +457,14 @@ export default function RegisterScreen({ navigation }: Props) {
                     ? t('authentication.register.wizard.steps.birth.ageOk', {
                         age,
                       })
-                    : t('authentication.register.wizard.steps.birth.ageTooYoung')}
+                    : age > MAX_REGISTRATION_AGE
+                      ? t(
+                          'authentication.register.wizard.steps.birth.ageTooOld',
+                          { age: MAX_REGISTRATION_AGE },
+                        )
+                      : t(
+                          'authentication.register.wizard.steps.birth.ageTooYoung',
+                        )}
                 </Text>
               ) : null}
             </>
