@@ -1,7 +1,9 @@
 /** Full birth date — day, month and year. Never year-only (CRJ / TSB-001). */
 
 /** Productive minimum age for registration (do not change without product approval). */
-export const MIN_REGISTRATION_AGE = 14;
+export const MIN_REGISTRATION_AGE = 18;
+/** Productive maximum age for registration and onboarding (do not change without product approval). */
+export const MAX_REGISTRATION_AGE = 99;
 
 export type BirthDateParts = {
   day: number | null;
@@ -89,7 +91,7 @@ export function ageFromBirthDate(
 }
 
 /**
- * Exact calendar age gate: turns 14 today → allowed; turns 14 tomorrow → blocked.
+ * Exact calendar age gate: turns 18 today → allowed; turns 18 tomorrow → blocked.
  * Future / non-existent dates → blocked.
  */
 export function meetsMinimumRegistrationAge(
@@ -98,6 +100,26 @@ export function meetsMinimumRegistrationAge(
 ): boolean {
   const age = ageFromBirthDate(b, asOf);
   return age !== null && age >= MIN_REGISTRATION_AGE;
+}
+
+/** Exact calendar age gate: turns 99 today → allowed; turns 100 today → blocked. */
+export function meetsMaximumRegistrationAge(
+  b: BirthDateParts,
+  asOf: Date = new Date(),
+): boolean {
+  const age = ageFromBirthDate(b, asOf);
+  return age !== null && age <= MAX_REGISTRATION_AGE;
+}
+
+/** Registration/onboarding age window (18–99 inclusive), using full birth date. */
+export function meetsRegistrationAgeRange(
+  b: BirthDateParts,
+  asOf: Date = new Date(),
+): boolean {
+  return (
+    meetsMinimumRegistrationAge(b, asOf) &&
+    meetsMaximumRegistrationAge(b, asOf)
+  );
 }
 
 /** Persistable ISO date `YYYY-MM-DD` for new registrations. */

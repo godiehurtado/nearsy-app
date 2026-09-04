@@ -5,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -17,10 +18,12 @@ import {
  * Auth social provider row — single visual source used by Login and Welcome.
  * Preserves the approved Login look: Ionicons logo + provider name + border.
  * Extracted from LoginScreen without changing Login appearance or behaviour.
+ *
+ * Apple Sign-In is not offered on Android (final product decision).
  */
 export type AuthSocialProvider = 'google' | 'apple' | 'meta' | 'linkedin';
 
-const PROVIDERS: {
+const ALL_PROVIDERS: {
   id: AuthSocialProvider;
   icon: keyof typeof Ionicons.glyphMap;
 }[] = [
@@ -29,6 +32,11 @@ const PROVIDERS: {
   { id: 'meta', icon: 'logo-facebook' },
   { id: 'linkedin', icon: 'logo-linkedin' },
 ];
+
+const PROVIDERS =
+  Platform.OS === 'android'
+    ? ALL_PROVIDERS.filter((p) => p.id !== 'apple')
+    : ALL_PROVIDERS;
 
 export type AuthSocialButtonRowProps = {
   labels: Record<AuthSocialProvider, string>;

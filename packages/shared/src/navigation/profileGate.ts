@@ -155,6 +155,18 @@ export function resolveAuthenticatedProfileFlow(
 }
 
 /**
+ * Full-screen loader must not trap guests: profile gate only applies when
+ * authenticated. Without this, `profileFlow.kind === 'loading'` with `!uid`
+ * blocks Welcome / Login / Register indefinitely.
+ */
+export function isAuthenticatedProfileLoading(
+  uid: string | null | undefined,
+  profileFlowKind: AuthenticatedProfileFlow['kind'],
+): boolean {
+  return Boolean(uid) && profileFlowKind === 'loading';
+}
+
+/**
  * Session wrapper used by AppNavigator.
  * start/retry/stop semantics are identical for Google, password, and LinkedIn.
  */
