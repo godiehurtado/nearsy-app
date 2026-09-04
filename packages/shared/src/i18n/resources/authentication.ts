@@ -95,7 +95,8 @@ export const authenticationTranslations = {
       birthYearModalTitle: 'Select your birth year',
       countryModalTitle: 'Select country code',
       ageHelper: 'You must be 18–99 to register.',
-      termsPrefix: 'I agree to the ',
+      birthDateModalTitle: 'Select your date of birth',
+      termsPrefix: 'I agree to the',
       termsLink: 'terms and conditions',
       termsSuffix: '.',
       submit: 'Register',
@@ -105,8 +106,10 @@ export const authenticationTranslations = {
         birthYearRequiredTitle: 'Birth year required',
         birthYearRequiredMessage: 'Please select your birth year.',
         birthDateRequiredTitle: 'Date of birth required',
+        birthDateRequiredMessage: 'Please enter your date of birth.',
         minimumAgeTitle: 'Minimum age',
         minimumAgeMessage: 'You must be 18+ to create an account.',
+        maximumAgeMessage: 'You must be {{age}} or younger to create an account.',
         invalidEmailTitle: 'Invalid email',
         invalidEmailMessage: 'Please enter a valid email address.',
         emailMismatchTitle: 'Email mismatch',
@@ -128,17 +131,14 @@ export const authenticationTranslations = {
           'Your account was created successfully. Please sign in to continue setting up your profile.',
         errorTitle: 'Error',
       },
-      /** Registration wizard (CRJ, 5 steps: name / birth / email / password / phone). */
+      /** Auth registration: Email → Password → Birth → Terms (OTP after create). */
       wizard: {
         continue: 'Continue',
         createAccount: 'Create account',
         backA11y: 'Back',
         selectCountryA11y: 'Select country dial code',
+        calendarDone: 'Done',
         steps: {
-          name: {
-            title: "What's your name?",
-            subtitle: "This is how you'll appear on Nearsy.",
-          },
           birth: {
             title: 'When were you born?',
             subtitle: 'Your profile shows your age, not your birth date.',
@@ -156,32 +156,34 @@ export const authenticationTranslations = {
             title: 'Create a password',
             subtitle: 'At least 8 characters, including letters and numbers.',
           },
-          phone: {
-            title: "What's your mobile number?",
+          terms: {
+            title: 'Terms and conditions',
             subtitle:
-              'Required for your account. Phone verification will happen later — no code is sent yet.',
+              'Review and accept the terms to create your account. Phone verification comes next.',
           },
         },
         fields: {
-          realName: 'Real name',
           day: 'Day',
           month: 'Month',
           year: 'Year',
+          birthDate: 'Birth Date',
           email: 'Email',
           password: 'Password',
-          phone: 'Mobile number',
         },
         placeholders: {
-          realName: 'Real name',
           day: 'DD',
           month: 'MM',
           year: 'YYYY',
+          birthDateMdy: 'MM/DD/YYYY',
+          birthDateDmy: 'DD/MM/YYYY',
+          birthDateYmd: 'YYYY/MM/DD',
           email: 'Email',
           password: 'Password',
-          phone: 'Mobile number',
+        },
+        a11y: {
+          birthDateCalendar: 'Open birth date calendar',
         },
         validation: {
-          name: 'Enter your real name',
           birthIncomplete: 'Enter your full date of birth',
           birthInvalid: 'Enter a valid date of birth.',
           birthFuture: 'Enter a date of birth that is not in the future.',
@@ -189,7 +191,6 @@ export const authenticationTranslations = {
           birthMaximumAge: 'You must be {{age}} or younger to create an account.',
           email: 'Enter a valid email address',
           password: 'Use at least 8 characters with letters and numbers',
-          phone: 'Enter a valid mobile number',
           terms: 'Please accept the terms and conditions to continue.',
         },
       },
@@ -410,7 +411,8 @@ export const authenticationTranslations = {
       birthYearModalTitle: 'Selecciona tu año de nacimiento',
       countryModalTitle: 'Seleccionar código de país',
       ageHelper: 'Debes tener entre 18 y 99 años para registrarte.',
-      termsPrefix: 'Acepto los ',
+      birthDateModalTitle: 'Selecciona tu fecha de nacimiento',
+      termsPrefix: 'Acepto los',
       termsLink: 'términos y condiciones',
       termsSuffix: '.',
       submit: 'Registrarse',
@@ -420,8 +422,11 @@ export const authenticationTranslations = {
         birthYearRequiredTitle: 'Año de nacimiento obligatorio',
         birthYearRequiredMessage: 'Selecciona tu año de nacimiento.',
         birthDateRequiredTitle: 'Fecha de nacimiento requerida',
+        birthDateRequiredMessage: 'Ingresa tu fecha de nacimiento.',
         minimumAgeTitle: 'Edad mínima',
         minimumAgeMessage: 'Debes tener 18 años o más para crear una cuenta.',
+        maximumAgeMessage:
+          'Debes tener {{age}} años o menos para crear una cuenta.',
         invalidEmailTitle: 'Correo no válido',
         invalidEmailMessage:
           'Introduce una dirección de correo electrónico válida.',
@@ -445,17 +450,14 @@ export const authenticationTranslations = {
           'Tu cuenta se creó correctamente. Inicia sesión para continuar con la configuración de tu perfil.',
         errorTitle: 'Error',
       },
-      /** Asistente de registro (CRJ, 5 pasos: nombre / nacimiento / correo / contraseña / teléfono). */
+      /** Registro auth: Correo → Contraseña → Nacimiento → Términos (OTP tras crear). */
       wizard: {
         continue: 'Continuar',
         createAccount: 'Crear cuenta',
         backA11y: 'Atrás',
         selectCountryA11y: 'Seleccionar código de país',
+        calendarDone: 'Listo',
         steps: {
-          name: {
-            title: '¿Cómo te llamas?',
-            subtitle: 'Así aparecerás en Nearsy.',
-          },
           birth: {
             title: '¿Cuándo naciste?',
             subtitle: 'Tu perfil muestra tu edad, no tu fecha de nacimiento.',
@@ -475,32 +477,34 @@ export const authenticationTranslations = {
             title: 'Crea una contraseña',
             subtitle: 'Al menos 8 caracteres, incluyendo letras y números.',
           },
-          phone: {
-            title: '¿Cuál es tu número móvil?',
+          terms: {
+            title: 'Términos y condiciones',
             subtitle:
-              'Obligatorio para tu cuenta. La verificación del teléfono se hará más adelante — aún no se envía ningún código.',
+              'Revisa y acepta los términos para crear tu cuenta. A continuación viene la verificación del teléfono.',
           },
         },
         fields: {
-          realName: 'Nombre real',
           day: 'Día',
           month: 'Mes',
           year: 'Año',
+          birthDate: 'Fecha de nacimiento',
           email: 'Correo electrónico',
           password: 'Contraseña',
-          phone: 'Número móvil',
         },
         placeholders: {
-          realName: 'Nombre real',
           day: 'DD',
           month: 'MM',
           year: 'AAAA',
+          birthDateMdy: 'MM/DD/AAAA',
+          birthDateDmy: 'DD/MM/AAAA',
+          birthDateYmd: 'AAAA/MM/DD',
           email: 'Correo electrónico',
           password: 'Contraseña',
-          phone: 'Número móvil',
+        },
+        a11y: {
+          birthDateCalendar: 'Abrir calendario de fecha de nacimiento',
         },
         validation: {
-          name: 'Ingresa tu nombre real',
           birthIncomplete: 'Ingresa tu fecha de nacimiento completa',
           birthInvalid: 'Ingresa una fecha de nacimiento válida.',
           birthFuture:
@@ -510,7 +514,6 @@ export const authenticationTranslations = {
             'Debes tener {{age}} años o menos para crear una cuenta.',
           email: 'Ingresa un correo electrónico válido',
           password: 'Usa al menos 8 caracteres con letras y números',
-          phone: 'Ingresa un número móvil válido',
           terms: 'Acepta los términos y condiciones para continuar.',
         },
       },

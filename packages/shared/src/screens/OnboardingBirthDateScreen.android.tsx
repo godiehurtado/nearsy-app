@@ -6,11 +6,8 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  Modal,
   Keyboard,
   Alert,
-  Platform,
-  useWindowDimensions,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -59,7 +56,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'OnboardingBirthDate'>;
 type NativeDateTimePickerProps = {
   value: Date;
   mode?: 'date' | 'time' | 'datetime';
-  display?: 'default' | 'spinner' | 'compact' | 'inline';
+  display?: 'default' | 'spinner' | 'compact' | 'inline' | 'calendar';
   maximumDate?: Date;
   minimumDate?: Date;
   locale?: string;
@@ -69,9 +66,11 @@ type NativeDateTimePickerProps = {
   onChange?: (event: { type?: string }, date?: Date) => void;
 };
 
-function loadIosDateTimePicker(): React.ComponentType<NativeDateTimePickerProps> | null {
-  if (Platform.OS !== 'ios') return null;
+function loadRegistrationDateTimePicker(): React.ComponentType<NativeDateTimePickerProps> | null {
   try {
+    // Avoid UIManager probes — missing native views can hang New Architecture.
+    const { NativeModules } = require('react-native') as typeof import('react-native');
+    if (!NativeModules?.RNDateTimePicker) return null;
     return require('@react-native-community/datetimepicker')
       .default as React.ComponentType<NativeDateTimePickerProps>;
   } catch {
@@ -80,20 +79,18 @@ function loadIosDateTimePicker(): React.ComponentType<NativeDateTimePickerProps>
 }
 
 export default function OnboardingBirthDateScreen({ route, navigation }: Props) {
-  const { palette, theme } = useAppTheme();
+  const { palette } = useAppTheme();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
-  const inlinePickerHeight = Math.min(
-    380,
-    Math.max(300, Math.round(windowHeight * 0.42)),
-  );
 
   const [birthDigits, setBirthDigits] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarDraft, setCalendarDraft] = useState<Date | null>(null);
-  const NativeDateTimePicker = useMemo(() => loadIosDateTimePicker(), []);
+  const NativeDateTimePicker = useMemo(
+    () => loadRegistrationDateTimePicker(),
+    [],
+  );
 
   const deviceLocaleTag =
     Localization.getLocales()[0]?.languageTag ?? 'en-US';
@@ -163,10 +160,8 @@ export default function OnboardingBirthDateScreen({ route, navigation }: Props) 
     setCalendarDraft(null);
   }
 
-  function confirmBirthDateCalendar() {
-    const selected = calendarDraft
-      ? localDateToBirthParts(calendarDraft)
-      : null;
+  function applyCalendarDate(selectedDate: Date) {
+    const selected = localDateToBirthParts(selectedDate);
     setBirthDigits(commitCalendarSelection(birthDigits, selected, birthOrder));
     setCalendarOpen(false);
     setCalendarDraft(null);
@@ -342,80 +337,20 @@ export default function OnboardingBirthDateScreen({ route, navigation }: Props) 
       </ScrollView>
 
       {NativeDateTimePicker && calendarOpen && calendarDraft ? (
-        <Modal
-          visible
-          transparent
-          animationType="fade"
-          onRequestClose={cancelBirthDateCalendar}
-        >
-          <View style={styles.calendarOverlay}>
-            <Pressable
-              style={StyleSheet.absoluteFill}
-              accessibilityRole="button"
-              accessibilityLabel={t('common.cancel')}
-              onPress={cancelBirthDateCalendar}
-            />
-            <View
-              style={[
-                styles.calendarSheet,
-                { backgroundColor: palette.surface, borderColor: palette.border },
-              ]}
-            >
-              <View style={styles.calendarHeader}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t('common.cancel')}
-                  onPress={cancelBirthDateCalendar}
-                  hitSlop={8}
-                >
-                  <Text style={[styles.calendarAction, { color: palette.textSecondary }]}>
-                    {t('common.cancel')}
-                  </Text>
-                </Pressable>
-                <Text
-                  style={[styles.calendarTitle, { color: palette.textPrimary }]}
-                  numberOfLines={1}
-                >
-                  {t('authentication.register.birthDateModalTitle')}
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t(
-                    'authentication.register.wizard.calendarDone',
-                  )}
-                  onPress={confirmBirthDateCalendar}
-                  hitSlop={8}
-                >
-                  <Text style={[styles.calendarAction, { color: palette.primary }]}>
-                    {t('authentication.register.wizard.calendarDone')}
-                  </Text>
-                </Pressable>
-              </View>
-              <View
-                style={[styles.calendarPickerArea, { height: inlinePickerHeight }]}
-              >
-                <NativeDateTimePicker
-                  value={calendarDraft}
-                  mode="date"
-                  display="inline"
-                  locale={deviceLocaleTag}
-                  themeVariant={theme === 'dark' ? 'dark' : 'light'}
-                  accentColor={palette.primary}
-                  style={{ width: '100%', height: inlinePickerHeight }}
-                  maximumDate={calendarMaxDate}
-                  minimumDate={calendarMinDate}
-                  onChange={(event, date) => {
-                    if (event.type === 'dismissed') {
-                      cancelBirthDateCalendar();
-                      return;
-                    }
-                    if (date) setCalendarDraft(date);
-                  }}
-                />
-              </View>
-            </View>
-          </View>
-        </Modal>
+        <NativeDateTimePicker
+          value={calendarDraft}
+          mode="date"
+          display="default"
+          maximumDate={calendarMaxDate}
+          minimumDate={calendarMinDate}
+          onChange={(event, date) => {
+            if (event.type === 'dismissed') {
+              cancelBirthDateCalendar();
+              return;
+            }
+            if (date) applyCalendarDate(date);
+          }}
+        />
       ) : null}
     </RegistrationLayout>
   );
@@ -466,38 +401,5 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     marginTop: spacing.md,
     lineHeight: fontSize.sm * 1.45,
-  },
-  calendarOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
-  calendarSheet: {
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    borderWidth: 1,
-    paddingBottom: spacing.lg,
-  },
-  calendarHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  calendarTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
-    marginHorizontal: spacing.sm,
-  },
-  calendarAction: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
-    minWidth: 72,
-  },
-  calendarPickerArea: {
-    paddingHorizontal: spacing.md,
   },
 });
