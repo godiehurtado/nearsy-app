@@ -136,6 +136,35 @@ describe('contract parsers', () => {
       customToken: 'synthetic.custom.token',
     });
     assert.equal(out.customToken, 'synthetic.custom.token');
+    assert.equal(out.profileHints, undefined);
+  });
+
+  it('accepts optional profileHints and ignores invalid fields', () => {
+    const out = parseLinkedInAuthExchangeResponse({
+      customToken: 'synthetic.custom.token',
+      profileHints: {
+        givenName: ' Ada ',
+        familyName: ' Lovelace ',
+        displayName: 'Ada Lovelace',
+        photoUrl: 'https://cdn.example.com/p.png',
+        email: 'must-not-leak@example.com',
+      },
+    });
+    assert.deepEqual(out.profileHints, {
+      givenName: 'Ada',
+      familyName: 'Lovelace',
+      displayName: 'Ada Lovelace',
+      photoUrl: 'https://cdn.example.com/p.png',
+    });
+    assert.equal(JSON.stringify(out).includes('must-not-leak'), false);
+  });
+
+  it('accepts legacy Exchange response without profileHints key', () => {
+    const out = parseLinkedInAuthExchangeResponse({
+      customToken: 'legacy.token.only',
+    });
+    assert.equal(out.customToken, 'legacy.token.only');
+    assert.equal('profileHints' in out, false);
   });
 
   it('rejects invalid Exchange response', () => {

@@ -46,7 +46,11 @@ export type LinkedInSessionDeps = LinkedInCoordinatorDeps & {
 };
 
 export type LinkedInSessionResult =
-  | { status: 'authenticated'; session: LinkedInFirebaseSession }
+  | {
+      status: 'authenticated';
+      session: LinkedInFirebaseSession;
+      profileHints?: import('./linkedinAuthCore.ts').LinkedInProfileHints;
+    }
   | { status: 'cancelled' }
   | { status: 'dismissed' }
   | { status: 'provider_error'; errorCode: string; transactionId?: string }
@@ -306,12 +310,19 @@ export async function authenticateWithLinkedInBrowser(
     }
 
     const customToken = flow.customToken;
+    const profileHints = flow.profileHints;
 
     if (deps.firebaseAuth.getCurrentUserId()) {
       return { status: 'session_changed_during_flow' };
     }
 
-    return await performSignInOnce(deps.firebaseAuth, customToken);
+    const signedIn = await performSignInOnce(deps.firebaseAuth, customToken);
+    if (signedIn.status !== 'authenticated') {
+      return signedIn;
+    }
+    return profileHints
+      ? { ...signedIn, profileHints }
+      : signedIn;
   } finally {
     sessionFlowInFlight = false;
   }
@@ -385,12 +396,14 @@ export async function authenticateWithLinkedInColdStartClaim(
     }
 
     let customToken: string;
+    let profileHints: import('./linkedinAuthCore.ts').LinkedInProfileHints | undefined;
     try {
       const exchanged = await linkedInAuthExchange(
         deps as LinkedInAuthClientDeps,
         { transactionId: claim.transactionId },
       );
       customToken = exchanged.customToken;
+      profileHints = exchanged.profileHints;
     } catch (err) {
       const normalized =
         err instanceof LinkedInAuthError
@@ -406,7 +419,13 @@ export async function authenticateWithLinkedInColdStartClaim(
       return { status: 'session_changed_during_flow' };
     }
 
-    return await performSignInOnce(deps.firebaseAuth, customToken);
+    const signedIn = await performSignInOnce(deps.firebaseAuth, customToken);
+    if (signedIn.status !== 'authenticated') {
+      return signedIn;
+    }
+    return profileHints
+      ? { ...signedIn, profileHints }
+      : signedIn;
   } finally {
     sessionFlowInFlight = false;
   }

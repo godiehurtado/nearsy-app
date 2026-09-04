@@ -53,8 +53,17 @@ export type LinkedInAuthExchangeRequest = {
   clientProofVerifier: string;
 };
 
+/** Optional editable CRJ prefill from Exchange — not identity. */
+export type LinkedInProfileHints = {
+  givenName?: string;
+  familyName?: string;
+  displayName?: string;
+  photoUrl?: string;
+};
+
 export type LinkedInAuthExchangeResponse = {
   customToken: string;
+  profileHints?: LinkedInProfileHints;
 };
 
 /**
@@ -157,6 +166,39 @@ export function parseLinkedInAuthStartResponse(
   };
 }
 
+export function parseLinkedInProfileHints(value: unknown): LinkedInProfileHints | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as Record<string, unknown>;
+  const hints: LinkedInProfileHints = {};
+  const givenName = trimHintString(raw.givenName);
+  const familyName = trimHintString(raw.familyName);
+  const displayName = trimHintString(raw.displayName);
+  const photoUrl = sanitizeHttpsPhotoUrl(raw.photoUrl);
+  if (givenName) hints.givenName = givenName;
+  if (familyName) hints.familyName = familyName;
+  if (displayName) hints.displayName = displayName;
+  if (photoUrl) hints.photoUrl = photoUrl;
+  return Object.keys(hints).length > 0 ? hints : undefined;
+}
+
+function trimHintString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function sanitizeHttpsPhotoUrl(value: unknown): string | undefined {
+  const url = trimHintString(value);
+  if (!url) return undefined;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return undefined;
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 export function parseLinkedInAuthExchangeResponse(
   data: unknown,
 ): LinkedInAuthExchangeResponse {
@@ -167,7 +209,10 @@ export function parseLinkedInAuthExchangeResponse(
   if (typeof d.customToken !== 'string' || d.customToken.length < 1) {
     throw new Error('INVALID_EXCHANGE_RESPONSE');
   }
-  return { customToken: d.customToken };
+  const profileHints = parseLinkedInProfileHints(d.profileHints);
+  return profileHints
+    ? { customToken: d.customToken, profileHints }
+    : { customToken: d.customToken };
 }
 
 export function isExactLinkedInMobileReturnBase(url: string): boolean {
@@ -705,7 +750,7 @@ export async function linkedInAuthStart(
 export async function linkedInAuthExchange(
   deps: LinkedInAuthClientDeps,
   input: { transactionId: string },
-): Promise<{ customToken: string }> {
+): Promise<{ customToken: string; profileHints?: LinkedInProfileHints }> {
   if (startInFlight || exchangeInFlight) {
     throw new LinkedInAuthError(
       'OPERATION_IN_PROGRESS',
@@ -748,13 +793,16 @@ export async function linkedInAuthExchange(
     };
 
     let customToken: string;
+    let profileHints: LinkedInProfileHints | undefined;
     try {
       const raw = await deps.functions.call<
         LinkedInAuthExchangeRequest,
         unknown
       >(LINKEDIN_AUTH_EXCHANGE_CALLABLE, request);
       try {
-        customToken = parseLinkedInAuthExchangeResponse(raw).customToken;
+        const parsed = parseLinkedInAuthExchangeResponse(raw);
+        customToken = parsed.customToken;
+        profileHints = parsed.profileHints;
       } catch {
         throw new LinkedInAuthError(
           'EXCHANGE_RESPONSE_INVALID',
@@ -773,7 +821,7 @@ export async function linkedInAuthExchange(
     }
 
     await deps.store.clear();
-    return { customToken };
+    return profileHints ? { customToken, profileHints } : { customToken };
   } finally {
     exchangeInFlight = false;
   }

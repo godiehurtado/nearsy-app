@@ -7,7 +7,11 @@ import {
   signInWithLinkedInBrowser,
 } from '../authentication/linkedin/linkedinAuth.android';
 import { getUserProfile, isProfileComplete } from '../services/firestoreService';
-import { clearPendingSocialProfilePrefill } from '../authentication/social';
+import {
+  clearPendingSocialProfilePrefill,
+  setPendingSocialProfilePrefill,
+} from '../authentication/social';
+import { linkedInProfileHintsToSocialPrefill } from '../authentication/linkedin/linkedinProfilePrefill';
 
 /**
  * Android Development LinkedIn → Firebase session → profile routing.
@@ -98,9 +102,17 @@ export function useLinkedInSignInFlow() {
       const emailForProfile =
         typeof profile?.email === 'string' ? profile.email : '';
 
+      const commitProfilePrefill = () => {
+        const prefill = linkedInProfileHintsToSocialPrefill(result.profileHints);
+        if (prefill) {
+          setPendingSocialProfilePrefill(uid, prefill);
+        }
+      };
+
       Keyboard.dismiss();
 
       if (!profile) {
+        commitProfilePrefill();
         setTimeout(() => {
           navigation.reset({
             index: 0,
@@ -131,6 +143,7 @@ export function useLinkedInSignInFlow() {
           return;
         }
 
+        commitProfilePrefill();
         navigation.reset({
           index: 0,
           routes: [

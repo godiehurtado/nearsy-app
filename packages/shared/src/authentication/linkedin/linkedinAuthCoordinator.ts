@@ -40,6 +40,7 @@ import {
   type LinkedInAuthClientDeps,
   type LinkedInAuthStartResult,
   type LinkedInDeepLinkParseResult,
+  type LinkedInProfileHints,
   type LinkedInStoredTransaction,
 } from './linkedinAuthCore.ts';
 
@@ -59,7 +60,7 @@ export type LinkedInReturnSource =
   | 'explicit';
 
 export type LinkedInBrowserFlowResult =
-  | { status: 'authenticated'; customToken: string }
+  | { status: 'authenticated'; customToken: string; profileHints?: LinkedInProfileHints }
   | { status: 'cancelled' }
   | { status: 'dismissed' }
   | { status: 'provider_error'; errorCode: string; transactionId?: string }
@@ -75,7 +76,7 @@ export type LinkedInPendingExchangeClaim = {
 export type LinkedInReturnHandleResult =
   | { status: 'ignored' }
   | { status: 'pending_exchange'; claim: LinkedInPendingExchangeClaim }
-  | { status: 'authenticated'; customToken: string }
+  | { status: 'authenticated'; customToken: string; profileHints?: LinkedInProfileHints }
   | { status: 'provider_error'; errorCode: string; transactionId?: string }
   | { status: 'failed'; error: LinkedInAuthError };
 
@@ -293,10 +294,12 @@ export async function handleLinkedInReturnUrl(
   }
 
   try {
-    const { customToken } = await linkedInAuthExchange(deps, {
+    const { customToken, profileHints } = await linkedInAuthExchange(deps, {
       transactionId: gated.transactionId,
     });
-    return { status: 'authenticated', customToken };
+    return profileHints
+      ? { status: 'authenticated', customToken, profileHints }
+      : { status: 'authenticated', customToken };
   } catch (err) {
     const normalized =
       err instanceof LinkedInAuthError
@@ -420,10 +423,16 @@ export async function runLinkedInBrowserAuthFlow(
     // handle a soft duplicate (no clear). We do not invoke handle twice here.
 
     if (handled.status === 'authenticated') {
-      return {
-        status: 'authenticated',
-        customToken: handled.customToken,
-      };
+      return handled.profileHints
+        ? {
+            status: 'authenticated',
+            customToken: handled.customToken,
+            profileHints: handled.profileHints,
+          }
+        : {
+            status: 'authenticated',
+            customToken: handled.customToken,
+          };
     }
     if (handled.status === 'provider_error') {
       return {
