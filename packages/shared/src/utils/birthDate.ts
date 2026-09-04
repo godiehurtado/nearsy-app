@@ -137,3 +137,55 @@ export function birthDateToIso(b: BirthDateParts): string | null {
   const dd = String(b.day).padStart(2, '0');
   return `${b.year}-${mm}-${dd}`;
 }
+
+/** Parse `YYYY-MM-DD` into civil parts; null if incomplete/invalid calendar date. */
+export function birthPartsFromIso(iso: string): BirthDateParts | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const parts: BirthDateParts = { day, month, year };
+  return isCompleteBirthDate(parts) ? parts : null;
+}
+
+/** Local civil parts from a Date (picker / Timestamp interop). */
+export function localDateToBirthParts(d: Date): BirthDateParts {
+  return {
+    year: d.getFullYear(),
+    month: d.getMonth() + 1,
+    day: d.getDate(),
+  };
+}
+
+/** Local Date for picker interop only — convert back to parts immediately. */
+export function birthPartsToLocalDate(b: BirthDateParts): Date | null {
+  if (
+    !isCompleteBirthDate(b) ||
+    b.day == null ||
+    b.month == null ||
+    b.year == null
+  ) {
+    return null;
+  }
+  return new Date(b.year, b.month - 1, b.day);
+}
+
+/**
+ * Oldest allowed registration civil date (turns MAX+1 yesterday → blocked;
+ * turns MAX today → allowed).
+ */
+export function minRegistrationBirthDate(asOf: Date = new Date()): BirthDateParts {
+  const today = startOfLocalDay(asOf);
+  const centennial = new Date(
+    today.getFullYear() - (MAX_REGISTRATION_AGE + 1),
+    today.getMonth(),
+    today.getDate(),
+  );
+  const minimum = new Date(
+    centennial.getFullYear(),
+    centennial.getMonth(),
+    centennial.getDate() + 1,
+  );
+  return localDateToBirthParts(minimum);
+}

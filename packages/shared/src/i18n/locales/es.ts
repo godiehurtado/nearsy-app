@@ -4,6 +4,7 @@ import { homeTranslations } from '../resources/home';
 import { nearbyTranslations } from '../resources/nearby';
 import { notificationsTranslations } from '../resources/notifications';
 import { onboardingTranslations } from '../resources/onboarding';
+import { phoneOtpTranslations } from '../resources/phoneOtp';
 import { profileTranslations } from '../resources/profile';
 import { settingsTranslations } from '../resources/settings';
 import { validationTranslations } from '../resources/validation';
@@ -18,4 +19,5 @@ export const es = {
   profile: profileTranslations.es,
   notifications: notificationsTranslations.es,
   settings: settingsTranslations.es,
+  phoneOtp: phoneOtpTranslations.es,
 } as const;
