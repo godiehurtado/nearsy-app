@@ -19,6 +19,10 @@
     "preview": {
       "distribution": "internal",
       "prebuildCommand": "npx expo prebuild --platform android --clean",
+      "env": {
+        "NEARSY_FIREBASE_ENV": "production",
+        "NEARSY_DEV_CLIENT": "false"
+      },
       "android": {
         "buildType": "apk"
       }
@@ -26,6 +30,10 @@
     "production": {
       "autoIncrement": true,
       "prebuildCommand": "npx expo prebuild --platform android --clean",
+      "env": {
+        "NEARSY_FIREBASE_ENV": "production",
+        "NEARSY_DEV_CLIENT": "false"
+      },
       "android": {
         "buildType": "app-bundle"
       }

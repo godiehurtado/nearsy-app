@@ -1,85 +1,132 @@
 /**
- * App Check provider policy for LinkedIn identity callables (A3.4.1).
+ * Android App Check provider policy (J01).
  *
- * Debug is allowed ONLY when BOTH:
- * 1) Firebase env is Development (nearsy-dev), and
- * 2) the binary is a development client / __DEV__ session.
- *
- * A Development Metro session pointed at Production (default google-services)
- * must NEVER select Debug. Production / preview builds never select Debug.
- *
- * This phase does not configure Play Integrity. When Debug is not allowed,
- * App Check initialization is skipped (LinkedIn callables are Dev-only for now).
+ * Development + nearsy-dev + development build → Debug
+ * Production + nearsy-pj → Play Integrity
+ * Mismatched / unknown → reject (fail closed — never skip, never Debug in prod)
  */
 
-export type NearsyFirebaseEnvLabel = 'development' | 'default';
+import {
+  resolveNearsyAndroidEnvironment,
+  type NearsyAndroidEnvExtras,
+  type AndroidEnvironmentResolution,
+} from './nearsyAndroidEnvironment.ts';
+import {
+  resolveAndroidAppCheckProviderConfig,
+  type AndroidAppCheckProviderConfig,
+} from './androidAppCheckProviderConfig.ts';
 
-export type NearsyFirebaseEnvExtras = {
-  nearsyFirebaseEnv?: unknown;
-  nearsyDevClient?: unknown;
-};
+/** @deprecated Prefer NearsyAndroidEnvExtras — kept for call-site compatibility. */
+export type NearsyFirebaseEnvExtras = NearsyAndroidEnvExtras;
 
+/** @deprecated Use parse/resolve via nearsyAndroidEnvironment. */
+export type NearsyFirebaseEnvLabel = 'development' | 'default' | 'production';
+
+export {
+  resolveNearsyDevClientFlag,
+  type NearsyAndroidEnvExtras,
+} from './nearsyAndroidEnvironment.ts';
+
+/** Legacy helper: maps extras to development | default (production). */
 export function resolveNearsyFirebaseEnvLabel(
   extras: NearsyFirebaseEnvExtras | null | undefined,
 ): NearsyFirebaseEnvLabel {
   const raw = extras?.nearsyFirebaseEnv;
-  if (raw === 'development') return 'development';
+  if (raw === 'development' || raw === 'dev') return 'development';
+  if (raw === 'production' || raw === 'prod') return 'production';
   if (raw === 'default' || raw === undefined || raw === null) return 'default';
-  // Unknown / inconsistent → fail closed to default (never treat as development).
   return 'default';
 }
 
-export function resolveNearsyDevClientFlag(
-  extras: NearsyFirebaseEnvExtras | null | undefined,
-): boolean {
-  return extras?.nearsyDevClient === true;
-}
+export type AppCheckRejectReason =
+  | 'unknown_environment'
+  | 'unknown_project'
+  | 'env_project_mismatch'
+  | 'functions_region_invalid'
+  | 'development_requires_dev_build'
+  | 'debug_forbidden_outside_development'
+  | 'provider_config_invalid';
 
 export type AppCheckProviderDecision =
   | { action: 'use_debug'; reason: 'development_nearsy_dev' }
-  | { action: 'skip'; reason: AppCheckSkipReason };
-
-export type AppCheckSkipReason =
-  | 'firebase_env_not_development'
-  | 'not_a_development_build'
-  | 'invalid_or_inconsistent_env';
+  | { action: 'use_play_integrity'; reason: 'production_nearsy_pj' }
+  | { action: 'reject'; reason: AppCheckRejectReason };
 
 export type AppCheckPolicyInput = {
-  extras: NearsyFirebaseEnvExtras | null | undefined;
+  extras: NearsyAndroidEnvExtras | null | undefined;
   /** Metro / debug JS bundle. Alone is insufficient without Development Firebase env. */
   isJsDev: boolean;
-  /**
-   * Optional explicit override when extras cannot be read in unit tests.
-   * Production callers should omit this and rely on extras.
-   */
-  firebaseEnvOverride?: 'development' | 'default' | 'invalid';
 };
 
 export function decideAppCheckProvider(
   input: AppCheckPolicyInput,
 ): AppCheckProviderDecision {
-  const envFromExtras = resolveNearsyFirebaseEnvLabel(input.extras);
-  const env =
-    input.firebaseEnvOverride === 'invalid'
-      ? 'invalid'
-      : (input.firebaseEnvOverride ?? envFromExtras);
+  const resolution = resolveNearsyAndroidEnvironment({
+    extras: input.extras,
+    isJsDev: input.isJsDev,
+  });
+  return decideAppCheckProviderFromResolution(resolution);
+}
 
-  if (env === 'invalid') {
-    return { action: 'skip', reason: 'invalid_or_inconsistent_env' };
+export function decideAppCheckProviderFromResolution(
+  resolution: AndroidEnvironmentResolution,
+): AppCheckProviderDecision {
+  if (resolution.ok === false) {
+    return { action: 'reject', reason: resolution.reason };
   }
 
-  if (env !== 'development') {
-    return { action: 'skip', reason: 'firebase_env_not_development' };
+  const { config, isDevBuild } = resolution;
+
+  if (config.appCheckProvider === 'debug') {
+    if (config.environment !== 'development') {
+      return {
+        action: 'reject',
+        reason: 'debug_forbidden_outside_development',
+      };
+    }
+    if (!isDevBuild) {
+      return {
+        action: 'reject',
+        reason: 'development_requires_dev_build',
+      };
+    }
+    return { action: 'use_debug', reason: 'development_nearsy_dev' };
   }
 
-  const isDevBuild =
-    input.isJsDev === true || resolveNearsyDevClientFlag(input.extras) === true;
-
-  if (!isDevBuild) {
-    return { action: 'skip', reason: 'not_a_development_build' };
+  if (config.appCheckProvider === 'production') {
+    if (config.environment !== 'production') {
+      return {
+        action: 'reject',
+        reason: 'debug_forbidden_outside_development',
+      };
+    }
+    return { action: 'use_play_integrity', reason: 'production_nearsy_pj' };
   }
 
-  return { action: 'use_debug', reason: 'development_nearsy_dev' };
+  return { action: 'reject', reason: 'provider_config_invalid' };
+}
+
+/**
+ * Build RNFB Android provider options from a policy decision.
+ * Throws AndroidAppCheckProviderConfigError when production would get a debug token.
+ */
+export function materializeAndroidAppCheckProviderConfig(
+  decision: AppCheckProviderDecision,
+  debugToken?: string | null,
+): AndroidAppCheckProviderConfig {
+  if (decision.action === 'use_debug') {
+    return resolveAndroidAppCheckProviderConfig({
+      appCheckProvider: 'debug',
+      debugToken,
+    });
+  }
+  if (decision.action === 'use_play_integrity') {
+    return resolveAndroidAppCheckProviderConfig({
+      appCheckProvider: 'production',
+      debugToken,
+    });
+  }
+  throw new Error(`Cannot materialize App Check config for ${decision.action}`);
 }
 
 // --- Injectable bootstrap (no native SDK imports; Node-test friendly) ---
@@ -88,8 +135,11 @@ export type AppCheckInitStatus =
   | { status: 'idle' }
   | { status: 'pending' }
   | { status: 'ready'; decision: AppCheckProviderDecision }
-  | { status: 'skipped'; decision: AppCheckProviderDecision }
-  | { status: 'error'; message: string; decision?: AppCheckProviderDecision };
+  | {
+      status: 'error';
+      message: string;
+      decision?: AppCheckProviderDecision;
+    };
 
 type AppCheckModule = {
   newReactNativeFirebaseAppCheckProvider: () => {
@@ -101,16 +151,20 @@ type AppCheckModule = {
     provider: unknown;
     isTokenAutoRefreshEnabled?: boolean;
   }) => Promise<void>;
+  getToken?: (forceRefresh?: boolean) => Promise<{ token: string }>;
 };
 
 export type AppCheckBootstrapDeps = {
-  readExtras: () => NearsyFirebaseEnvExtras;
+  readExtras: () => NearsyAndroidEnvExtras;
   isJsDev: boolean;
   getAppCheck: () => AppCheckModule;
+  /** Optional embedded debug token — never used in production. */
+  readDebugToken?: () => string | null | undefined;
 };
 
 let initPromise: Promise<AppCheckInitStatus> | null = null;
 let lastStatus: AppCheckInitStatus = { status: 'idle' };
+let lastAppCheckModule: AppCheckModule | null = null;
 
 export function getAppCheckInitStatus(): AppCheckInitStatus {
   return lastStatus;
@@ -120,6 +174,14 @@ export function getAppCheckInitStatus(): AppCheckInitStatus {
 export function __resetAppCheckBootstrapForTests(): void {
   initPromise = null;
   lastStatus = { status: 'idle' };
+  lastAppCheckModule = null;
+}
+
+function sanitizeMessage(message: string): string {
+  return message.replace(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+    '[redacted]',
+  );
 }
 
 async function runInit(
@@ -132,21 +194,31 @@ async function runInit(
     isJsDev: deps.isJsDev,
   });
 
-  if (decision.action === 'skip') {
-    const skipped: AppCheckInitStatus = { status: 'skipped', decision };
-    lastStatus = skipped;
-    return skipped;
+  if (decision.action === 'reject') {
+    const errorStatus: AppCheckInitStatus = {
+      status: 'error',
+      message: `App Check rejected: ${decision.reason}`,
+      decision,
+    };
+    lastStatus = errorStatus;
+    return errorStatus;
   }
 
   try {
+    const providerConfig = materializeAndroidAppCheckProviderConfig(
+      decision,
+      deps.readDebugToken?.(),
+    );
     const ac = deps.getAppCheck();
+    lastAppCheckModule = ac;
     const provider = ac.newReactNativeFirebaseAppCheckProvider();
-    // Debug provider without embedding a token — owner registers logcat token
-    // privately in Firebase Console (see docs/operations/A3.4.1-APP-CHECK-DEBUG.md).
     provider.configure({
-      android: {
-        provider: 'debug',
-      },
+      android: providerConfig.debugToken
+        ? {
+            provider: providerConfig.provider,
+            debugToken: providerConfig.debugToken,
+          }
+        : { provider: providerConfig.provider },
     });
     await ac.initializeAppCheck({
       provider,
@@ -158,13 +230,9 @@ async function runInit(
   } catch (err) {
     const message =
       err instanceof Error ? err.message : 'App Check initialization failed.';
-    const sanitized = message.replace(
-      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
-      '[redacted]',
-    );
     const errorStatus: AppCheckInitStatus = {
       status: 'error',
-      message: sanitized,
+      message: sanitizeMessage(message),
       decision,
     };
     lastStatus = errorStatus;
@@ -179,4 +247,32 @@ export function ensureAppCheckInitializedWithDeps(
     initPromise = runInit(deps);
   }
   return initPromise;
+}
+
+/**
+ * Foundation for future callables (OTP, Affiliations, Visibility, LinkedIn).
+ * After ready, RNFB httpsCallable attaches App Check automatically; getToken
+ * is available when the native module exposes it.
+ */
+export type AppCheckTokenFoundation =
+  | { status: 'ready'; canGetToken: boolean }
+  | { status: 'not_ready'; reason: string };
+
+export async function ensureAppCheckTokenFoundationWithDeps(
+  deps: AppCheckBootstrapDeps,
+): Promise<AppCheckTokenFoundation> {
+  const status = await ensureAppCheckInitializedWithDeps(deps);
+  if (status.status !== 'ready') {
+    return {
+      status: 'not_ready',
+      reason:
+        status.status === 'error'
+          ? status.message
+          : `App Check status: ${status.status}`,
+    };
+  }
+  return {
+    status: 'ready',
+    canGetToken: typeof lastAppCheckModule?.getToken === 'function',
+  };
 }

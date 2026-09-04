@@ -1,17 +1,23 @@
 /**
- * Controlled App Check bootstrap for Android Development (A3.4.1).
+ * Controlled App Check bootstrap for Android (J01).
  * Native SDKs load lazily so Node unit tests can target appCheckPolicy.ts.
  */
 
 import {
   ensureAppCheckInitializedWithDeps,
+  ensureAppCheckTokenFoundationWithDeps,
   getAppCheckInitStatus,
   __resetAppCheckBootstrapForTests,
   type AppCheckBootstrapDeps,
   type AppCheckInitStatus,
-} from './appCheckPolicy';
+  type AppCheckTokenFoundation,
+} from './appCheckPolicy.ts';
 
-export type { AppCheckInitStatus, AppCheckBootstrapDeps };
+export type {
+  AppCheckInitStatus,
+  AppCheckBootstrapDeps,
+  AppCheckTokenFoundation,
+};
 export { getAppCheckInitStatus, __resetAppCheckBootstrapForTests };
 
 function defaultDeps(): AppCheckBootstrapDeps {
@@ -30,10 +36,18 @@ function defaultDeps(): AppCheckBootstrapDeps {
 
 /**
  * Ensures App Check bootstrap has been attempted once.
- * Safe to call from multiple effects; does not throw on policy skip or native error.
+ * Safe to call from multiple effects; does not throw on policy reject or native error
+ * (status is returned — LinkedIn / callables must treat non-ready as hard failure).
  */
 export function ensureAppCheckInitialized(
   deps: AppCheckBootstrapDeps = defaultDeps(),
 ): Promise<AppCheckInitStatus> {
   return ensureAppCheckInitializedWithDeps(deps);
+}
+
+/** Token foundation for future Identity / OTP / Affiliations / Visibility callables. */
+export function ensureAppCheckTokenFoundation(
+  deps: AppCheckBootstrapDeps = defaultDeps(),
+): Promise<AppCheckTokenFoundation> {
+  return ensureAppCheckTokenFoundationWithDeps(deps);
 }

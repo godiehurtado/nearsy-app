@@ -14,7 +14,7 @@ import {
 import { linkedInProfileHintsToSocialPrefill } from '../authentication/linkedin/linkedinProfilePrefill';
 
 /**
- * Android Development LinkedIn → Firebase session → profile routing.
+ * Android LinkedIn → Firebase session → profile routing (Dev or Prod env pair).
  * Mirrors useGoogleSignInFlow. iOS / other platforms must not call this.
  */
 export function useLinkedInSignInFlow() {
@@ -25,10 +25,10 @@ export function useLinkedInSignInFlow() {
   const signInWithLinkedIn = useCallback(async () => {
     if (Platform.OS !== 'android') return;
     if (submitting) return;
-    // Defense in depth: never start LinkedIn outside Development Firebase.
+    // Defense in depth: only valid development↔nearsy-dev or production↔nearsy-pj.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { isNearsyFirebaseDevelopment } = require('../config/nearsyFirebaseEnv');
-    if (!isNearsyFirebaseDevelopment()) return;
+    const { isNearsyLinkedInAuthAllowed } = require('../config/nearsyFirebaseEnv');
+    if (!isNearsyLinkedInAuthAllowed()) return;
 
     setSubmitting(true);
     try {
