@@ -106,6 +106,24 @@ export async function uploadGalleryImage(
   }
 }
 
+export async function deleteGalleryStorageObject(path: string): Promise<void> {
+  if (
+    !path ||
+    path.startsWith('local-') ||
+    /^(file|content|ph|assets-library):/i.test(path)
+  ) {
+    return;
+  }
+  if (!storageWeb) return;
+  try {
+    await storageWeb.ref(path).delete();
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('deleteGalleryStorageObject error:', error);
+    }
+  }
+}
+
 export async function uploadTopBarImage(
   uid: string,
   localUri: string,

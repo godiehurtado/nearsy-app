@@ -50,11 +50,14 @@ describe('Android register and phone OTP integration', () => {
     assert.doesNotMatch(foundation, /fixture|fakeOtp|hardcoded/i);
   });
 
-  it('AppNavigator enforces PhoneVerification gate stack', () => {
+  it('AppNavigator includes PhoneVerification in authoritative onboarding stack', () => {
     const nav = readSharedSource('navigation/AppNavigator.tsx');
-    assert.match(nav, /needsPhoneVerification/);
-    assert.match(nav, /RootAuthenticatedPhone/);
+    assert.match(nav, /needsOnboarding/);
+    assert.match(nav, /RootAuthenticatedComplete/);
+    assert.match(nav, /name="OnboardingBirthDate"/);
     assert.match(nav, /name="PhoneVerification"/);
+    assert.match(nav, /initialRouteName=\{onboardingInitialRoute\}/);
+    assert.doesNotMatch(nav, /RootAuthenticatedPhone/);
     assert.doesNotMatch(nav, /PhoneAuthProvider/);
   });
 

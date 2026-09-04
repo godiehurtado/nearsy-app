@@ -1,18 +1,18 @@
-﻿/**
+/**
  * Single source of truth for the NEW dual-profile presentation model (CRJ).
  *
- * Shared: realName (top-level only — never duplicated per mode).
- * Per mode: profileImage, occupation, status, bio (+ company for professional).
+ * Per mode: realName, lastName, profileImage, occupation, status, bio
+ * (+ company for professional).
  *
- * This module does NOT implement legacy migration. Nested `profiles[mode]` is
- * authoritative for users created through the new onboarding. Optional
- * `projectActiveToTopLevel` mirrors the *active* face to top-level keys so
+ * Top-level `realName` / `lastName` may be mirrored from the *active* face so
  * existing Home/Nearby readers keep working for new users — not a migration.
  */
 
 export type ProfileMode = 'personal' | 'professional';
 
 export type ModePresentation = {
+  realName?: string;
+  lastName?: string;
   profileImage?: string | null;
   occupation?: string;
   status?: string;
@@ -72,27 +72,36 @@ export function resolveModePresentation(
 ): ModePresentation {
   const profiles = (data?.profiles ?? {}) as ProfilesMap;
   const nested = profiles[mode] ?? {};
+  const activeFallback = data?.mode === mode;
 
   return {
+    realName:
+      nonEmptyString(nested.realName) ??
+      (activeFallback ? nonEmptyString(data?.realName) : null) ??
+      '',
+    lastName:
+      nonEmptyString(nested.lastName) ??
+      (activeFallback ? nonEmptyString(data?.lastName) : null) ??
+      '',
     profileImage:
       nonEmptyUri(nested.profileImage) ??
-      (data?.mode === mode ? nonEmptyUri(data?.profileImage) : null) ??
+      (activeFallback ? nonEmptyUri(data?.profileImage) : null) ??
       null,
     occupation:
       nonEmptyString(nested.occupation) ??
-      (data?.mode === mode ? nonEmptyString(data?.occupation) : null) ??
+      (activeFallback ? nonEmptyString(data?.occupation) : null) ??
       '',
     status:
       nonEmptyString(nested.status) ??
-      (data?.mode === mode ? nonEmptyString(data?.status) : null) ??
+      (activeFallback ? nonEmptyString(data?.status) : null) ??
       '',
     bio:
       nonEmptyString(nested.bio) ??
-      (data?.mode === mode ? nonEmptyString(data?.bio) : null) ??
+      (activeFallback ? nonEmptyString(data?.bio) : null) ??
       '',
     company:
       nonEmptyString(nested.company) ??
-      (data?.mode === mode ? nonEmptyString(data?.company) : null) ??
+      (activeFallback ? nonEmptyString(data?.company) : null) ??
       '',
   };
 }
@@ -112,17 +121,22 @@ export function resolveActiveProfileImage(
 
 export type ActiveProfileSaveInput = {
   mode: ProfileMode;
+  /** @deprecated Prefer presentation.realName — still accepted for callers. */
   realName?: string;
   presentation: ModePresentation;
   /** When true (default), also project active face to top-level for current readers. */
   projectActiveToTopLevel?: boolean;
+  /**
+   * When false, omits top-level `mode` from the patch (mode changes use setActiveProfileMode).
+   * Default true for Android / legacy callers.
+   */
+  includeModeInPatch?: boolean;
 };
 
 /**
  * Build Firestore merge patch for ONE mode only.
  * - Never writes the other mode's nested keys.
  * - Never writes undefined or blank strings.
- * - realName only when non-empty (shared identity).
  * - Does not set visibility or profileSetupCompleted (callers decide).
  */
 export function buildActiveProfileSavePatch(
@@ -130,12 +144,18 @@ export function buildActiveProfileSavePatch(
 ): Record<string, unknown> {
   const { mode, presentation } = input;
   const project = input.projectActiveToTopLevel !== false;
-  const flat: Record<string, unknown> = { mode };
-
-  const realName = nonEmptyString(input.realName);
-  if (realName) flat.realName = realName;
+  const includeMode = input.includeModeInPatch !== false;
+  const flat: Record<string, unknown> = includeMode ? { mode } : {};
 
   const nestedEntries: [string, unknown][] = [];
+
+  const realName =
+    nonEmptyString(presentation.realName) ?? nonEmptyString(input.realName);
+  if (realName) nestedEntries.push(['realName', realName]);
+
+  const lastName = nonEmptyString(presentation.lastName);
+  if (lastName) nestedEntries.push(['lastName', lastName]);
+
   if (presentation.profileImage !== undefined) {
     const uri = nonEmptyUri(presentation.profileImage);
     if (uri) nestedEntries.push(['profileImage', uri]);
@@ -147,10 +167,7 @@ export function buildActiveProfileSavePatch(
     const v = nonEmptyString(presentation.occupation);
     if (v) nestedEntries.push(['occupation', v]);
   }
-  if (presentation.status !== undefined) {
-    const v = nonEmptyString(presentation.status);
-    if (v) nestedEntries.push(['status', v]);
-  }
+  // Status is product-removed. Keep ModePresentation.status for legacy reads only.
   if (presentation.bio !== undefined) {
     const v = nonEmptyString(presentation.bio);
     if (v) nestedEntries.push(['bio', v]);

@@ -1,5 +1,5 @@
-﻿import type { InterestLabel, LogoPick } from '../types/profile';
-import { getInterestLogoCatalog } from '../components/InterestsWithLogo';
+﻿import type { InterestLabel, LogoPick } from '../types/profile.ts';
+import { getInterestLogoCatalog } from '../components/InterestsWithLogo.tsx';
 
 export type OnboardingInterestItem = LogoPick & {
   category: InterestLabel;

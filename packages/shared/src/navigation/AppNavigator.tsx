@@ -21,6 +21,7 @@ import RegisterScreen from '../screens/RegisterScreen';
 import CompleteProfileScreen from '../screens/CompleteProfileScreen';
 import ProfileCompletionScreen from '../screens/ProfileCompletionScreen';
 import PhoneVerificationScreen from '../screens/PhoneVerificationScreen';
+import OnboardingBirthDateScreen from '../screens/OnboardingBirthDateScreen';
 import IntroVideoScreen from '../screens/IntroVideoScreen';
 import ThemeSelectionScreen from '../screens/ThemeSelectionScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
@@ -41,6 +42,7 @@ import {
   PROFILE_GATE_I18N_KEYS,
   type AuthenticatedProfileFlow,
 } from './profileGate';
+import type { AuthenticatedOnboardingStackRoute } from '../phoneOtp/onboardingResolver';
 
 export type { RootStackParamList } from './types';
 
@@ -208,21 +210,26 @@ export default function AppNavigator() {
 
   // Guests must not wait on profile-gate loading (no uid → no profile to load).
   const profileLoading = isAuthenticatedProfileLoading(uid, profileFlow.kind);
-  const needsPhoneVerification = profileFlow.kind === 'PhoneVerification';
-  const needsCompleteProfile = profileFlow.kind === 'ProfileCompletion';
+  const needsOnboarding =
+    profileFlow.kind === 'OnboardingBirthDate' ||
+    profileFlow.kind === 'PhoneVerification' ||
+    profileFlow.kind === 'ProfileCompletion';
+  const onboardingInitialRoute: AuthenticatedOnboardingStackRoute =
+    needsOnboarding ? profileFlow.kind : 'ProfileCompletion';
   const profileReadError =
     profileFlow.kind === 'profile_read_error' ? profileFlow : null;
 
   // Guest key must NOT flip when hasChosenTheme becomes true on Continue —
   // otherwise the stack remounts and races with navigation.replace('Welcome').
   // hasSeenWelcome is also excluded: marking Welcome seen mid-session must not remount.
+  // Incomplete onboarding uses one stack key so DOB → OTP → CRJ navigates in-place
+  // (initialRouteName only applies on cold start / resume remount).
   const flowKey = useMemo(() => {
     if (authLoading || profileLoading || hydrating || welcomeHydrating)
       return 'loading';
     if (!uid) return 'guest';
     if (profileReadError) return `auth-error-${uid}`;
-    if (needsPhoneVerification) return `auth-phone-${uid}`;
-    if (needsCompleteProfile) return `auth-complete-${uid}`;
+    if (needsOnboarding) return `auth-complete-${uid}`;
     return `auth-main-${uid}`;
   }, [
     authLoading,
@@ -230,8 +237,7 @@ export default function AppNavigator() {
     hydrating,
     welcomeHydrating,
     uid,
-    needsPhoneVerification,
-    needsCompleteProfile,
+    needsOnboarding,
     profileReadError,
   ]);
 
@@ -267,6 +273,10 @@ export default function AppNavigator() {
         <Stack.Screen name="Register" component={RegisterScreen} />
         <Stack.Screen name="IntroVideo" component={IntroVideoScreen} />
         <Stack.Screen
+          name="OnboardingBirthDate"
+          component={OnboardingBirthDateScreen}
+        />
+        <Stack.Screen
           name="ProfileCompletion"
           component={ProfileCompletionScreen}
         />
@@ -299,44 +309,26 @@ export default function AppNavigator() {
     );
   }
 
-  // J03: phone OTP gate — cannot navigate around to MainTabs while unverified.
-  // DOB missing still lands on ProfileCompletion until J04 OnboardingBirthDate.
-  if (needsPhoneVerification) {
-    return (
-      <Stack.Navigator
-        id="RootAuthenticatedPhone"
-        key={`auth-phone-${uid}`}
-        screenOptions={{ headerShown: false }}
-      >
-        <Stack.Screen
-          name="PhoneVerification"
-          component={PhoneVerificationScreen}
-          initialParams={{ uid, from: 'onboarding' }}
-        />
-        <Stack.Screen
-          name="ProfileCompletion"
-          component={ProfileCompletionScreen}
-          initialParams={{ uid, email: userEmail }}
-        />
-        <Stack.Screen
-          name="CompleteProfile"
-          component={CompleteProfileScreen}
-          initialParams={{ uid, email: userEmail }}
-        />
-        <Stack.Screen name="Login" component={LoginScreen} />
-      </Stack.Navigator>
-    );
-  }
-
-  // Incomplete profile after OTP (or DOB pending) → ProfileCompletion / CRJ shell.
-  // Phone OTP (J03) is enforced above; full DOB-CRJ parity remains J04.
-  if (needsCompleteProfile) {
+  // Nearsy 2.0 onboarding: one stack; initial route from authoritative resolver.
+  // Order: OnboardingBirthDate → PhoneVerification → ProfileCompletion (CRJ).
+  if (needsOnboarding) {
     return (
       <Stack.Navigator
         id="RootAuthenticatedComplete"
-        key={`auth-complete-${uid}`}
+        key={flowKey}
+        initialRouteName={onboardingInitialRoute}
         screenOptions={{ headerShown: false }}
       >
+        <Stack.Screen
+          name="OnboardingBirthDate"
+          component={OnboardingBirthDateScreen}
+          initialParams={{ uid, email: userEmail, inputNonce: Date.now() }}
+        />
+        <Stack.Screen
+          name="PhoneVerification"
+          component={PhoneVerificationScreen}
+          initialParams={{ uid, from: 'onboarding' }}
+        />
         <Stack.Screen
           name="ProfileCompletion"
           component={ProfileCompletionScreen}
@@ -346,11 +338,6 @@ export default function AppNavigator() {
           name="CompleteProfile"
           component={CompleteProfileScreen}
           initialParams={{ uid, email: userEmail }}
-        />
-        <Stack.Screen
-          name="PhoneVerification"
-          component={PhoneVerificationScreen}
-          initialParams={{ uid, from: 'onboarding' }}
         />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="MainTabs" component={RootTabs} />
