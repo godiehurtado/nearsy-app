@@ -1,8 +1,8 @@
-import type { LinkedInProfileHints } from '../authentication/linkedin/linkedinAuthCore';
+import type { LinkedInProfileHints } from './linkedinAuthCore.ts';
 import {
   buildGoogleProfilePrefill,
   type GoogleProfilePrefill,
-} from '../authentication/googleProfilePrefillStore';
+} from '../googleProfilePrefillStore.ts';
 
 /** Map Exchange profileHints to the shared CRJ prefill contract. */
 export function linkedInProfileHintsToSocialPrefill(

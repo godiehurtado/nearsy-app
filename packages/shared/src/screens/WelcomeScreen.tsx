@@ -23,7 +23,7 @@ import { radius } from '../theme/radius';
 import { useTranslation } from '../i18n';
 import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
 import { useLinkedInSignInFlow } from '../hooks/useLinkedInSignInFlow';
-import { isNearsyFirebaseDevelopment } from '../config/nearsyFirebaseEnv';
+import { isNearsyLinkedInAuthAllowed } from '../config/nearsyFirebaseEnv';
 import { markWelcomeSeen } from '../onboarding/welcomeStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Welcome'>;
@@ -62,7 +62,7 @@ export default function WelcomeScreen({ navigation }: Props) {
     if (
       p === 'linkedin' &&
       Platform.OS === 'android' &&
-      isNearsyFirebaseDevelopment()
+      isNearsyLinkedInAuthAllowed()
     ) {
       void leaveWelcome(() => {
         void signInWithLinkedIn();

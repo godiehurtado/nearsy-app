@@ -36,7 +36,7 @@ import {
 } from '../components/AuthSocialButtonRow';
 import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
 import { useLinkedInSignInFlow } from '../hooks/useLinkedInSignInFlow';
-import { isNearsyFirebaseDevelopment } from '../config/nearsyFirebaseEnv';
+import { isNearsyLinkedInAuthAllowed } from '../config/nearsyFirebaseEnv';
 
 export default function LoginScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -260,11 +260,11 @@ export default function LoginScreen({ navigation }: any) {
       return;
     }
 
-    // A3: LinkedIn OAuth only on Android + Development Firebase (nearsy-dev).
+    // A3: LinkedIn OAuth on Android when environment pair is valid (dev↔nearsy-dev or prod↔nearsy-pj).
     if (
       provider === 'linkedin' &&
       Platform.OS === 'android' &&
-      isNearsyFirebaseDevelopment()
+      isNearsyLinkedInAuthAllowed()
     ) {
       void signInWithLinkedIn();
       return;

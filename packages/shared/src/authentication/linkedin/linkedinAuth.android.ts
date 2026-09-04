@@ -114,12 +114,6 @@ function createSecureStoreKv(): SecureKv {
 async function ensureAppCheckReady(): Promise<void> {
   const status = await ensureAppCheckInitialized();
   if (status.status === 'ready') return;
-  if (status.status === 'skipped') {
-    throw new LinkedInAuthError(
-      'APP_CHECK_NOT_READY',
-      'App Check is not available for this build/environment.',
-    );
-  }
   if (status.status === 'error') {
     throw new LinkedInAuthError(
       'APP_CHECK_NOT_READY',

@@ -195,8 +195,15 @@ export default function App() {
         if (cancelled || !__DEV__) return;
         if (status.status === 'error') {
           console.warn('[App] App Check init error:', status.message);
-        } else if (status.status === 'skipped') {
-          console.log('[App] App Check skipped:', status.decision.reason);
+        } else if (status.status === 'ready') {
+          console.log(
+            '[App] App Check ready:',
+            status.decision.action === 'use_debug'
+              ? 'debug'
+              : status.decision.action === 'use_play_integrity'
+                ? 'playIntegrity'
+                : status.decision.action,
+          );
         }
       })
       .catch((e) => {
