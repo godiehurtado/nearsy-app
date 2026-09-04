@@ -4,8 +4,18 @@ import type { AffiliationEntitySearchCallable } from './firebaseAffiliationEntit
 import { createFirebaseAffiliationEntitySearchProvider } from './firebaseAffiliationEntitySearchProvider.ts';
 import { buildLogoDevImageUrl } from './affiliationLogoDev.ts';
 import { readLogoDevPublishableKey } from './affiliationLogoDevConfig.ts';
+import { AffiliationEntitySearchClientError } from './affiliationEntitySearchContract.ts';
 
-export type AffiliationEntitySearchProviderKind = 'fixture' | 'firebase';
+/**
+ * Environment / runtime kinds:
+ * - firebase: valid env pair + registered callable
+ * - unavailable: invalid/unknown/mismatched pair or callable missing (fail closed)
+ * - fixture: explicit TEST / local harness only — never selected by env resolution
+ */
+export type AffiliationEntitySearchProviderKind =
+  | 'firebase'
+  | 'unavailable'
+  | 'fixture';
 
 export type AffiliationEntitySearchRuntimeContext = {
   firebaseEnv?: string | null;
@@ -23,13 +33,19 @@ export function setAffiliationExpoExtraForTests(
   expoExtraForTests = extra;
 }
 
+/**
+ * Explicit kind override (tests / harness).
+ * Never maps unknown values to fixture — unknown → unavailable.
+ */
 export function resolveAffiliationEntitySearchProviderKind(
   raw?: string | null,
 ): AffiliationEntitySearchProviderKind {
   const value = String(raw ?? '')
     .trim()
     .toLowerCase();
-  return value === 'firebase' ? 'firebase' : 'fixture';
+  if (value === 'firebase') return 'firebase';
+  if (value === 'fixture') return 'fixture';
+  return 'unavailable';
 }
 
 const AFFILIATION_LIVE_PROJECT_BY_ENV = {
@@ -98,23 +114,23 @@ function readAffiliationProjectId(projectId?: string | null): string {
 }
 
 /**
- * Live Firebase provider is allowlisted:
- * development / nearsy-dev and production / nearsy-pj.
- * Crossed, empty, or unknown pairs stay on fixture.
+ * Live Firebase provider is allowlisted only:
+ * development↔nearsy-dev and production↔nearsy-pj.
+ * Crossed, empty, or unknown pairs FAIL CLOSED (unavailable) — never fixture.
  */
 export function resolveAffiliationEntitySearchProviderKindFromEnvironment(
   firebaseEnv?: string | null,
   projectId?: string | null,
-): AffiliationEntitySearchProviderKind {
+): Exclude<AffiliationEntitySearchProviderKind, 'fixture'> {
   const environment = parseExplicitFirebaseEnv(
     firebaseEnv ??
       pickExpoPublicConfigValue('nearsyFirebaseEnv') ??
       pickExpoPublicConfigValue('EXPO_PUBLIC_NEARSY_FIREBASE_ENV'),
   );
-  if (!environment) return 'fixture';
+  if (!environment) return 'unavailable';
   const expected = AFFILIATION_LIVE_PROJECT_BY_ENV[environment];
   const project = readAffiliationProjectId(projectId);
-  if (!project || project !== expected) return 'fixture';
+  if (!project || project !== expected) return 'unavailable';
   return 'firebase';
 }
 
@@ -139,6 +155,21 @@ function readRuntimeContext(): AffiliationEntitySearchRuntimeContext {
   };
 }
 
+/** Fail-closed provider — search rejects; UI shows suggestionsUnavailable. */
+export function createUnavailableAffiliationEntitySearchProvider(
+  reason = 'Affiliation entity search is unavailable for this environment.',
+): AffiliationEntitySearchProvider {
+  return {
+    id: 'unavailable',
+    search: async () => {
+      throw new AffiliationEntitySearchClientError(
+        'FAILED_PRECONDITION',
+        reason,
+      );
+    },
+  };
+}
+
 export function getAffiliationEntitySearchProvider(
   rawKind?: string | null,
   context?: AffiliationEntitySearchRuntimeContext,
@@ -149,6 +180,12 @@ export function getAffiliationEntitySearchProvider(
         context?.firebaseEnv ?? readRuntimeContext().firebaseEnv,
         context?.projectId ?? readRuntimeContext().projectId,
       );
+
+  // Explicit test / local harness only — never chosen by environment resolution.
+  if (kind === 'fixture') {
+    return fixtureAffiliationEntitySearchProvider;
+  }
+
   if (kind === 'firebase' && registeredCallable) {
     return createFirebaseAffiliationEntitySearchProvider({
       invoke: registeredCallable,
@@ -156,5 +193,11 @@ export function getAffiliationEntitySearchProvider(
         buildLogoDevImageUrl(domain, readLogoDevPublishableKey()),
     });
   }
-  return fixtureAffiliationEntitySearchProvider;
+
+  // Invalid env, or valid env without a registered callable → fail closed.
+  return createUnavailableAffiliationEntitySearchProvider(
+    kind === 'firebase'
+      ? 'Affiliation search callable is not registered.'
+      : 'Affiliation entity search is unavailable for this environment.',
+  );
 }

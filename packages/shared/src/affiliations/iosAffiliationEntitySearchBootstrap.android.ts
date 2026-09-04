@@ -64,6 +64,7 @@ export function startAffiliationEntitySearchBootstrap(): void {
     pick('nearsyFirebaseEnv') ?? pick('EXPO_PUBLIC_NEARSY_FIREBASE_ENV'),
     pick('nearsyFirebaseProjectId') ?? pick('EXPO_PUBLIC_FIREBASE_PROJECT_ID'),
   );
+  // Invalid pairs fail closed: do not register; runtime returns unavailable.
   if (kind !== 'firebase') return;
 
   const invoke: AffiliationEntitySearchCallable = async (name, data) => {
