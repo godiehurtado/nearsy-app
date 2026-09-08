@@ -312,6 +312,13 @@ export default function RegisterScreen({ navigation }: Props) {
         form.password,
       );
 
+      // Ensure Auth token exists before profile gate / Phone OTP Identity calls.
+      try {
+        await user.getIdToken(true);
+      } catch {
+        // Gate + OTP foundation also refresh; continue to persist profile.
+      }
+
       await createUserProfile(user.uid, {
         email: form.email.trim(),
         birthYear: year,
@@ -324,6 +331,7 @@ export default function RegisterScreen({ navigation }: Props) {
       });
 
       // Auth state + profile gate → Phone OTP (DOB already persisted; no old wizard).
+      // Gate treats an absent users/{uid} snapshot as loading until this write lands.
       Keyboard.dismiss();
     } catch (e: any) {
       const code = e?.code as string | undefined;

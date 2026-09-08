@@ -222,14 +222,16 @@ export default function AppNavigator() {
   // Guest key must NOT flip when hasChosenTheme becomes true on Continue —
   // otherwise the stack remounts and races with navigation.replace('Welcome').
   // hasSeenWelcome is also excluded: marking Welcome seen mid-session must not remount.
-  // Incomplete onboarding uses one stack key so DOB → OTP → CRJ navigates in-place
-  // (initialRouteName only applies on cold start / resume remount).
+  // Incomplete onboarding keys include the authoritative route kind so a race
+  // that briefly resolved to OnboardingBirthDate before createUserProfile wrote
+  // birthDate remounts onto PhoneVerification once the profile snapshot updates.
+  // (initialRouteName only applies on mount / remount.)
   const flowKey = useMemo(() => {
     if (authLoading || profileLoading || hydrating || welcomeHydrating)
       return 'loading';
     if (!uid) return 'guest';
     if (profileReadError) return `auth-error-${uid}`;
-    if (needsOnboarding) return `auth-complete-${uid}`;
+    if (needsOnboarding) return `auth-complete-${uid}-${profileFlow.kind}`;
     return `auth-main-${uid}`;
   }, [
     authLoading,
@@ -238,6 +240,7 @@ export default function AppNavigator() {
     welcomeHydrating,
     uid,
     needsOnboarding,
+    profileFlow.kind,
     profileReadError,
   ]);
 

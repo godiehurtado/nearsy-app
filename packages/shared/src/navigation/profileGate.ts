@@ -60,6 +60,13 @@ export type ProfileGateListen = (
 export type ProfileGateGet = (uid: string) => Promise<unknown>;
 
 /**
+ * Brief wait when the users/{uid} doc is absent so Email registration can
+ * finish createUserProfile before the gate treats "missing" as needs DOB.
+ * (Auth fires before the profile write completes.)
+ */
+export const PROFILE_ABSENT_CONFIRM_MS = 800;
+
+/**
  * Manages a single profile listener + get fallback.
  * `start` / `retry` replace any prior subscription (no duplicate listeners).
  * `stop` increments generation so in-flight callbacks are ignored.
@@ -67,11 +74,22 @@ export type ProfileGateGet = (uid: string) => Promise<unknown>;
 export function createProfileGateController(deps: {
   listen: ProfileGateListen;
   get: ProfileGateGet;
+  /** Override absent-doc confirm delay (tests). */
+  absentConfirmMs?: number;
 }) {
   let unsubscribe: (() => void) | null = null;
   let generation = 0;
+  let absentConfirmTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearAbsentConfirm() {
+    if (absentConfirmTimer != null) {
+      clearTimeout(absentConfirmTimer);
+      absentConfirmTimer = null;
+    }
+  }
 
   function clearSubscription() {
+    clearAbsentConfirm();
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;
@@ -83,24 +101,64 @@ export function createProfileGateController(deps: {
     clearSubscription();
   }
 
+  function emitDocumentStatus(
+    onStatus: (status: ProfileGateStatus) => void,
+    data: unknown,
+  ) {
+    const phase = statusFromProfileDocument(data);
+    onStatus(
+      phase === 'profile_complete' ? { phase, data } : { phase, data },
+    );
+  }
+
   function start(
     uid: string,
     onStatus: (status: ProfileGateStatus) => void,
   ): void {
     stop();
     const gen = generation;
+    const absentMs = deps.absentConfirmMs ?? PROFILE_ABSENT_CONFIRM_MS;
     onStatus({ phase: 'loading' });
 
     unsubscribe = deps.listen(
       uid,
       (data) => {
         if (gen !== generation) return;
-        const phase = statusFromProfileDocument(data);
-        onStatus(
-          phase === 'profile_complete'
-            ? { phase, data }
-            : { phase, data },
-        );
+
+        // Absent doc: stay loading while registration may still be writing.
+        // Confirm with get after a short delay so orphans still reach DOB.
+        if (data == null) {
+          clearAbsentConfirm();
+          onStatus({ phase: 'loading' });
+          absentConfirmTimer = setTimeout(() => {
+            absentConfirmTimer = null;
+            void (async () => {
+              if (gen !== generation) return;
+              try {
+                const confirmed = await deps.get(uid);
+                if (gen !== generation) return;
+                if (confirmed == null) {
+                  onStatus({
+                    phase: 'profile_missing_or_incomplete',
+                    data: null,
+                  });
+                  return;
+                }
+                emitDocumentStatus(onStatus, confirmed);
+              } catch (getErr) {
+                if (gen !== generation) return;
+                onStatus({
+                  phase: 'profile_read_error',
+                  reason: classifyProfileReadError(getErr),
+                });
+              }
+            })();
+          }, absentMs);
+          return;
+        }
+
+        clearAbsentConfirm();
+        emitDocumentStatus(onStatus, data);
       },
       (listenErr) => {
         void (async () => {
@@ -108,12 +166,7 @@ export function createProfileGateController(deps: {
           try {
             const data = await deps.get(uid);
             if (gen !== generation) return;
-            const phase = statusFromProfileDocument(data);
-            onStatus(
-              phase === 'profile_complete'
-                ? { phase, data }
-                : { phase, data },
-            );
+            emitDocumentStatus(onStatus, data);
           } catch (getErr) {
             if (gen !== generation) return;
             const reason = classifyProfileReadError(getErr ?? listenErr);

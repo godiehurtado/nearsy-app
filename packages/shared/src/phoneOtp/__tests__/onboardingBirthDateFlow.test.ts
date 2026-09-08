@@ -156,10 +156,13 @@ describe('onboarding birth date screen wiring', () => {
     assert.match(nav, /resolvePostAuthNavigationTarget/);
   });
 
-  it('AppNavigator mounts single incomplete onboarding stack with DOB + OTP + CRJ', () => {
+  it('AppNavigator remounts incomplete onboarding when route kind changes (DOB race recovery)', () => {
     const appNav = readSharedSource('navigation/AppNavigator.tsx');
     assert.match(appNav, /key=\{flowKey\}/);
-    assert.match(appNav, /auth-complete-\$\{uid\}/);
+    assert.match(
+      appNav,
+      /auth-complete-\$\{uid\}-\$\{profileFlow\.kind\}/,
+    );
     assert.match(appNav, /OnboardingBirthDate/);
     assert.match(appNav, /PhoneVerification/);
     assert.match(appNav, /initialRouteName=\{onboardingInitialRoute\}/);
