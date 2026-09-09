@@ -54,6 +54,16 @@ export function getPhoneOtpClient(): Promise<PhoneOtpClient> {
               message: 'Phone OTP callable requires sign-in.',
             };
           }
+          // Fresh email/password sessions can race ahead of ID token attach on
+          // Identity callables — force a token before httpsCallable.
+          try {
+            await user.getIdToken(true);
+          } catch {
+            throw {
+              code: 'functions/unauthenticated',
+              message: 'Phone OTP callable requires sign-in.',
+            };
+          }
           await ensureAppCheckReady();
           if (region !== 'us-central1') {
             throw {
@@ -66,8 +76,30 @@ export function getPhoneOtpClient(): Promise<PhoneOtpClient> {
             const result = await callable(data);
             return result.data;
           } catch (err: unknown) {
+            const e = err as { code?: unknown; message?: unknown };
+            const rawCode = typeof e.code === 'string' ? e.code : '';
+            const normalized = rawCode.replace(/^functions\//, '').toLowerCase();
+            // A3.4.1: App Check rejection commonly surfaces as UNAUTHENTICATED
+            // even when a valid Firebase Auth session exists locally.
+            if (
+              normalized === 'unauthenticated' &&
+              firebaseAuth.currentUser
+            ) {
+              if (__DEV__) {
+                console.log('[phoneOtp.android] callable error', {
+                  name,
+                  code: 'failed-precondition',
+                  message: 'App Check token was rejected by the backend.',
+                  hasCurrentUser: true,
+                  appCheck: getAppCheckInitStatus().status,
+                });
+              }
+              throw {
+                code: 'functions/failed-precondition',
+                message: 'App Check token was rejected by the backend.',
+              };
+            }
             if (__DEV__) {
-              const e = err as { code?: unknown; message?: unknown };
               const msg =
                 typeof e.message === 'string'
                   ? e.message.replace(
@@ -79,6 +111,8 @@ export function getPhoneOtpClient(): Promise<PhoneOtpClient> {
                 name,
                 code: typeof e.code === 'string' ? e.code : undefined,
                 message: msg,
+                hasCurrentUser: Boolean(firebaseAuth.currentUser),
+                appCheck: getAppCheckInitStatus().status,
               });
             }
             throw err;

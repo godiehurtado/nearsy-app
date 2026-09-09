@@ -71,20 +71,52 @@ describe('classifyProfileReadError', () => {
 });
 
 describe('createProfileGateController', () => {
-  it('listener success with absent doc → missing_or_incomplete', async () => {
+  it('listener success with absent doc stays loading until confirm get', async () => {
     const statuses: ProfileGateStatus[] = [];
     const gate = createProfileGateController({
+      absentConfirmMs: 20,
       listen: (_uid, onData) => {
         onData(null);
         return () => undefined;
       },
-      get: async () => {
-        throw new Error('should not get');
-      },
+      get: async () => null,
     });
     gate.start('u1', (s) => statuses.push(s));
     assert.equal(statuses[0]?.phase, 'loading');
+    assert.equal(statuses.at(-1)?.phase, 'loading');
+    await new Promise((r) => setTimeout(r, 40));
     assert.equal(statuses.at(-1)?.phase, 'profile_missing_or_incomplete');
+    gate.stop();
+  });
+
+  it('absent doc then profile write with birthDate → incomplete (OTP path), not sticky DOB race', async () => {
+    const statuses: ProfileGateStatus[] = [];
+    let push: ((data: unknown) => void) | null = null;
+    const gate = createProfileGateController({
+      absentConfirmMs: 200,
+      listen: (_uid, onData) => {
+        push = onData;
+        onData(null);
+        return () => undefined;
+      },
+      get: async () => null,
+    });
+    gate.start('u1', (s) => statuses.push(s));
+    assert.equal(statuses.at(-1)?.phase, 'loading');
+    // Registration write lands before absent confirm.
+    push?.({
+      profileSetupCompleted: false,
+      birthDate: '1990-01-15',
+      phoneVerified: false,
+    });
+    assert.equal(statuses.at(-1)?.phase, 'profile_missing_or_incomplete');
+    await new Promise((r) => setTimeout(r, 50));
+    // Delayed confirm must not overwrite the written profile with null.
+    assert.equal(statuses.at(-1)?.phase, 'profile_missing_or_incomplete');
+    assert.equal(
+      (statuses.at(-1) as { data?: { birthDate?: string } })?.data?.birthDate,
+      '1990-01-15',
+    );
     gate.stop();
   });
 

@@ -1,16 +1,17 @@
 ﻿import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { useAppTheme } from '../../theme/ThemeContext';
-import { radius } from '../../theme/radius';
-import { fontSize, fontWeight } from '../../theme/typography';
+import { useAppTheme } from '../../theme/ThemeContext.tsx';
+import { radius } from '../../theme/radius.ts';
+import { fontSize, fontWeight } from '../../theme/typography.ts';
 
 interface Props {
   /** 0–1 */
   progress: number;
-  stepLabel: string;
+  /** Optional n/N label — CRJ 2.0 uses soft progress without counts. */
+  stepLabel?: string;
 }
 
-/** Progress track + step label (nearsy-rn-v3 ProgressBar). */
+/** Progress track + optional step label. */
 export function RegistrationProgress({ progress, stepLabel }: Props) {
   const { palette } = useAppTheme();
   return (
@@ -26,17 +27,19 @@ export function RegistrationProgress({ progress, stepLabel }: Props) {
           ]}
         />
       </View>
-      <Text
-        style={{
-          color: palette.textMuted,
-          fontSize: fontSize.sm,
-          fontWeight: fontWeight.extrabold,
-          minWidth: 26,
-          textAlign: 'right',
-        }}
-      >
-        {stepLabel}
-      </Text>
+      {stepLabel ? (
+        <Text
+          style={{
+            color: palette.textMuted,
+            fontSize: fontSize.sm,
+            fontWeight: fontWeight.extrabold,
+            minWidth: 26,
+            textAlign: 'right',
+          }}
+        >
+          {stepLabel}
+        </Text>
+      ) : null}
     </View>
   );
 }

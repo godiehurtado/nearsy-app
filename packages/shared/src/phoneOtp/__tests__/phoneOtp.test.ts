@@ -84,6 +84,15 @@ describe('phone OTP error mapping', () => {
     assert.equal(mapped.reason, 'auth_required');
   });
 
+  it('infers App Check rejection when backend returns Unauthenticated-style App Check message', () => {
+    const mapped = mapPhoneOtpErrorReason({
+      code: 'failed-precondition',
+      message: 'App Check token was rejected by the backend.',
+    });
+    assert.equal(mapped.reason, 'app_check_failed');
+    assert.match(mapped.messageKey, /appCheckFailed/);
+  });
+
   it('infers code mismatch from message', () => {
     const mapped = mapPhoneOtpErrorReason({
       code: 'failed-precondition',

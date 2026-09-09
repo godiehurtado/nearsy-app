@@ -32,7 +32,7 @@ function leaf(obj: Record<string, unknown>, path: string): unknown {
 }
 
 describe('AppNavigator authenticated profile gate (integration)', () => {
-  it('authenticated + absent profile → ProfileCompletion', async () => {
+  it('authenticated + absent profile → OnboardingBirthDate', async () => {
     const flows: AuthenticatedProfileFlow[] = [];
     const gate = createAuthenticatedProfileGate({
       listen: (_uid, onData) => {
@@ -43,15 +43,53 @@ describe('AppNavigator authenticated profile gate (integration)', () => {
     });
     gate.start('uid-any-provider', (f) => flows.push(f));
     await waitMicrotask();
-    assert.equal(flows.at(-1)?.kind, 'ProfileCompletion');
+    assert.equal(flows.at(-1)?.kind, 'OnboardingBirthDate');
     gate.stop();
   });
 
-  it('authenticated + incomplete profile → ProfileCompletion', async () => {
+  it('authenticated + incomplete without DOB → OnboardingBirthDate', async () => {
     const flows: AuthenticatedProfileFlow[] = [];
     const gate = createAuthenticatedProfileGate({
       listen: (_uid, onData) => {
         onData({ profileSetupCompleted: false, email: 'a@b.c' });
+        return () => undefined;
+      },
+      get: async () => null,
+    });
+    gate.start('uid-any-provider', (f) => flows.push(f));
+    await waitMicrotask();
+    assert.equal(flows.at(-1)?.kind, 'OnboardingBirthDate');
+    gate.stop();
+  });
+
+  it('authenticated + valid DOB + unverified phone → PhoneVerification', async () => {
+    const flows: AuthenticatedProfileFlow[] = [];
+    const gate = createAuthenticatedProfileGate({
+      listen: (_uid, onData) => {
+        onData({
+          profileSetupCompleted: false,
+          birthDate: '1990-06-15',
+          phoneVerified: false,
+        });
+        return () => undefined;
+      },
+      get: async () => null,
+    });
+    gate.start('uid-any-provider', (f) => flows.push(f));
+    await waitMicrotask();
+    assert.equal(flows.at(-1)?.kind, 'PhoneVerification');
+    gate.stop();
+  });
+
+  it('authenticated + valid DOB + verified phone → ProfileCompletion', async () => {
+    const flows: AuthenticatedProfileFlow[] = [];
+    const gate = createAuthenticatedProfileGate({
+      listen: (_uid, onData) => {
+        onData({
+          profileSetupCompleted: false,
+          birthDate: '1990-06-15',
+          phoneVerified: true,
+        });
         return () => undefined;
       },
       get: async () => null,
@@ -200,12 +238,12 @@ describe('AppNavigator authenticated profile gate (integration)', () => {
     gate.retry('uid-any-provider', (f) => flows.push(f));
     assert.equal(listenCallbacks.length, 2);
 
-    // Stale first listener reports complete; active retry reports incomplete.
+    // Stale first listener reports complete; active retry reports incomplete (no DOB).
     listenCallbacks[0]?.({ profileSetupCompleted: true });
     listenCallbacks[1]?.({ profileSetupCompleted: false });
     await waitMicrotask();
 
-    assert.equal(flows.at(-1)?.kind, 'ProfileCompletion');
+    assert.equal(flows.at(-1)?.kind, 'OnboardingBirthDate');
     assert.equal(
       flows.filter((f) => f.kind === 'MainTabs').length,
       0,
@@ -220,7 +258,7 @@ describe('AppNavigator authenticated profile gate (integration)', () => {
         resolveAuthenticatedProfileFlow({
           phase: 'profile_missing_or_incomplete',
         }).kind,
-        'ProfileCompletion',
+        'OnboardingBirthDate',
       );
       assert.equal(
         resolveAuthenticatedProfileFlow({ phase: 'profile_complete' }).kind,

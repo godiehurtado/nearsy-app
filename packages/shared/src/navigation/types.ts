@@ -24,6 +24,11 @@
     phone?: string;
     from?: string;
   };
+  OnboardingBirthDate: {
+    uid: string;
+    email?: string | null;
+    inputNonce?: number;
+  };
 
   Interests: any;
   Gallery: any;

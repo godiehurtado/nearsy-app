@@ -122,6 +122,7 @@ export function normalizeFirebaseErrorCode(raw: unknown): PhoneOtpFirebaseErrorC
 
 function inferReasonFromMessage(message: string): PhoneOtpErrorReason | null {
   const m = message.toLowerCase();
+  if (m.includes('app check')) return 'app_check_failed';
   if (m.includes('expired')) return 'challenge_expired';
   if (m.includes('incorrect') || m.includes('invalid') && m.includes('code')) {
     return 'code_mismatch';

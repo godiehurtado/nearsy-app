@@ -138,14 +138,14 @@ describe('onboarding birth date persistence flow', () => {
 });
 
 describe('onboarding birth date screen wiring', () => {
-  it('Android defers full DOB screen to J04 — resolver still owns DOB gate', () => {
+  it('Android maps needsDateOfBirth to OnboardingBirthDate screen', () => {
     assert.equal(
       resolveOnboardingRoute({ phoneVerified: false }).kind,
       'needsDateOfBirth',
     );
     assert.equal(
       resolveAuthenticatedProfileFlowEquivalent(),
-      'ProfileCompletion',
+      'OnboardingBirthDate',
     );
   });
 
@@ -156,11 +156,17 @@ describe('onboarding birth date screen wiring', () => {
     assert.match(nav, /resolvePostAuthNavigationTarget/);
   });
 
-  it('AppNavigator mounts phone OTP as a dedicated authenticated stack', () => {
+  it('AppNavigator remounts incomplete onboarding when route kind changes (DOB race recovery)', () => {
     const appNav = readSharedSource('navigation/AppNavigator.tsx');
-    assert.match(appNav, /key=\{`auth-phone-\$\{uid\}`\}/);
-    assert.match(appNav, /key=\{`auth-complete-\$\{uid\}`\}/);
-    assert.match(appNav, /needsPhoneVerification/);
+    assert.match(appNav, /key=\{flowKey\}/);
+    assert.match(
+      appNav,
+      /auth-complete-\$\{uid\}-\$\{profileFlow\.kind\}/,
+    );
+    assert.match(appNav, /OnboardingBirthDate/);
+    assert.match(appNav, /PhoneVerification/);
+    assert.match(appNav, /initialRouteName=\{onboardingInitialRoute\}/);
+    assert.doesNotMatch(appNav, /auth-phone-\$\{uid\}/);
   });
 
   it('six-digit OTP component is wired on Android OTP screen', () => {
@@ -174,8 +180,8 @@ describe('onboarding birth date screen wiring', () => {
 });
 
 function resolveAuthenticatedProfileFlowEquivalent(): string {
-  // Mirrors profileGate mapping for needsDateOfBirth until J04 DOB screen exists.
-  return 'ProfileCompletion';
+  // Mirrors profileGate mapping for needsDateOfBirth (J04).
+  return 'OnboardingBirthDate';
 }
 describe('normalizeOnboardingProfileSnapshot', () => {
   it('rejects birthYear-only without canonical birthDate', () => {

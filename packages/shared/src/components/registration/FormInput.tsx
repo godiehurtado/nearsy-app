@@ -6,9 +6,9 @@ import {
   StyleSheet,
   TextInputProps,
 } from 'react-native';
-import { useAppTheme } from '../../theme/ThemeContext';
-import { radius } from '../../theme/radius';
-import { fontSize, fontWeight } from '../../theme/typography';
+import { useAppTheme } from '../../theme/ThemeContext.tsx';
+import { radius } from '../../theme/radius.ts';
+import { fontSize, fontWeight } from '../../theme/typography.ts';
 
 interface Props extends TextInputProps {
   label?: string;

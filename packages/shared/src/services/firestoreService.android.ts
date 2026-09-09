@@ -65,7 +65,9 @@ export const createUserProfile = async (
     birthDate?: string;
     realName?: string;
     phoneVerified?: boolean;
+    phoneVerifiedAt?: string | null;
     acceptedTerms?: boolean;
+    acceptedTermsAt?: string;
   },
 ) => {
   try {
@@ -78,8 +80,14 @@ export const createUserProfile = async (
         ...(data.phoneVerified !== undefined
           ? { phoneVerified: data.phoneVerified }
           : {}),
+        ...(data.phoneVerifiedAt !== undefined
+          ? { phoneVerifiedAt: data.phoneVerifiedAt }
+          : {}),
         ...(data.acceptedTerms !== undefined
           ? { acceptedTerms: data.acceptedTerms }
+          : {}),
+        ...(data.acceptedTermsAt
+          ? { acceptedTermsAt: data.acceptedTermsAt }
           : {}),
 
         createdAt: now(),
