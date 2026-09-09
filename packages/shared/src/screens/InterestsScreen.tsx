@@ -1,424 +1,324 @@
-// src/screens/InterestsScreen.tsx ✅ RNFirebase-only
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+/**
+ * Own Profile Interests editor — Nearsy 2.0 onboarding catalog + post-CRJ persistence.
+ * Does not use legacy InterestAffiliations maps (those remain for ProfileDetail migration).
+ */
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
+  ScrollView,
   StyleSheet,
+  Pressable,
   ActivityIndicator,
   Alert,
-  ScrollView,
-  TouchableOpacity,
   KeyboardAvoidingView,
-  Keyboard,
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation, useRoute } from '@react-navigation/native';
 
-import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import TopHeader from '../components/TopHeader';
-import GuideOnboardingCard from '../components/GuideOnboardingCard';
-import InterestsWithLogo from '../components/InterestsWithLogo';
-import { GUIDE_AUDIO } from '../constants/guideAudioAssets';
-import { useGuideAudio } from '../hooks/useGuideAudio';
-import type { InterestAffiliations, InterestLabel } from '../types/profile';
-import { getUserProfile } from '../services/firestoreService';
+import { OnboardingInterestCategoryPanel } from '../components/registration/OnboardingInterestCategoryPanel';
+import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
+import {
+  countFinalOnboardingInterests,
+  buildPostCrjInterestPersistencePatch,
+  ONBOARDING_INTEREST_CATEGORIES,
+  type OnboardingInterestCategoryId,
+  type OnboardingSelectedInterest,
+} from '../interests/onboardingInterestCatalog';
+import {
+  parsePostCrjInterestEditorParams,
+  readOnboardingInterestsFromDoc,
+} from '../interests/postCrjInterestEditor';
+import {
+  isHierarchicalInterestCategory,
+  resolveActiveGroupId,
+} from '../interests/interestHierarchy';
+import { useAppTheme } from '../theme/ThemeContext';
+import { fontSize, fontWeight } from '../theme/typography';
+import { spacing } from '../theme/spacing';
+import { radius } from '../theme/radius';
+import { useTranslation } from '../i18n';
 
 type ProfileMode = 'personal' | 'professional';
 
-type RouteParams = {
-  mode?: ProfileMode;
-  uid?: string;
-  personalAff?: InterestAffiliations;
-  professionalAff?: InterestAffiliations;
-};
+function interestsFingerprint(selected: OnboardingSelectedInterest[]): string {
+  const patch = buildPostCrjInterestPersistencePatch('personal', selected);
+  return JSON.stringify(patch.personalOnboardingInterests ?? []);
+}
 
-const INTERESTS_SETUP_STEPS = [
-  {
-    title: 'Select a category',
-    description: 'Tap any interest category to get started.',
-    audio: null,
-  },
-  {
-    title: 'Select your interests',
-    description: 'Choose one or more icons for this category.',
-    audio: GUIDE_AUDIO.interests.selectInterests,
-  },
-  {
-    title: 'Tap Done',
-    description: 'Tap Done when you have finished selecting icons.',
-    audio: GUIDE_AUDIO.interests.tapDone,
-  },
-  {
-    title: 'Save interests',
-    description: 'Tap Save interests to continue.',
-    audio: GUIDE_AUDIO.interests.save,
-  },
-];
+function categoryAccent(category: (typeof ONBOARDING_INTEREST_CATEGORIES)[number]) {
+  return (
+    category.items?.[0]?.iconColor ??
+    category.groups?.[0]?.iconColor ??
+    '#2563EB'
+  );
+}
 
 export default function InterestsScreen() {
-  const route = useRoute<any>();
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const insets = useSafeAreaInsets();
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-  const params = (route.params ?? {}) as RouteParams;
-  const mode: ProfileMode =
-    params.mode === 'professional' ? 'professional' : 'personal';
+  const { palette } = useAppTheme();
+  const { t } = useTranslation();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [isSetupMode, setIsSetupMode] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState(0);
-  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
-  const [openedGuideCategory, setOpenedGuideCategory] =
-    useState<InterestLabel | null>(null);
-  const [interestsModalOpen, setInterestsModalOpen] = useState(false);
-  const onboardingActive =
-    isSetupMode && !onboardingCompleted && !loading;
+  const [mode, setMode] = useState<ProfileMode>('personal');
+  const [uid, setUid] = useState<string | null>(null);
+  const [draft, setDraft] = useState<OnboardingSelectedInterest[]>([]);
+  const [snapshot, setSnapshot] = useState<OnboardingSelectedInterest[]>([]);
+  const [expandedId, setExpandedId] =
+    useState<OnboardingInterestCategoryId | null>(null);
+  const [activeGroupByCategory, setActiveGroupByCategory] = useState<
+    Partial<Record<OnboardingInterestCategoryId, string>>
+  >({});
 
-  const showOnboardingGuideOutside =
-    onboardingActive && (onboardingStep === 0 || onboardingStep === 3);
+  const dirty = interestsFingerprint(draft) !== interestsFingerprint(snapshot);
+  const total = countFinalOnboardingInterests(draft);
 
-  const showOnboardingGuideInModal =
-    onboardingActive &&
-    interestsModalOpen &&
-    (onboardingStep === 1 || onboardingStep === 2);
-  const { playAudio, stopAudio } = useGuideAudio();
-  const currentSetupStep = INTERESTS_SETUP_STEPS[onboardingStep];
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const authUid = firebaseAuth.currentUser?.uid ?? null;
+      const parsed = parsePostCrjInterestEditorParams(
+        route.params ?? {},
+        authUid,
+      );
+      if (!parsed.ok) {
+        Alert.alert('Sign in required', 'Please sign in to edit interests.');
+        navigation.goBack();
+        return;
+      }
+
+      const { uid: targetUid, mode: targetMode } = parsed.params;
+      setUid(targetUid);
+      setMode(targetMode);
+
+      const snap = await firestoreDb.collection('users').doc(targetUid).get();
+      const exists =
+        typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+      const data = (exists ? snap.data() : {}) as Record<string, unknown>;
+      const interests = readOnboardingInterestsFromDoc(data, targetMode);
+      setDraft(interests);
+      setSnapshot(interests);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not load interests.');
+      navigation.goBack();
+    } finally {
+      setLoading(false);
+    }
+  }, [navigation, route.params]);
 
   useEffect(() => {
-    if (!onboardingActive) {
-      void stopAudio();
-      return;
-    }
-    void playAudio(currentSetupStep?.audio);
-  }, [onboardingActive, onboardingStep, currentSetupStep?.audio, playAudio, stopAudio]);
+    void load();
+  }, [load]);
 
-  const completeOnboarding = useCallback(() => {
-    setOnboardingCompleted(true);
-    void stopAudio();
-  }, [stopAudio]);
-
-  const [profileImage, setProfileImage] = useState<string | null>(null);
-  const [topBarColor, setTopBarColor] = useState('#3B5A85');
-  const [topBarMode, setTopBarMode] = useState<'color' | 'image'>('color');
-  const [topBarImage, setTopBarImage] = useState<string | null>(null);
-
-  const [personalAff, setPersonalAff] = useState<InterestAffiliations>({});
-  const [professionalAff, setProfessionalAff] = useState<InterestAffiliations>(
-    {},
-  );
-
-  const currentAff = mode === 'personal' ? personalAff : professionalAff;
-  const setCurrentAff =
-    mode === 'personal' ? setPersonalAff : setProfessionalAff;
-
-  const handleOnboardingBack = () => {
-    if (onboardingStep === 1) {
-      setOpenedGuideCategory(null);
-      setOnboardingStep(0);
-      return;
-    }
-
-    if (onboardingStep === 2) {
-      setOnboardingStep(1);
-    }
-  };
-
-  const handleOnboardingNext = () => {
-    if (onboardingStep !== 1) return;
-
-    const category = openedGuideCategory;
-    const picks =
-      category && Array.isArray(currentAff[category])
-        ? currentAff[category]!
-        : [];
-
-    if (picks.length === 0) {
-      Alert.alert(
-        'One more thing',
-        'Please select at least one interest in this category.',
-      );
-      return;
-    }
-
-    setOnboardingStep(2);
-  };
-
-  const title = useMemo(
-    () => `${mode === 'personal' ? 'Personal' : 'Professional'} Interests`,
-    [mode],
-  );
-
-  const modalGuideCard = showOnboardingGuideInModal ? (
-    <Animated.View
-      entering={FadeInDown.duration(350)}
-      style={styles.modalGuideCard}
-    >
-      <GuideOnboardingCard
-        stepIndex={onboardingStep}
-        totalSteps={INTERESTS_SETUP_STEPS.length}
-        title={currentSetupStep.title}
-        description={currentSetupStep.description}
-        showBack={onboardingStep === 1 || onboardingStep === 2}
-        showNext={onboardingStep === 1}
-        onBack={handleOnboardingBack}
-        onNext={handleOnboardingNext}
-        onSkip={completeOnboarding}
-      />
-    </Animated.View>
-  ) : null;
-
-  const cleanAffiliations = (aff: InterestAffiliations): InterestAffiliations =>
-    Object.fromEntries(
-      Object.entries(aff ?? {}).filter(
-        ([, arr]) => Array.isArray(arr) && arr.length > 0,
-      ),
-    ) as InterestAffiliations;
-
-  const labelsFromAff = (aff: InterestAffiliations): string[] =>
-    Object.keys(aff ?? {});
-
-  const handleSave = async () => {
+  const save = async () => {
+    if (!uid || saving) return;
+    setSaving(true);
     try {
-      setSaving(true);
-
-      const uid = params.uid || firebaseAuth.currentUser?.uid;
-      if (!uid) throw new Error('User not authenticated.');
-
-      if (mode === 'personal') {
-        const clean = cleanAffiliations(personalAff);
-        const labels = labelsFromAff(clean);
-
-        await firestoreDb
-          .collection('users')
-          .doc(uid)
-          .set(
-            {
-              personalInterests: labels,
-              personalInterestAffiliations: clean,
-              updatedAt: Date.now(),
-            },
-            { merge: true },
-          );
-      } else {
-        const clean = cleanAffiliations(professionalAff);
-        const labels = labelsFromAff(clean);
-
-        await firestoreDb
-          .collection('users')
-          .doc(uid)
-          .set(
-            {
-              professionalInterests: labels,
-              professionalInterestAffiliations: clean,
-              updatedAt: Date.now(),
-            },
-            { merge: true },
-          );
-      }
-
-      Alert.alert('Saved', 'Your interests were updated.');
+      const patch = buildPostCrjInterestPersistencePatch(mode, draft);
+      await firestoreDb
+        .collection('users')
+        .doc(uid)
+        .set({ ...patch, updatedAt: Date.now() }, { merge: true });
+      setSnapshot(draft);
       navigation.goBack();
     } catch (e: any) {
-      if (__DEV__) {
-        console.error('[InterestsScreen] Error saving interests', e);
-      }
-
       Alert.alert('Error', e?.message || 'Could not save interests.');
     } finally {
       setSaving(false);
     }
   };
 
-  useEffect(() => {
-    const showEvent =
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent =
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const showSub = Keyboard.addListener(showEvent, (event) => {
-      setKeyboardVisible(true);
-      setKeyboardHeight(event.endCoordinates?.height ?? 0);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardVisible(false);
-      setKeyboardHeight(0);
-    });
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const uid = params.uid || firebaseAuth.currentUser?.uid;
-        if (!uid) throw new Error('User not authenticated.');
-
-        const existing = await getUserProfile(uid);
-
-        if (!existing) {
-          setIsSetupMode(true);
-          setPersonalAff(params.personalAff ?? {});
-          setProfessionalAff(params.professionalAff ?? {});
-
-          setTopBarColor('#3B5A85');
-          setTopBarMode('color');
-          setTopBarImage(null);
-          setProfileImage(null);
-          return;
-        }
-
-        setIsSetupMode(
-          (existing as { profileSetupCompleted?: boolean }).profileSetupCompleted !==
-            true,
-        );
-
-        setPersonalAff(
-          (existing as any)?.personalInterestAffiliations ??
-            params.personalAff ??
-            {},
-        );
-
-        setProfessionalAff(
-          (existing as any)?.professionalInterestAffiliations ??
-            params.professionalAff ??
-            {},
-        );
-
-        setTopBarColor((existing as any)?.topBarColor || '#3B5A85');
-        setTopBarMode(
-          (existing as any)?.topBarMode ||
-            ((existing as any)?.topBarImage ? 'image' : 'color'),
-        );
-        setTopBarImage((existing as any)?.topBarImage || null);
-        setProfileImage((existing as any)?.profileImage || null);
-      } catch (e: any) {
-        if (__DEV__) {
-          console.error('[InterestsScreen] Error loading interests', e);
-        }
-
-        setPersonalAff(params.personalAff ?? {});
-        setProfessionalAff(params.professionalAff ?? {});
-
-        setTopBarColor('#3B5A85');
-        setTopBarMode('color');
-        setTopBarImage(null);
-        setProfileImage(null);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
   if (loading) {
     return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.loaderText}>Loading interests…</Text>
+      <View style={[styles.flex, { backgroundColor: palette.background }]}>
+        <TopHeader
+          topBarMode="color"
+          topBarColor={palette.primary}
+          leftIcon="chevron-back"
+          onLeftPress={() => navigation.goBack()}
+          showAvatar={false}
+        />
+        <View style={styles.centered}>
+          <ActivityIndicator color={palette.primary} />
+        </View>
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+    <View style={[styles.flex, { backgroundColor: palette.background }]}>
+      <TopHeader
+        topBarMode="color"
+        topBarColor={palette.primary}
+        leftIcon="chevron-back"
+        onLeftPress={() => navigation.goBack()}
+        showAvatar={false}
+      />
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={insets.top}
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{
-            paddingBottom: keyboardVisible
-              ? keyboardHeight + insets.bottom + 88
-              : insets.bottom + 88,
-          }}
+          contentContainerStyle={[
+            styles.content,
+            { paddingBottom: insets.bottom + 100 },
+          ]}
           keyboardShouldPersistTaps="handled"
         >
-          <TopHeader
-            topBarMode={topBarMode}
-            topBarColor={topBarColor}
-            topBarImage={topBarImage}
-            profileImage={profileImage}
-            leftIcon="chevron-back"
-            onLeftPress={() => navigation.goBack()}
-            showAvatar
-          />
+          <Text style={[styles.eyebrow, { color: palette.chipText }]}>
+            {mode === 'professional' ? 'Professional' : 'Personal'}
+          </Text>
+          <Text style={[styles.title, { color: palette.textPrimary }]}>
+            {t('onboarding.profileCompletion.interests.title' as any, {
+              defaultValue: 'Your interests',
+            })}
+          </Text>
+          <Text style={[styles.body, { color: palette.textSecondary }]}>
+            {total === 0
+              ? t('onboarding.profileCompletion.interests.body' as any, {
+                  defaultValue: 'Choose what you care about.',
+                })
+              : `${total} selected`}
+          </Text>
 
-          <Text style={styles.headerTitle}>{title}</Text>
+          {ONBOARDING_INTEREST_CATEGORIES.map((category) => {
+            const open = expandedId === category.id;
+            const count = draft.filter((i) => i.categoryId === category.id)
+              .length;
+            const hierarchical = isHierarchicalInterestCategory(category);
+            const accent = categoryAccent(category);
+            const headerIcon =
+              category.items?.[0]?.icon ??
+              category.groups?.[0]?.icon ??
+              'sparkles-outline';
+            return (
+              <View
+                key={category.id}
+                style={[
+                  styles.categoryCard,
+                  {
+                    backgroundColor: palette.surface,
+                    borderColor: palette.border,
+                  },
+                ]}
+              >
+                <Pressable
+                  onPress={() =>
+                    setExpandedId((prev) =>
+                      prev === category.id ? null : category.id,
+                    )
+                  }
+                  style={styles.categoryHeader}
+                  accessibilityRole="button"
+                >
+                  <View
+                    style={[styles.categoryIconWrap, { backgroundColor: `${accent}22` }]}
+                  >
+                    <Ionicons
+                      name={headerIcon as any}
+                      size={18}
+                      color={accent}
+                    />
+                  </View>
+                  <View style={styles.categoryHeaderText}>
+                    <Text
+                      style={[styles.categoryTitle, { color: palette.textPrimary }]}
+                    >
+                      {t(
+                        `onboarding.profileCompletion.interests.categories.${category.nameKey}` as any,
+                        { defaultValue: category.name },
+                      )}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.categorySubtitle,
+                        { color: palette.textSecondary },
+                      ]}
+                    >
+                      {count > 0 ? `${count} selected` : 'Tap to edit'}
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name={open ? 'chevron-up' : 'chevron-down'}
+                    size={20}
+                    color={palette.textSecondary}
+                  />
+                </Pressable>
 
-          <View style={{ flex: 1, padding: 16 }}>
-            <InterestsWithLogo
-              value={currentAff}
-              onChange={setCurrentAff}
-              scope={mode}
-              editable={true}
-              setupGuideActive={onboardingActive}
-              setupGuideStep={onboardingStep}
-              modalGuideCard={modalGuideCard}
-              onSetupModalOpenChange={setInterestsModalOpen}
-              onSetupCategoryOpened={(interest) => {
-                setOpenedGuideCategory(interest);
-                setOnboardingStep(1);
-              }}
-              onSetupModalDone={() => setOnboardingStep(3)}
-            />
-          </View>
+                {open ? (
+                  <View style={styles.panelWrap}>
+                    <OnboardingInterestCategoryPanel
+                      categoryId={category.id}
+                      selected={draft}
+                      onChangeSelected={setDraft}
+                      activeGroupId={
+                        hierarchical
+                          ? resolveActiveGroupId(
+                              category,
+                              activeGroupByCategory[category.id],
+                            )
+                          : undefined
+                      }
+                      onActiveGroupChange={
+                        hierarchical
+                          ? (groupId) => {
+                              setActiveGroupByCategory((prev) => ({
+                                ...prev,
+                                [category.id]: groupId,
+                              }));
+                            }
+                          : undefined
+                      }
+                    />
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
         </ScrollView>
-
-        {showOnboardingGuideOutside ? (
-          <Animated.View
-            entering={FadeInDown.duration(350)}
-            style={[
-              styles.floatingGuideCard,
-              onboardingStep === 0
-                ? { top: insets.top + 10 }
-                : { bottom: insets.bottom + 72 },
-            ]}
-          >
-            <GuideOnboardingCard
-              stepIndex={onboardingStep}
-              totalSteps={INTERESTS_SETUP_STEPS.length}
-              title={currentSetupStep.title}
-              description={currentSetupStep.description}
-              showBack={false}
-              showNext={false}
-              onSkip={completeOnboarding}
-            />
-          </Animated.View>
-        ) : null}
 
         <View
           style={[
-            styles.bottomBar,
-            onboardingActive &&
-              onboardingStep === 3 &&
-              styles.setupGuideHighlight,
+            styles.footer,
+            {
+              paddingBottom: Math.max(insets.bottom, 12),
+              backgroundColor: palette.background,
+              borderTopColor: palette.border,
+            },
           ]}
         >
-          <TouchableOpacity
-            style={[styles.bottomSaveBtn, saving && { opacity: 0.7 }]}
-            onPress={handleSave}
-            disabled={saving || (onboardingActive && onboardingStep !== 3)}
-            activeOpacity={0.85}
+          <Pressable
+            style={[
+              styles.saveBtn,
+              {
+                backgroundColor: dirty ? palette.primary : palette.chipBg,
+                opacity: saving ? 0.7 : 1,
+              },
+            ]}
+            disabled={!dirty || saving}
+            onPress={() => {
+              void save();
+            }}
           >
             {saving ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <>
-                <Ionicons name="save-outline" size={18} color="#fff" />
-                <Text style={styles.bottomSaveText}>Save interests</Text>
-              </>
+              <Text
+                style={[
+                  styles.saveBtnText,
+                  { color: dirty ? '#fff' : palette.chipText },
+                ]}
+              >
+                Save interests
+              </Text>
             )}
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </KeyboardAvoidingView>
     </View>
@@ -426,66 +326,71 @@ export default function InterestsScreen() {
 }
 
 const styles = StyleSheet.create({
-  floatingGuideCard: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    zIndex: 50,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 14,
-    elevation: 10,
+  flex: { flex: 1 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  eyebrow: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: spacing.xs,
   },
-  modalGuideCard: {
-    marginBottom: 12,
+  title: {
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.bold,
+    marginBottom: spacing.xs,
   },
-  setupGuideHighlight: {
-    borderWidth: 2,
-    borderColor: '#3B5A85',
-    borderRadius: 14,
+  body: {
+    fontSize: fontSize.sm,
+    lineHeight: 20,
+    marginBottom: spacing.lg,
   },
-  loader: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
-  loaderText: { color: '#374151' },
-
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    textAlign: 'center',
-    marginTop: 20,
-    marginBottom: 12,
-    color: '#111827',
+  categoryCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.lg,
+    marginBottom: spacing.md,
+    overflow: 'hidden',
   },
-
-  bottomBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.96)',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 16,
-  },
-  bottomSaveBtn: {
-    height: 50,
-    borderRadius: 999,
-    backgroundColor: '#3B5A85',
+  categoryHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
   },
-  bottomSaveText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
+  categoryIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryHeaderText: { flex: 1 },
+  categoryTitle: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
+  },
+  categorySubtitle: {
+    fontSize: fontSize.xs,
+    marginTop: 2,
+  },
+  panelWrap: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+  },
+  footer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+  },
+  saveBtn: {
+    borderRadius: radius.md,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  saveBtnText: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
   },
 });

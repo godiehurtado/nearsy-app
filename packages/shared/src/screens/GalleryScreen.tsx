@@ -25,13 +25,30 @@ import {
 import { GalleryPhoto } from '../types/profile';
 import { uploadGalleryImage } from '../services/storageService';
 import TopHeader from '../components/TopHeader';
+import { MAX_GALLERY_ITEMS } from '../visibility/constants';
+import {
+  GALLERY_GRID_GAP,
+  GALLERY_TILE_RADIUS,
+  OWN_PROFILE_GALLERY_COLUMNS,
+  galleryTileSize,
+} from '../gallery/galleryGridTokens';
+import {
+  buildPostCrjGalleryPersistencePatch,
+  prependGalleryPhoto,
+  readPostCrjGalleryFromDoc,
+  removeGalleryPhoto as removeGalleryPhotoFromList,
+} from '../gallery/postCrjGalleryEditor';
 
 type ProfileMode = 'personal' | 'professional';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_PADDING = 16;
-const ITEM_GAP = 10;
-const ITEM_SIZE = (SCREEN_WIDTH - GRID_PADDING * 2 - ITEM_GAP * 2) / 3;
+const ITEM_GAP = GALLERY_GRID_GAP;
+const ITEM_SIZE = galleryTileSize(
+  SCREEN_WIDTH,
+  OWN_PROFILE_GALLERY_COLUMNS,
+  GRID_PADDING * 2,
+);
 
 type RouteParams = {
   uid?: string;
@@ -66,8 +83,7 @@ export default function GalleryScreen({ route, navigation }: any) {
     null,
   );
 
-  const fieldName =
-    mode === 'personal' ? 'personalGallery' : 'professionalGallery';
+  const atGalleryCap = photos.length >= MAX_GALLERY_ITEMS;
 
   useEffect(() => {
     (async () => {
@@ -115,16 +131,7 @@ export default function GalleryScreen({ route, navigation }: any) {
 
         setMode(effectiveMode);
 
-        const raw =
-          effectiveMode === 'personal'
-            ? data?.personalGallery
-            : data?.professionalGallery;
-
-        const list: GalleryPhoto[] = Array.isArray(raw)
-          ? raw.filter((p) => !!p?.url)
-          : [];
-
-        setPhotos(list);
+        setPhotos(readPostCrjGalleryFromDoc(data as Record<string, unknown>, effectiveMode));
       } catch (e: any) {
         if (__DEV__) {
           console.error('[GalleryScreen] Error loading gallery', e);
@@ -163,6 +170,14 @@ export default function GalleryScreen({ route, navigation }: any) {
     try {
       if (!isOwn || !ownerUid) return;
 
+      if (photos.length >= MAX_GALLERY_ITEMS) {
+        Alert.alert(
+          'Gallery full',
+          `You can add up to ${MAX_GALLERY_ITEMS} photos.`,
+        );
+        return;
+      }
+
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (!perm.granted) {
@@ -192,7 +207,10 @@ export default function GalleryScreen({ route, navigation }: any) {
 
       animateNewPhoto(localPhotoKey);
 
-      const optimisticPhotos = [localPhoto, ...photos];
+      const optimisticPhotos = prependGalleryPhoto(photos, localPhoto).slice(
+        0,
+        MAX_GALLERY_ITEMS,
+      );
       setPhotos(optimisticPhotos);
 
       const { url, path } = await uploadGalleryImage(ownerUid, asset.uri, mode);
@@ -207,12 +225,13 @@ export default function GalleryScreen({ route, navigation }: any) {
         p.path === localPhoto.path ? uploadedPhoto : p,
       );
 
+      const patch = buildPostCrjGalleryPersistencePatch(mode, finalPhotos);
       await firestoreDb
         .collection('users')
         .doc(ownerUid)
         .set(
           {
-            [fieldName]: finalPhotos,
+            ...patch,
             updatedAt: Date.now(),
           },
           { merge: true },
@@ -265,16 +284,15 @@ export default function GalleryScreen({ route, navigation }: any) {
         }
       }
 
-      const next = photos.filter(
-        (p) => (p.path || p.url) !== (photo.path || photo.url),
-      );
+      const next = removeGalleryPhotoFromList(photos, photo);
 
+      const patch = buildPostCrjGalleryPersistencePatch(mode, next);
       await firestoreDb
         .collection('users')
         .doc(ownerUid)
         .set(
           {
-            [fieldName]: next,
+            ...patch,
             updatedAt: Date.now(),
           },
           { merge: true },
@@ -323,10 +341,11 @@ export default function GalleryScreen({ route, navigation }: any) {
       <Text style={styles.title}>
         {isOwn ? 'Your Gallery' : 'Gallery'} ·{' '}
         {mode === 'personal' ? 'Personal' : 'Professional'}
+        {isOwn ? ` · ${photos.length}/${MAX_GALLERY_ITEMS}` : ''}
       </Text>
 
       <View style={styles.grid}>
-        {isOwn && (
+        {isOwn && !atGalleryCap && (
           <TouchableOpacity
             style={styles.addItem}
             onPress={handleAddPhoto}
@@ -440,14 +459,14 @@ const styles = StyleSheet.create({
   gridItemWrap: {
     width: ITEM_SIZE,
     height: ITEM_SIZE,
-    borderRadius: 10,
+    borderRadius: GALLERY_TILE_RADIUS,
     position: 'relative',
   },
 
   addItem: {
     width: ITEM_SIZE,
     height: ITEM_SIZE,
-    borderRadius: 10,
+    borderRadius: GALLERY_TILE_RADIUS,
     borderWidth: 2,
     borderColor: '#D1D5DB',
     borderStyle: 'dashed',
@@ -459,7 +478,7 @@ const styles = StyleSheet.create({
   gridItem: {
     width: '100%',
     height: '100%',
-    borderRadius: 10,
+    borderRadius: GALLERY_TILE_RADIUS,
     backgroundColor: '#E5E7EB',
   },
 

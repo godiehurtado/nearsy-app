@@ -47,6 +47,11 @@ import {
   getUserProfile,
   updateUserMode,
 } from '../services/firestoreService';
+import { extractOwnProfileAffiliationSummaryCounts } from '../affiliations/postCrjAffiliationEditor';
+import {
+  countFinalOnboardingInterests,
+} from '../interests/onboardingInterestCatalog';
+import { readOnboardingInterestsFromDoc } from '../interests/postCrjInterestEditor';
 
 import {
   uploadProfileImage,
@@ -246,6 +251,15 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const [professionalAffiliations, setProfessionalAffiliations] = useState<
     AffiliationItem[]
   >([]);
+  const [personalOnboardingInterestCount, setPersonalOnboardingInterestCount] =
+    useState(0);
+  const [
+    professionalOnboardingInterestCount,
+    setProfessionalOnboardingInterestCount,
+  ] = useState(0);
+  const [personalAffiliationCount, setPersonalAffiliationCount] = useState(0);
+  const [professionalAffiliationCount, setProfessionalAffiliationCount] =
+    useState(0);
 
   // UI state
   const [isLoading, setIsLoading] = useState(false);
@@ -363,7 +377,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
           (existing as any).socialLinksProfessional ?? {},
         );
 
-        // Gallery por modo
+        // Gallery por modo (post-CRJ bags)
         setPersonalGallery(
           Array.isArray((existing as any).personalGallery)
             ? (existing as any).personalGallery
@@ -375,7 +389,12 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
             : [],
         );
 
-        // Affiliations por modo
+        // Affiliations — prefer onboarding bag counts for Own Profile hub
+        const affiliationCounts = extractOwnProfileAffiliationSummaryCounts(
+          existing as Record<string, unknown>,
+        );
+        setPersonalAffiliationCount(affiliationCounts.personal);
+        setProfessionalAffiliationCount(affiliationCounts.professional);
         setPersonalAffiliations(
           Array.isArray((existing as any).personalAffiliations)
             ? (existing as any).personalAffiliations
@@ -385,6 +404,23 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
           Array.isArray((existing as any).professionalAffiliations)
             ? (existing as any).professionalAffiliations
             : [],
+        );
+
+        setPersonalOnboardingInterestCount(
+          countFinalOnboardingInterests(
+            readOnboardingInterestsFromDoc(
+              existing as Record<string, unknown>,
+              'personal',
+            ),
+          ),
+        );
+        setProfessionalOnboardingInterestCount(
+          countFinalOnboardingInterests(
+            readOnboardingInterestsFromDoc(
+              existing as Record<string, unknown>,
+              'professional',
+            ),
+          ),
         );
 
         setIsNewProfile(false);
@@ -466,8 +502,8 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
   const interestsCount =
     (mode ?? 'personal') === 'professional'
-      ? professionalInterestsCount
-      : personalInterestsCount;
+      ? professionalOnboardingInterestCount || professionalInterestsCount
+      : personalOnboardingInterestCount || personalInterestsCount;
 
   const currentLinks =
     (mode ?? 'personal') === 'professional'
@@ -490,8 +526,8 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
   const affiliationsCount =
     (mode ?? 'personal') === 'professional'
-      ? professionalAffiliations.length
-      : personalAffiliations.length;
+      ? professionalAffiliationCount || professionalAffiliations.length
+      : personalAffiliationCount || personalAffiliations.length;
 
   const pickImage = async () => {
     try {
