@@ -1,525 +1,405 @@
-// src/screens/AlertsScreen.tsx  ✅ Hybrid: RNFirebase Auth + Web Firestore
-import React, {
-  useEffect,
-  useState,
-  useCallback,
-  useMemo,
-  useRef,
-} from 'react';
+/**
+ * Alerts — discoverNearby only; opens DiscoveryProfile (no peer user docs).
+ */
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
   FlatList,
   Image,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
+
 import type { RootTabsParamList } from '../navigation/RootTabs';
-
-import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { registerPushToken } from '../services/pushTokens';
+import { useNearbyAlerts, type AlertItem } from '../hooks/useNearbyAlerts';
+import { useTranslation } from '../i18n';
 import {
-  FEET_PER_METER,
-  ALERTS_NEARBY_RADIUS_FT,
-  ALERTS_NEARBY_RADIUS_KM,
-} from '../config/proximityThresholds';
-
-type AlertKind = 'interest_nearby' | 'contact_nearby';
-
-type AlertItem = {
-  id: string;
-  uid?: string;
-  name: string;
-  avatar?: string | null;
-  kind: AlertKind;
-  distanceFt?: number; // ✅ pies
-  sharedInterests?: string[];
-  at: number;
-  fromContacts?: boolean; // ✅ viene de tus contactos
-};
-
-type LocationDoc = { lat: number; lng: number; updatedAt?: number };
-type UserDoc = {
-  uid?: string;
-  realName?: string;
-  profileImage?: string | null;
-  topBarColor?: string;
-  visibility?: boolean;
-  location?: LocationDoc | null;
-  personalInterests?: string[];
-  professionalInterests?: string[];
-  mode?: 'personal' | 'professional';
-
-  // filtros y bloqueos
-  birthYear?: number;
-  visibleToMinAge?: number | null;
-  visibleToMaxAge?: number | null;
-  blockedContacts?: string[];
-  email?: string;
-  phone?: string;
-
-  // 👇 contactos normalizados (email/phone)
-  contactsSafe?: string[];
-};
-
-// ===== utilidades =====
-const shortName = (full?: string) => {
-  const s = (full || '').trim();
-  if (!s) return 'Unnamed';
-  const parts = s.split(/\s+/);
-  if (parts.length === 1) return s;
-  return `${parts[0]} ${parts[1][0]}.`;
-};
-
-const timeAgo = (ms: number) => {
-  const diff = Math.max(1, Math.round((Date.now() - ms) / 60000)); // mins
-  if (diff < 60) return `${diff}m`;
-  const h = Math.round(diff / 60);
-  return `${h}h`;
-};
-
-// Haversine (km)
-function haversineKm(
-  a: { lat: number; lng: number },
-  b: { lat: number; lng: number },
-) {
-  const R = 6371; // km
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const lat1 = (a.lat * Math.PI) / 180;
-  const lat2 = (b.lat * Math.PI) / 180;
-
-  const sinDLat = Math.sin(dLat / 2);
-  const sinDLng = Math.sin(dLng / 2);
-
-  const c =
-    sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng;
-
-  const d = 2 * Math.atan2(Math.sqrt(c), Math.sqrt(1 - c));
-  return R * d;
-}
-
-function normalizeId(value?: string | null): string {
-  if (!value) return '';
-  return value.replace(/\s+/g, '').toLowerCase();
-}
-
-function isBlockedBetween(
-  myEmail?: string | null,
-  myPhone?: string | null,
-  myBlockedContacts?: string[] | null,
-  otherEmail?: string | null,
-  otherPhone?: string | null,
-  otherBlockedContacts?: string[] | null,
-) {
-  const meIds = [normalizeId(myEmail), normalizeId(myPhone)].filter(Boolean);
-  const otherIds = [normalizeId(otherEmail), normalizeId(otherPhone)].filter(
-    Boolean,
-  );
-
-  const myBlocked = (myBlockedContacts ?? []).map(normalizeId);
-  const otherBlocked = (otherBlockedContacts ?? []).map(normalizeId);
-
-  const iBlockedOther = otherIds.some((id) => myBlocked.includes(id));
-  const otherBlockedMe = meIds.some((id) => otherBlocked.includes(id));
-
-  return iBlockedOther || otherBlockedMe;
-}
-
-const LOCATION_FRESH_MS = 10 * 60 * 1000;
-const AUTO_REFRESH_MS = 30 * 1000;
-
-async function getBlockedUserIds(uid: string): Promise<Set<string>> {
-  const snap = await firestoreDb
-    .collection('users')
-    .doc(uid)
-    .collection('blockedUsers')
-    .get();
-  const ids = new Set<string>();
-
-  snap.forEach((d) => {
-    if (d.id) ids.add(d.id);
-
-    const data = d.data() as { blockedUid?: string };
-    if (data?.blockedUid) ids.add(data.blockedUid);
-  });
-
-  return ids;
-}
+  fontSize,
+  fontWeight,
+  radius,
+  screenPadding,
+  spacing,
+  useAppTheme,
+} from '../theme';
+import {
+  buildAlertRowMessage,
+  formatAlertDistance,
+  formatAlertRelativeTime,
+  NOTIFICATION_AVATAR_SIZE,
+} from './alertsPresentation';
 
 export default function AlertsScreen() {
   const navigation =
     useNavigation<BottomTabNavigationProp<RootTabsParamList>>();
-
-  const [loading, setLoading] = useState(true);
+  const { loading, alerts, me, refresh } = useNearbyAlerts();
   const [refreshing, setRefreshing] = useState(false);
-  const [topColor, setTopColor] = useState('#3B5A85');
-  const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [me, setMe] = useState<UserDoc | null>(null);
-
   const insets = useSafeAreaInsets();
-  const currentYear = useMemo(() => new Date().getFullYear(), []);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { palette } = useAppTheme();
+  const { t } = useTranslation();
 
-  // Reasegura el token push al abrir esta screen (barato e idempotente)
+  const translateItem = useCallback(
+    (nameKey: string, fallback: string) =>
+      t(`onboarding.profileCompletion.interests.items.${nameKey}` as any, {
+        defaultValue: fallback,
+      }),
+    [t],
+  );
+
   useEffect(() => {
     registerPushToken().catch(() => {});
   }, []);
 
-  // Suscríbete a MI doc: color, visibility y location (Web Firestore)
-  useEffect(() => {
-    const uid = firebaseAuth.currentUser?.uid;
-    if (!uid) {
-      setLoading(false);
-      return;
-    }
-
-    const unsub = firestoreDb
-      .collection('users')
-      .doc(uid)
-      .onSnapshot(
-      (snap) => {
-        const exists =
-          typeof snap.exists === 'function' ? snap.exists() : snap.exists;
-        if (exists) {
-          const data = (snap.data() as UserDoc) ?? {};
-          if (typeof data.topBarColor === 'string' && data.topBarColor) {
-            setTopColor(data.topBarColor);
-          }
-          setMe({ ...data, uid });
-        } else {
-          setMe(null);
-        }
-        setLoading(false);
-      },
-      () => {
-        // si falla el listener por permisos/red, evitamos freeze
-        setMe(null);
-        setLoading(false);
-      },
-    );
-
-    return () => unsub();
-  }, []);
-
-  const buildAlerts = useCallback(async () => {
-    const uid = firebaseAuth.currentUser?.uid;
-    if (!uid || !me) {
-      setAlerts([]);
-      return;
-    }
-
-    const blockedUserIds = await getBlockedUserIds(uid);
-
-    // Reglas base: debo estar visible y tener location válida
-    if (!me.visibility || !me.location?.lat || !me.location?.lng) {
-      setAlerts([]);
-      return;
-    }
-
-    try {
-      const snap = await firestoreDb
-        .collection('users')
-        .where('visibility', '==', true)
-        .limit(200)
-        .get();
-
-      const myPoint = { lat: me.location.lat, lng: me.location.lng };
-      const now = Date.now();
-
-      const myAge =
-        typeof me.birthYear === 'number' ? currentYear - me.birthYear : null;
-
-      // 🔹 contactos normalizados del usuario actual
-      const contactsSet = new Set<string>(
-        (me.contactsSafe ?? []).map((c) => normalizeId(c)),
-      );
-
-      // 🔹 intereses del usuario actual (se calculan una sola vez)
-      const myInterests = new Set(
-        [
-          ...(me.personalInterests ?? []),
-          ...(me.professionalInterests ?? []),
-        ].map((x) => (x || '').toLowerCase()),
-      );
-
-      const results: AlertItem[] = [];
-
-      snap.forEach((d) => {
-        if (d.id === uid) return;
-        if (blockedUserIds.has(d.id)) return;
-
-        const u = (d.data() as UserDoc) ?? {};
-
-        // 🚫 Bloqueos (mutuos)
-        const authUser = firebaseAuth.currentUser;
-        const myEmail = authUser?.email ?? null;
-        const myPhone = me.phone ?? null;
-        const myBlockedContacts = me.blockedContacts ?? [];
-
-        const blocked = isBlockedBetween(
-          myEmail,
-          myPhone,
-          myBlockedContacts,
-          u.email ?? null,
-          u.phone ?? null,
-          u.blockedContacts ?? [],
-        );
-        if (blocked) return;
-
-        // 🚫 Edad fuera de rango (mutuos)
-        const theirAge =
-          typeof u.birthYear === 'number' ? currentYear - u.birthYear : null;
-
-        if (myAge !== null) {
-          if (u.visibleToMinAge && myAge < u.visibleToMinAge) return;
-          if (u.visibleToMaxAge && myAge > u.visibleToMaxAge) return;
-        }
-        if (theirAge !== null) {
-          if (me.visibleToMinAge && theirAge < me.visibleToMinAge) return;
-          if (me.visibleToMaxAge && theirAge > me.visibleToMaxAge) return;
-        }
-
-        // 🚫 Ubicación inválida o vieja
-        const loc = u.location;
-        if (!loc?.lat || !loc?.lng) return;
-        if (loc.updatedAt && now - loc.updatedAt > LOCATION_FRESH_MS) return;
-
-        // Distancia → en ft (con límite NEARBY_RADIUS_FT)
-        const km = haversineKm(myPoint, { lat: loc.lat, lng: loc.lng });
-        if (km > ALERTS_NEARBY_RADIUS_KM) return;
-        const meters = km * 1000;
-        const feet = meters * FEET_PER_METER;
-
-        // Intereses compartidos
-        const otherInterests = new Set(
-          [
-            ...(u.personalInterests ?? []),
-            ...(u.professionalInterests ?? []),
-          ].map((x) => (x || '').toLowerCase()),
-        );
-
-        const shared: string[] = [];
-        otherInterests.forEach((tag) => {
-          if (myInterests.has(tag)) shared.push(tag);
-        });
-
-        // 👇 ¿está en mis contactos?
-        const emailNorm = normalizeId(u.email ?? null);
-        const phoneNorm = normalizeId(u.phone ?? null);
-        const fromContacts =
-          (!!emailNorm && contactsSet.has(emailNorm)) ||
-          (!!phoneNorm && contactsSet.has(phoneNorm));
-
-        const kind: AlertKind =
-          shared.length > 0 ? 'interest_nearby' : 'contact_nearby';
-
-        results.push({
-          id: `${d.id}-${loc.updatedAt || now}`,
-          uid: d.id,
-          name: shortName(u.realName),
-          avatar: u.profileImage ?? undefined,
-          kind,
-          distanceFt: Math.round(feet),
-          sharedInterests: shared.slice(0, 3),
-          at: loc.updatedAt || now,
-          fromContacts,
-        });
-      });
-
-      results.sort((a, b) => (a.distanceFt ?? 0) - (b.distanceFt ?? 0));
-      setAlerts(results);
-    } catch {
-      setAlerts([]);
-    }
-  }, [me, currentYear]);
-
-  // Inicial + auto refresh ✅
-  useEffect(() => {
-    if (!me) {
-      setAlerts([]);
-      return;
-    }
-
-    setLoading(true);
-    buildAlerts().finally(() => setLoading(false));
-
-    const id = setInterval(() => {
-      buildAlerts();
-    }, AUTO_REFRESH_MS);
-
-    intervalRef.current = id;
-
-    return () => {
-      if (id) clearInterval(id);
-    };
-  }, [me, buildAlerts]);
-
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await buildAlerts();
+      await refresh();
     } finally {
       setRefreshing(false);
     }
-  }, [buildAlerts]);
+  }, [refresh]);
 
-  const renderMsg = (a: AlertItem) => {
-    const tags = (a.sharedInterests ?? []).slice(0, 2).join(', ');
-    const inContactsLabel = a.fromContacts ? ' (in your contacts)' : '';
+  const inactive = !me?.visibility;
 
-    if (a.sharedInterests && a.sharedInterests.length > 0) {
-      return `${a.name}${inContactsLabel} is near you and you share interests${
-        tags ? ` (${tags})` : ''
-      }.`;
-    }
+  const rowMessage = useCallback(
+    (item: AlertItem) => buildAlertRowMessage(item, t, translateItem),
+    [t, translateItem],
+  );
 
-    return `${a.name}${inContactsLabel} is near you.`;
-  };
+  const listBottomPad = useMemo(
+    () => 96 + insets.bottom,
+    [insets.bottom],
+  );
+
+  const openDiscoveryProfile = useCallback(
+    (uid: string | undefined) => {
+      if (!uid) return;
+      navigation.navigate('Home', {
+        screen: 'DiscoveryProfile',
+        params: { uid },
+      });
+    },
+    [navigation],
+  );
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#2B3A42" />
+      <View
+        style={[styles.centered, { backgroundColor: palette.background }]}
+        accessibilityLiveRegion="polite"
+        accessibilityLabel={t('notifications.loading')}
+      >
+        <ActivityIndicator size="large" color={palette.primary} />
+        <Text style={[styles.loadingText, { color: palette.textSecondary }]}>
+          {t('notifications.loading')}
+        </Text>
       </View>
     );
   }
 
-  const noLocation =
-    !me?.visibility || !me?.location?.lat || !me?.location?.lng;
+  const renderItem = ({ item }: { item: AlertItem }) => {
+    const message = rowMessage(item);
+    const distanceLabel = formatAlertDistance(item.distanceFt, t);
+    const timeLabel = formatAlertRelativeTime(item.at, Date.now(), t);
+
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={message}
+        onPress={() => openDiscoveryProfile(item.uid)}
+        style={({ pressed }) => [
+          styles.row,
+          { opacity: pressed ? 0.88 : 1 },
+        ]}
+      >
+        {item.avatar ? (
+          <Image
+            source={{ uri: item.avatar }}
+            style={[
+              styles.avatar,
+              {
+                backgroundColor: palette.panel,
+                borderColor: palette.border,
+              },
+            ]}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          />
+        ) : (
+          <View
+            style={[
+              styles.avatar,
+              styles.avatarPlaceholder,
+              {
+                backgroundColor: palette.panel,
+                borderColor: palette.border,
+              },
+            ]}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <Ionicons name="person" size={18} color={palette.textMuted} />
+          </View>
+        )}
+
+        <View style={styles.textCol}>
+          <Text
+            style={[styles.message, { color: palette.textPrimary }]}
+            numberOfLines={2}
+          >
+            {message}
+          </Text>
+          {distanceLabel ? (
+            <Text style={[styles.distance, { color: palette.textMuted }]}>
+              {distanceLabel}
+            </Text>
+          ) : null}
+        </View>
+
+        <Text style={[styles.time, { color: palette.textMuted }]}>
+          {timeLabel}
+        </Text>
+      </Pressable>
+    );
+  };
+
+  const emptyContent = inactive ? (
+    <View style={styles.emptyWrap}>
+      <View
+        style={[
+          styles.emptyIcon,
+          {
+            backgroundColor: palette.panel,
+            borderColor: palette.border,
+          },
+        ]}
+      >
+        <Ionicons
+          name="eye-off-outline"
+          size={22}
+          color={palette.textMuted}
+        />
+      </View>
+      <Text style={[styles.emptyTitle, { color: palette.textPrimary }]}>
+        {t('notifications.inactive.title')}
+      </Text>
+      <Text style={[styles.emptyBody, { color: palette.textSecondary }]}>
+        {t('notifications.inactive.body')}
+      </Text>
+    </View>
+  ) : (
+    <View style={styles.emptyWrap}>
+      <View
+        style={[
+          styles.emptyIcon,
+          {
+            backgroundColor: palette.panel,
+            borderColor: palette.border,
+          },
+        ]}
+      >
+        <Ionicons
+          name="notifications-outline"
+          size={22}
+          color={palette.textMuted}
+        />
+      </View>
+      <Text style={[styles.emptyTitle, { color: palette.textPrimary }]}>
+        {t('notifications.empty.title')}
+      </Text>
+      <Text style={[styles.emptyBody, { color: palette.textSecondary }]}>
+        {t('notifications.empty.body')}
+      </Text>
+    </View>
+  );
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff', paddingTop: insets.top }}>
-      {/* Top bar sobria */}
-      <View style={[styles.topBar, { backgroundColor: topColor }]}>
-        <Image
-          source={require('../assets/icon_white.png')}
-          style={{
-            width: 26,
-            height: 26,
-            resizeMode: 'contain',
-            marginRight: 8,
-          }}
-        />
-        <Text style={styles.brandText}>Nearsy</Text>
-      </View>
-
+    <View style={[styles.root, { backgroundColor: palette.background }]}>
       <FlatList
         data={alerts}
-        keyExtractor={(it) => it.id}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={palette.primary}
+          />
         }
         ListHeaderComponent={
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>Alerts (real-time)</Text>
-            <Text
-              style={{ textAlign: 'center', color: '#6B7280', marginTop: 6 }}
-            >
-              Showing only users within {ALERTS_NEARBY_RADIUS_FT} ft right now.
-            </Text>
-            {noLocation && (
-              <Text
-                style={{ textAlign: 'center', color: '#6B7280', marginTop: 6 }}
-              >
-                Turn your account ACTIVE to receive nearby alerts.
-              </Text>
-            )}
-          </View>
-        }
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => {
-              if (!item.uid) return;
-              navigation.navigate('Home', {
-                screen: 'ProfileDetail',
-                params: { uid: item.uid },
-              } as any);
-            }}
+          <View
+            style={[
+              styles.header,
+              { paddingTop: insets.top + spacing.md },
+            ]}
           >
-            <View style={styles.row}>
-              {item.avatar ? (
-                <Image source={{ uri: item.avatar }} style={styles.avatar} />
-              ) : (
-                <View style={[styles.avatar, { backgroundColor: '#E5E7EB' }]} />
-              )}
-              <View style={styles.textCol}>
-                <Text style={styles.msg} numberOfLines={2}>
-                  {renderMsg(item)}
-                </Text>
-                <View style={styles.metaRow}>
-                  {typeof item.distanceFt === 'number' && (
-                    <Text style={styles.meta}>{item.distanceFt} ft</Text>
-                  )}
-                  <Text style={styles.dot}>•</Text>
-                  <Text style={styles.meta}>{timeAgo(item.at)}</Text>
-                </View>
-              </View>
-            </View>
-          </TouchableOpacity>
-        )}
-        ItemSeparatorComponent={() => <View style={styles.sep} />}
-        contentContainerStyle={{ paddingBottom: 32 }}
-        ListEmptyComponent={
-          <View style={{ alignItems: 'center', marginTop: 24 }}>
-            <Text style={{ color: '#64748B' }}>
-              No nearby alerts right now. Pull to refresh.
+            <Text
+              accessibilityRole="header"
+              style={[styles.screenTitle, { color: palette.textPrimary }]}
+            >
+              {t('notifications.title')}
             </Text>
+            {inactive ? (
+              <View
+                style={[
+                  styles.inactiveBanner,
+                  {
+                    backgroundColor: palette.chipBg,
+                    borderColor: palette.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.inactiveBannerText, { color: palette.chipText }]}
+                >
+                  {t('notifications.inactive.body')}
+                </Text>
+              </View>
+            ) : null}
           </View>
         }
+        ItemSeparatorComponent={() => (
+          <View
+            style={[
+              styles.separator,
+              {
+                backgroundColor: palette.border,
+                marginLeft:
+                  screenPadding.horizontal +
+                  NOTIFICATION_AVATAR_SIZE +
+                  spacing.md,
+              },
+            ]}
+          />
+        )}
+        contentContainerStyle={[
+          styles.listContent,
+          {
+            paddingBottom: listBottomPad,
+            flexGrow: 1,
+          },
+        ]}
+        ListEmptyComponent={emptyContent}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
-  topBar: {
-    height: 52,
-    width: '100%',
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
-    flexDirection: 'row',
+  root: {
+    flex: 1,
+  },
+  centered: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
+    gap: spacing.md,
+    paddingHorizontal: screenPadding.horizontal,
   },
-  brandText: { color: '#fff', fontWeight: '800', fontSize: 18 },
-
-  header: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1F2937',
+  loadingText: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.medium,
     textAlign: 'center',
-    marginBottom: 8,
   },
-
+  header: {
+    paddingHorizontal: screenPadding.horizontal,
+    paddingBottom: spacing.md,
+  },
+  screenTitle: {
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.extrabold,
+    marginBottom: spacing.sm,
+  },
+  inactiveBanner: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  inactiveBannerText: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.medium,
+    lineHeight: fontSize.sm * 1.45,
+  },
+  listContent: {
+    paddingTop: spacing.xxs,
+  },
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    alignItems: 'flex-start',
+    paddingHorizontal: screenPadding.horizontal,
+    paddingVertical: spacing.sm + 2,
+    minHeight: 56,
   },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
+    width: NOTIFICATION_AVATAR_SIZE,
+    height: NOTIFICATION_AVATAR_SIZE,
+    borderRadius: radius.md,
+    borderWidth: 1,
   },
-  textCol: { flex: 1, marginLeft: 12 },
-  msg: { color: '#111827', fontSize: 15, fontWeight: '600' },
-
-  metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  meta: { color: '#6B7280', fontSize: 12 },
-  dot: { color: '#9CA3AF', marginHorizontal: 6 },
-
-  sep: { height: 1, backgroundColor: '#F3F4F6', marginLeft: 84 },
+  avatarPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textCol: {
+    flex: 1,
+    marginLeft: spacing.md,
+    marginRight: spacing.sm,
+    paddingTop: 1,
+  },
+  message: {
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.semibold,
+    lineHeight: fontSize.base * 1.35,
+  },
+  distance: {
+    marginTop: spacing.xxs,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.medium,
+  },
+  time: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.medium,
+    minWidth: 28,
+    textAlign: 'right',
+    paddingTop: 2,
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+  },
+  emptyWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: screenPadding.horizontal,
+    paddingTop: spacing.xxxl,
+    gap: spacing.sm,
+  },
+  emptyIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
+  emptyTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.bold,
+    textAlign: 'center',
+  },
+  emptyBody: {
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.medium,
+    textAlign: 'center',
+    lineHeight: fontSize.base * 1.45,
+  },
 });

@@ -6,22 +6,22 @@ import {
   buildInterestFieldPersistencePatch,
   buildPostCrjInterestPersistencePatch,
   type OnboardingSelectedInterest,
-} from '../interests/onboardingInterestCatalog';
+} from '../interests/onboardingInterestCatalog.ts';
 import {
   buildAffiliationFieldPersistencePatch,
   buildCrjAffiliationPersistencePatch,
   buildPostCrjAffiliationPersistencePatch,
-} from '../affiliations/onboardingAffiliationPersistence';
-import type { OnboardingSelectedAffiliation } from '../affiliations/onboardingAffiliationCatalog';
+} from '../affiliations/onboardingAffiliationPersistence.ts';
+import type { OnboardingSelectedAffiliation } from '../affiliations/onboardingAffiliationCatalog.ts';
 import {
   buildCrjSocialLinksPersistencePatch,
   buildPostCrjSocialLinksPersistencePatch,
   buildSocialLinksFieldPersistencePatch,
-} from '../social/onboardingSocialPersistence';
+} from '../social/onboardingSocialPersistence.ts';
 import {
   CRJ_SOCIAL_PLATFORM_IDS,
   emptyCrjSocialDraftValues,
-} from '../social/onboardingSocialCatalog';
+} from '../social/onboardingSocialCatalog.ts';
 
 function assertNoLifecycleKeys(patch: object) {
   assert.equal(

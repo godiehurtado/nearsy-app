@@ -42,6 +42,7 @@ export type UserProfile = {
   topBarMode?: 'color' | 'image';
 
   visibility?: boolean;
+  profileSetupCompleted?: boolean;
 
   /** @deprecated */
   socialLinks?: SocialLinks;

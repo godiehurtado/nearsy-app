@@ -1,144 +1,137 @@
-// src/screens/ProfileGalleryScreen.tsx  ✅ Hybrid (Firestore Web SDK)
-import React, { useEffect, useState, useCallback } from 'react';
+/**
+ * Profile Gallery viewer — getDiscoveryProfile URLs only (no peer users/{uid} read).
+ * Dark Nearsy chrome: header + thumbnail rail, main photo with swipe / arrows.
+ */
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
+  Dimensions,
   FlatList,
   Image,
-  Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Pressable,
+  StatusBar,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
+  type ViewToken,
 } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { HomeStackParamList } from '../navigation/HomeStack';
 import { Ionicons } from '@expo/vector-icons';
 
-import { firestoreDb } from '../config/firebaseConfig';
+import type { HomeStackParamList } from '../navigation/HomeStack';
+import { useTranslation } from '../i18n';
+import {
+  fontSize,
+  fontWeight,
+  radius,
+  spacing,
+  useAppTheme,
+} from '../theme';
+import {
+  buildGetDiscoveryProfileRequest,
+  clampGalleryIndex,
+  nextGalleryIndex,
+  prevGalleryIndex,
+  type DiscoveryGalleryItem,
+} from '../visibility';
+import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 
-type Params = { uid: string; mode?: 'personal' | 'professional' };
+type GalleryPhoto = { url: string };
 
-type GalleryPhoto = {
-  url: string;
-  path?: string;
-  createdAt?: number;
+/** Hosted on HomeStack (Discovery) and ProfileStack (Own Profile Gallery). */
+type ProfileGalleryHostParamList = {
+  ProfileGallery: HomeStackParamList['ProfileGallery'];
 };
 
-type ProfileDoc = {
-  realName?: string;
-  topBarColor?: string;
-  mode?: 'personal' | 'professional';
-
-  // NUEVO esquema por modo:
-  personalGallery?: GalleryPhoto[] | string[];
-  professionalGallery?: GalleryPhoto[] | string[];
-
-  // LEGACY (por si hay restos)
-  photos?: GalleryPhoto[] | string[];
-};
-
-function deriveFirstName(real?: string) {
-  const rn = (real || '').trim();
-  if (!rn) return 'Unnamed';
-  const [first] = rn.split(/\s+/);
-  return `${first}'s`;
-}
-
-function normalizePhotos(input?: GalleryPhoto[] | string[]) {
-  if (!Array.isArray(input)) return [];
-  if (input.length > 0 && typeof input[0] === 'string') {
-    return (input as string[]).filter(Boolean).map((url) => ({ url }));
-  }
-  return (input as GalleryPhoto[]).filter((p) => !!p?.url);
-}
+const GALLERY_DARK = '#0C1936';
+const GALLERY_DARK_ALT = '#12203D';
+const THUMB = 56;
+const THUMB_GAP = 8;
 
 export default function ProfileGalleryScreen() {
-  // ✅ tipado de route y navigation (HomeStack)
   type NavProp = NativeStackNavigationProp<
-    HomeStackParamList,
+    ProfileGalleryHostParamList,
     'ProfileGallery'
   >;
-  type RouteProps = RouteProp<HomeStackParamList, 'ProfileGallery'>;
+  type RouteProps = RouteProp<ProfileGalleryHostParamList, 'ProfileGallery'>;
 
   const route = useRoute<RouteProps>();
   const navigation = useNavigation<NavProp>();
+  const { t } = useTranslation();
+  const { palette } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const windowWidth = Dimensions.get('window').width;
 
   const viewedUid = route.params?.uid;
-  const routeMode = route.params?.mode;
+  const paramUrls = route.params?.urls;
+  const displayNameParam = route.params?.displayName;
+  const routeInitial = route.params?.initialIndex ?? 0;
+  const fullGallery = route.params?.fullGallery === true;
 
   const [loading, setLoading] = useState(true);
-  const [topColor, setTopColor] = useState('#3B5A85');
-  const [firstName, setFirstName] = useState('Unnamed');
-  const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
-  const [resolvedMode, setResolvedMode] = useState<'personal' | 'professional'>(
-    'personal',
+  const [loadError, setLoadError] = useState(false);
+  const [displayName, setDisplayName] = useState(
+    displayNameParam || t('discoveryProfile.title'),
   );
+  const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
+  const [index, setIndex] = useState(0);
+  const [failed, setFailed] = useState<Record<number, boolean>>({});
+  const [loaded, setLoaded] = useState<Record<number, boolean>>({});
 
-  const [viewerOpen, setViewerOpen] = useState(false);
-  const [current, setCurrent] = useState<string | null>(null);
+  const mainRef = useRef<FlatList<GalleryPhoto>>(null);
+  const thumbsRef = useRef<FlatList<GalleryPhoto>>(null);
 
-  const insets = useSafeAreaInsets();
-
-  const openViewer = useCallback((uri: string) => {
-    setCurrent(uri);
-    setViewerOpen(true);
-  }, []);
-
-  // ✅ Carga del perfil consultado (Firestore Web SDK)
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       try {
         setLoading(true);
+        setLoadError(false);
 
-        if (!viewedUid) {
-          if (!cancelled) {
-            setFirstName('Unnamed');
-            setTopColor('#3B5A85');
-            setPhotos([]);
-          }
+        const apply = (
+          urls: DiscoveryGalleryItem[] | GalleryPhoto[],
+          name?: string,
+        ) => {
+          if (cancelled) return;
+          const next = urls
+            .map((item) => ({ url: item.url }))
+            .filter((item) => typeof item.url === 'string' && !!item.url);
+          const capped = fullGallery ? next : next.slice(0, 12);
+          setPhotos(capped);
+          setIndex(clampGalleryIndex(routeInitial, next.length));
+          if (name) setDisplayName(name);
+        };
+
+        if (paramUrls) {
+          apply(paramUrls, displayNameParam);
           return;
         }
 
-        const snap = await firestoreDb.collection('users').doc(viewedUid).get();
-
-        if (cancelled) return;
-
-        const exists =
-          typeof snap.exists === 'function' ? snap.exists() : snap.exists;
-        if (exists) {
-          const data = snap.data() as ProfileDoc;
-
-          // 1) nombre y color del perfil visto
-          setFirstName(deriveFirstName(data.realName));
-          setTopColor(data.topBarColor ?? '#3B5A85');
-
-          // 2) modo a usar: el de la ruta, o el del doc, o 'personal'
-          const mode: 'personal' | 'professional' =
-            routeMode ?? data.mode ?? 'personal';
-          setResolvedMode(mode);
-
-          // 3) fotos según modo (con fallback legacy si hiciera falta)
-          const list =
-            mode === 'professional'
-              ? normalizePhotos(data.professionalGallery)
-              : normalizePhotos(data.personalGallery);
-
-          const finalList =
-            list.length > 0 ? list : normalizePhotos(data.photos);
-          setPhotos(finalList);
-        } else {
-          setFirstName('Unnamed');
-          setPhotos([]);
+        if (!viewedUid) {
+          apply([]);
+          return;
         }
-      } catch (e: any) {
-        if (__DEV__) console.error('[ProfileGallery] load error:', e);
+
+        const client = await getVisibilityDiscoveryClient();
+        const response = await client.getDiscoveryProfile(
+          buildGetDiscoveryProfileRequest(viewedUid),
+        );
+        apply(response.gallery, response.profile.displayName);
+      } catch {
         if (!cancelled) {
-          setFirstName('Unnamed');
           setPhotos([]);
+          setLoadError(true);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -148,152 +141,380 @@ export default function ProfileGalleryScreen() {
     return () => {
       cancelled = true;
     };
-  }, [viewedUid, routeMode]);
+  }, [viewedUid, paramUrls, displayNameParam, routeInitial, fullGallery]);
+
+  const goTo = useCallback(
+    (next: number, animated = true) => {
+      const clamped = clampGalleryIndex(next, photos.length);
+      setIndex(clamped);
+      mainRef.current?.scrollToIndex({ index: clamped, animated });
+      thumbsRef.current?.scrollToIndex({
+        index: clamped,
+        animated: true,
+        viewPosition: 0.5,
+      });
+    },
+    [photos.length],
+  );
+
+  const onMomentumEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const x = e.nativeEvent.contentOffset.x;
+      const next = clampGalleryIndex(
+        Math.round(x / Math.max(1, windowWidth)),
+        photos.length,
+      );
+      setIndex(next);
+      thumbsRef.current?.scrollToIndex({
+        index: next,
+        animated: true,
+        viewPosition: 0.5,
+      });
+    },
+    [photos.length, windowWidth],
+  );
+
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      const first = viewableItems[0];
+      if (typeof first?.index === 'number') {
+        setIndex(first.index);
+      }
+    },
+  ).current;
+
+  const viewabilityConfig = useMemo(
+    () => ({ viewAreaCoveragePercentThreshold: 60 }),
+    [],
+  );
+
+  const prev = prevGalleryIndex(index, photos.length);
+  const next = nextGalleryIndex(index, photos.length);
+  const counter =
+    photos.length > 0
+      ? t('discoveryProfile.galleryCounter', {
+          current: index + 1,
+          total: photos.length,
+        })
+      : '';
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#2B3A42" />
+      <View
+        style={[
+          styles.root,
+          styles.center,
+          { paddingTop: insets.top, backgroundColor: GALLERY_DARK },
+        ]}
+      >
+        <StatusBar barStyle="light-content" />
+        <ActivityIndicator size="large" color="#FFFFFF" />
+        <Text style={styles.loadingText}>{t('discoveryProfile.loading')}</Text>
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff', paddingTop: insets.top }}>
-      {/* Top bar con logo + texto centrado */}
-      <View style={[styles.topBar, { backgroundColor: topColor }]}>
-        <TouchableOpacity
+    <View style={[styles.root, { backgroundColor: GALLERY_DARK }]}>
+      <StatusBar barStyle="light-content" />
+
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: insets.top + spacing.sm,
+            backgroundColor: GALLERY_DARK_ALT,
+          },
+        ]}
+      >
+        <Pressable
           onPress={() => navigation.goBack()}
-          style={styles.topBtn}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={styles.headerBtn}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel={t('discoveryProfile.a11yBack')}
         >
-          <Ionicons name="chevron-back" size={22} color="#fff" />
-        </TouchableOpacity>
-
-        <View style={styles.brandContainer}>
-          <Image
-            source={require('../assets/icon_white.png')}
-            style={styles.brandIcon}
-          />
-          <Text style={styles.brandText}>Nearsy</Text>
-        </View>
-
-        <View style={styles.topBtn} />
-      </View>
-
-      <Text style={styles.title}>
-        {firstName}{' '}
-        {resolvedMode === 'professional' ? 'Professional' : 'Personal'} Gallery
-      </Text>
-
-      {photos.length === 0 ? (
-        <View style={styles.center}>
-          <Text style={{ color: '#6B7280' }}>No photos yet.</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={photos}
-          keyExtractor={(p, i) => (p.path || p.url) + i}
-          numColumns={3}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.thumbWrap}
-              activeOpacity={0.9}
-              onPress={() => openViewer(item.url)}
-            >
-              <Image source={{ uri: item.url }} style={styles.thumb} />
-            </TouchableOpacity>
-          )}
-          contentContainerStyle={{ padding: 6 }}
-        />
-      )}
-
-      {/* Visor fullscreen */}
-      <Modal visible={viewerOpen} transparent animationType="fade">
-        <View style={styles.viewerBackdrop}>
-          <TouchableOpacity
-            style={styles.viewerClose}
-            onPress={() => setViewerOpen(false)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="close" size={26} color="#fff" />
-          </TouchableOpacity>
-
-          {current ? (
-            <Image
-              source={{ uri: current }}
-              style={styles.viewerImage}
-              resizeMode="contain"
-            />
+          <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+        </Pressable>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerName} numberOfLines={1}>
+            {displayName}
+          </Text>
+          {photos.length > 0 ? (
+            <Text style={styles.headerCounter}>{counter}</Text>
           ) : null}
         </View>
-      </Modal>
+        <View style={styles.headerBtn} />
+      </View>
+
+      {loadError ? (
+        <View style={styles.center}>
+          <Text style={styles.muted}>{t('discoveryProfile.loadError')}</Text>
+        </View>
+      ) : photos.length === 0 ? (
+        <View style={styles.center}>
+          <Text style={styles.muted}>{t('discoveryProfile.galleryEmpty')}</Text>
+        </View>
+      ) : (
+        <>
+          <View style={styles.mainWrap}>
+            <FlatList
+              ref={mainRef}
+              data={photos}
+              keyExtractor={(item, i) => `${item.url}:${i}`}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              initialScrollIndex={clampGalleryIndex(index, photos.length)}
+              getItemLayout={(_, i) => ({
+                length: windowWidth,
+                offset: windowWidth * i,
+                index: i,
+              })}
+              onMomentumScrollEnd={onMomentumEnd}
+              onViewableItemsChanged={onViewableItemsChanged}
+              viewabilityConfig={viewabilityConfig}
+              onScrollToIndexFailed={(info) => {
+                setTimeout(() => {
+                  mainRef.current?.scrollToIndex({
+                    index: info.index,
+                    animated: false,
+                  });
+                }, 50);
+              }}
+              renderItem={({ item, index: i }) => (
+                <View
+                  style={[
+                    styles.slide,
+                    { width: windowWidth, backgroundColor: GALLERY_DARK },
+                  ]}
+                >
+                  {failed[i] ? (
+                    <View style={styles.imageFallback}>
+                      <Ionicons
+                        name="image-outline"
+                        size={40}
+                        color="rgba(255,255,255,0.55)"
+                      />
+                      <Text style={styles.muted}>
+                        {t('discoveryProfile.imageUnavailable')}
+                      </Text>
+                    </View>
+                  ) : (
+                    <>
+                      <Image
+                        source={{ uri: item.url }}
+                        style={styles.mainImage}
+                        resizeMode="contain"
+                        onLoad={() =>
+                          setLoaded((prevMap) => ({ ...prevMap, [i]: true }))
+                        }
+                        onError={() =>
+                          setFailed((prevMap) => ({ ...prevMap, [i]: true }))
+                        }
+                        accessibilityLabel={t('discoveryProfile.a11yPhoto')}
+                      />
+                      {!loaded[i] ? (
+                        <View style={styles.imageLoading}>
+                          <ActivityIndicator color="#FFFFFF" />
+                        </View>
+                      ) : null}
+                    </>
+                  )}
+                </View>
+              )}
+            />
+
+            {prev !== null ? (
+              <Pressable
+                onPress={() => goTo(prev)}
+                style={[styles.navArrow, styles.navLeft]}
+                accessibilityRole="button"
+                accessibilityLabel={t('discoveryProfile.a11yPreviousPhoto')}
+                hitSlop={8}
+              >
+                <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+              </Pressable>
+            ) : null}
+            {next !== null ? (
+              <Pressable
+                onPress={() => goTo(next)}
+                style={[styles.navArrow, styles.navRight]}
+                accessibilityRole="button"
+                accessibilityLabel={t('discoveryProfile.a11yNextPhoto')}
+                hitSlop={8}
+              >
+                <Ionicons name="chevron-forward" size={24} color="#FFFFFF" />
+              </Pressable>
+            ) : null}
+          </View>
+
+          <View
+            style={[
+              styles.thumbRail,
+              {
+                paddingBottom: Math.max(insets.bottom, spacing.md),
+                backgroundColor: GALLERY_DARK_ALT,
+              },
+            ]}
+          >
+            <FlatList
+              ref={thumbsRef}
+              data={photos}
+              keyExtractor={(item, i) => `thumb:${item.url}:${i}`}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.thumbContent}
+              initialScrollIndex={clampGalleryIndex(index, photos.length)}
+              getItemLayout={(_, i) => ({
+                length: THUMB + THUMB_GAP,
+                offset: (THUMB + THUMB_GAP) * i,
+                index: i,
+              })}
+              onScrollToIndexFailed={() => {}}
+              renderItem={({ item, index: i }) => {
+                const active = i === index;
+                return (
+                  <Pressable
+                    onPress={() => goTo(i)}
+                    style={[
+                      styles.thumb,
+                      {
+                        borderColor: active
+                          ? palette.primaryLight
+                          : 'transparent',
+                        opacity: active ? 1 : 0.72,
+                      },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={t('discoveryProfile.a11ySelectPhoto', {
+                      index: i + 1,
+                      total: photos.length,
+                    })}
+                  >
+                    <Image
+                      source={{ uri: item.url }}
+                      style={styles.thumbImg}
+                      resizeMode="cover"
+                    />
+                  </Pressable>
+                );
+              }}
+            />
+          </View>
+        </>
+      )}
     </View>
   );
 }
 
-const GAP = 6;
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  topBar: {
-    height: 60,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-  },
-  topBtn: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  brandContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  root: { flex: 1 },
+  center: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+    gap: spacing.md,
   },
-  brandIcon: {
-    width: 30,
-    height: 30,
-    resizeMode: 'contain',
-    marginRight: 8,
+  loadingText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: fontSize.sm,
   },
-  brandText: { color: '#fff', fontWeight: '800', fontSize: 18 },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1F2937',
+  muted: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: fontSize.sm,
     textAlign: 'center',
-    marginBottom: 16,
-    marginTop: 16,
   },
-  thumbWrap: {
-    flex: 1 / 3,
-    aspectRatio: 1,
-    padding: GAP / 2,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+  },
+  headerBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    minWidth: 0,
+  },
+  headerName: {
+    color: '#FFFFFF',
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.extrabold,
+  },
+  headerCounter: {
+    marginTop: 2,
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+  },
+  mainWrap: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  slide: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mainImage: {
+    width: '100%',
+    height: '100%',
+  },
+  imageFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  imageLoading: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navArrow: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -22,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(18,32,61,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navLeft: { left: spacing.md },
+  navRight: { right: spacing.md },
+  thumbRail: {
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.12)',
+  },
+  thumbContent: {
+    paddingHorizontal: spacing.lg,
+    gap: THUMB_GAP,
   },
   thumb: {
-    flex: 1,
-    borderRadius: 10,
-    backgroundColor: '#E5E7EB',
+    width: THUMB,
+    height: THUMB,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    borderWidth: 2,
+    marginRight: THUMB_GAP,
   },
-  viewerBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  viewerClose: {
-    position: 'absolute',
-    top: 40,
-    right: 20,
-    zIndex: 2,
-  },
-  viewerImage: {
+  thumbImg: {
     width: '100%',
-    height: '80%',
+    height: '100%',
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
 });

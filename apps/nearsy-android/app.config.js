@@ -29,6 +29,15 @@ const googleServicesFile = useNearsyDev
 const nearsyFirebaseEnv = useNearsyDev ? 'development' : 'production';
 const nearsyFirebaseProjectId = useNearsyDev ? 'nearsy-dev' : 'nearsy-pj';
 
+/**
+ * Logo.dev publishable key (pk_ only). Never embed sk_ secrets.
+ * Expo inlines EXPO_PUBLIC_* at bundle time; also copy into extra for
+ * Constants.expoConfig readers (affiliation logo rebuild after persist).
+ */
+const logoDevPublishableKey = String(
+  process.env.EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY || '',
+).trim();
+
 module.exports = {
   expo: {
     ...appJson.expo,
@@ -48,6 +57,9 @@ module.exports = {
        * Combined with nearsyFirebaseEnv for App Check Debug eligibility.
        */
       nearsyDevClient,
+      ...(logoDevPublishableKey.startsWith('pk_')
+        ? { EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY: logoDevPublishableKey }
+        : {}),
     },
   },
 };
