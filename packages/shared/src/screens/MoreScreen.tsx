@@ -24,12 +24,15 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as Localization from 'expo-localization';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 import { SettingsSection } from '../components/settings/SettingsSection';
 import { SettingsRow } from '../components/settings/SettingsRow';
 import { SettingsToggleRow } from '../components/settings/SettingsToggleRow';
-import { firebaseAuth, firestoreWebDb as firestoreDb } from '../config/firebaseConfig';
+import { firebaseAuth } from '../config/firebaseConfig';
+import {
+  getUserProfile,
+  updateUserProfilePartial,
+} from '../services/firestoreService';
 import {
   changeAppLanguage,
   isSupportedLanguage,
@@ -246,12 +249,11 @@ export default function MoreScreen() {
       return;
     }
     setUserEmail(firebaseAuth.currentUser?.email ?? '');
-    const snap = await getDoc(doc(firestoreDb, 'users', uid));
-    if (!snap.exists()) {
+    const data = (await getUserProfile(uid)) as ProfileDoc | null;
+    if (!data) {
       setLoading(false);
       return;
     }
-    const data = snap.data() as ProfileDoc;
     setStoredPhone(data.phone ?? null);
     const split = splitStoredPhone(data.phone ?? null);
     setSelectedCountry(split.country);
@@ -328,7 +330,7 @@ export default function MoreScreen() {
         updateData.phoneVerified = patch.verification.phoneVerified;
         updateData.phoneVerifiedAt = patch.verification.phoneVerifiedAt;
       }
-      await setDoc(doc(firestoreDb, 'users', uid), updateData, { merge: true });
+      await updateUserProfilePartial(uid, updateData);
       setStoredPhone(patch.phone);
       Alert.alert(t('common.appName'), t('settings.phone.saved'));
       closeEditor();
@@ -362,15 +364,11 @@ export default function MoreScreen() {
         return;
       }
       const persistence = buildBirthDatePersistencePatch(birthParts);
-      await setDoc(
-        doc(firestoreDb, 'users', uid),
-        {
-          birthDate: persistence.birthDate,
-          birthYear: persistence.birthYear,
-          updatedAt: Date.now(),
-        },
-        { merge: true },
-      );
+      await updateUserProfilePartial(uid, {
+        birthDate: persistence.birthDate,
+        birthYear: persistence.birthYear,
+        updatedAt: Date.now(),
+      });
       setBirthDateIso(persistence.birthDate);
       Alert.alert(t('common.appName'), t('settings.birthDate.saved'));
       closeEditor();
@@ -403,15 +401,11 @@ export default function MoreScreen() {
         Alert.alert(t('common.error'), msg);
         return;
       }
-      await setDoc(
-        doc(firestoreDb, 'users', uid),
-        {
-          visibleToMinAge: validated.min,
-          visibleToMaxAge: validated.max,
-          updatedAt: Date.now(),
-        },
-        { merge: true },
-      );
+      await updateUserProfilePartial(uid, {
+        visibleToMinAge: validated.min,
+        visibleToMaxAge: validated.max,
+        updatedAt: Date.now(),
+      });
       setVisibleToMinAge(validated.min);
       setVisibleToMaxAge(validated.max);
       Alert.alert(t('common.appName'), t('settings.visibilityAge.saved'));
@@ -441,11 +435,10 @@ export default function MoreScreen() {
     }
     try {
       setBgChanging(true);
-      await setDoc(
-        doc(firestoreDb, 'users', uid),
-        { bgVisible: next, updatedAt: Date.now() },
-        { merge: true },
-      );
+      await updateUserProfilePartial(uid, {
+        bgVisible: next,
+        updatedAt: Date.now(),
+      });
       if (next) {
         await startBackgroundLocation({ uid });
         setBgVisible(true);

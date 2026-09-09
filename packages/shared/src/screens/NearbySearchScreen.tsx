@@ -18,9 +18,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Localization from 'expo-localization';
-import { doc, onSnapshot } from 'firebase/firestore';
-
-import { firebaseAuth, firestoreWebDb as firestoreDb } from '../config/firebaseConfig';
+import { firebaseAuth } from '../config/firebaseConfig';
+import { dbOnUserSnapshot } from '../services/db';
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { useTranslation } from '../i18n';
 import {
@@ -93,8 +92,8 @@ export default function NearbySearchScreen() {
   useEffect(() => {
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) return;
-    const unsub = onSnapshot(doc(firestoreDb, 'users', uid), (snap) => {
-      if (snap.exists()) setProfile((snap.data() as ProfileDoc) ?? {});
+    const unsub = dbOnUserSnapshot(uid, (raw) => {
+      if (raw) setProfile((raw as ProfileDoc) ?? {});
     });
     return () => unsub();
   }, []);

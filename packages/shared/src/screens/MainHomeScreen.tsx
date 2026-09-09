@@ -19,9 +19,8 @@ import * as Localization from 'expo-localization';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { doc, onSnapshot } from 'firebase/firestore';
-
-import { firebaseAuth, firestoreWebDb as firestoreDb } from '../config/firebaseConfig';
+import { firebaseAuth } from '../config/firebaseConfig';
+import { dbOnUserSnapshot } from '../services/db';
 import { setContactsSyncEnabled } from '../services/contactsSync';
 import { useTranslation } from '../i18n';
 import {
@@ -216,13 +215,12 @@ export default function MainHomeScreen({ navigation }: Props) {
       return;
     }
 
-    const ref = doc(firestoreDb, 'users', uid);
-    const unsub = onSnapshot(
-      ref,
-      (snap) => {
-        if (snap.exists()) {
+    const unsub = dbOnUserSnapshot(
+      uid,
+      (raw) => {
+        if (raw) {
           const data = reconcileUserDocWithActiveProfileMode(
-            (snap.data() as ProfileDoc) ?? {},
+            (raw as ProfileDoc) ?? {},
             uid,
           );
           setProfile(data);

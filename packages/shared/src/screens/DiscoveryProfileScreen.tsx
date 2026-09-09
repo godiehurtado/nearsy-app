@@ -22,9 +22,8 @@ import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as Localization from 'expo-localization';
-import { doc, onSnapshot } from 'firebase/firestore';
-
-import { firebaseAuth, firestoreWebDb as firestoreDb } from '../config/firebaseConfig';
+import { firebaseAuth } from '../config/firebaseConfig';
+import { dbOnUserSnapshot } from '../services/db';
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { useTranslation } from '../i18n';
 import { InterestChip } from '../components/InterestChip';
@@ -109,9 +108,9 @@ export default function DiscoveryProfileScreen() {
   useEffect(() => {
     const myUid = firebaseAuth.currentUser?.uid;
     if (!myUid) return;
-    const unsub = onSnapshot(doc(firestoreDb, 'users', myUid), (snap) => {
-      if (snap.exists()) {
-        setViewerDoc((snap.data() as ViewerProfileExplorationDoc) ?? {});
+    const unsub = dbOnUserSnapshot(myUid, (raw) => {
+      if (raw) {
+        setViewerDoc((raw as ViewerProfileExplorationDoc) ?? {});
       }
     });
     return () => unsub();
