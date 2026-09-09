@@ -12,19 +12,17 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
-import TopHeader from '../components/TopHeader';
+import { OwnProfileEditorShell } from '../components/registration/OwnProfileEditorShell';
 import { OnboardingAffiliationCategoryPanel } from '../components/registration/OnboardingAffiliationCategoryPanel';
+import { PrimaryButton } from '../components/PrimaryButton';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import {
-  listOnboardingAffiliationCategoryIds,
   ONBOARDING_AFFILIATION_CATEGORIES,
+  listOnboardingAffiliationCategoryIds,
   type OnboardingAffiliationCategoryId,
   type OnboardingSelectedAffiliation,
 } from '../affiliations/onboardingAffiliationCatalog';
@@ -53,7 +51,6 @@ const CATEGORY_ORDER = listOnboardingAffiliationCategoryIds();
 export default function AffiliationsScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const insets = useSafeAreaInsets();
   const { palette } = useAppTheme();
   const { t } = useTranslation();
 
@@ -63,17 +60,16 @@ export default function AffiliationsScreen() {
   const [uid, setUid] = useState<string | null>(null);
   const [draft, setDraft] = useState<OnboardingSelectedAffiliation[]>([]);
   const [snapshot, setSnapshot] = useState<OnboardingSelectedAffiliation[]>([]);
-  const [expandedId, setExpandedId] = useState<OnboardingAffiliationCategoryId | null>(
-    null,
-  );
+  const [expandedId, setExpandedId] =
+    useState<OnboardingAffiliationCategoryId | null>(null);
   const [searchUiByCategory, setSearchUiByCategory] = useState<
     Partial<Record<OnboardingAffiliationCategoryId, AffiliationSearchUiSnapshot>>
   >({});
 
   const scrollRef = useRef<ScrollView>(null);
-  const categoryAnchorY = useRef<Partial<Record<OnboardingAffiliationCategoryId, number>>>(
-    {},
-  );
+  const categoryAnchorY = useRef<
+    Partial<Record<OnboardingAffiliationCategoryId, number>>
+  >({});
   const activeScrollAnchorYRef = useRef(0);
   const searchAddRef = useRef<(() => void) | null>(null);
 
@@ -178,218 +174,138 @@ export default function AffiliationsScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.flex, { backgroundColor: palette.background }]}>
-        <TopHeader
-          topBarMode="color"
-          topBarColor={palette.primary}
-          leftIcon="chevron-back"
-          onLeftPress={() => navigation.goBack()}
-          showAvatar={false}
-        />
+      <OwnProfileEditorShell
+        title="Affiliations"
+        onBack={() => navigation.goBack()}
+        scroll={false}
+      >
         <View style={styles.centered}>
           <ActivityIndicator color={palette.primary} />
         </View>
-      </View>
+      </OwnProfileEditorShell>
     );
   }
 
-  return (
-    <View style={[styles.flex, { backgroundColor: palette.background }]}>
-      <TopHeader
-        topBarMode="color"
-        topBarColor={palette.primary}
-        leftIcon="chevron-back"
-        onLeftPress={() => navigation.goBack()}
-        showAvatar={false}
+  const footer =
+    pendingSearch?.ui.showAddCta && pendingSearch.ui.addName ? (
+      <PrimaryButton
+        label={t('onboarding.profileCompletion.affiliations.addNamed' as any, {
+          name: pendingSearch.ui.addName,
+          defaultValue: `Add ${pendingSearch.ui.addName}`,
+        })}
+        onPress={() => searchAddRef.current?.()}
       />
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          ref={scrollRef}
-          contentContainerStyle={[
-            styles.content,
-            { paddingBottom: insets.bottom + 100 },
-          ]}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-        >
-          <Text style={[styles.eyebrow, { color: palette.chipText }]}>
-            {mode === 'professional' ? 'Professional' : 'Personal'}
-          </Text>
-          <Text style={[styles.title, { color: palette.textPrimary }]}>
-            {t('onboarding.profileCompletion.affiliations.title' as any, {
-              defaultValue: 'Your affiliations',
-            })}
-          </Text>
-          <Text style={[styles.body, { color: palette.textSecondary }]}>
-            {t('onboarding.profileCompletion.affiliations.body' as any, {
-              defaultValue:
-                'Search and add schools, teams, companies, and groups you belong to.',
-            })}
-          </Text>
+    ) : (
+      <PrimaryButton
+        label="Save affiliations"
+        onPress={() => {
+          void save();
+        }}
+        disabled={!dirty || saving}
+        loading={saving}
+      />
+    );
 
-          {ONBOARDING_AFFILIATION_CATEGORIES.map((category) => {
-            const open = expandedId === category.id;
-            const count = draft.filter((a) => a.categoryId === category.id)
-              .length;
-            return (
-              <View
-                key={category.id}
-                style={[
-                  styles.categoryCard,
-                  {
-                    backgroundColor: palette.surface,
-                    borderColor: palette.border,
-                  },
-                ]}
-                onLayout={(e) => {
-                  categoryAnchorY.current[category.id] = e.nativeEvent.layout.y;
-                  if (expandedId === category.id) {
-                    activeScrollAnchorYRef.current = e.nativeEvent.layout.y;
-                  }
-                }}
-              >
-                <Pressable
-                  onPress={() =>
-                    setExpandedId((prev) =>
-                      prev === category.id ? null : category.id,
-                    )
-                  }
-                  style={styles.categoryHeader}
-                  accessibilityRole="button"
+  return (
+    <OwnProfileEditorShell
+      title={t('onboarding.profileCompletion.affiliations.title' as any, {
+        defaultValue: 'Your affiliations',
+      })}
+      eyebrow={mode === 'professional' ? 'Professional' : 'Personal'}
+      body={t('onboarding.profileCompletion.affiliations.body' as any, {
+        defaultValue:
+          'Search and add schools, teams, companies, and groups you belong to.',
+      })}
+      onBack={() => navigation.goBack()}
+      footer={footer}
+      contentScrollRef={scrollRef}
+    >
+      {ONBOARDING_AFFILIATION_CATEGORIES.map((category) => {
+        const open = expandedId === category.id;
+        const count = draft.filter((a) => a.categoryId === category.id).length;
+        return (
+          <View
+            key={category.id}
+            style={[
+              styles.categoryCard,
+              {
+                backgroundColor: palette.surface,
+                borderColor: palette.border,
+              },
+            ]}
+            onLayout={(e) => {
+              categoryAnchorY.current[category.id] = e.nativeEvent.layout.y;
+              if (expandedId === category.id) {
+                activeScrollAnchorYRef.current = e.nativeEvent.layout.y;
+              }
+            }}
+          >
+            <Pressable
+              onPress={() =>
+                setExpandedId((prev) =>
+                  prev === category.id ? null : category.id,
+                )
+              }
+              style={styles.categoryHeader}
+              accessibilityRole="button"
+            >
+              <Text style={styles.categoryEmoji}>{category.emoji}</Text>
+              <View style={styles.categoryHeaderText}>
+                <Text
+                  style={[styles.categoryTitle, { color: palette.textPrimary }]}
                 >
-                  <Text style={styles.categoryEmoji}>{category.emoji}</Text>
-                  <View style={styles.categoryHeaderText}>
-                    <Text
-                      style={[styles.categoryTitle, { color: palette.textPrimary }]}
-                    >
-                      {t(
-                        `onboarding.profileCompletion.affiliations.categories.${category.nameKey}` as any,
-                        { defaultValue: category.name },
-                      )}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.categorySubtitle,
-                        { color: palette.textSecondary },
-                      ]}
-                    >
-                      {count > 0
-                        ? `${count} added`
-                        : t(
-                            `onboarding.profileCompletion.affiliations.subtitles.${category.subtitleKey}` as any,
-                            { defaultValue: category.subtitle },
-                          )}
-                    </Text>
-                  </View>
-                  <Ionicons
-                    name={open ? 'chevron-up' : 'chevron-down'}
-                    size={20}
-                    color={palette.textSecondary}
-                  />
-                </Pressable>
-
-                {open ? (
-                  <View style={styles.panelWrap}>
-                    <OnboardingAffiliationCategoryPanel
-                      categoryId={category.id}
-                      selected={draft}
-                      onChangeSelected={setDraft}
-                      onSearchUiChange={onSearchUiChange(category.id)}
-                      searchAddRef={
-                        pendingSearch?.categoryId === category.id
-                          ? searchAddRef
-                          : undefined
-                      }
-                      contentScrollRef={scrollRef}
-                      scrollAnchorYRef={activeScrollAnchorYRef}
-                    />
-                  </View>
-                ) : null}
-              </View>
-            );
-          })}
-        </ScrollView>
-
-        <View
-          style={[
-            styles.footer,
-            {
-              paddingBottom: Math.max(insets.bottom, 12),
-              backgroundColor: palette.background,
-              borderTopColor: palette.border,
-            },
-          ]}
-        >
-          {pendingSearch?.ui.showAddCta && pendingSearch.ui.addName ? (
-            <Pressable
-              style={[styles.addBtn, { backgroundColor: palette.primary }]}
-              onPress={() => searchAddRef.current?.()}
-            >
-              <Text style={styles.addBtnText}>
-                {t('onboarding.profileCompletion.affiliations.addNamed' as any, {
-                  name: pendingSearch.ui.addName,
-                  defaultValue: `Add ${pendingSearch.ui.addName}`,
-                })}
-              </Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              style={[
-                styles.saveBtn,
-                {
-                  backgroundColor: dirty ? palette.primary : palette.chipBg,
-                  opacity: saving ? 0.7 : 1,
-                },
-              ]}
-              disabled={!dirty || saving}
-              onPress={() => {
-                void save();
-              }}
-            >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
+                  {t(
+                    `onboarding.profileCompletion.affiliations.categories.${category.nameKey}` as any,
+                    { defaultValue: category.name },
+                  )}
+                </Text>
                 <Text
                   style={[
-                    styles.saveBtnText,
-                    { color: dirty ? '#fff' : palette.chipText },
+                    styles.categorySubtitle,
+                    { color: palette.textSecondary },
                   ]}
                 >
-                  Save affiliations
+                  {count > 0
+                    ? `${count} added`
+                    : t(
+                        `onboarding.profileCompletion.affiliations.subtitles.${category.subtitleKey}` as any,
+                        { defaultValue: category.subtitle },
+                      )}
                 </Text>
-              )}
+              </View>
+              <Ionicons
+                name={open ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={palette.textSecondary}
+              />
             </Pressable>
-          )}
-        </View>
-      </KeyboardAvoidingView>
-    </View>
+
+            {open ? (
+              <View style={styles.panelWrap}>
+                <OnboardingAffiliationCategoryPanel
+                  categoryId={category.id}
+                  selected={draft}
+                  onChangeSelected={setDraft}
+                  onSearchUiChange={onSearchUiChange(category.id)}
+                  searchAddRef={
+                    pendingSearch?.categoryId === category.id
+                      ? searchAddRef
+                      : undefined
+                  }
+                  contentScrollRef={scrollRef}
+                  scrollAnchorYRef={activeScrollAnchorYRef}
+                />
+              </View>
+            ) : null}
+          </View>
+        );
+      })}
+    </OwnProfileEditorShell>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
-  eyebrow: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: spacing.xs,
-  },
-  title: {
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
-    marginBottom: spacing.xs,
-  },
-  body: {
-    fontSize: fontSize.sm,
-    lineHeight: 20,
-    marginBottom: spacing.lg,
-  },
   categoryCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radius.lg,
@@ -416,29 +332,5 @@ const styles = StyleSheet.create({
   panelWrap: {
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.md,
-  },
-  footer: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-  },
-  addBtn: {
-    borderRadius: radius.md,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  addBtnText: {
-    color: '#fff',
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
-  },
-  saveBtn: {
-    borderRadius: radius.md,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  saveBtnText: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
   },
 });

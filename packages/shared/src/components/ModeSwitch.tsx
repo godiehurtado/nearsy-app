@@ -1,114 +1,136 @@
-// src/components/ModeSwitch.tsx
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import {
   View,
   Text,
-  TouchableWithoutFeedback,
+  Pressable,
   StyleSheet,
-  Animated,
+  ActivityIndicator,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { adjustColor } from '../utils/colors';
+import { useAppTheme } from '../theme/ThemeContext';
+import { radius } from '../theme/radius';
+import { spacing } from '../theme/spacing';
+import { fontSize, fontWeight } from '../theme/typography';
 
-interface Props {
-  mode: 'personal' | 'professional';
+export type ProfileModeValue = 'personal' | 'professional';
+
+type Props = {
+  mode: ProfileModeValue;
   onToggle: () => void;
-  topBarColor?: string;
-  compact?: boolean;
-}
+  personalLabel: string;
+  professionalLabel: string;
+  disabled?: boolean;
+  loading?: boolean;
+  accessibilityHint?: string;
+};
 
 export default function ModeSwitch({
   mode,
   onToggle,
-  topBarColor,
-  compact,
+  personalLabel,
+  professionalLabel,
+  disabled = false,
+  loading = false,
+  accessibilityHint,
 }: Props) {
-  // ✅ Usamos useRef para no recrear la animación en cada render
-  const translateX = useRef(
-    new Animated.Value(mode === 'personal' ? 0 : 1),
-  ).current;
-
-  const baseColor: string = topBarColor ?? '#3B5A85';
-  const light2: string = adjustColor(baseColor, 60);
-  const light1: string = adjustColor(baseColor, 40);
-  const dark: string = adjustColor(baseColor, -30);
-
-  useEffect(() => {
-    Animated.timing(translateX, {
-      toValue: mode === 'personal' ? 0 : 1,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
-  }, [mode, translateX]);
-
-  const thumbPosition = translateX.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['2%', '52%'],
-  });
+  const { palette } = useAppTheme();
+  const busy = disabled || loading;
 
   return (
-    <TouchableWithoutFeedback onPress={onToggle}>
-      <LinearGradient
-        colors={mode === 'personal' ? [light2, light1] : [baseColor, dark]}
-        style={[
-          styles.container,
-          compact && styles.containerCompact, // 👈 más estrecho en modo compacto
-        ]}
-      >
-        <Animated.View style={[styles.thumb, { left: thumbPosition }]}>
-          <Text style={styles.thumbText}>
-            {mode === 'personal' ? '🧑‍🤝‍🧑' : '💼'}
-          </Text>
-        </Animated.View>
-
-        {/* En modo compacto ocultamos los textos para que no se rompa el diseño */}
-        {!compact && (
-          <View style={styles.labelContainer}>
-            <Text style={styles.label}>Professional</Text>
-            <Text style={styles.label}>Personal</Text>
-          </View>
-        )}
-      </LinearGradient>
-    </TouchableWithoutFeedback>
+    <View
+      accessibilityRole="tablist"
+      accessibilityLabel={accessibilityHint}
+      style={[
+        styles.track,
+        {
+          backgroundColor: palette.panel,
+          borderColor: palette.border,
+        },
+      ]}
+    >
+      {(['personal', 'professional'] as const).map((option) => {
+        const selected = mode === option;
+        const label =
+          option === 'personal' ? personalLabel : professionalLabel;
+        return (
+          <Pressable
+            key={option}
+            accessibilityRole="tab"
+            accessibilityState={{ selected, disabled: busy }}
+            accessibilityLabel={label}
+            disabled={busy}
+            onPress={() => {
+              if (selected || busy) return;
+              onToggle();
+            }}
+            style={({ pressed }) => [
+              styles.segment,
+              selected && {
+                backgroundColor: palette.primary,
+                ...styles.segmentSelected,
+              },
+              pressed && !busy && styles.pressed,
+            ]}
+          >
+            <Text
+              style={[
+                styles.segmentText,
+                {
+                  color: selected ? palette.surface : palette.textSecondary,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {label}
+            </Text>
+          </Pressable>
+        );
+      })}
+      {loading ? (
+        <View style={styles.loadingOverlay} pointerEvents="none">
+          <ActivityIndicator color={palette.primary} />
+        </View>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    width: '70%',
-    height: 50,
-    borderRadius: 25,
-    padding: 5,
-    justifyContent: 'center',
-    position: 'relative',
-    alignSelf: 'center',
-  },
-  // 👇 En modo compacto lo hacemos un poco más angosto
-  containerCompact: {
-    width: '55%',
-  },
-  thumb: {
-    position: 'absolute',
-    top: 5,
-    width: '45%',
-    height: 40,
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1,
-    elevation: 3,
-  },
-  thumbText: {
-    fontSize: 18,
-  },
-  labelContainer: {
+  track: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    padding: spacing.xxs,
+    position: 'relative',
+    minHeight: 44,
   },
-  label: {
-    color: '#fff',
-    fontWeight: 'bold',
+  segment: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  segmentSelected: {
+    shadowColor: '#0A1330',
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  segmentText: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
+  },
+  pressed: {
+    opacity: 0.88,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.45)',
   },
 });

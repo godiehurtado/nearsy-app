@@ -82,7 +82,7 @@ export function createFirebaseAffiliationEntitySearchProvider(
           timeoutMs,
         );
         const parsed = parseAffiliationEntitySearchResponse(data);
-        return parsed.results
+        const results = parsed.results
           .slice(0, AFFILIATION_ENTITY_SEARCH_DEFAULT_LIMIT)
           .map((row) => {
             const mapped = mapNormalizedRowToUiResult(row, categoryId);
@@ -92,6 +92,16 @@ export function createFirebaseAffiliationEntitySearchProvider(
             }
             return mapped;
           });
+        if (typeof __DEV__ !== 'undefined' && __DEV__) {
+          const sample = results[0];
+          console.log('[AffiliationSearch] ok', {
+            count: results.length,
+            hasLogoUrl: results.some((row) => typeof row.logoUrl === 'string'),
+            sampleHasWebsite: typeof sample?.website === 'string',
+            sampleHasProviderId: typeof sample?.providerId === 'string',
+          });
+        }
+        return results;
       } catch (error) {
         const mapped = mapAffiliationSearchCallableError(error);
         if (typeof __DEV__ !== 'undefined' && __DEV__) {

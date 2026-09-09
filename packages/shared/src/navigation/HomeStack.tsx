@@ -11,7 +11,16 @@ export type HomeStackParamList = {
   MainHome: undefined;
   NearbySearch: undefined;
   ProfileDetail: { uid: string };
-  ProfileGallery: { uid: string; mode?: 'personal' | 'professional' };
+  ProfileGallery: {
+    uid: string;
+    mode?: 'personal' | 'professional';
+    urls?: { url: string }[];
+    displayName?: string;
+    /** 0-based index into gallery URLs. */
+    initialIndex?: number;
+    /** Own Profile editor passes the full stored gallery (no client cap). */
+    fullGallery?: boolean;
+  };
 };
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();

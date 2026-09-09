@@ -35,18 +35,22 @@ describe('J05/J06 Own Profile affiliations + logo contract', () => {
     const src = readSharedSource('screens/AffiliationsScreen.tsx');
     assert.match(src, /OnboardingAffiliationCategoryPanel/);
     assert.match(src, /scrollAnchorYRef/);
+    assert.match(src, /OwnProfileEditorShell/);
     assert.match(src, /buildPostCrjAffiliationPersistencePatch/);
     assert.match(src, /readAffiliationsForPostCrjEditor/);
     assert.doesNotMatch(src, /uploadAffiliationImage/);
     assert.doesNotMatch(src, /CATEGORY_CONFIG/);
+    assert.doesNotMatch(src, /TopHeader/);
   });
 
   it('InterestsScreen uses onboarding catalog + post-CRJ persistence', () => {
     const src = readSharedSource('screens/InterestsScreen.tsx');
     assert.match(src, /OnboardingInterestCategoryPanel/);
+    assert.match(src, /OwnProfileEditorShell/);
     assert.match(src, /buildPostCrjInterestPersistencePatch/);
     assert.match(src, /readOnboardingInterestsFromDoc/);
     assert.doesNotMatch(src, /InterestsWithLogo/);
+    assert.doesNotMatch(src, /TopHeader/);
   });
 
   it('Android app.config wires Logo.dev publishable key into extra', () => {
@@ -98,8 +102,30 @@ describe('J05/J06 Own Profile affiliations + logo contract', () => {
     assert.equal(MAX_GALLERY_ITEMS, 12);
     assert.equal(OWN_PROFILE_GALLERY_COLUMNS, 3);
     const gallery = readSharedSource('screens/GalleryScreen.tsx');
-    assert.match(gallery, /MAX_GALLERY_ITEMS/);
     assert.match(gallery, /OWN_PROFILE_GALLERY_COLUMNS/);
     assert.match(gallery, /buildPostCrjGalleryPersistencePatch/);
+    assert.match(gallery, /ProfileGalleryAdminGrid/);
+    assert.doesNotMatch(gallery, /TopHeader/);
+  });
+
+  it('CompleteProfile hub uses Nearsy 2.0 Own Profile shell (no legacy TopHeader/guide)', () => {
+    const hub = readSharedSource('screens/CompleteProfileScreen.tsx');
+    assert.match(hub, /OwnProfileHero/);
+    assert.match(hub, /OwnProfileDetails/);
+    assert.match(hub, /OwnProfileSaveBar/);
+    assert.doesNotMatch(hub, /TopHeader/);
+    assert.doesNotMatch(hub, /COMPLETE_PROFILE_GUIDE/);
+    assert.doesNotMatch(hub, /GUIDE_AUDIO/);
+  });
+
+  it('Android affiliation search bootstrap uses App Check platform entry + callable HTTP', () => {
+    const bootstrap = readSharedSource(
+      'affiliations/iosAffiliationEntitySearchBootstrap.android.ts',
+    );
+    assert.match(bootstrap, /getIdToken\(true\)/);
+    assert.match(bootstrap, /invokeAffiliationSearchCallableHttp/);
+    assert.match(bootstrap, /from '\.\.\/config\/appCheckBootstrap'/);
+    assert.doesNotMatch(bootstrap, /from '\.\.\/config\/appCheckBootstrap\.ts'/);
+    assert.match(bootstrap, /FAILED_PRECONDITION/);
   });
 });

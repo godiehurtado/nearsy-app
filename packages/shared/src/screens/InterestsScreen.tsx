@@ -1,25 +1,21 @@
 /**
  * Own Profile Interests editor — Nearsy 2.0 onboarding catalog + post-CRJ persistence.
- * Does not use legacy InterestAffiliations maps (those remain for ProfileDetail migration).
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
   Pressable,
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
-import TopHeader from '../components/TopHeader';
+import { OwnProfileEditorShell } from '../components/registration/OwnProfileEditorShell';
 import { OnboardingInterestCategoryPanel } from '../components/registration/OnboardingInterestCategoryPanel';
+import { PrimaryButton } from '../components/PrimaryButton';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import {
   countFinalOnboardingInterests,
@@ -60,7 +56,6 @@ function categoryAccent(category: (typeof ONBOARDING_INTEREST_CATEGORIES)[number
 export default function InterestsScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const insets = useSafeAreaInsets();
   const { palette } = useAppTheme();
   const { t } = useTranslation();
 
@@ -136,216 +131,141 @@ export default function InterestsScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.flex, { backgroundColor: palette.background }]}>
-        <TopHeader
-          topBarMode="color"
-          topBarColor={palette.primary}
-          leftIcon="chevron-back"
-          onLeftPress={() => navigation.goBack()}
-          showAvatar={false}
-        />
+      <OwnProfileEditorShell
+        title="Interests"
+        onBack={() => navigation.goBack()}
+        scroll={false}
+      >
         <View style={styles.centered}>
           <ActivityIndicator color={palette.primary} />
         </View>
-      </View>
+      </OwnProfileEditorShell>
     );
   }
 
   return (
-    <View style={[styles.flex, { backgroundColor: palette.background }]}>
-      <TopHeader
-        topBarMode="color"
-        topBarColor={palette.primary}
-        leftIcon="chevron-back"
-        onLeftPress={() => navigation.goBack()}
-        showAvatar={false}
-      />
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={[
-            styles.content,
-            { paddingBottom: insets.bottom + 100 },
-          ]}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Text style={[styles.eyebrow, { color: palette.chipText }]}>
-            {mode === 'professional' ? 'Professional' : 'Personal'}
-          </Text>
-          <Text style={[styles.title, { color: palette.textPrimary }]}>
-            {t('onboarding.profileCompletion.interests.title' as any, {
-              defaultValue: 'Your interests',
-            })}
-          </Text>
-          <Text style={[styles.body, { color: palette.textSecondary }]}>
-            {total === 0
-              ? t('onboarding.profileCompletion.interests.body' as any, {
-                  defaultValue: 'Choose what you care about.',
-                })
-              : `${total} selected`}
-          </Text>
-
-          {ONBOARDING_INTEREST_CATEGORIES.map((category) => {
-            const open = expandedId === category.id;
-            const count = draft.filter((i) => i.categoryId === category.id)
-              .length;
-            const hierarchical = isHierarchicalInterestCategory(category);
-            const accent = categoryAccent(category);
-            const headerIcon =
-              category.items?.[0]?.icon ??
-              category.groups?.[0]?.icon ??
-              'sparkles-outline';
-            return (
-              <View
-                key={category.id}
-                style={[
-                  styles.categoryCard,
-                  {
-                    backgroundColor: palette.surface,
-                    borderColor: palette.border,
-                  },
-                ]}
-              >
-                <Pressable
-                  onPress={() =>
-                    setExpandedId((prev) =>
-                      prev === category.id ? null : category.id,
-                    )
-                  }
-                  style={styles.categoryHeader}
-                  accessibilityRole="button"
-                >
-                  <View
-                    style={[styles.categoryIconWrap, { backgroundColor: `${accent}22` }]}
-                  >
-                    <Ionicons
-                      name={headerIcon as any}
-                      size={18}
-                      color={accent}
-                    />
-                  </View>
-                  <View style={styles.categoryHeaderText}>
-                    <Text
-                      style={[styles.categoryTitle, { color: palette.textPrimary }]}
-                    >
-                      {t(
-                        `onboarding.profileCompletion.interests.categories.${category.nameKey}` as any,
-                        { defaultValue: category.name },
-                      )}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.categorySubtitle,
-                        { color: palette.textSecondary },
-                      ]}
-                    >
-                      {count > 0 ? `${count} selected` : 'Tap to edit'}
-                    </Text>
-                  </View>
-                  <Ionicons
-                    name={open ? 'chevron-up' : 'chevron-down'}
-                    size={20}
-                    color={palette.textSecondary}
-                  />
-                </Pressable>
-
-                {open ? (
-                  <View style={styles.panelWrap}>
-                    <OnboardingInterestCategoryPanel
-                      categoryId={category.id}
-                      selected={draft}
-                      onChangeSelected={setDraft}
-                      activeGroupId={
-                        hierarchical
-                          ? resolveActiveGroupId(
-                              category,
-                              activeGroupByCategory[category.id],
-                            )
-                          : undefined
-                      }
-                      onActiveGroupChange={
-                        hierarchical
-                          ? (groupId) => {
-                              setActiveGroupByCategory((prev) => ({
-                                ...prev,
-                                [category.id]: groupId,
-                              }));
-                            }
-                          : undefined
-                      }
-                    />
-                  </View>
-                ) : null}
-              </View>
-            );
-          })}
-        </ScrollView>
-
-        <View
-          style={[
-            styles.footer,
-            {
-              paddingBottom: Math.max(insets.bottom, 12),
-              backgroundColor: palette.background,
-              borderTopColor: palette.border,
-            },
-          ]}
-        >
-          <Pressable
+    <OwnProfileEditorShell
+      title={t('onboarding.profileCompletion.interests.title' as any, {
+        defaultValue: 'Your interests',
+      })}
+      eyebrow={mode === 'professional' ? 'Professional' : 'Personal'}
+      body={
+        total === 0
+          ? t('onboarding.profileCompletion.interests.body' as any, {
+              defaultValue: 'Choose what you care about.',
+            })
+          : `${total} selected`
+      }
+      onBack={() => navigation.goBack()}
+      footer={
+        <PrimaryButton
+          label="Save interests"
+          onPress={() => {
+            void save();
+          }}
+          disabled={!dirty || saving}
+          loading={saving}
+        />
+      }
+    >
+      {ONBOARDING_INTEREST_CATEGORIES.map((category) => {
+        const open = expandedId === category.id;
+        const count = draft.filter((i) => i.categoryId === category.id).length;
+        const hierarchical = isHierarchicalInterestCategory(category);
+        const accent = categoryAccent(category);
+        const headerIcon =
+          category.items?.[0]?.icon ??
+          category.groups?.[0]?.icon ??
+          'sparkles-outline';
+        return (
+          <View
+            key={category.id}
             style={[
-              styles.saveBtn,
+              styles.categoryCard,
               {
-                backgroundColor: dirty ? palette.primary : palette.chipBg,
-                opacity: saving ? 0.7 : 1,
+                backgroundColor: palette.surface,
+                borderColor: palette.border,
               },
             ]}
-            disabled={!dirty || saving}
-            onPress={() => {
-              void save();
-            }}
           >
-            {saving ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text
+            <Pressable
+              onPress={() =>
+                setExpandedId((prev) =>
+                  prev === category.id ? null : category.id,
+                )
+              }
+              style={styles.categoryHeader}
+              accessibilityRole="button"
+            >
+              <View
                 style={[
-                  styles.saveBtnText,
-                  { color: dirty ? '#fff' : palette.chipText },
+                  styles.categoryIconWrap,
+                  { backgroundColor: `${accent}22` },
                 ]}
               >
-                Save interests
-              </Text>
-            )}
-          </Pressable>
-        </View>
-      </KeyboardAvoidingView>
-    </View>
+                <Ionicons name={headerIcon as any} size={18} color={accent} />
+              </View>
+              <View style={styles.categoryHeaderText}>
+                <Text
+                  style={[styles.categoryTitle, { color: palette.textPrimary }]}
+                >
+                  {t(
+                    `onboarding.profileCompletion.interests.categories.${category.nameKey}` as any,
+                    { defaultValue: category.name },
+                  )}
+                </Text>
+                <Text
+                  style={[
+                    styles.categorySubtitle,
+                    { color: palette.textSecondary },
+                  ]}
+                >
+                  {count > 0 ? `${count} selected` : 'Tap to edit'}
+                </Text>
+              </View>
+              <Ionicons
+                name={open ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={palette.textSecondary}
+              />
+            </Pressable>
+
+            {open ? (
+              <View style={styles.panelWrap}>
+                <OnboardingInterestCategoryPanel
+                  categoryId={category.id}
+                  selected={draft}
+                  onChangeSelected={setDraft}
+                  activeGroupId={
+                    hierarchical
+                      ? resolveActiveGroupId(
+                          category,
+                          activeGroupByCategory[category.id],
+                        )
+                      : undefined
+                  }
+                  onActiveGroupChange={
+                    hierarchical
+                      ? (groupId) => {
+                          setActiveGroupByCategory((prev) => ({
+                            ...prev,
+                            [category.id]: groupId,
+                          }));
+                        }
+                      : undefined
+                  }
+                />
+              </View>
+            ) : null}
+          </View>
+        );
+      })}
+    </OwnProfileEditorShell>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
-  eyebrow: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: spacing.xs,
-  },
-  title: {
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
-    marginBottom: spacing.xs,
-  },
-  body: {
-    fontSize: fontSize.sm,
-    lineHeight: 20,
-    marginBottom: spacing.lg,
-  },
   categoryCard: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radius.lg,
@@ -378,19 +298,5 @@ const styles = StyleSheet.create({
   panelWrap: {
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.md,
-  },
-  footer: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-  },
-  saveBtn: {
-    borderRadius: radius.md,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  saveBtnText: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
   },
 });
