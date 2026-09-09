@@ -4,7 +4,7 @@
  */
 import { deleteDoc, doc } from 'firebase/firestore';
 
-import { firestoreDb } from '../config/firebaseConfig';
+import { firestoreWebDb as firestoreDb } from '../config/firebaseConfig';
 
 export type UnblockCandidateInput = {
   myUid: string;

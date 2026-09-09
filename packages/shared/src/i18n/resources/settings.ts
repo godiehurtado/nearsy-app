@@ -1,34 +1,127 @@
-export const settingsTranslations = {
-  en: {
-    more: 'More',
-    language: {
-      title: 'Language',
-      description: 'Choose the language used in Nearsy.',
-      english: 'English',
-      spanish: 'Spanish',
-      current: 'Current language',
-      changeSuccess: 'Language updated.',
-    },
-    backgroundVisibility: {
-      title: 'Stay visible in background',
-      enabled: 'Background visibility is ON.',
-    },
-    deleteAccount: 'Delete account',
+export default {
+  title: 'Settings',
+  sections: {
+    account: 'Account',
+    privacy: 'Privacy & discovery',
+    preferences: 'Preferences',
+    actions: 'Account actions',
   },
-  es: {
-    more: 'Más',
-    language: {
-      title: 'Idioma',
-      description: 'Elige el idioma que usa Nearsy.',
-      english: 'Inglés',
-      spanish: 'Español',
-      current: 'Idioma actual',
-      changeSuccess: 'Idioma actualizado.',
-    },
-    backgroundVisibility: {
-      title: 'Permanecer visible en segundo plano',
-      enabled: 'Visibilidad en segundo plano activada.',
-    },
-    deleteAccount: 'Eliminar cuenta',
+  email: {
+    title: 'Email',
+    missing: 'No email available',
+  },
+  phone: {
+    title: 'Phone number',
+    placeholder: 'Phone number (optional)',
+    hint: 'Optional. Used for contact purposes inside Nearsy and is not public.',
+    invalid: 'Enter a valid mobile number with your country code.',
+    selectCountry: 'Select country code',
+    saved: 'Phone number updated',
+  },
+  birthDate: {
+    title: 'Date of birth',
+    notSet: 'Not set',
+    hint: 'Your date of birth is used for age-based discovery. You must be 18–99.',
+    incomplete: 'Enter a complete date of birth.',
+    invalid: 'Enter a valid calendar date.',
+    tooYoung: 'You must be at least {{age}} years old.',
+    tooOld: 'Age must be {{age}} or younger.',
+    saved: 'Date of birth updated',
+  },
+  visibilityAge: {
+    title: 'Who can find me by age',
+    notSet: 'No age limit',
+    minLabel: 'Hide me from users younger than',
+    maxLabel: 'Hide me from users older than',
+    hint: 'Leave blank to skip a limit. Allowed range is {{min}}–{{max}}.',
+    minBounds: 'Minimum age must be between {{min}} and {{max}}.',
+    maxBounds: 'Maximum age must be between {{min}} and {{max}}.',
+    order: 'Minimum age cannot be greater than maximum age.',
+    saved: 'Visibility age updated',
+  },
+  backgroundVisibility: {
+    title: 'Stay visible in background',
+    description:
+      'Keep your location updated so others can discover you nearby even when the app is closed.',
+    hint: 'Requires Always location permission. On iOS, a blue indicator may appear while Nearsy updates your location in the background.',
+    enabled: 'Background visibility is on',
+    disabled: 'Background visibility is off',
+    unsupported: 'Background location is not available on web.',
+    authRequired: 'Please log in again.',
+    error: 'Could not update background location.',
+  },
+  language: {
+    title: 'Language',
+    description: 'Choose the language for the app interface',
+    english: 'English',
+    spanish: 'Spanish',
+    current: 'Current: {{language}}',
+    changeSuccess: 'Language updated',
+  },
+  logout: {
+    title: 'Log out',
+    error: 'Could not log out.',
+  },
+  deleteAccount: {
+    title: 'Delete account',
+    confirm: 'This action cannot be undone',
+    body: 'Type DELETE to confirm. Your profile data and photos will be removed.',
+    placeholder: 'Type DELETE',
+    permanently: 'Delete permanently',
+    alertTitle: 'Delete account',
+    alertBody:
+      'This will permanently delete your account and associated data. This action cannot be undone.',
+    alertCancel: 'Cancel',
+    alertConfirm: 'Delete',
+    done: 'Your account has been deleted.',
+    error: 'Could not delete account.',
+    permissionError:
+      'Could not delete your account data. Please try again while signed in.',
+    networkError: 'Network error. Check your connection and try again.',
+    reauthBody: 'For security, please confirm your password to continue.',
+    reauthBodyGoogle:
+      'For security, continue with Google to confirm it’s you before deleting this account.',
+    reauthBodyApple:
+      'For security, continue with Apple to confirm it’s you before deleting this account.',
+    passwordPlaceholder: 'Password',
+    reauthConfirm: 'Confirm password and delete',
+    reauthContinueGoogle: 'Continue with Google and delete',
+    reauthContinueApple: 'Continue with Apple and delete',
+    reauthError: 'Could not confirm password.',
+    reauthFailed: 'Could not confirm your identity. Your account was not deleted.',
+    reauthCancelled: 'Sign-in was cancelled. Your account was not deleted.',
+    reauthMismatch:
+      'That account does not match the one signed in to Nearsy. Your account was not deleted.',
+    reauthUnavailable:
+      'Account deletion for this sign-in method is temporarily unavailable in the app. Please contact Nearsy support for help.',
+  },
+  blockedPeople: {
+    title: 'Blocked People',
+    openHint: 'View and unblock people you have blocked',
+    back: 'Back',
+    loading: 'Loading blocked people…',
+    empty: "You haven't blocked anyone.",
+    unavailable: 'Unavailable user',
+    loadError: 'Could not load blocked people.',
+    retry: 'Retry',
+    unblock: 'Unblock',
+    cancel: 'Cancel',
+    unblockConfirmTitle: 'Unblock {{name}}?',
+    unblockConfirmTitleUnavailable: 'Unblock this user?',
+    unblockConfirmBody:
+      'They may appear in Nearby again if they meet your discovery settings.',
+    unblockError: 'Could not unblock this person. Please try again.',
+  },
+  editor: {
+    save: 'Save',
+    cancel: 'Cancel',
+    edit: 'Edit',
+  },
+  loadError: 'Could not load settings.',
+  saveError: 'Could not save.',
+  // Kept for resource compatibility; UI must not surface these in Unit 2A.
+  contacts: {
+    title: 'Contacts',
+    enable: 'Use contacts for familiar alerts',
   },
 } as const;

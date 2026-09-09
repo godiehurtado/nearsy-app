@@ -60,4 +60,6 @@ export const firebaseAuth = initializeAuth(webApp, {
 });
 
 export const firestoreDb = getFirestore(webApp);
+/** Alias for shared code that targets Web Firestore explicitly on Android hybrid config. */
+export const firestoreWebDb = firestoreDb;
 export const storageWeb = getStorage(webApp);

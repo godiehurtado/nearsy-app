@@ -1,23 +1,351 @@
+import type { TranslationResources } from './en';
 import { authenticationTranslations } from '../resources/authentication';
 import { commonTranslations } from '../resources/common';
-import { homeTranslations } from '../resources/home';
-import { nearbyTranslations } from '../resources/nearby';
-import { notificationsTranslations } from '../resources/notifications';
 import { onboardingTranslations } from '../resources/onboarding';
 import { phoneOtpTranslations } from '../resources/phoneOtp';
 import { profileTranslations } from '../resources/profile';
-import { settingsTranslations } from '../resources/settings';
 import { validationTranslations } from '../resources/validation';
 
-export const es = {
+export const es: TranslationResources = {
   common: commonTranslations.es,
   validation: validationTranslations.es,
   authentication: authenticationTranslations.es,
   onboarding: onboardingTranslations.es,
-  home: homeTranslations.es,
-  nearby: nearbyTranslations.es,
+  home: {
+    greeting: 'Hola, {{name}}',
+    brand: 'Nearsy',
+    accountStatus: 'Tu cuenta está',
+    controlHint: 'Tú decides cuándo eres visible para otros.',
+    findPeopleTitle: '¿Encontrar personas interesantes cerca?',
+    findPeopleBody:
+      'Explora perfiles temporales de otras personas para facilitar conexiones presenciales significativas.',
+    modePreferences: 'Preferencias {{mode}}',
+    modePersonal: 'Personal',
+    modeProfessional: 'Profesional',
+    visibility: {
+      active: 'Activo',
+      inactive: 'Inactivo',
+      activeHint: 'Eres visible para usuarios cercanos',
+      inactiveHint: 'Estás oculto para usuarios cercanos',
+    },
+    preferences: {
+      ageRange: 'Rango de edad',
+      ageRangeHint:
+        'Elige el rango de edad de las personas que quieres descubrir.',
+      ageValue: '{{min}}–{{max}}',
+      distanceRange: 'Rango de búsqueda',
+      distanceValueFt: 'hasta {{value}} ft',
+      distanceValueM: 'hasta {{value}} m',
+    },
+    discovery: {
+      title: 'Descubrimiento',
+      cta: 'Ver quién está cerca',
+      disabledReason: 'Activa Visibilidad para iniciar Descubrimiento.',
+      maxInterestsTitle: 'Límite de intereses',
+      maxInterests: 'Puedes seleccionar hasta 12 intereses.',
+      interestsTitle: 'Intereses para coincidir',
+      interestsHint: 'Solo muestra personas que compartan lo que elijas.',
+      interestsCounter: '{{count}}/{{max}}',
+      anyInterest: 'Cualquier interés',
+      interestsSearchPlaceholder: 'Buscar intereses, categorías…',
+      clearSearch: 'Borrar búsqueda',
+      interestsNoResults: 'Ningún interés coincide con tu búsqueda.',
+    },
+    errors: {
+      title: 'Visibilidad',
+      generic: 'No se pudo actualizar Visibilidad. Inténtalo de nuevo.',
+      retry: 'La activación falló. Actualiza e inténtalo de nuevo.',
+      profileIncomplete:
+        'Completa tu perfil antes de activar Visibilidad.',
+      invalidLocation:
+        'La precisión de ubicación es baja. Sal al exterior e inténtalo de nuevo.',
+      unauthenticated: 'Inicia sesión de nuevo para usar Visibilidad.',
+      permissionDenied: 'Se requiere permiso de ubicación para Visibilidad.',
+      visibilityInactive:
+        'Visibilidad está desactivada. Actívala para descubrir personas cercanas.',
+      networkUnavailable:
+        'Red no disponible. Comprueba tu conexión e inténtalo de nuevo.',
+    },
+  },
+  nearby: {
+    title: 'Cerca',
+    tagline: 'Sé tu propio anuncio.',
+    peopleNearby: 'personas cerca',
+    searchPlaceholder: 'Buscar intereses, nombre…',
+    filters: 'Filtros',
+    back: 'Atrás',
+    loading: 'Buscando alrededor…',
+    distanceAwayFt: 'a {{value}} ft',
+    distanceAwayM: 'a {{value}} m',
+    sharedCount: '{{count}} en común',
+    emptyTitle: 'Nadie coincide con estos filtros',
+    emptyBody:
+      'Prueba ampliar tu rango de distancia o limpiar los filtros de intereses.',
+    inactiveTitle: 'Visibilidad desactivada',
+    inactiveBody: 'Activa Visibilidad para descubrir personas cercanas.',
+    goHome: 'Volver a Inicio',
+    errorTitle: 'No se pudo cargar Cerca',
+    errorRetry: 'Error temporal. Desliza para actualizar o inténtalo de nuevo.',
+    errorGeneric: 'No se pudieron cargar perfiles cercanos.',
+    retry: 'Reintentar',
+    hintWithLocation: 'Mostrando personas cerca de ti',
+    hintWithoutLocation: 'Activa la ubicación para ver personas cerca de ti',
+    pullToRefresh: 'Desliza para actualizar',
+    emptyWithLocation: 'No se encontraron perfiles cercanos.',
+    emptyWithoutLocation:
+      'La ubicación está desactivada. Actívala y desliza para actualizar.',
+  },
   profile: profileTranslations.es,
-  notifications: notificationsTranslations.es,
-  settings: settingsTranslations.es,
+  discoveryProfile: {
+    title: 'Perfil',
+    back: 'Atrás',
+    modePersonal: 'Personal',
+    modeProfessional: 'Profesional',
+    ageYears: '{{age}}',
+    distanceAwayFt: 'a {{value}} ft',
+    distanceAwayM: 'a {{value}} m',
+    occupation: 'Ocupación',
+    company: 'Empresa',
+    biography: 'Biografía',
+    sharedInterests: 'Intereses compartidos',
+    affiliations: 'Afiliaciones',
+    compatibility: 'Compatibilidad',
+    compatibilityMatch: '{{score}}% Match',
+    compatibilityBody:
+      'Basado en sus intereses compartidos y cosas en común.',
+    compatibilityUnavailable: 'Estamos preparando la compatibilidad.',
+    compatibilityDemo: 'Indicador de compatibilidad',
+    a11yCompatibilityMatch: '{{score}} por ciento de compatibilidad',
+    sharedInterestsCount: '{{count}} intereses en común',
+    sharedInterestsCount_one: '{{count}} interés en común',
+    noSharedInterests: 'Aún no hay intereses en común',
+    photos: 'Fotos',
+    viewAll: 'Ver todas',
+    galleryEmpty: 'Aún no hay fotos.',
+    galleryTitle: 'Galería de {{name}}',
+    requestToConnect: 'Solicitar conexión',
+    comingSoon: 'Próximamente',
+    report: 'Reportar',
+    block: 'Bloquear',
+    blockConfirmTitle: '¿Bloquear a {{name}}?',
+    blockConfirmBody:
+      'No verán tu perfil ni aparecerán cerca. Puedes gestionar a las personas bloqueadas en Ajustes.',
+    blockConfirmAction: 'Bloquear',
+    cancel: 'Cancelar',
+    blocking: 'Bloqueando…',
+    blockError: 'No se pudo bloquear a esta persona. Inténtalo de nuevo.',
+    retry: 'Reintentar',
+    loading: 'Cargando perfil…',
+    unavailable: 'Este perfil ya no está disponible.',
+    loadError: 'No se pudo cargar el perfil.',
+    missing: 'Falta el perfil.',
+    a11yBack: 'Volver',
+    a11yConnect: 'Solicitar conexión, próximamente',
+    a11yReport: 'Reportar, próximamente',
+    a11yBlock: 'Bloquear a esta persona',
+    a11yViewAllPhotos: 'Ver todas las fotos',
+    a11yPhoto: 'Foto',
+    a11yPhotoOverflow: 'Foto, {{count}} más',
+    a11yClose: 'Cerrar',
+    a11ySocialMedia: 'Redes sociales',
+    a11yPreviousPhoto: 'Foto anterior',
+    a11yNextPhoto: 'Foto siguiente',
+    a11ySelectPhoto: 'Foto {{index}} de {{total}}',
+    galleryCounter: '{{current}}/{{total}}',
+    imageUnavailable: 'Foto no disponible',
+    openLinkError: 'No se pudo abrir este enlace.',
+    platformLinkedin: 'LinkedIn',
+    platformInstagram: 'Instagram',
+    platformFacebook: 'Facebook',
+    platformYoutube: 'YouTube',
+    platformX: 'X',
+    platformTiktok: 'TikTok',
+    platformSnapchat: 'Snapchat',
+    platformWebsite: 'Sitio web',
+  },
+  alignment: {
+    title: 'Alineación',
+    unavailable: 'Estamos preparando la alineación.',
+    tiers: {
+      weak: 'Algo en común',
+      partial: 'Puntos en común',
+      strong: 'Muy alineados',
+      full: 'Alineación excepcional',
+    },
+    a11yScoreOnly: '{{score}} por ciento de alineación',
+    a11yWithTier: '{{score}} por ciento de alineación, {{tier}}',
+  },
+  activeProfileMode: {
+    errors: {
+      title: 'Perfil',
+      generic: 'No pudimos cambiar de perfil. Inténtalo de nuevo.',
+      networkUnavailable:
+        'No pudimos cambiar de perfil. Revisa tu conexión e inténtalo de nuevo.',
+    },
+    incomplete: {
+      message: 'Completa este perfil antes de volver a estar visible.',
+    },
+  },
+  notifications: {
+    title: 'Notificaciones',
+    loading: 'Cargando notificaciones…',
+    pullToRefresh: 'Desliza para actualizar',
+    empty: {
+      title: 'No hay alertas cercanas',
+      body: 'Desliza para actualizar y comprobar de nuevo.',
+    },
+    inactive: {
+      title: 'Visibilidad desactivada',
+      body: 'Activa tu cuenta para descubrir personas cercanas.',
+    },
+    messages: {
+      interestNearby:
+        '{{name}} está cerca y compartís intereses{{interests}}.',
+      interestsSuffix: ' ({{interests}})',
+      nearbyOnly: '{{name}} está cerca.',
+    },
+    time: {
+      minutes: '{{count}}m',
+      hours: '{{count}}h',
+    },
+    distance: '{{count}} ft',
+    kinds: {
+      contactNearby: 'Persona cercana',
+      interestNearby: 'Interés compartido cercano',
+    },
+  },
+  settings: {
+    title: 'Ajustes',
+    sections: {
+      account: 'Cuenta',
+      privacy: 'Privacidad y descubrimiento',
+      preferences: 'Preferencias',
+      actions: 'Acciones de la cuenta',
+    },
+    email: {
+      title: 'Correo electrónico',
+      missing: 'No hay correo disponible',
+    },
+    phone: {
+      title: 'Número de teléfono',
+      placeholder: 'Número de teléfono (opcional)',
+      hint: 'Opcional. Se usa para contacto dentro de Nearsy y no es público.',
+      invalid:
+        'Introduce un número móvil válido con el código de tu país.',
+      selectCountry: 'Selecciona el código de país',
+      saved: 'Número de teléfono actualizado',
+    },
+    birthDate: {
+      title: 'Fecha de nacimiento',
+      notSet: 'Sin definir',
+      hint: 'Tu fecha de nacimiento se usa para el descubrimiento por edad. Debes tener entre 18 y 99 años.',
+      incomplete: 'Introduce una fecha de nacimiento completa.',
+      invalid: 'Introduce una fecha válida.',
+      tooYoung: 'Debes tener al menos {{age}} años.',
+      tooOld: 'La edad debe ser {{age}} o menor.',
+      saved: 'Fecha de nacimiento actualizada',
+    },
+    visibilityAge: {
+      title: 'Quién puede encontrarme por edad',
+      notSet: 'Sin límite de edad',
+      minLabel: 'Ocultarme de usuarios menores de',
+      maxLabel: 'Ocultarme de usuarios mayores de',
+      hint: 'Déjalo en blanco para omitir un límite. El rango permitido es {{min}}–{{max}}.',
+      minBounds: 'La edad mínima debe estar entre {{min}} y {{max}}.',
+      maxBounds: 'La edad máxima debe estar entre {{min}} y {{max}}.',
+      order: 'La edad mínima no puede ser mayor que la máxima.',
+      saved: 'Rango de edad de visibilidad actualizado',
+    },
+    backgroundVisibility: {
+      title: 'Permanecer visible en segundo plano',
+      description:
+        'Mantén tu ubicación actualizada para que otros puedan descubrirte cerca aunque la app esté cerrada.',
+      hint: 'Requiere permiso de ubicación Siempre. En iOS puede aparecer un indicador azul mientras Nearsy actualiza tu ubicación en segundo plano.',
+      enabled: 'La visibilidad en segundo plano está activada',
+      disabled: 'La visibilidad en segundo plano está desactivada',
+      unsupported:
+        'La ubicación en segundo plano no está disponible en la web.',
+      authRequired: 'Vuelve a iniciar sesión.',
+      error: 'No se pudo actualizar la ubicación en segundo plano.',
+    },
+    language: {
+      title: 'Idioma',
+      description: 'Elige el idioma de la interfaz de la aplicación',
+      english: 'Inglés',
+      spanish: 'Español',
+      current: 'Actual: {{language}}',
+      changeSuccess: 'Idioma actualizado',
+    },
+    logout: {
+      title: 'Cerrar sesión',
+      error: 'No se pudo cerrar la sesión.',
+    },
+    deleteAccount: {
+      title: 'Eliminar cuenta',
+      confirm: 'Esta acción no se puede deshacer',
+      body: 'Escribe DELETE para confirmar. Se eliminarán tus datos de perfil y fotos.',
+      placeholder: 'Escribe DELETE',
+      permanently: 'Eliminar permanentemente',
+      alertTitle: 'Eliminar cuenta',
+      alertBody:
+        'Esto eliminará permanentemente tu cuenta y los datos asociados. Esta acción no se puede deshacer.',
+      alertCancel: 'Cancelar',
+      alertConfirm: 'Eliminar',
+      done: 'Tu cuenta ha sido eliminada.',
+      error: 'No se pudo eliminar la cuenta.',
+      permissionError:
+        'No se pudieron eliminar los datos de tu cuenta. Inténtalo de nuevo mientras la sesión esté activa.',
+      networkError:
+        'Error de red. Revisa tu conexión e inténtalo de nuevo.',
+      reauthBody:
+        'Por seguridad, confirma tu contraseña para continuar.',
+      reauthBodyGoogle:
+        'Por seguridad, continúa con Google para confirmar tu identidad antes de eliminar esta cuenta.',
+      reauthBodyApple:
+        'Por seguridad, continúa con Apple para confirmar tu identidad antes de eliminar esta cuenta.',
+      passwordPlaceholder: 'Contraseña',
+      reauthConfirm: 'Confirmar contraseña y eliminar',
+      reauthContinueGoogle: 'Continuar con Google y eliminar',
+      reauthContinueApple: 'Continuar con Apple y eliminar',
+      reauthError: 'No se pudo confirmar la contraseña.',
+      reauthFailed:
+        'No se pudo confirmar tu identidad. Tu cuenta no fue eliminada.',
+      reauthCancelled:
+        'Se canceló el inicio de sesión. Tu cuenta no fue eliminada.',
+      reauthMismatch:
+        'Esa cuenta no coincide con la sesión de Nearsy. Tu cuenta no fue eliminada.',
+      reauthUnavailable:
+        'La eliminación de cuenta para este método de acceso no está disponible temporalmente en la app. Contacta a soporte de Nearsy para obtener ayuda.',
+    },
+    blockedPeople: {
+      title: 'Personas bloqueadas',
+      openHint: 'Ver y desbloquear personas que has bloqueado',
+      back: 'Atrás',
+      loading: 'Cargando personas bloqueadas…',
+      empty: 'No has bloqueado a nadie.',
+      unavailable: 'Usuario no disponible',
+      loadError: 'No se pudieron cargar las personas bloqueadas.',
+      retry: 'Reintentar',
+      unblock: 'Desbloquear',
+      cancel: 'Cancelar',
+      unblockConfirmTitle: '¿Desbloquear a {{name}}?',
+      unblockConfirmTitleUnavailable: '¿Desbloquear a este usuario?',
+      unblockConfirmBody:
+        'Pueden volver a aparecer en Cerca si cumplen tus ajustes de descubrimiento.',
+      unblockError:
+        'No se pudo desbloquear a esta persona. Inténtalo de nuevo.',
+    },
+    editor: {
+      save: 'Guardar',
+      cancel: 'Cancelar',
+      edit: 'Editar',
+    },
+    loadError: 'No se pudieron cargar los ajustes.',
+    saveError: 'No se pudo guardar.',
+    contacts: {
+      title: 'Contactos',
+      enable: 'Usar contactos para alertas familiares',
+    },
+  },
   phoneOtp: phoneOtpTranslations.es,
 } as const;

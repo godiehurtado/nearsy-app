@@ -5,7 +5,7 @@
  */
 import { doc, setDoc } from 'firebase/firestore';
 
-import { firestoreDb } from '../config/firebaseConfig';
+import { firestoreWebDb as firestoreDb } from '../config/firebaseConfig';
 import {
   buildBlockUserDoc,
   type BlockUserDoc,

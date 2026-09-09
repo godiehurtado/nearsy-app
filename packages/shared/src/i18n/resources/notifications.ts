@@ -1,14 +1,28 @@
-export const notificationsTranslations = {
-  en: {
-    alertsTab: 'Alerts',
-    empty: 'No nearby alerts right now. Pull to refresh.',
-    interestNearby: 'Interest nearby',
-    contactNearby: 'Contact nearby',
+export default {
+  title: 'Notifications',
+  loading: 'Loading notifications…',
+  pullToRefresh: 'Pull to refresh',
+  empty: {
+    title: 'No nearby alerts',
+    body: 'Pull to refresh to check again.',
   },
-  es: {
-    alertsTab: 'Alertas',
-    empty: 'No hay alertas cercanas. Desliza para actualizar.',
-    interestNearby: 'Interés cerca',
-    contactNearby: 'Contacto cerca',
+  inactive: {
+    title: 'Visibility is off',
+    body: 'Turn your account Active to discover nearby people.',
+  },
+  messages: {
+    interestNearby: '{{name}} is near you and you share interests{{interests}}.',
+    interestsSuffix: ' ({{interests}})',
+    nearbyOnly: '{{name}} is near you.',
+  },
+  time: {
+    minutes: '{{count}}m',
+    hours: '{{count}}h',
+  },
+  distance: '{{count}} ft',
+  kinds: {
+    /** Nearby without shared interests — not an established contact relationship. */
+    contactNearby: 'Nearby person',
+    interestNearby: 'Shared interest nearby',
   },
 } as const;
