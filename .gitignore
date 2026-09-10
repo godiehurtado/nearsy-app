@@ -38,6 +38,9 @@ yarn-error.*
 # Firebase Development google-services (Android) — never commit
 **/google-services.nearsy-dev.json
 
+# Local Android QA / release forensics (never commit)
+.qa-j05/
+
 # typescript
 *.tsbuildinfo
 
