@@ -22,3 +22,15 @@ yarn-error.*
 
 # --- asegúrate que el lockfile SI se incluya en el tar del build ---
 !package-lock.json
+
+# --- CRITICAL: .easignore REPLACES .gitignore for EAS upload ---
+# Generated Expo Android native tree must NEVER upload. If present on disk
+# from local QA/dev, EAS skips prebuild and can embed a stale
+# google-services.json (nearsy-dev) into production AABs.
+apps/nearsy-android/android/
+
+# Development-only Firebase config — never upload to EAS
+**/google-services.nearsy-dev.json
+
+# Local QA / forensics artifacts — never upload
+.qa-j05/
