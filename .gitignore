@@ -22,6 +22,7 @@ expo-env.d.ts
 
 # Metro
 .metro-health-check*
+metro-lan.log
 
 # debug
 npm-debug.*
@@ -64,6 +65,7 @@ expo-env.d.ts
 
 # Metro
 .metro-health-check*
+metro-lan.log
 
 # debug
 npm-debug.*
