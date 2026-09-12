@@ -247,7 +247,21 @@ export function OnboardingAffiliationCategoryPanel({
     setSearchPending(false);
   }, [categoryId]);
 
+  useEffect(() => {
+    if (!topicId) return;
+    const timer = setTimeout(() => {
+      scrollSearchIntoView();
+      searchInputRef.current?.focus();
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [topicId]);
+
   function toggleTopic(nextId: string) {
+    const isClosing = topicId === nextId;
+    if (isClosing) {
+      searchInputRef.current?.blur();
+      Keyboard.dismiss();
+    }
     setTopicId((prev) => (prev === nextId ? null : nextId));
     setQuery('');
     setPickedName(null);
@@ -262,6 +276,9 @@ export function OnboardingAffiliationCategoryPanel({
     setQuery(result.name.slice(0, QUERY_MAX));
     setDraftImage(null);
     setDuplicateError(null);
+    searchInputRef.current?.blur();
+    Keyboard.dismiss();
+    scheduleScrollSearchIntoView();
   }
 
   async function pickOwnLogo() {
