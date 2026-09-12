@@ -38,17 +38,16 @@ describe('register and phone OTP integration', () => {
     assert.doesNotMatch(screen, /PhoneAuthProvider/);
     assert.doesNotMatch(screen, /signInWithPhoneNumber/);
     assert.doesNotMatch(screen, /AsyncStorage/);
-    assert.match(screen, /runPhoneOtpScreenSignOut/);
-    assert.match(screen, /createPhoneOtpSignOutPressHandler/);
-    assert.match(screen, /resetAuthNavigationToLogin/);
-    assert.match(screen, /handleSignOutPress/);
-    assert.match(screen, /clearPendingSocialProfilePrefill/);
+    assert.doesNotMatch(screen, /OtpSignOutFooter/);
+    assert.doesNotMatch(screen, /runPhoneOtpScreenSignOut/);
+    assert.doesNotMatch(screen, /createPhoneOtpSignOutPressHandler/);
+    assert.doesNotMatch(screen, /phoneOtp\.signOut/);
+    assert.doesNotMatch(screen, /Cerrar sesión|Sign out/i);
     assert.match(screen, /styles\.header/);
     assert.match(screen, /styles\.stepScroll/);
     assert.doesNotMatch(screen, /flexGrow:\s*1/);
     assert.match(screen, /SecondaryButton/);
     assert.match(screen, /OtpContextualAction/);
-    assert.match(screen, /OtpSignOutFooter/);
     assert.match(screen, /styles\.actionSection/);
     assert.match(screen, /styles\.primaryActionSection/);
     assert.match(screen, /marginTop:\s*spacing\.lg/);
@@ -57,6 +56,14 @@ describe('register and phone OTP integration', () => {
     const otpComponent = readSharedSource('components/phoneOtp/OtpSixDigitInput.tsx');
     assert.match(otpComponent, /textContentType="oneTimeCode"/);
     assert.match(otpComponent, /autoComplete="sms-otp"/);
+  });
+
+  it('iOS OTP screen preserves change-number and resend without Sign out', () => {
+    const screen = readSharedSource('screens/PhoneVerificationScreen.ios.tsx');
+    assert.match(screen, /phoneOtp\.codeStep\.resend/);
+    assert.match(screen, /phoneOtp\.codeStep\.changeNumber/);
+    assert.match(screen, /phoneOtp\.confirmStep\.changeNumber/);
+    assert.doesNotMatch(screen, /OtpSignOutFooter/);
   });
 
   it('Android phone screen unchanged by iOS OTP work', () => {

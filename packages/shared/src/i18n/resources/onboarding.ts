@@ -35,8 +35,8 @@ export default {
     identity: {
       title: "What's your name?",
       subtitle: 'This is how people will recognize you on Nearsy.',
-      nameLabel: 'Name',
-      namePlaceholder: 'Name',
+      nameLabel: 'First Name',
+      namePlaceholder: 'First Name',
       lastNameLabel: 'Last Name',
       lastNamePlaceholder: 'Last Name',
       nameRequired: 'Enter your name to continue',

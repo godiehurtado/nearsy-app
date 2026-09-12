@@ -30,12 +30,6 @@ import { firebaseAuth } from '../config/firebaseConfig';
 import { buildFullPhoneNumber, sanitizePhoneNumber } from '../settings/settingsPhoneCountries';
 import { isValidE164Phone, normalizeCanonicalPhone } from '../settings/settingsContracts';
 import { getPhoneOtpClient } from '../phoneOtp/iosPhoneOtpFoundation';
-import { clearPendingSocialProfilePrefill } from '../authentication/social';
-import {
-  createPhoneOtpSignOutPressHandler,
-  resetAuthNavigationToLogin,
-  runPhoneOtpScreenSignOut,
-} from '../phoneOtp/phoneOtpSignOut';
 import {
   createPhoneOtpController,
   type PhoneOtpController,
@@ -92,63 +86,6 @@ function OtpContextualAction({
   );
 }
 
-type OtpSignOutFooterProps = {
-  signingOut: boolean;
-  signOutError: string | null;
-  onSignOut: () => void;
-  palette: ReturnType<typeof useAppTheme>['palette'];
-  signingOutLabel: string;
-  signOutLabel: string;
-  signOutA11y: string;
-};
-
-function OtpSignOutFooter({
-  signingOut,
-  signOutError,
-  onSignOut,
-  palette,
-  signingOutLabel,
-  signOutLabel,
-  signOutA11y,
-}: OtpSignOutFooterProps) {
-  return (
-    <View
-      style={[
-        styles.signOutSection,
-        { borderTopColor: palette.border },
-      ]}
-    >
-      {signOutError ? (
-        <Text
-          style={[styles.error, { color: palette.danger }]}
-          accessibilityRole="alert"
-        >
-          {signOutError}
-        </Text>
-      ) : null}
-      <Pressable
-        onPress={onSignOut}
-        disabled={signingOut}
-        accessibilityRole="button"
-        accessibilityLabel={signOutA11y}
-        accessibilityState={{ disabled: signingOut, busy: signingOut }}
-        style={({ pressed }) => [
-          styles.signOutControl,
-          {
-            borderColor: palette.danger,
-            backgroundColor: pressed && !signingOut ? `${palette.danger}14` : 'transparent',
-            opacity: signingOut ? 0.72 : 1,
-          },
-        ]}
-      >
-        <Text style={[styles.signOutText, { color: palette.danger }]}>
-          {signingOut ? signingOutLabel : signOutLabel}
-        </Text>
-      </Pressable>
-    </View>
-  );
-}
-
 export default function PhoneVerificationScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
@@ -157,14 +94,11 @@ export default function PhoneVerificationScreen() {
 
   const controllerRef = useRef<PhoneOtpController | null>(null);
   const aliveRef = useRef(true);
-  const signingOutRef = useRef(false);
   const [view, setView] = useState<PhoneOtpViewState | null>(null);
   const [countryDial, setCountryDial] = useState(REGISTRATION_COUNTRIES[0].dial);
   const [localPhone, setLocalPhone] = useState('');
   const [showCountries, setShowCountries] = useState(false);
   const [tick, setTick] = useState(0);
-  const [signingOut, setSigningOut] = useState(false);
-  const [signOutError, setSignOutError] = useState<string | null>(null);
 
   const locale = i18n.language === 'es' ? 'es' : 'en';
 
@@ -180,10 +114,6 @@ export default function PhoneVerificationScreen() {
       aliveRef.current = false;
     };
   }, []);
-
-  useEffect(() => {
-    signingOutRef.current = signingOut;
-  }, [signingOut]);
 
   useEffect(() => {
     let alive = true;
@@ -283,31 +213,6 @@ export default function PhoneVerificationScreen() {
 
   const canResend = controllerRef.current?.canResend() ?? false;
 
-  const handleSignOutPress = useMemo(
-    () =>
-      createPhoneOtpSignOutPressHandler({
-        isSigningOut: () => signingOutRef.current,
-        setSigningOut,
-        setSignOutError,
-        translate: (key) => t(key),
-        isMounted: () => aliveRef.current,
-        runSignOut: () =>
-          runPhoneOtpScreenSignOut({
-            controller: controllerRef.current,
-            signOut: () => firebaseAuth.signOut(),
-            clearSocialPrefill: () => clearPendingSocialProfilePrefill(),
-            clearSensitiveLocalState: () => {
-              setLocalPhone('');
-              setShowCountries(false);
-              controllerRef.current = null;
-            },
-            resetNavigationToLogin: () =>
-              resetAuthNavigationToLogin(navigation),
-          }),
-      }),
-    [navigation, t],
-  );
-
   async function onContinueCapture() {
     const controller = controllerRef.current;
     if (!controller || !isValidPhone(fullPhone)) return;
@@ -349,25 +254,11 @@ export default function PhoneVerificationScreen() {
 
   async function onRetryBootstrap() {
     const controller = controllerRef.current;
-    if (!controller || signingOut || view?.operationInFlight) return;
+    if (!controller || view?.operationInFlight) return;
     syncView(await controller.bootstrap());
   }
 
-  const busy = (view?.operationInFlight ?? false) || signingOut;
-
-  const signOutFooter = (
-    <OtpSignOutFooter
-      signingOut={signingOut}
-      signOutError={signOutError}
-      onSignOut={() => {
-        void handleSignOutPress();
-      }}
-      palette={palette}
-      signingOutLabel={t('phoneOtp.signOut.signingOut')}
-      signOutLabel={t('phoneOtp.signOut.label')}
-      signOutA11y={t('phoneOtp.a11y.signOutButton')}
-    />
-  );
+  const busy = view?.operationInFlight ?? false;
 
   const afterPrimaryActions = (content: React.ReactNode) => (
     <View style={styles.actionSection}>{content}</View>
@@ -398,7 +289,6 @@ export default function PhoneVerificationScreen() {
             <Text style={[styles.hint, { color: palette.textSecondary }]}>
               {t('phoneOtp.states.loading')}
             </Text>
-            {afterPrimaryActions(signOutFooter)}
           </View>
         ) : (
           <RegistrationFadeSlideIn animKey={screenPhase}>
@@ -469,7 +359,6 @@ export default function PhoneVerificationScreen() {
                     loading={busy}
                   />,
                 )}
-                {afterPrimaryActions(signOutFooter)}
               </>
             )}
 
@@ -496,14 +385,11 @@ export default function PhoneVerificationScreen() {
                   />,
                 )}
                 {afterPrimaryActions(
-                  <>
-                    <SecondaryButton
-                      label={t('phoneOtp.confirmStep.changeNumber')}
-                      onPress={onChangeNumber}
-                      disabled={busy}
-                    />
-                    {signOutFooter}
-                  </>,
+                  <SecondaryButton
+                    label={t('phoneOtp.confirmStep.changeNumber')}
+                    onPress={onChangeNumber}
+                    disabled={busy}
+                  />,
                 )}
               </>
             )}
@@ -554,27 +440,24 @@ export default function PhoneVerificationScreen() {
                   />,
                 )}
                 {afterPrimaryActions(
-                  <>
-                    <View style={styles.actionStack}>
-                      <OtpContextualAction
-                        label={
-                          canResend
-                            ? t('phoneOtp.codeStep.resend')
-                            : t('phoneOtp.codeStep.resendIn', { seconds: resendSeconds })
-                        }
-                        onPress={onResend}
-                        disabled={!canResend || busy}
-                        accessibilityLabel={t('phoneOtp.a11y.resendButton')}
-                        palette={palette}
-                      />
-                      <SecondaryButton
-                        label={t('phoneOtp.codeStep.changeNumber')}
-                        onPress={onChangeNumber}
-                        disabled={busy}
-                      />
-                    </View>
-                    {signOutFooter}
-                  </>,
+                  <View style={styles.actionStack}>
+                    <OtpContextualAction
+                      label={
+                        canResend
+                          ? t('phoneOtp.codeStep.resend')
+                          : t('phoneOtp.codeStep.resendIn', { seconds: resendSeconds })
+                      }
+                      onPress={onResend}
+                      disabled={!canResend || busy}
+                      accessibilityLabel={t('phoneOtp.a11y.resendButton')}
+                      palette={palette}
+                    />
+                    <SecondaryButton
+                      label={t('phoneOtp.codeStep.changeNumber')}
+                      onPress={onChangeNumber}
+                      disabled={busy}
+                    />
+                  </View>,
                 )}
               </>
             )}
@@ -609,17 +492,14 @@ export default function PhoneVerificationScreen() {
                   onPress={onChangeNumber}
                 />
                 {afterPrimaryActions(
-                  <>
-                    <OtpContextualAction
-                      label={t('phoneOtp.states.retryBootstrap')}
-                      onPress={() => {
-                        void onRetryBootstrap();
-                      }}
-                      disabled={busy}
-                      palette={palette}
-                    />
-                    {signOutFooter}
-                  </>,
+                  <OtpContextualAction
+                    label={t('phoneOtp.states.retryBootstrap')}
+                    onPress={() => {
+                      void onRetryBootstrap();
+                    }}
+                    disabled={busy}
+                    palette={palette}
+                  />,
                 )}
               </>
             )}
@@ -638,7 +518,6 @@ export default function PhoneVerificationScreen() {
                 <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
                   {t('phoneOtp.success.subtitle')}
                 </Text>
-                {afterPrimaryActions(signOutFooter)}
               </>
             )}
           </RegistrationFadeSlideIn>
@@ -735,25 +614,6 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.extrabold,
     letterSpacing: -0.15,
     textAlign: 'center',
-  },
-  signOutSection: {
-    marginTop: spacing.xl,
-    gap: spacing.md,
-    paddingTop: spacing.xl,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  signOutControl: {
-    minHeight: 44,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  signOutText: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
   },
   icon: { alignSelf: 'center', marginBottom: spacing.md },
 });

@@ -64,6 +64,7 @@ import {
 } from '../visibility/activeProfileModeSync';
 import { attemptInitialVisibilityAfterCrjCompletion } from '../visibility/initialCrjVisibilityActivation';
 import { uploadProfileImage, uploadAffiliationImage, uploadGalleryImage, deleteGalleryStorageObject } from '../services/storageService';
+import { registerPushToken } from '../services/pushTokens';
 import {
   commitPendingSocialNamePrefill,
   clearPendingSocialProfilePrefill,
@@ -973,6 +974,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       current.granted ||
       current.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
     if (already) {
+      void registerPushToken().catch(() => {});
       setStepIndex((i) => i + 1);
       return;
     }
@@ -991,6 +993,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         t('onboarding.profileCompletion.notifications.deniedTitle'),
         t('onboarding.profileCompletion.notifications.deniedMessage'),
       );
+    } else {
+      void registerPushToken().catch(() => {});
     }
     setStepIndex((i) => i + 1);
   }

@@ -126,11 +126,6 @@ function displayNameFromProfile(data: ProfileDoc, mode: ProfileMode): string {
   return mode === 'professional' ? 'Professional' : 'Personal';
 }
 
-function firstNameFromDisplayName(name: string): string {
-  const [first] = name.split(/\s+/);
-  return first || name;
-}
-
 export default function MainHomeScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const { palette, theme } = useAppTheme();
@@ -167,7 +162,6 @@ export default function MainHomeScreen({ navigation }: Props) {
     profile as Record<string, unknown>,
   );
   const displayName = displayNameFromProfile(profile, mode);
-  const firstName = firstNameFromDisplayName(displayName);
   const profileImage =
     presentation.profileImage ?? profile.profileImage ?? null;
 
@@ -763,9 +757,6 @@ export default function MainHomeScreen({ navigation }: Props) {
           </View>
         )}
 
-        <Text style={[styles.greetingSubtle, { color: palette.textMuted }]}>
-          {t('home.greeting', { name: firstName })}
-        </Text>
       </View>
     </ScrollView>
   );
@@ -972,10 +963,5 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     fontSize: fontSize.sm,
     textAlign: 'center',
-  },
-  greetingSubtle: {
-    marginTop: spacing.lg,
-    textAlign: 'center',
-    fontSize: fontSize.sm,
   },
 });

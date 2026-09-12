@@ -16,22 +16,16 @@ export async function registerPushToken(): Promise<RegisterResult> {
     const user = firebaseAuth.currentUser;
     if (!user) return { ok: false, reason: 'no-user' };
 
-    // 1) Permisos (iOS + Android 13+)
+    // Read existing OS permission only — never prompt here.
+    // Native authorization is owned by the dedicated CRJ notifications step
+    // (and any future explicit user-facing request). App auth bootstrap may
+    // still register a token once permission is already granted.
     const current = await Notifications.getPermissionsAsync();
-    let granted =
+    const granted =
       current.granted ||
       current.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
 
-    if (!granted) {
-      const req = await Notifications.requestPermissionsAsync({
-        ios: { allowAlert: true, allowBadge: true, allowSound: true },
-      });
-      granted =
-        req.granted ||
-        req.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
-    }
-
-    if (!granted) return { ok: false, reason: 'denied' };
+    if (!granted) return { ok: false, reason: 'permission-not-granted' };
 
     // 2) Obtener Expo push token
     const projectId =

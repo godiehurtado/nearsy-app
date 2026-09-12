@@ -856,7 +856,6 @@ const es: TranslationResources = {
     },
   },
   home: {
-    greeting: 'Hola, {{name}}',
     brand: 'Nearsy',
     accountStatus: 'Tu cuenta está',
     controlHint: 'Tú decides cuándo eres visible para otros.',
