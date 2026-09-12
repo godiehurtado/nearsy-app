@@ -58,6 +58,26 @@ describe('register and phone OTP integration', () => {
     assert.match(otpComponent, /autoComplete="sms-otp"/);
   });
 
+  it('iOS OTP Continue cannot silently no-op after client init failure', () => {
+    const screen = readSharedSource('screens/PhoneVerificationScreen.ios.tsx');
+    assert.match(screen, /view\.phase === 'failed'/);
+    assert.match(screen, /viewStateForClientInitFailure/);
+    assert.match(screen, /runClientBootstrap/);
+    assert.match(screen, /onContinueCapture/);
+    assert.match(screen, /controller\.setPhoneE164/);
+    assert.doesNotMatch(screen, /OtpSignOutFooter/);
+    // Capture Continue recovers controller instead of bare `if (!controller) return`
+    assert.match(
+      screen,
+      /async function onContinueCapture\(\)[\s\S]*?await runClientBootstrap\(\)/,
+    );
+    // Retry recreates client when controller was never created
+    assert.match(
+      screen,
+      /async function onRetryBootstrap\(\)[\s\S]*?await runClientBootstrap\(\)/,
+    );
+  });
+
   it('iOS OTP screen preserves change-number and resend without Sign out', () => {
     const screen = readSharedSource('screens/PhoneVerificationScreen.ios.tsx');
     assert.match(screen, /phoneOtp\.codeStep\.resend/);
