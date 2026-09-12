@@ -1,10 +1,11 @@
 ﻿/**
  * Settings hub — Nearsy 2.0 More tab (Unit 2A).
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   FlatList,
   KeyboardAvoidingView,
   Linking,
@@ -37,12 +38,14 @@ import {
   useTranslation,
   type SupportedLanguage,
 } from '../i18n';
+import * as Location from 'expo-location';
 import type { MoreStackParamList } from '../navigation/MoreStack';
 import {
   isBackgroundLocationPermissionError,
   startBackgroundLocation,
   stopBackgroundLocation,
 } from '../services/backgroundLocation';
+import { evaluateBackgroundLocationSettingsReturn } from '../visibility/settingsRecovery';
 import {
   ageFromBirthDate,
   applyBirthDateTextChange,
@@ -192,6 +195,12 @@ export default function MoreScreen() {
   const [visibleToMaxAge, setVisibleToMaxAge] = useState<number | null>(null);
   const [bgVisible, setBgVisible] = useState(false);
   const [bgChanging, setBgChanging] = useState(false);
+  const appStateRef = useRef(AppState.currentState);
+  const pendingBgEnableIntentRef = useRef(false);
+  const bgChangingRef = useRef(bgChanging);
+  bgChangingRef.current = bgChanging;
+  const bgVisibleRef = useRef(bgVisible);
+  bgVisibleRef.current = bgVisible;
 
   const [editor, setEditor] = useState<EditorKind>(null);
   const [languageModalOpen, setLanguageModalOpen] = useState(false);
@@ -474,6 +483,7 @@ export default function MoreScreen() {
       setBgVisible(false);
       if (isBackgroundLocationPermissionError(e)) {
         const openSettings = () => {
+          pendingBgEnableIntentRef.current = true;
           void Linking.openSettings();
         };
         if (!e.canAskAgain) {
@@ -481,7 +491,13 @@ export default function MoreScreen() {
             t('common.appName'),
             t('settings.backgroundVisibility.needsAlwaysPermission'),
             [
-              { text: t('common.cancel'), style: 'cancel' },
+              {
+                text: t('common.cancel'),
+                style: 'cancel',
+                onPress: () => {
+                  pendingBgEnableIntentRef.current = false;
+                },
+              },
               {
                 text: t('settings.backgroundVisibility.openSettings'),
                 onPress: openSettings,
@@ -489,6 +505,7 @@ export default function MoreScreen() {
             ],
           );
         } else {
+          pendingBgEnableIntentRef.current = false;
           Alert.alert(
             t('common.error'),
             t('settings.backgroundVisibility.needsAlwaysPermission'),
@@ -504,6 +521,66 @@ export default function MoreScreen() {
       setBgChanging(false);
     }
   };
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (nextState) => {
+      const wasBackground = appStateRef.current.match(/inactive|background/);
+      const isNowActive = nextState === 'active';
+      appStateRef.current = nextState;
+
+      if (wasBackground && isNowActive) {
+        if (!pendingBgEnableIntentRef.current) return;
+
+        let fgStatus = 'undetermined';
+        let bgStatus = 'undetermined';
+        try {
+          const fg = await Location.getForegroundPermissionsAsync();
+          fgStatus = fg.status;
+          const bg = await Location.getBackgroundPermissionsAsync();
+          bgStatus = bg.status;
+        } catch {
+          fgStatus = 'undetermined';
+          bgStatus = 'undetermined';
+        }
+
+        const evaluation = evaluateBackgroundLocationSettingsReturn(
+          pendingBgEnableIntentRef.current,
+          fgStatus,
+          bgStatus,
+        );
+
+        if (evaluation.clearIntent) {
+          pendingBgEnableIntentRef.current = false;
+        }
+
+        if (evaluation.shouldActivate) {
+          const uid = firebaseAuth.currentUser?.uid;
+          if (!uid || bgChangingRef.current || bgVisibleRef.current) return;
+
+          try {
+            setBgChanging(true);
+            await startBackgroundLocation({ uid });
+            await setDoc(
+              doc(firestoreDb, 'users', uid),
+              { bgVisible: true, updatedAt: Date.now() },
+              { merge: true },
+            );
+            setBgVisible(true);
+            Alert.alert(
+              t('common.appName'),
+              t('settings.backgroundVisibility.enabled'),
+            );
+          } catch {
+            setBgVisible(false);
+          } finally {
+            setBgChanging(false);
+          }
+        }
+      }
+    });
+
+    return () => sub.remove();
+  }, [t]);
 
   const handleSelectLanguage = async (language: SupportedLanguage) => {
     if (!isSupportedLanguage(language)) return;

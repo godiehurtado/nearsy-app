@@ -10,6 +10,7 @@ import {
   Pressable,
   Alert,
   AccessibilityInfo,
+  AppState,
   Keyboard,
   Linking,
 } from 'react-native';
@@ -34,11 +35,13 @@ import {
   useAppTheme,
 } from '../theme';
 import { cardShadow } from '../theme/shadows';
+import * as Location from 'expo-location';
 import {
   activateVisibilityFlow,
   deactivateVisibilityFlow,
   reconcileVisibilityWithForegroundPermission,
 } from '../visibility/orchestration';
+import { evaluateVisibilitySettingsReturn } from '../visibility/settingsRecovery';
 import { pressTransformStyle } from '../visibility/pressTransformStyle';
 import {
   reconcileUserDocWithActiveProfileMode,
@@ -137,6 +140,12 @@ export default function MainHomeScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<ProfileDoc>({});
   const [statusUpdating, setStatusUpdating] = useState(false);
+  const appStateRef = useRef(AppState.currentState);
+  const pendingVisibilityIntentRef = useRef(false);
+  const statusUpdatingRef = useRef(statusUpdating);
+  statusUpdatingRef.current = statusUpdating;
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
   const [prefs, setPrefs] = useState<VisibilitySearchPreferencesByMode>(() =>
     parseSearchPreferencesFromUserDoc(null, unit),
   );
@@ -332,16 +341,24 @@ export default function MainHomeScreen({ navigation }: Props) {
     );
     if (canAskAgain === false) {
       Alert.alert(presentation.title, presentation.userMessage, [
-        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.cancel'),
+          style: 'cancel',
+          onPress: () => {
+            pendingVisibilityIntentRef.current = false;
+          },
+        },
         {
           text: openSettingsLabel,
           onPress: () => {
+            pendingVisibilityIntentRef.current = true;
             void Linking.openSettings();
           },
         },
       ]);
       return;
     }
+    pendingVisibilityIntentRef.current = false;
     Alert.alert(presentation.title, presentation.userMessage);
   };
 
@@ -408,57 +425,43 @@ export default function MainHomeScreen({ navigation }: Props) {
     [announceInterestLimit, mode, officialInterestIds, t],
   );
 
-  const handleToggleActive = async () => {
-    if (statusUpdating) return;
+  const activateVisibility = useCallback(async () => {
+    if (statusUpdatingRef.current) return;
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) return;
 
-    const goingActive = !profile.visibility;
     setStatusUpdating(true);
     setVisibilityError(null);
     try {
       const client = await getVisibilityDiscoveryClient();
-      if (goingActive) {
-        const outcome = await activateVisibilityFlow(client);
-        if (outcome.ok === false) {
-          if (outcome.kind === 'permission-denied') {
-            showVisibilityPermissionDenied(
-              presentVisibilityLocalError('permission-denied', t),
-              outcome.canAskAgain,
-            );
-          } else if (outcome.kind === 'invalid-accuracy') {
-            showVisibilityError(
-              presentVisibilityLocalError('invalid-accuracy', t),
-            );
-          } else if (outcome.kind === 'unavailable') {
-            showVisibilityError(
-              presentVisibilityLocalError('unavailable', t),
-            );
-          } else if (outcome.error) {
-            showVisibilityError(
-              presentVisibilityCallableError(outcome.error, t),
-              outcome.error,
-            );
-          } else {
-            showVisibilityError(presentUnknownVisibilityError(t));
-          }
-          return;
-        }
-        setProfile((p) => ({ ...p, visibility: true }));
-        if (profile.bgVisible) {
-          await startBackgroundLocation({ uid }).catch(() => {});
-        }
-      } else {
-        const outcome = await deactivateVisibilityFlow(client);
-        if (outcome.ok === false) {
+      const outcome = await activateVisibilityFlow(client);
+      if (outcome.ok === false) {
+        if (outcome.kind === 'permission-denied') {
+          showVisibilityPermissionDenied(
+            presentVisibilityLocalError('permission-denied', t),
+            outcome.canAskAgain,
+          );
+        } else if (outcome.kind === 'invalid-accuracy') {
+          showVisibilityError(
+            presentVisibilityLocalError('invalid-accuracy', t),
+          );
+        } else if (outcome.kind === 'unavailable') {
+          showVisibilityError(
+            presentVisibilityLocalError('unavailable', t),
+          );
+        } else if (outcome.error) {
           showVisibilityError(
             presentVisibilityCallableError(outcome.error, t),
             outcome.error,
           );
-          return;
+        } else {
+          showVisibilityError(presentUnknownVisibilityError(t));
         }
-        setProfile((p) => ({ ...p, visibility: false }));
-        await stopBackgroundLocation().catch(() => {});
+        return;
+      }
+      setProfile((p) => ({ ...p, visibility: true }));
+      if (profileRef.current.bgVisible) {
+        await startBackgroundLocation({ uid }).catch(() => {});
       }
     } catch (err) {
       if (isVisibilityDiscoveryClientError(err)) {
@@ -469,7 +472,79 @@ export default function MainHomeScreen({ navigation }: Props) {
     } finally {
       setStatusUpdating(false);
     }
+  }, [t]);
+
+  const handleToggleActive = async () => {
+    if (statusUpdating) return;
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) return;
+
+    const goingActive = !profile.visibility;
+    if (goingActive) {
+      await activateVisibility();
+      return;
+    }
+
+    setStatusUpdating(true);
+    setVisibilityError(null);
+    try {
+      const client = await getVisibilityDiscoveryClient();
+      const outcome = await deactivateVisibilityFlow(client);
+      if (outcome.ok === false) {
+        showVisibilityError(
+          presentVisibilityCallableError(outcome.error, t),
+          outcome.error,
+        );
+        return;
+      }
+      setProfile((p) => ({ ...p, visibility: false }));
+      await stopBackgroundLocation().catch(() => {});
+    } catch (err) {
+      if (isVisibilityDiscoveryClientError(err)) {
+        showVisibilityError(presentVisibilityCallableError(err, t), err);
+      } else {
+        showVisibilityError(presentUnknownVisibilityError(t), err);
+      }
+    } finally {
+      setStatusUpdating(false);
+    }
   };
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (nextState) => {
+      const wasBackground = appStateRef.current.match(/inactive|background/);
+      const isNowActive = nextState === 'active';
+      appStateRef.current = nextState;
+
+      if (wasBackground && isNowActive) {
+        if (!pendingVisibilityIntentRef.current) return;
+
+        let foregroundStatus = 'undetermined';
+        try {
+          const perm = await Location.getForegroundPermissionsAsync();
+          foregroundStatus = perm.status;
+        } catch {
+          foregroundStatus = 'undetermined';
+        }
+
+        const evaluation = evaluateVisibilitySettingsReturn(
+          pendingVisibilityIntentRef.current,
+          foregroundStatus,
+        );
+
+        if (evaluation.clearIntent) {
+          pendingVisibilityIntentRef.current = false;
+        }
+
+        if (evaluation.shouldActivate) {
+          if (profileRef.current.visibility || statusUpdatingRef.current) return;
+          await activateVisibility();
+        }
+      }
+    });
+
+    return () => sub.remove();
+  }, [activateVisibility]);
 
   const atInterestLimit =
     activePrefs.interestIds.length >= MAX_SEARCH_INTEREST_IDS;
