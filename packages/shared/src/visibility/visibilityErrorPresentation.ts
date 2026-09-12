@@ -150,8 +150,8 @@ export function presentVisibilityLocalError(
       retryable: false,
     };
     return {
-      title: t('home.visibility.inactive'),
-      userMessage: t('nearby.hintWithoutLocation'),
+      title: t('home.errors.title'),
+      userMessage: t('home.errors.permissionDenied'),
       retryable: false,
       diagnostic,
       devDetail: buildDevDetail(diagnostic),

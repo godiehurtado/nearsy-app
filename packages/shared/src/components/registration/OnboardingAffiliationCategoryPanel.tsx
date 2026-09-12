@@ -200,9 +200,12 @@ export function OnboardingAffiliationCategoryPanel({
           count: totalAdded,
         });
 
+  const onSearchUiChangeRef = useRef(onSearchUiChange);
+  onSearchUiChangeRef.current = onSearchUiChange;
+
   useEffect(() => {
-    onSearchUiChange?.(searchUi);
-  }, [searchUi, onSearchUiChange]);
+    onSearchUiChangeRef.current?.(searchUi);
+  }, [searchUi]);
 
   function scrollSearchIntoView() {
     const anchor = scrollAnchorYRef?.current;
@@ -774,6 +777,10 @@ const styles = StyleSheet.create({
   resultsScroll: {
     flex: 1,
     minHeight: 0,
+    // Own Profile nests this ScrollView inside another ScrollView without a
+    // bounded flex parent; maxHeight keeps results visible there (CRJ still
+    // uses the flex:1 chain when the outer scroll is locked).
+    maxHeight: 280,
     marginTop: 11,
   },
   resultRow: {

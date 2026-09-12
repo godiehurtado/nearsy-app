@@ -18,6 +18,19 @@ export const IDLE_AFFILIATION_SEARCH_UI: AffiliationSearchUiSnapshot = {
   addName: null,
 };
 
+export function affiliationSearchUiEqual(
+  a: AffiliationSearchUiSnapshot | undefined,
+  b: AffiliationSearchUiSnapshot,
+): boolean {
+  if (!a) return false;
+  return (
+    a.phase === b.phase &&
+    a.hideJourneyFooter === b.hideJourneyFooter &&
+    a.showAddCta === b.showAddCta &&
+    a.addName === b.addName
+  );
+}
+
 /**
  * Keyboard Search Mode for CRJ Affiliations.
  * Selecting a suggestion never persists; Add remains explicit.
