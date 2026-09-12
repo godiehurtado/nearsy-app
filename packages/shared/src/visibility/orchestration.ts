@@ -26,24 +26,38 @@ export type LocationSampleResult =
   | {
       ok: false;
       kind: 'permission-denied' | 'unavailable' | 'invalid-accuracy';
+      /** Present when kind is permission-denied; false means iOS won't prompt again. */
+      canAskAgain?: boolean;
     };
 
-export async function ensureForegroundPermission(): Promise<
-  'granted' | 'denied' | 'undetermined'
-> {
+export async function ensureForegroundPermission(): Promise<{
+  status: 'granted' | 'denied' | 'undetermined';
+  canAskAgain: boolean;
+}> {
   let perm = await Location.getForegroundPermissionsAsync();
-  if (perm.status === 'granted') return 'granted';
+  if (perm.status === 'granted') {
+    return { status: 'granted', canAskAgain: true };
+  }
   if (perm.status === 'undetermined' || perm.canAskAgain) {
     perm = await Location.requestForegroundPermissionsAsync();
   }
-  if (perm.status === 'granted') return 'granted';
-  return perm.status === 'undetermined' ? 'undetermined' : 'denied';
+  if (perm.status === 'granted') {
+    return { status: 'granted', canAskAgain: true };
+  }
+  return {
+    status: perm.status === 'undetermined' ? 'undetermined' : 'denied',
+    canAskAgain: !!perm.canAskAgain,
+  };
 }
 
 export async function obtainValidLocationSample(): Promise<LocationSampleResult> {
   const permission = await ensureForegroundPermission();
-  if (permission !== 'granted') {
-    return { ok: false, kind: 'permission-denied' };
+  if (permission.status !== 'granted') {
+    return {
+      ok: false,
+      kind: 'permission-denied',
+      canAskAgain: permission.canAskAgain,
+    };
   }
 
   try {
@@ -84,6 +98,7 @@ export type ActivateOutcome =
         | 'invalid-accuracy'
         | 'callable';
       error?: VisibilityDiscoveryClientError;
+      canAskAgain?: boolean;
     };
 
 export async function activateVisibilityFlow(
@@ -91,7 +106,13 @@ export async function activateVisibilityFlow(
 ): Promise<ActivateOutcome> {
   const sample = await obtainValidLocationSample();
   if (sample.ok === false) {
-    return { ok: false as const, kind: sample.kind };
+    return {
+      ok: false as const,
+      kind: sample.kind,
+      ...(sample.kind === 'permission-denied'
+        ? { canAskAgain: sample.canAskAgain }
+        : {}),
+    };
   }
   try {
     const response = await client.activateVisibility(

@@ -187,6 +187,14 @@ describe('post-CRJ Affiliations editor screen contract', () => {
     assert.ok(patch.personalOnboardingAffiliations!.length === 1);
   });
 
+  it('Own Profile Affiliations search mode locks host scroll and avoids update loops', () => {
+    const screen = readShared('screens/AffiliationsScreen.tsx');
+    assert.match(screen, /OnboardingAffiliationCategoryPanel/);
+    assert.match(screen, /affiliationSearchUiEqual/);
+    assert.match(screen, /scrollEnabled=\{!searchModeActive\}/);
+    assert.match(screen, /getAffiliationEntitySearchProvider|OnboardingAffiliationCategoryPanel/);
+  });
+
   it('CompleteProfileScreen refreshes affiliation summaries without full reload when dirty', () => {
     const screen = readShared('screens/CompleteProfileScreen.tsx');
     assert.match(screen, /refreshProfileSummaries/);

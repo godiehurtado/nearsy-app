@@ -11,6 +11,7 @@ import {
   Alert,
   AccessibilityInfo,
   Keyboard,
+  Linking,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -100,6 +101,7 @@ type ProfileDoc = {
   profileImage?: string | null;
   realName?: string;
   visibility?: boolean;
+  bgVisible?: boolean;
   mode?: ProfileMode;
   searchPreferences?: unknown;
   profiles?: unknown;
@@ -291,7 +293,12 @@ export default function MainHomeScreen({ navigation }: Props) {
             return;
           }
           if (result.visibility) {
-            await startBackgroundLocation({ uid }).catch(() => {});
+            // Honor More → Stay visible in background; do not restart BG when off.
+            if (profile.bgVisible) {
+              await startBackgroundLocation({ uid }).catch(() => {});
+            } else {
+              await stopBackgroundLocation().catch(() => {});
+            }
           } else {
             await stopBackgroundLocation().catch(() => {});
           }
@@ -302,7 +309,7 @@ export default function MainHomeScreen({ navigation }: Props) {
       return () => {
         cancelled = true;
       };
-    }, [profile.visibility, loading]),
+    }, [profile.visibility, profile.bgVisible, loading]),
   );
 
   const showVisibilityError = (
@@ -311,6 +318,30 @@ export default function MainHomeScreen({ navigation }: Props) {
   ) => {
     setVisibilityError(presentation);
     logVisibilityErrorDiagnostic('MainHome.visibility', presentation, err);
+    Alert.alert(presentation.title, presentation.userMessage);
+  };
+
+  const showVisibilityPermissionDenied = (
+    presentation: VisibilityErrorPresentation,
+    canAskAgain?: boolean,
+  ) => {
+    setVisibilityError(presentation);
+    logVisibilityErrorDiagnostic('MainHome.visibility', presentation);
+    const openSettingsLabel = t(
+      'onboarding.profileCompletion.gallery.openSettings' as any,
+    );
+    if (canAskAgain === false) {
+      Alert.alert(presentation.title, presentation.userMessage, [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: openSettingsLabel,
+          onPress: () => {
+            void Linking.openSettings();
+          },
+        },
+      ]);
+      return;
+    }
     Alert.alert(presentation.title, presentation.userMessage);
   };
 
@@ -391,8 +422,9 @@ export default function MainHomeScreen({ navigation }: Props) {
         const outcome = await activateVisibilityFlow(client);
         if (outcome.ok === false) {
           if (outcome.kind === 'permission-denied') {
-            showVisibilityError(
+            showVisibilityPermissionDenied(
               presentVisibilityLocalError('permission-denied', t),
+              outcome.canAskAgain,
             );
           } else if (outcome.kind === 'invalid-accuracy') {
             showVisibilityError(
@@ -413,7 +445,9 @@ export default function MainHomeScreen({ navigation }: Props) {
           return;
         }
         setProfile((p) => ({ ...p, visibility: true }));
-        await startBackgroundLocation({ uid }).catch(() => {});
+        if (profile.bgVisible) {
+          await startBackgroundLocation({ uid }).catch(() => {});
+        }
       } else {
         const outcome = await deactivateVisibilityFlow(client);
         if (outcome.ok === false) {

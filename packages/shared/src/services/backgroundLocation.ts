@@ -13,6 +13,33 @@ type StartOpts = {
   showsIndicatorIOS?: boolean;
 };
 
+export type BackgroundLocationPermissionFailure = {
+  code: 'foreground-denied' | 'background-denied';
+  canAskAgain: boolean;
+};
+
+export class BackgroundLocationPermissionError extends Error {
+  readonly code: BackgroundLocationPermissionFailure['code'];
+  readonly canAskAgain: boolean;
+
+  constructor(failure: BackgroundLocationPermissionFailure) {
+    super(
+      failure.code === 'foreground-denied'
+        ? 'Foreground location permission not granted'
+        : 'Background location permission not granted',
+    );
+    this.name = 'BackgroundLocationPermissionError';
+    this.code = failure.code;
+    this.canAskAgain = failure.canAskAgain;
+  }
+}
+
+export function isBackgroundLocationPermissionError(
+  err: unknown,
+): err is BackgroundLocationPermissionError {
+  return err instanceof BackgroundLocationPermissionError;
+}
+
 export async function startBackgroundLocation({
   uid,
   accuracy = Location.Accuracy.Highest,
@@ -27,18 +54,32 @@ export async function startBackgroundLocation({
   // Guarda uid para que la Task lo recupere
   await AsyncStorage.setItem('NEARSY_BG_UID', uid);
 
-  // ===== Permisos =====
+  // ===== Permisos (check → request only when iOS can still prompt) =====
 
-  const fg = await Location.requestForegroundPermissionsAsync();
-
+  let fg = await Location.getForegroundPermissionsAsync();
   if (fg.status !== 'granted') {
-    throw new Error('Foreground location permission not granted');
+    if (fg.status === 'undetermined' || fg.canAskAgain) {
+      fg = await Location.requestForegroundPermissionsAsync();
+    }
+  }
+  if (fg.status !== 'granted') {
+    throw new BackgroundLocationPermissionError({
+      code: 'foreground-denied',
+      canAskAgain: !!fg.canAskAgain,
+    });
   }
 
-  const bg = await Location.requestBackgroundPermissionsAsync();
-
+  let bg = await Location.getBackgroundPermissionsAsync();
   if (bg.status !== 'granted') {
-    throw new Error('Background location permission not granted');
+    if (bg.status === 'undetermined' || bg.canAskAgain) {
+      bg = await Location.requestBackgroundPermissionsAsync();
+    }
+  }
+  if (bg.status !== 'granted') {
+    throw new BackgroundLocationPermissionError({
+      code: 'background-denied',
+      canAskAgain: !!bg.canAskAgain,
+    });
   }
 
   // ===== Reinicia la task para aplicar SIEMPRE la configuración nueva =====
@@ -95,5 +136,14 @@ export async function stopBackgroundLocation() {
     }
   } finally {
     await AsyncStorage.removeItem('NEARSY_BG_UID');
+  }
+}
+
+/** True when Expo has an active background location updates registration. */
+export async function isBackgroundLocationTaskRunning(): Promise<boolean> {
+  try {
+    return await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
+  } catch {
+    return false;
   }
 }

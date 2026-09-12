@@ -7,6 +7,7 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -38,6 +39,7 @@ import {
 } from '../i18n';
 import type { MoreStackParamList } from '../navigation/MoreStack';
 import {
+  isBackgroundLocationPermissionError,
   startBackgroundLocation,
   stopBackgroundLocation,
 } from '../services/backgroundLocation';
@@ -441,20 +443,27 @@ export default function MoreScreen() {
     }
     try {
       setBgChanging(true);
-      await setDoc(
-        doc(firestoreDb, 'users', uid),
-        { bgVisible: next, updatedAt: Date.now() },
-        { merge: true },
-      );
       if (next) {
+        // Permission + task first; only then persist preference.
         await startBackgroundLocation({ uid });
+        await setDoc(
+          doc(firestoreDb, 'users', uid),
+          { bgVisible: true, updatedAt: Date.now() },
+          { merge: true },
+        );
         setBgVisible(true);
         Alert.alert(
           t('common.appName'),
           t('settings.backgroundVisibility.enabled'),
         );
       } else {
+        // Stop Nearsy background updates; iOS Always cannot be revoked in-app.
         await stopBackgroundLocation();
+        await setDoc(
+          doc(firestoreDb, 'users', uid),
+          { bgVisible: false, updatedAt: Date.now() },
+          { merge: true },
+        );
         setBgVisible(false);
         Alert.alert(
           t('common.appName'),
@@ -462,7 +471,31 @@ export default function MoreScreen() {
         );
       }
     } catch (e: any) {
-      setBgVisible(!next);
+      setBgVisible(false);
+      if (isBackgroundLocationPermissionError(e)) {
+        const openSettings = () => {
+          void Linking.openSettings();
+        };
+        if (!e.canAskAgain) {
+          Alert.alert(
+            t('common.appName'),
+            t('settings.backgroundVisibility.needsAlwaysPermission'),
+            [
+              { text: t('common.cancel'), style: 'cancel' },
+              {
+                text: t('settings.backgroundVisibility.openSettings'),
+                onPress: openSettings,
+              },
+            ],
+          );
+        } else {
+          Alert.alert(
+            t('common.error'),
+            t('settings.backgroundVisibility.needsAlwaysPermission'),
+          );
+        }
+        return;
+      }
       Alert.alert(
         t('common.error'),
         e?.message || t('settings.backgroundVisibility.error'),

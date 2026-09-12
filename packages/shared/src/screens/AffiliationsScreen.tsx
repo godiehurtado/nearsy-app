@@ -36,6 +36,7 @@ import {
   readAffiliationsForPostCrjEditor,
 } from '../affiliations/postCrjAffiliationEditor';
 import {
+  affiliationSearchUiEqual,
   resolvePendingAffiliationSearchUi,
   type AffiliationSearchUiSnapshot,
 } from '../affiliations/affiliationSearchInteraction';
@@ -131,8 +132,22 @@ export default function AffiliationsScreen() {
     categoryIds,
   );
   const showAddCta = Boolean(pendingSearch);
+  const searchModeActive = Boolean(pendingSearch?.ui.hideJourneyFooter);
   const selectedCount = selected.length;
   const isDirty = isPostCrjAffiliationEditorDirty(snapshotRef.current, selected);
+
+  const handleSearchUiChange = useCallback(
+    (
+      categoryId: OnboardingAffiliationCategoryId,
+      ui: AffiliationSearchUiSnapshot,
+    ) => {
+      setSearchUiByCategory((prev) => {
+        if (affiliationSearchUiEqual(prev[categoryId], ui)) return prev;
+        return { ...prev, [categoryId]: ui };
+      });
+    },
+    [],
+  );
 
   const screenTitle =
     editorMode === 'professional'
@@ -314,8 +329,10 @@ export default function AffiliationsScreen() {
           contentContainerStyle={{
             paddingTop: insets.top + spacing.md,
             paddingBottom: 120 + bottomBarInset,
+            ...(searchModeActive ? { flexGrow: 1 } : null),
           }}
           keyboardShouldPersistTaps="handled"
+          scrollEnabled={!searchModeActive}
           scrollIndicatorInsets={{ top: insets.top }}
         >
           <View
@@ -382,10 +399,7 @@ export default function AffiliationsScreen() {
                   selected={selected}
                   onChangeSelected={setSelected}
                   onSearchUiChange={(ui) => {
-                    setSearchUiByCategory((prev) => ({
-                      ...prev,
-                      [categoryId]: ui,
-                    }));
+                    handleSearchUiChange(categoryId, ui);
                   }}
                   searchAddRef={getAddRef(categoryId)}
                   contentScrollRef={scrollRef}
