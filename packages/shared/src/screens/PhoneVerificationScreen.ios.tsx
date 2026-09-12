@@ -31,6 +31,10 @@ import { buildFullPhoneNumber, sanitizePhoneNumber } from '../settings/settingsP
 import { isValidE164Phone, normalizeCanonicalPhone } from '../settings/settingsContracts';
 import { getPhoneOtpClient } from '../phoneOtp/iosPhoneOtpFoundation';
 import {
+  PhoneOtpClientError,
+  normalizePhoneOtpCallableError,
+} from '../phoneOtp/callables/errors';
+import {
   createPhoneOtpController,
   type PhoneOtpController,
   type PhoneOtpViewState,
@@ -40,6 +44,49 @@ type ScreenPhase = 'capture' | 'confirm' | 'code' | 'success' | 'terminal';
 
 function isValidPhone(fullPhone: string) {
   return isValidE164Phone(normalizeCanonicalPhone(fullPhone));
+}
+
+/** Client/bootstrap init failure before a controller exists (Continue must not stay on capture). */
+function viewStateForClientInitFailure(err: unknown): PhoneOtpViewState {
+  const anyErr = err as { code?: unknown; message?: unknown };
+  const code = typeof anyErr.code === 'string' ? anyErr.code : '';
+  const message = typeof anyErr.message === 'string' ? anyErr.message : '';
+  const appCheck =
+    code === 'APP_CHECK_FAILED' ||
+    /app check|debug provider token/i.test(message);
+
+  const lastError = appCheck
+    ? new PhoneOtpClientError({
+        code: 'failed-precondition',
+        reason: 'app_check_failed',
+        retryable: true,
+        messageKey: 'phoneOtp.errors.appCheckFailed',
+        causeForLog: err,
+      })
+    : normalizePhoneOtpCallableError(err);
+
+  const phase =
+    lastError.reason === 'app_check_failed'
+      ? 'app_check_failure'
+      : lastError.reason === 'auth_required'
+        ? 'auth_failure'
+        : 'failed';
+
+  return {
+    phase,
+    challengeId: null,
+    maskedPhone: null,
+    expiresAt: null,
+    resendAvailableAt: null,
+    attemptsRemaining: null,
+    sendsRemaining30m: null,
+    sendsRemaining24h: null,
+    phoneE164InMemory: null,
+    code: '',
+    lastError,
+    operationInFlight: false,
+    bootstrapComplete: true,
+  };
 }
 
 type OtpContextualActionProps = {
@@ -115,47 +162,38 @@ export default function PhoneVerificationScreen() {
     };
   }, []);
 
+  const runClientBootstrap = useCallback(async () => {
+    const client = await getPhoneOtpClient();
+    const controller = createPhoneOtpController({ client, locale });
+    controllerRef.current = controller;
+    const boot = await controller.bootstrap();
+    if (!aliveRef.current) return boot;
+    syncView(boot);
+    if (boot.phase === 'verified') {
+      navigation.replace('ProfileCompletion', {
+        uid: firebaseAuth.currentUser?.uid,
+        email: firebaseAuth.currentUser?.email,
+        inputNonce: Date.now(),
+      });
+    }
+    return boot;
+  }, [locale, navigation, syncView]);
+
   useEffect(() => {
-    let alive = true;
+    let cancelled = false;
     (async () => {
       try {
-        const client = await getPhoneOtpClient();
-        if (!alive) return;
-        const controller = createPhoneOtpController({ client, locale });
-        controllerRef.current = controller;
-        const boot = await controller.bootstrap();
-        if (!alive) return;
-        syncView(boot);
-        if (boot.phase === 'verified') {
-          navigation.replace('ProfileCompletion', {
-            uid: firebaseAuth.currentUser?.uid,
-            email: firebaseAuth.currentUser?.email,
-            inputNonce: Date.now(),
-          });
-        }
-      } catch {
-        if (!alive) return;
-        syncView({
-          phase: 'failed',
-          challengeId: null,
-          maskedPhone: null,
-          expiresAt: null,
-          resendAvailableAt: null,
-          attemptsRemaining: null,
-          sendsRemaining30m: null,
-          sendsRemaining24h: null,
-          phoneE164InMemory: null,
-          code: '',
-          lastError: null,
-          operationInFlight: false,
-          bootstrapComplete: true,
-        });
+        await runClientBootstrap();
+      } catch (err) {
+        if (cancelled || !aliveRef.current) return;
+        controllerRef.current = null;
+        syncView(viewStateForClientInitFailure(err));
       }
     })();
     return () => {
-      alive = false;
+      cancelled = true;
     };
-  }, [locale, navigation, syncView]);
+  }, [runClientBootstrap, syncView]);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
@@ -185,7 +223,8 @@ export default function PhoneVerificationScreen() {
       view.phase === 'locked' ||
       view.phase === 'cancelled' ||
       view.phase === 'app_check_failure' ||
-      view.phase === 'auth_failure'
+      view.phase === 'auth_failure' ||
+      view.phase === 'failed'
     ) {
       return 'terminal';
     }
@@ -214,7 +253,19 @@ export default function PhoneVerificationScreen() {
   const canResend = controllerRef.current?.canResend() ?? false;
 
   async function onContinueCapture() {
-    const controller = controllerRef.current;
+    let controller = controllerRef.current;
+    if (!controller) {
+      // Capture must only render after a successful client bootstrap. If the
+      // controller is missing, recover instead of silently no-op'ing Continue.
+      try {
+        await runClientBootstrap();
+      } catch (err) {
+        controllerRef.current = null;
+        syncView(viewStateForClientInitFailure(err));
+        return;
+      }
+      controller = controllerRef.current;
+    }
     if (!controller || !isValidPhone(fullPhone)) return;
     syncView(controller.setPhoneE164(normalizeCanonicalPhone(fullPhone)));
   }
@@ -253,9 +304,21 @@ export default function PhoneVerificationScreen() {
   }
 
   async function onRetryBootstrap() {
-    const controller = controllerRef.current;
-    if (!controller || view?.operationInFlight) return;
-    syncView(await controller.bootstrap());
+    if (view?.operationInFlight) return;
+    if (view) {
+      syncView({ ...view, operationInFlight: true, lastError: null });
+    }
+    try {
+      const existing = controllerRef.current;
+      if (existing) {
+        syncView(await existing.bootstrap());
+        return;
+      }
+      await runClientBootstrap();
+    } catch (err) {
+      controllerRef.current = null;
+      syncView(viewStateForClientInitFailure(err));
+    }
   }
 
   const busy = view?.operationInFlight ?? false;
