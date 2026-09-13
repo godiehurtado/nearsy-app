@@ -43,12 +43,16 @@ export default {
     title: 'Stay visible in background',
     description:
       'Keep your location updated so others can discover you nearby even when the app is closed.',
-    hint: 'Requires Always location permission. On iOS, a blue indicator may appear while Nearsy updates your location in the background.',
+    hint: 'Requires background location permission. Android may ask you to allow location “all the time” in Settings.',
     enabled: 'Background visibility is on',
-    disabled: 'Background visibility is off',
+    disabled:
+      'Background visibility is off in Nearsy. Location may still be allowed in system Settings until you change it there.',
     unsupported: 'Background location is not available on web.',
     authRequired: 'Please log in again.',
     error: 'Could not update background location.',
+    openSettings: 'Open Settings',
+    needsBackgroundPermission:
+      'Nearsy needs background location access to stay visible when the app is not open. Enable it in system Settings.',
   },
   language: {
     title: 'Language',

@@ -1,5 +1,4 @@
 export default {
-  greeting: 'Hello, {{name}}',
   brand: 'Nearsy',
   accountStatus: 'Your account is',
   controlHint: 'You control when you are visible to others.',
