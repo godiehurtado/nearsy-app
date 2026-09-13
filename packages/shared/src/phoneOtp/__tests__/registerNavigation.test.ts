@@ -39,7 +39,8 @@ describe('Android register and phone OTP integration', () => {
     assert.doesNotMatch(screen, /phoneVerified:\s*true/);
     assert.match(screen, /getPhoneOtpClient/);
     assert.match(screen, /createPhoneOtpController/);
-    assert.match(screen, /runPhoneOtpScreenSignOut/);
+    assert.doesNotMatch(screen, /runPhoneOtpScreenSignOut/);
+    assert.doesNotMatch(screen, /OtpSignOutFooter/);
     assert.match(screen, /OtpSixDigitInput/);
   });
 

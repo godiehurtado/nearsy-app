@@ -12,7 +12,6 @@ export const es: TranslationResources = {
   authentication: authenticationTranslations.es,
   onboarding: onboardingTranslations.es,
   home: {
-    greeting: 'Hola, {{name}}',
     brand: 'Nearsy',
     accountStatus: 'Tu cuenta está',
     controlHint: 'Tú decides cuándo eres visible para otros.',
@@ -260,13 +259,17 @@ export const es: TranslationResources = {
       title: 'Permanecer visible en segundo plano',
       description:
         'Mantén tu ubicación actualizada para que otros puedan descubrirte cerca aunque la app esté cerrada.',
-      hint: 'Requiere permiso de ubicación Siempre. En iOS puede aparecer un indicador azul mientras Nearsy actualiza tu ubicación en segundo plano.',
+      hint: 'Requiere permiso de ubicación en segundo plano. Android puede pedirte permitir la ubicación “todo el tiempo” en Ajustes.',
       enabled: 'La visibilidad en segundo plano está activada',
-      disabled: 'La visibilidad en segundo plano está desactivada',
+      disabled:
+        'La visibilidad en segundo plano está desactivada en Nearsy. La ubicación puede seguir permitida en Ajustes del sistema hasta que la cambies allí.',
       unsupported:
         'La ubicación en segundo plano no está disponible en la web.',
       authRequired: 'Vuelve a iniciar sesión.',
       error: 'No se pudo actualizar la ubicación en segundo plano.',
+      openSettings: 'Abrir Ajustes',
+      needsBackgroundPermission:
+        'Nearsy necesita acceso a la ubicación en segundo plano para permanecer visible cuando la app no está abierta. Actívalo en Ajustes del sistema.',
     },
     language: {
       title: 'Idioma',

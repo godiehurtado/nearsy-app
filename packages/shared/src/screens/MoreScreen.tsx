@@ -1,12 +1,14 @@
 ﻿/**
  * Settings hub — Nearsy 2.0 More tab (Unit 2A).
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -24,6 +26,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as Localization from 'expo-localization';
+import * as Location from 'expo-location';
 
 import { SettingsSection } from '../components/settings/SettingsSection';
 import { SettingsRow } from '../components/settings/SettingsRow';
@@ -43,7 +46,9 @@ import type { MoreStackParamList } from '../navigation/MoreStack';
 import {
   startBackgroundLocation,
   stopBackgroundLocation,
+  isBackgroundLocationPermissionError,
 } from '../services/backgroundLocation';
+import { evaluateBackgroundLocationSettingsReturn } from '../visibility/settingsRecovery';
 import {
   ageFromBirthDate,
   applyBirthDateTextChange,
@@ -193,6 +198,12 @@ export default function MoreScreen() {
   const [visibleToMaxAge, setVisibleToMaxAge] = useState<number | null>(null);
   const [bgVisible, setBgVisible] = useState(false);
   const [bgChanging, setBgChanging] = useState(false);
+  const appStateRef = useRef(AppState.currentState);
+  const pendingBgEnableIntentRef = useRef(false);
+  const bgChangingRef = useRef(bgChanging);
+  bgChangingRef.current = bgChanging;
+  const bgVisibleRef = useRef(bgVisible);
+  bgVisibleRef.current = bgVisible;
 
   const [editor, setEditor] = useState<EditorKind>(null);
   const [languageModalOpen, setLanguageModalOpen] = useState(false);
@@ -435,19 +446,25 @@ export default function MoreScreen() {
     }
     try {
       setBgChanging(true);
-      await updateUserProfilePartial(uid, {
-        bgVisible: next,
-        updatedAt: Date.now(),
-      });
       if (next) {
+        // Permission + task first; only then persist preference.
         await startBackgroundLocation({ uid });
+        await updateUserProfilePartial(uid, {
+          bgVisible: true,
+          updatedAt: Date.now(),
+        });
         setBgVisible(true);
         Alert.alert(
           t('common.appName'),
           t('settings.backgroundVisibility.enabled'),
         );
       } else {
+        // Stop Nearsy background updates; OS permission is not revoked in-app.
         await stopBackgroundLocation();
+        await updateUserProfilePartial(uid, {
+          bgVisible: false,
+          updatedAt: Date.now(),
+        });
         setBgVisible(false);
         Alert.alert(
           t('common.appName'),
@@ -455,7 +472,39 @@ export default function MoreScreen() {
         );
       }
     } catch (e: any) {
-      setBgVisible(!next);
+      setBgVisible(false);
+      if (isBackgroundLocationPermissionError(e)) {
+        const openSettings = () => {
+          pendingBgEnableIntentRef.current = true;
+          void Linking.openSettings();
+        };
+        if (!e.canAskAgain) {
+          Alert.alert(
+            t('common.appName'),
+            t('settings.backgroundVisibility.needsBackgroundPermission'),
+            [
+              {
+                text: t('common.actions.cancel'),
+                style: 'cancel',
+                onPress: () => {
+                  pendingBgEnableIntentRef.current = false;
+                },
+              },
+              {
+                text: t('settings.backgroundVisibility.openSettings'),
+                onPress: openSettings,
+              },
+            ],
+          );
+        } else {
+          pendingBgEnableIntentRef.current = false;
+          Alert.alert(
+            t('common.error'),
+            t('settings.backgroundVisibility.needsBackgroundPermission'),
+          );
+        }
+        return;
+      }
       Alert.alert(
         t('common.error'),
         e?.message || t('settings.backgroundVisibility.error'),
@@ -464,6 +513,65 @@ export default function MoreScreen() {
       setBgChanging(false);
     }
   };
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (nextState) => {
+      const wasBackground = appStateRef.current.match(/inactive|background/);
+      const isNowActive = nextState === 'active';
+      appStateRef.current = nextState;
+
+      if (wasBackground && isNowActive) {
+        if (!pendingBgEnableIntentRef.current) return;
+
+        let fgStatus = 'undetermined';
+        let bgStatus = 'undetermined';
+        try {
+          const fg = await Location.getForegroundPermissionsAsync();
+          fgStatus = fg.status;
+          const bg = await Location.getBackgroundPermissionsAsync();
+          bgStatus = bg.status;
+        } catch {
+          fgStatus = 'undetermined';
+          bgStatus = 'undetermined';
+        }
+
+        const evaluation = evaluateBackgroundLocationSettingsReturn(
+          pendingBgEnableIntentRef.current,
+          fgStatus,
+          bgStatus,
+        );
+
+        if (evaluation.clearIntent) {
+          pendingBgEnableIntentRef.current = false;
+        }
+
+        if (evaluation.shouldActivate) {
+          const uid = firebaseAuth.currentUser?.uid;
+          if (!uid || bgChangingRef.current || bgVisibleRef.current) return;
+
+          try {
+            setBgChanging(true);
+            await startBackgroundLocation({ uid });
+            await updateUserProfilePartial(uid, {
+              bgVisible: true,
+              updatedAt: Date.now(),
+            });
+            setBgVisible(true);
+            Alert.alert(
+              t('common.appName'),
+              t('settings.backgroundVisibility.enabled'),
+            );
+          } catch {
+            setBgVisible(false);
+          } finally {
+            setBgChanging(false);
+          }
+        }
+      }
+    });
+
+    return () => sub.remove();
+  }, [t]);
 
   const handleSelectLanguage = async (language: SupportedLanguage) => {
     if (!isSupportedLanguage(language)) return;
