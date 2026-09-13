@@ -28,7 +28,7 @@
       }
     },
     "production": {
-      "autoIncrement": false,
+      "autoIncrement": true,
       "prebuildCommand": "npx expo prebuild --platform android --clean",
       "env": {
         "NEARSY_FIREBASE_ENV": "production",
