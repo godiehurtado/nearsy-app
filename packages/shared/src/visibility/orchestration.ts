@@ -38,15 +38,27 @@ export async function ensureForegroundPermission(): Promise<{
   if (perm.status === 'granted') {
     return { status: 'granted', canAskAgain: true };
   }
+
+  // Request when the OS may still show a system prompt.
+  let requestedInSession = false;
   if (perm.status === 'undetermined' || perm.canAskAgain) {
     perm = await Location.requestForegroundPermissionsAsync();
+    requestedInSession = true;
   }
+
   if (perm.status === 'granted') {
     return { status: 'granted', canAskAgain: true };
   }
+
+  // After an in-session request (or when Expo reports the OS won't prompt),
+  // Settings is the recovery path. Do not trust a stale canAskAgain=true when
+  // we already attempted requestForegroundPermissionsAsync this session —
+  // Android USER_FIXED / silent denials often leave canAskAgain unreliable.
+  const canAskAgain = requestedInSession ? false : !!perm.canAskAgain;
+
   return {
     status: perm.status === 'undetermined' ? 'undetermined' : 'denied',
-    canAskAgain: !!perm.canAskAgain,
+    canAskAgain,
   };
 }
 

@@ -2,6 +2,7 @@ export const commonTranslations = {
   en: {
     appName: 'Nearsy',
     loading: 'Loading…',
+    error: 'Something went wrong',
     actions: {
       save: 'Save',
       cancel: 'Cancel',
@@ -20,6 +21,7 @@ export const commonTranslations = {
   es: {
     appName: 'Nearsy',
     loading: 'Cargando…',
+    error: 'Algo salió mal',
     actions: {
       save: 'Guardar',
       cancel: 'Cancelar',

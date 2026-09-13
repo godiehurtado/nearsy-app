@@ -51,6 +51,8 @@ export default {
     authRequired: 'Please log in again.',
     error: 'Could not update background location.',
     openSettings: 'Open Settings',
+    needsForegroundPermission:
+      'Nearsy needs location access before background visibility can stay on. Enable location in system Settings, then return here.',
     needsBackgroundPermission:
       'Nearsy needs background location access to stay visible when the app is not open. Enable it in system Settings.',
   },

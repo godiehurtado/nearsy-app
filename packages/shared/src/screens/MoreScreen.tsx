@@ -478,31 +478,25 @@ export default function MoreScreen() {
           pendingBgEnableIntentRef.current = true;
           void Linking.openSettings();
         };
-        if (!e.canAskAgain) {
-          Alert.alert(
-            t('common.appName'),
-            t('settings.backgroundVisibility.needsBackgroundPermission'),
-            [
-              {
-                text: t('common.actions.cancel'),
-                style: 'cancel',
-                onPress: () => {
-                  pendingBgEnableIntentRef.current = false;
-                },
-              },
-              {
-                text: t('settings.backgroundVisibility.openSettings'),
-                onPress: openSettings,
-              },
-            ],
-          );
-        } else {
-          pendingBgEnableIntentRef.current = false;
-          Alert.alert(
-            t('common.error'),
-            t('settings.backgroundVisibility.needsBackgroundPermission'),
-          );
-        }
+        const message =
+          e.code === 'foreground-denied'
+            ? t('settings.backgroundVisibility.needsForegroundPermission')
+            : t('settings.backgroundVisibility.needsBackgroundPermission');
+        // startBackgroundLocation already requested when possible. Always offer
+        // Settings recovery — never raw Error.message / missing i18n keys.
+        Alert.alert(t('common.appName'), message, [
+          {
+            text: t('common.actions.cancel'),
+            style: 'cancel',
+            onPress: () => {
+              pendingBgEnableIntentRef.current = false;
+            },
+          },
+          {
+            text: t('settings.backgroundVisibility.openSettings'),
+            onPress: openSettings,
+          },
+        ]);
         return;
       }
       Alert.alert(
