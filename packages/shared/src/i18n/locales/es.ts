@@ -268,6 +268,8 @@ export const es: TranslationResources = {
       authRequired: 'Vuelve a iniciar sesión.',
       error: 'No se pudo actualizar la ubicación en segundo plano.',
       openSettings: 'Abrir Ajustes',
+      needsForegroundPermission:
+        'Nearsy necesita acceso a la ubicación antes de activar la visibilidad en segundo plano. Activa la ubicación en Ajustes del sistema y vuelve aquí.',
       needsBackgroundPermission:
         'Nearsy necesita acceso a la ubicación en segundo plano para permanecer visible cuando la app no está abierta. Actívalo en Ajustes del sistema.',
     },

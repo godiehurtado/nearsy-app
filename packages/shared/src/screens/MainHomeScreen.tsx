@@ -330,34 +330,32 @@ export default function MainHomeScreen({ navigation }: Props) {
 
   const showVisibilityPermissionDenied = (
     presentation: VisibilityErrorPresentation,
-    canAskAgain?: boolean,
+    _canAskAgain?: boolean,
   ) => {
     setVisibilityError(presentation);
     logVisibilityErrorDiagnostic('MainHome.visibility', presentation);
     const openSettingsLabel = t(
       'onboarding.profileCompletion.gallery.openSettings' as any,
     );
-    if (canAskAgain === false) {
-      Alert.alert(presentation.title, presentation.userMessage, [
-        {
-          text: t('common.actions.cancel'),
-          style: 'cancel',
-          onPress: () => {
-            pendingVisibilityIntentRef.current = false;
-          },
+    // activateVisibilityFlow already requested permission when the OS could
+    // still prompt. Any remaining denial must offer Settings recovery —
+    // including soft-deny — so the user is never stuck on OK-only.
+    Alert.alert(presentation.title, presentation.userMessage, [
+      {
+        text: t('common.actions.cancel'),
+        style: 'cancel',
+        onPress: () => {
+          pendingVisibilityIntentRef.current = false;
         },
-        {
-          text: openSettingsLabel,
-          onPress: () => {
-            pendingVisibilityIntentRef.current = true;
-            void Linking.openSettings();
-          },
+      },
+      {
+        text: openSettingsLabel,
+        onPress: () => {
+          pendingVisibilityIntentRef.current = true;
+          void Linking.openSettings();
         },
-      ]);
-      return;
-    }
-    pendingVisibilityIntentRef.current = false;
-    Alert.alert(presentation.title, presentation.userMessage);
+      },
+    ]);
   };
 
   const announceInterestLimit = useCallback(() => {

@@ -37,7 +37,20 @@ export class BackgroundLocationPermissionError extends Error {
 export function isBackgroundLocationPermissionError(
   err: unknown,
 ): err is BackgroundLocationPermissionError {
-  return err instanceof BackgroundLocationPermissionError;
+  if (err instanceof BackgroundLocationPermissionError) return true;
+  // Metro monorepo can duplicate this module; duck-type across identities.
+  if (!err || typeof err !== 'object') return false;
+  const candidate = err as {
+    name?: unknown;
+    code?: unknown;
+    canAskAgain?: unknown;
+  };
+  return (
+    candidate.name === 'BackgroundLocationPermissionError' &&
+    (candidate.code === 'foreground-denied' ||
+      candidate.code === 'background-denied') &&
+    typeof candidate.canAskAgain === 'boolean'
+  );
 }
 
 export async function startBackgroundLocation({
@@ -57,28 +70,34 @@ export async function startBackgroundLocation({
   // ===== Permisos (check → request only when Android can still prompt) =====
 
   let fg = await Location.getForegroundPermissionsAsync();
+  let fgRequestedInSession = false;
   if (fg.status !== 'granted') {
     if (fg.status === 'undetermined' || fg.canAskAgain) {
       fg = await Location.requestForegroundPermissionsAsync();
+      fgRequestedInSession = true;
     }
   }
   if (fg.status !== 'granted') {
     throw new BackgroundLocationPermissionError({
       code: 'foreground-denied',
-      canAskAgain: !!fg.canAskAgain,
+      // After an in-session request, force Settings recovery (Expo canAskAgain
+      // is unreliable for Android USER_FIXED / silent denials).
+      canAskAgain: fgRequestedInSession ? false : !!fg.canAskAgain,
     });
   }
 
   let bg = await Location.getBackgroundPermissionsAsync();
+  let bgRequestedInSession = false;
   if (bg.status !== 'granted') {
     if (bg.status === 'undetermined' || bg.canAskAgain) {
       bg = await Location.requestBackgroundPermissionsAsync();
+      bgRequestedInSession = true;
     }
   }
   if (bg.status !== 'granted') {
     throw new BackgroundLocationPermissionError({
       code: 'background-denied',
-      canAskAgain: !!bg.canAskAgain,
+      canAskAgain: bgRequestedInSession ? false : !!bg.canAskAgain,
     });
   }
 

@@ -91,6 +91,9 @@ describe('Android post-MVP batch 1 source contracts', () => {
     const home = readSharedSource('screens/MainHomeScreen.tsx');
     const homeI18n = readSharedSource('i18n/resources/home.ts');
     assert.doesNotMatch(home, /home\.greeting/);
+    assert.doesNotMatch(home, /greetingSubtle/);
+    assert.doesNotMatch(home, /firstNameFromDisplayName/);
+    assert.doesNotMatch(home, /Hello,\s*/);
     assert.doesNotMatch(homeI18n, /greeting:/);
   });
 
@@ -100,20 +103,44 @@ describe('Android post-MVP batch 1 source contracts', () => {
     assert.match(home, /pendingVisibilityIntentRef/);
     assert.match(home, /evaluateVisibilitySettingsReturn/);
     assert.match(home, /Linking\.openSettings/);
-    assert.match(home, /outcome\.canAskAgain/);
+    assert.match(home, /showVisibilityPermissionDenied/);
+    // Permission-denied UI always offers Open Settings (no OK-only gate).
+    assert.match(
+      home,
+      /showVisibilityPermissionDenied[\s\S]*?Alert\.alert\([\s\S]*?openSettingsLabel/,
+    );
+    assert.doesNotMatch(
+      home,
+      /showVisibilityPermissionDenied[\s\S]*?if \(canAskAgain/,
+    );
     assert.match(orch, /canAskAgain:\s*boolean/);
+    assert.match(orch, /requestedInSession/);
     assert.match(home, /profileRef\.current\.bgVisible/);
   });
 
   it('Background Location Settings recovery is wired on More', () => {
     const more = readSharedSource('screens/MoreScreen.tsx');
     const bg = readSharedSource('services/backgroundLocation.ts');
+    const common = readSharedSource('i18n/resources/common.ts');
     assert.match(more, /pendingBgEnableIntentRef/);
     assert.match(more, /evaluateBackgroundLocationSettingsReturn/);
     assert.match(more, /isBackgroundLocationPermissionError/);
     assert.match(more, /Linking\.openSettings/);
+    assert.match(more, /needsForegroundPermission/);
+    // Permission errors always offer Open Settings (no canAskAgain OK-only).
+    assert.match(
+      more,
+      /isBackgroundLocationPermissionError[\s\S]*?openSettings[\s\S]*?Alert\.alert\([\s\S]*?openSettings/,
+    );
+    assert.doesNotMatch(
+      more,
+      /isBackgroundLocationPermissionError[\s\S]*?if \(!?e\.canAskAgain/,
+    );
     assert.match(bg, /BackgroundLocationPermissionError/);
     assert.match(bg, /canAskAgain/);
+    assert.match(bg, /fgRequestedInSession|bgRequestedInSession/);
+    assert.match(bg, /candidate\.name === 'BackgroundLocationPermissionError'/);
+    assert.match(common, /error:\s*'Something went wrong'/);
   });
 
   it('pushTokens.android never requests notification permission', () => {
