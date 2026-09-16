@@ -51,6 +51,21 @@ export async function setActiveProfileModeFlow(
   }
 }
 
+/**
+ * BUG-PROFILE-02 — gate for Discovery re-projection after Professional field save.
+ * Call setActiveProfileModeFlow('professional') only when the active face is
+ * already Professional and completeness validation passed for that face.
+ */
+export function shouldResyncProfessionalActiveModeAfterSave(input: {
+  activeMode: ProfileMode | null | undefined;
+  professionalFaceComplete: boolean;
+}): boolean {
+  return (
+    input.activeMode === 'professional' &&
+    input.professionalFaceComplete === true
+  );
+}
+
 export { clearActiveProfileModeConfirmation };
 
 export function presentActiveProfileModeError(

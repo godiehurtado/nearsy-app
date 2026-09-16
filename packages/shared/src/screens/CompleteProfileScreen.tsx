@@ -43,6 +43,8 @@ import {
   applyActiveProfileModeResponseToUserDoc,
   createActiveProfileModeSwitchSession,
   presentActiveProfileModeError,
+  setActiveProfileModeFlow,
+  shouldResyncProfessionalActiveModeAfterSave,
 } from '../visibility/activeProfileModeSync';
 import { uploadProfileImage } from '../services/storageService';
 import {
@@ -762,13 +764,13 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       applyDraftToForm(persistedDraft);
       commitSnapshot(persistedDraft);
 
-      setProfileDoc((prev) => ({
-        ...(prev ?? {}),
+      let nextProfileDoc: Record<string, unknown> = {
+        ...(profileDoc ?? {}),
         ...modePatch,
         profiles: {
-          ...((prev?.profiles as any) ?? {}),
+          ...((profileDoc?.profiles as any) ?? {}),
           [mode]: {
-            ...(((prev?.profiles as any)?.[mode] as object) ?? {}),
+            ...(((profileDoc?.profiles as any)?.[mode] as object) ?? {}),
             realName: persistedDraft.realName,
             lastName: persistedDraft.lastName,
             profileImage: persistedDraft.profileImage,
@@ -779,7 +781,47 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
               : {}),
           },
         },
-      }));
+      };
+
+      // BUG-PROFILE-02: after a successful Professional face save, re-run the
+      // canonical setActiveProfileMode callable so Discovery projection recovers
+      // without requiring Personal → Professional toggle.
+      if (
+        shouldResyncProfessionalActiveModeAfterSave({
+          activeMode: mode,
+          professionalFaceComplete: true,
+        })
+      ) {
+        const client = await getVisibilityDiscoveryClient();
+        const outcome = await setActiveProfileModeFlow(
+          client,
+          'professional',
+          uid,
+        );
+        if (!mountedRef.current || getUid() !== uid) {
+          return;
+        }
+        if (outcome.ok === false) {
+          const presentation = presentActiveProfileModeError(t, outcome.error);
+          Alert.alert(presentation.title, presentation.userMessage);
+        } else {
+          nextProfileDoc = applyActiveProfileModeResponseToUserDoc(
+            nextProfileDoc,
+            outcome.response,
+          );
+          if (!outcome.response.targetProfileComplete) {
+            Alert.alert(
+              t('activeProfileMode.errors.title'),
+              t('activeProfileMode.incomplete.message'),
+            );
+          }
+        }
+      }
+
+      if (!mountedRef.current || getUid() !== uid) {
+        return;
+      }
+      setProfileDoc(nextProfileDoc);
 
       clearPendingSocialProfilePrefill();
       Keyboard.dismiss();
