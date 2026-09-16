@@ -80,7 +80,11 @@ describe('Android prod Firebase native env upload guard', () => {
       assert.equal(cfg.expo.extra?.nearsyFirebaseEnv, 'production');
       assert.equal(cfg.expo.extra?.nearsyFirebaseProjectId, 'nearsy-pj');
       assert.equal(cfg.expo.extra?.nearsyDevClient, false);
-      assert.equal(cfg.expo.version, '2.0.0');
+      const appJson = JSON.parse(readRepo('apps/nearsy-android/app.json')) as {
+        expo?: { version?: string };
+      };
+      assert.equal(cfg.expo.version, appJson.expo?.version);
+      assert.match(String(cfg.expo.version ?? ''), /^\d+\.\d+\.\d+$/);
     } finally {
       if (previousEnv === undefined) delete process.env.NEARSY_FIREBASE_ENV;
       else process.env.NEARSY_FIREBASE_ENV = previousEnv;
