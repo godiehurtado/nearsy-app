@@ -1,791 +1,1086 @@
-/**
- * Registration wizard — auth phase only (Email → Password → Birth → Terms).
- *
- * Phone capture and OTP verification happen after account creation via the
- * central onboarding gate (PhoneVerificationScreen).
- *
- * Identity (Name / Last Name) is collected after Profile Type in ProfileCompletion.
- */
-import React, { useMemo, useState } from 'react';
+// RegisterScreen.tsx
+import { useMemo, useRef, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
   Text,
-  Pressable,
+  TextInput,
   StyleSheet,
-  ScrollView,
-  Alert,
-  Keyboard,
-  Linking,
   TouchableOpacity,
+  Alert,
   Modal,
+  Pressable,
   Platform,
-  useWindowDimensions,
-  type StyleProp,
-  type ViewStyle,
+  Linking,
+  KeyboardAvoidingView,
+  ScrollView,
+  ActivityIndicator,
+  FlatList,
 } from 'react-native';
+import { firebaseAuth } from '../config/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
-import * as Localization from 'expo-localization';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/types';
-import { RegistrationLayout } from '../components/registration/RegistrationLayout';
-import { RegistrationProgress } from '../components/registration/RegistrationProgress';
-import { RegistrationFadeSlideIn } from '../components/registration/RegistrationFadeSlideIn';
-import { FormInput } from '../components/registration/FormInput';
-import { authPhaseProgress } from '../components/registration/crjProgress';
-import {
-  EMAIL_REGISTER_STEPS,
-  type EmailRegisterStep,
-} from '../components/registration/emailRegisterSteps';
-import { PrimaryButton } from '../components/PrimaryButton';
-import { useAppTheme } from '../theme/ThemeContext';
-import { fontSize, fontWeight } from '../theme/typography';
-import { spacing } from '../theme/spacing';
-import { radius } from '../theme/radius';
-import {
-  ageFromBirthDate,
-  applyBirthDateTextChange,
-  birthDatePlaceholderForOrder,
-  birthDateToIso,
-  birthPartsFromDigits,
-  birthPartsToLocalDate,
-  commitCalendarSelection,
-  formatBirthDateDigits,
-  isBirthDateInFuture,
-  isCompleteBirthDate,
-  localDateToBirthParts,
-  maxAdultBirthDate,
-  meetsRegistrationAgeRange,
-  MAX_REGISTRATION_AGE,
-  minRegistrationBirthDate,
-  MIN_REGISTRATION_AGE,
-  resolveBirthDateOrder,
-  resolveCalendarInitialBirthDate,
-} from '../utils/birthDate';
+
 import { registerWithEmail } from '../services/authService';
 import { createUserProfile } from '../services/firestoreService';
-import { useTranslation } from '../i18n';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
+// 🔒 Social login must be disabled + invisible for this version
+const ENABLE_SOCIAL_LOGIN = false;
 
-type Step = EmailRegisterStep;
-
-const TERMS_URL = 'https://nearsy.app/legal';
-
-type FormState = {
-  /** Digit buffer only (max 8); never the localized display string. */
-  birthDigits: string;
+type CreateProfilePayload = {
   email: string;
-  password: string;
+  birthYear: number;
+  phone?: string | null;
+  acceptedTerms?: boolean;
+  acceptedTermsAt?: string;
+  phoneVerified?: boolean;
+  phoneVerifiedAt?: string | null;
 };
 
-function isStrongPassword(value: string) {
-  if (value.length < 8) return false;
-  return /[A-Za-z]/.test(value) && /\d/.test(value);
-}
-
-function isValidEmail(value: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-}
-
-type NativeDateTimePickerProps = {
-  value: Date;
-  mode?: 'date' | 'time' | 'datetime';
-  display?: 'default' | 'spinner' | 'compact' | 'inline' | 'calendar';
-  maximumDate?: Date;
-  minimumDate?: Date;
-  locale?: string;
-  themeVariant?: 'light' | 'dark';
-  accentColor?: string;
-  style?: StyleProp<ViewStyle>;
-  onChange?: (event: { type?: string }, date?: Date) => void;
+type CountryPhoneOption = {
+  code: string;
+  name: string;
+  dialCode: string;
+  flag: string;
 };
 
-/** Native calendar when linked in the Dev Client; otherwise null (digit mask remains). */
-function loadRegistrationDateTimePicker(): React.ComponentType<NativeDateTimePickerProps> | null {
-  try {
-    // Avoid UIManager probes — missing native views can hang New Architecture.
-    const { NativeModules } = require('react-native') as typeof import('react-native');
-    if (!NativeModules?.RNDateTimePicker) return null;
-    return require('@react-native-community/datetimepicker')
-      .default as React.ComponentType<NativeDateTimePickerProps>;
-  } catch {
-    return null;
-  }
-}
+const AMERICA_COUNTRIES: CountryPhoneOption[] = [
+  { code: 'CA', name: 'Canada', dialCode: '+1', flag: '🇨🇦' },
+  { code: 'US', name: 'United States', dialCode: '+1', flag: '🇺🇸' },
+  { code: 'MX', name: 'Mexico', dialCode: '+52', flag: '🇲🇽' },
+  { code: 'GT', name: 'Guatemala', dialCode: '+502', flag: '🇬🇹' },
+  { code: 'BZ', name: 'Belize', dialCode: '+501', flag: '🇧🇿' },
+  { code: 'SV', name: 'El Salvador', dialCode: '+503', flag: '🇸🇻' },
+  { code: 'HN', name: 'Honduras', dialCode: '+504', flag: '🇭🇳' },
+  { code: 'NI', name: 'Nicaragua', dialCode: '+505', flag: '🇳🇮' },
+  { code: 'CR', name: 'Costa Rica', dialCode: '+506', flag: '🇨🇷' },
+  { code: 'PA', name: 'Panama', dialCode: '+507', flag: '🇵🇦' },
+  { code: 'CU', name: 'Cuba', dialCode: '+53', flag: '🇨🇺' },
+  { code: 'DO', name: 'Dominican Republic', dialCode: '+1', flag: '🇩🇴' },
+  { code: 'HT', name: 'Haiti', dialCode: '+509', flag: '🇭🇹' },
+  { code: 'JM', name: 'Jamaica', dialCode: '+1', flag: '🇯🇲' },
+  { code: 'TT', name: 'Trinidad and Tobago', dialCode: '+1', flag: '🇹🇹' },
+  { code: 'BS', name: 'Bahamas', dialCode: '+1', flag: '🇧🇸' },
+  { code: 'BB', name: 'Barbados', dialCode: '+1', flag: '🇧🇧' },
+  { code: 'AG', name: 'Antigua and Barbuda', dialCode: '+1', flag: '🇦🇬' },
+  { code: 'DM', name: 'Dominica', dialCode: '+1', flag: '🇩🇲' },
+  { code: 'GD', name: 'Grenada', dialCode: '+1', flag: '🇬🇩' },
+  { code: 'KN', name: 'Saint Kitts and Nevis', dialCode: '+1', flag: '🇰🇳' },
+  { code: 'LC', name: 'Saint Lucia', dialCode: '+1', flag: '🇱🇨' },
+  {
+    code: 'VC',
+    name: 'Saint Vincent and the Grenadines',
+    dialCode: '+1',
+    flag: '🇻🇨',
+  },
+  { code: 'AR', name: 'Argentina', dialCode: '+54', flag: '🇦🇷' },
+  { code: 'BO', name: 'Bolivia', dialCode: '+591', flag: '🇧🇴' },
+  { code: 'BR', name: 'Brazil', dialCode: '+55', flag: '🇧🇷' },
+  { code: 'CL', name: 'Chile', dialCode: '+56', flag: '🇨🇱' },
+  { code: 'CO', name: 'Colombia', dialCode: '+57', flag: '🇨🇴' },
+  { code: 'EC', name: 'Ecuador', dialCode: '+593', flag: '🇪🇨' },
+  { code: 'GY', name: 'Guyana', dialCode: '+592', flag: '🇬🇾' },
+  { code: 'PY', name: 'Paraguay', dialCode: '+595', flag: '🇵🇾' },
+  { code: 'PE', name: 'Peru', dialCode: '+51', flag: '🇵🇪' },
+  { code: 'SR', name: 'Suriname', dialCode: '+597', flag: '🇸🇷' },
+  { code: 'UY', name: 'Uruguay', dialCode: '+598', flag: '🇺🇾' },
+  { code: 'VE', name: 'Venezuela', dialCode: '+58', flag: '🇻🇪' },
+];
 
-export default function RegisterScreen({ navigation }: Props) {
-  const { palette, theme } = useAppTheme();
-  const { t } = useTranslation();
-  const { height: windowHeight } = useWindowDimensions();
-  const inlinePickerHeight = Math.min(
-    380,
-    Math.max(300, Math.round(windowHeight * 0.42)),
+export default function RegisterScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
+
+  const [email, setEmail] = useState('');
+  const [confirmEmail, setConfirmEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [phone, setPhone] = useState('');
+
+  const [selectedCountry, setSelectedCountry] = useState<CountryPhoneOption>(
+    AMERICA_COUNTRIES.find((c) => c.code === 'US') || AMERICA_COUNTRIES[0],
   );
+  const [countryModalOpen, setCountryModalOpen] = useState(false);
 
-  const [stepIndex, setStepIndex] = useState(0);
+  // Loading único (evita doble taps)
   const [submitting, setSubmitting] = useState(false);
+
+  // Errores en vivo
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [confirmEmailError, setConfirmEmailError] = useState<string | null>(
+    null,
+  );
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [confirmPasswordError, setConfirmPasswordError] = useState<
+    string | null
+  >(null);
+
+  // Mostrar/ocultar password
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Año de nacimiento (obligatorio)
+  const [birthYear, setBirthYear] = useState<number | null>(null);
+
   const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [calendarOpen, setCalendarOpen] = useState(false);
-  const [calendarDraft, setCalendarDraft] = useState<Date | null>(null);
-  const NativeDateTimePicker = useMemo(() => loadRegistrationDateTimePicker(), []);
-  const [form, setForm] = useState<FormState>({
-    birthDigits: '',
-    email: '',
-    password: '',
-  });
 
-  const step: Step = EMAIL_REGISTER_STEPS[stepIndex];
-  const deviceLocaleTag =
-    Localization.getLocales()[0]?.languageTag ?? 'en-US';
-  const birthOrder = useMemo(
-    () => resolveBirthDateOrder(deviceLocaleTag),
-    [deviceLocaleTag],
+  // modal wheel
+  const [yearOpen, setYearOpen] = useState(false);
+  const [tempYear, setTempYear] = useState<number | null>(null);
+
+  const currentYear = new Date().getFullYear();
+  const years = useMemo(
+    () => Array.from({ length: 100 }, (_, i) => currentYear - i),
+    [currentYear],
   );
-  const birthVisible = useMemo(
-    () => formatBirthDateDigits(form.birthDigits, birthOrder),
-    [form.birthDigits, birthOrder],
-  );
-  const birthPlaceholder = useMemo(() => {
-    if (birthOrder === 'MDY') {
-      return t('authentication.register.wizard.placeholders.birthDateMdy');
+
+  const getInitialYearIndex = () => {
+    const fallback = currentYear - 18;
+    const targetYear = birthYear ?? tempYear ?? fallback;
+    const index = years.indexOf(targetYear);
+    return index >= 0 ? index : 0;
+  };
+
+  const openYear = () => {
+    const fallback = currentYear - 18;
+    setTempYear(birthYear ?? fallback);
+    setYearOpen(true);
+  };
+
+  const yearListRef = useRef<FlatList<number>>(null);
+
+  const confirmYear = () => {
+    if (tempYear) setBirthYear(tempYear);
+    setYearOpen(false);
+  };
+
+  const computedAge = birthYear != null ? currentYear - birthYear : null;
+  const ageInvalid = computedAge !== null && computedAge < 14;
+
+  const isValidEmail = (value: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
+  const isStrongPassword = (value: string) => {
+    if (value.length < 8) return false;
+    const hasLetter = /[A-Za-z]/.test(value);
+    const hasNumber = /\d/.test(value);
+    return hasLetter && hasNumber;
+  };
+
+  const sanitizePhoneNumber = (value: string) => value.replace(/\D/g, '');
+
+  const buildFullPhoneNumber = (
+    dialCode: string,
+    localPhone: string,
+  ): string => {
+    const cleanDialCode = dialCode.replace(/\D/g, '');
+    const cleanLocalPhone = sanitizePhoneNumber(localPhone);
+    return `+${cleanDialCode}${cleanLocalPhone}`;
+  };
+
+  const isValidPhone = (fullPhone: string) => {
+    if (!fullPhone) return false;
+    return /^\+[1-9]\d{7,14}$/.test(fullPhone);
+  };
+
+  // Handlers con validaciones en vivo
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+
+    if (!value.trim()) {
+      setEmailError(null);
+    } else if (!isValidEmail(value)) {
+      setEmailError('Please enter a valid email address.');
+    } else {
+      setEmailError(null);
     }
-    if (birthOrder === 'DMY') {
-      return t('authentication.register.wizard.placeholders.birthDateDmy');
+
+    if (confirmEmail.trim()) {
+      if (value.trim().toLowerCase() !== confirmEmail.trim().toLowerCase()) {
+        setConfirmEmailError('Email and confirmation email must match.');
+      } else {
+        setConfirmEmailError(null);
+      }
     }
-    return t('authentication.register.wizard.placeholders.birthDateYmd');
-  }, [birthOrder, t]);
-  const birthParts = useMemo(
-    () => birthPartsFromDigits(form.birthDigits, birthOrder),
-    [form.birthDigits, birthOrder],
-  );
-  const birthComplete = useMemo(
-    () => isCompleteBirthDate(birthParts),
-    [birthParts],
-  );
-  const birthFuture = useMemo(
-    () => isBirthDateInFuture(birthParts),
-    [birthParts],
-  );
-  const age = useMemo(() => ageFromBirthDate(birthParts), [birthParts]);
-  const ageOk = useMemo(
-    () => meetsRegistrationAgeRange(birthParts),
-    [birthParts],
-  );
-  const ageTooOld = useMemo(
-    () =>
-      birthComplete &&
-      !birthFuture &&
-      age !== null &&
-      age > MAX_REGISTRATION_AGE,
-    [birthComplete, birthFuture, age],
-  );
-  const birthDigitsFull = form.birthDigits.length === 8;
-  const calendarMaxDate = useMemo(
-    () => birthPartsToLocalDate(maxAdultBirthDate()) as Date,
-    [],
-  );
-  const calendarMinDate = useMemo(
-    () => birthPartsToLocalDate(minRegistrationBirthDate()) as Date,
-    [],
-  );
+  };
 
-  function openBirthDateCalendar() {
-    Keyboard.dismiss();
-    const initial = resolveCalendarInitialBirthDate(birthParts);
-    const asDate = birthPartsToLocalDate(initial);
-    if (!asDate) return;
-    setCalendarDraft(asDate);
-    setCalendarOpen(true);
-  }
+  const handleConfirmEmailChange = (value: string) => {
+    setConfirmEmail(value);
 
-  function cancelBirthDateCalendar() {
-    setCalendarOpen(false);
-    setCalendarDraft(null);
-  }
-
-  function applyCalendarDate(selectedDate: Date) {
-    const selected = localDateToBirthParts(selectedDate);
-    update(
-      'birthDigits',
-      commitCalendarSelection(form.birthDigits, selected, birthOrder),
-    );
-    setCalendarOpen(false);
-    setCalendarDraft(null);
-  }
-
-  function confirmBirthDateCalendar() {
-    if (!calendarDraft) {
-      cancelBirthDateCalendar();
+    if (!value.trim()) {
+      setConfirmEmailError(null);
       return;
     }
-    applyCalendarDate(calendarDraft);
-  }
 
-  function update<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((f) => ({ ...f, [key]: value }));
-  }
-
-  function isStepValid(): boolean {
-    switch (step) {
-      case 'birth':
-        return ageOk;
-      case 'email':
-        return isValidEmail(form.email);
-      case 'password':
-        return isStrongPassword(form.password);
-      case 'terms':
-        return acceptedTerms;
+    if (value.trim().toLowerCase() !== email.trim().toLowerCase()) {
+      setConfirmEmailError('Email and confirmation email must match.');
+    } else {
+      setConfirmEmailError(null);
     }
-  }
+  };
 
-  function blockedReason(): string | undefined {
-    if (isStepValid()) return undefined;
-    switch (step) {
-      case 'birth':
-        if (birthComplete && birthFuture) {
-          return t('authentication.register.wizard.validation.birthFuture');
-        }
-        if (birthDigitsFull && !birthComplete) {
-          return t('authentication.register.wizard.validation.birthInvalid');
-        }
-        if (age !== null && age < MIN_REGISTRATION_AGE) {
-          return t('authentication.register.wizard.validation.birthMinimumAge');
-        }
-        if (ageTooOld) {
-          return t('authentication.register.wizard.validation.birthMaximumAge', {
-            age: MAX_REGISTRATION_AGE,
-          });
-        }
-        return t('authentication.register.wizard.validation.birthIncomplete');
-      case 'email':
-        return t('authentication.register.wizard.validation.email');
-      case 'password':
-        return t('authentication.register.wizard.validation.password');
-      case 'terms':
-        if (!acceptedTerms) {
-          return t('authentication.register.wizard.validation.terms');
-        }
-        return undefined;
-      default:
-        return undefined;
+  const handlePasswordChange = (value: string) => {
+    setPassword(value);
+
+    if (!value) {
+      setPasswordError(null);
+    } else if (!isStrongPassword(value)) {
+      setPasswordError(
+        'Password must be at least 8 characters and include letters and numbers.',
+      );
+    } else {
+      setPasswordError(null);
     }
-  }
 
-  function goBack() {
-    if (stepIndex <= 0) {
-      navigation.navigate('Welcome');
+    if (confirmPassword) {
+      if (confirmPassword !== value) {
+        setConfirmPasswordError('Password and confirmation must match.');
+      } else {
+        setConfirmPasswordError(null);
+      }
+    }
+  };
+
+  const handleConfirmPasswordChange = (value: string) => {
+    setConfirmPassword(value);
+
+    if (!value) {
+      setConfirmPasswordError(null);
       return;
     }
-    setStepIndex((i) => i - 1);
-  }
 
-  async function submitRegistration() {
+    if (value !== password) {
+      setConfirmPasswordError('Password and confirmation must match.');
+    } else {
+      setConfirmPasswordError(null);
+    }
+  };
+
+  const handleRegister = async () => {
     if (submitting) return;
 
-    if (!acceptedTerms) {
+    if (birthYear === null) {
+      Alert.alert('Birth year required', 'Please select your birth year.');
+      return;
+    }
+
+    if (currentYear - birthYear < 14) {
+      Alert.alert('Minimum age', 'You must be 14+ to create an account.');
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      Alert.alert('Invalid email', 'Please enter a valid email address.');
+      return;
+    }
+
+    if (email.trim().toLowerCase() !== confirmEmail.trim().toLowerCase()) {
+      Alert.alert('Email mismatch', 'Email and confirmation email must match.');
+      return;
+    }
+
+    const localPhone = sanitizePhoneNumber(phone);
+    const normalizedPhone = localPhone
+      ? buildFullPhoneNumber(selectedCountry.dialCode, localPhone)
+      : '';
+
+    // ✅ Teléfono opcional en TODAS las plataformas
+    if (normalizedPhone && !isValidPhone(normalizedPhone)) {
       Alert.alert(
-        t('authentication.register.alerts.termsRequiredTitle'),
-        t('authentication.errors.termsRequired'),
+        'Invalid phone number',
+        'If you provide a phone number, please select your country code and enter a valid mobile number.',
       );
       return;
     }
 
-    const isoBirthDate = birthDateToIso(birthParts);
-    const year = birthParts.year;
-
-    if (!isoBirthDate || year == null || !meetsRegistrationAgeRange(birthParts)) {
+    if (!isStrongPassword(password)) {
       Alert.alert(
-        t('authentication.register.alerts.birthDateRequiredTitle'),
-        ageTooOld
-          ? t('authentication.register.alerts.maximumAgeMessage', {
-              age: MAX_REGISTRATION_AGE,
-            })
-          : t('authentication.register.alerts.minimumAgeMessage'),
+        'Weak password',
+        'Password must be at least 8 characters long and include letters and numbers.',
+      );
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert(
+        'Password mismatch',
+        'Password and confirmation password must match.',
+      );
+      return;
+    }
+
+    if (!acceptedTerms) {
+      Alert.alert(
+        'Terms required',
+        'You must accept the terms and conditions to create an account.',
       );
       return;
     }
 
     try {
       setSubmitting(true);
-      const { user } = await registerWithEmail(
-        form.email.trim(),
-        form.password,
-      );
 
-      // Ensure Auth token exists before profile gate / Phone OTP Identity calls.
-      try {
-        await user.getIdToken(true);
-      } catch {
-        // Gate + OTP foundation also refresh; continue to persist profile.
-      }
+      const { user } = await registerWithEmail(email.trim(), password);
 
-      await createUserProfile(user.uid, {
-        email: form.email.trim(),
-        birthYear: year,
-        birthDate: isoBirthDate,
-        phone: null,
-        phoneVerified: false,
-        phoneVerifiedAt: null,
+      const profile: CreateProfilePayload = {
+        email: email.trim(),
+        birthYear,
+        phone: normalizedPhone || null,
         acceptedTerms: true,
         acceptedTermsAt: new Date().toISOString(),
-      });
 
-      // Auth state + profile gate → Phone OTP (DOB already persisted; no old wizard).
-      // Gate treats an absent users/{uid} snapshot as loading until this write lands.
-      Keyboard.dismiss();
+        // ✅ ya no dependemos de SMS
+        phoneVerified: true,
+        phoneVerifiedAt: null,
+      };
+
+      await createUserProfile(user.uid, profile as any);
+
+      try {
+        await firebaseAuth.signOut();
+      } catch {}
+
+      Alert.alert(
+        'Verify your email',
+        'We sent a verification link to your email. Please verify your account before logging in on this device. If you don’t see the email, please check your Spam or Junk folder.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.replace('Login');
+            },
+          },
+        ],
+      );
     } catch (e: any) {
-      const code = e?.code as string | undefined;
-      let message = t('authentication.errors.default');
-      if (code === 'auth/email-already-in-use') {
-        message = t('authentication.errors.emailAlreadyInUse');
-      } else if (code === 'auth/weak-password') {
-        message = t('authentication.errors.weakPasswordRegister');
-      } else if (code === 'auth/network-request-failed') {
-        message = t('authentication.errors.networkError');
-      }
-      Alert.alert(t('authentication.register.alerts.invalidEmailTitle'), message);
+      const msg = getAuthErrorMessage(e?.code);
+      Alert.alert('Error', msg);
     } finally {
       setSubmitting(false);
     }
-  }
+  };
 
-  async function goNext() {
-    if (!isStepValid() || submitting) return;
-    if (step === 'terms') {
-      await submitRegistration();
-      return;
+  function getAuthErrorMessage(code?: string) {
+    switch (code) {
+      case 'auth/invalid-email':
+      case 'auth/missing-email':
+        return 'Please enter a valid email address.';
+
+      case 'auth/invalid-credential':
+      case 'auth/user-not-found':
+      case 'auth/wrong-password':
+        return 'Invalid email or password.';
+
+      case 'auth/weak-password':
+        return 'Password is too weak. Please use a stronger password.';
+
+      case 'auth/email-already-in-use':
+        return 'This email is already registered. Try logging in.';
+
+      case 'auth/network-request-failed':
+        return 'Network error. Please check your connection and try again.';
+
+      case 'auth/too-many-requests':
+        return 'Too many attempts. Please wait a moment and try again.';
+
+      case 'auth/operation-not-allowed':
+        return 'Email/password sign-up is disabled for this project.';
+
+      default:
+        return 'Something went wrong. Please try again.';
     }
-    setStepIndex((i) => i + 1);
   }
 
   return (
-    <RegistrationLayout
-      footer={
-        <PrimaryButton
-          label={
-            step === 'terms'
-              ? t('authentication.register.wizard.createAccount')
-              : t('authentication.register.wizard.continue')
-          }
-          onPress={() => {
-            void goNext();
-          }}
-          disabled={!isStepValid() || submitting}
-          loading={submitting}
-          disabledReason={blockedReason()}
-        />
-      }
-    >
-      <View style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('authentication.register.wizard.backA11y')}
-          onPress={goBack}
-          style={[
-            styles.backBtn,
-            { backgroundColor: palette.panel, borderColor: palette.border },
-          ]}
-        >
-          <Text style={{ color: palette.textPrimary, fontSize: 22, lineHeight: 24 }}>
-            {'\u2039'}
-          </Text>
-        </Pressable>
-        <RegistrationProgress
-          progress={authPhaseProgress(stepIndex, EMAIL_REGISTER_STEPS.length)}
-        />
-      </View>
-
-      <ScrollView
-        style={styles.stepScroll}
-        contentContainerStyle={styles.stepBody}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={insets.top + 20}
       >
-        <RegistrationFadeSlideIn animKey={step}>
-          {step === 'birth' && (
-            <>
-              <Text style={[styles.title, { color: palette.textPrimary }]}>
-                {t('authentication.register.wizard.steps.birth.title')}
-              </Text>
-              <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
-                {t('authentication.register.wizard.steps.birth.subtitle')}
-              </Text>
-              <View style={styles.form}>
-                <View style={styles.birthFieldRow}>
-                  <View style={styles.birthField}>
-                    <FormInput
-                      label={t('authentication.register.wizard.fields.birthDate')}
-                      placeholder={birthPlaceholder}
-                      keyboardType="number-pad"
-                      maxLength={10}
-                      value={birthVisible}
-                      accessibilityLabel={t(
-                        'authentication.register.wizard.fields.birthDate',
-                      )}
-                      accessibilityHint={birthDatePlaceholderForOrder(birthOrder)}
-                      onChangeText={(v) =>
-                        update(
-                          'birthDigits',
-                          applyBirthDateTextChange(birthVisible, v, birthOrder),
-                        )
-                      }
-                    />
-                  </View>
-                  {NativeDateTimePicker ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={t(
-                        'authentication.register.wizard.a11y.birthDateCalendar',
-                      )}
-                      onPress={openBirthDateCalendar}
-                      style={[
-                        styles.calendarBtn,
-                        {
-                          backgroundColor: palette.panel,
-                          borderColor: palette.borderStrong,
-                        },
-                      ]}
-                    >
-                      <Ionicons
-                        name="calendar-outline"
-                        size={22}
-                        color={palette.textPrimary}
-                      />
-                    </Pressable>
-                  ) : null}
-                </View>
-              </View>
-              {birthComplete && birthFuture ? (
-                <Text style={[styles.ageNote, { color: palette.danger }]}>
-                  {t('authentication.register.wizard.steps.birth.futureDate')}
-                </Text>
-              ) : null}
-              {!birthComplete && birthDigitsFull ? (
-                <Text style={[styles.ageNote, { color: palette.danger }]}>
-                  {t('authentication.register.wizard.steps.birth.invalidDate')}
-                </Text>
-              ) : null}
-              {age !== null && !birthFuture ? (
-                <Text
-                  style={[
-                    styles.ageNote,
-                    {
-                      color:
-                        ageOk && !ageTooOld
-                          ? palette.textSecondary
-                          : palette.danger,
-                    },
-                  ]}
-                >
-                  {ageTooOld
-                    ? t('authentication.register.wizard.steps.birth.ageTooOld', {
-                        age: MAX_REGISTRATION_AGE,
-                      })
-                    : ageOk
-                      ? t('authentication.register.wizard.steps.birth.ageOk', {
-                          age,
-                        })
-                      : t('authentication.register.wizard.steps.birth.ageTooYoung')}
-                </Text>
-              ) : null}
-            </>
-          )}
-
-          {step === 'email' && (
-            <>
-              <Text style={[styles.title, { color: palette.textPrimary }]}>
-                {t('authentication.register.wizard.steps.email.title')}
-              </Text>
-              <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
-                {t('authentication.register.wizard.steps.email.subtitle')}
-              </Text>
-              <View style={styles.form}>
-                <FormInput
-                  label={t('authentication.register.wizard.fields.email')}
-                  placeholder={t(
-                    'authentication.register.wizard.placeholders.email',
-                  )}
-                  value={form.email}
-                  onChangeText={(v) => update('email', v)}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  autoCorrect={false}
-                />
-              </View>
-            </>
-          )}
-
-          {step === 'password' && (
-            <>
-              <Text style={[styles.title, { color: palette.textPrimary }]}>
-                {t('authentication.register.wizard.steps.password.title')}
-              </Text>
-              <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
-                {t('authentication.register.wizard.steps.password.subtitle')}
-              </Text>
-              <View style={styles.form}>
-                <FormInput
-                  label={t('authentication.register.wizard.fields.password')}
-                  placeholder={t(
-                    'authentication.register.wizard.placeholders.password',
-                  )}
-                  value={form.password}
-                  onChangeText={(v) => update('password', v)}
-                  secureTextEntry
-                />
-              </View>
-            </>
-          )}
-
-          {step === 'terms' && (
-            <>
-              <Text style={[styles.title, { color: palette.textPrimary }]}>
-                {t('authentication.register.wizard.steps.terms.title')}
-              </Text>
-              <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
-                {t('authentication.register.wizard.steps.terms.subtitle')}
-              </Text>
-              <View style={styles.termsRow}>
-                <TouchableOpacity
-                  style={styles.checkbox}
-                  onPress={() => setAcceptedTerms((prev) => !prev)}
-                  activeOpacity={0.7}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: acceptedTerms }}
-                >
-                  <Ionicons
-                    name={acceptedTerms ? 'checkbox' : 'square-outline'}
-                    size={22}
-                    color={palette.primary}
-                  />
-                </TouchableOpacity>
-                <Text style={[styles.termsText, { color: palette.textSecondary }]}>
-                  {t('authentication.register.termsPrefix')}{' '}
-                  <Text
-                    style={[styles.termsLink, { color: palette.primary }]}
-                    onPress={() => {
-                      void Linking.openURL(TERMS_URL);
-                    }}
-                  >
-                    {t('authentication.register.termsLink')}
-                  </Text>
-                  .
-                </Text>
-              </View>
-            </>
-          )}
-        </RegistrationFadeSlideIn>
-      </ScrollView>
-
-      {/* Android: system date dialog (display=default) — no custom modal. */}
-      {NativeDateTimePicker &&
-      calendarOpen &&
-      calendarDraft &&
-      Platform.OS === 'android' ? (
-        <NativeDateTimePicker
-          value={calendarDraft}
-          mode="date"
-          display="default"
-          maximumDate={calendarMaxDate}
-          minimumDate={calendarMinDate}
-          onChange={(event, date) => {
-            if (event.type === 'dismissed') {
-              cancelBirthDateCalendar();
-              return;
-            }
-            if (date) applyCalendarDate(date);
-          }}
-        />
-      ) : null}
-
-      {/* iOS: inline calendar sheet (parity with develop-ios). */}
-      {NativeDateTimePicker &&
-      calendarOpen &&
-      calendarDraft &&
-      Platform.OS === 'ios' ? (
-        <Modal
-          visible
-          transparent
-          animationType="fade"
-          onRequestClose={cancelBirthDateCalendar}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={[
+            styles.container,
+            {
+              paddingTop: insets.top + 20,
+              paddingBottom: insets.bottom + 40,
+            },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <View style={styles.calendarOverlay}>
-            <Pressable
-              style={StyleSheet.absoluteFill}
-              accessibilityRole="button"
-              accessibilityLabel={t('common.cancel')}
-              onPress={cancelBirthDateCalendar}
-            />
-            <View
-              style={[
-                styles.calendarSheet,
-                { backgroundColor: palette.surface, borderColor: palette.border },
-              ]}
-            >
-              <View style={styles.calendarHeader}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t('common.cancel')}
-                  onPress={cancelBirthDateCalendar}
-                  hitSlop={8}
-                >
-                  <Text style={[styles.calendarAction, { color: palette.textSecondary }]}>
-                    {t('common.cancel')}
-                  </Text>
-                </Pressable>
-                <Text
-                  style={[styles.calendarTitle, { color: palette.textPrimary }]}
-                  numberOfLines={1}
-                >
-                  {t('authentication.register.birthDateModalTitle')}
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t(
-                    'authentication.register.wizard.calendarDone',
-                  )}
-                  onPress={confirmBirthDateCalendar}
-                  hitSlop={8}
-                >
-                  <Text style={[styles.calendarAction, { color: palette.primary }]}>
-                    {t('authentication.register.wizard.calendarDone')}
-                  </Text>
-                </Pressable>
-              </View>
-              <View
-                style={[
-                  styles.calendarPickerArea,
-                  { height: inlinePickerHeight },
-                ]}
+          <Text style={styles.title}>Create Account</Text>
+
+          {/* Email */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Email</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons
+                name="mail"
+                size={20}
+                color="#999"
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Email"
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                value={email}
+                onChangeText={handleEmailChange}
+                secureTextEntry={false}
+                autoComplete="off"
+                textContentType="none"
+                importantForAutofill="no"
+              />
+            </View>
+            {emailError && <Text style={styles.errorText}>{emailError}</Text>}
+          </View>
+
+          {/* Confirm Email */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Confirm Email</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons
+                name="mail"
+                size={20}
+                color="#999"
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Confirm Email"
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                value={confirmEmail}
+                onChangeText={handleConfirmEmailChange}
+                secureTextEntry={false}
+                autoComplete="off"
+                textContentType="none"
+                importantForAutofill="no"
+              />
+            </View>
+            {confirmEmailError && (
+              <Text style={styles.errorText}>{confirmEmailError}</Text>
+            )}
+          </View>
+
+          {/* Phone */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Phone number (optional)</Text>
+
+            <View style={styles.phoneContainer}>
+              <TouchableOpacity
+                style={styles.countrySelector}
+                activeOpacity={0.8}
+                onPress={() => setCountryModalOpen(true)}
               >
-                <NativeDateTimePicker
-                  value={calendarDraft}
-                  mode="date"
-                  display="inline"
-                  locale={deviceLocaleTag}
-                  themeVariant={theme === 'dark' ? 'dark' : 'light'}
-                  accentColor={palette.primary}
-                  style={{ width: '100%', height: inlinePickerHeight }}
-                  maximumDate={calendarMaxDate}
-                  minimumDate={calendarMinDate}
-                  onChange={(event, date) => {
-                    if (event.type === 'dismissed') {
-                      cancelBirthDateCalendar();
-                      return;
-                    }
-                    if (date) setCalendarDraft(date);
-                  }}
+                <Text style={styles.countryFlag}>{selectedCountry.flag}</Text>
+                <Text style={styles.countryDialCode}>
+                  {selectedCountry.dialCode}
+                </Text>
+                <Ionicons name="chevron-down" size={16} color="#475569" />
+              </TouchableOpacity>
+
+              <View style={styles.phoneInputContainer}>
+                <Ionicons
+                  name="call"
+                  size={20}
+                  color="#999"
+                  style={styles.inputIcon}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder={
+                    Platform.OS === 'android'
+                      ? 'Phone number (optional)'
+                      : 'Phone number (optional)'
+                  }
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="phone-pad"
+                  value={phone}
+                  onChangeText={(value) =>
+                    setPhone(value.replace(/[^\d]/g, ''))
+                  }
+                  secureTextEntry={false}
+                  autoComplete="off"
+                  textContentType="none"
+                  importantForAutofill="no"
                 />
               </View>
             </View>
+
+            <Text style={styles.helperText}>
+              Optional. Select your country and enter your mobile number.
+            </Text>
           </View>
-        </Modal>
-      ) : null}
-    </RegistrationLayout>
+
+          {/* Password */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Password</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons
+                name="lock-closed"
+                size={20}
+                color="#999"
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor="#9CA3AF"
+                secureTextEntry={!showPassword}
+                value={password}
+                onChangeText={handlePasswordChange}
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword((prev) => !prev)}
+                style={styles.eyeButton}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off' : 'eye'}
+                  size={20}
+                  color="#777"
+                />
+              </TouchableOpacity>
+            </View>
+            {passwordError && (
+              <Text style={styles.errorText}>{passwordError}</Text>
+            )}
+          </View>
+
+          {/* Confirm Password */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Confirm Password</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons
+                name="lock-closed"
+                size={20}
+                color="#999"
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Confirm Password"
+                placeholderTextColor="#9CA3AF"
+                secureTextEntry={!showConfirmPassword}
+                value={confirmPassword}
+                onChangeText={handleConfirmPasswordChange}
+              />
+              <TouchableOpacity
+                onPress={() => setShowConfirmPassword((prev) => !prev)}
+                style={styles.eyeButton}
+              >
+                <Ionicons
+                  name={showConfirmPassword ? 'eye-off' : 'eye'}
+                  size={20}
+                  color="#777"
+                />
+              </TouchableOpacity>
+            </View>
+            {confirmPasswordError && (
+              <Text style={styles.errorText}>{confirmPasswordError}</Text>
+            )}
+          </View>
+
+          {/* Birth year */}
+          <View style={[styles.fieldGroup, styles.ageRow]}>
+            <View style={styles.labelRow}>
+              <Ionicons name="calendar" size={18} color="#999" />
+              <Text style={styles.fieldLabel}>Birth year *</Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.selector, ageInvalid && styles.selectorError]}
+              activeOpacity={0.8}
+              onPress={openYear}
+            >
+              <Text style={styles.selectorText}>
+                {birthYear === null ? 'Select' : String(birthYear)}
+              </Text>
+              <Ionicons name="chevron-down" size={18} color="#475569" />
+            </TouchableOpacity>
+
+            {ageInvalid && (
+              <Text style={styles.ageHelper}>You must be 14+ to register.</Text>
+            )}
+          </View>
+
+          {/* Terms and Conditions */}
+          <View style={styles.termsRow}>
+            <TouchableOpacity
+              style={styles.checkbox}
+              onPress={() => setAcceptedTerms((prev) => !prev)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={acceptedTerms ? 'checkbox' : 'square-outline'}
+                size={22}
+                color="#3B5A85"
+              />
+            </TouchableOpacity>
+
+            <Text style={styles.termsText}>
+              I agree to the{' '}
+              <Text
+                style={styles.termsLink}
+                onPress={() => Linking.openURL('https://nearsy.app/legal')}
+              >
+                terms and conditions
+              </Text>
+              .
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.button, submitting && { opacity: 0.7 }]}
+            onPress={handleRegister}
+            disabled={submitting}
+            activeOpacity={0.85}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#1A2B3C" />
+            ) : (
+              <Text style={styles.buttonText}>Register</Text>
+            )}
+          </TouchableOpacity>
+
+          {ENABLE_SOCIAL_LOGIN ? null : null}
+
+          <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+            <Text style={styles.link}>Already have an account? Log In</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* Birth year modal */}
+      <Modal
+        visible={yearOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setYearOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => {
+            if (tempYear) setBirthYear(tempYear);
+            setYearOpen(false);
+          }}
+        >
+          <Pressable style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Select your birth year</Text>
+
+            <FlatList
+              ref={yearListRef}
+              data={years}
+              keyExtractor={(item) => String(item)}
+              style={{ width: '100%', maxHeight: 250 }}
+              contentContainerStyle={{ paddingVertical: 6 }}
+              showsVerticalScrollIndicator={false}
+              initialScrollIndex={getInitialYearIndex()}
+              getItemLayout={(_, index) => ({
+                length: 52,
+                offset: 52 * index,
+                index,
+              })}
+              onScrollToIndexFailed={(info) => {
+                setTimeout(() => {
+                  yearListRef.current?.scrollToIndex({
+                    index: info.index,
+                    animated: true,
+                    viewPosition: 0.5,
+                  });
+                }, 100);
+              }}
+              renderItem={({ item }) => {
+                const isSelected = item === birthYear;
+
+                return (
+                  <TouchableOpacity
+                    style={[
+                      styles.yearOption,
+                      isSelected && styles.yearOptionSelected,
+                    ]}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      setBirthYear(item);
+                      setYearOpen(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.yearText,
+                        isSelected && styles.yearTextSelected,
+                      ]}
+                    >
+                      {item}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Country modal */}
+      <Modal
+        visible={countryModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCountryModalOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setCountryModalOpen(false)}
+        >
+          <Pressable style={styles.countryModalCard}>
+            <Text style={styles.modalTitle}>Select country code</Text>
+
+            <FlatList
+              data={AMERICA_COUNTRIES}
+              keyExtractor={(item) => item.code}
+              showsVerticalScrollIndicator={false}
+              style={{ width: '100%' }}
+              renderItem={({ item }) => {
+                const isSelected = item.code === selectedCountry.code;
+
+                return (
+                  <TouchableOpacity
+                    style={[
+                      styles.countryOption,
+                      isSelected && styles.countryOptionSelected,
+                    ]}
+                    onPress={() => {
+                      setSelectedCountry(item);
+                      setCountryModalOpen(false);
+                    }}
+                  >
+                    <View style={styles.countryOptionLeft}>
+                      <Text style={styles.countryOptionFlag}>{item.flag}</Text>
+                      <View>
+                        <Text style={styles.countryOptionName}>
+                          {item.name}
+                        </Text>
+                        <Text style={styles.countryOptionDialCodeSmall}>
+                          {item.dialCode}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {isSelected ? (
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={22}
+                        color="#3B5A85"
+                      />
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
+  container: {
     alignItems: 'center',
-    gap: spacing.md,
-    marginBottom: spacing.xl,
+    backgroundColor: '#fff',
+    paddingHorizontal: 30,
   },
-  backBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepScroll: { flex: 1 },
-  stepBody: { paddingBottom: spacing.xl },
   title: {
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.extrabold,
-    letterSpacing: -0.3,
-    lineHeight: fontSize.xl * 1.2,
+    fontSize: 26,
+    fontWeight: 'bold',
+    marginBottom: 30,
+    color: '#2B3A42',
   },
-  subtitle: {
-    fontSize: fontSize.base,
-    lineHeight: fontSize.base * 1.5,
-    marginTop: spacing.sm,
+
+  fieldGroup: {
+    width: '100%',
+    marginBottom: 8,
   },
-  form: { gap: spacing.lg, marginTop: spacing.xxl },
-  birthFieldRow: {
+  fieldLabel: {
+    fontSize: 13,
+    color: '#4B5563',
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  labelRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-  },
-  birthField: { flex: 1 },
-  calendarBtn: {
-    width: 50,
-    height: 50,
-    marginTop: fontSize.xs + 7,
-    borderRadius: radius.lg,
-    borderWidth: 1,
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 6,
+    marginBottom: 4,
   },
-  calendarOverlay: {
+
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F1F1',
+    borderRadius: 30,
+    paddingHorizontal: 15,
+    marginVertical: 2,
+    width: '100%',
+  },
+  inputIcon: {
+    marginRight: 8,
+  },
+  input: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-    padding: spacing.lg,
+    height: 45,
+    fontSize: 16,
+    color: '#333',
   },
-  calendarSheet: {
-    borderRadius: radius.lg,
+  eyeButton: {
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  errorText: {
+    width: '100%',
+    color: '#EF4444',
+    fontSize: 12,
+    marginTop: 2,
+    marginBottom: 4,
+  },
+  helperText: {
+    width: '100%',
+    color: '#6B7280',
+    fontSize: 11,
+    marginTop: 2,
+    marginBottom: 4,
+  },
+
+  ageRow: {
+    width: '100%',
+    marginTop: 6,
+    marginBottom: 10,
+  },
+  selector: {
+    width: '100%',
+    height: 45,
+    paddingHorizontal: 15,
+    borderRadius: 30,
+    backgroundColor: '#F1F1F1',
     borderWidth: 1,
-    paddingBottom: spacing.md,
-  },
-  calendarHeader: {
+    borderColor: '#E5E7EB',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    gap: spacing.sm,
   },
-  calendarPickerArea: {
-    width: '100%',
-    alignItems: 'stretch',
-    justifyContent: 'flex-start',
+  selectorError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
   },
-  calendarTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.bold,
+  selectorText: {
+    color: '#111827',
+    fontSize: 16,
+    fontWeight: '500',
   },
-  calendarAction: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
-    minWidth: 64,
+  ageHelper: {
+    color: '#EF4444',
+    marginTop: 4,
+    marginBottom: 6,
+    fontSize: 12,
   },
-  ageNote: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-    marginTop: spacing.md,
-  },
+
   termsRow: {
+    width: '100%',
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginTop: spacing.xl,
+    alignItems: 'center',
+    marginTop: 8,
     paddingHorizontal: 4,
   },
   checkbox: {
     marginRight: 8,
-    marginTop: 1,
   },
   termsText: {
     flex: 1,
     fontSize: 12,
-    lineHeight: 18,
+    color: '#4B5563',
   },
   termsLink: {
-    fontWeight: fontWeight.bold,
     textDecorationLine: 'underline',
+    color: '#3B5A85',
+    fontWeight: '600',
+  },
+
+  button: {
+    backgroundColor: '#ADCBE3',
+    paddingVertical: 12,
+    paddingHorizontal: 60,
+    borderRadius: 20,
+    marginTop: 20,
+    minWidth: 180,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#1A2B3C',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+
+  link: {
+    marginTop: 20,
+    fontSize: 14,
+    color: '#555',
+  },
+
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  wheelItem: {
+    fontSize: 22,
+    lineHeight: 28,
+    textAlign: 'center',
+    color: '#111827',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  modalBtnSecondary: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#E5E7EB',
+  },
+  modalBtnSecondaryText: {
+    color: '#111827',
+    fontWeight: '600',
+  },
+  modalBtnPrimary: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#ADCBE3',
+  },
+  modalBtnPrimaryText: {
+    color: '#1A2B3C',
+    fontWeight: '700',
+  },
+
+  phoneContainer: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  countrySelector: {
+    height: 45,
+    minWidth: 110,
+    paddingHorizontal: 12,
+    borderRadius: 30,
+    backgroundColor: '#F1F1F1',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  countryFlag: {
+    fontSize: 18,
+    marginRight: 6,
+  },
+  countryDialCode: {
+    fontSize: 14,
+    color: '#111827',
+    fontWeight: '600',
+    marginRight: 6,
+  },
+  phoneInputContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F1F1',
+    borderRadius: 30,
+    paddingHorizontal: 15,
+    marginVertical: 2,
+  },
+
+  countryModalCard: {
+    width: '100%',
+    maxWidth: 420,
+    maxHeight: '70%',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+  },
+  countryOption: {
+    width: '100%',
+    minHeight: 58,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  countryOptionSelected: {
+    backgroundColor: '#EEF4FA',
+  },
+  countryOptionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    paddingRight: 8,
+  },
+  countryOptionFlag: {
+    fontSize: 22,
+    marginRight: 12,
+  },
+  countryOptionName: {
+    fontSize: 15,
+    color: '#111827',
+    fontWeight: '600',
+  },
+  countryOptionDialCodeSmall: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+
+  yearOption: {
+    height: 52,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+
+  yearOptionSelected: {
+    backgroundColor: '#EEF4FA',
+  },
+
+  yearText: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#111827',
+  },
+
+  yearTextSelected: {
+    color: '#3B5A85',
+    fontWeight: '800',
   },
 });

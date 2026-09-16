@@ -16,6 +16,9 @@ import { deleteAccountAndData } from '../services/accountDeletion';
 import TopHeader from '../components/TopHeader';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 
+// ✅ Firestore Web SDK
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+
 type ProfileDoc = {
   profileImage?: string | null;
   topBarColor?: string;
@@ -62,11 +65,9 @@ export default function DeleteAccountScreen() {
           return;
         }
 
-        const snap = await firestoreDb.collection('users').doc(uid).get();
+        const snap = await getDoc(doc(firestoreDb, 'users', uid));
 
-        const exists =
-          typeof snap.exists === 'function' ? snap.exists() : snap.exists;
-        if (!cancelled && exists) {
+        if (!cancelled && snap.exists()) {
           const data = snap.data() as ProfileDoc;
 
           setTopBarColor(data.topBarColor ?? '#3B5A85');
