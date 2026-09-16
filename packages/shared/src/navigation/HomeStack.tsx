@@ -7,6 +7,7 @@ import ProfileDetailScreen from '../screens/ProfileDetailScreen';
 import DiscoveryProfileScreen from '../screens/DiscoveryProfileScreen';
 import ProfileGalleryScreen from '../screens/ProfileGalleryScreen';
 import LiveLocationTracker from '../components/LiveLocationTracker';
+import ContractualLocationPublisher from '../components/ContractualLocationPublisher';
 
 export type HomeStackParamList = {
   MainHome: undefined;
@@ -31,6 +32,7 @@ export default function HomeStack() {
   return (
     <View style={{ flex: 1 }}>
       <LiveLocationTracker />
+      <ContractualLocationPublisher />
       <Stack.Navigator
         id="HomeStack"
         initialRouteName="MainHome"

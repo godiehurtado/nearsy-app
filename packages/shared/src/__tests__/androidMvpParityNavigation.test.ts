@@ -20,8 +20,9 @@ describe('Android MVP parity navigation', () => {
     assert.match(homeStack, /DiscoveryProfile/);
     assert.match(homeStack, /DiscoveryProfileScreen/);
     assert.match(nearby, /navigate\('DiscoveryProfile'/);
-    assert.match(nearby, /discoverNearby/);
+    assert.match(nearby, /loadNearbyWithContractualRefresh/);
     assert.match(nearby, /getVisibilityDiscoveryClient/);
+    assert.match(nearby, /DiscoveryProfile/);
   });
 
   it('MainHome uses visibility orchestration callables', () => {
