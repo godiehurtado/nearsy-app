@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "557470198780-3t02s298l4f9e38evnof8r51ftqna84f.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nearsy.app",
+            "certificate_hash": "ea727a1862e274bb476fdaf7831256a79992b7b4"
+          }
+        },
+        {
           "client_id": "557470198780-9hs4r3aoj7qbevcrcd8d2f7thkrakpqk.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

@@ -100,7 +100,8 @@ export default function RootTabs() {
         name="Home"
         component={HomeStack}
         listeners={({ navigation }) => ({
-          tabPress: () => {
+          tabPress: (e) => {
+            (e as unknown as { preventDefault: () => void }).preventDefault();
             navigation.navigate('Home', { screen: 'MainHome' });
           },
         })}

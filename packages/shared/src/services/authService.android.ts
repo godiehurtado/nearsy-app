@@ -1,6 +1,6 @@
 // src/services/authService.ts  ✅ Cross-platform (iOS Web SDK + Android RNFirebase)
 import { Platform } from 'react-native';
-import { firebaseAuth } from '../config/firebaseConfig';
+import { firebaseAuth } from '../config/firebaseConfig.android';
 
 // Tipos suaves (para que compile con ambos SDKs)
 type AnyUser = any;
@@ -29,7 +29,8 @@ export const registerWithEmail = async (
       firebaseAuth as any
     ).createUserWithEmailAndPassword(email, password);
 
-    await sendVerificationEmail(userCredential.user);
+    // TEMP: Email verification temporarily disabled (Android only).
+    // await sendVerificationEmail(userCredential.user);
 
     return userCredential;
   } catch (error: any) {

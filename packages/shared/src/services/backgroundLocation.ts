@@ -1,5 +1,6 @@
 // src/services/backgroundLocation.ts
 
+import { Platform } from 'react-native';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BG_LOCATION_TASK } from '../background/locationTask.android';
@@ -11,6 +12,46 @@ type StartOpts = {
   timeIntervalMs?: number; // ms mínimos entre updates (Android respeta más este)
   showsIndicatorIOS?: boolean;
 };
+
+export type BackgroundLocationPermissionFailure = {
+  code: 'foreground-denied' | 'background-denied';
+  canAskAgain: boolean;
+};
+
+export class BackgroundLocationPermissionError extends Error {
+  readonly code: BackgroundLocationPermissionFailure['code'];
+  readonly canAskAgain: boolean;
+
+  constructor(failure: BackgroundLocationPermissionFailure) {
+    super(
+      failure.code === 'foreground-denied'
+        ? 'Foreground location permission not granted'
+        : 'Background location permission not granted',
+    );
+    this.name = 'BackgroundLocationPermissionError';
+    this.code = failure.code;
+    this.canAskAgain = failure.canAskAgain;
+  }
+}
+
+export function isBackgroundLocationPermissionError(
+  err: unknown,
+): err is BackgroundLocationPermissionError {
+  if (err instanceof BackgroundLocationPermissionError) return true;
+  // Metro monorepo can duplicate this module; duck-type across identities.
+  if (!err || typeof err !== 'object') return false;
+  const candidate = err as {
+    name?: unknown;
+    code?: unknown;
+    canAskAgain?: unknown;
+  };
+  return (
+    candidate.name === 'BackgroundLocationPermissionError' &&
+    (candidate.code === 'foreground-denied' ||
+      candidate.code === 'background-denied') &&
+    typeof candidate.canAskAgain === 'boolean'
+  );
+}
 
 export async function startBackgroundLocation({
   uid,
@@ -26,18 +67,38 @@ export async function startBackgroundLocation({
   // Guarda uid para que la Task lo recupere
   await AsyncStorage.setItem('NEARSY_BG_UID', uid);
 
-  // ===== Permisos =====
+  // ===== Permisos (check → request only when Android can still prompt) =====
 
-  const fg = await Location.requestForegroundPermissionsAsync();
-
+  let fg = await Location.getForegroundPermissionsAsync();
+  let fgRequestedInSession = false;
   if (fg.status !== 'granted') {
-    throw new Error('Foreground location permission not granted');
+    if (fg.status === 'undetermined' || fg.canAskAgain) {
+      fg = await Location.requestForegroundPermissionsAsync();
+      fgRequestedInSession = true;
+    }
+  }
+  if (fg.status !== 'granted') {
+    throw new BackgroundLocationPermissionError({
+      code: 'foreground-denied',
+      // After an in-session request, force Settings recovery (Expo canAskAgain
+      // is unreliable for Android USER_FIXED / silent denials).
+      canAskAgain: fgRequestedInSession ? false : !!fg.canAskAgain,
+    });
   }
 
-  const bg = await Location.requestBackgroundPermissionsAsync();
-
+  let bg = await Location.getBackgroundPermissionsAsync();
+  let bgRequestedInSession = false;
   if (bg.status !== 'granted') {
-    throw new Error('Background location permission not granted');
+    if (bg.status === 'undetermined' || bg.canAskAgain) {
+      bg = await Location.requestBackgroundPermissionsAsync();
+      bgRequestedInSession = true;
+    }
+  }
+  if (bg.status !== 'granted') {
+    throw new BackgroundLocationPermissionError({
+      code: 'background-denied',
+      canAskAgain: bgRequestedInSession ? false : !!bg.canAskAgain,
+    });
   }
 
   // ===== Reinicia la task para aplicar SIEMPRE la configuración nueva =====
@@ -51,6 +112,11 @@ export async function startBackgroundLocation({
 
   // ===== Inicia tracking =====
 
+  // Android: distanceInterval 0 → time-driven delivery while stationary (no 1 m gate).
+  // iOS: keep caller/default distanceInterval (1 m).
+  const effectiveDistanceInterval =
+    Platform.OS === 'android' ? 0 : distanceInterval;
+
   await Location.startLocationUpdatesAsync(BG_LOCATION_TASK, {
     accuracy,
 
@@ -58,7 +124,7 @@ export async function startBackgroundLocation({
     timeInterval: timeIntervalMs,
 
     // iOS: distancia mínima (Android también la considera)
-    distanceInterval,
+    distanceInterval: effectiveDistanceInterval,
 
     // iOS: barra azul
     showsBackgroundLocationIndicator: showsIndicatorIOS,

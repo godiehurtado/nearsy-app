@@ -1,481 +1,623 @@
-// src/screens/PhoneVerificationScreen.android.tsx ✅ RNFirebase-only
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+// PhoneVerificationScreen.android — Identity backend OTP (not Firebase PhoneAuth)
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TextInput,
-  TouchableOpacity,
+  ScrollView,
+  Pressable,
+  AppState,
   ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { RegistrationLayout } from '../components/registration/RegistrationLayout';
+import { RegistrationProgress } from '../components/registration/RegistrationProgress';
+import { RegistrationFadeSlideIn } from '../components/registration/RegistrationFadeSlideIn';
+import { FormInput } from '../components/registration/FormInput';
+import { OtpSixDigitInput } from '../components/phoneOtp/OtpSixDigitInput';
+import { REGISTRATION_COUNTRIES } from '../components/registration/countries';
+import { authPhaseProgress } from '../components/registration/crjProgress';
+import { PrimaryButton, SecondaryButton } from '../components/PrimaryButton';
+import { useAppTheme } from '../theme/ThemeContext';
+import { fontSize, fontWeight } from '../theme/typography';
+import { spacing } from '../theme/spacing';
+import { radius } from '../theme/radius';
+import { useTranslation } from '../i18n';
 import { firebaseAuth } from '../config/firebaseConfig';
-import { PhoneAuthProvider, PhoneAuthState } from '@react-native-firebase/auth';
+import { buildFullPhoneNumber, sanitizePhoneNumber } from '../settings/settingsPhoneCountries';
+import { isValidE164Phone, normalizeCanonicalPhone } from '../settings/settingsContracts';
+import { getPhoneOtpClient } from '../phoneOtp/phoneOtpFoundation';
 import {
-  isProfileComplete,
-  updateUserProfilePartial,
-} from '../services/firestoreService';
+  createPhoneOtpController,
+  type PhoneOtpController,
+  type PhoneOtpViewState,
+} from '../phoneOtp/phoneOtpController';
 
-type RouteParams = {
-  uid: string;
-  phone: string;
+type ScreenPhase = 'capture' | 'confirm' | 'code' | 'success' | 'terminal';
+
+function isValidPhone(fullPhone: string) {
+  return isValidE164Phone(normalizeCanonicalPhone(fullPhone));
+}
+
+type OtpContextualActionProps = {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  accessibilityLabel?: string;
+  palette: ReturnType<typeof useAppTheme>['palette'];
 };
 
+/** Secondary contextual action (resend countdown, try again). */
+function OtpContextualAction({
+  label,
+  onPress,
+  disabled = false,
+  accessibilityLabel,
+  palette,
+}: OtpContextualActionProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled }}
+      style={({ pressed }) => [
+        styles.actionControl,
+        {
+          borderColor: disabled ? palette.border : palette.socialBorder,
+          backgroundColor: pressed && !disabled ? palette.socialPressed : 'transparent',
+          opacity: disabled ? 0.72 : 1,
+        },
+      ]}
+    >
+      <Text
+        style={[
+          styles.actionControlLabel,
+          { color: disabled ? palette.textMuted : palette.primary },
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 export default function PhoneVerificationScreen() {
-  const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
-  const route = useRoute<any>();
+  const insets = useSafeAreaInsets();
+  const { palette } = useAppTheme();
+  const { t, i18n } = useTranslation();
 
-  const { uid, phone } = (route.params || {}) as RouteParams;
+  const controllerRef = useRef<PhoneOtpController | null>(null);
+  const aliveRef = useRef(true);
 
-  const [verificationId, setVerificationId] = useState<string | null>(null);
-  const [code, setCode] = useState('');
-  const [sending, setSending] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [resendTimer, setResendTimer] = useState(0);
+  const [view, setView] = useState<PhoneOtpViewState | null>(null);
+  const [countryDial, setCountryDial] = useState(REGISTRATION_COUNTRIES[0].dial);
+  const [localPhone, setLocalPhone] = useState('');
+  const [showCountries, setShowCountries] = useState(false);
+  const [tick, setTick] = useState(0);
 
-  // Guardamos el listener object para poder limpiar y no acumular listeners
-  const phoneListenerRef = useRef<any>(null);
+  const locale = i18n.language === 'es' ? 'es' : 'en';
 
-  // Timer para reintento de envío de SMS
+  const syncView = useCallback((next: PhoneOtpViewState) => {
+    if (!aliveRef.current) return next;
+    setView(next);
+    return next;
+  }, []);
+
   useEffect(() => {
-    if (resendTimer <= 0) return;
-    const id = setInterval(() => setResendTimer((prev) => prev - 1), 1000);
-    return () => clearInterval(id);
-  }, [resendTimer]);
-
-  // Cleanup listener al salir
-  useEffect(() => {
+    aliveRef.current = true;
     return () => {
-      if (phoneListenerRef.current) {
-        try {
-          if (
-            typeof phoneListenerRef.current.removeAllListeners === 'function'
-          ) {
-            phoneListenerRef.current.removeAllListeners('state_changed');
-          } else if (typeof phoneListenerRef.current.off === 'function') {
-            phoneListenerRef.current.off('state_changed');
-          }
-        } catch {
-          // ignore
-        }
-        phoneListenerRef.current = null;
-      }
+      aliveRef.current = false;
     };
   }, []);
 
-  const maskedPhone = useMemo(() => {
-    const trimmed = (phone || '').trim();
-    if (trimmed.length < 4) return trimmed;
-    return trimmed.slice(0, -2).replace(/./g, '•') + trimmed.slice(-2);
-  }, [phone]);
-
-  const getPhoneErrorMessage = (code?: string) => {
-    switch (code) {
-      case 'auth/invalid-verification-code':
-        return 'The code is invalid. Please check it and try again.';
-      case 'auth/missing-verification-code':
-        return 'Please enter the verification code.';
-      case 'auth/code-expired':
-        return 'The code has expired. Please request a new one.';
-      case 'auth/too-many-requests':
-        return 'Too many attempts. Please wait a bit and try again.';
-      case 'auth/credential-already-in-use':
-        return 'This phone number is already associated with another account.';
-      case 'auth/provider-already-linked':
-        return 'A phone number is already linked to this account. We will update it instead.';
-      default:
-        return '';
-    }
-  };
-
-  const handleVerifyInternal = async (vId: string, c: string) => {
-    const currentUser = firebaseAuth.currentUser;
-    if (!currentUser) throw new Error('No authenticated user.');
-
-    // Seguridad: validar que el uid de route coincida con el user actual
-    if (uid && currentUser.uid !== uid) {
-      throw new Error('Session mismatch. Please log in again.');
-    }
-
-    const credential = PhoneAuthProvider.credential(vId, c.trim());
-
-    // ✅ Primero intentamos link, si ya existe provider ligado usamos updatePhoneNumber
-    try {
-      await currentUser.linkWithCredential(credential);
-    } catch (err: any) {
-      const errCode = err?.code;
-      if (
-        errCode === 'auth/provider-already-linked' ||
-        errCode === 'auth/credential-already-in-use'
-      ) {
-        await currentUser.updatePhoneNumber(credential);
-      } else {
-        throw err;
-      }
-    }
-
-    // ✅ Guardamos en Firestore (y marcamos verificado)
-    await updateUserProfilePartial(currentUser.uid, {
-      phoneVerified: true,
-      phoneVerifiedAt: new Date().toISOString(),
-      phone: phone.trim(),
-    });
-
-    return currentUser;
-  };
-
-  const sendCode = async () => {
-    if (!phone?.trim()) {
-      Alert.alert('Phone required', 'Phone number is missing.');
-      return;
-    }
-
-    // 🔹 Por ahora desactivamos verificación por SMS en iOS
-    if (Platform.OS === 'ios') {
-      Alert.alert(
-        'Not available yet',
-        'Phone verification via SMS is currently only available on Android in this beta version.',
-      );
-      return;
-    }
-
-    try {
-      setSending(true);
-
-      const currentUser = firebaseAuth.currentUser;
-      if (!currentUser) throw new Error('No authenticated user.');
-
-      // ✅ evita múltiples listeners
-      if (phoneListenerRef.current) {
-        try {
-          if (
-            typeof phoneListenerRef.current.removeAllListeners === 'function'
-          ) {
-            phoneListenerRef.current.removeAllListeners('state_changed');
-          } else if (typeof phoneListenerRef.current.off === 'function') {
-            phoneListenerRef.current.off('state_changed');
-          }
-        } catch {
-          // ignore
-        }
-        phoneListenerRef.current = null;
-      }
-
-      const phoneAuthListener = firebaseAuth.verifyPhoneNumber(phone);
-      phoneListenerRef.current = phoneAuthListener;
-
-      phoneAuthListener.on('state_changed', async (phoneAuthSnapshot: any) => {
-        const state = phoneAuthSnapshot.state;
-
-        if (state === PhoneAuthState.CODE_SENT) {
-          setVerificationId(phoneAuthSnapshot.verificationId ?? null);
-          setResendTimer(60);
-          Alert.alert(
-            'Code sent',
-            `We sent a verification code to ${maskedPhone}.`,
-          );
-          return;
-        }
-
-        // ✅ A veces Android auto-verifica
-        if (state === PhoneAuthState.AUTO_VERIFIED) {
-          try {
-            const vId = phoneAuthSnapshot.verificationId;
-            const sms = (phoneAuthSnapshot as any)?.code; // no siempre viene
-            if (vId && sms) {
-              setVerificationId(vId);
-              setCode(String(sms));
-              await handleVerifyInternal(vId, String(sms));
-            }
-          } catch {
-            // si falla, el usuario puede ingresar el código manual
-          }
-          return;
-        }
-
-        if (state === PhoneAuthState.AUTO_VERIFY_TIMEOUT) {
-          // Dejamos el verificationId si está disponible
-          if (phoneAuthSnapshot.verificationId) {
-            setVerificationId(phoneAuthSnapshot.verificationId);
-          }
-          return;
-        }
-
-        if (state === PhoneAuthState.ERROR) {
-          const errCode = phoneAuthSnapshot.error?.code;
-          Alert.alert(
-            'Error',
-            getPhoneErrorMessage(errCode) ||
-              phoneAuthSnapshot.error?.message ||
-              'Could not send verification code.',
-          );
-          return;
-        }
-      });
-    } catch (e: any) {
-      Alert.alert(
-        'Error',
-        getPhoneErrorMessage(e?.code) ||
-          e?.message ||
-          'Could not send verification code.',
-      );
-    } finally {
-      setSending(false);
-    }
-  };
-
-  // Envía el SMS automáticamente al entrar
   useEffect(() => {
-    sendCode();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let alive = true;
+    (async () => {
+      try {
+        const client = await getPhoneOtpClient();
+        if (!alive) return;
+        const controller = createPhoneOtpController({ client, locale });
+        controllerRef.current = controller;
+        const boot = await controller.bootstrap();
+        if (!alive) return;
+        syncView(boot);
+        if (boot.phase === 'verified') {
+          navigation.replace('ProfileCompletion', {
+            uid: firebaseAuth.currentUser?.uid,
+            email: firebaseAuth.currentUser?.email,
+            inputNonce: Date.now(),
+          });
+        }
+      } catch {
+        if (!alive) return;
+        syncView({
+          phase: 'failed',
+          challengeId: null,
+          maskedPhone: null,
+          expiresAt: null,
+          resendAvailableAt: null,
+          attemptsRemaining: null,
+          sendsRemaining30m: null,
+          sendsRemaining24h: null,
+          phoneE164InMemory: null,
+          code: '',
+          lastError: null,
+          operationInFlight: false,
+          bootstrapComplete: true,
+        });
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [locale, navigation, syncView]);
 
-  const handleVerify = async () => {
-    if (Platform.OS === 'ios') {
-      Alert.alert(
-        'Not available yet',
-        'Phone verification via SMS is currently only available on Android in this beta version.',
-      );
-      return;
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' || !controllerRef.current) return;
+      void controllerRef.current.onForeground().then(syncView);
+    });
+    return () => sub.remove();
+  }, [syncView]);
+
+  useEffect(() => {
+    if (!view?.resendAvailableAt) return;
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [view?.resendAvailableAt]);
+
+  const fullPhone = useMemo(() => {
+    const local = sanitizePhoneNumber(localPhone);
+    return local ? buildFullPhoneNumber(countryDial, local) : '';
+  }, [countryDial, localPhone]);
+
+  const screenPhase: ScreenPhase = useMemo(() => {
+    if (!view) return 'capture';
+    if (view.phase === 'verified') return 'success';
+    if (
+      view.phase === 'feature_disabled' ||
+      view.phase === 'expired' ||
+      view.phase === 'locked' ||
+      view.phase === 'cancelled' ||
+      view.phase === 'app_check_failure' ||
+      view.phase === 'auth_failure'
+    ) {
+      return 'terminal';
     }
-
-    if (!verificationId) {
-      Alert.alert(
-        'No code sent',
-        'We could not find an active verification. Please resend the code.',
-      );
-      return;
+    if (view.phase === 'confirm') return 'confirm';
+    if (
+      view.phase === 'pending' ||
+      view.phase === 'checking' ||
+      view.phase === 'sending'
+    ) {
+      return 'code';
     }
+    return 'capture';
+  }, [view]);
 
-    if (!code.trim()) {
-      Alert.alert('Code required', 'Please enter the verification code.');
-      return;
+  const errorMessage = useMemo(() => {
+    if (!view?.lastError) return null;
+    const key = view.lastError.messageKey;
+    return t(key as any);
+  }, [view?.lastError, t]);
+
+  const resendSeconds = useMemo(() => {
+    void tick;
+    return controllerRef.current?.resendSecondsRemaining() ?? 0;
+  }, [tick, view?.resendAvailableAt]);
+
+  const canResend = controllerRef.current?.canResend() ?? false;
+
+  async function onContinueCapture() {
+    const controller = controllerRef.current;
+    if (!controller || !isValidPhone(fullPhone)) return;
+    syncView(controller.setPhoneE164(normalizeCanonicalPhone(fullPhone)));
+  }
+
+  async function onSendCode() {
+    const controller = controllerRef.current;
+    if (!controller || !fullPhone) return;
+    syncView(await controller.startVerification(normalizeCanonicalPhone(fullPhone)));
+  }
+
+  async function onVerify() {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    const next = await controller.checkCode();
+    syncView(next);
+    if (next.phase === 'verified') {
+      navigation.replace('ProfileCompletion', {
+        uid: firebaseAuth.currentUser?.uid,
+        email: firebaseAuth.currentUser?.email,
+        inputNonce: Date.now(),
+      });
     }
+  }
 
-    try {
-      setVerifying(true);
+  async function onResend() {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    syncView(await controller.resend());
+  }
 
-      const currentUser = await handleVerifyInternal(verificationId, code);
+  async function onChangeNumber() {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    setLocalPhone('');
+    syncView(await controller.changePhone());
+  }
 
-      Alert.alert('Phone verified', 'Your phone number has been verified.', [
-        {
-          text: 'Continue',
-          onPress: async () => {
-            try {
-              const complete = await isProfileComplete(currentUser.uid);
+  async function onRetryBootstrap() {
+    const controller = controllerRef.current;
+    if (!controller || view?.operationInFlight) return;
+    syncView(await controller.bootstrap());
+  }
 
-              navigation.reset({
-                index: 0,
-                routes: [
-                  {
-                    name: complete ? 'MainTabs' : 'CompleteProfile',
-                    params: complete
-                      ? undefined
-                      : { uid: currentUser.uid, email: currentUser.email },
-                  },
-                ],
-              });
-            } catch {
-              navigation.reset({
-                index: 0,
-                routes: [
-                  {
-                    name: 'CompleteProfile',
-                    params: { uid: currentUser.uid, email: currentUser.email },
-                  },
-                ],
-              });
-            }
-          },
-        },
-      ]);
-    } catch (e: any) {
-      Alert.alert(
-        'Error',
-        getPhoneErrorMessage(e?.code) ||
-          e?.message ||
-          'Could not verify this code.',
-      );
-    } finally {
-      setVerifying(false);
-    }
-  };
+  const busy = view?.operationInFlight ?? false;
+
+  const afterPrimaryActions = (content: React.ReactNode) => (
+    <View style={styles.actionSection}>{content}</View>
+  );
+
+  const primaryAction = (button: React.ReactNode) => (
+    <View style={styles.primaryActionSection}>{button}</View>
+  );
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={insets.top + 20}
+    <RegistrationLayout>
+      <View style={styles.header}>
+        <RegistrationProgress
+          progress={authPhaseProgress(3, 4)}
+          stepLabel="3/4"
+        />
+      </View>
+
+      <ScrollView
+        style={styles.stepScroll}
+        contentContainerStyle={[
+          styles.stepBody,
+          { paddingBottom: insets.bottom + spacing.xl },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <View
-          style={[
-            styles.container,
-            {
-              paddingTop: insets.top + 40,
-              paddingBottom: insets.bottom + 20,
-            },
-          ]}
-        >
-          <Text style={styles.title}>Verify your phone</Text>
-          <Text style={styles.subtitle}>
-            We sent a code by SMS to:{' '}
-            <Text style={styles.phoneText}>{maskedPhone}</Text>
-          </Text>
-
-          <Text style={styles.label}>Verification code</Text>
-          <View style={styles.codeRow}>
-            <Ionicons
-              name="key-outline"
-              size={20}
-              color="#6B7280"
-              style={{ marginRight: 8 }}
-            />
-            <TextInput
-              style={styles.codeInput}
-              keyboardType="number-pad"
-              placeholder="123456"
-              placeholderTextColor="#9CA3AF"
-              value={code}
-              onChangeText={setCode}
-              maxLength={6}
-            />
+        {!view ? (
+          <View style={styles.loadingBlock}>
+            <ActivityIndicator size="large" color={palette.primary} />
+            <Text style={[styles.hint, { color: palette.textSecondary }]}>
+              {t('phoneOtp.states.loading')}
+            </Text>
           </View>
-
-          <TouchableOpacity
-            style={[styles.verifyButton, verifying && { opacity: 0.7 }]}
-            onPress={handleVerify}
-            disabled={verifying}
-            activeOpacity={0.85}
-          >
-            {verifying ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
+        ) : (
+          <RegistrationFadeSlideIn animKey={screenPhase}>
+            {screenPhase === 'capture' && (
               <>
-                <Ionicons
-                  name="checkmark-circle-outline"
-                  size={20}
-                  color="#fff"
-                />
-                <Text style={styles.verifyButtonText}>Verify code</Text>
+                <Text style={[styles.title, { color: palette.textPrimary }]}>
+                  {t('phoneOtp.phoneStep.title')}
+                </Text>
+                <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
+                  {t('phoneOtp.phoneStep.subtitle')}
+                </Text>
+                <View style={styles.phoneRow}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t('phoneOtp.a11y.countrySelector')}
+                    onPress={() => setShowCountries((v) => !v)}
+                    style={[
+                      styles.dialBtn,
+                      {
+                        borderColor: palette.borderStrong,
+                        backgroundColor: palette.surface,
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: palette.textPrimary, fontWeight: fontWeight.bold }}>
+                      {countryDial}
+                    </Text>
+                  </Pressable>
+                  <View style={styles.phoneField}>
+                    <FormInput
+                      placeholder={t('phoneOtp.phoneStep.phonePlaceholder')}
+                      keyboardType="phone-pad"
+                      value={localPhone}
+                      onChangeText={(v) => setLocalPhone(v.replace(/[^\d]/g, ''))}
+                    />
+                  </View>
+                </View>
+                {showCountries ? (
+                  <View
+                    style={[
+                      styles.countryList,
+                      { borderColor: palette.border, backgroundColor: palette.panel },
+                    ]}
+                  >
+                    {REGISTRATION_COUNTRIES.map((c) => (
+                      <Pressable
+                        key={`${c.iso2}-${c.dial}`}
+                        onPress={() => {
+                          setCountryDial(c.dial);
+                          setShowCountries(false);
+                        }}
+                        style={styles.countryRow}
+                      >
+                        <Text style={{ color: palette.textPrimary }}>{c.flag} {c.name}</Text>
+                        <Text style={{ color: palette.textSecondary }}>{c.dial}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+                {errorMessage ? (
+                  <Text style={[styles.error, { color: palette.danger }]}>{errorMessage}</Text>
+                ) : null}
+                {primaryAction(
+                  <PrimaryButton
+                    label={t('phoneOtp.phoneStep.continue')}
+                    onPress={onContinueCapture}
+                    disabled={!isValidPhone(fullPhone) || busy}
+                    loading={busy}
+                  />,
+                )}
+                  </>
+            )}
+
+            {screenPhase === 'confirm' && (
+              <>
+                <Text style={[styles.title, { color: palette.textPrimary }]}>
+                  {t('phoneOtp.confirmStep.title')}
+                </Text>
+                <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
+                  {t('phoneOtp.confirmStep.subtitle')}
+                </Text>
+                <Text style={[styles.phoneConfirm, { color: palette.textPrimary }]}>
+                  {fullPhone}
+                </Text>
+                {errorMessage ? (
+                  <Text style={[styles.error, { color: palette.danger }]}>{errorMessage}</Text>
+                ) : null}
+                {primaryAction(
+                  <PrimaryButton
+                    label={t('phoneOtp.confirmStep.sendCode')}
+                    onPress={onSendCode}
+                    disabled={busy}
+                    loading={busy}
+                  />,
+                )}
+                {afterPrimaryActions(
+                  <SecondaryButton
+                    label={t('phoneOtp.confirmStep.changeNumber')}
+                    onPress={onChangeNumber}
+                    disabled={busy}
+                  />,
+                )}
               </>
             )}
-          </TouchableOpacity>
 
-          <View style={styles.resendRow}>
-            <Text style={styles.resendText}>Didn't receive the code?</Text>
-            <TouchableOpacity
-              onPress={sendCode}
-              disabled={sending || resendTimer > 0}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.resendLink,
-                  (sending || resendTimer > 0) && { opacity: 0.6 },
-                ]}
-              >
-                {resendTimer > 0 ? `Resend in ${resendTimer}s` : 'Resend code'}
-              </Text>
-            </TouchableOpacity>
-          </View>
+            {screenPhase === 'code' && (
+              <>
+                <Text style={[styles.title, { color: palette.textPrimary }]}>
+                  {t('phoneOtp.codeStep.title')}
+                </Text>
+                <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
+                  {t('phoneOtp.codeStep.subtitle', {
+                    maskedPhone: view.maskedPhone ?? '••••',
+                  })}
+                </Text>
+                {view.attemptsRemaining != null ? (
+                  <Text style={[styles.hint, { color: palette.textSecondary }]}>
+                    {t('phoneOtp.codeStep.attemptsRemaining', {
+                      count: view.attemptsRemaining,
+                    })}
+                  </Text>
+                ) : null}
+                {errorMessage ? (
+                  <Text
+                    style={[styles.error, { color: palette.danger }]}
+                    accessibilityRole="alert"
+                  >
+                    {errorMessage}
+                  </Text>
+                ) : null}
+                <OtpSixDigitInput
+                  value={view.code}
+                  onChangeText={(v) => {
+                    const controller = controllerRef.current;
+                    if (!controller) return;
+                    syncView(controller.setCode(v));
+                  }}
+                  label={t('phoneOtp.codeStep.codeLabel')}
+                  accessibilityLabel={t('phoneOtp.a11y.codeInput')}
+                  hasError={!!errorMessage}
+                  disabled={busy}
+                />
+                {primaryAction(
+                  <PrimaryButton
+                    label={t('phoneOtp.codeStep.verify')}
+                    onPress={onVerify}
+                    disabled={busy || view.code.length !== 6}
+                    loading={busy || view.phase === 'checking'}
+                  />,
+                )}
+                {afterPrimaryActions(
+                  <View style={styles.actionStack}>
+                    <OtpContextualAction
+                      label={
+                        canResend
+                          ? t('phoneOtp.codeStep.resend')
+                          : t('phoneOtp.codeStep.resendIn', { seconds: resendSeconds })
+                      }
+                      onPress={onResend}
+                      disabled={!canResend || busy}
+                      accessibilityLabel={t('phoneOtp.a11y.resendButton')}
+                      palette={palette}
+                    />
+                    <SecondaryButton
+                      label={t('phoneOtp.codeStep.changeNumber')}
+                      onPress={onChangeNumber}
+                      disabled={busy}
+                    />
+                  </View>,
+                )}
+              </>
+            )}
 
-          {sending && (
-            <View style={{ marginTop: 16, alignItems: 'center' }}>
-              <ActivityIndicator />
-              <Text style={{ marginTop: 6, color: '#6B7280', fontSize: 12 }}>
-                Sending SMS…
-              </Text>
-            </View>
-          )}
-        </View>
-      </KeyboardAvoidingView>
-    </View>
+            {screenPhase === 'terminal' && (
+              <>
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={40}
+                  color={palette.primary}
+                  style={styles.icon}
+                />
+                <Text style={[styles.title, { color: palette.textPrimary }]}>
+                  {view.phase === 'feature_disabled'
+                    ? t('phoneOtp.states.featureDisabledTitle')
+                    : view.phase === 'expired'
+                      ? t('phoneOtp.states.expiredTitle')
+                      : view.phase === 'locked'
+                        ? t('phoneOtp.states.lockedTitle')
+                        : view.phase === 'cancelled'
+                          ? t('phoneOtp.states.cancelledTitle')
+                          : t('phoneOtp.states.failedTitle')}
+                </Text>
+                <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
+                  {errorMessage ??
+                    (view.phase === 'feature_disabled'
+                      ? t('phoneOtp.states.featureDisabledMessage')
+                      : t('phoneOtp.states.failedMessage'))}
+                </Text>
+                <PrimaryButton
+                  label={t('phoneOtp.confirmStep.changeNumber')}
+                  onPress={onChangeNumber}
+                />
+                {afterPrimaryActions(
+                  <OtpContextualAction
+                    label={t('phoneOtp.states.retryBootstrap')}
+                    onPress={() => {
+                      void onRetryBootstrap();
+                    }}
+                    disabled={busy}
+                    palette={palette}
+                  />,
+                )}
+              </>
+            )}
+
+            {screenPhase === 'success' && (
+              <>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={48}
+                  color={palette.primary}
+                  style={styles.icon}
+                />
+                <Text style={[styles.title, { color: palette.textPrimary }]}>
+                  {t('phoneOtp.success.title')}
+                </Text>
+                <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
+                  {t('phoneOtp.success.subtitle')}
+                </Text>
+                  </>
+            )}
+          </RegistrationFadeSlideIn>
+        )}
+      </ScrollView>
+    </RegistrationLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  header: {
+    marginBottom: spacing.xl,
+  },
+  stepScroll: {
     flex: 1,
-    paddingHorizontal: 30,
+  },
+  stepBody: {
+    paddingBottom: spacing.xl,
+  },
+  loadingBlock: {
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingTop: spacing.lg,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#111827',
-    marginBottom: 8,
-    textAlign: 'center',
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.extrabold,
+    letterSpacing: -0.3,
+    lineHeight: fontSize.xl * 1.2,
   },
   subtitle: {
-    fontSize: 14,
-    color: '#4B5563',
-    marginBottom: 24,
+    fontSize: fontSize.base,
+    lineHeight: fontSize.base * 1.5,
+    marginTop: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  phoneRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  dialBtn: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    justifyContent: 'center',
+    minHeight: 52,
+  },
+  phoneField: { flex: 1 },
+  countryList: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    marginBottom: spacing.md,
+    maxHeight: 220,
+  },
+  countryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  phoneConfirm: {
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.bold,
     textAlign: 'center',
   },
-  phoneText: {
-    fontWeight: '700',
-    color: '#111827',
+  hint: { fontSize: fontSize.sm, marginTop: spacing.sm },
+  error: {
+    fontSize: fontSize.sm,
+    marginTop: spacing.sm,
+    lineHeight: fontSize.sm * 1.45,
   },
-  label: {
-    fontSize: 13,
-    color: '#4B5563',
-    marginBottom: 6,
-    fontWeight: '500',
+  primaryActionSection: {
+    marginTop: spacing.lg,
   },
-  codeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 14,
+  actionSection: {
+    marginTop: spacing.lg,
+    gap: spacing.md,
+  },
+  actionStack: {
+    gap: spacing.md,
+  },
+  actionControl: {
+    minHeight: 44,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#F9FAFB',
-    marginBottom: 20,
-  },
-  codeInput: {
-    flex: 1,
-    fontSize: 18,
-    letterSpacing: 4,
-    color: '#111827',
-    paddingVertical: 4,
-  },
-  verifyButton: {
-    height: 48,
-    borderRadius: 999,
-    backgroundColor: '#3B5A85',
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    marginBottom: 16,
   },
-  verifyButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
+  actionControlLabel: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.extrabold,
+    letterSpacing: -0.15,
+    textAlign: 'center',
   },
-  resendRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  resendText: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginRight: 4,
-  },
-  resendLink: {
-    fontSize: 13,
-    color: '#2563EB',
-    fontWeight: '600',
-  },
+  icon: { alignSelf: 'center', marginBottom: spacing.md },
 });

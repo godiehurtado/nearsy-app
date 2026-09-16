@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
 import { AppState, AppStateStatus, Platform } from 'react-native';
 import { dbSetUserMerge } from '../services/db';
+import { buildLocationPayload } from '../utils/locationPayload';
 
 type Options = {
   enabled?: boolean;
@@ -18,7 +19,7 @@ export function useLiveLocation({
   uid,
   distanceInterval = 10,
   timeIntervalMs = 30_000,
-  accuracy = Location.Accuracy.Balanced,
+  accuracy = Location.Accuracy.Highest,
   onError,
 }: Options) {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
@@ -32,8 +33,12 @@ export function useLiveLocation({
     watcher.current = null;
   };
 
-  const sendOnce = async (lat: number, lng: number) => {
-    await upsertLocation(uid as string, lat, lng);
+  const sendOnce = async (
+    lat: number,
+    lng: number,
+    coords?: Location.LocationObjectCoords,
+  ) => {
+    await upsertLocation(uid as string, lat, lng, coords);
     lastSentAt.current = Date.now();
   };
 
@@ -59,13 +64,22 @@ export function useLiveLocation({
         }
         if (!cancelled) setHasPermission(true);
 
-        // ✅ primer fix (rápido)
-        const last = await Location.getLastKnownPositionAsync();
-        const first =
-          last ?? (await Location.getCurrentPositionAsync({ accuracy }));
+        let first: Location.LocationObject | null = null;
+        try {
+          first = await Location.getCurrentPositionAsync({ accuracy });
+        } catch {
+          first = null;
+        }
+        if (!first) {
+          first = await Location.getLastKnownPositionAsync();
+        }
 
         if (first?.coords && !cancelled) {
-          await sendOnce(first.coords.latitude, first.coords.longitude);
+          await sendOnce(
+            first.coords.latitude,
+            first.coords.longitude,
+            first.coords,
+          );
         }
 
         // ✅ watcher en movimiento (solo foreground)
@@ -83,7 +97,11 @@ export function useLiveLocation({
             if (now - lastSentAt.current < timeIntervalMs) return;
 
             try {
-              await sendOnce(pos.coords.latitude, pos.coords.longitude);
+              await sendOnce(
+                pos.coords.latitude,
+                pos.coords.longitude,
+                pos.coords,
+              );
             } catch (err) {
               onError?.(err);
             }
@@ -132,7 +150,11 @@ export function useLiveLocation({
             if (perm.status !== 'granted') return;
 
             const pos = await Location.getCurrentPositionAsync({ accuracy });
-            await sendOnce(pos.coords.latitude, pos.coords.longitude);
+            await sendOnce(
+              pos.coords.latitude,
+              pos.coords.longitude,
+              pos.coords,
+            );
           } catch (err) {
             onError?.(err);
           }
@@ -148,10 +170,11 @@ export function useLiveLocation({
   return { hasPermission };
 }
 
-async function upsertLocation(uid: string, lat: number, lng: number) {
-  const now = Date.now();
-  await dbSetUserMerge(uid, {
-    location: { lat, lng, updatedAt: now },
-    updatedAt: now,
-  });
+async function upsertLocation(
+  uid: string,
+  lat: number,
+  lng: number,
+  coords?: Location.LocationObjectCoords,
+) {
+  await dbSetUserMerge(uid, buildLocationPayload(lat, lng, coords));
 }

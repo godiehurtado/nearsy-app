@@ -1,811 +1,336 @@
-// src/screens/AffiliationsScreen.tsx
-
-import React, { useEffect, useState } from 'react';
+/**
+ * Own Profile Affiliations editor — Nearsy 2.0 CRJ search/select panel.
+ * Multi-category layout sets scrollAnchorYRef so search focus does not jump to y=0
+ * (known iOS Own Profile Affiliations search bug — do not reproduce).
+ */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
+  StyleSheet,
+  Pressable,
   ActivityIndicator,
   Alert,
-  Modal,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  TextInput,
-  Image,
-  StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
+import { useNavigation, useRoute } from '@react-navigation/native';
 
-import TopHeader from '../components/TopHeader';
+import { OwnProfileEditorShell } from '../components/registration/OwnProfileEditorShell';
+import { OnboardingAffiliationCategoryPanel } from '../components/registration/OnboardingAffiliationCategoryPanel';
+import { PrimaryButton } from '../components/PrimaryButton';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
-import { doc, setDoc } from 'firebase/firestore';
-import { getUserProfile } from '../services/firestoreService';
-import { uploadAffiliationImage } from '../services/storageService';
+import {
+  ONBOARDING_AFFILIATION_CATEGORIES,
+  listOnboardingAffiliationCategoryIds,
+  type OnboardingAffiliationCategoryId,
+  type OnboardingSelectedAffiliation,
+} from '../affiliations/onboardingAffiliationCatalog';
+import {
+  isPostCrjAffiliationEditorDirty,
+  parsePostCrjAffiliationEditorParams,
+  readAffiliationsForPostCrjEditor,
+} from '../affiliations/postCrjAffiliationEditor';
+import { buildPostCrjAffiliationPersistencePatch } from '../affiliations/onboardingAffiliationPersistence';
+import {
+  IDLE_AFFILIATION_SEARCH_UI,
+  resolvePendingAffiliationSearchUi,
+  type AffiliationSearchUiSnapshot,
+} from '../affiliations/affiliationSearchInteraction';
+import { describeAffiliationLogoRuntime } from '../affiliations/affiliationLogoDevConfig';
+import { useAppTheme } from '../theme/ThemeContext';
+import { fontSize, fontWeight } from '../theme/typography';
+import { spacing } from '../theme/spacing';
+import { radius } from '../theme/radius';
+import { useTranslation } from '../i18n';
 
-type TopBarMode = 'color' | 'image';
 type ProfileMode = 'personal' | 'professional';
 
-import type { AffiliationItem, AffiliationCategory } from '../types/profile';
+const CATEGORY_ORDER = listOnboardingAffiliationCategoryIds();
 
-type Props = {
-  navigation: any;
-  route: {
-    params?: {
-      uid?: string;
-      mode?: ProfileMode;
-    };
-  };
-};
+export default function AffiliationsScreen() {
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const { palette } = useAppTheme();
+  const { t } = useTranslation();
 
-const LABEL_MAX = 50;
-
-// 🔹 CONFIG categorías
-const CATEGORY_CONFIG: {
-  key: AffiliationCategory;
-  title: string;
-  subtitle: string;
-  emoji: string;
-}[] = [
-  {
-    key: 'schoolCollege',
-    title: 'School / College',
-    subtitle: 'Your school, college or university.',
-    emoji: '🎓',
-  },
-  {
-    key: 'majorField',
-    title: 'Major / Field',
-    subtitle: 'Your main field of study or specialization.',
-    emoji: '📚',
-  },
-  {
-    key: 'alumniGroup',
-    title: 'Alumni Group',
-    subtitle: 'Alumni associations or class groups you belong to.',
-    emoji: '🏫',
-  },
-  {
-    key: 'favoriteTeam',
-    title: 'Favorite Sport Team',
-    subtitle: 'Club, national team or franchise you support.',
-    emoji: '⚽',
-  },
-  {
-    key: 'hobbiesClubs',
-    title: 'Clubs',
-    subtitle: 'Hobby clubs, art groups or special interests.',
-    emoji: '🎭',
-  },
-  {
-    key: 'industry',
-    title: 'Industry',
-    subtitle: 'The main industry you work or network in.',
-    emoji: '💼',
-  },
-  {
-    key: 'communityGroups',
-    title: 'Community Groups',
-    subtitle: 'Community, volunteering or local groups.',
-    emoji: '🧑‍🤝‍🧑',
-  },
-  {
-    key: 'pets',
-    title: 'Pets',
-    subtitle: 'Your pets or animals you feel connected to.',
-    emoji: '🐶',
-  },
-];
-
-export default function AffiliationsScreen({ navigation, route }: Props) {
-  const insets = useSafeAreaInsets();
-
-  const [isSetupMode, setIsSetupMode] = useState(false);
-
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [mode, setMode] = useState<ProfileMode>('personal');
+  const [uid, setUid] = useState<string | null>(null);
+  const [draft, setDraft] = useState<OnboardingSelectedAffiliation[]>([]);
+  const [snapshot, setSnapshot] = useState<OnboardingSelectedAffiliation[]>([]);
+  const [expandedId, setExpandedId] =
+    useState<OnboardingAffiliationCategoryId | null>(null);
+  const [searchUiByCategory, setSearchUiByCategory] = useState<
+    Partial<Record<OnboardingAffiliationCategoryId, AffiliationSearchUiSnapshot>>
+  >({});
 
-  // Header visuals
-  const [profileImage, setProfileImage] = useState<string | null>(null);
-  const [topBarColor, setTopBarColor] = useState('#3B5A85');
-  const [topBarImage, setTopBarImage] = useState<string | null>(null);
-  const [topBarMode, setTopBarMode] = useState<TopBarMode>('color');
+  const scrollRef = useRef<ScrollView>(null);
+  const categoryAnchorY = useRef<
+    Partial<Record<OnboardingAffiliationCategoryId, number>>
+  >({});
+  const activeScrollAnchorYRef = useRef(0);
+  const searchAddRef = useRef<(() => void) | null>(null);
 
-  // Affiliations
-  const [affiliations, setAffiliations] = useState<AffiliationItem[]>([]);
+  const pendingSearch = useMemo(
+    () => resolvePendingAffiliationSearchUi(searchUiByCategory, CATEGORY_ORDER),
+    [searchUiByCategory],
+  );
 
-  // UI state
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const dirty = isPostCrjAffiliationEditorDirty(snapshot, draft);
 
-  // Modal label + logo
-  const [labelModalOpen, setLabelModalOpen] = useState(false);
-  const [editingCategory, setEditingCategory] =
-    useState<AffiliationCategory | null>(null);
-  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
-  const [tempLabel, setTempLabel] = useState('');
-  const [tempImageUrl, setTempImageUrl] = useState<string | null>(null);
-
-  // Helpers para agrupar
-  const getItemsForCategory = (cat: AffiliationCategory) =>
-    affiliations
-      .map((item, idx) => ({ item, idx }))
-      .filter(({ item }) => item.category === cat);
-
-  // Cargar perfil + afiliaciones existentes
-  useEffect(() => {
-    const initialMode: ProfileMode =
-      route?.params?.mode === 'professional' ? 'professional' : 'personal';
-    setMode(initialMode);
-
-    (async () => {
-      const uid = route?.params?.uid || firebaseAuth.currentUser?.uid;
-      if (!uid) return;
-
-      try {
-        setIsLoading(true);
-        const existing = await getUserProfile(uid);
-
-        if (!existing) {
-          // 🔥 SETUP MODE
-          setIsSetupMode(true);
-
-          // defaults seguros
-          setProfileImage(null);
-          setTopBarColor('#3B5A85');
-          setTopBarImage(null);
-          setTopBarMode('color');
-          setAffiliations([]);
-
-          return;
-        }
-
-        setProfileImage(existing.profileImage ?? null);
-        setTopBarColor(existing.topBarColor ?? '#3B5A85');
-        setTopBarImage((existing as any).topBarImage ?? null);
-        setTopBarMode(
-          (existing as any).topBarMode ??
-            ((existing as any).topBarImage ? 'image' : 'color'),
-        );
-
-        const sourceField =
-          initialMode === 'professional'
-            ? (existing as any).professionalAffiliations
-            : (existing as any).personalAffiliations;
-
-        if (Array.isArray(sourceField)) {
-          setAffiliations(
-            sourceField.map((a: any) => ({
-              category: a.category as AffiliationCategory,
-              label: a.label ?? '',
-              imageUrl: a.imageUrl ?? null,
-            })),
-          );
-        }
-      } catch (e) {
-        if (__DEV__) {
-          console.error('[Affiliations] Error loading affiliations', e);
-        }
-      } finally {
-        setIsLoading(false);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const authUid = firebaseAuth.currentUser?.uid ?? null;
+      const parsed = parsePostCrjAffiliationEditorParams(
+        route.params ?? {},
+        authUid,
+      );
+      if (!parsed.ok) {
+        Alert.alert('Sign in required', 'Please sign in to edit affiliations.');
+        navigation.goBack();
+        return;
       }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  const openEditorForCategory = (
-    cat: AffiliationCategory,
-    globalIndex?: number,
-  ) => {
-    const isEditingExisting = typeof globalIndex === 'number';
+      const { uid: targetUid, mode: targetMode } = parsed.params;
+      setUid(targetUid);
+      setMode(targetMode);
 
-    let existingLabel = '';
-    let existingImage = null;
+      const snap = await firestoreDb.collection('users').doc(targetUid).get();
+      const exists =
+        typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+      const data = (exists ? snap.data() : {}) as Record<string, unknown>;
+      const { affiliations } = readAffiliationsForPostCrjEditor(data, targetMode);
+      setDraft(affiliations);
+      setSnapshot(affiliations);
 
-    if (isEditingExisting && typeof globalIndex === 'number') {
-      existingLabel = affiliations[globalIndex]?.label ?? '';
-      existingImage = affiliations[globalIndex]?.imageUrl ?? null;
-    }
-
-    setEditingCategory(cat);
-    setEditingItemIndex(isEditingExisting ? globalIndex! : null);
-    setTempLabel(existingLabel);
-    setTempImageUrl(existingImage);
-    setLabelModalOpen(true);
-  };
-
-  const handleSaveLabel = () => {
-    if (!editingCategory) return;
-
-    const trimmed = tempLabel.trim();
-    if (!trimmed) {
-      Alert.alert('Validation', 'Please enter a short label.');
-      return;
-    }
-
-    const exists = affiliations.some(
-      (a) =>
-        a.category === editingCategory &&
-        a.label.toLowerCase() === trimmed.toLowerCase(),
-    );
-
-    if (exists) {
-      Alert.alert('Duplicate', 'This item already exists.');
-      return;
-    }
-
-    setAffiliations((prev) => {
-      const next = [...prev];
-
-      if (editingItemIndex != null && next[editingItemIndex]) {
-        // actualizar existente
-        next[editingItemIndex] = {
-          ...next[editingItemIndex],
-          label: trimmed,
-          imageUrl: tempImageUrl,
-        };
-      } else {
-        // agregar nuevo
-        next.push({
-          category: editingCategory,
-          label: trimmed,
-          imageUrl: tempImageUrl,
+      if (__DEV__) {
+        const logo = describeAffiliationLogoRuntime();
+        console.log('[AffiliationsScreen] logo runtime', {
+          keyPresent: logo.keyPresent,
+          envKeyPresent: logo.envKeyPresent,
+          extraKeyPresent: logo.extraKeyPresent,
+          host: logo.host,
         });
       }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not load affiliations.');
+      navigation.goBack();
+    } finally {
+      setLoading(false);
+    }
+  }, [navigation, route.params]);
 
-      return next;
-    });
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-    setLabelModalOpen(false);
-    setEditingCategory(null);
-    setEditingItemIndex(null);
-    setTempLabel('');
-    setTempImageUrl(null);
-  };
+  useEffect(() => {
+    if (!expandedId) {
+      activeScrollAnchorYRef.current = 0;
+      return;
+    }
+    activeScrollAnchorYRef.current = categoryAnchorY.current[expandedId] ?? 0;
+  }, [expandedId]);
 
-  const handleSaveAll = async () => {
-    try {
-      setIsSaving(true);
-
-      const uid = route?.params?.uid || firebaseAuth.currentUser?.uid;
-      if (!uid) throw new Error('User not authenticated.');
-
-      const withUploaded = await Promise.all(
-        affiliations.map(async (item) => {
-          const uri = item.imageUrl ?? '';
-
-          const isLocal =
-            !!uri &&
-            (uri.startsWith('file:') ||
-              uri.startsWith('content:') ||
-              uri.startsWith('ph:'));
-
-          if (isLocal) {
-            try {
-              const remoteUrl = await uploadAffiliationImage(
-                uid,
-                uri,
-                item.category,
-              );
-              return { ...item, imageUrl: remoteUrl };
-            } catch (e) {
-              if (__DEV__)
-                console.error('Error uploading affiliation image', e);
-              return item;
-            }
+  const onSearchUiChange = useCallback(
+    (categoryId: OnboardingAffiliationCategoryId) =>
+      (ui: AffiliationSearchUiSnapshot) => {
+        setSearchUiByCategory((prev) => {
+          const prevUi = prev[categoryId] ?? IDLE_AFFILIATION_SEARCH_UI;
+          if (
+            prevUi.phase === ui.phase &&
+            prevUi.hideJourneyFooter === ui.hideJourneyFooter &&
+            prevUi.showAddCta === ui.showAddCta &&
+            prevUi.addName === ui.addName
+          ) {
+            return prev;
           }
+          return { ...prev, [categoryId]: ui };
+        });
+      },
+    [],
+  );
 
-          return item;
-        }),
-      );
-
-      const fieldName =
-        mode === 'professional'
-          ? 'professionalAffiliations'
-          : 'personalAffiliations';
-
-      // 🔥 CLAVE: setDoc con merge
-      await setDoc(
-        doc(firestoreDb, 'users', uid),
-        {
-          [fieldName]: withUploaded,
-          updatedAt: new Date(),
-        },
-        { merge: true },
-      );
-
-      setAffiliations(withUploaded);
-
-      Alert.alert('Success', 'Affiliations saved.');
+  const save = async () => {
+    if (!uid || saving) return;
+    setSaving(true);
+    try {
+      const patch = buildPostCrjAffiliationPersistencePatch(mode, draft);
+      await firestoreDb
+        .collection('users')
+        .doc(uid)
+        .set({ ...patch, updatedAt: Date.now() }, { merge: true });
+      setSnapshot(draft);
       navigation.goBack();
     } catch (e: any) {
-      if (__DEV__) {
-        console.error('[Affiliations] Error saving affiliations', e);
-      }
       Alert.alert('Error', e?.message || 'Could not save affiliations.');
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   };
 
-  return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <TopHeader
-        topBarMode={topBarMode}
-        topBarColor={topBarColor}
-        topBarImage={topBarImage}
-        profileImage={profileImage}
-        leftIcon="chevron-back"
-        onLeftPress={() => navigation.goBack()}
-        showAvatar
+  if (loading) {
+    return (
+      <OwnProfileEditorShell
+        title="Affiliations"
+        onBack={() => navigation.goBack()}
+        scroll={false}
+      >
+        <View style={styles.centered}>
+          <ActivityIndicator color={palette.primary} />
+        </View>
+      </OwnProfileEditorShell>
+    );
+  }
+
+  const footer =
+    pendingSearch?.ui.showAddCta && pendingSearch.ui.addName ? (
+      <PrimaryButton
+        label={t('onboarding.profileCompletion.affiliations.addNamed' as any, {
+          name: pendingSearch.ui.addName,
+          defaultValue: `Add ${pendingSearch.ui.addName}`,
+        })}
+        onPress={() => searchAddRef.current?.()}
       />
-
-      <ScrollView
-        contentContainerStyle={{
-          paddingBottom: 120,
-          paddingHorizontal: 20,
+    ) : (
+      <PrimaryButton
+        label="Save affiliations"
+        onPress={() => {
+          void save();
         }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Text style={styles.title}>
-          {mode === 'professional'
-            ? 'Professional Affiliations'
-            : 'Social Affiliations'}
-        </Text>
+        disabled={!dirty || saving}
+        loading={saving}
+      />
+    );
 
-        <Text style={styles.subtitle}>
-          Add logos or images to show more about your story.
-        </Text>
-
-        {isLoading ? (
-          <View style={{ marginTop: 40, alignItems: 'center' }}>
-            <ActivityIndicator size="large" color="#3B5A85" />
-          </View>
-        ) : (
-          CATEGORY_CONFIG.map((cat) => {
-            const itemsForCat = getItemsForCategory(cat.key);
-
-            return (
-              <View key={cat.key} style={styles.block}>
-                <View style={styles.blockHeader}>
-                  <Text style={styles.blockTitle}>
-                    {cat.emoji} {cat.title}
-                  </Text>
-                </View>
-
-                <Text style={styles.blockSubtitle}>{cat.subtitle}</Text>
-
-                <View style={styles.affiliationCardWrap}>
-                  <View style={styles.affiliationRow}>
-                    {itemsForCat.map(({ item, idx }) => (
-                      <TouchableOpacity
-                        key={`${cat.key}-${idx}`}
-                        style={styles.affiliationCard}
-                        onPress={() => openEditorForCategory(cat.key, idx)}
-                        activeOpacity={0.9}
-                      >
-                        <View style={styles.affiliationCircle}>
-                          {item.imageUrl ? (
-                            <Image
-                              source={{ uri: item.imageUrl }}
-                              style={styles.affiliationImage}
-                            />
-                          ) : (
-                            <Text style={styles.affiliationEmoji}>
-                              {cat.emoji}
-                            </Text>
-                          )}
-                        </View>
-
-                        <Text style={styles.affiliationLabel} numberOfLines={2}>
-                          {item.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-
-                    <TouchableOpacity
-                      style={styles.affiliationCard}
-                      onPress={() => openEditorForCategory(cat.key)}
-                      activeOpacity={0.9}
-                    >
-                      <View
-                        style={[
-                          styles.affiliationCircle,
-                          { borderStyle: 'dashed', borderColor: '#9CA3AF' },
-                        ]}
-                      >
-                        <Ionicons
-                          name="add-outline"
-                          size={28}
-                          color="#9CA3AF"
-                        />
-                      </View>
-
-                      <Text
-                        style={[styles.affiliationLabel, { color: '#9CA3AF' }]}
-                        numberOfLines={2}
-                      >
-                        {itemsForCat.length === 0
-                          ? 'Add your first item'
-                          : 'Add more'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            );
-          })
-        )}
-      </ScrollView>
-
-      {/* Modal para label + preview */}
-      <Modal
-        visible={labelModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setLabelModalOpen(false)}
-      >
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
-        >
-          <Pressable
-            style={styles.modalBackdrop}
-            onPress={() => setLabelModalOpen(false)}
+  return (
+    <OwnProfileEditorShell
+      title={t('onboarding.profileCompletion.affiliations.title' as any, {
+        defaultValue: 'Your affiliations',
+      })}
+      eyebrow={mode === 'professional' ? 'Professional' : 'Personal'}
+      body={t('onboarding.profileCompletion.affiliations.body' as any, {
+        defaultValue:
+          'Search and add schools, teams, companies, and groups you belong to.',
+      })}
+      onBack={() => navigation.goBack()}
+      footer={footer}
+      contentScrollRef={scrollRef}
+    >
+      {ONBOARDING_AFFILIATION_CATEGORIES.map((category) => {
+        const open = expandedId === category.id;
+        const count = draft.filter((a) => a.categoryId === category.id).length;
+        return (
+          <View
+            key={category.id}
+            style={[
+              styles.categoryCard,
+              {
+                backgroundColor: palette.surface,
+                borderColor: palette.border,
+              },
+            ]}
+            onLayout={(e) => {
+              categoryAnchorY.current[category.id] = e.nativeEvent.layout.y;
+              if (expandedId === category.id) {
+                activeScrollAnchorYRef.current = e.nativeEvent.layout.y;
+              }
+            }}
           >
-            <Pressable style={styles.modalCard} onPress={() => {}}>
-              <Text style={styles.modalTitle}>Add affiliation</Text>
-              <Text style={styles.modalSubtitle}>
-                Give it a name. You can also add an image if you want. (max{' '}
-                {LABEL_MAX} characters).
-              </Text>
-
-              <View style={styles.modalPreviewCircle}>
-                {tempImageUrl ? (
-                  <Image
-                    source={{ uri: tempImageUrl }}
-                    style={styles.affiliationImage}
-                  />
-                ) : (
-                  <Ionicons name="image-outline" size={32} color="#9CA3AF" />
-                )}
-              </View>
-              <TouchableOpacity
-                style={styles.addImageBtn}
-                onPress={async () => {
-                  try {
-                    const perm =
-                      await ImagePicker.requestMediaLibraryPermissionsAsync();
-                    if (!perm.granted) {
-                      Alert.alert(
-                        'Permission required',
-                        'We need access to your photos.',
-                      );
-                      return;
-                    }
-
-                    const result = await ImagePicker.launchImageLibraryAsync({
-                      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                      allowsEditing: true,
-                      aspect: [1, 1],
-                      quality: 0.8,
-                    });
-
-                    if (!result.canceled && result.assets.length > 0) {
-                      setTempImageUrl(result.assets[0].uri);
-                    }
-                  } catch (e) {
-                    Alert.alert('Error', 'Could not pick image.');
-                  }
-                }}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="image-outline" size={16} color="#3B5A85" />
-                <Text style={styles.addImageText}>
-                  {tempImageUrl ? 'Change image' : 'Add image (optional)'}
+            <Pressable
+              onPress={() =>
+                setExpandedId((prev) =>
+                  prev === category.id ? null : category.id,
+                )
+              }
+              style={styles.categoryHeader}
+              accessibilityRole="button"
+            >
+              <Text style={styles.categoryEmoji}>{category.emoji}</Text>
+              <View style={styles.categoryHeaderText}>
+                <Text
+                  style={[styles.categoryTitle, { color: palette.textPrimary }]}
+                >
+                  {t(
+                    `onboarding.profileCompletion.affiliations.categories.${category.nameKey}` as any,
+                    { defaultValue: category.name },
+                  )}
                 </Text>
-              </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.categorySubtitle,
+                    { color: palette.textSecondary },
+                  ]}
+                >
+                  {count > 0
+                    ? `${count} added`
+                    : t(
+                        `onboarding.profileCompletion.affiliations.subtitles.${category.subtitleKey}` as any,
+                        { defaultValue: category.subtitle },
+                      )}
+                </Text>
+              </View>
+              <Ionicons
+                name={open ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={palette.textSecondary}
+              />
+            </Pressable>
 
-              <View style={styles.modalInputGroup}>
-                <View style={styles.modalLabelRow}>
-                  <Text style={styles.modalLabel}>Label</Text>
-                  <Text style={styles.modalCounter}>
-                    {tempLabel.length}/{LABEL_MAX}
-                  </Text>
-                </View>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="E.g. MIT, Lakers, Photography Club..."
-                  placeholderTextColor="#9CA3AF"
-                  value={tempLabel}
-                  onChangeText={(t) =>
-                    t.length <= LABEL_MAX ? setTempLabel(t) : null
+            {open ? (
+              <View style={styles.panelWrap}>
+                <OnboardingAffiliationCategoryPanel
+                  categoryId={category.id}
+                  selected={draft}
+                  onChangeSelected={setDraft}
+                  onSearchUiChange={onSearchUiChange(category.id)}
+                  searchAddRef={
+                    pendingSearch?.categoryId === category.id
+                      ? searchAddRef
+                      : undefined
                   }
+                  contentScrollRef={scrollRef}
+                  scrollAnchorYRef={activeScrollAnchorYRef}
                 />
               </View>
-
-              <View style={styles.modalButtonsRow}>
-                <TouchableOpacity
-                  style={[styles.modalBtn, styles.modalBtnGhost]}
-                  onPress={() => setLabelModalOpen(false)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.modalBtnGhostText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalBtn, styles.modalBtnPrimary]}
-                  onPress={handleSaveLabel}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.modalBtnPrimaryText}>Save</Text>
-                </TouchableOpacity>
-              </View>
-            </Pressable>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* Barra inferior para guardar */}
-      <View
-        style={[
-          styles.bottomBar,
-          { paddingBottom: insets.bottom > 0 ? insets.bottom + 8 : 16 },
-        ]}
-      >
-        <TouchableOpacity
-          style={[styles.bottomSaveBtn, isSaving && { opacity: 0.7 }]}
-          onPress={handleSaveAll}
-          disabled={isSaving}
-          activeOpacity={0.85}
-        >
-          {isSaving ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="save-outline" size={18} color="#fff" />
-              <Text style={styles.bottomSaveText}>Save affiliations</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
-    </View>
+            ) : null}
+          </View>
+        );
+      })}
+    </OwnProfileEditorShell>
   );
 }
 
 const styles = StyleSheet.create({
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1F2937',
-    textAlign: 'center',
-    marginTop: 24,
-    marginBottom: 6,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  block: {
-    marginTop: 18,
-  },
-  blockHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  blockTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-    flex: 1,
-    paddingRight: 8,
-  },
-  blockSubtitle: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 4,
-  },
-  editPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#3B5A85',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    gap: 4,
-  },
-  editPillText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  affiliationCardWrap: {
-    marginTop: 10,
-  },
-  affiliationRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  affiliationCard: {
-    alignItems: 'center',
-    width: 90,
-  },
-  affiliationCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    borderWidth: 2,
-    borderColor: '#3B5A85',
-    backgroundColor: '#F9FAFB',
-    justifyContent: 'center',
-    alignItems: 'center',
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  categoryCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.lg,
+    marginBottom: spacing.md,
     overflow: 'hidden',
   },
-  affiliationImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  affiliationEmoji: {
-    fontSize: 32,
-  },
-  affiliationLabel: {
-    marginTop: 6,
-    fontSize: 12,
-    color: '#111827',
-    fontWeight: '600',
-    textAlign: 'center',
-    maxWidth: 100,
-  },
-  emptyText: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginTop: 4,
-  },
-
-  // Modal
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 420,
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 18,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  modalSubtitle: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginBottom: 12,
-  },
-  modalPreviewCircle: {
-    alignSelf: 'center',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 2,
-    borderColor: '#3B5A85',
-    backgroundColor: '#F9FAFB',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 14,
-    overflow: 'hidden',
-  },
-  modalInputGroup: {
-    marginBottom: 14,
-  },
-  modalLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginBottom: 4,
-  },
-  modalLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  modalCounter: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  modalInput: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 14,
-    color: '#111827',
-  },
-  modalButtonsRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    columnGap: 10,
-  },
-  modalBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 999,
-  },
-  modalBtnGhost: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#fff',
-  },
-  modalBtnGhostText: {
-    color: '#374151',
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  modalBtnPrimary: {
-    backgroundColor: '#3B5A85',
-  },
-  modalBtnPrimaryText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 13,
-  },
-
-  // Bottom bar
-  bottomBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.96)',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  bottomSaveBtn: {
-    height: 50,
-    borderRadius: 999,
-    backgroundColor: '#3B5A85',
+  categoryHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
   },
-  bottomSaveText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
+  categoryEmoji: { fontSize: 22 },
+  categoryHeaderText: { flex: 1 },
+  categoryTitle: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
   },
-
-  addImageBtn: {
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 12,
+  categorySubtitle: {
+    fontSize: fontSize.xs,
+    marginTop: 2,
   },
-
-  addImageText: {
-    color: '#3B5A85',
-    fontWeight: '600',
-    fontSize: 13,
+  panelWrap: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
   },
 });

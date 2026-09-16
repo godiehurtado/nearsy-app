@@ -810,6 +810,11 @@ const logoCatalog: Record<InterestLabel, LogoOption[]> = {
   Other: OTHER_GROUPS.flatMap((g) => g.options),
 };
 
+/** Read-only access to the full interest logo catalog (id/name/emoji per category). */
+export function getInterestLogoCatalog(): Record<InterestLabel, LogoPick[]> {
+  return logoCatalog;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Componente
 export default function InterestsWithLogo({
@@ -817,11 +822,23 @@ export default function InterestsWithLogo({
   onChange,
   scope = 'personal',
   editable = true,
+  setupGuideActive = false,
+  setupGuideStep = 0,
+  modalGuideCard = null,
+  onSetupCategoryOpened,
+  onSetupModalDone,
+  onSetupModalOpenChange,
 }: {
   value: InterestAffiliations;
   onChange: (next: InterestAffiliations) => void;
   scope?: 'personal' | 'professional';
   editable?: boolean;
+  setupGuideActive?: boolean;
+  setupGuideStep?: number;
+  modalGuideCard?: React.ReactNode;
+  onSetupCategoryOpened?: (interest: InterestLabel) => void;
+  onSetupModalDone?: () => void;
+  onSetupModalOpenChange?: (open: boolean) => void;
 }) {
   const [interestLogoMap, setInterestLogoMap] = useState<InterestAffiliations>(
     value ?? {},
@@ -856,24 +873,42 @@ export default function InterestsWithLogo({
   );
   const [searchText, setSearchText] = useState('');
 
-  const selectedInterests = useMemo(
-    () => Object.keys(interestLogoMap) as InterestLabel[],
-    [interestLogoMap],
-  );
+  const closeInterestModal = () => {
+    setModalVisible(false);
+    setCurrentInterest(null);
+    onSetupModalOpenChange?.(false);
+  };
 
   const openInterestModal = (interest: InterestLabel) => {
     setCurrentInterest(interest);
     setSearchText('');
     setModalVisible(true);
+    onSetupModalOpenChange?.(true);
   };
+
+  useEffect(() => {
+    if (setupGuideActive && setupGuideStep === 0 && modalVisible) {
+      closeInterestModal();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setupGuideActive, setupGuideStep, modalVisible]);
+
+  const selectedInterests = useMemo(
+    () => Object.keys(interestLogoMap) as InterestLabel[],
+    [interestLogoMap],
+  );
 
   const onPressInterest = (interest: InterestLabel) => {
     if (!editable) return;
+    if (setupGuideActive && setupGuideStep === 0) {
+      onSetupCategoryOpened?.(interest);
+    }
     openInterestModal(interest);
   };
 
   const toggleLogo = (logo: LogoOption) => {
     if (!currentInterest) return;
+    if (setupGuideActive && setupGuideStep !== 1) return;
     const curr = interestLogoMap[currentInterest] ?? [];
     const exists = curr.some((p) => p.id === logo.id);
 
@@ -931,7 +966,14 @@ export default function InterestsWithLogo({
   return (
     <View style={styles.container}>
       {/* Selector de intereses */}
-      <View style={styles.interestsContainer}>
+      <View
+        style={[
+          styles.interestsContainer,
+          setupGuideActive &&
+            setupGuideStep === 0 &&
+            styles.setupGuideHighlight,
+        ]}
+      >
         <Text style={styles.modeLabel}>Select Your Interests:</Text>
         <View style={styles.interestsList}>
           {interestOptions.map((it) => {
@@ -960,13 +1002,18 @@ export default function InterestsWithLogo({
         visible={modalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => {
-          setModalVisible(false);
-          setCurrentInterest(null);
-        }}
+        onRequestClose={closeInterestModal}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View
+            style={[
+              styles.modalCard,
+              setupGuideActive &&
+                (setupGuideStep === 1 || setupGuideStep === 2) &&
+                styles.setupGuideHighlight,
+            ]}
+          >
+            {modalGuideCard}
             <Text style={styles.modalTitle}>
               {currentInterest
                 ? `Choose a ${currentInterest} icon`
@@ -1075,20 +1122,25 @@ export default function InterestsWithLogo({
 
             {/* Acciones modal */}
             <TouchableOpacity
-              style={styles.modalCloseBtn}
+              style={[
+                styles.modalCloseBtn,
+                setupGuideActive &&
+                  setupGuideStep === 2 &&
+                  styles.setupGuideHighlight,
+              ]}
+              disabled={setupGuideActive && setupGuideStep !== 2}
               onPress={() => {
-                setModalVisible(false);
-                setCurrentInterest(null);
+                closeInterestModal();
+                if (setupGuideActive && setupGuideStep === 2) {
+                  onSetupModalDone?.();
+                }
               }}
             >
               <Text style={styles.modalCloseText}>Done</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.modalCloseBtn}
-              onPress={() => {
-                setModalVisible(false);
-                setCurrentInterest(null);
-              }}
+              onPress={closeInterestModal}
             >
               <Text style={styles.modalCloseText}>Cancel</Text>
             </TouchableOpacity>
@@ -1185,6 +1237,11 @@ const styles = StyleSheet.create({
   interestSelected: {
     borderColor: '#4F46E5',
     backgroundColor: '#EEF2FF',
+  },
+  setupGuideHighlight: {
+    borderWidth: 2,
+    borderColor: '#3B5A85',
+    borderRadius: 14,
   },
   interestText: { fontSize: 14 },
 

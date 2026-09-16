@@ -13,6 +13,7 @@ import {
   Alert,
   Modal,
   Pressable,
+  Platform,
 } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import type { HomeStackParamList } from '../navigation/HomeStack';
@@ -25,17 +26,6 @@ import type {
   AffiliationItem,
   AffiliationCategory,
 } from '../types/profile';
-
-// ✅ Firestore Web SDK
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  serverTimestamp,
-  setDoc,
-} from 'firebase/firestore';
 
 // ===== Perfil Firestore =====
 type ProfileDoc = {
@@ -208,20 +198,57 @@ const INTEREST_CATEGORY_META: Partial<
   },
 };
 
-function normalizeUrl(u: string) {
+function normalizeUrl(u: string): string {
   if (!u) return '';
-  if (!/^https?:\/\//i.test(u)) return `https://${u}`;
-  return u;
+
+  let trimmed = u.trim().replace(/ /g, '%20');
+  if (!trimmed) return '';
+
+  if (!/^https?:\/\//i.test(trimmed)) {
+    trimmed = `https://${trimmed}`;
+  }
+
+  return trimmed;
+}
+
+function isHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
 }
 
 async function openLink(url: string) {
   const safe = normalizeUrl(url);
-  const can = await Linking.canOpenURL(safe);
-  if (!can) {
+  if (!safe) {
     Alert.alert('Invalid link', 'Could not open this link.');
     return;
   }
-  Linking.openURL(safe);
+
+  if (isHttpUrl(safe)) {
+    if (Platform.OS !== 'android') {
+      const can = await Linking.canOpenURL(safe);
+      if (!can) {
+        Alert.alert('Invalid link', 'Could not open this link.');
+        return;
+      }
+    }
+
+    try {
+      await Linking.openURL(safe);
+    } catch {
+      Alert.alert('Invalid link', 'Could not open this link.');
+    }
+    return;
+  }
+
+  try {
+    const can = await Linking.canOpenURL(safe);
+    if (!can) {
+      Alert.alert('Invalid link', 'Could not open this link.');
+      return;
+    }
+    await Linking.openURL(safe);
+  } catch {
+    Alert.alert('Invalid link', 'Could not open this link.');
+  }
 }
 
 export default function ProfileDetailScreen() {
@@ -257,12 +284,14 @@ export default function ProfileDetailScreen() {
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) return;
 
-    const ref = doc(firestoreDb, 'users', uid);
-
-    const unsub = onSnapshot(
-      ref,
+    const unsub = firestoreDb
+      .collection('users')
+      .doc(uid)
+      .onSnapshot(
       (snap) => {
-        if (snap.exists()) setMyProfile(snap.data() as ProfileDoc);
+        const exists =
+          typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+        if (exists) setMyProfile(snap.data() as ProfileDoc);
       },
       (error) => {
         if (__DEV__)
@@ -287,11 +316,12 @@ export default function ProfileDetailScreen() {
           return;
         }
 
-        const ref = doc(firestoreDb, 'users', uidp);
-        const snap = await getDoc(ref);
+        const snap = await firestoreDb.collection('users').doc(uidp).get();
 
         if (cancelled) return;
-        setP(snap.exists() ? (snap.data() as ProfileDoc) : null);
+        const exists =
+          typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+        setP(exists ? (snap.data() as ProfileDoc) : null);
       } catch (e: any) {
         if (__DEV__) console.error('[ProfileDetail] target get error:', e);
         if (!cancelled) {
@@ -399,22 +429,26 @@ export default function ProfileDetailScreen() {
               setActionBusy(true);
 
               // 1) guardar bloqueo para mi cuenta
-              await setDoc(
-                doc(firestoreDb, 'users', currentUid, 'blockedUsers', uidp),
-                {
-                  blockedUid: uidp,
-                  createdAt: serverTimestamp(),
-                  source: 'profile_detail',
-                },
-                { merge: true },
-              );
+              await firestoreDb
+                .collection('users')
+                .doc(currentUid)
+                .collection('blockedUsers')
+                .doc(uidp)
+                .set(
+                  {
+                    blockedUid: uidp,
+                    createdAt: Date.now(),
+                    source: 'profile_detail',
+                  },
+                  { merge: true },
+                );
 
               // 2) notificar al developer / moderación
-              await addDoc(collection(firestoreDb, 'moderationEvents'), {
+              await firestoreDb.collection('moderationEvents').add({
                 type: 'block',
                 actorUid: currentUid,
                 targetUid: uidp,
-                createdAt: serverTimestamp(),
+                createdAt: Date.now(),
                 source: 'profile_detail',
                 status: 'new',
               });
@@ -447,22 +481,22 @@ export default function ProfileDetailScreen() {
     try {
       setActionBusy(true);
 
-      await addDoc(collection(firestoreDb, 'reports'), {
+      await firestoreDb.collection('reports').add({
         type: 'user',
         reporterUid: currentUid,
         reportedUid: uidp,
         reason,
-        createdAt: serverTimestamp(),
+        createdAt: Date.now(),
         status: 'pending',
         source: 'profile_detail',
       });
 
-      await addDoc(collection(firestoreDb, 'moderationEvents'), {
+      await firestoreDb.collection('moderationEvents').add({
         type: 'report',
         actorUid: currentUid,
         targetUid: uidp,
         reason,
-        createdAt: serverTimestamp(),
+        createdAt: Date.now(),
         source: 'profile_detail',
         status: 'new',
       });
