@@ -50,7 +50,8 @@ export type LoadNearbyWithContractualRefreshInput = {
   limit?: number;
   /**
    * Injectable for tests / composition. Defaults to publishLocationFlow
-   * (lazy-loaded so Node unit tests can avoid expo-location).
+   * (sync require — avoids Metro lazy `import()` chunk resolution under
+   * EXPO_NO_METRO_WORKSPACE_ROOT, and keeps Node tests free of expo-location).
    */
   publish?: (
     client: VisibilityDiscoveryClient,
@@ -84,6 +85,19 @@ function mapPublishFailure(
   };
 }
 
+function defaultPublishLocationFlow(): NonNullable<
+  LoadNearbyWithContractualRefreshInput['publish']
+> {
+  // Sync require matches initialCrjVisibilityActivation; do not use import().
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const orchestration = require('./orchestration') as {
+    publishLocationFlow: NonNullable<
+      LoadNearbyWithContractualRefreshInput['publish']
+    >;
+  };
+  return orchestration.publishLocationFlow;
+}
+
 /**
  * Visibility ON → publish current contractual location → discoverNearby.
  * Visibility OFF → inactive (never activates Visibility).
@@ -98,9 +112,7 @@ export async function loadNearbyWithContractualRefresh(
     return { ok: false, kind: 'inactive' };
   }
 
-  const publish =
-    input.publish ??
-    (await import('./orchestration')).publishLocationFlow;
+  const publish = input.publish ?? defaultPublishLocationFlow();
   const publishOutcome = await publish(input.client);
   if (publishOutcome.ok === false) {
     return mapPublishFailure(publishOutcome);
