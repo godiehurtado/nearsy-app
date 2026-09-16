@@ -3,7 +3,7 @@
     "name": "Nearsy",
     "slug": "nearsy-android",
     "scheme": "nearsy",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "orientation": "portrait",
     "icon": "../../packages/shared/src/assets/icon.png",
     "userInterfaceStyle": "light",
