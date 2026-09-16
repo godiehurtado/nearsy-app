@@ -61,6 +61,7 @@ import {
   applyActiveProfileModeResponseToUserDoc,
   presentActiveProfileModeError,
   setActiveProfileModeFlow,
+  shouldResyncProfessionalActiveModeAfterSave,
 } from '../visibility/activeProfileModeSync';
 import { attemptInitialVisibilityAfterCrjCompletion } from '../visibility/initialCrjVisibilityActivation';
 import { uploadProfileImage, uploadAffiliationImage, uploadGalleryImage, deleteGalleryStorageObject } from '../services/storageService';
@@ -781,6 +782,43 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       mode,
       profileSetupCompleted: false,
     }));
+
+    // BUG-PROFILE-02: after Professional details persist, re-sync active mode so
+    // Discovery projection recovers without a later Personal → Professional toggle.
+    // Name/photo were already written in earlier CRJ steps; details completion
+    // finishes the Professional face when isCrjProfileDetailsValid is true.
+    if (
+      shouldResyncProfessionalActiveModeAfterSave({
+        activeMode: mode,
+        professionalFaceComplete: isCrjProfileDetailsValid({
+          mode,
+          occupation,
+          bio,
+          company,
+        }),
+      })
+    ) {
+      const client = await getVisibilityDiscoveryClient();
+      const outcome = await setActiveProfileModeFlow(
+        client,
+        'professional',
+        uid,
+      );
+      if (outcome.ok === false) {
+        throw outcome.error;
+      }
+      setShellData((prev) =>
+        applyActiveProfileModeResponseToUserDoc(
+          {
+            ...(prev ?? {}),
+            ...patch,
+            mode: outcome.response.mode,
+            profileSetupCompleted: false,
+          },
+          outcome.response,
+        ),
+      );
+    }
   }
 
   async function persistInterests() {
