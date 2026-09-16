@@ -6,34 +6,16 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal",
-      "prebuildCommand": "npx expo prebuild --platform android --clean"
-    },
-    "development-nearsy-dev": {
-      "extends": "development",
-      "env": {
-        "NEARSY_FIREBASE_ENV": "development",
-        "NEARSY_DEV_CLIENT": "true"
-      }
+      "distribution": "internal"
     },
     "preview": {
       "distribution": "internal",
-      "prebuildCommand": "npx expo prebuild --platform android --clean",
-      "env": {
-        "NEARSY_FIREBASE_ENV": "production",
-        "NEARSY_DEV_CLIENT": "false"
-      },
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
       "autoIncrement": true,
-      "prebuildCommand": "npx expo prebuild --platform android --clean",
-      "env": {
-        "NEARSY_FIREBASE_ENV": "production",
-        "NEARSY_DEV_CLIENT": "false"
-      },
       "android": {
         "buildType": "app-bundle"
       }

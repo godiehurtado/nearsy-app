@@ -1,5 +1,5 @@
 /**
- * TypeScript module entry for `import '…/PhoneVerificationScreen'`.
- * Metro prefers `.android.tsx` / `.ios.tsx` at bundle time.
+ * TypeScript module entry for `import 'â€¦/PhoneVerificationScreen'`.
+ * Metro still prefers `PhoneVerificationScreen.android.tsx` / `PhoneVerificationScreen.ios.tsx` at bundle time when present.
  */
-export { default } from './PhoneVerificationScreen.android';
+export { default } from './PhoneVerificationScreen.ios';

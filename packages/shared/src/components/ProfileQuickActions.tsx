@@ -1,164 +1,134 @@
+// src/components/ProfileQuickActions.tsx
 import React from 'react';
-import {
-  View,
-  Text,
-  Pressable,
-  StyleSheet,
-  useWindowDimensions,
-  PixelRatio,
-} from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useAppTheme } from '../theme/ThemeContext';
-import { radius } from '../theme/radius';
-import { spacing, screenPadding } from '../theme/spacing';
-import { fontSize, fontWeight } from '../theme/typography';
-import { cardShadow } from '../theme/shadows';
-import { shouldUseSingleColumnQuickActions } from './profile/profileQuickActionsLayout';
-
-type QuickActionId = 'interests' | 'affiliations' | 'social' | 'gallery';
-
-type ActionConfig = {
-  id: QuickActionId;
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  subtitle: string;
-  accessibilityLabel: string;
-  onPress: () => void;
-};
 
 type Props = {
-  sectionTitle: string;
-  actions: ActionConfig[];
+  onOpenInterests: () => void;
+  onOpenSocial: () => void;
+  onOpenGallery: () => void;
+  onOpenAffiliations: () => void;
+  stats?: {
+    interestsCount?: number;
+    socialCount?: number;
+    photosCount?: number;
+    affiliationsCount?: number;
+  };
+  compact?: boolean; // 👈 responsive
 };
 
 export default function ProfileQuickActions({
-  sectionTitle,
-  actions,
+  onOpenInterests,
+  onOpenSocial,
+  onOpenGallery,
+  onOpenAffiliations,
+  stats,
+  compact,
 }: Props) {
-  const { palette } = useAppTheme();
-  const { width } = useWindowDimensions();
-  const singleColumn = shouldUseSingleColumnQuickActions(
-    width,
-    PixelRatio.getFontScale(),
-  );
-
   return (
     <View style={styles.wrap}>
-      <Text style={[styles.title, { color: palette.textPrimary }]}>
-        {sectionTitle}
-      </Text>
-      <View style={[styles.grid, singleColumn && styles.gridSingle]}>
-        {actions.map((action) => (
-          <Pressable
-            key={action.id}
-            accessibilityRole="button"
-            accessibilityLabel={action.accessibilityLabel}
-            accessibilityHint={action.subtitle}
-            onPress={action.onPress}
-            style={({ pressed }) => [
-              styles.card,
-              singleColumn ? styles.cardSingle : styles.cardHalf,
-              {
-                backgroundColor: palette.panel,
-                borderColor: palette.border,
-              },
-              cardShadow,
-              pressed && styles.pressed,
-            ]}
-          >
-            <View
-              style={[
-                styles.iconWrap,
-                { backgroundColor: palette.chipBg },
-              ]}
-            >
-              <Ionicons name={action.icon} size={20} color={palette.primary} />
-            </View>
-            <View style={styles.textCol}>
-              <Text style={[styles.cardTitle, { color: palette.textPrimary }]}>
-                {action.title}
-              </Text>
-              <Text
-                style={[styles.cardSubtitle, { color: palette.textSecondary }]}
-              >
-                {action.subtitle}
-              </Text>
-            </View>
-            <Ionicons
-              name="chevron-forward"
-              size={18}
-              color={palette.textMuted}
-              style={styles.chevron}
-            />
-          </Pressable>
-        ))}
+      <Text style={styles.title}>Quick actions</Text>
+
+      <View style={[styles.grid, compact && styles.gridCompact]}>
+        <Tile
+          icon="sparkles-outline"
+          title="Affiliations"
+          subtitle={`${stats?.affiliationsCount ?? 0} selected`}
+          onPress={onOpenAffiliations}
+          compact={compact}
+        />
+        <Tile
+          icon="sparkles-outline"
+          title="Interests"
+          subtitle={`${stats?.interestsCount ?? 0} selected`}
+          onPress={onOpenInterests}
+          compact={compact}
+        />
+        <Tile
+          icon="share-social-outline"
+          title="Social media"
+          subtitle={`${stats?.socialCount ?? 0} connected`}
+          onPress={onOpenSocial}
+          compact={compact}
+        />
+        <Tile
+          icon="images-outline"
+          title="Gallery"
+          subtitle={`${stats?.photosCount ?? 0} photos`}
+          onPress={onOpenGallery}
+          compact={compact}
+        />
       </View>
     </View>
   );
 }
 
+function Tile({
+  icon,
+  title,
+  subtitle,
+  onPress,
+  compact,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle?: string;
+  onPress: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.tile,
+        compact && styles.tileCompact, // 👈 full-width en modo compacto
+        pressed && styles.pressed,
+      ]}
+    >
+      <Ionicons name={icon} size={22} color="#FFFFFF" />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.tileTitle}>{title}</Text>
+        {!!subtitle && <Text style={styles.tileSubtitle}>{subtitle}</Text>}
+      </View>
+      <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  wrap: {
-    marginTop: spacing.lg,
-    marginHorizontal: screenPadding.horizontal,
-    gap: spacing.md,
-    marginBottom: spacing.xxl,
-  },
+  wrap: { marginTop: 18, gap: 10 },
   title: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
-    paddingHorizontal: spacing.xxs,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    paddingHorizontal: 4,
   },
   grid: {
     flexDirection: 'row',
+    gap: 10,
     flexWrap: 'wrap',
-    gap: spacing.sm,
   },
-  gridSingle: {
+  // 👇 En compacto apilamos una debajo de otra
+  gridCompact: {
     flexDirection: 'column',
     flexWrap: 'nowrap',
   },
-  card: {
+  tile: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    padding: spacing.md,
-    minHeight: 72,
-  },
-  cardHalf: {
-    width: '48%',
+    gap: 10,
+    backgroundColor: '#3B5A85', // Azul principal
+    padding: 12,
+    borderRadius: 14,
+    minWidth: '47%',
     flexGrow: 1,
   },
-  cardSingle: {
-    width: '100%',
+  // 👇 Full width para pantallas con texto grande
+  tileCompact: {
+    minWidth: '100%',
+    alignSelf: 'stretch',
   },
-  iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  textCol: {
-    flex: 1,
-    minWidth: 0,
-    gap: spacing.xxs,
-  },
-  chevron: {
-    flexShrink: 0,
-  },
-  cardTitle: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.bold,
-  },
-  cardSubtitle: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
-  },
-  pressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.99 }],
-  },
+  tileTitle: { fontWeight: '700', color: '#FFFFFF' },
+  tileSubtitle: { color: '#E0E7FF', fontSize: 12 },
+  pressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
 });

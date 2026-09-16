@@ -1,21 +1,14 @@
 // packages/shared/src/services/db.android.ts
-import firestore, {
-  type FirebaseFirestoreTypes,
-} from '@react-native-firebase/firestore';
-import { firestoreDb } from '../config/firebaseConfig.android';
+import type { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+import { firestoreDb } from '../config/firebaseConfig';
 
 type DocSnap = FirebaseFirestoreTypes.DocumentSnapshot;
 type QueryDocSnap = FirebaseFirestoreTypes.QueryDocumentSnapshot;
 type SnapErr = unknown;
 
-function snapshotExists(snap: DocSnap) {
-  const exists = (snap as any).exists;
-  return typeof exists === 'function' ? exists.call(snap) : !!exists;
-}
-
 export async function dbGetUser(uid: string) {
   const snap = await firestoreDb.collection('users').doc(uid).get();
-  return snapshotExists(snap) ? snap.data() : null;
+  return snap.exists ? snap.data() : null;
 }
 
 export async function dbSetUserMerge(uid: string, data: any) {
@@ -27,13 +20,13 @@ export function dbOnUserSnapshot(
   onData: (d: any | null) => void,
   onErr?: (e: SnapErr) => void,
 ) {
-  const rnFirestore = firestore();
-  const userRef = rnFirestore.collection('users').doc(uid);
-
-  return userRef.onSnapshot(
-    (snap: DocSnap) => onData(snapshotExists(snap) ? snap.data() : null),
-    (err: SnapErr) => onErr?.(err as unknown),
-  );
+  return firestoreDb
+    .collection('users')
+    .doc(uid)
+    .onSnapshot(
+      (snap: DocSnap) => onData(snap.exists() ? snap.data() : null),
+      (err: SnapErr) => onErr?.(err as unknown),
+    );
 }
 
 export async function dbQueryVisibleUsers(limit = 300) {

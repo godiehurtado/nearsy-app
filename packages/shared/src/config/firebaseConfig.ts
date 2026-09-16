@@ -1,1 +1,1 @@
-export * from './firebaseConfig.android';
+export * from './firebaseConfig.ios';

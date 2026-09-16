@@ -14,12 +14,6 @@ export type LogoPick = {
 };
 
 export type InterestAffiliations = Partial<Record<InterestLabel, LogoPick[]>>;
-
-export type SocialCustomLink = {
-  name: string;
-  url: string;
-};
-
 export type SocialLinks = {
   linkedin?: string;
   instagram?: string;
@@ -29,8 +23,6 @@ export type SocialLinks = {
   tiktok?: string;
   snapchat?: string;
   website?: string;
-  /** CRJ "Other network" rows. Not a known-platform id. */
-  custom?: SocialCustomLink[];
 };
 
 export type GalleryPhoto = {

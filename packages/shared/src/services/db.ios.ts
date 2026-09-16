@@ -13,14 +13,12 @@ import {
 } from 'firebase/firestore';
 
 export async function dbGetUser(uid: string) {
-  const ref = doc(firestoreDb, 'users', uid);
-  const snap = await getDoc(ref);
+  const snap = await getDoc(doc(firestoreDb, 'users', uid));
   return snap.exists() ? snap.data() : null;
 }
 
 export async function dbSetUserMerge(uid: string, data: any) {
-  const ref = doc(firestoreDb, 'users', uid);
-  await setDoc(ref, data, { merge: true });
+  await setDoc(doc(firestoreDb, 'users', uid), data, { merge: true });
 }
 
 export function dbOnUserSnapshot(
@@ -28,9 +26,8 @@ export function dbOnUserSnapshot(
   onData: (d: any | null) => void,
   onErr?: (e: any) => void,
 ) {
-  const ref = doc(firestoreDb, 'users', uid);
   return onSnapshot(
-    ref,
+    doc(firestoreDb, 'users', uid),
     (snap) => onData(snap.exists() ? snap.data() : null),
     (err) => onErr?.(err),
   );
@@ -47,9 +44,8 @@ export async function dbQueryVisibleUsers(limit = 300) {
 }
 
 export async function dbGetContactHashes(uid: string): Promise<string[]> {
-  const colRef = collection(firestoreDb, 'users', uid, 'contactHashes');
   const snap = await getDocs(
-    colRef,
+    collection(firestoreDb, 'users', uid, 'contactHashes'),
   );
 
   const out: string[] = [];

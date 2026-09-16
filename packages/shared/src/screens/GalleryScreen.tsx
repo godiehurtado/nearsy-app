@@ -1,181 +1,172 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+// src/screens/GalleryScreen.tsx
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
+  Image,
+  TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Modal,
   ScrollView,
-  Pressable,
+  Animated,
+  Dimensions,
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
-import { firebaseAuth } from '../config/firebaseConfig';
-import { getUserProfile, updateUserProfilePartial } from '../services/firestoreService';
 import {
-  deleteGalleryStorageObject,
-  uploadGalleryImage,
-} from '../services/storageService';
-import { useTranslation } from '../i18n';
-import { useAppTheme } from '../theme/ThemeContext';
-import { spacing, screenPadding } from '../theme/spacing';
-import { fontSize, fontWeight } from '../theme/typography';
-import { radius } from '../theme/radius';
-import type { GalleryPhoto } from '../types/profile';
-import type { ProfileMode } from '../profile/profileModeFields';
-import { ProfileGalleryAdminGrid } from '../components/gallery/ProfileGalleryAdminGrid';
-import { OWN_PROFILE_GALLERY_COLUMNS } from '../gallery/galleryGridTokens';
-import { isProfileDocumentComplete } from '../utils/profileDocumentComplete';
-import {
-  buildPostCrjGalleryPersistencePatch,
-  createGalleryOperationLock,
-  parsePostCrjGalleryEditorParams,
-  prependGalleryPhoto,
-  readPostCrjGalleryFromDoc,
-  removeGalleryPhoto,
-} from '../gallery/postCrjGalleryEditor';
+  firestoreDb,
+  firebaseAuth,
+  storageWeb,
+} from '../config/firebaseConfig';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { ref, deleteObject } from 'firebase/storage';
+
+import { GalleryPhoto } from '../types/profile';
+import { uploadGalleryImage } from '../services/storageService';
+import TopHeader from '../components/TopHeader';
+
+type ProfileMode = 'personal' | 'professional';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const GRID_PADDING = 16;
+const ITEM_GAP = 10;
+const ITEM_SIZE = (SCREEN_WIDTH - GRID_PADDING * 2 - ITEM_GAP * 2) / 3;
 
 type RouteParams = {
   uid?: string;
   mode?: ProfileMode;
 };
 
-type LoadState = 'loading' | 'ready' | 'error' | 'blocked';
-type OperationKind = 'idle' | 'uploading' | 'deleting';
+export default function GalleryScreen({ route, navigation }: any) {
+  const { uid: routeUid, mode: routeMode } = (route?.params ||
+    {}) as RouteParams;
 
-export default function GalleryScreen() {
-  const route = useRoute<any>();
-  const navigation = useNavigation<any>();
-  const insets = useSafeAreaInsets();
-  const { t } = useTranslation();
-  const { palette } = useAppTheme();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  const params = (route.params ?? {}) as RouteParams;
-  const parsed = parsePostCrjGalleryEditorParams(
-    params as Record<string, unknown>,
-    firebaseAuth.currentUser?.uid ?? null,
+  const [ownerUid, setOwnerUid] = useState<string | null>(null);
+  const [isOwn, setIsOwn] = useState<boolean>(true);
+  const [mode, setMode] = useState<ProfileMode>(
+    routeMode === 'professional' ? 'professional' : 'personal',
   );
 
-  const lockedModeRef = useRef<ProfileMode | null>(
-    parsed.ok ? parsed.params.mode : null,
-  );
-  const lockedUidRef = useRef<string | null>(parsed.ok ? parsed.params.uid : null);
-  const editorMode = lockedModeRef.current;
-  const editorUid = lockedUidRef.current;
-  const operationLockRef = useRef(createGalleryOperationLock());
+  const [topBarColor, setTopBarColor] = useState('#3B5A85');
+  const [topBarMode, setTopBarMode] = useState<'color' | 'image'>('color');
+  const [topBarImage, setTopBarImage] = useState<string | null>(null);
+  const [profileImage, setProfileImage] = useState<string | null>(null);
 
-  const [loadState, setLoadState] = useState<LoadState>(
-    parsed.ok ? 'loading' : 'blocked',
-  );
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
-  const [operationKind, setOperationKind] = useState<OperationKind>('idle');
-  const [pendingPreviewUri, setPendingPreviewUri] = useState<string | null>(null);
 
-  const photoCount = photos.length;
-  const operationBusy = operationKind !== 'idle';
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [current, setCurrent] = useState<string | null>(null);
 
-  const screenTitle =
-    editorMode === 'professional'
-      ? t('profile.gallery.professionalTitle')
-      : t('profile.gallery.personalTitle');
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const [lastAddedPhotoKey, setLastAddedPhotoKey] = useState<string | null>(
+    null,
+  );
 
-  const countLabel =
-    photoCount === 1
-      ? t('profile.gallery.countOne')
-      : t('profile.gallery.count', { count: photoCount });
-
-  const beginOperation = useCallback((kind: OperationKind): boolean => {
-    if (!operationLockRef.current.tryAcquire()) return false;
-    setOperationKind(kind);
-    return true;
-  }, []);
-
-  const endOperation = useCallback(() => {
-    operationLockRef.current.release();
-    setOperationKind('idle');
-    setPendingPreviewUri(null);
-  }, []);
-
-  const handleBack = useCallback(() => {
-    navigation.goBack();
-  }, [navigation]);
+  const fieldName =
+    mode === 'personal' ? 'personalGallery' : 'professionalGallery';
 
   useEffect(() => {
-    if (!parsed.ok || !editorUid || !editorMode) {
-      setLoadState('blocked');
-      return;
-    }
-
-    let cancelled = false;
     (async () => {
       try {
-        setLoadState('loading');
-        const existing = await getUserProfile(editorUid);
-        if (cancelled) return;
+        const myUid = firebaseAuth.currentUser?.uid ?? null;
+        const targetUid = routeUid ?? myUid ?? null;
 
-        if (!existing || !isProfileDocumentComplete(existing)) {
-          setLoadState('blocked');
+        if (!targetUid) throw new Error('User not authenticated.');
+
+        setOwnerUid(targetUid);
+        setIsOwn(!!myUid && myUid === targetUid);
+
+        const effectiveRouteMode: ProfileMode =
+          routeMode === 'professional' ? 'professional' : 'personal';
+
+        const snap = await getDoc(doc(firestoreDb, 'users', targetUid));
+
+        if (!snap.exists()) {
+          setTopBarColor('#3B5A85');
+          setTopBarMode('color');
+          setTopBarImage(null);
+          setProfileImage(null);
+          setMode(effectiveRouteMode);
+          setPhotos([]);
           return;
         }
 
-        setPhotos(
-          readPostCrjGalleryFromDoc(existing as Record<string, unknown>, editorMode),
+        const data = snap.data() as any;
+
+        setTopBarColor(data?.topBarColor || '#3B5A85');
+        setTopBarMode(
+          data?.topBarMode || (data?.topBarImage ? 'image' : 'color'),
         );
-        setLoadState('ready');
-      } catch {
-        if (!cancelled) setLoadState('error');
+        setTopBarImage(data?.topBarImage || null);
+        setProfileImage(data?.profileImage || null);
+
+        const effectiveMode: ProfileMode =
+          routeMode === 'professional' || routeMode === 'personal'
+            ? routeMode
+            : data?.mode === 'professional'
+              ? 'professional'
+              : 'personal';
+
+        setMode(effectiveMode);
+
+        const raw =
+          effectiveMode === 'personal'
+            ? data?.personalGallery
+            : data?.professionalGallery;
+
+        const list: GalleryPhoto[] = Array.isArray(raw)
+          ? raw.filter((p) => !!p?.url)
+          : [];
+
+        setPhotos(list);
+      } catch (e: any) {
+        if (__DEV__) {
+          console.error('[GalleryScreen] Error loading gallery', e);
+        }
+
+        setTopBarColor('#3B5A85');
+        setTopBarMode('color');
+        setTopBarImage(null);
+        setProfileImage(null);
+        setPhotos([]);
+
+        Alert.alert('Error', e?.message || 'Could not load gallery.');
+      } finally {
+        setLoading(false);
       }
     })();
+  }, [routeUid, routeMode]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [editorMode, editorUid, parsed.ok]);
+  const openViewer = (uri: string) => {
+    setCurrent(uri);
+    setViewerOpen(true);
+  };
 
-  const persistGallery = useCallback(
-    async (nextPhotos: GalleryPhoto[]) => {
-      if (!editorUid || !editorMode) {
-        throw new Error('Gallery editor unavailable');
-      }
-      const patch = buildPostCrjGalleryPersistencePatch(editorMode, nextPhotos);
-      await updateUserProfilePartial(editorUid, patch);
-      setPhotos(nextPhotos);
-    },
-    [editorMode, editorUid],
-  );
+  const animateNewPhoto = (photoKey: string) => {
+    fadeAnim.setValue(0);
+    setLastAddedPhotoKey(photoKey);
 
-  const openGalleryViewer = useCallback(
-    (index: number) => {
-      if (operationBusy || photos.length === 0) return;
-      // Push on the same Profile stack so viewer Back returns to Gallery
-      // (not cross-tab to Home, which left goBack on MainHome).
-      navigation.navigate('ProfileGallery', {
-        uid: editorUid,
-        urls: photos.map((photo) => ({ url: photo.url })),
-        displayName: screenTitle,
-        initialIndex: index,
-        fullGallery: true,
-      });
-    },
-    [editorUid, navigation, operationBusy, photos, screenTitle],
-  );
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 350,
+      useNativeDriver: true,
+    }).start();
+  };
 
-  const handleAddPhoto = useCallback(async () => {
-    if (!editorUid || !editorMode || operationBusy) return;
-    if (!beginOperation('uploading')) return;
-
-    let uploadedPath: string | null = null;
-
+  const handleAddPhoto = async () => {
     try {
+      if (!isOwn || !ownerUid) return;
+
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
       if (!perm.granted) {
-        Alert.alert(
-          t('profile.gallery.permissionTitle'),
-          t('profile.gallery.permissionBody'),
-        );
+        Alert.alert('Permission required', 'We need access to your photos.');
         return;
       }
 
@@ -187,337 +178,303 @@ export default function GalleryScreen() {
 
       if (result.canceled || result.assets.length === 0) return;
 
-      const asset = result.assets[0]!;
-      setPendingPreviewUri(asset.uri);
+      setSaving(true);
 
-      const uploaded = await uploadGalleryImage(editorUid, asset.uri, editorMode);
-      uploadedPath = uploaded.path;
+      const asset = result.assets[0];
 
-      const newPhoto: GalleryPhoto = {
-        url: uploaded.url,
-        path: uploaded.path,
+      const localPhoto: GalleryPhoto = {
+        url: asset.uri,
+        path: `local-${Date.now()}`,
         createdAt: Date.now(),
       };
 
-      const nextPhotos = prependGalleryPhoto(photos, newPhoto);
-      await persistGallery(nextPhotos);
-    } catch (e: any) {
-      if (uploadedPath) {
-        await deleteGalleryStorageObject(uploadedPath);
-      }
-      Alert.alert(t('common.error'), e?.message || t('profile.gallery.uploadError'));
-    } finally {
-      endOperation();
-    }
-  }, [
-    beginOperation,
-    editorMode,
-    editorUid,
-    endOperation,
-    operationBusy,
-    persistGallery,
-    photos,
-    t,
-  ]);
+      const localPhotoKey = localPhoto.path || localPhoto.url;
 
-  const handleDeletePhoto = useCallback(
-    (photo: GalleryPhoto) => {
-      if (operationBusy) return;
+      animateNewPhoto(localPhotoKey);
 
-      Alert.alert(
-        t('profile.gallery.deleteTitle'),
-        t('profile.gallery.deleteBody'),
-        [
-          { text: t('profile.gallery.cancel'), style: 'cancel' },
-          {
-            text: t('profile.gallery.delete'),
-            style: 'destructive',
-            onPress: () => {
-              void (async () => {
-                if (!beginOperation('deleting')) return;
+      const optimisticPhotos = [localPhoto, ...photos];
+      setPhotos(optimisticPhotos);
 
-                const previousPhotos = photos;
-                const nextPhotos = removeGalleryPhoto(previousPhotos, photo);
+      const { url, path } = await uploadGalleryImage(ownerUid, asset.uri, mode);
 
-                try {
-                  await persistGallery(nextPhotos);
-                  if (photo.path) {
-                    await deleteGalleryStorageObject(photo.path);
-                  }
-                } catch (e: any) {
-                  setPhotos(previousPhotos);
-                  Alert.alert(
-                    t('common.error'),
-                    e?.message || t('profile.gallery.deleteError'),
-                  );
-                } finally {
-                  endOperation();
-                }
-              })();
-            },
-          },
-        ],
-        { cancelable: true },
+      const uploadedPhoto: GalleryPhoto = {
+        url,
+        path,
+        createdAt: localPhoto.createdAt,
+      };
+
+      const finalPhotos = optimisticPhotos.map((p) =>
+        p.path === localPhoto.path ? uploadedPhoto : p,
       );
-    },
-    [beginOperation, endOperation, operationBusy, persistGallery, photos, t],
-  );
 
-  if (!parsed.ok || loadState === 'blocked') {
-    return (
-      <View style={[styles.root, { backgroundColor: palette.background }]}>
-        <View style={[styles.centered, { paddingTop: insets.top + spacing.xl }]}>
-          <Text style={[styles.messageText, { color: palette.textSecondary }]}>
-            {t('profile.gallery.loadError')}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t('profile.gallery.backA11y')}
-            onPress={handleBack}
-            style={({ pressed }) => [
-              styles.backBtn,
-              {
-                borderColor: palette.borderStrong,
-                backgroundColor: palette.panel,
-              },
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={[styles.backBtnText, { color: palette.textPrimary }]}>
-              {t('profile.gallery.backA11y')}
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  }
+      await setDoc(
+        doc(firestoreDb, 'users', ownerUid),
+        {
+          [fieldName]: finalPhotos,
+          updatedAt: Date.now(),
+        },
+        { merge: true },
+      );
 
-  if (loadState === 'loading') {
-    return (
-      <View style={[styles.root, { backgroundColor: palette.background }]}>
-        <View
-          style={[styles.centered, { paddingTop: insets.top + spacing.xl }]}
-          accessibilityLiveRegion="polite"
-        >
-          <ActivityIndicator size="large" color={palette.primary} />
-        </View>
-      </View>
-    );
-  }
+      setPhotos(finalPhotos);
+      setLastAddedPhotoKey(uploadedPhoto.path || uploadedPhoto.url);
+    } catch (e: any) {
+      if (__DEV__) {
+        console.error('[GalleryScreen] Error adding photo', e);
+      }
 
-  if (loadState === 'error') {
+      Alert.alert('Error', e?.message || 'Could not add photo.');
+      setPhotos((prev) => prev.filter((p) => !p.path?.startsWith('local-')));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeletePhoto = async (photo: GalleryPhoto) => {
+    try {
+      if (!isOwn || !ownerUid) return;
+
+      const confirmed = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          'Delete photo',
+          'Are you sure you want to delete this photo?',
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+            {
+              text: 'Delete',
+              style: 'destructive',
+              onPress: () => resolve(true),
+            },
+          ],
+        );
+      });
+
+      if (!confirmed) return;
+
+      setSaving(true);
+
+      if (photo.path && !photo.path.startsWith('local-')) {
+        try {
+          await deleteObject(ref(storageWeb, photo.path));
+        } catch (e) {
+          if (__DEV__) {
+            console.warn('[GalleryScreen] Could not delete storage object', e);
+          }
+        }
+      }
+
+      const next = photos.filter(
+        (p) => (p.path || p.url) !== (photo.path || photo.url),
+      );
+
+      await setDoc(
+        doc(firestoreDb, 'users', ownerUid),
+        {
+          [fieldName]: next,
+          updatedAt: Date.now(),
+        },
+        { merge: true },
+      );
+
+      setPhotos(next);
+
+      if (current && current === photo.url) {
+        setViewerOpen(false);
+        setCurrent(null);
+      }
+    } catch (e: any) {
+      if (__DEV__) {
+        console.error('[GalleryScreen] Error deleting photo', e);
+      }
+
+      Alert.alert('Error', e?.message || 'Could not delete photo.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
     return (
-      <View style={[styles.root, { backgroundColor: palette.background }]}>
-        <View style={[styles.centered, { paddingTop: insets.top + spacing.xl }]}>
-          <Text
-            accessibilityRole="alert"
-            style={[styles.messageText, { color: palette.textSecondary }]}
-          >
-            {t('profile.gallery.loadError')}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t('profile.gallery.backA11y')}
-            onPress={handleBack}
-            style={({ pressed }) => [
-              styles.backBtn,
-              {
-                borderColor: palette.borderStrong,
-                backgroundColor: palette.panel,
-              },
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={[styles.backBtnText, { color: palette.textPrimary }]}>
-              {t('profile.gallery.backA11y')}
-            </Text>
-          </Pressable>
-        </View>
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#2B3A42" />
       </View>
     );
   }
 
   return (
-    <View style={[styles.root, { backgroundColor: palette.background }]}>
-      <ScrollView
-        style={styles.flex}
-        contentContainerStyle={{
-          paddingTop: insets.top + spacing.md,
-          paddingBottom: insets.bottom + spacing.xl,
-          paddingHorizontal: screenPadding.horizontal,
-        }}
-        scrollIndicatorInsets={{ top: insets.top }}
-      >
-        <View style={styles.headerRow}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t('profile.gallery.backA11y')}
-            onPress={handleBack}
-            hitSlop={8}
-            style={({ pressed }) => [
-              styles.headerBack,
-              {
-                backgroundColor: palette.panel,
-                borderColor: palette.border,
-              },
-              pressed && styles.pressed,
-            ]}
-          >
-            <Ionicons name="chevron-back" size={22} color={palette.textPrimary} />
-          </Pressable>
-
-          <View style={styles.headerTextCol}>
-            <Text
-              accessibilityRole="header"
-              style={[styles.title, { color: palette.textPrimary }]}
-            >
-              {screenTitle}
-            </Text>
-            <Text
-              accessibilityLabel={countLabel}
-              style={[styles.countText, { color: palette.textSecondary }]}
-            >
-              {countLabel}
-            </Text>
-          </View>
-        </View>
-
-        <Text style={[styles.description, { color: palette.textSecondary }]}>
-          {t('profile.gallery.description')}
-        </Text>
-
-        {photoCount === 0 && !pendingPreviewUri ? (
-          <Text style={[styles.emptyText, { color: palette.textMuted }]}>
-            {t('profile.gallery.empty')}
-          </Text>
-        ) : null}
-
-        {operationKind === 'uploading' ? (
-          <Text
-            accessibilityLiveRegion="polite"
-            style={[styles.progressText, { color: palette.textSecondary }]}
-          >
-            {t('profile.gallery.adding')}
-          </Text>
-        ) : null}
-
-        {operationKind === 'deleting' ? (
-          <Text
-            accessibilityLiveRegion="polite"
-            style={[styles.progressText, { color: palette.textSecondary }]}
-          >
-            {t('profile.gallery.deleting')}
-          </Text>
-        ) : null}
-
-        <ProfileGalleryAdminGrid
-          photos={photos}
-          columns={OWN_PROFILE_GALLERY_COLUMNS}
-          addLabel={t('profile.gallery.add')}
-          addA11y={t('profile.gallery.addA11y')}
-          photoA11y={(index, total) =>
-            t('profile.gallery.photoA11y', { index, total })
-          }
-          deleteA11y={(index, total) =>
-            t('profile.gallery.deleteA11y', { index, total })
-          }
-          uploadingA11y={t('profile.gallery.uploadingA11y')}
-          operationBusy={operationBusy}
-          pendingPreviewUri={pendingPreviewUri}
-          onAddPress={() => void handleAddPhoto()}
-          onPhotoPress={openGalleryViewer}
-          onDeletePress={(photo) => handleDeletePhoto(photo)}
-        />
-      </ScrollView>
-
-      <View
-        pointerEvents="none"
-        style={[
-          styles.statusBarOverlay,
-          {
-            height: insets.top,
-            backgroundColor: palette.background,
-          },
-        ]}
+    <ScrollView
+      style={{ flex: 1, backgroundColor: '#fff' }}
+      contentContainerStyle={{ paddingBottom: 80 }}
+    >
+      <TopHeader
+        topBarMode={topBarMode}
+        topBarColor={topBarColor}
+        topBarImage={topBarImage}
+        profileImage={profileImage}
+        leftIcon="chevron-back"
+        onLeftPress={() => navigation.goBack()}
+        showAvatar
       />
-    </View>
+
+      <Text style={styles.title}>
+        {isOwn ? 'Your Gallery' : 'Gallery'} ·{' '}
+        {mode === 'personal' ? 'Personal' : 'Professional'}
+      </Text>
+
+      <View style={styles.grid}>
+        {isOwn && (
+          <TouchableOpacity
+            style={styles.addItem}
+            onPress={handleAddPhoto}
+            activeOpacity={0.8}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator color="#3B5A85" />
+            ) : (
+              <Ionicons name="add" size={34} color="#3B5A85" />
+            )}
+          </TouchableOpacity>
+        )}
+
+        {photos.map((p, i) => {
+          const photoKey = p.path || p.url;
+          const isNewPhoto = photoKey === lastAddedPhotoKey;
+
+          if (isNewPhoto) {
+            return (
+              <Animated.View
+                key={photoKey + i}
+                style={[
+                  styles.gridItemWrap,
+                  {
+                    opacity: fadeAnim,
+                    transform: [
+                      {
+                        scale: fadeAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.92, 1],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <TouchableOpacity
+                  style={{ flex: 1 }}
+                  activeOpacity={0.9}
+                  onPress={() => openViewer(p.url)}
+                  onLongPress={() => isOwn && handleDeletePhoto(p)}
+                >
+                  <Image source={{ uri: p.url }} style={styles.gridItem} />
+                </TouchableOpacity>
+              </Animated.View>
+            );
+          }
+
+          return (
+            <TouchableOpacity
+              key={photoKey + i}
+              style={styles.gridItemWrap}
+              activeOpacity={0.9}
+              onPress={() => openViewer(p.url)}
+              onLongPress={() => isOwn && handleDeletePhoto(p)}
+            >
+              <Image source={{ uri: p.url }} style={styles.gridItem} />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <Modal visible={viewerOpen} transparent animationType="fade">
+        <View style={styles.viewerBackdrop}>
+          <TouchableOpacity
+            style={styles.viewerClose}
+            onPress={() => setViewerOpen(false)}
+          >
+            <Ionicons name="close" size={26} color="#fff" />
+          </TouchableOpacity>
+
+          {current && (
+            <Image
+              source={{ uri: current }}
+              style={styles.viewerImage}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  flex: { flex: 1 },
-  statusBarOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 1,
-  },
-  centered: {
+  center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.md,
-    paddingHorizontal: screenPadding.horizontal,
   },
-  messageText: {
-    fontSize: fontSize.md,
-    textAlign: 'center',
-    lineHeight: fontSize.md * 1.4,
-  },
-  backBtn: {
-    minHeight: 44,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  backBtnText: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  headerBack: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTextCol: {
-    flex: 1,
-    gap: spacing.xs,
-  },
+
   title: {
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1F2937',
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 8,
   },
-  countText: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.medium,
+
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+    paddingHorizontal: GRID_PADDING,
+    columnGap: ITEM_GAP,
+    rowGap: ITEM_GAP,
   },
-  description: {
-    fontSize: fontSize.md,
-    lineHeight: fontSize.md * 1.45,
-    marginBottom: spacing.md,
+
+  gridItemWrap: {
+    width: ITEM_SIZE,
+    height: ITEM_SIZE,
+    borderRadius: 10,
+    position: 'relative',
   },
-  emptyText: {
-    fontSize: fontSize.md,
-    marginBottom: spacing.md,
+
+  addItem: {
+    width: ITEM_SIZE,
+    height: ITEM_SIZE,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F9FAFB',
   },
-  progressText: {
-    fontSize: fontSize.sm,
-    marginBottom: spacing.sm,
+
+  gridItem: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 10,
+    backgroundColor: '#E5E7EB',
   },
-  pressed: {
-    opacity: 0.85,
+
+  viewerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  viewerClose: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    zIndex: 2,
+  },
+
+  viewerImage: {
+    width: '100%',
+    height: '80%',
   },
 });
