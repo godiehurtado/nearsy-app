@@ -51,6 +51,53 @@ export async function setActiveProfileModeFlow(
   }
 }
 
+/**
+ * BUG-PROFILE-02: after a successful Professional face save, re-run the
+ * canonical setActiveProfileMode path so Discovery projection can restore.
+ * Personal saves and incomplete faces must skip.
+ */
+export function shouldResyncProfessionalDiscoveryProjection(input: {
+  activeMode: ProfileMode | null;
+  professionalFaceComplete: boolean;
+}): boolean {
+  return (
+    input.activeMode === 'professional' && input.professionalFaceComplete === true
+  );
+}
+
+export type ProfessionalDiscoveryResyncResult =
+  | { kind: 'skipped' }
+  | { kind: 'synced'; response: SetActiveProfileModeResponse }
+  | { kind: 'failed'; error: VisibilityDiscoveryClientError };
+
+/**
+ * At most one intended callable when gated. Call only after Firestore save OK.
+ */
+export async function resyncProfessionalDiscoveryProjectionAfterSave(input: {
+  activeMode: ProfileMode | null;
+  professionalFaceComplete: boolean;
+  uid: string;
+  client: VisibilityDiscoveryClient;
+}): Promise<ProfessionalDiscoveryResyncResult> {
+  if (
+    !shouldResyncProfessionalDiscoveryProjection({
+      activeMode: input.activeMode,
+      professionalFaceComplete: input.professionalFaceComplete,
+    })
+  ) {
+    return { kind: 'skipped' };
+  }
+  const outcome = await setActiveProfileModeFlow(
+    input.client,
+    'professional',
+    input.uid,
+  );
+  if (outcome.ok === false) {
+    return { kind: 'failed', error: outcome.error };
+  }
+  return { kind: 'synced', response: outcome.response };
+}
+
 export { clearActiveProfileModeConfirmation };
 
 export function presentActiveProfileModeError(
