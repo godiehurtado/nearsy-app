@@ -34,7 +34,6 @@ import { subtleShadow } from '../theme/shadows';
 import { NearbyInterestIconRow } from '../components/visibility/NearbyInterestIconRow';
 import { AlignmentScoreRing } from '../components/alignment/AlignmentScoreRing';
 import {
-  buildDiscoverNearbyRequest,
   isVisibilityDiscoveryClientError,
   metersToFeet,
   resolveDistanceDisplayUnit,
@@ -52,7 +51,11 @@ import {
   matchesNearbyLocalQuery,
   resolveInterestChips,
 } from '../visibility/interestDisplay';
-import { presentVisibilityCallableError } from '../visibility/visibilityErrorPresentation';
+import { loadNearbyWithContractualRefresh } from '../visibility/nearbyDiscoveryLoad';
+import {
+  presentVisibilityCallableError,
+  presentVisibilityLocalError,
+} from '../visibility/visibilityErrorPresentation';
 
 type ProfileDoc = {
   visibility?: boolean;
@@ -116,7 +119,8 @@ export default function NearbySearchScreen() {
       setErrorKind('none');
       setErrorMessage(null);
       try {
-        if (!firebaseAuth.currentUser?.uid) {
+        const uid = firebaseAuth.currentUser?.uid;
+        if (!uid) {
           setItems([]);
           setErrorKind('generic');
           setErrorMessage(t('nearby.errorGeneric'));
@@ -130,16 +134,75 @@ export default function NearbySearchScreen() {
         }
 
         const client = await getVisibilityDiscoveryClient();
-        const response = await client.discoverNearby(
-          buildDiscoverNearbyRequest({ limit: 50 }),
-        );
-        setItems(response.results);
-        if (response.results.length === 0) {
+        const outcome = await loadNearbyWithContractualRefresh({
+          uid,
+          visibility: true,
+          client,
+          limit: 50,
+        });
+
+        if (outcome.ok === false) {
+          setItems([]);
+          if (outcome.kind === 'inactive') {
+            setErrorKind('inactive');
+            setErrorMessage(t('nearby.inactiveBody'));
+            return;
+          }
+          if (outcome.kind === 'permission-denied') {
+            setErrorKind('generic');
+            setErrorMessage(t('nearby.hintWithoutLocation'));
+            return;
+          }
+          if (
+            outcome.kind === 'unavailable' ||
+            outcome.kind === 'invalid-accuracy'
+          ) {
+            const presented = presentVisibilityLocalError(outcome.kind, t);
+            setErrorKind('retry');
+            setErrorMessage(t('nearby.errorRetry'));
+            if (__DEV__) {
+              console.warn('[NearbySearch] local', presented.devDetail);
+            }
+            return;
+          }
+          if (outcome.kind === 'unauthenticated') {
+            setErrorKind('generic');
+            setErrorMessage(t('nearby.errorGeneric'));
+            return;
+          }
+          const err = outcome.error;
+          if (err && isVisibilityDiscoveryClientError(err)) {
+            if (
+              err.reason.kind === 'known' &&
+              err.reason.value === 'visibility-inactive'
+            ) {
+              setErrorKind('inactive');
+              setErrorMessage(t('nearby.inactiveBody'));
+            } else if (err.retryable) {
+              setErrorKind('retry');
+              setErrorMessage(t('nearby.errorRetry'));
+            } else {
+              const presented = presentVisibilityCallableError(err, t);
+              setErrorKind('generic');
+              setErrorMessage(presented.userMessage);
+            }
+          } else {
+            setErrorKind('generic');
+            setErrorMessage(t('nearby.errorGeneric'));
+          }
+          if (__DEV__ && err) {
+            console.error('[NearbySearch] discover/publish', err);
+          }
+          return;
+        }
+
+        setItems(outcome.results);
+        if (outcome.results.length === 0) {
           setErrorKind('empty');
           setErrorMessage(t('nearby.emptyBody'));
         }
       } catch (err) {
-        if (__DEV__) console.error('[NearbySearch] discoverNearby', err);
+        if (__DEV__) console.error('[NearbySearch] loadData', err);
         setItems([]);
         if (isVisibilityDiscoveryClientError(err)) {
           if (

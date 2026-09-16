@@ -20,6 +20,7 @@ import {
 } from './callables';
 import { MAX_LOCATION_ACCURACY_METERS } from './constants';
 import { isAccuracyValid } from './freshness';
+import { writeVisibilityRecoveryIntent } from './visibilityRecoveryIntent';
 
 export type LocationSampleResult =
   | { ok: true; location: VisibilityLocationPayload }
@@ -210,18 +211,49 @@ export async function publishLocationFlow(
   }
 }
 
+export type ReconcileVisibilityWithForegroundPermissionInput = {
+  remoteVisibility: boolean;
+  client: VisibilityDiscoveryClient;
+  /**
+   * When provided with storage, preserves BUG-DISC-01 recovery intent
+   * before any permission-driven deactivate.
+   */
+  uid?: string;
+  recoveryStorage?: {
+    getItem(key: string): Promise<string | null>;
+    setItem(key: string, value: string): Promise<void>;
+    removeItem(key: string): Promise<void>;
+  };
+};
+
 /**
  * If remote visibility is true but foreground permission is not granted,
  * deactivate via backend. Does not deactivate for stale location alone.
+ *
+ * BUG-DISC-01: when uid + recoveryStorage are provided, write recovery intent
+ * before deactivate so granting permission can restore Visibility.
  */
 export async function reconcileVisibilityWithForegroundPermission(
-  remoteVisibility: boolean,
-  client: VisibilityDiscoveryClient,
+  remoteVisibilityOrInput:
+    | boolean
+    | ReconcileVisibilityWithForegroundPermissionInput,
+  clientMaybe?: VisibilityDiscoveryClient,
 ): Promise<{
   visibility: boolean;
   reconciled: boolean;
+  recoveryIntentPreserved?: boolean;
   error?: VisibilityDiscoveryClientError;
 }> {
+  const input: ReconcileVisibilityWithForegroundPermissionInput =
+    typeof remoteVisibilityOrInput === 'boolean'
+      ? {
+          remoteVisibility: remoteVisibilityOrInput,
+          client: clientMaybe as VisibilityDiscoveryClient,
+        }
+      : remoteVisibilityOrInput;
+
+  const { remoteVisibility, client, uid, recoveryStorage } = input;
+
   if (!remoteVisibility) {
     return { visibility: false, reconciled: false };
   }
@@ -229,13 +261,25 @@ export async function reconcileVisibilityWithForegroundPermission(
   if (perm.status === 'granted') {
     return { visibility: true, reconciled: false };
   }
+
+  let recoveryIntentPreserved = false;
+  if (uid && recoveryStorage) {
+    await writeVisibilityRecoveryIntent(recoveryStorage, uid);
+    recoveryIntentPreserved = true;
+  }
+
   const outcome = await deactivateVisibilityFlow(client);
   if (outcome.ok === true) {
-    return { visibility: false, reconciled: true };
+    return {
+      visibility: false,
+      reconciled: true,
+      recoveryIntentPreserved,
+    };
   }
   return {
     visibility: true,
     reconciled: false,
+    recoveryIntentPreserved,
     error: outcome.error,
   };
 }

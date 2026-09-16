@@ -22,3 +22,6 @@ export * from './activeProfileModeSync';
 export * from './activeProfileModeReconciliation';
 export * from './setActiveProfileModeClientSemantics';
 export * from './initialCrjVisibilityActivation';
+export * from './contractualLocationRefresh';
+export * from './nearbyDiscoveryLoad';
+export * from './visibilityRecoveryIntent';
