@@ -18,7 +18,9 @@ import {
   applyActiveProfileModeResponseToUserDoc,
   createActiveProfileModeSwitchSession,
   presentActiveProfileModeError,
+  resyncProfessionalDiscoveryProjectionAfterSave,
   setActiveProfileModeFlow,
+  shouldResyncProfessionalDiscoveryProjection,
 } from '../activeProfileModeSync';
 import {
   isActiveFaceIncomplete,
@@ -34,6 +36,13 @@ import {
 } from '../activeProfileModeReconciliation';
 import { attemptInitialVisibilityAfterCrjCompletion } from '../initialCrjVisibilityActivation';
 import { buildActiveProfileSavePatch } from '../../profile/profileModeFields';
+import {
+  buildOwnProfileSavePatch,
+  ownProfileSaveOmitsForbiddenKeys,
+  validateOwnProfileDraft,
+  type OwnProfileDraft,
+} from '../../profile/ownProfileEditorState';
+import { isCrjProfileDetailsValid } from '../../profile/crjProfileDetails';
 import en from '../../i18n/locales/en';
 import es from '../../i18n/locales/es';
 
@@ -622,6 +631,174 @@ describe('residual mode writes (iOS CRJ saves)', () => {
   });
 });
 
+describe('BUG-PROFILE-02 professional discovery re-sync', () => {
+  const completeProfessionalDraft: OwnProfileDraft = {
+    realName: 'Ana',
+    lastName: 'García',
+    profileImage: 'https://cdn.example/ana.jpg',
+    occupation: 'Engineer',
+    bio: 'Hello nearby',
+    company: 'Nearsy',
+  };
+
+  it('Personal save gating skips Professional re-sync', async () => {
+    assert.equal(
+      shouldResyncProfessionalDiscoveryProjection({
+        activeMode: 'personal',
+        professionalFaceComplete: true,
+      }),
+      false,
+    );
+    const fake = createFakeVisibilityDiscoveryClient({
+      setActiveProfileMode: async () => {
+        throw new Error('must not call');
+      },
+    });
+    const result = await resyncProfessionalDiscoveryProjectionAfterSave({
+      activeMode: 'personal',
+      professionalFaceComplete: true,
+      uid: UID_A,
+      client: fake,
+    });
+    assert.deepEqual(result, { kind: 'skipped' });
+    assert.equal(fake.calls.length, 0);
+  });
+
+  it('complete Professional Own Profile save triggers exactly one re-sync', async () => {
+    assert.equal(
+      validateOwnProfileDraft(completeProfessionalDraft, 'professional').ok,
+      true,
+    );
+    const patch = buildOwnProfileSavePatch({
+      mode: 'professional',
+      draft: completeProfessionalDraft,
+    });
+    assert.equal(ownProfileSaveOmitsForbiddenKeys(patch), true);
+    assert.equal(Object.prototype.hasOwnProperty.call(patch, 'mode'), false);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(patch, 'visibility'),
+      false,
+    );
+
+    let calls = 0;
+    const fake = createFakeVisibilityDiscoveryClient({
+      setActiveProfileMode: async (req) => {
+        calls += 1;
+        assert.equal(req.mode, 'professional');
+        return {
+          contractVersion: 1,
+          mode: 'professional',
+          visibility: true,
+          targetProfileComplete: true,
+          discoverySynced: true,
+          serverTime: 9,
+        };
+      },
+    });
+    const result = await resyncProfessionalDiscoveryProjectionAfterSave({
+      activeMode: 'professional',
+      professionalFaceComplete:
+        validateOwnProfileDraft(completeProfessionalDraft, 'professional')
+          .ok === true,
+      uid: UID_A,
+      client: fake,
+    });
+    assert.equal(result.kind, 'synced');
+    assert.equal(calls, 1);
+    assert.equal(fake.calls.length, 1);
+  });
+
+  it('Professional CRJ details completion triggers exactly one re-sync', async () => {
+    assert.equal(
+      isCrjProfileDetailsValid({
+        mode: 'professional',
+        occupation: 'Engineer',
+        bio: 'Hello',
+        company: 'Nearsy',
+      }),
+      true,
+    );
+    let calls = 0;
+    const fake = createFakeVisibilityDiscoveryClient({
+      setActiveProfileMode: async (req) => {
+        calls += 1;
+        assert.equal(req.mode, 'professional');
+        return {
+          contractVersion: 1,
+          mode: 'professional',
+          visibility: true,
+          targetProfileComplete: true,
+          discoverySynced: true,
+          serverTime: 10,
+        };
+      },
+    });
+    const result = await resyncProfessionalDiscoveryProjectionAfterSave({
+      activeMode: 'professional',
+      professionalFaceComplete: isCrjProfileDetailsValid({
+        mode: 'professional',
+        occupation: 'Engineer',
+        bio: 'Hello',
+        company: 'Nearsy',
+      }),
+      uid: UID_A,
+      client: fake,
+    });
+    assert.equal(result.kind, 'synced');
+    assert.equal(calls, 1);
+  });
+
+  it('Firestore save failure path never reaches re-sync (gate helper alone is inert)', async () => {
+    // Callers must not invoke resync when updateUserProfilePartial throws.
+    // Gate + helper remain skipped until explicitly called after a successful write.
+    const fake = createFakeVisibilityDiscoveryClient({
+      setActiveProfileMode: async () => {
+        throw new Error('must not call');
+      },
+    });
+    assert.equal(fake.calls.length, 0);
+  });
+
+  it('incomplete Professional face skips re-sync (no cyclic duplicate)', async () => {
+    assert.equal(
+      shouldResyncProfessionalDiscoveryProjection({
+        activeMode: 'professional',
+        professionalFaceComplete: false,
+      }),
+      false,
+    );
+    const fake = createFakeVisibilityDiscoveryClient({
+      setActiveProfileMode: async () => {
+        throw new Error('must not call');
+      },
+    });
+    const result = await resyncProfessionalDiscoveryProjectionAfterSave({
+      activeMode: 'professional',
+      professionalFaceComplete: false,
+      uid: UID_A,
+      client: fake,
+    });
+    assert.deepEqual(result, { kind: 'skipped' });
+    assert.equal(fake.calls.length, 0);
+  });
+
+  it('resync failure surfaces as ok:false without inventing success', async () => {
+    const fake = createFakeVisibilityDiscoveryClient({
+      setActiveProfileMode: async () => {
+        throw createContractResponseError('boom', null);
+      },
+    });
+    const result = await resyncProfessionalDiscoveryProjectionAfterSave({
+      activeMode: 'professional',
+      professionalFaceComplete: true,
+      uid: UID_A,
+      client: fake,
+    });
+    assert.equal(result.kind, 'failed');
+    assert.equal(fake.calls.length, 1);
+  });
+});
+
 describe('static integration guards (I1)', () => {
   it('callable name registered', () => {
     assert.equal(
@@ -635,6 +812,38 @@ describe('static integration guards (I1)', () => {
     assert.match(src, /setActiveProfileModeFlow/);
     assert.doesNotMatch(src, /updateUserMode/);
     assert.match(src, /getUserProfile\(uid\)/);
+  });
+
+  it('BUG-PROFILE-02 Own Profile save re-syncs Professional after Firestore write', () => {
+    const src = readShared('screens/CompleteProfileScreen.tsx');
+    const persist = src.slice(
+      src.indexOf('const persistOwnProfile'),
+      src.indexOf('const handleSave'),
+    );
+    assert.match(persist, /updateUserProfilePartial\(uid, modePatch\)/);
+    assert.match(persist, /resyncProfessionalDiscoveryProjectionAfterSave/);
+    assert.ok(
+      persist.indexOf('updateUserProfilePartial(uid, modePatch)') <
+        persist.indexOf('resyncProfessionalDiscoveryProjectionAfterSave'),
+    );
+    assert.match(persist, /validateOwnProfileDraft\(persistedDraft, mode\)/);
+    assert.doesNotMatch(persist, /includeModeInPatch:\s*true/);
+  });
+
+  it('BUG-PROFILE-02 CRJ persistDetails re-syncs Professional after Firestore write', () => {
+    const src = readShared('screens/ProfileCompletionScreen.tsx');
+    const persist = src.slice(
+      src.indexOf('async function persistDetails()'),
+      src.indexOf('async function persistInterests()'),
+    );
+    assert.match(persist, /updateUserProfilePartial/);
+    assert.match(persist, /resyncProfessionalDiscoveryProjectionAfterSave/);
+    assert.ok(
+      persist.indexOf('updateUserProfilePartial') <
+        persist.indexOf('resyncProfessionalDiscoveryProjectionAfterSave'),
+    );
+    assert.match(persist, /isCrjProfileDetailsValid/);
+    assert.doesNotMatch(persist, /includeModeInPatch:\s*true/);
   });
 
   it('CompleteProfile toggle is non-optimistic and uses session guard', () => {

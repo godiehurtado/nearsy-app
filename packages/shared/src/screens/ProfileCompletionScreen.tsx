@@ -60,6 +60,7 @@ import { isVisibilityDiscoveryClientError } from '../visibility/callables';
 import {
   applyActiveProfileModeResponseToUserDoc,
   presentActiveProfileModeError,
+  resyncProfessionalDiscoveryProjectionAfterSave,
   setActiveProfileModeFlow,
 } from '../visibility/activeProfileModeSync';
 import { attemptInitialVisibilityAfterCrjCompletion } from '../visibility/initialCrjVisibilityActivation';
@@ -774,12 +775,36 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       ...patch,
       profileSetupCompleted: false,
     });
-    setShellData((prev) => ({
-      ...(prev ?? {}),
-      ...patch,
-      mode,
-      profileSetupCompleted: false,
-    }));
+
+    // BUG-PROFILE-02: re-sync Discovery after Professional details complete.
+    const resync = await resyncProfessionalDiscoveryProjectionAfterSave({
+      activeMode: mode,
+      professionalFaceComplete: isCrjProfileDetailsValid({
+        mode,
+        occupation,
+        bio,
+        company,
+      }),
+      uid,
+      client: await getVisibilityDiscoveryClient(),
+    });
+
+    setShellData((prev) => {
+      let next: Record<string, unknown> = {
+        ...(prev ?? {}),
+        ...patch,
+        mode,
+        profileSetupCompleted: false,
+      };
+      if (resync.kind === 'synced') {
+        next = applyActiveProfileModeResponseToUserDoc(next, resync.response);
+      }
+      return next;
+    });
+
+    if (resync.kind === 'failed') {
+      throw resync.error;
+    }
   }
 
   async function persistInterests() {
