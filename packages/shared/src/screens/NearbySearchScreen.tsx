@@ -53,6 +53,13 @@ import {
 } from '../visibility/interestDisplay';
 import { loadNearbyWithContractualRefresh } from '../visibility/nearbyDiscoveryLoad';
 import {
+  shouldPreserveNearbyResultsDuringLoad,
+  shouldShowNearbyEmptyChrome,
+  shouldUseNearbyFullScreenLoader,
+  shouldWaitForNearbyProfile,
+  type NearbyLoadReason,
+} from '../visibility/nearbyLoadUi';
+import {
   presentVisibilityCallableError,
   presentVisibilityLocalError,
 } from '../visibility/visibilityErrorPresentation';
@@ -77,12 +84,17 @@ export default function NearbySearchScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [items, setItems] = useState<DiscoverNearbyResult[]>([]);
   const [profile, setProfile] = useState<ProfileDoc>({});
+  const [profileReady, setProfileReady] = useState(false);
   const [query, setQuery] = useState('');
   const [errorKind, setErrorKind] = useState<
     'none' | 'inactive' | 'empty' | 'retry' | 'generic'
   >('none');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const hasLoadedOnce = useRef(false);
+  /** True until first Visibility-ON publish→discover finishes (or inactive resolved). */
+  const initialDiscoveryPendingRef = useRef(true);
+  const [initialDiscoveryPending, setInitialDiscoveryPending] = useState(true);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   const translateItem = useCallback(
     (nameKey: string, fallback: string) =>
@@ -96,10 +108,25 @@ export default function NearbySearchScreen() {
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) return;
     const unsub = dbOnUserSnapshot(uid, (raw) => {
-      if (raw) setProfile((raw as ProfileDoc) ?? {});
+      if (raw) {
+        setProfile((raw as ProfileDoc) ?? {});
+        setProfileReady(true);
+      }
     });
     return () => unsub();
   }, []);
+
+  // Re-arm initial loading when Visibility flips OFF → ON while Nearby stays mounted.
+  const prevVisibilityRef = useRef<boolean | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevVisibilityRef.current;
+    prevVisibilityRef.current = profile.visibility;
+    if (prev === false && profile.visibility === true) {
+      initialDiscoveryPendingRef.current = true;
+      setInitialDiscoveryPending(true);
+      setLoading(true);
+    }
+  }, [profile.visibility]);
 
   const viewerInterestIds = useMemo(() => {
     const prefs = profile.searchPreferences as
@@ -114,22 +141,51 @@ export default function NearbySearchScreen() {
   }, [profile.mode, profile.searchPreferences]);
 
   const loadData = useCallback(
-    async (showFullScreenLoader: boolean) => {
-      if (showFullScreenLoader) setLoading(true);
-      setErrorKind('none');
-      setErrorMessage(null);
+    async (reason: NearbyLoadReason) => {
+      const pending = initialDiscoveryPendingRef.current;
+      const fullScreenLoader = shouldUseNearbyFullScreenLoader({
+        reason,
+        initialDiscoveryPending: pending,
+      });
+      const preserveResults = shouldPreserveNearbyResultsDuringLoad({
+        reason,
+        initialDiscoveryPending: pending,
+        itemCount: itemsRef.current.length,
+      });
+
+      if (fullScreenLoader) setLoading(true);
+      if (!preserveResults) {
+        setErrorKind('none');
+        setErrorMessage(null);
+      }
+
+      let releaseFullScreenLoader = fullScreenLoader;
+
+      const markInitialResolved = () => {
+        initialDiscoveryPendingRef.current = false;
+        setInitialDiscoveryPending(false);
+      };
+
       try {
+        if (shouldWaitForNearbyProfile({ profileReady })) {
+          // Keep the initial loader until the profile snapshot arrives.
+          releaseFullScreenLoader = false;
+          return;
+        }
+
         const uid = firebaseAuth.currentUser?.uid;
         if (!uid) {
           setItems([]);
           setErrorKind('generic');
           setErrorMessage(t('nearby.errorGeneric'));
+          markInitialResolved();
           return;
         }
         if (!profile.visibility) {
           setItems([]);
           setErrorKind('inactive');
           setErrorMessage(t('nearby.inactiveBody'));
+          markInitialResolved();
           return;
         }
 
@@ -142,15 +198,21 @@ export default function NearbySearchScreen() {
         });
 
         if (outcome.ok === false) {
+          if (preserveResults) {
+            // Background / PTR failure: keep current profiles on screen.
+            return;
+          }
           setItems([]);
           if (outcome.kind === 'inactive') {
             setErrorKind('inactive');
             setErrorMessage(t('nearby.inactiveBody'));
+            markInitialResolved();
             return;
           }
           if (outcome.kind === 'permission-denied') {
             setErrorKind('generic');
             setErrorMessage(t('nearby.hintWithoutLocation'));
+            markInitialResolved();
             return;
           }
           if (
@@ -163,11 +225,13 @@ export default function NearbySearchScreen() {
             if (__DEV__) {
               console.warn('[NearbySearch] local', presented.devDetail);
             }
+            markInitialResolved();
             return;
           }
           if (outcome.kind === 'unauthenticated') {
             setErrorKind('generic');
             setErrorMessage(t('nearby.errorGeneric'));
+            markInitialResolved();
             return;
           }
           const err = outcome.error;
@@ -193,6 +257,7 @@ export default function NearbySearchScreen() {
           if (__DEV__ && err) {
             console.error('[NearbySearch] discover/publish', err);
           }
+          markInitialResolved();
           return;
         }
 
@@ -200,9 +265,16 @@ export default function NearbySearchScreen() {
         if (outcome.results.length === 0) {
           setErrorKind('empty');
           setErrorMessage(t('nearby.emptyBody'));
+        } else {
+          setErrorKind('none');
+          setErrorMessage(null);
         }
+        markInitialResolved();
       } catch (err) {
         if (__DEV__) console.error('[NearbySearch] loadData', err);
+        if (preserveResults) {
+          return;
+        }
         setItems([]);
         if (isVisibilityDiscoveryClientError(err)) {
           if (
@@ -223,23 +295,22 @@ export default function NearbySearchScreen() {
           setErrorKind('generic');
           setErrorMessage(t('nearby.errorGeneric'));
         }
+        markInitialResolved();
       } finally {
-        if (showFullScreenLoader) setLoading(false);
+        if (releaseFullScreenLoader) setLoading(false);
       }
     },
-    [profile.visibility, t],
+    [profile.visibility, profileReady, t],
   );
 
   useEffect(() => {
-    const full = !hasLoadedOnce.current;
-    hasLoadedOnce.current = true;
-    void loadData(full);
+    void loadData('effect');
   }, [loadData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await loadData(false);
+      await loadData('ptr');
     } finally {
       setRefreshing(false);
     }
@@ -268,6 +339,12 @@ export default function NearbySearchScreen() {
       });
     });
   }, [items, query, translateItem]);
+
+  const showEmptyChrome = shouldShowNearbyEmptyChrome({
+    initialDiscoveryPending,
+    loading,
+    itemCount: filtered.length,
+  });
 
   const headerBg = theme === 'dark' ? palette.panel : palette.panel;
   const listPadBottom = 96 + insets.bottom;
@@ -476,6 +553,7 @@ export default function NearbySearchScreen() {
             />
           }
           ListEmptyComponent={
+            showEmptyChrome ? (
             <View style={styles.emptyWrap}>
               <View
                 style={[
@@ -513,13 +591,14 @@ export default function NearbySearchScreen() {
                 </Pressable>
               ) : (
                 <Pressable
-                  onPress={() => void loadData(true)}
+                  onPress={() => void loadData('retry')}
                   style={[styles.cta, { backgroundColor: palette.textPrimary }]}
                 >
                   <Text style={styles.ctaLabel}>{t('nearby.retry')}</Text>
                 </Pressable>
               )}
             </View>
+            ) : null
           }
         />
       )}
