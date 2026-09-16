@@ -42,6 +42,11 @@ import {
   reconcileVisibilityWithForegroundPermission,
 } from '../visibility/orchestration';
 import { evaluateVisibilitySettingsReturn } from '../visibility/settingsRecovery';
+import {
+  clearVisibilityRecoveryIntent,
+  decideVisibilityRecoveryAction,
+  readVisibilityRecoveryIntent,
+} from '../visibility/visibilityRecoveryIntent';
 import { pressTransformStyle } from '../visibility/pressTransformStyle';
 import {
   reconcileUserDocWithActiveProfileMode,
@@ -291,24 +296,102 @@ export default function MainHomeScreen({ navigation }: Props) {
         try {
           const client = await getVisibilityDiscoveryClient();
           const remote = !!profile.visibility;
-          const result = await reconcileVisibilityWithForegroundPermission(
-            remote,
-            client,
+          const recoveryIntent = await readVisibilityRecoveryIntent(
+            AsyncStorage,
           );
-          if (cancelled) return;
-          if (result.reconciled) {
-            setProfile((p) => ({ ...p, visibility: false }));
+          const fg = await Location.getForegroundPermissionsAsync();
+          const foregroundGranted = fg.status === 'granted';
+
+          const decision = decideVisibilityRecoveryAction({
+            uid,
+            remoteVisibility: remote,
+            foregroundGranted,
+            recoveryIntent,
+          });
+
+          if (decision.action === 'preserve-intent-then-deactivate') {
+            const result = await reconcileVisibilityWithForegroundPermission({
+              remoteVisibility: true,
+              client,
+              uid,
+              recoveryStorage: AsyncStorage,
+            });
+            if (cancelled) return;
+            if (result.reconciled) {
+              setProfile((p) => ({ ...p, visibility: false }));
+              await stopBackgroundLocation().catch(() => {});
+            }
+            // Ask for FG permission so grant can restore (BUG-DISC-01).
+            if (fg.status === 'undetermined' || fg.canAskAgain) {
+              await Location.requestForegroundPermissionsAsync().catch(
+                () => undefined,
+              );
+              if (cancelled) return;
+              const after = await Location.getForegroundPermissionsAsync();
+              if (after.status === 'granted') {
+                const restore = await activateVisibilityFlow(client);
+                if (cancelled) return;
+                if (restore.ok) {
+                  await clearVisibilityRecoveryIntent(AsyncStorage);
+                  setProfile((p) => ({ ...p, visibility: true }));
+                  if (profileRef.current.bgVisible) {
+                    await startBackgroundLocation({ uid }).catch(() => {});
+                  }
+                }
+              }
+            }
+            return;
+          }
+
+          if (decision.action === 'activate-from-intent') {
+            const restore = await activateVisibilityFlow(client);
+            if (cancelled) return;
+            if (restore.ok) {
+              await clearVisibilityRecoveryIntent(AsyncStorage);
+              setProfile((p) => ({ ...p, visibility: true }));
+              if (profileRef.current.bgVisible) {
+                await startBackgroundLocation({ uid }).catch(() => {});
+              }
+            }
+            return;
+          }
+
+          if (decision.action === 'await-permission') {
+            // Soft re-prompt once OS allows; no alert loop (Settings path via toggle).
+            if (fg.status === 'undetermined' || fg.canAskAgain) {
+              await Location.requestForegroundPermissionsAsync().catch(
+                () => undefined,
+              );
+              if (cancelled) return;
+              const after = await Location.getForegroundPermissionsAsync();
+              if (after.status === 'granted') {
+                const restore = await activateVisibilityFlow(client);
+                if (cancelled) return;
+                if (restore.ok) {
+                  await clearVisibilityRecoveryIntent(AsyncStorage);
+                  setProfile((p) => ({ ...p, visibility: true }));
+                  if (profileRef.current.bgVisible) {
+                    await startBackgroundLocation({ uid }).catch(() => {});
+                  }
+                }
+              }
+            }
             await stopBackgroundLocation().catch(() => {});
             return;
           }
-          if (result.visibility) {
-            // Honor More → Stay visible in background; do not restart BG when off.
+
+          if (decision.action === 'clear-intent') {
+            await clearVisibilityRecoveryIntent(AsyncStorage);
+          }
+
+          // Existing BG reconcile when already ON with permission
+          if (remote && foregroundGranted) {
             if (profile.bgVisible) {
               await startBackgroundLocation({ uid }).catch(() => {});
             } else {
               await stopBackgroundLocation().catch(() => {});
             }
-          } else {
+          } else if (!remote) {
             await stopBackgroundLocation().catch(() => {});
           }
         } catch {
@@ -460,6 +543,7 @@ export default function MainHomeScreen({ navigation }: Props) {
         return;
       }
       setProfile((p) => ({ ...p, visibility: true }));
+      await clearVisibilityRecoveryIntent(AsyncStorage).catch(() => {});
       if (profileRef.current.bgVisible) {
         await startBackgroundLocation({ uid }).catch(() => {});
       }
@@ -498,6 +582,7 @@ export default function MainHomeScreen({ navigation }: Props) {
         return;
       }
       setProfile((p) => ({ ...p, visibility: false }));
+      await clearVisibilityRecoveryIntent(AsyncStorage).catch(() => {});
       await stopBackgroundLocation().catch(() => {});
     } catch (err) {
       if (isVisibilityDiscoveryClientError(err)) {
@@ -517,6 +602,38 @@ export default function MainHomeScreen({ navigation }: Props) {
       appStateRef.current = nextState;
 
       if (wasBackground && isNowActive) {
+        // BUG-DISC-01: restore Visibility from preserved intent after Settings grant
+        try {
+          const uid = firebaseAuth.currentUser?.uid;
+          if (uid && !statusUpdatingRef.current) {
+            const client = await getVisibilityDiscoveryClient();
+            const recoveryIntent = await readVisibilityRecoveryIntent(
+              AsyncStorage,
+            );
+            const perm = await Location.getForegroundPermissionsAsync();
+            const decision = decideVisibilityRecoveryAction({
+              uid,
+              remoteVisibility: !!profileRef.current.visibility,
+              foregroundGranted: perm.status === 'granted',
+              recoveryIntent,
+            });
+            if (decision.action === 'activate-from-intent') {
+              const restore = await activateVisibilityFlow(client);
+              if (restore.ok) {
+                await clearVisibilityRecoveryIntent(AsyncStorage);
+                setProfile((p) => ({ ...p, visibility: true }));
+                pendingVisibilityIntentRef.current = false;
+                if (profileRef.current.bgVisible) {
+                  await startBackgroundLocation({ uid }).catch(() => {});
+                }
+                return;
+              }
+            }
+          }
+        } catch {
+          // fall through to Settings pending-intent path
+        }
+
         if (!pendingVisibilityIntentRef.current) return;
 
         let foregroundStatus = 'undetermined';
