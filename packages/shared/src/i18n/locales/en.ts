@@ -11,6 +11,7 @@ import profile from '../resources/profile';
 import settings from '../resources/settings';
 import phoneOtp from '../resources/phoneOtp';
 import validation from '../resources/validation';
+import zodiac from '../resources/zodiac';
 
 const en = {
   common,
@@ -26,6 +27,7 @@ const en = {
   notifications,
   settings,
   phoneOtp,
+  zodiac,
 } as const;
 
 export default en;

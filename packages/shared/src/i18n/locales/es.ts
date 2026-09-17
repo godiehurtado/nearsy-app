@@ -402,6 +402,16 @@ const es: TranslationResources = {
         nameRequired: 'Ingresa tu nombre para continuar',
         lastNameRequired: 'Ingresa tu apellido para continuar',
         required: 'Ingresa tu nombre y apellido para continuar',
+        birthCountryLabel: '¿En qué país naciste?',
+        birthCountryPlaceholder: 'País de nacimiento',
+        birthCountryRequired: 'Selecciona tu país de nacimiento para continuar',
+        residenceCountryLabel: '¿Dónde vives?',
+        residenceCountryPlaceholder: 'País de residencia',
+        residenceCountryRequired:
+          'Selecciona tu país de residencia para continuar',
+        searchCountry: 'Buscar países…',
+        countriesRequired:
+          'Selecciona tu país de nacimiento y de residencia para continuar',
       },
       info: {
         title: 'Agrega una foto de perfil',
@@ -424,6 +434,10 @@ const es: TranslationResources = {
           'Estado breve (p. ej. Abierto a conocer gente nueva)',
         bio: 'Biografía',
         bioPlaceholder: 'Comparte una breve presentación sobre ti',
+        languagesLabel: 'Idiomas que hablas',
+        languagesPlaceholder: 'Agrega los idiomas que hablas',
+        languagesSearchPlaceholder: 'Buscar idiomas…',
+        languagesRequired: 'Agrega al menos un idioma para continuar',
         required: 'Completa todos los campos obligatorios para continuar',
       },
       interestsIntro: {
@@ -949,6 +963,23 @@ const es: TranslationResources = {
     sections: {
       details: 'Detalles del perfil',
       content: 'Contenido del perfil',
+      context: 'Trasfondo',
+    },
+    context: {
+      birthCountry: 'País de nacimiento',
+      birthCountryPlaceholder: 'Selecciona el país de nacimiento',
+      residenceCountry: 'País de residencia',
+      residenceCountryPlaceholder: 'Selecciona el país de residencia',
+      languages: 'Idiomas',
+      languagesPlaceholder: 'Agrega los idiomas que hablas',
+      searchCountry: 'Buscar países…',
+      searchLanguage: 'Buscar idiomas…',
+      clearCountryA11y: 'Borrar país',
+      removeLanguageA11y: 'Quitar {{language}}',
+      maxLanguages: 'Puedes agregar hasta {{count}} idiomas',
+      noLanguageResults: 'Ningún idioma coincide con tu búsqueda',
+      syncError:
+        'Perfil guardado, pero Discovery aún no se pudo actualizar. Se sincronizará cuando seas visible.',
     },
     mode: {
       personal: 'Personal',
@@ -1173,6 +1204,10 @@ const es: TranslationResources = {
     interests: 'Intereses',
     sharedInterests: 'Intereses compartidos',
     affiliations: 'Afiliaciones',
+    from: 'De {{flag}} {{country}}',
+    livesIn: 'Vive en {{flag}} {{country}}',
+    languages: 'Idiomas',
+    zodiac: 'Zodiaco',
     compatibility: 'Compatibilidad',
     compatibilityMatch: '{{score}}% Match',
     compatibilityBody:
@@ -1227,6 +1262,20 @@ const es: TranslationResources = {
     platformTiktok: 'TikTok',
     platformSnapchat: 'Snapchat',
     platformWebsite: 'Sitio web',
+  },
+  zodiac: {
+    aries: 'Aries',
+    taurus: 'Tauro',
+    gemini: 'Géminis',
+    cancer: 'Cáncer',
+    leo: 'Leo',
+    virgo: 'Virgo',
+    libra: 'Libra',
+    scorpio: 'Escorpio',
+    sagittarius: 'Sagitario',
+    capricorn: 'Capricornio',
+    aquarius: 'Acuario',
+    pisces: 'Piscis',
   },
   notifications: {
     title: 'Notificaciones',

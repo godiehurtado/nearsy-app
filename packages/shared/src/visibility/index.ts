@@ -21,6 +21,7 @@ export * from './interestDisplay';
 export * from './activeProfileModeSync';
 export * from './activeProfileModeReconciliation';
 export * from './setActiveProfileModeClientSemantics';
+export * from './syncDiscoveryProfileContext';
 export * from './initialCrjVisibilityActivation';
 export * from './contractualLocationRefresh';
 export * from './nearbyDiscoveryLoad';

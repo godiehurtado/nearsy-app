@@ -9,6 +9,23 @@ export default {
   sections: {
     details: 'Profile details',
     content: 'Profile content',
+    context: 'Background',
+  },
+  context: {
+    birthCountry: 'Country of birth',
+    birthCountryPlaceholder: 'Select country of birth',
+    residenceCountry: 'Country of residence',
+    residenceCountryPlaceholder: 'Select country of residence',
+    languages: 'Languages',
+    languagesPlaceholder: 'Add languages you speak',
+    searchCountry: 'Search countries…',
+    searchLanguage: 'Search languages…',
+    clearCountryA11y: 'Clear country',
+    removeLanguageA11y: 'Remove {{language}}',
+    maxLanguages: 'You can add up to {{count}} languages',
+    noLanguageResults: 'No languages match your search',
+    syncError:
+      'Profile saved, but Discovery could not be updated yet. It will sync when you are discoverable.',
   },
   mode: {
     personal: 'Personal',

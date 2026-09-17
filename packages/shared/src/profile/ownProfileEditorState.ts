@@ -1,9 +1,20 @@
 import { isProfileDocumentComplete } from '../utils/profileDocumentComplete';
+import { normalizeCountryCode } from './countryCatalog';
+import { normalizeLanguageCodes } from './languageCatalog';
+import {
+  buildProfileContextWritePatch,
+  parseUserProfileContext,
+} from './profileContextFields';
 import {
   buildActiveProfileSavePatch,
   type ModePresentation,
   type ProfileMode,
 } from './profileModeFields';
+
+function languageCodesEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((code, index) => code === b[index]);
+}
 
 /** Own Profile is post-CRJ only. Incomplete documents must not use this editor. */
 export function isOwnProfileEditorAllowed(profileDoc: unknown): boolean {
@@ -99,6 +110,31 @@ export function createOwnProfileDraftFromPresentation(
     occupation: presentation.occupation ?? '',
     bio: presentation.bio ?? '',
     company: presentation.company ?? '',
+    birthCountryCode: null,
+    residenceCountryCode: null,
+    languageCodes: [],
+  });
+}
+
+/**
+ * Mode face fields from presentation + top-level context from the user doc.
+ * Context is never read from ModePresentation.
+ */
+export function createOwnProfileDraftFromDoc(
+  doc: unknown,
+  presentation: ModePresentation,
+): OwnProfileDraft {
+  const ctx = parseUserProfileContext(doc);
+  return createOwnProfileSnapshot({
+    realName: presentation.realName ?? '',
+    lastName: presentation.lastName ?? '',
+    profileImage: presentation.profileImage ?? null,
+    occupation: presentation.occupation ?? '',
+    bio: presentation.bio ?? '',
+    company: presentation.company ?? '',
+    birthCountryCode: ctx.birthCountryCode,
+    residenceCountryCode: ctx.residenceCountryCode,
+    languageCodes: ctx.languageCodes,
   });
 }
 
@@ -110,6 +146,9 @@ export type OwnProfileDraft = {
   occupation: string;
   bio: string;
   company: string;
+  birthCountryCode: string | null;
+  residenceCountryCode: string | null;
+  languageCodes: string[];
 };
 
 export type OwnProfileValidationField =
@@ -136,6 +175,9 @@ export function normalizeOwnProfileDraft(
     occupation: draft.occupation.trim(),
     bio: draft.bio.trim(),
     company: draft.company.trim(),
+    birthCountryCode: normalizeCountryCode(draft.birthCountryCode),
+    residenceCountryCode: normalizeCountryCode(draft.residenceCountryCode),
+    languageCodes: normalizeLanguageCodes(draft.languageCodes),
   };
 }
 
@@ -160,9 +202,21 @@ export function isOwnProfileDraftDirty(
   if (mode === 'professional' && current.company !== snapshot.company) {
     return true;
   }
+  if (current.birthCountryCode !== snapshot.birthCountryCode) return true;
+  if (current.residenceCountryCode !== snapshot.residenceCountryCode) {
+    return true;
+  }
+  if (!languageCodesEqual(current.languageCodes, snapshot.languageCodes)) {
+    return true;
+  }
   return false;
 }
 
+/**
+ * Own Profile edit validation.
+ * Countries/languages are optional for already-completed users (CRJ-only required).
+ * Language codes are normalized/capped on save; empty is allowed.
+ */
 export function validateOwnProfileDraft(
   draft: OwnProfileDraft,
   mode: ProfileMode | null,
@@ -216,6 +270,18 @@ export function buildOwnProfileSavePatch(input: {
     presentation,
     projectActiveToTopLevel: true,
     includeModeInPatch: false,
+  });
+}
+
+/** Top-level context only — never includes zodiacSign. */
+export function buildOwnProfileContextSavePatch(
+  draft: OwnProfileDraft,
+): Record<string, unknown> {
+  const current = normalizeOwnProfileDraft(draft);
+  return buildProfileContextWritePatch({
+    birthCountryCode: current.birthCountryCode,
+    residenceCountryCode: current.residenceCountryCode,
+    languageCodes: current.languageCodes,
   });
 }
 
