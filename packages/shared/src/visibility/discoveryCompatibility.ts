@@ -63,8 +63,16 @@ export type AlignmentAvailable = {
   tier?: AlignmentTier;
 };
 
+/** UI presentation bucket — never a raw backend reason code. */
+export type AlignmentUnavailableState =
+  | 'insufficient'
+  | 'processing'
+  | 'unavailable';
+
 export type AlignmentUnavailable = {
   available: false;
+  /** Explanatory copy bucket for explored/public profile. */
+  state: AlignmentUnavailableState;
 };
 
 export type Alignment = AlignmentAvailable | AlignmentUnavailable;
@@ -242,6 +250,28 @@ export function parseDiscoveryCompatibility(
   return UNAVAILABLE_SAFE;
 }
 
+/** Map wire unavailable reason → UI presentation bucket (never invents scores). */
+export function mapUnavailableReasonToAlignmentState(
+  reason: DiscoveryCompatibilityUnavailableReason | undefined,
+): AlignmentUnavailableState {
+  switch (reason) {
+    case 'insufficient-comparable-dimensions':
+    case 'mode-incomplete':
+      return 'insufficient';
+    case 'embeddings-pending':
+    case 'embeddings-missing':
+    case 'embeddings-stale':
+      return 'processing';
+    case 'embeddings-failed':
+    case 'model-mismatch':
+    case 'mode-mismatch':
+    case 'embedding-corrupt':
+      return 'unavailable';
+    default:
+      return 'unavailable';
+  }
+}
+
 /** Map wire compatibility to UI Alignment (never invents tiers). */
 export function toAlignment(
   compatibility: DiscoveryCompatibility | undefined,
@@ -249,8 +279,11 @@ export function toAlignment(
   if (compatibility === undefined) {
     return undefined;
   }
-  if (!compatibility.available) {
-    return { available: false };
+  if (compatibility.available === false) {
+    return {
+      available: false,
+      state: mapUnavailableReasonToAlignmentState(compatibility.reason),
+    };
   }
   return {
     available: true,

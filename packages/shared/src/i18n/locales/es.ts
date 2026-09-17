@@ -164,7 +164,10 @@ export const es: TranslationResources = {
   },
   alignment: {
     title: 'Alineación',
-    unavailable: 'Estamos preparando la alineación.',
+    insufficient:
+      'Aún no hay suficiente información para calcular la alineación.',
+    processing: 'La alineación aún se está calculando.',
+    unavailable: 'La alineación no está disponible en este momento.',
     tiers: {
       weak: 'Algo en común',
       partial: 'Puntos en común',
