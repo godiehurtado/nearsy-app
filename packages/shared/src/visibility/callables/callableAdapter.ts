@@ -14,6 +14,7 @@ import {
   parseGetDiscoveryProfileResponse,
   parsePublishLocationResponse,
   parseSetActiveProfileModeResponse,
+  parseSyncDiscoveryProfileContextResponse,
 } from './parse';
 import { serializeVisibilityRequest } from './requests';
 import type {
@@ -24,6 +25,7 @@ import type {
   GetDiscoveryProfileRequest,
   PublishLocationRequest,
   SetActiveProfileModeRequest,
+  SyncDiscoveryProfileContextRequest,
 } from './wireTypes';
 
 export type VisibilityCallableInvoker = (
@@ -100,6 +102,13 @@ export function createVisibilityDiscoveryCallableClient(
         VISIBILITY_CALLABLE_NAMES.setActiveProfileMode,
         serializeVisibilityRequest(request),
         parseSetActiveProfileModeResponse,
+      );
+    },
+    syncDiscoveryProfileContext(request: SyncDiscoveryProfileContextRequest) {
+      return callParsed(
+        VISIBILITY_CALLABLE_NAMES.syncDiscoveryProfileContext,
+        serializeVisibilityRequest(request),
+        parseSyncDiscoveryProfileContextResponse,
       );
     },
     getBlockedPeople(request: GetBlockedPeopleRequest) {

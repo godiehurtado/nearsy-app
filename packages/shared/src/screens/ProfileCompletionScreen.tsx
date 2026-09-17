@@ -79,6 +79,15 @@ import {
   type ProfileMode,
 } from '../profile/profileModeFields';
 import {
+  buildProfileContextSavePatch,
+  isCrjIdentityContextValid,
+  isCrjLanguagesValid,
+  readProfileContextFromUserDoc,
+  syncDiscoveryProfileContextAfterSave,
+} from '../profileContext';
+import { CountrySelectField } from '../components/profileContext/CountrySelectField';
+import { LanguageMultiSelectField } from '../components/profileContext/LanguageMultiSelectField';
+import {
   buildCrjDetailsPresentation,
   isCrjProfileDetailsValid,
 } from '../profile/crjProfileDetails';
@@ -329,7 +338,7 @@ function progressPhaseForStep(step: ResolvedStep): CrjProgressPhase | null {
 
 export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const { palette } = useAppTheme();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const uid =
     route.params?.uid ||
@@ -347,6 +356,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [occupation, setOccupation] = useState('');
   const [company, setCompany] = useState('');
   const [bio, setBio] = useState('');
+  const [birthCountryCode, setBirthCountryCode] = useState<string | null>(null);
+  const [residenceCountryCode, setResidenceCountryCode] = useState<
+    string | null
+  >(null);
+  const [languageCodes, setLanguageCodes] = useState<string[]>([]);
   const [selectedInterests, setSelectedInterests] = useState<
     OnboardingSelectedInterest[]
   >([]);
@@ -528,6 +542,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       }
 
       setShellData((existing as Record<string, unknown>) ?? null);
+      const context = readProfileContextFromUserDoc(
+        existing as Record<string, unknown> | null,
+      );
+      setBirthCountryCode(context.birthCountryCode);
+      setResidenceCountryCode(context.residenceCountryCode);
+      setLanguageCodes(context.languageCodes);
 
       let nextPhoto: string | null = null;
       const existingMode =
@@ -631,7 +651,14 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       case 'type':
         return mode != null;
       case 'identity':
-        return firstName.trim().length > 0 && lastName.trim().length > 0;
+        return (
+          firstName.trim().length > 0 &&
+          lastName.trim().length > 0 &&
+          isCrjIdentityContextValid({
+            birthCountryCode,
+            residenceCountryCode,
+          })
+        );
       case 'photo':
         return !!photoUri?.trim();
       case 'details':
@@ -640,6 +667,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
           occupation,
           bio,
           company,
+          languageCodes,
         });
       case 'interestsIntro':
       case 'interest':
@@ -667,10 +695,23 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         if (!lastName.trim()) {
           return t('onboarding.profileCompletion.identity.lastNameRequired');
         }
+        if (!birthCountryCode) {
+          return t(
+            'onboarding.profileCompletion.identity.birthCountryRequired',
+          );
+        }
+        if (!residenceCountryCode) {
+          return t(
+            'onboarding.profileCompletion.identity.residenceCountryRequired',
+          );
+        }
         return t('onboarding.profileCompletion.identity.required');
       case 'photo':
         return t('onboarding.profileCompletion.info.photoRequired');
       case 'details':
+        if (!isCrjLanguagesValid(languageCodes)) {
+          return t('onboarding.profileCompletion.details.languagesRequired');
+        }
         return t('onboarding.profileCompletion.details.required' as any);
       default:
         return undefined;
@@ -707,13 +748,23 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       projectActiveToTopLevel: true,
       includeModeInPatch: false,
     });
+    const contextPatch = buildProfileContextSavePatch({
+      birthCountryCode,
+      residenceCountryCode,
+      languageCodes,
+    });
     await updateUserProfilePartial(uid, {
       ...patch,
+      ...contextPatch,
       profileSetupCompleted: false,
     });
+    void syncDiscoveryProfileContextAfterSave(
+      await getVisibilityDiscoveryClient(),
+    );
     setShellData((prev) => ({
       ...(prev ?? {}),
       ...patch,
+      ...contextPatch,
       mode,
       profileSetupCompleted: false,
     }));
@@ -771,10 +822,19 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       projectActiveToTopLevel: true,
       includeModeInPatch: false,
     });
+    const contextPatch = buildProfileContextSavePatch({
+      birthCountryCode,
+      residenceCountryCode,
+      languageCodes,
+    });
     await updateUserProfilePartial(uid, {
       ...patch,
+      ...contextPatch,
       profileSetupCompleted: false,
     });
+
+    const client = await getVisibilityDiscoveryClient();
+    void syncDiscoveryProfileContextAfterSave(client);
 
     // BUG-PROFILE-02: re-sync Discovery after Professional details complete.
     const resync = await resyncProfessionalDiscoveryProjectionAfterSave({
@@ -784,15 +844,17 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         occupation,
         bio,
         company,
+        languageCodes,
       }),
       uid,
-      client: await getVisibilityDiscoveryClient(),
+      client,
     });
 
     setShellData((prev) => {
       let next: Record<string, unknown> = {
         ...(prev ?? {}),
         ...patch,
+        ...contextPatch,
         mode,
         profileSetupCompleted: false,
       };
@@ -1614,6 +1676,40 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                   autoComplete="family-name"
                   textContentType="familyName"
                 />
+                <CountrySelectField
+                  label={t(
+                    'onboarding.profileCompletion.identity.birthCountryLabel',
+                  )}
+                  placeholder={t(
+                    'onboarding.profileCompletion.identity.birthCountryPlaceholder',
+                  )}
+                  searchPlaceholder={t(
+                    'onboarding.profileCompletion.identity.birthCountryPlaceholder',
+                  )}
+                  emptyLabel={t(
+                    'onboarding.profileCompletion.identity.countrySearchEmpty',
+                  )}
+                  value={birthCountryCode}
+                  locale={i18n.language}
+                  onChange={setBirthCountryCode}
+                />
+                <CountrySelectField
+                  label={t(
+                    'onboarding.profileCompletion.identity.residenceCountryLabel',
+                  )}
+                  placeholder={t(
+                    'onboarding.profileCompletion.identity.residenceCountryPlaceholder',
+                  )}
+                  searchPlaceholder={t(
+                    'onboarding.profileCompletion.identity.residenceCountryPlaceholder',
+                  )}
+                  emptyLabel={t(
+                    'onboarding.profileCompletion.identity.countrySearchEmpty',
+                  )}
+                  value={residenceCountryCode}
+                  locale={i18n.language}
+                  onChange={setResidenceCountryCode}
+                />
               </View>
             </>
           )}
@@ -1723,6 +1819,23 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                   textAlignVertical="top"
                   style={styles.bioInput}
                   autoCapitalize="sentences"
+                />
+                <LanguageMultiSelectField
+                  label={t(
+                    'onboarding.profileCompletion.details.languagesLabel',
+                  )}
+                  searchPlaceholder={t(
+                    'onboarding.profileCompletion.details.languagesPlaceholder',
+                  )}
+                  emptyLabel={t(
+                    'onboarding.profileCompletion.details.languagesEmpty',
+                  )}
+                  limitMessage={t(
+                    'onboarding.profileCompletion.details.languagesLimit',
+                  )}
+                  selectedCodes={languageCodes}
+                  locale={i18n.language}
+                  onChange={setLanguageCodes}
                 />
               </View>
             </>

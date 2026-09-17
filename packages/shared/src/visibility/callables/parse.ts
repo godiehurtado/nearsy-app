@@ -10,6 +10,9 @@ import {
   MAX_DISCOVERY_LIMIT,
   MAX_GALLERY_ITEMS,
 } from '../constants';
+import { normalizeCountryCode } from '../../profileContext/countryCatalog';
+import { normalizeLanguageCodes } from '../../profileContext/languageCatalog';
+import { parseZodiacSign } from '../../profileContext/zodiacPresentation';
 import { parseDiscoveryAffiliations } from '../discoveryAffiliations';
 import { parseDiscoveryCompatibility } from '../discoveryCompatibility';
 import { parseDiscoverySocialLinks } from '../discoverySocialLinks';
@@ -27,6 +30,7 @@ import type {
   GetDiscoveryProfileResponse,
   PublishLocationResponse,
   SetActiveProfileModeResponse,
+  SyncDiscoveryProfileContextResponse,
 } from './wireTypes';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -193,8 +197,64 @@ export function parseDiscoveryProfileSummary(
     'birthDate',
     'birthYear',
     'dateOfBirth',
+    'birthCountryCode',
+    'residenceCountryCode',
+    'languageCodes',
+    'zodiacSign',
   ]);
   return parseSummaryFields(value);
+}
+
+function parseDetailContextFields(value: Record<string, unknown>): Pick<
+  DiscoveryProfileDetail,
+  | 'birthCountryCode'
+  | 'residenceCountryCode'
+  | 'languageCodes'
+  | 'zodiacSign'
+> {
+  const birthCountryCode = Object.prototype.hasOwnProperty.call(
+    value,
+    'birthCountryCode',
+  )
+    ? value.birthCountryCode === null
+      ? null
+      : normalizeCountryCode(value.birthCountryCode)
+    : null;
+
+  if (
+    Object.prototype.hasOwnProperty.call(value, 'birthCountryCode') &&
+    value.birthCountryCode !== null &&
+    birthCountryCode === null
+  ) {
+    // Unknown code → treat as absent (rollout-safe), never fail parent DTO.
+  }
+
+  const residenceCountryCode = Object.prototype.hasOwnProperty.call(
+    value,
+    'residenceCountryCode',
+  )
+    ? value.residenceCountryCode === null
+      ? null
+      : normalizeCountryCode(value.residenceCountryCode)
+    : null;
+
+  const languageCodes = Object.prototype.hasOwnProperty.call(
+    value,
+    'languageCodes',
+  )
+    ? normalizeLanguageCodes(value.languageCodes)
+    : [];
+
+  const zodiacSign = Object.prototype.hasOwnProperty.call(value, 'zodiacSign')
+    ? parseZodiacSign(value.zodiacSign)
+    : null;
+
+  return {
+    birthCountryCode,
+    residenceCountryCode,
+    languageCodes,
+    zodiacSign,
+  };
 }
 
 export function parseDiscoveryProfileDetail(
@@ -230,6 +290,7 @@ export function parseDiscoveryProfileDetail(
     ...summary,
     company: value.company,
     bio: value.bio,
+    ...parseDetailContextFields(value),
   };
 }
 
@@ -450,6 +511,23 @@ export function parseSetActiveProfileModeResponse(
       'targetProfileComplete',
     ),
     discoverySynced: requireBoolean(data.discoverySynced, 'discoverySynced'),
+    serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
+  };
+}
+
+export function parseSyncDiscoveryProfileContextResponse(
+  data: unknown,
+): SyncDiscoveryProfileContextResponse {
+  if (!isPlainObject(data)) {
+    throw createContractResponseError(
+      'syncDiscoveryProfileContext response must be an object',
+      data,
+    );
+  }
+  assertNoForbiddenKeys(data, 'syncDiscoveryProfileContext');
+  return {
+    contractVersion: requireContractVersion(data.contractVersion),
+    synced: requireBoolean(data.synced, 'synced'),
     serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
   };
 }

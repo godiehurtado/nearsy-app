@@ -1,14 +1,19 @@
 import type { ModePresentation, ProfileMode } from './profileModeFields.ts';
+import { isCrjLanguagesValid } from '../profileContext/profileContextFields.ts';
 
 export function isCrjProfileDetailsValid(input: {
   mode: ProfileMode | null;
   occupation: string;
   bio: string;
   company?: string;
+  languageCodes?: readonly string[];
 }): boolean {
   if (!input.mode) return false;
   if (!input.occupation.trim() || !input.bio.trim()) return false;
   if (input.mode === 'professional' && !input.company?.trim()) {
+    return false;
+  }
+  if (!isCrjLanguagesValid(input.languageCodes ?? [])) {
     return false;
   }
   return true;

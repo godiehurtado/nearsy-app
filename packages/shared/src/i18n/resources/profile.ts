@@ -41,6 +41,9 @@ const en = {
     biography: 'Biography',
     company: 'Company',
     profileImage: 'Profile photo',
+    birthCountry: 'Country of birth',
+    residenceCountry: 'Country of residence',
+    languages: 'Languages',
   },
   placeholders: {
     realName: 'First name',
@@ -48,6 +51,16 @@ const en = {
     occupation: 'Occupation',
     biography: 'A short bio',
     company: 'Company',
+    birthCountrySearch: 'Search country of birth',
+    residenceCountrySearch: 'Search country of residence',
+    languagesSearch: 'Search languages',
+  },
+  context: {
+    countrySearchEmpty: 'No countries match your search',
+    languagesEmpty: 'No languages match your search',
+    languagesLimit: 'You can select up to 10 languages',
+    syncSoftError:
+      'Your profile was saved, but public context may take a moment to update.',
   },
   validation: {
     realName: 'First name is required.',
@@ -247,6 +260,9 @@ const es = {
       biography: 'Biografía',
       company: 'Empresa',
       profileImage: 'Foto de perfil',
+      birthCountry: 'País de nacimiento',
+      residenceCountry: 'País de residencia',
+      languages: 'Idiomas',
     },
     placeholders: {
       realName: 'Nombre',
@@ -254,6 +270,16 @@ const es = {
       occupation: 'Ocupación',
       biography: 'Una breve biografía',
       company: 'Empresa',
+      birthCountrySearch: 'Busca país de nacimiento',
+      residenceCountrySearch: 'Busca país de residencia',
+      languagesSearch: 'Busca idiomas',
+    },
+    context: {
+      countrySearchEmpty: 'Ningún país coincide con tu búsqueda',
+      languagesEmpty: 'Ningún idioma coincide con tu búsqueda',
+      languagesLimit: 'Puedes seleccionar hasta 10 idiomas',
+      syncSoftError:
+        'Tu perfil se guardó, pero el contexto público puede tardar un momento en actualizarse.',
     },
     validation: {
       realName: 'El nombre es obligatorio.',

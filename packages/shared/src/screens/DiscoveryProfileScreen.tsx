@@ -21,14 +21,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import * as Localization from 'expo-localization';
 import { firebaseAuth } from '../config/firebaseConfig';
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { useTranslation } from '../i18n';
 import { InterestChip } from '../components/InterestChip';
 import { MVP_FREE_SHOW_PROFILE_CONNECT_CTA } from '../product/mvpFreePresentation';
 import { DiscoveryAffiliationsCard } from '../components/profileExploration/DiscoveryAffiliationsCard';
-import { DiscoveryCompatibilityCard } from '../components/profileExploration/DiscoveryCompatibilityCard';
+import { DiscoveryContextCard } from '../components/profileExploration/DiscoveryContextCard';
+import { DiscoveryProfileIdentityHeader } from '../components/profileExploration/DiscoveryProfileIdentityHeader';
 import { DiscoverySocialMediaRow } from '../components/profileExploration/DiscoverySocialMediaRow';
 import {
   fontSize,
@@ -43,8 +43,6 @@ import {
   galleryPreviewOverflowCount,
   galleryPreviewUrls,
   isVisibilityDiscoveryClientError,
-  metersToFeet,
-  resolveDistanceDisplayUnit,
   resolveInterestChips,
   shouldShowGalleryPreviewOverflow,
   type GetDiscoveryProfileResponse,
@@ -69,11 +67,8 @@ export default function DiscoveryProfileScreen() {
     useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
   const insets = useSafeAreaInsets();
   const { palette, theme } = useAppTheme();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const uid = route.params?.uid;
-  const unit = resolveDistanceDisplayUnit(
-    Localization.getLocales()?.[0]?.languageTag,
-  );
 
   const [loading, setLoading] = useState(true);
   const [errorKind, setErrorKind] = useState<
@@ -146,17 +141,6 @@ export default function DiscoveryProfileScreen() {
       ? t('discoveryProfile.modeProfessional')
       : t('discoveryProfile.modePersonal');
   }, [data, t]);
-
-  const distanceLabel = useMemo(() => {
-    if (!data) return '';
-    const value =
-      unit === 'ft'
-        ? Math.round(metersToFeet(data.distanceMeters))
-        : Math.round(data.distanceMeters);
-    return unit === 'ft'
-      ? t('discoveryProfile.distanceAwayFt', { value })
-      : t('discoveryProfile.distanceAwayM', { value });
-  }, [data, t, unit]);
 
   const previewGallery = useMemo(
     () => (data ? galleryPreviewUrls(data.gallery, 3) : []),
@@ -334,38 +318,26 @@ export default function DiscoveryProfileScreen() {
         </View>
 
         <View style={{ paddingHorizontal: spacing.xl }}>
-          {/* 2. Identity — name, profile type, distance (age is private) */}
-          <Text
-            style={[styles.name, { color: palette.textPrimary }]}
-            accessibilityRole="header"
-          >
-            {profile.displayName}
-          </Text>
-          <Text
-            style={[
-              styles.metaSecondary,
-              { color: palette.textSecondary, marginTop: 4 },
-            ]}
-          >
-            {modeLabel}
-          </Text>
-          <Text
-            style={{
-              color: palette.textMuted,
-              marginTop: spacing.xs,
-              fontSize: fontSize.sm,
-            }}
-          >
-            {distanceLabel}
-          </Text>
+          {/* 2. Identity — name, mode, zodiac | compact Alignment */}
+          <DiscoveryProfileIdentityHeader
+            displayName={profile.displayName}
+            modeLabel={modeLabel}
+            zodiacSign={profile.zodiacSign}
+            compatibility={data.compatibility}
+          />
 
           {/* 3. Social Media — omitted when DTO has no public links */}
           <DiscoverySocialMediaRow links={publicSocialLinks} />
 
-          {/* 4. Compatibility — backend score when available */}
-          <DiscoveryCompatibilityCard compatibility={data.compatibility} />
+          {/* 4. Context — birth/residence/languages (replaces large Alignment card) */}
+          <DiscoveryContextCard
+            birthCountryCode={profile.birthCountryCode}
+            residenceCountryCode={profile.residenceCountryCode}
+            languageCodes={profile.languageCodes}
+            locale={i18n.language}
+          />
 
-          {/* 5. Profile information + shared interests */}
+          {/* 5. Profile information + public interests */}
           <View
             style={[
               styles.card,
