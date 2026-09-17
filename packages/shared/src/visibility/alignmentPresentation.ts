@@ -1,10 +1,14 @@
 /**
  * Alignment user-facing presentation helpers (M4A).
- * Tier labels come from i18n — never from wire reason codes.
+ * Tier / unavailable labels come from i18n — never from wire reason codes.
  */
 import type { TFunction } from 'i18next';
 
-import type { Alignment, AlignmentTier } from './discoveryCompatibility';
+import type {
+  Alignment,
+  AlignmentTier,
+  AlignmentUnavailablePresentation,
+} from './discoveryCompatibility';
 
 export function shouldShowNearbyTierBadge(
   tier: AlignmentTier | undefined,
@@ -19,8 +23,19 @@ export function alignmentTierLabel(
   return t(`alignment.tiers.${tier}`);
 }
 
-export function alignmentUnavailableLabel(t: TFunction): string {
-  return t('alignment.unavailable');
+export function alignmentUnavailableLabel(
+  t: TFunction,
+  presentation: AlignmentUnavailablePresentation = 'unavailable',
+): string {
+  switch (presentation) {
+    case 'insufficient':
+      return t('alignment.insufficient');
+    case 'processing':
+      return t('alignment.processing');
+    case 'unavailable':
+    default:
+      return t('alignment.unavailable');
+  }
 }
 
 export function alignmentTitleLabel(t: TFunction): string {
