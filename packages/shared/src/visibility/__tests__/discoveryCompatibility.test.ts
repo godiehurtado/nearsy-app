@@ -19,6 +19,7 @@ import {
 import {
   alignmentAccessibilityLabel,
   alignmentTierLabel,
+  alignmentUnavailableLabel,
   shouldShowNearbyTierBadge,
 } from '../alignmentPresentation';
 import {
@@ -311,6 +312,245 @@ describe('Alignment presentation helpers', () => {
   });
 });
 
+describe('Alignment unavailable presentation mapping (BUG-ALIGN-01)', () => {
+  const cases: Array<{
+    name: string;
+    compatibility: Record<string, unknown> | undefined;
+    expect:
+      | { kind: 'absent' }
+      | { kind: 'score'; score: number }
+      | {
+          kind: 'unavailable';
+          presentation: 'insufficient' | 'processing' | 'unavailable';
+          en: string;
+          es: string;
+        };
+  }> = [
+    {
+      name: 'available score > 0',
+      compatibility: {
+        available: true,
+        score: 66,
+        formulaVersion: '1',
+        alignmentTier: 'strong',
+        alignmentVersion: '1',
+      },
+      expect: { kind: 'score', score: 66 },
+    },
+    {
+      name: 'available score 0',
+      compatibility: {
+        available: true,
+        score: 0,
+        formulaVersion: '1',
+        alignmentTier: 'weak',
+        alignmentVersion: '1',
+      },
+      expect: { kind: 'score', score: 0 },
+    },
+    {
+      name: 'insufficient-comparable-dimensions',
+      compatibility: {
+        available: false,
+        reason: 'insufficient-comparable-dimensions',
+        formulaVersion: '1',
+      },
+      expect: {
+        kind: 'unavailable',
+        presentation: 'insufficient',
+        en: enAlignment.insufficient,
+        es: es.alignment.insufficient,
+      },
+    },
+    {
+      name: 'mode-incomplete',
+      compatibility: {
+        available: false,
+        reason: 'mode-incomplete',
+        formulaVersion: '1',
+      },
+      expect: {
+        kind: 'unavailable',
+        presentation: 'insufficient',
+        en: enAlignment.insufficient,
+        es: es.alignment.insufficient,
+      },
+    },
+    {
+      name: 'embeddings-pending',
+      compatibility: {
+        available: false,
+        reason: 'embeddings-pending',
+        formulaVersion: '1',
+      },
+      expect: {
+        kind: 'unavailable',
+        presentation: 'processing',
+        en: enAlignment.processing,
+        es: es.alignment.processing,
+      },
+    },
+    {
+      name: 'embeddings-missing',
+      compatibility: {
+        available: false,
+        reason: 'embeddings-missing',
+        formulaVersion: '1',
+      },
+      expect: {
+        kind: 'unavailable',
+        presentation: 'processing',
+        en: enAlignment.processing,
+        es: es.alignment.processing,
+      },
+    },
+    {
+      name: 'embeddings-stale',
+      compatibility: {
+        available: false,
+        reason: 'embeddings-stale',
+        formulaVersion: '1',
+      },
+      expect: {
+        kind: 'unavailable',
+        presentation: 'processing',
+        en: enAlignment.processing,
+        es: es.alignment.processing,
+      },
+    },
+    {
+      name: 'embeddings-failed',
+      compatibility: {
+        available: false,
+        reason: 'embeddings-failed',
+        formulaVersion: '1',
+      },
+      expect: {
+        kind: 'unavailable',
+        presentation: 'unavailable',
+        en: enAlignment.unavailable,
+        es: es.alignment.unavailable,
+      },
+    },
+    {
+      name: 'model-mismatch',
+      compatibility: {
+        available: false,
+        reason: 'model-mismatch',
+        formulaVersion: '1',
+      },
+      expect: {
+        kind: 'unavailable',
+        presentation: 'unavailable',
+        en: enAlignment.unavailable,
+        es: es.alignment.unavailable,
+      },
+    },
+    {
+      name: 'mode-mismatch',
+      compatibility: {
+        available: false,
+        reason: 'mode-mismatch',
+        formulaVersion: '1',
+      },
+      expect: {
+        kind: 'unavailable',
+        presentation: 'unavailable',
+        en: enAlignment.unavailable,
+        es: es.alignment.unavailable,
+      },
+    },
+    {
+      name: 'embedding-corrupt',
+      compatibility: {
+        available: false,
+        reason: 'embedding-corrupt',
+        formulaVersion: '1',
+      },
+      expect: {
+        kind: 'unavailable',
+        presentation: 'unavailable',
+        en: enAlignment.unavailable,
+        es: es.alignment.unavailable,
+      },
+    },
+    {
+      name: 'unknown unavailable reason',
+      compatibility: {
+        available: false,
+        reason: 'unknown-code',
+        formulaVersion: '1',
+      },
+      expect: {
+        kind: 'unavailable',
+        presentation: 'unavailable',
+        en: enAlignment.unavailable,
+        es: es.alignment.unavailable,
+      },
+    },
+    {
+      name: 'missing unavailable reason',
+      compatibility: {
+        available: false,
+        formulaVersion: '1',
+      },
+      expect: {
+        kind: 'unavailable',
+        presentation: 'unavailable',
+        en: enAlignment.unavailable,
+        es: es.alignment.unavailable,
+      },
+    },
+    {
+      name: 'compatibility absent',
+      compatibility: undefined,
+      expect: { kind: 'absent' },
+    },
+  ];
+
+  for (const tc of cases) {
+    it(tc.name, () => {
+      const parsed =
+        tc.compatibility === undefined
+          ? undefined
+          : parseDiscoveryCompatibility(tc.compatibility);
+      const alignment = toAlignment(parsed);
+
+      if (tc.expect.kind === 'absent') {
+        assert.equal(parsed, undefined);
+        assert.equal(alignment, undefined);
+        return;
+      }
+
+      if (tc.expect.kind === 'score') {
+        assert.equal(alignment?.available, true);
+        if (alignment?.available) {
+          assert.equal(alignment.score, tc.expect.score);
+        }
+        return;
+      }
+
+      assert.equal(alignment?.available, false);
+      if (!alignment || alignment.available) {
+        assert.fail('expected unavailable alignment');
+      }
+      assert.equal(alignment.presentation, tc.expect.presentation);
+      assert.equal(
+        alignmentUnavailableLabel(tEn, alignment.presentation),
+        tc.expect.en,
+      );
+      assert.equal(
+        alignmentUnavailableLabel(tEs, alignment.presentation),
+        tc.expect.es,
+      );
+      for (const reason of DISCOVERY_COMPATIBILITY_UNAVAILABLE_REASONS) {
+        assert.doesNotMatch(tc.expect.en, new RegExp(reason, 'i'));
+        assert.doesNotMatch(tc.expect.es, new RegExp(reason, 'i'));
+      }
+    });
+  }
+});
+
 describe('Alignment i18n EN/ES', () => {
   it('exposes four tier labels without banned terminology', () => {
     for (const tier of ALIGNMENT_TIERS) {
@@ -319,8 +559,30 @@ describe('Alignment i18n EN/ES', () => {
     }
     assert.equal(enAlignment.title, 'Alignment');
     assert.equal(es.alignment.title, 'Alineación');
-    assert.equal(enAlignment.unavailable, 'Alignment is being prepared.');
-    assert.equal(es.alignment.unavailable, 'Estamos preparando la alineación.');
+    assert.equal(
+      enAlignment.insufficient,
+      "There isn't enough information yet to calculate alignment.",
+    );
+    assert.equal(
+      es.alignment.insufficient,
+      'Aún no hay suficiente información para calcular la alineación.',
+    );
+    assert.equal(
+      enAlignment.processing,
+      'Alignment is still being calculated.',
+    );
+    assert.equal(
+      es.alignment.processing,
+      'La alineación aún se está calculando.',
+    );
+    assert.equal(
+      enAlignment.unavailable,
+      'Alignment is currently unavailable.',
+    );
+    assert.equal(
+      es.alignment.unavailable,
+      'La alineación no está disponible en este momento.',
+    );
     assert.equal(es.alignment.tiers.full, 'Alineación excepcional');
     const bundle = JSON.stringify({ en: enAlignment, es: es.alignment });
     for (const banned of [
@@ -362,6 +624,7 @@ describe('Alignment UI contract (static)', () => {
   it('Profile card uses Alignment copy and detail ring', () => {
     assert.match(compatSrc, /alignmentTitleLabel/);
     assert.match(compatSrc, /alignmentUnavailableLabel/);
+    assert.match(compatSrc, /alignment\.presentation/);
     assert.match(compatSrc, /AlignmentScoreRing/);
     assert.match(compatSrc, /variant="detail"/);
     assert.doesNotMatch(compatSrc, /compatibilityMatch/);

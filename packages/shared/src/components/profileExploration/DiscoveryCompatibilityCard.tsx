@@ -43,7 +43,7 @@ export function DiscoveryCompatibilityCard({ compatibility }: Props) {
     return null;
   }
 
-  if (alignment.available) {
+  if (alignment.available === true) {
     const a11yLabel = alignmentAccessibilityLabel(t, alignment);
     const tierLabel = alignment.tier
       ? alignmentTierLabel(t, alignment.tier)
@@ -87,7 +87,10 @@ export function DiscoveryCompatibilityCard({ compatibility }: Props) {
     );
   }
 
-  const unavailableCopy = alignmentUnavailableLabel(t);
+  const unavailableCopy = alignmentUnavailableLabel(
+    t,
+    alignment.presentation,
+  );
 
   return (
     <View

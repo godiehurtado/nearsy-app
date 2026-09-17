@@ -23,7 +23,7 @@ export const ALIGNMENT_TIERS: readonly AlignmentTier[] = [
 
 const VALID_TIERS = new Set<string>(ALIGNMENT_TIERS);
 
-/** V1 unavailable reasons — diagnostic only; never render in UI. */
+/** V1 unavailable reasons — diagnostic only; never render codes in UI. */
 export type DiscoveryCompatibilityUnavailableReason =
   | 'embeddings-missing'
   | 'embeddings-pending'
@@ -34,6 +34,12 @@ export type DiscoveryCompatibilityUnavailableReason =
   | 'mode-incomplete'
   | 'embedding-corrupt'
   | 'insufficient-comparable-dimensions';
+
+/** User-facing unavailable bucket — never a raw backend reason code. */
+export type AlignmentUnavailablePresentation =
+  | 'insufficient'
+  | 'processing'
+  | 'unavailable';
 
 export type DiscoveryCompatibilityAvailable = {
   available: true;
@@ -48,7 +54,7 @@ export type DiscoveryCompatibilityUnavailable = {
   available: false;
   formulaVersion: DiscoveryCompatibilityFormulaVersion;
   alignmentVersion?: AlignmentVersion;
-  /** Diagnostic only — never render in UI. */
+  /** Diagnostic only — map via {@link alignmentUnavailablePresentation}; never render. */
   reason?: DiscoveryCompatibilityUnavailableReason;
 };
 
@@ -65,6 +71,7 @@ export type AlignmentAvailable = {
 
 export type AlignmentUnavailable = {
   available: false;
+  presentation: AlignmentUnavailablePresentation;
 };
 
 export type Alignment = AlignmentAvailable | AlignmentUnavailable;
@@ -242,15 +249,43 @@ export function parseDiscoveryCompatibility(
   return UNAVAILABLE_SAFE;
 }
 
-/** Map wire compatibility to UI Alignment (never invents tiers). */
+/**
+ * Map backend diagnostic reason → presentation kind.
+ * Unknown / missing reason → neutral unavailable (never invent a score).
+ */
+export function alignmentUnavailablePresentation(
+  reason: DiscoveryCompatibilityUnavailableReason | undefined,
+): AlignmentUnavailablePresentation {
+  switch (reason) {
+    case 'insufficient-comparable-dimensions':
+    case 'mode-incomplete':
+      return 'insufficient';
+    case 'embeddings-pending':
+    case 'embeddings-missing':
+    case 'embeddings-stale':
+      return 'processing';
+    case 'embeddings-failed':
+    case 'model-mismatch':
+    case 'mode-mismatch':
+    case 'embedding-corrupt':
+      return 'unavailable';
+    default:
+      return 'unavailable';
+  }
+}
+
+/** Map wire compatibility to UI Alignment (never invents tiers or fake scores). */
 export function toAlignment(
   compatibility: DiscoveryCompatibility | undefined,
 ): Alignment | undefined {
   if (compatibility === undefined) {
     return undefined;
   }
-  if (!compatibility.available) {
-    return { available: false };
+  if (compatibility.available === false) {
+    return {
+      available: false,
+      presentation: alignmentUnavailablePresentation(compatibility.reason),
+    };
   }
   return {
     available: true,

@@ -1,6 +1,9 @@
 export default {
   title: 'Alignment',
-  unavailable: 'Alignment is being prepared.',
+  insufficient:
+    "There isn't enough information yet to calculate alignment.",
+  processing: 'Alignment is still being calculated.',
+  unavailable: 'Alignment is currently unavailable.',
   tiers: {
     weak: 'Some overlap',
     partial: 'Shared ground',
