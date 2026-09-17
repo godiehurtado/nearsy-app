@@ -3,6 +3,10 @@
  */
 
 import { normalizeSearchQuery } from '../visibility/interestSearchCatalog';
+import {
+  COUNTRY_NAMES_EN,
+  COUNTRY_NAMES_ES,
+} from './countryDisplayNames';
 
 /** Official ISO 3166-1 alpha-2 codes + XK (Kosovo, commonly needed). */
 export const COUNTRY_CODES = [
@@ -289,17 +293,26 @@ export function normalizeCountryCode(value: unknown): string | null {
 
 export function getCountryDisplayName(code: string, locale: string): string {
   const normalized = normalizeCountryCode(code);
-  if (!normalized) return typeof code === 'string' ? code.trim().toUpperCase() || code : '';
-  try {
-    const display = new Intl.DisplayNames([locale], { type: 'region' });
-    const name = display.of(normalized);
-    if (typeof name === 'string' && name.trim().length > 0) {
-      return name;
-    }
-  } catch {
-    // Fall through to code.
+  if (!normalized) {
+    return typeof code === 'string' ? code.trim().toUpperCase() || code : '';
   }
+  const map = resolveCountryNameMap(locale);
+  const name = map[normalized];
+  if (typeof name === 'string' && name.trim().length > 0) {
+    return name;
+  }
+  // Last-resort defensive fallback for unknown catalog gaps only.
   return normalized;
+}
+
+function resolveCountryNameMap(
+  locale: string,
+): Readonly<Record<string, string>> {
+  const tag = (locale || 'en').trim().toLowerCase();
+  if (tag === 'es' || tag.startsWith('es-')) {
+    return COUNTRY_NAMES_ES;
+  }
+  return COUNTRY_NAMES_EN;
 }
 
 function toCountryOption(code: string, locale: string): CountryOption {
