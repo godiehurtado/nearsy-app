@@ -1,16 +1,21 @@
 /**
  * Searchable language catalog for Profile Context (ENH-PROFILE-01).
  * Canonical persisted values: BCP-47-compatible language tags (lowercase).
+ * UI labels: deterministic EN/ES static maps (Hermes-safe; no Intl.DisplayNames).
  */
 
 import { normalizeSearchQuery } from '../visibility/interestSearchCatalog';
+import {
+  LANGUAGE_DISPLAY_NAMES_EN,
+  LANGUAGE_DISPLAY_NAMES_ES,
+} from './languageDisplayNames';
 
 export const MAX_PROFILE_LANGUAGE_CODES = 10;
 export const MIN_CRJ_LANGUAGE_CODES = 1;
 
 export type LanguageCatalogEntry = {
   code: string;
-  /** English fallback label when Intl is unavailable. */
+  /** English display label (also used as search haystack seed). */
   enFallback: string;
 };
 
@@ -144,21 +149,28 @@ export function normalizeLanguageCode(value: unknown): string | null {
 }
 
 export function languageDisplayName(code: string, locale: string): string {
-  const entry = BY_CODE.get(code) ?? BY_CODE.get(code.toLowerCase());
-  const fallback = entry?.enFallback ?? code;
-  try {
-    const name = new Intl.DisplayNames([locale], { type: 'language' }).of(code);
-    if (name && name.toLowerCase() !== code.toLowerCase()) return name;
-  } catch {
-    /* fall through */
-  }
-  try {
-    const name = new Intl.DisplayNames(['en'], { type: 'language' }).of(code);
-    if (name) return name;
-  } catch {
-    /* fall through */
-  }
-  return fallback;
+  const normalized = code.trim();
+  const key =
+    BY_CODE.has(normalized)
+      ? normalized
+      : BY_CODE.has(normalized.toLowerCase())
+        ? normalized.toLowerCase()
+        : null;
+  if (!key) return code;
+  const map =
+    resolveLanguageLabelLocale(locale) === 'es'
+      ? LANGUAGE_DISPLAY_NAMES_ES
+      : LANGUAGE_DISPLAY_NAMES_EN;
+  return (
+    map[key] ??
+    LANGUAGE_DISPLAY_NAMES_EN[key] ??
+    BY_CODE.get(key)?.enFallback ??
+    key
+  );
+}
+
+function resolveLanguageLabelLocale(locale: string): 'en' | 'es' {
+  return (locale || 'en').toLowerCase().startsWith('es') ? 'es' : 'en';
 }
 
 export type LanguageSearchEntry = {
@@ -172,10 +184,13 @@ export function buildLanguageSearchEntries(
 ): LanguageSearchEntry[] {
   return LANGUAGE_CATALOG.map((e) => {
     const label = languageDisplayName(e.code, locale);
+    const esLabel = languageDisplayName(e.code, 'es');
     return {
       code: e.code,
       label,
-      haystack: normalizeSearchQuery([label, e.code, e.enFallback].join(' ')),
+      haystack: normalizeSearchQuery(
+        [label, esLabel, e.code, e.enFallback].join(' '),
+      ),
     };
   });
 }

@@ -16,6 +16,7 @@ import {
 } from '../countryCatalog';
 import {
   canAddLanguageCode,
+  languageDisplayName,
   MAX_PROFILE_LANGUAGE_CODES,
   normalizeLanguageCode,
   normalizeLanguageCodes,
@@ -58,6 +59,68 @@ describe('profile context countries', () => {
   it('unknown code is safe', () => {
     assert.equal(normalizeCountryCode('XX'), null);
     assert.equal(normalizeCountryCode(null), null);
+  });
+});
+
+describe('profile context EN/ES label parity (Hermes-safe maps)', () => {
+  it('maps country codes to localized labels', () => {
+    assert.equal(countryDisplayName('CO', 'en'), 'Colombia');
+    assert.equal(countryDisplayName('US', 'en'), 'United States');
+    assert.equal(countryDisplayName('US', 'es'), 'Estados Unidos');
+    assert.equal(countryDisplayName('US', 'es-CO'), 'Estados Unidos');
+  });
+
+  it('maps language codes to localized labels', () => {
+    assert.equal(languageDisplayName('es', 'en'), 'Spanish');
+    assert.equal(languageDisplayName('es', 'es'), 'Español');
+    assert.equal(languageDisplayName('en', 'en'), 'English');
+    assert.equal(languageDisplayName('en', 'es'), 'Inglés');
+  });
+
+  it('country search works by localized name', () => {
+    const en = buildCountrySearchEntries('en');
+    assert.ok(searchCountryEntries(en, 'united states').some((e) => e.code === 'US'));
+    const es = buildCountrySearchEntries('es');
+    assert.ok(searchCountryEntries(es, 'estados unidos').some((e) => e.code === 'US'));
+  });
+
+  it('language search works by localized name', () => {
+    const en = buildLanguageSearchEntries('en');
+    assert.ok(
+      searchLanguageEntries(en, 'spanish', new Set()).some((e) => e.code === 'es'),
+    );
+    const es = buildLanguageSearchEntries('es');
+    assert.ok(
+      searchLanguageEntries(es, 'español', new Set()).some((e) => e.code === 'es'),
+    );
+  });
+
+  it('persistence remains canonical ISO / BCP-47 codes', () => {
+    assert.equal(normalizeCountryCode('co'), 'CO');
+    assert.equal(normalizeLanguageCode('ES'), 'es');
+    const patch = buildProfileContextSavePatch({
+      birthCountryCode: 'co',
+      residenceCountryCode: 'us',
+      languageCodes: ['ES', 'EN'],
+    });
+    assert.deepEqual(patch, {
+      birthCountryCode: 'CO',
+      residenceCountryCode: 'US',
+      languageCodes: ['es', 'en'],
+    });
+  });
+
+  it('runtime catalogs never call Intl.DisplayNames', () => {
+    const countrySrc = readFileSync(
+      join(__dirname, '../countryCatalog.ts'),
+      'utf8',
+    );
+    const languageSrc = readFileSync(
+      join(__dirname, '../languageCatalog.ts'),
+      'utf8',
+    );
+    assert.doesNotMatch(countrySrc, /new Intl\.DisplayNames/);
+    assert.doesNotMatch(languageSrc, /new Intl\.DisplayNames/);
   });
 });
 

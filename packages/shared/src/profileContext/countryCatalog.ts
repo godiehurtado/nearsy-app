@@ -1,9 +1,14 @@
 /**
  * ISO 3166-1 alpha-2 country catalog for Profile Context (ENH-PROFILE-01).
- * Canonical persisted value: uppercase alpha-2. Localized names via Intl.
+ * Canonical persisted value: uppercase alpha-2.
+ * UI labels: deterministic EN/ES static maps (Hermes-safe; no Intl.DisplayNames).
  */
 
 import { normalizeSearchQuery } from '../visibility/interestSearchCatalog';
+import {
+  COUNTRY_DISPLAY_NAMES_EN,
+  COUNTRY_DISPLAY_NAMES_ES,
+} from './countryDisplayNames';
 
 export const ISO_COUNTRY_CODES = [
   "AF",
@@ -286,19 +291,14 @@ export function countryFlagEmoji(code: string): string {
 export function countryDisplayName(code: string, locale: string): string {
   const cc = code.trim().toUpperCase();
   if (!CODE_SET.has(cc)) return cc;
-  try {
-    const name = new Intl.DisplayNames([locale], { type: 'region' }).of(cc);
-    if (name && name !== cc) return name;
-  } catch {
-    /* fall through */
-  }
-  try {
-    const name = new Intl.DisplayNames(['en'], { type: 'region' }).of(cc);
-    if (name) return name;
-  } catch {
-    /* fall through */
-  }
-  return cc;
+  const map = resolveCountryLabelLocale(locale) === 'es'
+    ? COUNTRY_DISPLAY_NAMES_ES
+    : COUNTRY_DISPLAY_NAMES_EN;
+  return map[cc] ?? COUNTRY_DISPLAY_NAMES_EN[cc] ?? cc;
+}
+
+function resolveCountryLabelLocale(locale: string): 'en' | 'es' {
+  return (locale || 'en').toLowerCase().startsWith('es') ? 'es' : 'en';
 }
 
 export type CountrySearchEntry = {
@@ -311,12 +311,16 @@ export type CountrySearchEntry = {
 export function buildCountrySearchEntries(locale: string): CountrySearchEntry[] {
   return ISO_COUNTRY_CODES.map((code) => {
     const label = countryDisplayName(code, locale);
+    const enLabel = countryDisplayName(code, 'en');
+    const esLabel = countryDisplayName(code, 'es');
     const flag = countryFlagEmoji(code);
     return {
       code,
       flag,
       label,
-      haystack: normalizeSearchQuery([label, code, flag].join(' ')),
+      haystack: normalizeSearchQuery(
+        [label, enLabel, esLabel, code, flag].join(' '),
+      ),
     };
   });
 }
