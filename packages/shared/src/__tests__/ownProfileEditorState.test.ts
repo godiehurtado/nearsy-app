@@ -26,6 +26,9 @@ const completeDraft: OwnProfileDraft = {
   occupation: 'Engineer',
   bio: 'Hello nearby',
   company: 'Nearsy',
+  birthCountryCode: null,
+  residenceCountryCode: null,
+  languageCodes: [],
 };
 
 function patchKeys(patch: Record<string, unknown>): string[] {
@@ -312,6 +315,9 @@ describe('Own Profile dirty state', () => {
       occupation: ' Engineer',
       bio: 'Hello nearby ',
       company: ' Nearsy ',
+      birthCountryCode: null,
+      residenceCountryCode: null,
+      languageCodes: [],
     };
     assert.equal(isOwnProfileDraftDirty(padded, snapshot, 'personal'), false);
   });
@@ -348,11 +354,14 @@ describe('Own Profile dirty state', () => {
     const snapshot = createOwnProfileSnapshot(completeDraft);
     assert.deepEqual(patchKeys(snapshot as unknown as Record<string, unknown>), [
       'bio',
+      'birthCountryCode',
       'company',
+      'languageCodes',
       'lastName',
       'occupation',
       'profileImage',
       'realName',
+      'residenceCountryCode',
     ]);
   });
 

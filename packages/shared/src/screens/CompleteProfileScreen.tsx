@@ -24,6 +24,7 @@ import {
 import ProfileQuickActions from '../components/ProfileQuickActions';
 import OwnProfileHero from '../components/profile/OwnProfileHero';
 import OwnProfileDetails from '../components/profile/OwnProfileDetails';
+import OwnProfileContextCard from '../components/profile/OwnProfileContextCard';
 import OwnProfileSaveBar from '../components/profile/OwnProfileSaveBar';
 import {
   InterestAffiliations,
@@ -54,10 +55,11 @@ import {
 } from '../authentication/social';
 import { resolveModePresentation, type ProfileMode } from '../profile/profileModeFields';
 import {
+  buildOwnProfileContextSavePatch,
   buildOwnProfileSavePatch,
   buildPersistedOwnProfileDraftAfterUpload,
   classifyOwnProfileLoadResult,
-  createOwnProfileDraftFromPresentation,
+  createOwnProfileDraftFromDoc,
   createOwnProfileSnapshot,
   decideDirtyNavigationGuard,
   isLocalProfileImageUri,
@@ -69,6 +71,7 @@ import {
   type OwnProfileLifecycleAuth,
   type OwnProfileValidationField,
 } from '../profile/ownProfileEditorState';
+import { syncDiscoveryProfileContextFlow } from '../visibility/syncDiscoveryProfileContext';
 import { extractOwnProfileInterestSummaryCounts } from '../interests/postCrjInterestEditor';
 import { extractOwnProfileAffiliationSummaryCounts } from '../affiliations/postCrjAffiliationEditor';
 import { extractOwnProfileSocialSummaryCounts } from '../social/postCrjSocialEditor';
@@ -129,6 +132,11 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const [occupation, setOccupation] = useState('');
   const [company, setCompany] = useState('');
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [birthCountryCode, setBirthCountryCode] = useState<string | null>(null);
+  const [residenceCountryCode, setResidenceCountryCode] = useState<
+    string | null
+  >(null);
+  const [languageCodes, setLanguageCodes] = useState<string[]>([]);
 
   const [personalAff, setPersonalAff] = useState<InterestAffiliations>({});
   const [professionalAff, setProfessionalAff] = useState<InterestAffiliations>(
@@ -188,12 +196,15 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     setBio(draft.bio);
     setCompany(draft.company);
     setProfileImage(draft.profileImage);
+    setBirthCountryCode(draft.birthCountryCode);
+    setResidenceCountryCode(draft.residenceCountryCode);
+    setLanguageCodes(draft.languageCodes);
   }, []);
 
   const applyModeFields = useCallback(
     (data: Record<string, unknown> | null | undefined, nextMode: ProfileMode) => {
       const presentation = resolveModePresentation(data, nextMode);
-      applyDraftToForm(createOwnProfileDraftFromPresentation(presentation));
+      applyDraftToForm(createOwnProfileDraftFromDoc(data, presentation));
     },
     [applyDraftToForm],
   );
@@ -218,8 +229,21 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       occupation,
       bio,
       company,
+      birthCountryCode,
+      residenceCountryCode,
+      languageCodes,
     }),
-    [realName, lastName, profileImage, occupation, bio, company],
+    [
+      realName,
+      lastName,
+      profileImage,
+      occupation,
+      bio,
+      company,
+      birthCountryCode,
+      residenceCountryCode,
+      languageCodes,
+    ],
   );
 
   const isDirty = isOwnProfileDraftDirty(editorDraft, savedSnapshot, mode);
@@ -354,7 +378,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       setMode(currentMode);
       applyModeFields(loadedDoc, currentMode);
 
-      const loadedDraft = createOwnProfileDraftFromPresentation({
+      const loadedDraft = createOwnProfileDraftFromDoc(loadedDoc, {
         ...presentation,
         realName: nextRealName,
         profileImage: nextProfileImage,
@@ -624,7 +648,8 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       applyModeFields(nextDoc, response.mode);
       setProfileDoc(nextDoc);
       commitSnapshot(
-        createOwnProfileDraftFromPresentation(
+        createOwnProfileDraftFromDoc(
+          nextDoc,
           resolveModePresentation(nextDoc, response.mode),
         ),
       );
@@ -758,8 +783,10 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         mode,
         draft: persistedDraft,
       });
+      const contextPatch = buildOwnProfileContextSavePatch(persistedDraft);
 
       await updateUserProfilePartial(uid, modePatch);
+      await updateUserProfilePartial(uid, contextPatch);
 
       applyDraftToForm(persistedDraft);
       commitSnapshot(persistedDraft);
@@ -767,6 +794,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       let nextProfileDoc: Record<string, unknown> = {
         ...(profileDoc ?? {}),
         ...modePatch,
+        ...contextPatch,
         profiles: {
           ...((profileDoc?.profiles as any) ?? {}),
           [mode]: {
@@ -782,6 +810,24 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
           },
         },
       };
+
+      // Soft-sync Discovery context after a successful user-doc write.
+      // synced:false → keep save; true callable error → soft warning, keep save.
+      try {
+        const client = await getVisibilityDiscoveryClient();
+        const syncOutcome = await syncDiscoveryProfileContextFlow(client);
+        if (
+          mountedRef.current &&
+          getUid() === uid &&
+          syncOutcome.ok === false
+        ) {
+          Alert.alert(t('common.error'), t('profile.context.syncError'));
+        }
+      } catch {
+        if (mountedRef.current && getUid() === uid) {
+          Alert.alert(t('common.error'), t('profile.context.syncError'));
+        }
+      }
 
       // BUG-PROFILE-02: after a successful Professional face save, re-run the
       // canonical setActiveProfileMode callable so Discovery projection recovers
@@ -1054,6 +1100,33 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 onChangeOccupation={setOccupation}
                 onChangeBio={setBio}
                 onChangeCompany={setCompany}
+              />
+
+              <OwnProfileContextCard
+                values={{
+                  birthCountryCode,
+                  residenceCountryCode,
+                  languageCodes,
+                }}
+                labels={{
+                  sectionTitle: t('profile.sections.context'),
+                  birthCountry: t('profile.context.birthCountry'),
+                  residenceCountry: t('profile.context.residenceCountry'),
+                  languages: t('profile.context.languages'),
+                }}
+                placeholders={{
+                  birthCountry: t('profile.context.birthCountryPlaceholder'),
+                  residenceCountry: t(
+                    'profile.context.residenceCountryPlaceholder',
+                  ),
+                  languages: t('profile.context.languagesPlaceholder'),
+                  searchCountry: t('profile.context.searchCountry'),
+                  searchLanguage: t('profile.context.searchLanguage'),
+                }}
+                editorWritable={editorWritable}
+                onChangeBirthCountry={setBirthCountryCode}
+                onChangeResidenceCountry={setResidenceCountryCode}
+                onChangeLanguages={setLanguageCodes}
               />
 
               <ProfileQuickActions

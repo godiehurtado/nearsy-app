@@ -29,6 +29,8 @@ import { RegistrationLayout } from '../components/registration/RegistrationLayou
 import { RegistrationProgress } from '../components/registration/RegistrationProgress';
 import { RegistrationFadeSlideIn } from '../components/registration/RegistrationFadeSlideIn';
 import { FormInput } from '../components/registration/FormInput';
+import { CountrySearchField } from '../components/profile/CountrySearchField';
+import { LanguageMultiSelectField } from '../components/profile/LanguageMultiSelectField';
 import { OnboardingInterestCategoryPanel } from '../components/registration/OnboardingInterestCategoryPanel';
 import { OnboardingAffiliationCategoryPanel } from '../components/registration/OnboardingAffiliationCategoryPanel';
 import { OnboardingSocialMediaStep } from '../components/registration/OnboardingSocialMediaStep';
@@ -83,6 +85,13 @@ import {
   buildCrjDetailsPresentation,
   isCrjProfileDetailsValid,
 } from '../profile/crjProfileDetails';
+import {
+  buildProfileContextWritePatch,
+  isCrjProfileContextCountriesValid,
+  isCrjProfileContextLanguagesValid,
+  parseUserProfileContext,
+} from '../profile/profileContextFields';
+import { syncDiscoveryProfileContextFlow } from '../visibility/syncDiscoveryProfileContext';
 import {
   buildCrjInterestPersistencePatch,
   countFinalOnboardingInterests,
@@ -344,6 +353,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [mode, setMode] = useState<ProfileMode | null>(null);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [birthCountryCode, setBirthCountryCode] = useState<string | null>(null);
+  const [residenceCountryCode, setResidenceCountryCode] = useState<
+    string | null
+  >(null);
+  const [languageCodes, setLanguageCodes] = useState<string[]>([]);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [occupation, setOccupation] = useState('');
   const [company, setCompany] = useState('');
@@ -427,9 +441,13 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     nextMode: ProfileMode,
   ) {
     const presentation = resolveModePresentation(data, nextMode);
+    const ctx = parseUserProfileContext(data);
 
     setFirstName((prev) => presentation.realName || prev);
     setLastName((prev) => presentation.lastName || prev);
+    setBirthCountryCode(ctx.birthCountryCode);
+    setResidenceCountryCode(ctx.residenceCountryCode);
+    setLanguageCodes(ctx.languageCodes);
     setOccupation(presentation.occupation ?? '');
     setCompany(presentation.company ?? '');
     setBio(presentation.bio ?? '');
@@ -529,6 +547,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       }
 
       setShellData((existing as Record<string, unknown>) ?? null);
+
+      const ctx = parseUserProfileContext(existing);
+      setBirthCountryCode(ctx.birthCountryCode);
+      setResidenceCountryCode(ctx.residenceCountryCode);
+      setLanguageCodes(ctx.languageCodes);
 
       let nextPhoto: string | null = null;
       const existingMode =
@@ -632,16 +655,25 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       case 'type':
         return mode != null;
       case 'identity':
-        return firstName.trim().length > 0 && lastName.trim().length > 0;
+        return (
+          firstName.trim().length > 0 &&
+          lastName.trim().length > 0 &&
+          isCrjProfileContextCountriesValid(
+            birthCountryCode,
+            residenceCountryCode,
+          )
+        );
       case 'photo':
         return !!photoUri?.trim();
       case 'details':
-        return isCrjProfileDetailsValid({
-          mode,
-          occupation,
-          bio,
-          company,
-        });
+        return (
+          isCrjProfileDetailsValid({
+            mode,
+            occupation,
+            bio,
+            company,
+          }) && isCrjProfileContextLanguagesValid(languageCodes)
+        );
       case 'interestsIntro':
       case 'interest':
       case 'interestsCelebration':
@@ -668,10 +700,33 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         if (!lastName.trim()) {
           return t('onboarding.profileCompletion.identity.lastNameRequired');
         }
+        if (!birthCountryCode) {
+          return t(
+            'onboarding.profileCompletion.identity.birthCountryRequired',
+          );
+        }
+        if (!residenceCountryCode) {
+          return t(
+            'onboarding.profileCompletion.identity.residenceCountryRequired',
+          );
+        }
         return t('onboarding.profileCompletion.identity.required');
       case 'photo':
         return t('onboarding.profileCompletion.info.photoRequired');
       case 'details':
+        if (
+          !isCrjProfileDetailsValid({
+            mode,
+            occupation,
+            bio,
+            company,
+          })
+        ) {
+          return t('onboarding.profileCompletion.details.required' as any);
+        }
+        if (!isCrjProfileContextLanguagesValid(languageCodes)) {
+          return t('onboarding.profileCompletion.details.languagesRequired');
+        }
         return t('onboarding.profileCompletion.details.required' as any);
       default:
         return undefined;
@@ -708,13 +763,19 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       projectActiveToTopLevel: true,
       includeModeInPatch: false,
     });
+    const contextPatch = buildProfileContextWritePatch({
+      birthCountryCode,
+      residenceCountryCode,
+    });
     await updateUserProfilePartial(uid, {
       ...patch,
+      ...contextPatch,
       profileSetupCompleted: false,
     });
     setShellData((prev) => ({
       ...(prev ?? {}),
       ...patch,
+      ...contextPatch,
       mode,
       profileSetupCompleted: false,
     }));
@@ -772,13 +833,18 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       projectActiveToTopLevel: true,
       includeModeInPatch: false,
     });
+    const contextPatch = buildProfileContextWritePatch({
+      languageCodes,
+    });
     await updateUserProfilePartial(uid, {
       ...patch,
+      ...contextPatch,
       profileSetupCompleted: false,
     });
     setShellData((prev) => ({
       ...(prev ?? {}),
       ...patch,
+      ...contextPatch,
       mode,
       profileSetupCompleted: false,
     }));
@@ -812,6 +878,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
           {
             ...(prev ?? {}),
             ...patch,
+            ...contextPatch,
             mode: outcome.response.mode,
             profileSetupCompleted: false,
           },
@@ -1048,6 +1115,22 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         ...(lastName.trim() ? { lastName: lastName.trim() } : {}),
       });
       clearPendingSocialProfilePrefill();
+
+      // Best-effort Discovery context projection once CRJ completes.
+      // synced:false and callable errors must not reopen CRJ.
+      try {
+        const client = await getVisibilityDiscoveryClient();
+        const syncOutcome = await syncDiscoveryProfileContextFlow(client);
+        if (__DEV__ && syncOutcome.ok === false) {
+          console.warn('[CRJ] syncDiscoveryProfileContext failed', {
+            reason: syncOutcome.error,
+          });
+        }
+      } catch (err) {
+        if (__DEV__) {
+          console.warn('[CRJ] syncDiscoveryProfileContext unexpected', err);
+        }
+      }
 
       // First-time onboarding only: attempt GLOBAL visibility ON when
       // foreground location is usable. Failures must not reopen CRJ.
@@ -1631,6 +1714,32 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                   autoComplete="family-name"
                   textContentType="familyName"
                 />
+                <CountrySearchField
+                  value={birthCountryCode}
+                  onChange={setBirthCountryCode}
+                  label={t(
+                    'onboarding.profileCompletion.identity.birthCountryLabel',
+                  )}
+                  placeholder={t(
+                    'onboarding.profileCompletion.identity.birthCountryPlaceholder',
+                  )}
+                  searchPlaceholder={t(
+                    'onboarding.profileCompletion.identity.searchCountry',
+                  )}
+                />
+                <CountrySearchField
+                  value={residenceCountryCode}
+                  onChange={setResidenceCountryCode}
+                  label={t(
+                    'onboarding.profileCompletion.identity.residenceCountryLabel',
+                  )}
+                  placeholder={t(
+                    'onboarding.profileCompletion.identity.residenceCountryPlaceholder',
+                  )}
+                  searchPlaceholder={t(
+                    'onboarding.profileCompletion.identity.searchCountry',
+                  )}
+                />
               </View>
             </>
           )}
@@ -1740,6 +1849,19 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                   textAlignVertical="top"
                   style={styles.bioInput}
                   autoCapitalize="sentences"
+                />
+                <LanguageMultiSelectField
+                  value={languageCodes}
+                  onChange={setLanguageCodes}
+                  label={t(
+                    'onboarding.profileCompletion.details.languagesLabel',
+                  )}
+                  placeholder={t(
+                    'onboarding.profileCompletion.details.languagesPlaceholder',
+                  )}
+                  searchPlaceholder={t(
+                    'onboarding.profileCompletion.details.languagesSearchPlaceholder',
+                  )}
                 />
               </View>
             </>

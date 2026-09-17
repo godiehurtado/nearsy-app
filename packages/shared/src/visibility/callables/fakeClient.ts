@@ -11,6 +11,7 @@ import type {
   DeactivateVisibilityResponse,
   DiscoverNearbyRequest,
   DiscoverNearbyResponse,
+  DiscoveryProfileDetail,
   DiscoveryProfileSummary,
   GetBlockedPeopleRequest,
   GetBlockedPeopleResponse,
@@ -20,6 +21,8 @@ import type {
   PublishLocationResponse,
   SetActiveProfileModeRequest,
   SetActiveProfileModeResponse,
+  SyncDiscoveryProfileContextRequest,
+  SyncDiscoveryProfileContextResponse,
 } from './wireTypes';
 
 const DEFAULT_PROFILE: DiscoveryProfileSummary = {
@@ -30,10 +33,14 @@ const DEFAULT_PROFILE: DiscoveryProfileSummary = {
   interestIds: ['sports_outdoors_soccer'],
 };
 
-const DEFAULT_DETAIL = {
+const DEFAULT_DETAIL: DiscoveryProfileDetail = {
   ...DEFAULT_PROFILE,
   company: '',
   bio: '',
+  birthCountryCode: null,
+  residenceCountryCode: null,
+  languageCodes: [],
+  zodiacSign: null,
 };
 
 export type FakeVisibilityDiscoveryHandlers = Partial<{
@@ -55,6 +62,9 @@ export type FakeVisibilityDiscoveryHandlers = Partial<{
   setActiveProfileMode: (
     request: SetActiveProfileModeRequest,
   ) => Promise<SetActiveProfileModeResponse>;
+  syncDiscoveryProfileContext: (
+    request: SyncDiscoveryProfileContextRequest,
+  ) => Promise<SyncDiscoveryProfileContextResponse>;
   getBlockedPeople: (
     request: GetBlockedPeopleRequest,
   ) => Promise<GetBlockedPeopleResponse>;
@@ -159,6 +169,17 @@ export function createFakeVisibilityDiscoveryClient(
         visibility: false,
         targetProfileComplete: false,
         discoverySynced: false,
+        serverTime: serverNow,
+      };
+    },
+    async syncDiscoveryProfileContext(request) {
+      calls.push({ name: 'syncDiscoveryProfileContext', request });
+      if (handlers.syncDiscoveryProfileContext) {
+        return handlers.syncDiscoveryProfileContext(request);
+      }
+      return {
+        contractVersion: CONTRACT_VERSION,
+        synced: false,
         serverTime: serverNow,
       };
     },

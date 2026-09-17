@@ -661,23 +661,18 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     __dirname,
     '../../components/visibility/NearbyInterestIconRow.tsx',
   );
-  const compatPath = join(
+  const affiliationsPath = join(
     __dirname,
-    '../../components/profileExploration/DiscoveryCompatibilityCard.tsx',
+    '../../components/profileExploration/DiscoveryAffiliationsCard.tsx',
   );
   const socialPath = join(
     __dirname,
     '../../components/profileExploration/DiscoverySocialMediaRow.tsx',
   );
-  const affiliationsPath = join(
-    __dirname,
-    '../../components/profileExploration/DiscoveryAffiliationsCard.tsx',
-  );
   const screenSrc = readFileSync(screenPath, 'utf8');
   const gallerySrc = readFileSync(galleryPath, 'utf8');
   const nearbySrc = readFileSync(nearbyPath, 'utf8');
   const nearbyIconsSrc = readFileSync(nearbyIconsPath, 'utf8');
-  const compatSrc = readFileSync(compatPath, 'utf8');
   const socialSrc = readFileSync(socialPath, 'utf8');
   const affiliationsSrc = readFileSync(affiliationsPath, 'utf8');
 
@@ -704,35 +699,31 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.doesNotMatch(gallerySrc, /ageYears/);
   });
 
-  it('keeps identity as name, mode, distance', () => {
-    assert.match(
-      screenSrc,
-      /accessibilityRole="header"[\s\S]{0,120}\{profile\.displayName\}/,
-    );
+  it('keeps identity as name, mode, zodiac + compact alignment (no distance)', () => {
+    assert.match(screenSrc, /DiscoveryProfileHeader/);
     assert.match(screenSrc, /modeLabel/);
-    assert.match(screenSrc, /distanceLabel/);
+    assert.match(screenSrc, /zodiacSign=\{profile\.zodiacSign\}/);
+    assert.match(screenSrc, /toAlignment\(data\.compatibility\)/);
+    assert.doesNotMatch(screenSrc, /distanceLabel/);
+    assert.doesNotMatch(screenSrc, /metersToFeet/);
   });
 
   it('places all public interests in the info card, not Compatibility', () => {
-    assert.match(screenSrc, /DiscoveryCompatibilityCard/);
+    assert.match(screenSrc, /ProfileContextCard/);
     assert.match(screenSrc, /discoveryProfile\.interests/);
     assert.match(screenSrc, /resolveInterestChips/);
     assert.match(screenSrc, /interestPills/);
     assert.doesNotMatch(screenSrc, /intersectOnboardingInterestIds/);
     assert.doesNotMatch(screenSrc, /extractViewerOnboardingInterestIds/);
     assert.doesNotMatch(screenSrc, /sharedPills|sharedIds/);
-    assert.doesNotMatch(compatSrc, /InterestChip/);
-    assert.doesNotMatch(compatSrc, /sharedPills|sharedIds|interestPills/);
+    assert.doesNotMatch(screenSrc, /DiscoveryCompatibilityCard/);
     assert.match(screenSrc, /InterestChip/);
   });
 
-  it('wires backend alignment into DiscoveryCompatibilityCard', () => {
-    assert.match(screenSrc, /DiscoveryCompatibilityCard/);
-    assert.match(screenSrc, /compatibility=\{data\.compatibility\}/);
-    assert.match(compatSrc, /toAlignment/);
-    assert.match(compatSrc, /alignmentTitleLabel/);
-    assert.match(compatSrc, /AlignmentScoreRing/);
-    assert.doesNotMatch(compatSrc, /compatibilityMatch/);
+  it('wires backend alignment into DiscoveryProfileHeader', () => {
+    assert.match(screenSrc, /DiscoveryProfileHeader/);
+    assert.match(screenSrc, /toAlignment\(data\.compatibility\)/);
+    assert.match(screenSrc, /AlignmentScoreRing|alignment=/);
   });
 
   it('omits Social Media when empty and wires response.socialLinks', () => {
@@ -741,11 +732,11 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.match(screenSrc, /DiscoverySocialMediaRow/);
   });
 
-  it('places Social Media section before Compatibility', () => {
+  it('places Social Media before ProfileContextCard', () => {
     const socialIdx = screenSrc.indexOf('<DiscoverySocialMediaRow');
-    const compatIdx = screenSrc.indexOf('<DiscoveryCompatibilityCard');
+    const contextIdx = screenSrc.indexOf('<ProfileContextCard');
     assert.ok(socialIdx > 0);
-    assert.ok(compatIdx > socialIdx);
+    assert.ok(contextIdx > socialIdx);
   });
 
   it('gallery preview opens View all at 0 and thumbnails at index', () => {

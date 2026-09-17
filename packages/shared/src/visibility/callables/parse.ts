@@ -10,6 +10,9 @@ import {
   MAX_DISCOVERY_LIMIT,
   MAX_GALLERY_ITEMS,
 } from '../constants';
+import { normalizeCountryCode } from '../../profile/countryCatalog';
+import { normalizeLanguageCodes } from '../../profile/languageCatalog';
+import { parseZodiacSign } from '../../profile/zodiacSign';
 import { parseDiscoveryAffiliations } from '../discoveryAffiliations';
 import { parseDiscoveryCompatibility } from '../discoveryCompatibility';
 import { parseDiscoverySocialLinks } from '../discoverySocialLinks';
@@ -27,6 +30,7 @@ import type {
   GetDiscoveryProfileResponse,
   PublishLocationResponse,
   SetActiveProfileModeResponse,
+  SyncDiscoveryProfileContextResponse,
 } from './wireTypes';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -226,10 +230,38 @@ export function parseDiscoveryProfileDetail(
       value.bio,
     );
   }
+
+  // Optional-safe context fields (older backends omit → defaults).
+  const birthCountryCode = Object.prototype.hasOwnProperty.call(
+    value,
+    'birthCountryCode',
+  )
+    ? normalizeCountryCode(value.birthCountryCode)
+    : null;
+  const residenceCountryCode = Object.prototype.hasOwnProperty.call(
+    value,
+    'residenceCountryCode',
+  )
+    ? normalizeCountryCode(value.residenceCountryCode)
+    : null;
+  const languageCodes = Object.prototype.hasOwnProperty.call(
+    value,
+    'languageCodes',
+  )
+    ? normalizeLanguageCodes(value.languageCodes)
+    : [];
+  const zodiacSign = Object.prototype.hasOwnProperty.call(value, 'zodiacSign')
+    ? parseZodiacSign(value.zodiacSign)
+    : null;
+
   return {
     ...summary,
     company: value.company,
     bio: value.bio,
+    birthCountryCode,
+    residenceCountryCode,
+    languageCodes,
+    zodiacSign,
   };
 }
 
@@ -450,6 +482,23 @@ export function parseSetActiveProfileModeResponse(
       'targetProfileComplete',
     ),
     discoverySynced: requireBoolean(data.discoverySynced, 'discoverySynced'),
+    serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
+  };
+}
+
+export function parseSyncDiscoveryProfileContextResponse(
+  data: unknown,
+): SyncDiscoveryProfileContextResponse {
+  if (!isPlainObject(data)) {
+    throw createContractResponseError(
+      'syncDiscoveryProfileContext response must be an object',
+      data,
+    );
+  }
+  assertNoForbiddenKeys(data, 'syncDiscoveryProfileContext');
+  return {
+    contractVersion: requireContractVersion(data.contractVersion),
+    synced: requireBoolean(data.synced, 'synced'),
     serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
   };
 }

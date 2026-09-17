@@ -21,7 +21,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import * as Localization from 'expo-localization';
 
 import { firebaseAuth } from '../config/firebaseConfig';
 import type { HomeStackParamList } from '../navigation/HomeStack';
@@ -29,8 +28,9 @@ import { useTranslation } from '../i18n';
 import { InterestChip } from '../components/InterestChip';
 import { MVP_FREE_SHOW_PROFILE_CONNECT_CTA } from '../product/mvpFreePresentation';
 import { DiscoveryAffiliationsCard } from '../components/profileExploration/DiscoveryAffiliationsCard';
-import { DiscoveryCompatibilityCard } from '../components/profileExploration/DiscoveryCompatibilityCard';
 import { DiscoverySocialMediaRow } from '../components/profileExploration/DiscoverySocialMediaRow';
+import { DiscoveryProfileHeader } from '../components/profile/DiscoveryProfileHeader';
+import { ProfileContextCard } from '../components/profile/ProfileContextCard';
 import {
   fontSize,
   fontWeight,
@@ -44,9 +44,8 @@ import {
   galleryPreviewOverflowCount,
   galleryPreviewUrls,
   isVisibilityDiscoveryClientError,
-  metersToFeet,
-  resolveDistanceDisplayUnit,
   shouldShowGalleryPreviewOverflow,
+  toAlignment,
   type GetDiscoveryProfileResponse,
   type ProfileMode,
 } from '../visibility';
@@ -72,9 +71,6 @@ export default function DiscoveryProfileScreen() {
   const { palette, theme } = useAppTheme();
   const { t } = useTranslation();
   const uid = route.params?.uid;
-  const unit = resolveDistanceDisplayUnit(
-    Localization.getLocales()?.[0]?.languageTag,
-  );
 
   const [loading, setLoading] = useState(true);
   const [errorKind, setErrorKind] = useState<
@@ -151,17 +147,6 @@ export default function DiscoveryProfileScreen() {
       ? t('discoveryProfile.modeProfessional')
       : t('discoveryProfile.modePersonal');
   }, [data, t]);
-
-  const distanceLabel = useMemo(() => {
-    if (!data) return '';
-    const value =
-      unit === 'ft'
-        ? Math.round(metersToFeet(data.distanceMeters))
-        : Math.round(data.distanceMeters);
-    return unit === 'ft'
-      ? t('discoveryProfile.distanceAwayFt', { value })
-      : t('discoveryProfile.distanceAwayM', { value });
-  }, [data, t, unit]);
 
   const previewGallery = useMemo(
     () => (data ? galleryPreviewUrls(data.gallery, 3) : []),
@@ -339,36 +324,24 @@ export default function DiscoveryProfileScreen() {
         </View>
 
         <View style={{ paddingHorizontal: spacing.xl }}>
-          {/* 2. Identity — name, profile type, distance (age is private) */}
-          <Text
-            style={[styles.name, { color: palette.textPrimary }]}
-            accessibilityRole="header"
-          >
-            {profile.displayName}
-          </Text>
-          <Text
-            style={[
-              styles.metaSecondary,
-              { color: palette.textSecondary, marginTop: 4 },
-            ]}
-          >
-            {modeLabel}
-          </Text>
-          <Text
-            style={{
-              color: palette.textMuted,
-              marginTop: spacing.xs,
-              fontSize: fontSize.sm,
-            }}
-          >
-            {distanceLabel}
-          </Text>
+          {/* 2. Identity — name, mode, zodiac + compact alignment (no distance) */}
+          <DiscoveryProfileHeader
+            displayName={profile.displayName}
+            modeLabel={modeLabel}
+            zodiacSign={profile.zodiacSign}
+            alignment={toAlignment(data.compatibility)}
+            t={t}
+          />
 
           {/* 3. Social Media — omitted when DTO has no public links */}
           <DiscoverySocialMediaRow links={publicSocialLinks} />
 
-          {/* 4. Compatibility — backend score when available */}
-          <DiscoveryCompatibilityCard compatibility={data.compatibility} />
+          {/* 4. Profile context — birth / residence / languages */}
+          <ProfileContextCard
+            birthCountryCode={profile.birthCountryCode}
+            residenceCountryCode={profile.residenceCountryCode}
+            languageCodes={profile.languageCodes}
+          />
 
           {/* 5. Profile information + all public interests */}
           <View
@@ -815,34 +788,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  identityRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  name: {
-    fontSize: 24,
-    fontWeight: fontWeight.extrabold,
-    letterSpacing: -0.2,
-  },
-  metaSecondary: {
-    fontSize: fontSize.base,
-    fontWeight: fontWeight.semibold,
-  },
-  age: {
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
-  },
   card: {
     marginTop: spacing.lg,
     borderWidth: 1,
     borderRadius: radius.xl,
     padding: spacing.lg,
-  },
-  compatTitle: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.extrabold,
   },
   sectionLabel: {
     fontSize: 11,

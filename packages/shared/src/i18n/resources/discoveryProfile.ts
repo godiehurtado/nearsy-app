@@ -12,6 +12,10 @@ export default {
   interests: 'Interests',
   sharedInterests: 'Shared interests',
   affiliations: 'Affiliations',
+  from: 'From {{flag}} {{country}}',
+  livesIn: 'Lives in {{flag}} {{country}}',
+  languages: 'Languages',
+  zodiac: 'Zodiac',
   compatibility: 'Compatibility',
   compatibilityMatch: '{{score}}% Match',
   compatibilityBody:

@@ -12,6 +12,7 @@ import type {
   GetDiscoveryProfileRequest,
   PublishLocationRequest,
   SetActiveProfileModeRequest,
+  SyncDiscoveryProfileContextRequest,
   VisibilityLocationPayload,
 } from './wireTypes';
 
@@ -85,6 +86,10 @@ export function buildSetActiveProfileModeRequest(
   };
 }
 
+export function buildSyncDiscoveryProfileContextRequest(): SyncDiscoveryProfileContextRequest {
+  return { contractVersion: CONTRACT_VERSION };
+}
+
 export function buildGetBlockedPeopleRequest(): GetBlockedPeopleRequest {
   return { contractVersion: CONTRACT_VERSION };
 }
@@ -98,6 +103,7 @@ export function serializeVisibilityRequest(
     | DiscoverNearbyRequest
     | GetDiscoveryProfileRequest
     | SetActiveProfileModeRequest
+    | SyncDiscoveryProfileContextRequest
     | GetBlockedPeopleRequest,
 ): Record<string, unknown> {
   return { ...request } as Record<string, unknown>;
