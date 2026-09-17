@@ -24,6 +24,7 @@ import {
   shouldShowGalleryPreviewOverflow,
   shouldShowOccupation,
 } from '../profileExploration';
+import { resolveInterestChips } from '../interestDisplay';
 import {
   DISCOVERY_SOCIAL_PLATFORMS,
   isAllowedDiscoverySocialHttpsUrl,
@@ -46,7 +47,7 @@ import { metersToFeet } from '../distance';
 import { resolveDistanceDisplayUnit } from '../searchPreferencesParse';
 import enAlignment from '../../i18n/resources/alignment';
 import enDiscovery from '../../i18n/resources/discoveryProfile';
-import es from '../../i18n/locales/es';
+import { es } from '../../i18n/locales/es';
 
 const translateItem = (_key: string, fallback: string) => fallback;
 
@@ -141,6 +142,60 @@ describe('profile exploration shared interests (onboarding ∩ candidate)', () =
       intersectOnboardingInterestIds(['a'], ['b', 'c']),
       [],
     );
+  });
+});
+
+describe('profile exploration public interests (BUG-PROFILE-01)', () => {
+  const exploredIds = [
+    'technology_ai',
+    'travel_international',
+    'business_networking',
+  ];
+  const viewerIds = ['travel_international', 'sports_outdoors_soccer'];
+
+  it('displays all explored interestIds, not only shared with viewer', () => {
+    const sharedOnly = intersectOnboardingInterestIds(viewerIds, exploredIds);
+    assert.deepEqual(sharedOnly, ['travel_international']);
+
+    const publicPills = resolveInterestChips(exploredIds, translateItem);
+    assert.deepEqual(
+      publicPills.map((p) => p.id),
+      exploredIds,
+    );
+    assert.ok(publicPills.length > sharedOnly.length);
+  });
+
+  it('still displays explored interests when viewer shares none', () => {
+    const shared = intersectOnboardingInterestIds(
+      ['sports_outdoors_soccer'],
+      exploredIds,
+    );
+    assert.deepEqual(shared, []);
+    const publicPills = resolveInterestChips(exploredIds, translateItem);
+    assert.equal(publicPills.length, exploredIds.length);
+  });
+
+  it('preserves empty interestIds as empty chips (section empty state)', () => {
+    assert.deepEqual(resolveInterestChips([], translateItem), []);
+  });
+
+  it('skips unknown/deprecated IDs via catalog resolution', () => {
+    const pills = resolveInterestChips(
+      ['technology_ai', 'not_in_catalog_xyz', 'deprecated_legacy_id'],
+      translateItem,
+    );
+    assert.deepEqual(
+      pills.map((p) => p.id),
+      ['technology_ai'],
+    );
+  });
+
+  it('leaves shared-interest helpers unchanged for Matching/Alignment', () => {
+    const shared = intersectOnboardingInterestIds(viewerIds, exploredIds);
+    assert.deepEqual(shared, ['travel_international']);
+    const sharedPills = resolveSharedInterestPills(shared, translateItem);
+    assert.equal(sharedPills.length, 1);
+    assert.equal(sharedPills[0].id, 'travel_international');
   });
 });
 
@@ -580,8 +635,11 @@ describe('profile exploration i18n EN/ES', () => {
     assert.equal(enAlignment.tiers.strong, 'Closely aligned');
     assert.equal(es.alignment.title, 'Alineación');
     assert.equal(es.alignment.tiers.full, 'Alineación excepcional');
-    assert.ok(enDiscovery.sharedInterests);
-    assert.ok(es.discoveryProfile.sharedInterests);
+    assert.ok(enDiscovery.interests);
+    assert.equal(enDiscovery.interests, 'Interests');
+    assert.equal(es.discoveryProfile.interests, 'Intereses');
+    assert.equal(enDiscovery.noInterests, 'No interests yet');
+    assert.equal(es.discoveryProfile.noInterests, 'Aún no hay intereses');
     assert.ok(enDiscovery.openLinkError);
     assert.ok(es.discoveryProfile.openLinkError);
     assert.ok(enDiscovery.platformLinkedin);
@@ -661,11 +719,15 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.match(screenSrc, /distanceLabel/);
   });
 
-  it('places shared interests in the info card, not Compatibility', () => {
+  it('places all public interests in the info card, not Compatibility', () => {
     assert.match(screenSrc, /DiscoveryCompatibilityCard/);
-    assert.match(screenSrc, /discoveryProfile\.sharedInterests/);
+    assert.match(screenSrc, /discoveryProfile\.interests/);
+    assert.match(screenSrc, /resolveInterestChips/);
+    assert.doesNotMatch(screenSrc, /intersectOnboardingInterestIds/);
+    assert.doesNotMatch(screenSrc, /resolveSharedInterestPills/);
+    assert.doesNotMatch(screenSrc, /discoveryProfile\.sharedInterests/);
     assert.doesNotMatch(compatSrc, /InterestChip/);
-    assert.doesNotMatch(compatSrc, /sharedPills|sharedIds/);
+    assert.doesNotMatch(compatSrc, /sharedPills|sharedIds|interestPills/);
     assert.match(screenSrc, /InterestChip/);
   });
 
