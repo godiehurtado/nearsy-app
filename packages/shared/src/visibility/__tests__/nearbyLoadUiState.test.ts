@@ -4,15 +4,17 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
+  isNearbyViewerVisibilityConfirmedOff,
   shouldClearNearbyItemsOnOutcomeFailure,
   shouldShowNearbyEmptyState,
   shouldShowNearbyFullScreenLoading,
 } from '../nearbyLoadUiState.ts';
 
-const ROOT = join(__dirname, '..', '..');
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 function readSrc(rel: string): string {
   return readFileSync(join(ROOT, rel), 'utf8');
@@ -45,10 +47,59 @@ describe('BUG-DISC-04 nearby load UI derivation', () => {
     );
   });
 
+  it('1c. Profile not hydrated → loading (no false Visibility off / empty)', () => {
+    const fullScreen = shouldShowNearbyFullScreenLoading({
+      loading: false,
+      initialFetchCompleted: false,
+      profileHydrated: false,
+    });
+    assert.equal(fullScreen, true);
+    assert.equal(
+      shouldShowNearbyEmptyState({
+        fullScreenLoading: fullScreen,
+        itemCount: 0,
+        errorKind: 'inactive',
+      }),
+      false,
+    );
+    assert.equal(
+      isNearbyViewerVisibilityConfirmedOff({
+        profileHydrated: false,
+        visibility: undefined,
+      }),
+      false,
+    );
+  });
+
+  it('1d. Confirmed visibility off only after hydrate', () => {
+    assert.equal(
+      isNearbyViewerVisibilityConfirmedOff({
+        profileHydrated: true,
+        visibility: false,
+      }),
+      true,
+    );
+    assert.equal(
+      isNearbyViewerVisibilityConfirmedOff({
+        profileHydrated: true,
+        visibility: undefined,
+      }),
+      true,
+    );
+    assert.equal(
+      isNearbyViewerVisibilityConfirmedOff({
+        profileHydrated: true,
+        visibility: true,
+      }),
+      false,
+    );
+  });
+
   it('2. Initial successful zero-result → empty visible, loading gone', () => {
     const fullScreen = shouldShowNearbyFullScreenLoading({
       loading: false,
       initialFetchCompleted: true,
+      profileHydrated: true,
     });
     assert.equal(fullScreen, false);
     assert.equal(
@@ -91,11 +142,23 @@ describe('BUG-DISC-04 nearby load UI derivation', () => {
     );
   });
 
+  it('4b. Confirmed inactive → Visibility is off empty state', () => {
+    assert.equal(
+      shouldShowNearbyEmptyState({
+        fullScreenLoading: false,
+        itemCount: 0,
+        errorKind: 'inactive',
+      }),
+      true,
+    );
+  });
+
   it('5. Subsequent auto refresh with profiles → no full-screen loading', () => {
     assert.equal(
       shouldShowNearbyFullScreenLoading({
         loading: false,
         initialFetchCompleted: true,
+        profileHydrated: true,
       }),
       false,
     );
@@ -110,6 +173,7 @@ describe('BUG-DISC-04 nearby load UI derivation', () => {
       shouldShowNearbyFullScreenLoading({
         loading: false,
         initialFetchCompleted: true,
+        profileHydrated: true,
       }),
       false,
     );
@@ -153,6 +217,16 @@ describe('BUG-DISC-04 NearbySearchScreen wiring', () => {
     assert.doesNotMatch(effect, /hasLoadedOnce\.current\s*=\s*true/);
   });
 
+  it('waits for profile hydration before treating visibility as off', () => {
+    assert.match(nearby, /profileHydrated/);
+    assert.match(nearby, /setProfileHydrated\(true\)/);
+    assert.match(nearby, /isNearbyViewerVisibilityConfirmedOff/);
+    assert.doesNotMatch(
+      nearby,
+      /if\s*\(\s*!profile\.visibility\s*\)\s*\{/,
+    );
+  });
+
   it('silent refresh does not clear error chrome at start', () => {
     assert.match(nearby, /if \(showFullScreenLoader\) \{/);
     assert.match(nearby, /setLoading\(true\);/);
@@ -174,10 +248,23 @@ describe('BUG-DISC-04 NearbySearchScreen wiring', () => {
     assert.match(nearby, /refreshing=\{refreshing\}/);
     assert.match(nearby, /shouldShowNearbyFullScreenLoading/);
     assert.match(nearby, /shouldShowNearbyEmptyState/);
+    assert.match(nearby, /profileHydrated/);
   });
 
   it('Discovery Reliability contract helpers remain wired', () => {
     assert.match(nearby, /loadNearbyWithContractualRefresh/);
     assert.match(nearby, /limit:\s*50/);
+  });
+});
+
+describe('Compact Alignment badge — single percent', () => {
+  const badge = readSrc('components/profileExploration/CompactAlignmentBadge.tsx');
+  const ring = readSrc('components/alignment/AlignmentScoreRing.tsx');
+
+  it('renders percent only inside AlignmentScoreRing, keeps Alignment caption', () => {
+    assert.match(badge, /AlignmentScoreRing/);
+    assert.match(badge, /alignmentTitleLabel/);
+    assert.doesNotMatch(badge, /formatAlignmentPercent/);
+    assert.match(ring, /formatAlignmentPercent\(clampedScore\)/);
   });
 });
