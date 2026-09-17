@@ -11,11 +11,17 @@ export type NearbyListErrorKind =
   | 'retry'
   | 'generic';
 
-/** Full-screen loader until the first fetch completes, or while an initial load runs. */
+/**
+ * Full-screen loader until the first fetch completes, or while an initial load
+ * runs. Also while the viewer profile snapshot has not hydrated — otherwise
+ * `visibility` defaults to undefined and falsely shows "Visibility is off".
+ */
 export function shouldShowNearbyFullScreenLoading(input: {
   loading: boolean;
   initialFetchCompleted: boolean;
+  profileHydrated?: boolean;
 }): boolean {
+  if (input.profileHydrated === false) return true;
   return input.loading || !input.initialFetchCompleted;
 }
 
@@ -38,4 +44,15 @@ export function shouldClearNearbyItemsOnOutcomeFailure(input: {
   showFullScreenLoader: boolean;
 }): boolean {
   return input.showFullScreenLoader === true;
+}
+
+/**
+ * Viewer visibility is known only after the profile snapshot hydrates.
+ * Until then, do not treat missing `visibility` as confirmed off.
+ */
+export function isNearbyViewerVisibilityConfirmedOff(input: {
+  profileHydrated: boolean;
+  visibility: boolean | undefined;
+}): boolean {
+  return input.profileHydrated === true && input.visibility !== true;
 }

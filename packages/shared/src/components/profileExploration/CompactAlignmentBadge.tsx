@@ -14,17 +14,12 @@ import {
   alignmentAccessibilityLabel,
   alignmentTitleLabel,
   alignmentUnavailableLabel,
-  formatAlignmentPercent,
 } from '../../visibility/alignmentPresentation';
 import {
   toAlignment,
   type DiscoveryCompatibility,
 } from '../../visibility/discoveryCompatibility';
-import {
-  fontSize,
-  fontWeight,
-  useAppTheme,
-} from '../../theme';
+import { useAppTheme } from '../../theme';
 
 type Props = {
   compatibility?: DiscoveryCompatibility;
@@ -76,13 +71,6 @@ export function CompactAlignmentBadge({ compatibility }: Props) {
     >
       <AlignmentScoreRing score={alignment.score} variant="compact" />
       <Text
-        style={[styles.percent, { color: palette.textPrimary }]}
-        accessibilityElementsHidden
-        importantForAccessibility="no"
-      >
-        {formatAlignmentPercent(alignment.score)}
-      </Text>
-      <Text
         style={[styles.caption, { color: palette.textMuted }]}
         accessibilityElementsHidden
         importantForAccessibility="no"
@@ -104,10 +92,6 @@ const styles = StyleSheet.create({
     height: ALIGNMENT_RING_COMPACT_SIZE,
     borderRadius: ALIGNMENT_RING_COMPACT_SIZE / 2,
     borderWidth: 3,
-  },
-  percent: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.extrabold,
   },
   caption: {
     fontSize: 11,

@@ -53,6 +53,7 @@ import {
 } from '../visibility/interestDisplay';
 import { loadNearbyWithContractualRefresh } from '../visibility/nearbyDiscoveryLoad';
 import {
+  isNearbyViewerVisibilityConfirmedOff,
   shouldClearNearbyItemsOnOutcomeFailure,
   shouldShowNearbyEmptyState,
   shouldShowNearbyFullScreenLoading,
@@ -90,6 +91,8 @@ export default function NearbySearchScreen() {
   /** True only after the first loadData attempt finishes (finally). */
   const [initialFetchCompleted, setInitialFetchCompleted] = useState(false);
   const initialFetchCompletedRef = useRef(false);
+  /** True after first profile snapshot — avoids false "Visibility is off". */
+  const [profileHydrated, setProfileHydrated] = useState(false);
 
   const translateItem = useCallback(
     (nameKey: string, fallback: string) =>
@@ -101,9 +104,13 @@ export default function NearbySearchScreen() {
 
   useEffect(() => {
     const uid = firebaseAuth.currentUser?.uid;
-    if (!uid) return;
+    if (!uid) {
+      setProfileHydrated(true);
+      return;
+    }
     const unsub = dbOnUserSnapshot(uid, (raw) => {
-      if (raw) setProfile((raw as ProfileDoc) ?? {});
+      setProfile((raw as ProfileDoc) ?? {});
+      setProfileHydrated(true);
     });
     return () => unsub();
   }, []);
@@ -137,7 +144,16 @@ export default function NearbySearchScreen() {
           setErrorMessage(t('nearby.errorGeneric'));
           return;
         }
-        if (!profile.visibility) {
+        if (!profileHydrated) {
+          // Wait for profile snapshot; do not treat unknown visibility as off.
+          return;
+        }
+        if (
+          isNearbyViewerVisibilityConfirmedOff({
+            profileHydrated,
+            visibility: profile.visibility,
+          })
+        ) {
           if (shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader })) {
             setItems([]);
           }
@@ -244,12 +260,17 @@ export default function NearbySearchScreen() {
           setErrorMessage(t('nearby.errorGeneric'));
         }
       } finally {
+        if (!profileHydrated && firebaseAuth.currentUser?.uid) {
+          // Keep initial full-screen loading until visibility is known.
+          if (showFullScreenLoader) setLoading(true);
+          return;
+        }
         if (showFullScreenLoader) setLoading(false);
         initialFetchCompletedRef.current = true;
         setInitialFetchCompleted(true);
       }
     },
-    [profile.visibility, t],
+    [profile.visibility, profileHydrated, t],
   );
 
   useEffect(() => {
@@ -296,6 +317,7 @@ export default function NearbySearchScreen() {
   const showFullScreenLoading = shouldShowNearbyFullScreenLoading({
     loading,
     initialFetchCompleted,
+    profileHydrated,
   });
   const showEmptyState = shouldShowNearbyEmptyState({
     fullScreenLoading: showFullScreenLoading,
