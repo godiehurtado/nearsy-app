@@ -24,6 +24,7 @@ describe('CRJ Profile Details without Status', () => {
         mode: 'personal',
         occupation: 'Engineer',
         bio: 'Hello nearby',
+        languageCodes: ['en'],
       }),
       true,
     );
@@ -36,6 +37,7 @@ describe('CRJ Profile Details without Status', () => {
         occupation: 'CEO',
         company: 'Nearsy',
         bio: 'Building connections',
+        languageCodes: ['es'],
       }),
       true,
     );
@@ -47,6 +49,7 @@ describe('CRJ Profile Details without Status', () => {
         mode: 'personal',
         occupation: '',
         bio: 'Bio',
+        languageCodes: ['en'],
       }),
       false,
     );
@@ -55,6 +58,7 @@ describe('CRJ Profile Details without Status', () => {
         mode: 'personal',
         occupation: 'Engineer',
         bio: '',
+        languageCodes: ['en'],
       }),
       false,
     );
@@ -67,6 +71,7 @@ describe('CRJ Profile Details without Status', () => {
         occupation: 'CEO',
         company: '',
         bio: 'Bio',
+        languageCodes: ['en'],
       }),
       false,
     );
@@ -76,6 +81,7 @@ describe('CRJ Profile Details without Status', () => {
         occupation: '',
         company: 'Nearsy',
         bio: 'Bio',
+        languageCodes: ['en'],
       }),
       false,
     );
@@ -85,6 +91,19 @@ describe('CRJ Profile Details without Status', () => {
         occupation: 'CEO',
         company: 'Nearsy',
         bio: '',
+        languageCodes: ['en'],
+      }),
+      false,
+    );
+  });
+
+  it('D2 — Details require at least one language', () => {
+    assert.equal(
+      isCrjProfileDetailsValid({
+        mode: 'personal',
+        occupation: 'Engineer',
+        bio: 'Hello',
+        languageCodes: [],
       }),
       false,
     );

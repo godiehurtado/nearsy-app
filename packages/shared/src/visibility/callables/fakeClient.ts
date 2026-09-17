@@ -20,6 +20,8 @@ import type {
   PublishLocationResponse,
   SetActiveProfileModeRequest,
   SetActiveProfileModeResponse,
+  SyncDiscoveryProfileContextRequest,
+  SyncDiscoveryProfileContextResponse,
 } from './wireTypes';
 
 const DEFAULT_PROFILE: DiscoveryProfileSummary = {
@@ -34,6 +36,10 @@ const DEFAULT_DETAIL = {
   ...DEFAULT_PROFILE,
   company: '',
   bio: '',
+  birthCountryCode: null as string | null,
+  residenceCountryCode: null as string | null,
+  languageCodes: [] as string[],
+  zodiacSign: null as null,
 };
 
 export type FakeVisibilityDiscoveryHandlers = Partial<{
@@ -55,6 +61,9 @@ export type FakeVisibilityDiscoveryHandlers = Partial<{
   setActiveProfileMode: (
     request: SetActiveProfileModeRequest,
   ) => Promise<SetActiveProfileModeResponse>;
+  syncDiscoveryProfileContext: (
+    request: SyncDiscoveryProfileContextRequest,
+  ) => Promise<SyncDiscoveryProfileContextResponse>;
   getBlockedPeople: (
     request: GetBlockedPeopleRequest,
   ) => Promise<GetBlockedPeopleResponse>;
@@ -159,6 +168,17 @@ export function createFakeVisibilityDiscoveryClient(
         visibility: false,
         targetProfileComplete: false,
         discoverySynced: false,
+        serverTime: serverNow,
+      };
+    },
+    async syncDiscoveryProfileContext(request) {
+      calls.push({ name: 'syncDiscoveryProfileContext', request });
+      if (handlers.syncDiscoveryProfileContext) {
+        return handlers.syncDiscoveryProfileContext(request);
+      }
+      return {
+        contractVersion: CONTRACT_VERSION,
+        synced: true,
         serverTime: serverNow,
       };
     },

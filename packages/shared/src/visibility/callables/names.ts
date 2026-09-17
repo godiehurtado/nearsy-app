@@ -10,6 +10,7 @@ export const VISIBILITY_CALLABLE_NAMES = {
   getDiscoveryProfile: 'getDiscoveryProfile',
   setActiveProfileMode: 'setActiveProfileMode',
   getBlockedPeople: 'getBlockedPeople',
+  syncDiscoveryProfileContext: 'syncDiscoveryProfileContext',
 } as const;
 
 export type VisibilityCallableName =

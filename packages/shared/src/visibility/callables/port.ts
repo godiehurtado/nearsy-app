@@ -17,6 +17,8 @@ import type {
   PublishLocationResponse,
   SetActiveProfileModeRequest,
   SetActiveProfileModeResponse,
+  SyncDiscoveryProfileContextRequest,
+  SyncDiscoveryProfileContextResponse,
 } from './wireTypes';
 
 export type VisibilityDiscoveryClient = {
@@ -38,6 +40,9 @@ export type VisibilityDiscoveryClient = {
   setActiveProfileMode(
     request: SetActiveProfileModeRequest,
   ): Promise<SetActiveProfileModeResponse>;
+  syncDiscoveryProfileContext(
+    request: SyncDiscoveryProfileContextRequest,
+  ): Promise<SyncDiscoveryProfileContextResponse>;
   getBlockedPeople(
     request: GetBlockedPeopleRequest,
   ): Promise<GetBlockedPeopleResponse>;

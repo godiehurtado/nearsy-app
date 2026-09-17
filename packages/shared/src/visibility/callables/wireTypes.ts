@@ -10,6 +10,7 @@ import type { ProfileMode } from '../types';
 import type { DiscoveryPublicAffiliation } from '../discoveryAffiliations';
 import type { DiscoveryCompatibility } from '../discoveryCompatibility';
 import type { DiscoveryPublicSocialLink } from '../discoverySocialLinks';
+import type { ZodiacSign } from '../../profileContext/zodiacPresentation';
 
 export type VisibilityContractVersion = typeof CONTRACT_VERSION;
 
@@ -52,6 +53,11 @@ export type SetActiveProfileModeRequest = {
   mode: ProfileMode;
 };
 
+/** Refresh public discovery projection after owner context field writes. */
+export type SyncDiscoveryProfileContextRequest = {
+  contractVersion: VisibilityContractVersion;
+};
+
 /** Owner Settings — no target UIDs; backend derives from caller's blockedUsers. */
 export type GetBlockedPeopleRequest = {
   contractVersion: VisibilityContractVersion;
@@ -63,6 +69,15 @@ export type SetActiveProfileModeResponse = {
   visibility: boolean;
   targetProfileComplete: boolean;
   discoverySynced: boolean;
+  serverTime: number;
+};
+
+/**
+ * Context sync result. `synced: false` is soft — save already succeeded.
+ */
+export type SyncDiscoveryProfileContextResponse = {
+  contractVersion: VisibilityContractVersion;
+  synced: boolean;
   serverTime: number;
 };
 
@@ -79,10 +94,17 @@ export type DiscoveryProfileSummary = {
   interestIds: string[];
 };
 
-/** Profile Detail wire profile = Summary + company + bio. */
+/**
+ * Profile Detail wire profile = Summary + company + bio + public context.
+ * Context defaults when absent: null / null / [] / null.
+ */
 export type DiscoveryProfileDetail = DiscoveryProfileSummary & {
   company: string;
   bio: string;
+  birthCountryCode: string | null;
+  residenceCountryCode: string | null;
+  languageCodes: string[];
+  zodiacSign: ZodiacSign | null;
 };
 
 /** Gallery entry — `url` only; `path` is not part of the public contract. */

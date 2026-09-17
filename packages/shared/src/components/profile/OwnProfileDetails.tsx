@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { FormInput } from '../registration/FormInput';
+import { CountrySelectField } from '../profileContext/CountrySelectField';
+import { LanguageMultiSelectField } from '../profileContext/LanguageMultiSelectField';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { radius } from '../../theme/radius';
 import { spacing, screenPadding } from '../../theme/spacing';
@@ -16,6 +18,12 @@ export type OwnProfileDetailsValues = {
   company: string;
 };
 
+export type OwnProfileContextValues = {
+  birthCountryCode: string | null;
+  residenceCountryCode: string | null;
+  languageCodes: string[];
+};
+
 type FieldLabels = {
   sectionTitle: string;
   realName: string;
@@ -23,6 +31,9 @@ type FieldLabels = {
   occupation: string;
   biography: string;
   company: string;
+  birthCountry: string;
+  residenceCountry: string;
+  languages: string;
 };
 
 type FieldPlaceholders = {
@@ -31,13 +42,21 @@ type FieldPlaceholders = {
   occupation: string;
   biography: string;
   company: string;
+  birthCountrySearch: string;
+  residenceCountrySearch: string;
+  languagesSearch: string;
+  countrySearchEmpty: string;
+  languagesEmpty: string;
+  languagesLimit: string;
 };
 
 type Props = {
   mode: ProfileModeValue;
   values: OwnProfileDetailsValues;
+  context: OwnProfileContextValues;
   labels: FieldLabels;
   placeholders: FieldPlaceholders;
+  locale: string;
   editorWritable: boolean;
   bioMaxLength: number;
   onChangeRealName: (value: string) => void;
@@ -45,6 +64,9 @@ type Props = {
   onChangeOccupation: (value: string) => void;
   onChangeBio: (value: string) => void;
   onChangeCompany: (value: string) => void;
+  onChangeBirthCountry: (value: string | null) => void;
+  onChangeResidenceCountry: (value: string | null) => void;
+  onChangeLanguages: (codes: string[]) => void;
   realNameMaxLength: number;
   lastNameMaxLength: number;
   occupationMaxLength: number;
@@ -54,8 +76,10 @@ type Props = {
 export default function OwnProfileDetails({
   mode,
   values,
+  context,
   labels,
   placeholders,
+  locale,
   editorWritable,
   bioMaxLength,
   onChangeRealName,
@@ -63,6 +87,9 @@ export default function OwnProfileDetails({
   onChangeOccupation,
   onChangeBio,
   onChangeCompany,
+  onChangeBirthCountry,
+  onChangeResidenceCountry,
+  onChangeLanguages,
   realNameMaxLength,
   lastNameMaxLength,
   occupationMaxLength,
@@ -111,6 +138,26 @@ export default function OwnProfileDetails({
           returnKeyType="next"
           textContentType="familyName"
         />
+        <CountrySelectField
+          label={labels.birthCountry}
+          placeholder={placeholders.birthCountrySearch}
+          searchPlaceholder={placeholders.birthCountrySearch}
+          emptyLabel={placeholders.countrySearchEmpty}
+          value={context.birthCountryCode}
+          locale={locale}
+          editable={editable}
+          onChange={onChangeBirthCountry}
+        />
+        <CountrySelectField
+          label={labels.residenceCountry}
+          placeholder={placeholders.residenceCountrySearch}
+          searchPlaceholder={placeholders.residenceCountrySearch}
+          emptyLabel={placeholders.countrySearchEmpty}
+          value={context.residenceCountryCode}
+          locale={locale}
+          editable={editable}
+          onChange={onChangeResidenceCountry}
+        />
         <FormInput
           label={labels.occupation}
           placeholder={placeholders.occupation}
@@ -154,6 +201,16 @@ export default function OwnProfileDetails({
             {values.bio.length}/{bioMaxLength}
           </Text>
         </View>
+        <LanguageMultiSelectField
+          label={labels.languages}
+          searchPlaceholder={placeholders.languagesSearch}
+          emptyLabel={placeholders.languagesEmpty}
+          limitMessage={placeholders.languagesLimit}
+          selectedCodes={context.languageCodes}
+          locale={locale}
+          editable={editable}
+          onChange={onChangeLanguages}
+        />
       </View>
     </View>
   );

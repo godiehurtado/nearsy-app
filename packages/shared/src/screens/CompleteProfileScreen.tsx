@@ -26,6 +26,14 @@ import OwnProfileHero from '../components/profile/OwnProfileHero';
 import OwnProfileDetails from '../components/profile/OwnProfileDetails';
 import OwnProfileSaveBar from '../components/profile/OwnProfileSaveBar';
 import {
+  buildProfileContextSavePatch,
+  isProfileContextDirty,
+  normalizeProfileContext,
+  readProfileContextFromUserDoc,
+  syncDiscoveryProfileContextAfterSave,
+  type ProfileContextFields,
+} from '../profileContext';
+import {
   InterestAffiliations,
   SocialLinks,
   GalleryPhoto,
@@ -111,7 +119,7 @@ function containsObjectionableContent(value: string) {
 
 export default function CompleteProfileScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { palette } = useAppTheme();
 
   const scrollRef = useRef<ScrollView | null>(null);
@@ -128,6 +136,13 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const [occupation, setOccupation] = useState('');
   const [company, setCompany] = useState('');
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [birthCountryCode, setBirthCountryCode] = useState<string | null>(null);
+  const [residenceCountryCode, setResidenceCountryCode] = useState<
+    string | null
+  >(null);
+  const [languageCodes, setLanguageCodes] = useState<string[]>([]);
+  const [contextSnapshot, setContextSnapshot] =
+    useState<ProfileContextFields | null>(null);
 
   const [personalAff, setPersonalAff] = useState<InterestAffiliations>({});
   const [professionalAff, setProfessionalAff] = useState<InterestAffiliations>(
@@ -221,7 +236,18 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     [realName, lastName, profileImage, occupation, bio, company],
   );
 
-  const isDirty = isOwnProfileDraftDirty(editorDraft, savedSnapshot, mode);
+  const contextDraft = useMemo<ProfileContextFields>(
+    () => ({
+      birthCountryCode,
+      residenceCountryCode,
+      languageCodes,
+    }),
+    [birthCountryCode, residenceCountryCode, languageCodes],
+  );
+
+  const isDirty =
+    isOwnProfileDraftDirty(editorDraft, savedSnapshot, mode) ||
+    isProfileContextDirty(contextDraft, contextSnapshot);
   if (!bypassDirtyNavigationRef.current) {
     isDirtyRef.current = isDirty;
   }
@@ -232,9 +258,15 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
   const restoreSavedSnapshot = useCallback(() => {
     const snapshot = savedSnapshotRef.current;
-    if (!snapshot) return;
-    applyDraftToForm(snapshot);
-  }, [applyDraftToForm]);
+    if (snapshot) {
+      applyDraftToForm(snapshot);
+    }
+    if (contextSnapshot) {
+      setBirthCountryCode(contextSnapshot.birthCountryCode);
+      setResidenceCountryCode(contextSnapshot.residenceCountryCode);
+      setLanguageCodes([...contextSnapshot.languageCodes]);
+    }
+  }, [applyDraftToForm, contextSnapshot]);
 
   const confirmDiscardChanges = useCallback(
     (onDiscard: () => void) => {
@@ -360,6 +392,13 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       });
       applyDraftToForm(loadedDraft);
       commitSnapshot(loadedDraft);
+      const loadedContext = readProfileContextFromUserDoc(
+        existing as Record<string, unknown>,
+      );
+      setBirthCountryCode(loadedContext.birthCountryCode);
+      setResidenceCountryCode(loadedContext.residenceCountryCode);
+      setLanguageCodes(loadedContext.languageCodes);
+      setContextSnapshot(normalizeProfileContext(loadedContext));
 
       const normalizeAff = (aff: any): InterestAffiliations =>
         Object.fromEntries(
@@ -757,15 +796,22 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         mode,
         draft: persistedDraft,
       });
+      const contextPatch = buildProfileContextSavePatch(contextDraft);
+      const combinedPatch = { ...modePatch, ...contextPatch };
 
-      await updateUserProfilePartial(uid, modePatch);
+      await updateUserProfilePartial(uid, combinedPatch);
 
       applyDraftToForm(persistedDraft);
       commitSnapshot(persistedDraft);
+      const nextContext = normalizeProfileContext(contextDraft);
+      setBirthCountryCode(nextContext.birthCountryCode);
+      setResidenceCountryCode(nextContext.residenceCountryCode);
+      setLanguageCodes(nextContext.languageCodes);
+      setContextSnapshot(nextContext);
 
       let nextDoc: Record<string, unknown> = {
         ...(profileDoc ?? {}),
-        ...modePatch,
+        ...combinedPatch,
         profiles: {
           ...((profileDoc?.profiles as any) ?? {}),
           [mode]: {
@@ -782,13 +828,19 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         },
       };
 
+      const client = await getVisibilityDiscoveryClient();
+      const contextSync = await syncDiscoveryProfileContextAfterSave(client);
+      if (contextSync.kind === 'failed') {
+        Alert.alert(t('common.error'), t('profile.context.syncSoftError'));
+      }
+
       // BUG-PROFILE-02: restore Discovery projection after complete Professional save.
       const resync = await resyncProfessionalDiscoveryProjectionAfterSave({
         activeMode: mode,
         professionalFaceComplete:
           validateOwnProfileDraft(persistedDraft, mode).ok === true,
         uid,
-        client: await getVisibilityDiscoveryClient(),
+        client,
       });
       if (resync.kind === 'failed') {
         const presentation = presentActiveProfileModeError(t, resync.error);
@@ -1007,6 +1059,11 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                   bio,
                   company,
                 }}
+                context={{
+                  birthCountryCode,
+                  residenceCountryCode,
+                  languageCodes,
+                }}
                 labels={{
                   sectionTitle: t('profile.sections.details'),
                   realName: t('profile.fields.realName'),
@@ -1014,6 +1071,9 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                   occupation: t('profile.fields.occupation'),
                   biography: t('profile.fields.biography'),
                   company: t('profile.fields.company'),
+                  birthCountry: t('profile.fields.birthCountry'),
+                  residenceCountry: t('profile.fields.residenceCountry'),
+                  languages: t('profile.fields.languages'),
                 }}
                 placeholders={{
                   realName: t('profile.placeholders.realName'),
@@ -1021,7 +1081,18 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                   occupation: t('profile.placeholders.occupation'),
                   biography: t('profile.placeholders.biography'),
                   company: t('profile.placeholders.company'),
+                  birthCountrySearch: t(
+                    'profile.placeholders.birthCountrySearch',
+                  ),
+                  residenceCountrySearch: t(
+                    'profile.placeholders.residenceCountrySearch',
+                  ),
+                  languagesSearch: t('profile.placeholders.languagesSearch'),
+                  countrySearchEmpty: t('profile.context.countrySearchEmpty'),
+                  languagesEmpty: t('profile.context.languagesEmpty'),
+                  languagesLimit: t('profile.context.languagesLimit'),
                 }}
+                locale={i18n.language}
                 editorWritable={editorWritable}
                 bioMaxLength={BIO_MAX}
                 realNameMaxLength={NAME_MAX}
@@ -1033,6 +1104,9 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 onChangeOccupation={setOccupation}
                 onChangeBio={setBio}
                 onChangeCompany={setCompany}
+                onChangeBirthCountry={setBirthCountryCode}
+                onChangeResidenceCountry={setResidenceCountryCode}
+                onChangeLanguages={setLanguageCodes}
               />
 
               <ProfileQuickActions

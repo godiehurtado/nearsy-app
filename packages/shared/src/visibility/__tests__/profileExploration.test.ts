@@ -64,6 +64,10 @@ const SAMPLE_DETAIL = {
   ...SAMPLE_PROFILE,
   company: 'Nearsy',
   bio: 'Hello',
+  birthCountryCode: null as string | null,
+  residenceCountryCode: null as string | null,
+  languageCodes: [] as string[],
+  zodiacSign: null as null,
 };
 
 function detailPayload(extra: Record<string, unknown> = {}) {
@@ -669,7 +673,7 @@ describe('profile exploration screen composition (static V1.4E)', () => {
   );
   const compatPath = join(
     __dirname,
-    '../../components/profileExploration/DiscoveryCompatibilityCard.tsx',
+    '../../components/profileExploration/CompactAlignmentBadge.tsx',
   );
   const socialPath = join(
     __dirname,
@@ -710,34 +714,30 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.doesNotMatch(gallerySrc, /ageYears/);
   });
 
-  it('keeps identity as name, mode, distance', () => {
-    assert.match(
-      screenSrc,
-      /accessibilityRole="header"[\s\S]{0,120}\{profile\.displayName\}/,
-    );
+  it('keeps identity as name, mode, zodiac header without distance', () => {
+    assert.match(screenSrc, /DiscoveryProfileIdentityHeader/);
     assert.match(screenSrc, /modeLabel/);
-    assert.match(screenSrc, /distanceLabel/);
+    assert.doesNotMatch(screenSrc, /distanceLabel/);
+    assert.match(screenSrc, /zodiacSign=\{profile\.zodiacSign\}/);
   });
 
-  it('places all public interests in the info card, not Compatibility', () => {
-    assert.match(screenSrc, /DiscoveryCompatibilityCard/);
+  it('places all public interests in the info card, not Alignment card', () => {
+    assert.match(screenSrc, /DiscoveryContextCard/);
     assert.match(screenSrc, /discoveryProfile\.interests/);
     assert.match(screenSrc, /resolveInterestChips/);
     assert.doesNotMatch(screenSrc, /intersectOnboardingInterestIds/);
     assert.doesNotMatch(screenSrc, /resolveSharedInterestPills/);
     assert.doesNotMatch(screenSrc, /discoveryProfile\.sharedInterests/);
-    assert.doesNotMatch(compatSrc, /InterestChip/);
-    assert.doesNotMatch(compatSrc, /sharedPills|sharedIds|interestPills/);
+    assert.doesNotMatch(screenSrc, /DiscoveryCompatibilityCard/);
     assert.match(screenSrc, /InterestChip/);
   });
 
-  it('wires backend alignment into DiscoveryCompatibilityCard', () => {
-    assert.match(screenSrc, /DiscoveryCompatibilityCard/);
+  it('wires compact Alignment into identity header', () => {
+    assert.match(screenSrc, /DiscoveryProfileIdentityHeader/);
     assert.match(screenSrc, /compatibility=\{data\.compatibility\}/);
     assert.match(compatSrc, /toAlignment/);
-    assert.match(compatSrc, /alignmentTitleLabel/);
+    assert.match(compatSrc, /alignmentUnavailableLabel|alignmentTitleLabel/);
     assert.match(compatSrc, /AlignmentScoreRing/);
-    assert.doesNotMatch(compatSrc, /compatibilityMatch/);
   });
 
   it('omits Social Media when empty and wires response.socialLinks', () => {
@@ -746,11 +746,11 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.match(screenSrc, /DiscoverySocialMediaRow/);
   });
 
-  it('places Social Media section before Compatibility', () => {
+  it('places Social Media section before Context card', () => {
     const socialIdx = screenSrc.indexOf('<DiscoverySocialMediaRow');
-    const compatIdx = screenSrc.indexOf('<DiscoveryCompatibilityCard');
+    const contextIdx = screenSrc.indexOf('<DiscoveryContextCard');
     assert.ok(socialIdx > 0);
-    assert.ok(compatIdx > socialIdx);
+    assert.ok(contextIdx > socialIdx);
   });
 
   it('gallery preview opens View all at 0 and thumbnails at index', () => {
