@@ -1,6 +1,7 @@
 /**
  * Pure helpers for Profile Exploration (safe Discovery Detail surface).
- * Shared interests = viewer active-mode onboarding ∩ candidate public interestIds.
+ * Shared-interest intersection remains available for Matching/Alignment and
+ * other non-profile surfaces; Discovery Profile shows all public interestIds.
  * Never uses searchPreferences as "own interests".
  */
 

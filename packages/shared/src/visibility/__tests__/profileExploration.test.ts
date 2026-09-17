@@ -24,6 +24,7 @@ import {
   shouldShowGalleryPreviewOverflow,
   shouldShowOccupation,
 } from '../profileExploration';
+import { resolveInterestChips } from '../interestDisplay';
 import {
   DISCOVERY_SOCIAL_PLATFORMS,
   isAllowedDiscoverySocialHttpsUrl,
@@ -140,6 +141,53 @@ describe('profile exploration shared interests (onboarding ∩ candidate)', () =
     assert.deepEqual(
       intersectOnboardingInterestIds(['a'], ['b', 'c']),
       [],
+    );
+  });
+});
+
+describe('profile exploration public interests display (BUG-PROFILE-01)', () => {
+  const explored = [
+    'technology_ai',
+    'travel_international',
+    'sports_soccer',
+  ] as const;
+  const viewer = ['travel_international', 'business_networking'] as const;
+
+  it('shows all explored interests, not only shared intersection', () => {
+    const shared = intersectOnboardingInterestIds(viewer, explored);
+    assert.deepEqual(shared, ['travel_international']);
+
+    const pills = resolveInterestChips(explored, translateItem);
+    assert.deepEqual(
+      pills.map((p) => p.id),
+      [...explored],
+    );
+    assert.ok(pills.every((p) => p.label.length > 0));
+  });
+
+  it('still shows explored interests when viewer shares none', () => {
+    const shared = intersectOnboardingInterestIds(
+      ['business_networking'],
+      explored,
+    );
+    assert.deepEqual(shared, []);
+
+    const pills = resolveInterestChips(explored, translateItem);
+    assert.equal(pills.length, explored.length);
+  });
+
+  it('empty explored interestIds resolve to no pills', () => {
+    assert.deepEqual(resolveInterestChips([], translateItem), []);
+  });
+
+  it('skips unknown/deprecated interest ids safely', () => {
+    const pills = resolveInterestChips(
+      ['technology_ai', 'not_in_catalog_xyz', 'travel_international'],
+      translateItem,
+    );
+    assert.deepEqual(
+      pills.map((p) => p.id),
+      ['technology_ai', 'travel_international'],
     );
   });
 });
@@ -580,6 +628,10 @@ describe('profile exploration i18n EN/ES', () => {
     assert.equal(enAlignment.tiers.strong, 'Closely aligned');
     assert.equal(es.alignment.title, 'Alineación');
     assert.equal(es.alignment.tiers.full, 'Alineación excepcional');
+    assert.ok(enDiscovery.interests);
+    assert.ok(es.discoveryProfile.interests);
+    assert.ok(enDiscovery.noInterests);
+    assert.ok(es.discoveryProfile.noInterests);
     assert.ok(enDiscovery.sharedInterests);
     assert.ok(es.discoveryProfile.sharedInterests);
     assert.ok(enDiscovery.openLinkError);
@@ -661,11 +713,16 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.match(screenSrc, /distanceLabel/);
   });
 
-  it('places shared interests in the info card, not Compatibility', () => {
+  it('places all public interests in the info card, not Compatibility', () => {
     assert.match(screenSrc, /DiscoveryCompatibilityCard/);
-    assert.match(screenSrc, /discoveryProfile\.sharedInterests/);
+    assert.match(screenSrc, /discoveryProfile\.interests/);
+    assert.match(screenSrc, /resolveInterestChips/);
+    assert.match(screenSrc, /interestPills/);
+    assert.doesNotMatch(screenSrc, /intersectOnboardingInterestIds/);
+    assert.doesNotMatch(screenSrc, /extractViewerOnboardingInterestIds/);
+    assert.doesNotMatch(screenSrc, /sharedPills|sharedIds/);
     assert.doesNotMatch(compatSrc, /InterestChip/);
-    assert.doesNotMatch(compatSrc, /sharedPills|sharedIds/);
+    assert.doesNotMatch(compatSrc, /sharedPills|sharedIds|interestPills/);
     assert.match(screenSrc, /InterestChip/);
   });
 
