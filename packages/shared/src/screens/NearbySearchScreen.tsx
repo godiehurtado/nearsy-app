@@ -53,6 +53,11 @@ import {
 } from '../visibility/interestDisplay';
 import { loadNearbyWithContractualRefresh } from '../visibility/nearbyDiscoveryLoad';
 import {
+  shouldClearNearbyItemsOnOutcomeFailure,
+  shouldShowNearbyEmptyState,
+  shouldShowNearbyFullScreenLoading,
+} from '../visibility/nearbyLoadUiState';
+import {
   presentVisibilityCallableError,
   presentVisibilityLocalError,
 } from '../visibility/visibilityErrorPresentation';
@@ -82,7 +87,9 @@ export default function NearbySearchScreen() {
     'none' | 'inactive' | 'empty' | 'retry' | 'generic'
   >('none');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const hasLoadedOnce = useRef(false);
+  /** True only after the first loadData attempt finishes (finally). */
+  const [initialFetchCompleted, setInitialFetchCompleted] = useState(false);
+  const initialFetchCompletedRef = useRef(false);
 
   const translateItem = useCallback(
     (nameKey: string, fallback: string) =>
@@ -115,19 +122,25 @@ export default function NearbySearchScreen() {
 
   const loadData = useCallback(
     async (showFullScreenLoader: boolean) => {
-      if (showFullScreenLoader) setLoading(true);
-      setErrorKind('none');
-      setErrorMessage(null);
+      if (showFullScreenLoader) {
+        setLoading(true);
+        setErrorKind('none');
+        setErrorMessage(null);
+      }
       try {
         const uid = firebaseAuth.currentUser?.uid;
         if (!uid) {
-          setItems([]);
+          if (shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader })) {
+            setItems([]);
+          }
           setErrorKind('generic');
           setErrorMessage(t('nearby.errorGeneric'));
           return;
         }
         if (!profile.visibility) {
-          setItems([]);
+          if (shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader })) {
+            setItems([]);
+          }
           setErrorKind('inactive');
           setErrorMessage(t('nearby.inactiveBody'));
           return;
@@ -142,7 +155,9 @@ export default function NearbySearchScreen() {
         });
 
         if (outcome.ok === false) {
-          setItems([]);
+          if (shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader })) {
+            setItems([]);
+          }
           if (outcome.kind === 'inactive') {
             setErrorKind('inactive');
             setErrorMessage(t('nearby.inactiveBody'));
@@ -200,10 +215,15 @@ export default function NearbySearchScreen() {
         if (outcome.results.length === 0) {
           setErrorKind('empty');
           setErrorMessage(t('nearby.emptyBody'));
+        } else {
+          setErrorKind('none');
+          setErrorMessage(null);
         }
       } catch (err) {
         if (__DEV__) console.error('[NearbySearch] loadData', err);
-        setItems([]);
+        if (shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader })) {
+          setItems([]);
+        }
         if (isVisibilityDiscoveryClientError(err)) {
           if (
             err.reason.kind === 'known' &&
@@ -225,15 +245,17 @@ export default function NearbySearchScreen() {
         }
       } finally {
         if (showFullScreenLoader) setLoading(false);
+        initialFetchCompletedRef.current = true;
+        setInitialFetchCompleted(true);
       }
     },
     [profile.visibility, t],
   );
 
   useEffect(() => {
-    const full = !hasLoadedOnce.current;
-    hasLoadedOnce.current = true;
-    void loadData(full);
+    // Full-screen loader only until the first fetch completes; later
+    // loadData identity changes (e.g. visibility snapshot) stay silent.
+    void loadData(!initialFetchCompletedRef.current);
   }, [loadData]);
 
   const onRefresh = useCallback(async () => {
@@ -271,6 +293,15 @@ export default function NearbySearchScreen() {
 
   const headerBg = theme === 'dark' ? palette.panel : palette.panel;
   const listPadBottom = 96 + insets.bottom;
+  const showFullScreenLoading = shouldShowNearbyFullScreenLoading({
+    loading,
+    initialFetchCompleted,
+  });
+  const showEmptyState = shouldShowNearbyEmptyState({
+    fullScreenLoading: showFullScreenLoading,
+    itemCount: filtered.length,
+    errorKind,
+  });
 
   const renderCard = ({ item }: { item: DiscoverNearbyResult }) => {
     const p = item.profile;
@@ -449,7 +480,7 @@ export default function NearbySearchScreen() {
         </View>
       </View>
 
-      {loading ? (
+      {showFullScreenLoading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={palette.primary} />
           <Text style={[styles.loadingText, { color: palette.textMuted }]}>
@@ -476,6 +507,7 @@ export default function NearbySearchScreen() {
             />
           }
           ListEmptyComponent={
+            showEmptyState ? (
             <View style={styles.emptyWrap}>
               <View
                 style={[
@@ -520,6 +552,7 @@ export default function NearbySearchScreen() {
                 </Pressable>
               )}
             </View>
+            ) : null
           }
         />
       )}
