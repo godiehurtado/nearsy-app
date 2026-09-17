@@ -43,11 +43,8 @@ export function DiscoveryCompatibilityCard({ compatibility }: Props) {
     return null;
   }
 
-  if (alignment.available) {
-    const a11yLabel = alignmentAccessibilityLabel(t, alignment);
-    const tierLabel = alignment.tier
-      ? alignmentTierLabel(t, alignment.tier)
-      : null;
+  if (alignment.available === false) {
+    const unavailableCopy = alignmentUnavailableLabel(t, alignment.state);
 
     return (
       <View
@@ -60,9 +57,17 @@ export function DiscoveryCompatibilityCard({ compatibility }: Props) {
           cardShadow,
         ]}
         accessibilityRole="summary"
-        accessibilityLabel={a11yLabel}
+        accessibilityLabel={unavailableCopy}
       >
-        <AlignmentScoreRing score={alignment.score} variant="detail" />
+        <View
+          style={[
+            styles.ringPlaceholder,
+            {
+              borderColor: palette.border,
+              backgroundColor: palette.background,
+            },
+          ]}
+        />
         <View style={styles.copy}>
           <Text
             style={[styles.title, { color: palette.textPrimary }]}
@@ -72,22 +77,23 @@ export function DiscoveryCompatibilityCard({ compatibility }: Props) {
           >
             {alignmentTitleLabel(t)}
           </Text>
-          {tierLabel ? (
-            <Text
-              style={[styles.body, { color: palette.textSecondary }]}
-              maxFontSizeMultiplier={1.5}
-              accessibilityElementsHidden
-              importantForAccessibility="no"
-            >
-              {tierLabel}
-            </Text>
-          ) : null}
+          <Text
+            style={[styles.body, { color: palette.textSecondary }]}
+            maxFontSizeMultiplier={1.5}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          >
+            {unavailableCopy}
+          </Text>
         </View>
       </View>
     );
   }
 
-  const unavailableCopy = alignmentUnavailableLabel(t);
+  const a11yLabel = alignmentAccessibilityLabel(t, alignment);
+  const tierLabel = alignment.tier
+    ? alignmentTierLabel(t, alignment.tier)
+    : null;
 
   return (
     <View
@@ -100,17 +106,9 @@ export function DiscoveryCompatibilityCard({ compatibility }: Props) {
         cardShadow,
       ]}
       accessibilityRole="summary"
-      accessibilityLabel={unavailableCopy}
+      accessibilityLabel={a11yLabel}
     >
-      <View
-        style={[
-          styles.ringPlaceholder,
-          {
-            borderColor: palette.border,
-            backgroundColor: palette.background,
-          },
-        ]}
-      />
+      <AlignmentScoreRing score={alignment.score} variant="detail" />
       <View style={styles.copy}>
         <Text
           style={[styles.title, { color: palette.textPrimary }]}
@@ -120,14 +118,16 @@ export function DiscoveryCompatibilityCard({ compatibility }: Props) {
         >
           {alignmentTitleLabel(t)}
         </Text>
-        <Text
-          style={[styles.body, { color: palette.textSecondary }]}
-          maxFontSizeMultiplier={1.5}
-          accessibilityElementsHidden
-          importantForAccessibility="no"
-        >
-          {unavailableCopy}
-        </Text>
+        {tierLabel ? (
+          <Text
+            style={[styles.body, { color: palette.textSecondary }]}
+            maxFontSizeMultiplier={1.5}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          >
+            {tierLabel}
+          </Text>
+        ) : null}
       </View>
     </View>
   );

@@ -4,7 +4,13 @@
  */
 import type { TFunction } from 'i18next';
 
-import type { Alignment, AlignmentTier } from './discoveryCompatibility';
+import type {
+  Alignment,
+  AlignmentTier,
+  AlignmentUnavailableState,
+  DiscoveryCompatibilityUnavailableReason,
+} from './discoveryCompatibility';
+import { mapUnavailableReasonToAlignmentState } from './discoveryCompatibility';
 
 export function shouldShowNearbyTierBadge(
   tier: AlignmentTier | undefined,
@@ -19,8 +25,30 @@ export function alignmentTierLabel(
   return t(`alignment.tiers.${tier}`);
 }
 
-export function alignmentUnavailableLabel(t: TFunction): string {
-  return t('alignment.unavailable');
+export function alignmentUnavailableLabel(
+  t: TFunction,
+  state: AlignmentUnavailableState = 'unavailable',
+): string {
+  switch (state) {
+    case 'insufficient':
+      return t('alignment.insufficient');
+    case 'processing':
+      return t('alignment.processing');
+    case 'unavailable':
+    default:
+      return t('alignment.unavailable');
+  }
+}
+
+/** Resolve presentation copy from optional wire reason (tests / helpers). */
+export function alignmentUnavailableLabelForReason(
+  t: TFunction,
+  reason: DiscoveryCompatibilityUnavailableReason | undefined,
+): string {
+  return alignmentUnavailableLabel(
+    t,
+    mapUnavailableReasonToAlignmentState(reason),
+  );
 }
 
 export function alignmentTitleLabel(t: TFunction): string {

@@ -8,17 +8,21 @@ import { join } from 'node:path';
 
 import enAlignment from '../../i18n/resources/alignment';
 import enDiscovery from '../../i18n/resources/discoveryProfile';
-import es from '../../i18n/locales/es';
+import { es } from '../../i18n/locales/es';
 import {
   ALIGNMENT_TIERS,
   DISCOVERY_COMPATIBILITY_UNAVAILABLE_REASONS,
   FORBIDDEN_DISCOVERY_COMPATIBILITY_KEYS,
+  mapUnavailableReasonToAlignmentState,
   parseDiscoveryCompatibility,
   toAlignment,
 } from '../discoveryCompatibility';
 import {
   alignmentAccessibilityLabel,
+  alignmentUnavailableLabel,
+  alignmentUnavailableLabelForReason,
   alignmentTierLabel,
+  formatAlignmentPercent,
   shouldShowNearbyTierBadge,
 } from '../alignmentPresentation';
 import {
@@ -283,6 +287,141 @@ describe('discoverNearby compatibility integration', () => {
   });
 });
 
+describe('Alignment unavailable presentation (BUG-ALIGN-01)', () => {
+  it('available score > 0 keeps percentage', () => {
+    const alignment = toAlignment({
+      available: true,
+      score: 66,
+      formulaVersion: '1',
+      alignmentTiers: 'strong',
+      alignmentVersion: '1',
+    });
+    assert.equal(alignment?.available, true);
+    if (alignment?.available) {
+      assert.equal(alignment.score, 66);
+      assert.equal(formatAlignmentPercent(alignment.score), '66%');
+    }
+  });
+
+  it('available score = 0 is a real 0%', () => {
+    const alignment = toAlignment({
+      available: true,
+      score: 0,
+      formulaVersion: '1',
+      alignmentTiers: 'weak',
+      alignmentVersion: '1',
+    });
+    assert.equal(alignment?.available, true);
+    if (alignment?.available) {
+      assert.equal(alignment.score, 0);
+      assert.equal(formatAlignmentPercent(alignment.score), '0%');
+    }
+  });
+
+  it('maps insufficient reasons', () => {
+    assert.equal(
+      mapUnavailableReasonToAlignmentState('insufficient-comparable-dimensions'),
+      'insufficient',
+    );
+    assert.equal(
+      mapUnavailableReasonToAlignmentState('mode-incomplete'),
+      'insufficient',
+    );
+    const a = toAlignment({
+      available: false,
+      formulaVersion: '1',
+      reason: 'insufficient-comparable-dimensions',
+    });
+    assert.equal(a?.available, false);
+    if (a && !a.available) assert.equal(a.state, 'insufficient');
+  });
+
+  it('maps processing reasons', () => {
+    for (const reason of [
+      'embeddings-pending',
+      'embeddings-missing',
+      'embeddings-stale',
+    ] as const) {
+      assert.equal(mapUnavailableReasonToAlignmentState(reason), 'processing');
+      const a = toAlignment({
+        available: false,
+        formulaVersion: '1',
+        reason,
+      });
+      assert.equal(a?.available, false);
+      if (a && !a.available) assert.equal(a.state, 'processing');
+    }
+  });
+
+  it('maps unavailable reasons', () => {
+    for (const reason of [
+      'embeddings-failed',
+      'model-mismatch',
+      'mode-mismatch',
+      'embedding-corrupt',
+    ] as const) {
+      assert.equal(mapUnavailableReasonToAlignmentState(reason), 'unavailable');
+      const a = toAlignment({
+        available: false,
+        formulaVersion: '1',
+        reason,
+      });
+      assert.equal(a?.available, false);
+      if (a && !a.available) assert.equal(a.state, 'unavailable');
+    }
+  });
+
+  it('unknown/missing reason → unavailable', () => {
+    assert.equal(mapUnavailableReasonToAlignmentState(undefined), 'unavailable');
+    const a = toAlignment({
+      available: false,
+      formulaVersion: '1',
+    });
+    assert.equal(a?.available, false);
+    if (a && !a.available) assert.equal(a.state, 'unavailable');
+  });
+
+  it('compatibility absent → undefined (card stays hidden)', () => {
+    assert.equal(toAlignment(undefined), undefined);
+  });
+
+  it('EN/ES copy matches approved mapping and never renders raw reasons', () => {
+    assert.equal(
+      alignmentUnavailableLabel(tEn, 'insufficient'),
+      "There isn't enough information yet to calculate alignment.",
+    );
+    assert.equal(
+      alignmentUnavailableLabel(tEs, 'insufficient'),
+      'Aún no hay suficiente información para calcular la alineación.',
+    );
+    assert.equal(
+      alignmentUnavailableLabel(tEn, 'processing'),
+      'Alignment is still being calculated.',
+    );
+    assert.equal(
+      alignmentUnavailableLabel(tEs, 'processing'),
+      'La alineación aún se está calculando.',
+    );
+    assert.equal(
+      alignmentUnavailableLabel(tEn, 'unavailable'),
+      'Alignment is currently unavailable.',
+    );
+    assert.equal(
+      alignmentUnavailableLabel(tEs, 'unavailable'),
+      'La alineación no está disponible en este momento.',
+    );
+
+    for (const reason of DISCOVERY_COMPATIBILITY_UNAVAILABLE_REASONS) {
+      const en = alignmentUnavailableLabelForReason(tEn, reason);
+      const esLabel = alignmentUnavailableLabelForReason(tEs, reason);
+      assert.doesNotMatch(en, new RegExp(reason));
+      assert.doesNotMatch(esLabel, new RegExp(reason));
+      assert.doesNotMatch(en, /preparing/i);
+      assert.doesNotMatch(esLabel, /preparando/i);
+    }
+  });
+});
+
 describe('Alignment presentation helpers', () => {
   it('shows Nearby badge only for strong and full', () => {
     assert.equal(shouldShowNearbyTierBadge('strong'), true);
@@ -319,8 +458,30 @@ describe('Alignment i18n EN/ES', () => {
     }
     assert.equal(enAlignment.title, 'Alignment');
     assert.equal(es.alignment.title, 'Alineación');
-    assert.equal(enAlignment.unavailable, 'Alignment is being prepared.');
-    assert.equal(es.alignment.unavailable, 'Estamos preparando la alineación.');
+    assert.equal(
+      enAlignment.insufficient,
+      "There isn't enough information yet to calculate alignment.",
+    );
+    assert.equal(
+      es.alignment.insufficient,
+      'Aún no hay suficiente información para calcular la alineación.',
+    );
+    assert.equal(
+      enAlignment.processing,
+      'Alignment is still being calculated.',
+    );
+    assert.equal(
+      es.alignment.processing,
+      'La alineación aún se está calculando.',
+    );
+    assert.equal(
+      enAlignment.unavailable,
+      'Alignment is currently unavailable.',
+    );
+    assert.equal(
+      es.alignment.unavailable,
+      'La alineación no está disponible en este momento.',
+    );
     assert.equal(es.alignment.tiers.full, 'Alineación excepcional');
     const bundle = JSON.stringify({ en: enAlignment, es: es.alignment });
     for (const banned of [
@@ -328,6 +489,8 @@ describe('Alignment i18n EN/ES', () => {
       'Match score',
       'Weak alignment',
       'Alineación rara',
+      'being prepared',
+      'preparando la alineación',
       ...DISCOVERY_COMPATIBILITY_UNAVAILABLE_REASONS,
     ]) {
       assert.doesNotMatch(bundle, new RegExp(banned, 'i'));
@@ -361,7 +524,7 @@ describe('Alignment UI contract (static)', () => {
 
   it('Profile card uses Alignment copy and detail ring', () => {
     assert.match(compatSrc, /alignmentTitleLabel/);
-    assert.match(compatSrc, /alignmentUnavailableLabel/);
+    assert.match(compatSrc, /alignmentUnavailableLabel\(t, alignment\.state\)/);
     assert.match(compatSrc, /AlignmentScoreRing/);
     assert.match(compatSrc, /variant="detail"/);
     assert.doesNotMatch(compatSrc, /compatibilityMatch/);
