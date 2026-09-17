@@ -3,6 +3,10 @@
  */
 
 import { normalizeSearchQuery } from '../visibility/interestSearchCatalog';
+import {
+  LANGUAGE_NAMES_EN,
+  LANGUAGE_NAMES_ES,
+} from './languageDisplayNames';
 
 export const MAX_PROFILE_LANGUAGES = 10;
 export const MIN_PROFILE_LANGUAGES_CRJ = 1;
@@ -164,16 +168,23 @@ export function getLanguageDisplayName(code: string, locale: string): string {
     normalized ??
     (typeof code === 'string' ? code.trim().toLowerCase() || code : '');
   if (!normalized) return fallback;
-  try {
-    const display = new Intl.DisplayNames([locale], { type: 'language' });
-    const name = display.of(normalized);
-    if (typeof name === 'string' && name.trim().length > 0) {
-      return name;
-    }
-  } catch {
-    // Fall through to code.
+  const map = resolveLanguageNameMap(locale);
+  const name = map[normalized];
+  if (typeof name === 'string' && name.trim().length > 0) {
+    return name;
   }
+  // Last-resort defensive fallback for unknown catalog gaps only.
   return normalized;
+}
+
+function resolveLanguageNameMap(
+  locale: string,
+): Readonly<Record<string, string>> {
+  const tag = (locale || 'en').trim().toLowerCase();
+  if (tag === 'es' || tag.startsWith('es-')) {
+    return LANGUAGE_NAMES_ES;
+  }
+  return LANGUAGE_NAMES_EN;
 }
 
 function toLanguageOption(code: string, locale: string): LanguageOption {

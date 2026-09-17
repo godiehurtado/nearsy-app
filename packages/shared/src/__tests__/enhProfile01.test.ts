@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import {
   countryCodeToFlagEmoji,
   filterCountries,
+  getCountryDisplayName,
   normalizeCountryCode,
   resolveCountryOption,
 } from '../profile/countryCatalog';
@@ -73,15 +74,24 @@ describe('ENH-PROFILE-01 country catalog', () => {
     const opt = resolveCountryOption('CO', 'en');
     assert.ok(opt);
     assert.equal(opt!.code, 'CO');
-    assert.match(opt!.name, /Colombia/i);
+    assert.equal(opt!.name, 'Colombia');
     assert.equal(opt!.flag, countryCodeToFlagEmoji('CO'));
     assert.equal(opt!.flag, '🇨🇴');
   });
 
-  it('filters countries by search query', () => {
-    const hits = filterCountries('colo', 'en');
-    assert.ok(hits.some((h) => h.code === 'CO'));
-    assert.ok(hits.every((h) => /colo/i.test(h.name) || h.code.includes('CO')));
+  it('localizes US for EN and ES', () => {
+    assert.equal(getCountryDisplayName('US', 'en'), 'United States');
+    assert.equal(getCountryDisplayName('US', 'es'), 'Estados Unidos');
+    assert.equal(getCountryDisplayName('US', 'es-CO'), 'Estados Unidos');
+  });
+
+  it('filters countries by localized search query', () => {
+    const hitsEn = filterCountries('colombia', 'en');
+    assert.ok(hitsEn.some((h) => h.code === 'CO' && h.name === 'Colombia'));
+    const hitsEs = filterCountries('estados unidos', 'es');
+    assert.ok(
+      hitsEs.some((h) => h.code === 'US' && h.name === 'Estados Unidos'),
+    );
   });
 
   it('handles unknown country codes safely', () => {
@@ -89,9 +99,31 @@ describe('ENH-PROFILE-01 country catalog', () => {
     assert.equal(normalizeCountryCode('colombia'), null);
     assert.equal(resolveCountryOption('ZZ', 'en'), null);
   });
+
+  it('never depends on Intl.DisplayNames', () => {
+    const src = readFileSync(
+      join(__dirname, '../profile/countryCatalog.ts'),
+      'utf8',
+    );
+    assert.doesNotMatch(src, /Intl\.DisplayNames/);
+  });
 });
 
 describe('ENH-PROFILE-01 language catalog', () => {
+  it('localizes language codes for EN and ES', () => {
+    assert.equal(getLanguageDisplayName('es', 'en'), 'Spanish');
+    assert.equal(getLanguageDisplayName('es', 'es'), 'Español');
+    assert.equal(getLanguageDisplayName('en', 'en'), 'English');
+    assert.equal(getLanguageDisplayName('en', 'es'), 'Inglés');
+  });
+
+  it('filters languages by localized search query', () => {
+    const hitsEn = filterLanguages('span', 'en');
+    assert.ok(hitsEn.some((h) => h.code === 'es' && h.name === 'Spanish'));
+    const hitsEs = filterLanguages('espa', 'es');
+    assert.ok(hitsEs.some((h) => h.code === 'es' && h.name === 'Español'));
+  });
+
   it('filters languages and keeps canonical codes', () => {
     const hits = filterLanguages('span', 'en');
     assert.ok(hits.some((h) => h.code === 'es'));
@@ -126,6 +158,14 @@ describe('ENH-PROFILE-01 language catalog', () => {
     ]);
     assert.deepEqual(normalizeLanguageCodes([]), []);
   });
+
+  it('never depends on Intl.DisplayNames', () => {
+    const src = readFileSync(
+      join(__dirname, '../profile/languageCatalog.ts'),
+      'utf8',
+    );
+    assert.doesNotMatch(src, /Intl\.DisplayNames/);
+  });
 });
 
 describe('ENH-PROFILE-01 profile context fields', () => {
@@ -137,7 +177,7 @@ describe('ENH-PROFILE-01 profile context fields', () => {
     });
   });
 
-  it('write patch never includes zodiacSign', () => {
+  it('write patch never includes zodiacSign and keeps canonical codes', () => {
     const patch = buildProfileContextWritePatch({
       birthCountryCode: 'CO',
       residenceCountryCode: 'US',
@@ -147,6 +187,9 @@ describe('ENH-PROFILE-01 profile context fields', () => {
     assert.equal(patch.residenceCountryCode, 'US');
     assert.deepEqual(patch.languageCodes, ['es', 'en']);
     assert.equal(Object.prototype.hasOwnProperty.call(patch, 'zodiacSign'), false);
+    // Display labels must not leak into persistence.
+    assert.notEqual(patch.birthCountryCode, 'Colombia');
+    assert.notEqual((patch.languageCodes as string[])[0], 'Spanish');
   });
 
   it('CRJ requires countries and >=1 language, max 10', () => {
