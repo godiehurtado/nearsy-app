@@ -143,6 +143,22 @@ describe('Android post-MVP batch 1 source contracts', () => {
     assert.match(common, /error:\s*'Something went wrong'/);
   });
 
+  it('More logout uses static social prefill cleanup (no dynamic import)', () => {
+    const more = readSharedSource('screens/MoreScreen.tsx');
+    assert.match(
+      more,
+      /import\s*\{\s*clearPendingSocialProfilePrefill\s*\}\s*from\s*'\.\.\/authentication\/social'/,
+    );
+    assert.match(
+      more,
+      /const handleLogout = async \(\) => \{[\s\S]*?clearPendingSocialProfilePrefill\(\);[\s\S]*?firebaseAuth\.signOut\(\)/,
+    );
+    assert.doesNotMatch(
+      more,
+      /await import\(\s*['"]\.\.\/authentication\/social['"]\s*\)/,
+    );
+  });
+
   it('pushTokens.android never requests notification permission', () => {
     const push = readSharedSource('services/pushTokens.android.ts');
     assert.match(push, /getPermissionsAsync/);

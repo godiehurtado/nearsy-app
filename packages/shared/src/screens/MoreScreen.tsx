@@ -32,6 +32,7 @@ import { SettingsSection } from '../components/settings/SettingsSection';
 import { SettingsRow } from '../components/settings/SettingsRow';
 import { SettingsToggleRow } from '../components/settings/SettingsToggleRow';
 import { firebaseAuth } from '../config/firebaseConfig';
+import { clearPendingSocialProfilePrefill } from '../authentication/social';
 import {
   getUserProfile,
   updateUserProfilePartial,
@@ -587,9 +588,6 @@ export default function MoreScreen() {
 
   const handleLogout = async () => {
     try {
-      const { clearPendingSocialProfilePrefill } = await import(
-        '../authentication/social'
-      );
       clearPendingSocialProfilePrefill();
       await firebaseAuth.signOut();
       const parent = navigation.getParent?.() as any;
