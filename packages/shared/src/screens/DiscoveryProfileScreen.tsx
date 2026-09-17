@@ -1,7 +1,7 @@
 /**
  * Profile Exploration — Discovery Profile Detail.
  * Candidate data: getDiscoveryProfile only (no peer users/{uid} read).
- * Viewer onboarding interests: owner users/{me} snapshot only.
+ * Interests: all public profile.interestIds (catalog-resolved); not viewer ∩ candidate.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -23,7 +23,6 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as Localization from 'expo-localization';
 import { firebaseAuth } from '../config/firebaseConfig';
-import { dbOnUserSnapshot } from '../services/db';
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { useTranslation } from '../i18n';
 import { InterestChip } from '../components/InterestChip';
@@ -46,6 +45,7 @@ import {
   isVisibilityDiscoveryClientError,
   metersToFeet,
   resolveDistanceDisplayUnit,
+  resolveInterestChips,
   shouldShowGalleryPreviewOverflow,
   type GetDiscoveryProfileResponse,
   type ProfileMode,
@@ -53,13 +53,9 @@ import {
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 import { blockCandidateUser } from '../visibility/blockCandidate';
 import {
-  extractViewerOnboardingInterestIds,
-  intersectOnboardingInterestIds,
-  resolveSharedInterestPills,
   shouldShowBio,
   shouldShowCompany,
   shouldShowOccupation,
-  type ViewerProfileExplorationDoc,
 } from '../visibility/profileExploration';
 
 const HERO_HEIGHT = Math.min(Dimensions.get('window').height * 0.42, 360);
@@ -84,7 +80,6 @@ export default function DiscoveryProfileScreen() {
     'none' | 'missing' | 'unavailable' | 'load'
   >('none');
   const [data, setData] = useState<GetDiscoveryProfileResponse | null>(null);
-  const [viewerDoc, setViewerDoc] = useState<ViewerProfileExplorationDoc>({});
   const [heroFailed, setHeroFailed] = useState(false);
   const [previewFailed, setPreviewFailed] = useState<Record<number, boolean>>(
     {},
@@ -104,17 +99,6 @@ export default function DiscoveryProfileScreen() {
       }),
     [t],
   );
-
-  useEffect(() => {
-    const myUid = firebaseAuth.currentUser?.uid;
-    if (!myUid) return;
-    const unsub = dbOnUserSnapshot(myUid, (raw) => {
-      if (raw) {
-        setViewerDoc((raw as ViewerProfileExplorationDoc) ?? {});
-      }
-    });
-    return () => unsub();
-  }, []);
 
   const loadProfile = useCallback(async () => {
     if (!uid) {
@@ -151,23 +135,10 @@ export default function DiscoveryProfileScreen() {
     void loadProfile();
   }, [loadProfile]);
 
-  const viewerInterestIds = useMemo(
-    () => extractViewerOnboardingInterestIds(viewerDoc),
-    [viewerDoc],
-  );
-
-  const sharedIds = useMemo(() => {
+  const interestPills = useMemo(() => {
     if (!data) return [];
-    return intersectOnboardingInterestIds(
-      viewerInterestIds,
-      data.profile.interestIds,
-    );
-  }, [data, viewerInterestIds]);
-
-  const sharedPills = useMemo(
-    () => resolveSharedInterestPills(sharedIds, translateItem),
-    [sharedIds, translateItem],
-  );
+    return resolveInterestChips(data.profile.interestIds, translateItem);
+  }, [data, translateItem]);
 
   const modeLabel = useMemo(() => {
     if (!data) return '';
@@ -491,11 +462,11 @@ export default function DiscoveryProfileScreen() {
                 },
               ]}
             >
-              {t('discoveryProfile.sharedInterests')}
+              {t('discoveryProfile.interests')}
             </Text>
-            {sharedPills.length > 0 ? (
+            {interestPills.length > 0 ? (
               <View style={styles.pillsRow}>
-                {sharedPills.map((chip) => (
+                {interestPills.map((chip) => (
                   <InterestChip
                     key={chip.id}
                     name={chip.label}
@@ -514,7 +485,7 @@ export default function DiscoveryProfileScreen() {
                   lineHeight: 20,
                 }}
               >
-                {t('discoveryProfile.noSharedInterests')}
+                {t('discoveryProfile.noInterests')}
               </Text>
             )}
           </View>
