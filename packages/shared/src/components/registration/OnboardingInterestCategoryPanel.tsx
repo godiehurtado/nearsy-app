@@ -9,10 +9,12 @@ import {
   buildCustomInterestId,
   countFinalOnboardingInterests,
   getOnboardingCategory,
+  isSelectableCatalogInterestId,
   validateCustomInterestInput,
   type OnboardingInterestCategoryId,
   type OnboardingSelectedInterest,
 } from '../../interests/onboardingInterestCatalog';
+import { resolveLegacyDisplayInterestItem } from '../../interests/interestLegacyCatalog';
 import {
   getHierarchicalGroups,
   isHierarchicalInterestCategory,
@@ -74,6 +76,14 @@ export function OnboardingInterestCategoryPanel({
   const selectedInCategory = useMemo(
     () => selected.filter((s) => s.categoryId === categoryId),
     [selected, categoryId],
+  );
+
+  const retainedLegacyInCategory = useMemo(
+    () =>
+      selectedInCategory.filter(
+        (s) => !s.isCustom && !isSelectableCatalogInterestId(s.id),
+      ),
+    [selectedInCategory],
   );
 
   const selectedIds = useMemo(
@@ -270,6 +280,34 @@ export function OnboardingInterestCategoryPanel({
           {renderComposer()}
         </>
       )}
+
+      {retainedLegacyInCategory.length > 0 ? (
+        <View style={[styles.chipWrap, { marginTop: spacing.md }]}>
+          {retainedLegacyInCategory.map((s) => {
+            const legacy = resolveLegacyDisplayInterestItem(s.id);
+            const label = legacy
+              ? itemLabel(legacy.nameKey, legacy.name)
+              : s.name;
+            return (
+              <InterestChip
+                key={s.id}
+                name={label}
+                icon={legacy?.icon ?? s.icon}
+                iconColor={legacy?.iconColor ?? s.iconColor}
+                selected
+                accessibilityLabel={
+                  customRemoveAccessibilityLabel
+                    ? customRemoveAccessibilityLabel(label)
+                    : label
+                }
+                onPress={() =>
+                  onChangeSelected(selected.filter((x) => x.id !== s.id))
+                }
+              />
+            );
+          })}
+        </View>
+      ) : null}
 
       {selectedInCategory.filter((s) => s.isCustom).length > 0 ? (
         <View style={[styles.chipWrap, { marginTop: spacing.md }]}>

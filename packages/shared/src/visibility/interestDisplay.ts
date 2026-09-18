@@ -1,11 +1,15 @@
 /**
  * Resolve CRJ interest IDs to localized labels + icons for discovery UI.
+ *
+ * Selectable catalog first; then legacy/deprecated display map.
+ * Truly unknown IDs return null (safe omit).
  */
 
 import {
-  flattenCatalogInterestItems,
+  findSelectableCatalogInterestItem,
   type OnboardingInterestItem,
 } from '../interests/onboardingInterestCatalog';
+import { resolveLegacyDisplayInterestItem } from '../interests/interestLegacyCatalog';
 import { normalizeSearchQuery } from './interestSearchCatalog';
 
 export type ResolvedInterestChip = {
@@ -15,26 +19,20 @@ export type ResolvedInterestChip = {
   iconColor: string;
 };
 
-const catalogById = (): Map<string, OnboardingInterestItem> => {
-  const map = new Map<string, OnboardingInterestItem>();
-  for (const item of flattenCatalogInterestItems()) {
-    map.set(item.id, item);
-  }
-  return map;
-};
-
-let cachedCatalog: Map<string, OnboardingInterestItem> | null = null;
-
-function catalogMap(): Map<string, OnboardingInterestItem> {
-  if (!cachedCatalog) cachedCatalog = catalogById();
-  return cachedCatalog;
+export function resolveCatalogOrLegacyInterestItem(
+  id: string,
+): OnboardingInterestItem | undefined {
+  return (
+    findSelectableCatalogInterestItem(id) ??
+    resolveLegacyDisplayInterestItem(id)
+  );
 }
 
 export function resolveInterestChip(
   id: string,
   translateItem: (nameKey: string, fallback: string) => string,
 ): ResolvedInterestChip | null {
-  const item = catalogMap().get(id);
+  const item = resolveCatalogOrLegacyInterestItem(id);
   if (!item) return null;
   return {
     id,
