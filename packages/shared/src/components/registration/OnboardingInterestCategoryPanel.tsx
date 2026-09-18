@@ -14,6 +14,11 @@ import {
   type OnboardingSelectedInterest,
 } from '../../interests/onboardingInterestCatalog.ts';
 import {
+  getDeprecatedInterestDisplayItem,
+  isDeprecatedInterestId,
+  isSelectableCatalogInterestId,
+} from '../../interests/onboardingInterestLegacyCatalog.ts';
+import {
   getHierarchicalGroups,
   isHierarchicalInterestCategory,
   resolveActiveGroupId,
@@ -292,6 +297,47 @@ export function OnboardingInterestCategoryPanel({
                 }
               />
             ))}
+        </View>
+      ) : null}
+
+      {selectedInCategory.filter(
+        (s) =>
+          !s.isCustom &&
+          isDeprecatedInterestId(s.id) &&
+          !isSelectableCatalogInterestId(s.id),
+      ).length > 0 ? (
+        <View style={[styles.chipWrap, { marginTop: spacing.md }]}>
+          {selectedInCategory
+            .filter(
+              (s) =>
+                !s.isCustom &&
+                isDeprecatedInterestId(s.id) &&
+                !isSelectableCatalogInterestId(s.id),
+            )
+            .map((s) => {
+              const legacy = getDeprecatedInterestDisplayItem(s.id);
+              const label = itemLabel(
+                legacy?.nameKey ?? s.id,
+                legacy?.name ?? s.name,
+              );
+              return (
+                <InterestChip
+                  key={s.id}
+                  name={label}
+                  icon={legacy?.icon ?? s.icon}
+                  iconColor={legacy?.iconColor ?? s.iconColor}
+                  selected
+                  accessibilityLabel={
+                    customRemoveAccessibilityLabel
+                      ? customRemoveAccessibilityLabel(label)
+                      : label
+                  }
+                  onPress={() =>
+                    onChangeSelected(selected.filter((x) => x.id !== s.id))
+                  }
+                />
+              );
+            })}
         </View>
       ) : null}
     </View>

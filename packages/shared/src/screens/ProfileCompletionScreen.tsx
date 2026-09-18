@@ -101,6 +101,7 @@ import {
   type OnboardingInterestCategoryId,
   type OnboardingSelectedInterest,
 } from '../interests/onboardingInterestCatalog';
+import { preserveOnboardingInterestsForEditor } from '../interests/onboardingInterestLegacyCatalog';
 import {
   isHierarchicalInterestCategory,
   resolveActiveGroupId,
@@ -260,7 +261,7 @@ function readOnboardingInterests(
         : {}),
     });
   }
-  return out;
+  return preserveOnboardingInterestsForEditor(out);
 }
 
 function readOnboardingAffiliations(
