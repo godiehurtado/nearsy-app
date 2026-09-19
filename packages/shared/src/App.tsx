@@ -28,10 +28,7 @@ import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 
 import * as Notifications from 'expo-notifications';
 import { registerPushToken } from './services/pushTokens';
-import {
-  startBackgroundLocation,
-  stopBackgroundLocation,
-} from './services/backgroundLocation';
+import { stopBackgroundLocationRuntime, syncBackgroundLocationRuntime } from './visibility/backgroundLocationRuntime';
 
 import * as WebBrowser from 'expo-web-browser';
 WebBrowser.maybeCompleteAuthSession();
@@ -155,7 +152,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
       async (user: any | null) => {
         if (!user) {
           if (Platform.OS !== 'web') {
-            await stopBackgroundLocation().catch(() => {});
+            await stopBackgroundLocationRuntime().catch(() => {});
           }
           return;
         }
@@ -170,6 +167,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
 
         try {
           let bgVisible = false;
+          let visibilityOn = false;
 
           try {
             if ((firestoreDb as any)?.collection) {
@@ -177,22 +175,30 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
                 .collection('users')
                 .doc(user.uid)
                 .get();
-              bgVisible = snap?.exists ? !!snap.data()?.bgVisible : false;
+              if (snap?.exists) {
+                const data = snap.data() ?? {};
+                bgVisible = !!data.bgVisible;
+                visibilityOn = !!data.visibility;
+              }
             } else {
               const { doc, getDoc } = await import('firebase/firestore');
               const ref = doc(firestoreDb as any, 'users', user.uid);
               const snap = await getDoc(ref);
-              bgVisible = snap.exists() ? !!snap.data()?.bgVisible : false;
+              if (snap.exists()) {
+                const data = snap.data() ?? {};
+                bgVisible = !!data.bgVisible;
+                visibilityOn = !!data.visibility;
+              }
             }
           } catch (e) {
             if (__DEV__) console.warn('[App] BG location read error:', e);
           }
 
-          if (bgVisible) {
-            await startBackgroundLocation({ uid: user.uid });
-          } else {
-            await stopBackgroundLocation().catch(() => {});
-          }
+          await syncBackgroundLocationRuntime({
+            uid: user.uid,
+            visibilityOn,
+            bgVisible,
+          });
         } catch (e) {
           if (__DEV__) console.warn('[App] BG location start/stop error:', e);
         }

@@ -46,7 +46,9 @@ import {
   type CrjProgressPhase,
 } from '../components/registration/crjProgress';
 import { PrimaryButton, SecondaryButton } from '../components/PrimaryButton';
+import { BackgroundLocationEducationModal } from '../components/BackgroundLocationEducationModal';
 import AnimatedNearsyLogo from '../components/auth/AnimatedNearsyLogo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAppTheme } from '../theme/ThemeContext';
 import { fontSize, fontWeight } from '../theme/typography';
 import { spacing } from '../theme/spacing';
@@ -66,6 +68,18 @@ import {
   shouldResyncProfessionalActiveModeAfterSave,
 } from '../visibility/activeProfileModeSync';
 import { attemptInitialVisibilityAfterCrjCompletion } from '../visibility/initialCrjVisibilityActivation';
+import {
+  decideBackgroundEducationOffer,
+  markFullBackgroundEducationSeen,
+  type BackgroundEducationVariant,
+} from '../visibility/locationEducation';
+import {
+  locationServicesEnabled,
+  readBackgroundPermissionSnapshot,
+  requestAndApplyBackgroundLocation,
+  syncBackgroundLocationRuntime,
+} from '../visibility/backgroundLocationRuntime';
+import { isBackgroundLocationPermissionError } from '../services/backgroundLocation';
 import { uploadProfileImage, uploadAffiliationImage, uploadGalleryImage, deleteGalleryStorageObject } from '../services/storageService';
 import { registerPushToken } from '../services/pushTokens';
 import {
@@ -384,6 +398,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   );
   const [galleryPermissionDenied, setGalleryPermissionDenied] =
     useState(false);
+  const [bgEducationOpen, setBgEducationOpen] = useState(false);
+  const [bgEducationVariant, setBgEducationVariant] =
+    useState<BackgroundEducationVariant>('full');
+  const [bgEducationBusy, setBgEducationBusy] = useState(false);
+  const [crjVisibilityOn, setCrjVisibilityOn] = useState(false);
+  const bgEducationResolverRef = useRef<(() => void) | null>(null);
   const [activeInterestGroupByCategory, setActiveInterestGroupByCategory] =
     useState<Partial<Record<OnboardingInterestCategoryId, string>>>({});
   const [shellData, setShellData] = useState<Record<string, unknown> | null>(
@@ -1058,19 +1078,161 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   }
 
   async function requestLocation() {
-    const current = await Location.getForegroundPermissionsAsync();
-    if (current.granted) {
+    if (!uid) {
       setStepIndex((i) => i + 1);
       return;
     }
-    const req = await Location.requestForegroundPermissionsAsync();
-    if (!req.granted) {
+
+    const servicesOn = await locationServicesEnabled();
+    if (!servicesOn) {
+      Alert.alert(
+        t('settings.backgroundVisibility.servicesOffTitle' as any),
+        t('settings.backgroundVisibility.servicesOffMessage' as any),
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: t('settings.backgroundVisibility.openSettings' as any),
+            onPress: () => void Linking.openSettings(),
+          },
+        ],
+      );
+      setStepIndex((i) => i + 1);
+      return;
+    }
+
+    const current = await Location.getForegroundPermissionsAsync();
+    let granted = !!current.granted || current.status === 'granted';
+    if (!granted) {
+      const req = await Location.requestForegroundPermissionsAsync();
+      granted = !!req.granted || req.status === 'granted';
+    }
+
+    if (!granted) {
       Alert.alert(
         t('onboarding.profileCompletion.location.deniedTitle'),
         t('onboarding.profileCompletion.location.deniedMessage'),
       );
+      setCrjVisibilityOn(false);
+      setStepIndex((i) => i + 1);
+      return;
     }
+
+    // FG granted → activate Visibility in this same journey, then offer BG.
+    const activation = await attemptInitialVisibilityAfterCrjCompletion({
+      getClient: getVisibilityDiscoveryClient,
+    });
+    const visibilityOn = activation.activated === true;
+    setCrjVisibilityOn(visibilityOn);
+
+    if (activation.activated === false && activation.reason === 'invalid-accuracy') {
+      Alert.alert(
+        t('settings.backgroundVisibility.accuracyTitle' as any),
+        t('settings.backgroundVisibility.accuracyMessage' as any),
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: t('settings.backgroundVisibility.openSettings' as any),
+            onPress: () => void Linking.openSettings(),
+          },
+        ],
+      );
+    }
+
+    const bg = await readBackgroundPermissionSnapshot();
+    const offer = await decideBackgroundEducationOffer({
+      storage: AsyncStorage,
+      backgroundGranted: bg.granted,
+      bgVisible: false,
+    });
+
+    if (offer.offer) {
+      setBgEducationVariant(offer.variant);
+      await new Promise<void>((resolve) => {
+        bgEducationResolverRef.current = resolve;
+        setBgEducationOpen(true);
+      });
+    } else if (bg.granted && visibilityOn) {
+      // Always already granted — persist preference and start if Visibility ON.
+      await updateUserProfilePartial(uid, { bgVisible: true }).catch(() => {});
+      await syncBackgroundLocationRuntime({
+        uid,
+        visibilityOn: true,
+        bgVisible: true,
+      });
+    }
+
     setStepIndex((i) => i + 1);
+  }
+
+  function closeBgEducation() {
+    setBgEducationOpen(false);
+    setBgEducationBusy(false);
+    const resolve = bgEducationResolverRef.current;
+    bgEducationResolverRef.current = null;
+    resolve?.();
+  }
+
+  async function handleCrjEnableBackground() {
+    if (!uid || bgEducationBusy) return;
+    setBgEducationBusy(true);
+    try {
+      await markFullBackgroundEducationSeen(AsyncStorage);
+      const result = await requestAndApplyBackgroundLocation({
+        uid,
+        visibilityOn: crjVisibilityOn,
+      });
+      if (!result.ok) {
+        await updateUserProfilePartial(uid, { bgVisible: false }).catch(
+          () => {},
+        );
+        if (result.code === 'services-off') {
+          Alert.alert(
+            t('settings.backgroundVisibility.servicesOffTitle' as any),
+            t('settings.backgroundVisibility.servicesOffMessage' as any),
+          );
+        } else if (!result.canAskAgain) {
+          Alert.alert(
+            t('common.appName'),
+            t('settings.backgroundVisibility.needsAlwaysPermission' as any),
+            [
+              { text: t('common.cancel'), style: 'cancel' },
+              {
+                text: t('settings.backgroundVisibility.openSettings' as any),
+                onPress: () => void Linking.openSettings(),
+              },
+            ],
+          );
+        } else {
+          Alert.alert(
+            t('common.appName'),
+            t('settings.backgroundVisibility.needsAlwaysPermission' as any),
+          );
+        }
+      } else {
+        await updateUserProfilePartial(uid, { bgVisible: true });
+      }
+    } catch (e) {
+      await updateUserProfilePartial(uid, { bgVisible: false }).catch(() => {});
+      if (isBackgroundLocationPermissionError(e)) {
+        Alert.alert(
+          t('common.appName'),
+          t('settings.backgroundVisibility.needsAlwaysPermission' as any),
+        );
+      }
+    } finally {
+      closeBgEducation();
+    }
+  }
+
+  async function handleCrjBackgroundNotNow() {
+    if (!uid) {
+      closeBgEducation();
+      return;
+    }
+    await markFullBackgroundEducationSeen(AsyncStorage);
+    await updateUserProfilePartial(uid, { bgVisible: false }).catch(() => {});
+    // Do not undo foreground or Visibility.
+    closeBgEducation();
   }
 
   async function requestNotifications() {
@@ -1358,6 +1520,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     .join(' ');
 
   return (
+    <>
     <RegistrationLayout
       footer={
         showFooterContinue ? (
@@ -2094,6 +2257,18 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         </RegistrationFadeSlideIn>
       </ScrollView>
     </RegistrationLayout>
+      <BackgroundLocationEducationModal
+        visible={bgEducationOpen}
+        variant={bgEducationVariant}
+        busy={bgEducationBusy}
+        onEnableBackground={() => {
+          void handleCrjEnableBackground();
+        }}
+        onNotNow={() => {
+          void handleCrjBackgroundNotNow();
+        }}
+      />
+    </>
   );
 }
 
