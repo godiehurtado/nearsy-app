@@ -53,6 +53,28 @@ export default {
     openSettings: 'Open Settings',
     needsAlwaysPermission:
       'Nearsy needs Always location access to stay visible in the background. Enable it in iOS Settings.',
+    education: {
+      full: {
+        title: 'Stay discoverable nearby',
+        body:
+          'Nearsy can keep your location updated in the background while Visibility is on, so people who are truly nearby can find you even when the app is closed. Background location is not used when Visibility is off.',
+      },
+      brief: {
+        title: 'Enable background location?',
+        body:
+          'Background updates keep you discoverable nearby while Visibility is on. You can turn this off anytime in More.',
+      },
+      controlNote:
+        'You stay in control. Background location is optional and never required to use Nearsy.',
+      enableBackground: 'Enable background location',
+      notNow: 'Not now',
+    },
+    servicesOffTitle: 'Location Services are off',
+    servicesOffMessage:
+      'Turn on Location Services in iOS Settings to use Visibility and nearby discovery.',
+    accuracyTitle: 'More precise location needed',
+    accuracyMessage:
+      'Nearsy needs more precise location to show people within about 200 feet. Enable Precise Location for Nearsy in iOS Settings.',
   },
   language: {
     title: 'Language',

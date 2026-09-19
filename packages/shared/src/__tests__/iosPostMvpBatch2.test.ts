@@ -87,19 +87,15 @@ describe('iOS post-MVP batch 2 — background location toggle', () => {
     const more = readSharedSource('screens/MoreScreen.tsx');
     assert.match(more, /isBackgroundLocationPermissionError/);
     assert.match(more, /Linking\.openSettings/);
-    assert.match(more, /startBackgroundLocation\(\{ uid \}\)/);
-    // Persist preference only after start succeeds on enable
-    assert.match(
-      more,
-      /await startBackgroundLocation\(\{ uid \}\);\s*await setDoc\([\s\S]*?bgVisible:\s*true/,
-    );
+    assert.match(more, /requestAndApplyBackgroundLocation/);
+    assert.match(more, /stopBackgroundLocationRuntime/);
+    // Persist preference only after enable succeeds
+    assert.match(more, /persistBgVisible\(uid, true\)/);
 
     const home = readSharedSource('screens/MainHomeScreen.tsx');
     assert.match(home, /profile\.bgVisible/);
-    assert.match(
-      home,
-      /if \(profile\.bgVisible\) \{\s*await startBackgroundLocation/,
-    );
+    assert.match(home, /syncBackgroundLocationRuntime/);
+    assert.match(home, /stopBackgroundLocationRuntime/);
   });
 });
 

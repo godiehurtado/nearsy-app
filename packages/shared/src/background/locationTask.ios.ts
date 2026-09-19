@@ -5,6 +5,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const BG_LOCATION_TASK = 'nearsy-bg-location';
 
+/** Must stay in sync with BG_RUNTIME_ALLOWED_KEY in backgroundLocationRuntime.ts */
+const BG_RUNTIME_ALLOWED_KEY = 'NEARSY_BG_RUNTIME_ALLOWED';
+
 type LocationTaskData = {
   locations?: Location.LocationObject[];
 };
@@ -22,6 +25,15 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
     const uid = await AsyncStorage.getItem('NEARSY_BG_UID');
     if (!uid) {
       if (__DEV__) console.warn('[BG Task iOS] missing uid');
+      return;
+    }
+
+    // Hard gate: never publish when Visibility runtime is not allowed.
+    const allowedUid = await AsyncStorage.getItem(BG_RUNTIME_ALLOWED_KEY);
+    if (allowedUid !== uid) {
+      if (__DEV__) {
+        console.warn('[BG Task iOS] publish blocked — runtime gate');
+      }
       return;
     }
 

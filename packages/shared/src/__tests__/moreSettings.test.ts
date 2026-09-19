@@ -135,11 +135,12 @@ describe('Settings background / language / logout / delete preservation', () => 
   it('preserves bgVisible and language contracts', () => {
     const screen = readShared('screens/MoreScreen.tsx');
     assert.match(screen, /bgVisible/);
-    assert.match(screen, /startBackgroundLocation/);
-    assert.match(screen, /stopBackgroundLocation/);
+    assert.match(screen, /requestAndApplyBackgroundLocation/);
+    assert.match(screen, /stopBackgroundLocationRuntime/);
     assert.match(screen, /changeAppLanguage/);
     assert.match(screen, /firebaseAuth\.signOut/);
     assert.match(screen, /navigate\('DeleteAccount'\)/);
+    assert.match(screen, /deactivateVisibilityFlow/);
   });
 
   it('delete screen finalizes guest Login after success and cleans up before Auth', () => {

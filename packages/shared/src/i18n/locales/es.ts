@@ -1384,6 +1384,28 @@ const es: TranslationResources = {
       openSettings: 'Abrir Ajustes',
       needsAlwaysPermission:
         'Nearsy necesita acceso de ubicación Siempre para permanecer visible en segundo plano. Actívalo en Ajustes de iOS.',
+      education: {
+        full: {
+          title: 'Sigue siendo visible cerca',
+          body:
+            'Nearsy puede mantener tu ubicación actualizada en segundo plano mientras Visibilidad está activa, para que personas realmente cercanas puedan encontrarte aunque la app esté cerrada. La ubicación en segundo plano no se usa cuando Visibilidad está desactivada.',
+        },
+        brief: {
+          title: '¿Activar ubicación en segundo plano?',
+          body:
+            'Las actualizaciones en segundo plano te mantienen visible cerca mientras Visibilidad está activa. Puedes desactivarlo cuando quieras en Más.',
+        },
+        controlNote:
+          'Tú tienes el control. La ubicación en segundo plano es opcional y nunca es obligatoria para usar Nearsy.',
+        enableBackground: 'Activar ubicación en segundo plano',
+        notNow: 'Ahora no',
+      },
+      servicesOffTitle: 'Los servicios de ubicación están desactivados',
+      servicesOffMessage:
+        'Activa los Servicios de ubicación en Ajustes de iOS para usar Visibilidad y el descubrimiento cercano.',
+      accuracyTitle: 'Se necesita ubicación más precisa',
+      accuracyMessage:
+        'Nearsy necesita una ubicación más precisa para mostrar personas a unos 200 pies. Activa Ubicación precisa para Nearsy en Ajustes de iOS.',
     },
     language: {
       title: 'Idioma',
