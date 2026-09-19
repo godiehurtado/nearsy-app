@@ -4,6 +4,7 @@ import {
   type OnboardingInterestCategoryId,
   type OnboardingSelectedInterest,
 } from './onboardingInterestCatalog.ts';
+import { preserveOnboardingInterestsForEditor } from './onboardingInterestLegacyCatalog.ts';
 import type { ProfileMode } from '../profile/profileModeFields.ts';
 
 export type PostCrjInterestEditorParams = {
@@ -85,7 +86,7 @@ export function readOnboardingInterestsFromDoc(
         : {}),
     });
   }
-  return out;
+  return preserveOnboardingInterestsForEditor(out);
 }
 
 export function countOnboardingInterestsInDoc(

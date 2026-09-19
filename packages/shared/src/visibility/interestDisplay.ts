@@ -1,11 +1,10 @@
 /**
  * Resolve CRJ interest IDs to localized labels + icons for discovery UI.
+ * Selectable 2.0.4 catalog first; deprecated IDs resolve via legacy display map.
  */
 
-import {
-  flattenCatalogInterestItems,
-  type OnboardingInterestItem,
-} from '../interests/onboardingInterestCatalog';
+import type { OnboardingInterestItem } from '../interests/onboardingInterestCatalog';
+import { lookupInterestItemForDisplay } from '../interests/onboardingInterestLegacyCatalog';
 import { normalizeSearchQuery } from './interestSearchCatalog';
 
 export type ResolvedInterestChip = {
@@ -15,26 +14,11 @@ export type ResolvedInterestChip = {
   iconColor: string;
 };
 
-const catalogById = (): Map<string, OnboardingInterestItem> => {
-  const map = new Map<string, OnboardingInterestItem>();
-  for (const item of flattenCatalogInterestItems()) {
-    map.set(item.id, item);
-  }
-  return map;
-};
-
-let cachedCatalog: Map<string, OnboardingInterestItem> | null = null;
-
-function catalogMap(): Map<string, OnboardingInterestItem> {
-  if (!cachedCatalog) cachedCatalog = catalogById();
-  return cachedCatalog;
-}
-
 export function resolveInterestChip(
   id: string,
   translateItem: (nameKey: string, fallback: string) => string,
 ): ResolvedInterestChip | null {
-  const item = catalogMap().get(id);
+  const item: OnboardingInterestItem | null = lookupInterestItemForDisplay(id);
   if (!item) return null;
   return {
     id,
