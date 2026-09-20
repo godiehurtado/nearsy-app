@@ -13,48 +13,37 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   BackgroundLocationPermissionError,
   isBackgroundLocationPermissionError,
+  ensureBackgroundLocationPermissions,
   startBackgroundLocation,
   stopBackgroundLocation,
 } from '../services/backgroundLocation';
+import {
+  BG_RUNTIME_ALLOWED_KEY,
+  isPublishAllowedByRuntimeFlags,
+  shouldRunBackgroundLocationRuntime,
+  snapshotFromPermissionResponse,
+  type BackgroundRuntimeGates,
+  type LocationPermissionSnapshot,
+  wasForegroundNewlyGranted,
+  reconcileBgVisibleWithBackgroundPermission,
+} from './backgroundLocationRuntimeGates';
 
-export { BackgroundLocationPermissionError, isBackgroundLocationPermissionError };
-
-/** Set only while a gated background runtime is actively allowed. */
-export const BG_RUNTIME_ALLOWED_KEY = 'NEARSY_BG_RUNTIME_ALLOWED' as const;
-
-export type LocationPermissionSnapshot = {
-  status: string;
-  granted: boolean;
-  canAskAgain: boolean;
-  /** iOS Allow Once / session grant when expires !== 'never'. */
-  sessionOnly: boolean;
-  iosScope: 'whenInUse' | 'always' | 'none' | null;
+export {
+  BackgroundLocationPermissionError,
+  isBackgroundLocationPermissionError,
 };
-
-export function isSessionOnlyGrant(expires: unknown): boolean {
-  return expires !== 'never';
-}
-
-export function snapshotFromPermissionResponse(perm: {
-  status: string;
-  granted?: boolean;
-  canAskAgain?: boolean;
-  expires?: unknown;
-  ios?: { scope?: string };
-}): LocationPermissionSnapshot {
-  const scope = perm.ios?.scope;
-  const iosScope =
-    scope === 'whenInUse' || scope === 'always' || scope === 'none'
-      ? scope
-      : null;
-  return {
-    status: String(perm.status),
-    granted: !!perm.granted || perm.status === 'granted',
-    canAskAgain: !!perm.canAskAgain,
-    sessionOnly: isSessionOnlyGrant(perm.expires),
-    iosScope,
-  };
-}
+export {
+  BG_RUNTIME_ALLOWED_KEY,
+  isPublishAllowedByRuntimeFlags,
+  isSessionOnlyGrant,
+  shouldRunBackgroundLocationRuntime,
+  snapshotFromPermissionResponse,
+  wasForegroundNewlyGranted,
+  reconcileBgVisibleWithBackgroundPermission,
+  LOGOUT_CLEANUP_ORDER,
+  type BackgroundRuntimeGates,
+  type LocationPermissionSnapshot,
+} from './backgroundLocationRuntimeGates';
 
 export async function readForegroundPermissionSnapshot(): Promise<LocationPermissionSnapshot> {
   const perm = await Location.getForegroundPermissionsAsync();
@@ -72,23 +61,6 @@ export async function locationServicesEnabled(): Promise<boolean> {
   } catch {
     return true;
   }
-}
-
-export type BackgroundRuntimeGates = {
-  uid: string | null | undefined;
-  visibilityOn: boolean;
-  bgVisible: boolean;
-};
-
-export function shouldRunBackgroundLocationRuntime(
-  gates: BackgroundRuntimeGates,
-): gates is BackgroundRuntimeGates & { uid: string } {
-  return (
-    typeof gates.uid === 'string' &&
-    gates.uid.length > 0 &&
-    gates.visibilityOn === true &&
-    gates.bgVisible === true
-  );
 }
 
 async function markRuntimeAllowed(uid: string): Promise<void> {
@@ -150,6 +122,7 @@ export type BackgroundLocationApplyResult = {
 /**
  * Request Always after education. Persists nothing — caller writes bgVisible.
  * Does not start the task unless visibilityOn is true (via sync).
+ * Re-reads effective background status after the OS prompt (deferred/denied → fail).
  */
 export async function requestAndApplyBackgroundLocation(input: {
   uid: string;
@@ -161,10 +134,7 @@ export async function requestAndApplyBackgroundLocation(input: {
   }
 
   try {
-    await startBackgroundLocation({
-      uid: input.uid,
-      requestPermissions: true,
-    });
+    await ensureBackgroundLocationPermissions(true);
   } catch (err) {
     if (isBackgroundLocationPermissionError(err)) {
       return {
@@ -174,6 +144,16 @@ export async function requestAndApplyBackgroundLocation(input: {
       };
     }
     return { ok: false, code: 'background-denied', canAskAgain: true };
+  }
+
+  // Effective status after prompt — never treat a deferred Always as success.
+  const bg = await readBackgroundPermissionSnapshot();
+  if (!bg.granted) {
+    return {
+      ok: false,
+      code: 'background-denied',
+      canAskAgain: bg.canAskAgain,
+    };
   }
 
   await syncBackgroundLocationRuntime({
@@ -190,22 +170,15 @@ export async function isBackgroundPublishAllowedForUid(
 ): Promise<boolean> {
   if (!uid) return false;
   const allowed = await readBackgroundRuntimeAllowedUid();
-  if (allowed !== uid) return false;
   const storedUid = await AsyncStorage.getItem('NEARSY_BG_UID');
-  return storedUid === uid;
+  return isPublishAllowedByRuntimeFlags({
+    expectedUid: uid,
+    taskUid: storedUid,
+    allowedUid: allowed,
+  });
 }
 
 export async function stopBackgroundLocationRuntime(): Promise<void> {
   await stopBackgroundLocation().catch(() => {});
   await clearRuntimeAllowed();
-}
-
-/**
- * Pure helper: first-time FG grant during an activate attempt.
- */
-export function wasForegroundNewlyGranted(input: {
-  beforeGranted: boolean;
-  afterGranted: boolean;
-}): boolean {
-  return !input.beforeGranted && input.afterGranted;
 }

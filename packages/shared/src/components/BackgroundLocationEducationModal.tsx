@@ -57,8 +57,16 @@ export function BackgroundLocationEducationModal({
           styles.backdrop,
           { backgroundColor: 'rgba(12, 25, 54, 0.55)' },
         ]}
+        accessibilityViewIsModal
       >
-        <Pressable style={StyleSheet.absoluteFill} onPress={() => !busy && onNotNow()} />
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => !busy && onNotNow()}
+          accessibilityRole="button"
+          accessibilityLabel={t(
+            'settings.backgroundVisibility.education.notNow' as any,
+          )}
+        />
         <View
           style={[
             styles.sheet,
@@ -68,13 +76,17 @@ export function BackgroundLocationEducationModal({
               paddingBottom: Math.max(insets.bottom, spacing.lg),
             },
           ]}
+          accessibilityRole="summary"
         >
           <ScrollView
             bounces={false}
             contentContainerStyle={styles.content}
             showsVerticalScrollIndicator={false}
           >
-            <Text style={[styles.title, { color: palette.textPrimary }]}>
+            <Text
+              style={[styles.title, { color: palette.textPrimary }]}
+              accessibilityRole="header"
+            >
               {t(`${prefix}.title` as any)}
             </Text>
             <Text style={[styles.body, { color: palette.textSecondary }]}>

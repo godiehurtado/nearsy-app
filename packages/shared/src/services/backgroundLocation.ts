@@ -45,23 +45,14 @@ export function isBackgroundLocationPermissionError(
   return err instanceof BackgroundLocationPermissionError;
 }
 
-export async function startBackgroundLocation({
-  uid,
-  accuracy = Location.Accuracy.Highest,
-  distanceInterval = 1,
-  timeIntervalMs = 15_000,
-  showsIndicatorIOS = true,
+/**
+ * Check/request FG + Always without starting the background task.
+ * Callers that only need permission (education → Always) must use this so a
+ * Visibility=OFF preference cannot briefly start updates.
+ */
+export async function ensureBackgroundLocationPermissions(
   requestPermissions = true,
-}: StartOpts) {
-  if (!uid) {
-    throw new Error('Missing uid for background location');
-  }
-
-  // Guarda uid para que la Task lo recupere (must match authenticated account)
-  await AsyncStorage.setItem('NEARSY_BG_UID', uid);
-
-  // ===== Permisos (check → request only when allowed) =====
-
+): Promise<void> {
   let fg = await Location.getForegroundPermissionsAsync();
   if (fg.status !== 'granted') {
     if (
@@ -87,12 +78,32 @@ export async function startBackgroundLocation({
       bg = await Location.requestBackgroundPermissionsAsync();
     }
   }
+  // Re-read effective status — iOS may defer/dismiss Always without granting.
+  bg = await Location.getBackgroundPermissionsAsync();
   if (bg.status !== 'granted') {
     throw new BackgroundLocationPermissionError({
       code: 'background-denied',
       canAskAgain: !!bg.canAskAgain,
     });
   }
+}
+
+export async function startBackgroundLocation({
+  uid,
+  accuracy = Location.Accuracy.Highest,
+  distanceInterval = 1,
+  timeIntervalMs = 15_000,
+  showsIndicatorIOS = true,
+  requestPermissions = true,
+}: StartOpts) {
+  if (!uid) {
+    throw new Error('Missing uid for background location');
+  }
+
+  // Guarda uid para que la Task lo recupere (must match authenticated account)
+  await AsyncStorage.setItem('NEARSY_BG_UID', uid);
+
+  await ensureBackgroundLocationPermissions(requestPermissions);
 
   // ===== Reinicia la task para aplicar SIEMPRE la configuración nueva =====
 

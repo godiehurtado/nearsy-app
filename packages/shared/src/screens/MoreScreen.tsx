@@ -48,6 +48,7 @@ import {
   locationServicesEnabled,
   readBackgroundPermissionSnapshot,
   readForegroundPermissionSnapshot,
+  reconcileBgVisibleWithBackgroundPermission,
   requestAndApplyBackgroundLocation,
   stopBackgroundLocationRuntime,
   syncBackgroundLocationRuntime,
@@ -304,8 +305,33 @@ export default function MoreScreen() {
     setVisibleToMaxAge(
       typeof data.visibleToMaxAge === 'number' ? data.visibleToMaxAge : null,
     );
-    setBgVisible(!!data.bgVisible);
     setVisibilityOn(!!data.visibility);
+
+    const preferenceBgVisible = !!data.bgVisible;
+    let backgroundGranted = false;
+    try {
+      const bg = await readBackgroundPermissionSnapshot();
+      backgroundGranted = bg.granted;
+    } catch {
+      backgroundGranted = false;
+    }
+    const reconciled = reconcileBgVisibleWithBackgroundPermission({
+      preferenceBgVisible,
+      backgroundGranted,
+    });
+    setBgVisible(reconciled.toggleOn);
+    if (reconciled.stopRuntime) {
+      await stopBackgroundLocationRuntime().catch(() => {});
+    }
+    if (reconciled.clearPreference && preferenceBgVisible) {
+      // Reflect effective OFF without touching Visibility / foreground.
+      await setDoc(
+        doc(firestoreDb, 'users', uid),
+        { bgVisible: false, updatedAt: Date.now() },
+        { merge: true },
+      ).catch(() => {});
+    }
+
     setLoading(false);
   }, []);
 
@@ -764,13 +790,18 @@ export default function MoreScreen() {
         '../authentication/social'
       );
       clearPendingSocialProfilePrefill();
+      // Contractual logout order (ENH-LOC-01):
+      // 1) stop background task/runtime (+ clear local UID / runtime-allowed)
+      // 2) deactivate Visibility via callable when possible
+      // 3) signOut
+      // 4) navigation reset
+      await stopBackgroundLocationRuntime().catch(() => {});
       try {
         const client = await getVisibilityDiscoveryClient();
         await deactivateVisibilityFlow(client);
       } catch {
         // Best-effort contractual Visibility close before sign-out.
       }
-      await stopBackgroundLocationRuntime().catch(() => {});
       await firebaseAuth.signOut();
       const parent = navigation.getParent?.() as any;
       if (parent?.reset) {
