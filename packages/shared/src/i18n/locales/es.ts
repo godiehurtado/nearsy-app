@@ -294,6 +294,33 @@ export const es: TranslationResources = {
         'Nearsy necesita acceso a la ubicación antes de activar la visibilidad en segundo plano. Activa la ubicación en Ajustes del sistema y vuelve aquí.',
       needsBackgroundPermission:
         'Nearsy necesita acceso a la ubicación en segundo plano para permanecer visible cuando la app no está abierta. Actívalo en Ajustes del sistema.',
+      fgsNotificationTitle: 'Nearsy está actualizando tu ubicación',
+      fgsNotificationBody:
+        'La ubicación puede actualizarse en segundo plano mientras Visibility esté activa',
+      approximateTitle: 'Se necesita ubicación precisa',
+      approximateMessage:
+        'Nearsy usa un radio aproximado de 200 ft. La ubicación aproximada o imprecisa no es suficiente. Activa la ubicación precisa en Ajustes del sistema.',
+      gpsOffTitle: 'Los servicios de ubicación están desactivados',
+      gpsOffMessage:
+        'Activa los servicios de ubicación / GPS en Ajustes del sistema para que Nearsy pueda encontrar personas cerca.',
+      disclosure: {
+        fullTitle: '¿Permanecer visible en segundo plano?',
+        fullBody:
+          'Nearsy recopila y usa tu ubicación en segundo plano solo mientras Visibility esté activa. Así mantenemos tu ubicación al día para que puedas encontrarte con personas realmente cercanas, incluso si la app no está abierta.',
+        briefTitle: '¿Activar ubicación en segundo plano?',
+        briefBody:
+          'La ubicación en segundo plano se usa solo con Visibility activada, para mantener el descubrimiento cercano al día cuando Nearsy no está abierta.',
+        bulletVisibility:
+          'No se usa ubicación en segundo plano con Visibility desactivada.',
+        bulletNearby:
+          'Ayuda a limitar los encuentros a personas que están realmente cerca.',
+        bulletControl:
+          'Puedes desactivarlo en cualquier momento en Más → Permanecer visible en segundo plano.',
+        optionalNote:
+          'La ubicación en segundo plano es opcional. Puedes usar Nearsy solo con ubicación en primer plano.',
+        enable: 'Activar ubicación en segundo plano',
+        notNow: 'Ahora no',
+      },
     },
     language: {
       title: 'Idioma',

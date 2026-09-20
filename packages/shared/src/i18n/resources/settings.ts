@@ -55,6 +55,32 @@ export default {
       'Nearsy needs location access before background visibility can stay on. Enable location in system Settings, then return here.',
     needsBackgroundPermission:
       'Nearsy needs background location access to stay visible when the app is not open. Enable it in system Settings.',
+    fgsNotificationTitle: 'Nearsy is updating your location',
+    fgsNotificationBody:
+      'Location may update in the background while Visibility is on',
+    approximateTitle: 'Precise location needed',
+    approximateMessage:
+      'Nearsy uses an approximate 200 ft radius. Approximate or coarse location is not accurate enough. Enable precise location in system Settings.',
+    gpsOffTitle: 'Location services are off',
+    gpsOffMessage:
+      'Turn on Location Services / GPS in system Settings so Nearsy can find people nearby.',
+    disclosure: {
+      fullTitle: 'Stay discoverable in the background?',
+      fullBody:
+        'Nearsy collects and uses your location in the background only while Visibility is active. This keeps your location current so you can meet people who are actually nearby — even when the app is not open.',
+      briefTitle: 'Enable background location?',
+      briefBody:
+        'Background location is used only while Visibility is on, so nearby discovery can stay up to date when Nearsy is not open.',
+      bulletVisibility:
+        'Background location is not used when Visibility is off.',
+      bulletNearby:
+        'It helps keep encounters limited to people who are really close.',
+      bulletControl:
+        'You can turn this off anytime in More → Stay visible in background.',
+      optionalNote: 'Background location is optional. You can use Nearsy with foreground location only.',
+      enable: 'Enable background location',
+      notNow: 'Not now',
+    },
   },
   language: {
     title: 'Language',

@@ -45,10 +45,19 @@ import {
 } from '../i18n';
 import type { MoreStackParamList } from '../navigation/MoreStack';
 import {
-  startBackgroundLocation,
+  startGatedBackgroundLocation,
   stopBackgroundLocation,
+  getLocationPermissionSnapshot,
   isBackgroundLocationPermissionError,
-} from '../services/backgroundLocation';
+} from '../location/startGatedBackgroundLocation';
+import { backgroundLocationNotificationCopy } from '../location/backgroundLocationCopy';
+import {
+  resolveBackgroundDisclosureVariant,
+  markBackgroundLocationEducationSeen,
+  type BackgroundDisclosureVariant,
+} from '../location/backgroundEducationStorage';
+import { requiresSettingsForBackgroundPermission } from '../location/backgroundPublicationGate';
+import { BackgroundLocationDisclosureModal } from '../components/BackgroundLocationDisclosureModal';
 import { evaluateBackgroundLocationSettingsReturn } from '../visibility/settingsRecovery';
 import {
   ageFromBirthDate,
@@ -99,6 +108,7 @@ type ProfileDoc = {
   visibleToMinAge?: number | null;
   visibleToMaxAge?: number | null;
   bgVisible?: boolean;
+  visibility?: boolean;
 };
 
 type EditorKind = 'phone' | 'birthDate' | 'visibilityAge' | null;
@@ -198,7 +208,12 @@ export default function MoreScreen() {
   const [visibleToMinAge, setVisibleToMinAge] = useState<number | null>(null);
   const [visibleToMaxAge, setVisibleToMaxAge] = useState<number | null>(null);
   const [bgVisible, setBgVisible] = useState(false);
+  const [visibilityOn, setVisibilityOn] = useState(false);
   const [bgChanging, setBgChanging] = useState(false);
+  const [bgDisclosureVisible, setBgDisclosureVisible] = useState(false);
+  const [bgDisclosureVariant, setBgDisclosureVariant] =
+    useState<BackgroundDisclosureVariant>('full');
+  const [bgDisclosureBusy, setBgDisclosureBusy] = useState(false);
   const appStateRef = useRef(AppState.currentState);
   const pendingBgEnableIntentRef = useRef(false);
   const bgChangingRef = useRef(bgChanging);
@@ -282,6 +297,7 @@ export default function MoreScreen() {
       typeof data.visibleToMaxAge === 'number' ? data.visibleToMaxAge : null,
     );
     setBgVisible(!!data.bgVisible);
+    setVisibilityOn(!!data.visibility);
     setLoading(false);
   }, []);
 
@@ -429,6 +445,131 @@ export default function MoreScreen() {
     }
   };
 
+  const fgsCopy = useMemo(() => backgroundLocationNotificationCopy(t), [t]);
+  const visibilityOnRef = useRef(visibilityOn);
+  visibilityOnRef.current = visibilityOn;
+
+  const persistBgPreference = async (uid: string, enabled: boolean) => {
+    await updateUserProfilePartial(uid, {
+      bgVisible: enabled,
+      updatedAt: Date.now(),
+    });
+    setBgVisible(enabled);
+  };
+
+  const runBackgroundEnableAfterDisclosure = async () => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) return;
+    setBgDisclosureBusy(true);
+    try {
+      if (bgDisclosureVariant === 'full') {
+        await markBackgroundLocationEducationSeen().catch(() => {});
+      }
+
+      const snap = await getLocationPermissionSnapshot();
+      if (!snap.foregroundGranted) {
+        let fg = await Location.getForegroundPermissionsAsync();
+        if (fg.status !== 'granted' && (fg.status === 'undetermined' || fg.canAskAgain)) {
+          fg = await Location.requestForegroundPermissionsAsync();
+        }
+        if (fg.status !== 'granted') {
+          setBgVisible(false);
+          Alert.alert(
+            t('common.appName'),
+            t('settings.backgroundVisibility.needsForegroundPermission'),
+            [
+              { text: t('common.actions.cancel'), style: 'cancel' },
+              {
+                text: t('settings.backgroundVisibility.openSettings'),
+                onPress: () => {
+                  pendingBgEnableIntentRef.current = true;
+                  void Linking.openSettings();
+                },
+              },
+            ],
+          );
+          return;
+        }
+      }
+
+      if (!snap.fineLocationGranted && snap.foregroundGranted) {
+        setBgVisible(false);
+        Alert.alert(
+          t('settings.backgroundVisibility.approximateTitle'),
+          t('settings.backgroundVisibility.approximateMessage'),
+          [
+            { text: t('common.actions.cancel'), style: 'cancel' },
+            {
+              text: t('settings.backgroundVisibility.openSettings'),
+              onPress: () => {
+                pendingBgEnableIntentRef.current = true;
+                void Linking.openSettings();
+              },
+            },
+          ],
+        );
+        return;
+      }
+
+      if (requiresSettingsForBackgroundPermission(Platform.Version)) {
+        pendingBgEnableIntentRef.current = true;
+        void Linking.openSettings();
+        return;
+      }
+
+      // Android 10-compatible path: request BG dialog, then start only if Visibility ON.
+      const bg = await Location.requestBackgroundPermissionsAsync();
+      if (bg.status !== 'granted') {
+        setBgVisible(false);
+        Alert.alert(
+          t('common.appName'),
+          t('settings.backgroundVisibility.needsBackgroundPermission'),
+          [
+            { text: t('common.actions.cancel'), style: 'cancel' },
+            {
+              text: t('settings.backgroundVisibility.openSettings'),
+              onPress: () => {
+                pendingBgEnableIntentRef.current = true;
+                void Linking.openSettings();
+              },
+            },
+          ],
+        );
+        return;
+      }
+
+      await persistBgPreference(uid, true);
+      if (visibilityOnRef.current) {
+        const result = await startGatedBackgroundLocation({
+          uid,
+          visibility: true,
+          bgVisible: true,
+          requestPermissions: false,
+          ...fgsCopy,
+        });
+        if (!result.ok) {
+          await persistBgPreference(uid, false);
+          await stopBackgroundLocation().catch(() => {});
+          Alert.alert(
+            t('common.error'),
+            t('settings.backgroundVisibility.error'),
+          );
+          return;
+        }
+      } else {
+        // Preference saved; FGS waits until Visibility is ON.
+        await stopBackgroundLocation().catch(() => {});
+      }
+      Alert.alert(
+        t('common.appName'),
+        t('settings.backgroundVisibility.enabled'),
+      );
+    } finally {
+      setBgDisclosureBusy(false);
+      setBgDisclosureVisible(false);
+    }
+  };
+
   const handleToggleBg = async (next: boolean) => {
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) {
@@ -447,31 +588,51 @@ export default function MoreScreen() {
     }
     try {
       setBgChanging(true);
-      if (next) {
-        // Permission + task first; only then persist preference.
-        await startBackgroundLocation({ uid });
-        await updateUserProfilePartial(uid, {
-          bgVisible: true,
-          updatedAt: Date.now(),
-        });
-        setBgVisible(true);
-        Alert.alert(
-          t('common.appName'),
-          t('settings.backgroundVisibility.enabled'),
-        );
-      } else {
-        // Stop Nearsy background updates; OS permission is not revoked in-app.
+      if (!next) {
         await stopBackgroundLocation();
-        await updateUserProfilePartial(uid, {
-          bgVisible: false,
-          updatedAt: Date.now(),
-        });
-        setBgVisible(false);
+        await persistBgPreference(uid, false);
         Alert.alert(
           t('common.appName'),
           t('settings.backgroundVisibility.disabled'),
         );
+        return;
       }
+
+      // Do not flip UI optimistically — only after successful grant path.
+      const snap = await getLocationPermissionSnapshot();
+      if (snap.backgroundGranted && snap.foregroundGranted) {
+        await persistBgPreference(uid, true);
+        if (visibilityOnRef.current) {
+          const result = await startGatedBackgroundLocation({
+            uid,
+            visibility: true,
+            bgVisible: true,
+            requestPermissions: false,
+            ...fgsCopy,
+          });
+          if (!result.ok) {
+            await persistBgPreference(uid, false);
+            setBgVisible(false);
+            Alert.alert(
+              t('common.error'),
+              t('settings.backgroundVisibility.error'),
+            );
+            return;
+          }
+        } else {
+          await stopBackgroundLocation().catch(() => {});
+        }
+        Alert.alert(
+          t('common.appName'),
+          t('settings.backgroundVisibility.enabled'),
+        );
+        return;
+      }
+
+      // FG missing → education → BG; FG present → disclosure before BG/Settings.
+      const variant = await resolveBackgroundDisclosureVariant();
+      setBgDisclosureVariant(variant);
+      setBgDisclosureVisible(true);
     } catch (e: any) {
       setBgVisible(false);
       if (isBackgroundLocationPermissionError(e)) {
@@ -483,8 +644,6 @@ export default function MoreScreen() {
           e.code === 'foreground-denied'
             ? t('settings.backgroundVisibility.needsForegroundPermission')
             : t('settings.backgroundVisibility.needsBackgroundPermission');
-        // startBackgroundLocation already requested when possible. Always offer
-        // Settings recovery — never raw Error.message / missing i18n keys.
         Alert.alert(t('common.appName'), message, [
           {
             text: t('common.actions.cancel'),
@@ -546,12 +705,31 @@ export default function MoreScreen() {
 
           try {
             setBgChanging(true);
-            await startBackgroundLocation({ uid });
             await updateUserProfilePartial(uid, {
               bgVisible: true,
               updatedAt: Date.now(),
             });
             setBgVisible(true);
+            if (visibilityOnRef.current) {
+              const result = await startGatedBackgroundLocation({
+                uid,
+                visibility: true,
+                bgVisible: true,
+                requestPermissions: false,
+                ...backgroundLocationNotificationCopy(t),
+              });
+              if (!result.ok) {
+                await updateUserProfilePartial(uid, {
+                  bgVisible: false,
+                  updatedAt: Date.now(),
+                });
+                setBgVisible(false);
+                await stopBackgroundLocation().catch(() => {});
+                return;
+              }
+            } else {
+              await stopBackgroundLocation().catch(() => {});
+            }
             Alert.alert(
               t('common.appName'),
               t('settings.backgroundVisibility.enabled'),
@@ -589,6 +767,7 @@ export default function MoreScreen() {
   const handleLogout = async () => {
     try {
       clearPendingSocialProfilePrefill();
+      await stopBackgroundLocation().catch(() => {});
       await firebaseAuth.signOut();
       const parent = navigation.getParent?.() as any;
       if (parent?.reset) {
@@ -1303,6 +1482,17 @@ export default function MoreScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+      <BackgroundLocationDisclosureModal
+        visible={bgDisclosureVisible}
+        variant={bgDisclosureVariant}
+        busy={bgDisclosureBusy}
+        onEnable={() => void runBackgroundEnableAfterDisclosure()}
+        onNotNow={() => {
+          void markBackgroundLocationEducationSeen().catch(() => {});
+          setBgDisclosureVisible(false);
+          setBgVisible(false);
+        }}
+      />
     </View>
   );
 }

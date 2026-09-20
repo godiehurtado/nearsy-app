@@ -13,6 +13,7 @@ import {
   Keyboard,
   AppState,
   Linking,
+  Platform,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -40,7 +41,7 @@ import {
   deactivateVisibilityFlow,
   reconcileVisibilityWithForegroundPermission,
 } from '../visibility/orchestration';
-import { evaluateVisibilitySettingsReturn } from '../visibility/settingsRecovery';
+import { evaluateVisibilitySettingsReturn, evaluateBackgroundLocationSettingsReturn } from '../visibility/settingsRecovery';
 import {
   clearVisibilityRecoveryIntent,
   decideVisibilityRecoveryAction,
@@ -89,9 +90,18 @@ import {
   type ProfileMode,
 } from '../profile/profileModeFields';
 import {
-  startBackgroundLocation,
+  startGatedBackgroundLocation,
   stopBackgroundLocation,
-} from '../services/backgroundLocation';
+  getLocationPermissionSnapshot,
+} from '../location/startGatedBackgroundLocation';
+import { backgroundLocationNotificationCopy } from '../location/backgroundLocationCopy';
+import {
+  resolveBackgroundDisclosureVariant,
+  markBackgroundLocationEducationSeen,
+  type BackgroundDisclosureVariant,
+} from '../location/backgroundEducationStorage';
+import { requiresSettingsForBackgroundPermission } from '../location/backgroundPublicationGate';
+import { BackgroundLocationDisclosureModal } from '../components/BackgroundLocationDisclosureModal';
 import {
   logVisibilityErrorDiagnostic,
   presentUnknownVisibilityError,
@@ -169,9 +179,140 @@ export default function MainHomeScreen({ navigation }: Props) {
   >(null);
   const [visibilityError, setVisibilityError] =
     useState<VisibilityErrorPresentation | null>(null);
+  const [bgDisclosureVisible, setBgDisclosureVisible] = useState(false);
+  const [bgDisclosureVariant, setBgDisclosureVariant] =
+    useState<BackgroundDisclosureVariant>('full');
+  const [bgDisclosureBusy, setBgDisclosureBusy] = useState(false);
+  const pendingBgDisclosureIntentRef = useRef(false);
+  const pendingBgEnableFromSettingsRef = useRef(false);
 
   const officialInterestIds = useMemo(() => officialCatalogInterestIdSet(), []);
   const mode: ProfileMode = resolveActiveMode(profile) ?? 'personal';
+
+  const fgsCopy = useMemo(() => backgroundLocationNotificationCopy(t), [t]);
+
+  const startGatedBackgroundIfAllowed = useCallback(
+    async (uid: string) => {
+      const visibility = !!profileRef.current.visibility;
+      const bgVisible = !!profileRef.current.bgVisible;
+      if (!visibility || !bgVisible) {
+        await stopBackgroundLocation().catch(() => {});
+        return;
+      }
+      await startGatedBackgroundLocation({
+        uid,
+        visibility: true,
+        bgVisible: true,
+        requestPermissions: false,
+        ...fgsCopy,
+      });
+    },
+    [fgsCopy],
+  );
+
+  const maybeOfferBackgroundDisclosure = useCallback(async () => {
+    if (Platform.OS === 'web') return;
+    const snap = await getLocationPermissionSnapshot();
+    if (snap.backgroundGranted) {
+      // Already effectively granted — do not repeat the journey.
+      if (profileRef.current.bgVisible && profileRef.current.visibility) {
+        const uid = firebaseAuth.currentUser?.uid;
+        if (uid) await startGatedBackgroundIfAllowed(uid);
+      }
+      return;
+    }
+    const variant = await resolveBackgroundDisclosureVariant();
+    setBgDisclosureVariant(variant);
+    setBgDisclosureVisible(true);
+  }, [startGatedBackgroundIfAllowed]);
+
+  const completeBackgroundDisclosure = useCallback(
+    async (enable: boolean) => {
+      const uid = firebaseAuth.currentUser?.uid;
+      setBgDisclosureBusy(true);
+      try {
+        if (bgDisclosureVariant === 'full') {
+          await markBackgroundLocationEducationSeen().catch(() => {});
+        }
+        if (!enable || !uid) {
+          setBgDisclosureVisible(false);
+          return;
+        }
+
+        const snap = await getLocationPermissionSnapshot();
+        if (!snap.fineLocationGranted && snap.foregroundGranted) {
+          Alert.alert(
+            t('settings.backgroundVisibility.approximateTitle'),
+            t('settings.backgroundVisibility.approximateMessage'),
+            [
+              { text: t('common.actions.cancel'), style: 'cancel' },
+              {
+                text: t('settings.backgroundVisibility.openSettings'),
+                onPress: () => void Linking.openSettings(),
+              },
+            ],
+          );
+          setBgDisclosureVisible(false);
+          return;
+        }
+
+        if (requiresSettingsForBackgroundPermission(Platform.Version)) {
+          pendingBgEnableFromSettingsRef.current = true;
+          setBgDisclosureVisible(false);
+          void Linking.openSettings();
+          return;
+        }
+
+        const result = await startGatedBackgroundLocation({
+          uid,
+          visibility: !!profileRef.current.visibility,
+          bgVisible: true,
+          requestPermissions: true,
+          ...fgsCopy,
+        });
+
+        if (result.ok === true) {
+          const { updateUserProfilePartial } = await import(
+            '../services/firestoreService'
+          );
+          await updateUserProfilePartial(uid, {
+            bgVisible: true,
+            updatedAt: Date.now(),
+          });
+          setProfile((p) => ({ ...p, bgVisible: true }));
+        } else {
+          const fail = result;
+          if (fail.reason === 'needs-settings') {
+            pendingBgEnableFromSettingsRef.current = true;
+            void Linking.openSettings();
+          } else if (
+            fail.reason === 'background-denied' ||
+            fail.reason === 'foreground-denied'
+          ) {
+            pendingBgEnableFromSettingsRef.current = true;
+            Alert.alert(
+              t('common.appName'),
+              fail.reason === 'foreground-denied'
+                ? t('settings.backgroundVisibility.needsForegroundPermission')
+                : t('settings.backgroundVisibility.needsBackgroundPermission'),
+              [
+                { text: t('common.actions.cancel'), style: 'cancel' },
+                {
+                  text: t('settings.backgroundVisibility.openSettings'),
+                  onPress: () => void Linking.openSettings(),
+                },
+              ],
+            );
+          }
+        }
+      } finally {
+        setBgDisclosureBusy(false);
+        setBgDisclosureVisible(false);
+      }
+    },
+    [bgDisclosureVariant, fgsCopy, t],
+  );
+
   const activePrefs = selectPreferencesForMode(prefs, mode);
   const presentation = resolveActivePresentation(
     profile as Record<string, unknown>,
@@ -333,7 +474,7 @@ export default function MainHomeScreen({ navigation }: Props) {
                   await clearVisibilityRecoveryIntent(AsyncStorage);
                   setProfile((p) => ({ ...p, visibility: true }));
                   if (profileRef.current.bgVisible) {
-                    await startBackgroundLocation({ uid }).catch(() => {});
+                    await startGatedBackgroundIfAllowed(uid);
                   }
                 }
               }
@@ -348,7 +489,7 @@ export default function MainHomeScreen({ navigation }: Props) {
               await clearVisibilityRecoveryIntent(AsyncStorage);
               setProfile((p) => ({ ...p, visibility: true }));
               if (profileRef.current.bgVisible) {
-                await startBackgroundLocation({ uid }).catch(() => {});
+                await startGatedBackgroundIfAllowed(uid);
               }
             }
             return;
@@ -369,7 +510,7 @@ export default function MainHomeScreen({ navigation }: Props) {
                   await clearVisibilityRecoveryIntent(AsyncStorage);
                   setProfile((p) => ({ ...p, visibility: true }));
                   if (profileRef.current.bgVisible) {
-                    await startBackgroundLocation({ uid }).catch(() => {});
+                    await startGatedBackgroundIfAllowed(uid);
                   }
                 }
               }
@@ -385,7 +526,7 @@ export default function MainHomeScreen({ navigation }: Props) {
           // Existing BG reconcile when already ON with permission
           if (remote && foregroundGranted) {
             if (profile.bgVisible) {
-              await startBackgroundLocation({ uid }).catch(() => {});
+              await startGatedBackgroundIfAllowed(uid);
             } else {
               await stopBackgroundLocation().catch(() => {});
             }
@@ -521,12 +662,31 @@ export default function MainHomeScreen({ navigation }: Props) {
             outcome.canAskAgain,
           );
         } else if (outcome.kind === 'invalid-accuracy') {
-          showVisibilityError(
-            presentVisibilityLocalError('invalid-accuracy', t),
+          Alert.alert(
+            t('settings.backgroundVisibility.approximateTitle'),
+            t('settings.backgroundVisibility.approximateMessage'),
+            [
+              { text: t('common.actions.cancel'), style: 'cancel' },
+              {
+                text: t('settings.backgroundVisibility.openSettings'),
+                onPress: () => {
+                  pendingVisibilityIntentRef.current = true;
+                  void Linking.openSettings();
+                },
+              },
+            ],
           );
         } else if (outcome.kind === 'unavailable') {
-          showVisibilityError(
-            presentVisibilityLocalError('unavailable', t),
+          Alert.alert(
+            t('settings.backgroundVisibility.gpsOffTitle'),
+            t('settings.backgroundVisibility.gpsOffMessage'),
+            [
+              { text: t('common.actions.cancel'), style: 'cancel' },
+              {
+                text: t('settings.backgroundVisibility.openSettings'),
+                onPress: () => void Linking.openSettings(),
+              },
+            ],
           );
         } else if (outcome.error) {
           showVisibilityError(
@@ -540,9 +700,7 @@ export default function MainHomeScreen({ navigation }: Props) {
       }
       setProfile((p) => ({ ...p, visibility: true }));
       await clearVisibilityRecoveryIntent(AsyncStorage).catch(() => {});
-      if (profileRef.current.bgVisible) {
-        await startBackgroundLocation({ uid }).catch(() => {});
-      }
+      await maybeOfferBackgroundDisclosure();
     } catch (err) {
       if (isVisibilityDiscoveryClientError(err)) {
         showVisibilityError(presentVisibilityCallableError(err, t), err);
@@ -552,7 +710,7 @@ export default function MainHomeScreen({ navigation }: Props) {
     } finally {
       setStatusUpdating(false);
     }
-  }, [t]);
+  }, [t, maybeOfferBackgroundDisclosure]);
 
   const handleToggleActive = async () => {
     if (statusUpdating) return;
@@ -620,7 +778,7 @@ export default function MainHomeScreen({ navigation }: Props) {
                 setProfile((p) => ({ ...p, visibility: true }));
                 pendingVisibilityIntentRef.current = false;
                 if (profileRef.current.bgVisible) {
-                  await startBackgroundLocation({ uid }).catch(() => {});
+                  await startGatedBackgroundIfAllowed(uid);
                 }
                 return;
               }
@@ -652,12 +810,49 @@ export default function MainHomeScreen({ navigation }: Props) {
         if (evaluation.shouldActivate) {
           if (profileRef.current.visibility || statusUpdatingRef.current) return;
           await activateVisibility();
+          return;
+        }
+
+        // Background enable return from Settings (after disclosure).
+        if (pendingBgEnableFromSettingsRef.current) {
+          const uid = firebaseAuth.currentUser?.uid;
+          if (!uid) {
+            pendingBgEnableFromSettingsRef.current = false;
+            return;
+          }
+          let fgStatus = 'undetermined';
+          let bgStatus = 'undetermined';
+          try {
+            const fg = await Location.getForegroundPermissionsAsync();
+            fgStatus = fg.status;
+            const bg = await Location.getBackgroundPermissionsAsync();
+            bgStatus = bg.status;
+          } catch {
+            // keep undetermined
+          }
+          const bgEval = evaluateBackgroundLocationSettingsReturn(
+            true,
+            fgStatus,
+            bgStatus,
+          );
+          pendingBgEnableFromSettingsRef.current = false;
+          if (bgEval.shouldActivate && profileRef.current.visibility) {
+            const { updateUserProfilePartial } = await import(
+              '../services/firestoreService'
+            );
+            await updateUserProfilePartial(uid, {
+              bgVisible: true,
+              updatedAt: Date.now(),
+            });
+            setProfile((p) => ({ ...p, bgVisible: true }));
+            await startGatedBackgroundIfAllowed(uid);
+          }
         }
       }
     });
 
     return () => sub.remove();
-  }, [activateVisibility]);
+  }, [activateVisibility, startGatedBackgroundIfAllowed]);
 
   const atInterestLimit =
     activePrefs.interestIds.length >= MAX_SEARCH_INTEREST_IDS;
@@ -701,6 +896,7 @@ export default function MainHomeScreen({ navigation }: Props) {
       : t('home.modeProfessional');
 
   return (
+    <>
     <ScrollView
       style={{ flex: 1, backgroundColor: palette.background }}
       contentContainerStyle={{
@@ -980,6 +1176,14 @@ export default function MainHomeScreen({ navigation }: Props) {
         )}
       </View>
     </ScrollView>
+    <BackgroundLocationDisclosureModal
+      visible={bgDisclosureVisible}
+      variant={bgDisclosureVariant}
+      busy={bgDisclosureBusy}
+      onEnable={() => void completeBackgroundDisclosure(true)}
+      onNotNow={() => void completeBackgroundDisclosure(false)}
+    />
+    </>
   );
 }
 

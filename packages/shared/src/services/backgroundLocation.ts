@@ -11,7 +11,16 @@ type StartOpts = {
   distanceInterval?: number; // metros mínimos para disparar update
   timeIntervalMs?: number; // ms mínimos entre updates (Android respeta más este)
   showsIndicatorIOS?: boolean;
+  /** Optional FGS notification copy (EN/ES from caller). */
+  notificationTitle?: string;
+  notificationBody?: string;
 };
+
+/** Default FGS copy when caller does not pass localized strings. */
+export const DEFAULT_BG_LOCATION_NOTIFICATION_TITLE =
+  'Nearsy is updating your location';
+export const DEFAULT_BG_LOCATION_NOTIFICATION_BODY =
+  'Location may update in the background while Visibility is on';
 
 export type BackgroundLocationPermissionFailure = {
   code: 'foreground-denied' | 'background-denied';
@@ -59,12 +68,14 @@ export async function startBackgroundLocation({
   distanceInterval = 1,
   timeIntervalMs = 15_000,
   showsIndicatorIOS = true,
+  notificationTitle = DEFAULT_BG_LOCATION_NOTIFICATION_TITLE,
+  notificationBody = DEFAULT_BG_LOCATION_NOTIFICATION_BODY,
 }: StartOpts) {
   if (!uid) {
     throw new Error('Missing uid for background location');
   }
 
-  // Guarda uid para que la Task lo recupere
+  // Guarda uid para que la Task lo recupere (task still re-validates gates).
   await AsyncStorage.setItem('NEARSY_BG_UID', uid);
 
   // ===== Permisos (check → request only when Android can still prompt) =====
@@ -136,8 +147,8 @@ export async function startBackgroundLocation({
 
     // Android foreground service obligatorio
     foregroundService: {
-      notificationTitle: 'Nearsy is updating your location',
-      notificationBody: 'Visible to nearby users while you use the app',
+      notificationTitle,
+      notificationBody,
     },
 
     // iOS: entregas inmediatas

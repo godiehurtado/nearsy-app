@@ -20,10 +20,8 @@ import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 
 import * as Notifications from 'expo-notifications';
 import { registerPushToken } from './services/pushTokens';
-import {
-  startBackgroundLocation,
-  stopBackgroundLocation,
-} from './services/backgroundLocation';
+import { stopBackgroundLocation } from './services/backgroundLocation';
+import { startGatedBackgroundLocation } from './location/startGatedBackgroundLocation';
 
 import * as WebBrowser from 'expo-web-browser';
 WebBrowser.maybeCompleteAuthSession();
@@ -79,6 +77,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
 
         try {
           let bgVisible = false;
+          let visibility = false;
           let profileSetupCompleted = false;
 
           try {
@@ -90,6 +89,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
                 .get();
               const data = snap?.exists ? snap.data() : null;
               bgVisible = !!data?.bgVisible;
+              visibility = !!data?.visibility;
               profileSetupCompleted = data?.profileSetupCompleted === true;
             } else {
               // Web SDK Firestore (iOS)
@@ -98,6 +98,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
               const snap = await getDoc(ref);
               const data = snap.exists() ? snap.data() : null;
               bgVisible = !!data?.bgVisible;
+              visibility = !!data?.visibility;
               profileSetupCompleted = data?.profileSetupCompleted === true;
             }
           } catch (e) {
@@ -115,8 +116,14 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
             }
           }
 
-          if (bgVisible) {
-            await startBackgroundLocation({ uid: user.uid });
+          // Hard gate: never start FGS from bgVisible alone.
+          if (bgVisible && visibility) {
+            await startGatedBackgroundLocation({
+              uid: user.uid,
+              visibility: true,
+              bgVisible: true,
+              requestPermissions: false,
+            });
           } else {
             await stopBackgroundLocation().catch(() => {});
           }
