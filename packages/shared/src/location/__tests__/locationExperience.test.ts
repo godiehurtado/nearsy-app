@@ -24,6 +24,10 @@ import {
   markBackgroundLocationEducationSeen,
   resolveBackgroundDisclosureVariant,
 } from '../backgroundEducationStorage.ts';
+import {
+  runContractualAndroidLogout,
+  shouldReconcileBgPreferenceOff,
+} from '../contractualLogout.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -136,6 +140,68 @@ describe('backgroundEducationStorage', () => {
   });
 });
 
+describe('contractualLogout + preference reconcile', () => {
+  it('logout order: stop → deactivate if active → signOut', async () => {
+    const steps: string[] = [];
+    await runContractualAndroidLogout({
+      clearSocialPrefill: () => steps.push('prefill'),
+      stopBackground: async () => {
+        steps.push('stop');
+      },
+      isVisibilityActive: () => true,
+      deactivateVisibility: async () => {
+        steps.push('deactivate');
+      },
+      signOut: async () => {
+        steps.push('signOut');
+      },
+    });
+    assert.deepEqual(steps, ['prefill', 'stop', 'deactivate', 'signOut']);
+  });
+
+  it('logout skips deactivate when Visibility already OFF', async () => {
+    const steps: string[] = [];
+    await runContractualAndroidLogout({
+      clearSocialPrefill: () => steps.push('prefill'),
+      stopBackground: async () => {
+        steps.push('stop');
+      },
+      isVisibilityActive: () => false,
+      deactivateVisibility: async () => {
+        steps.push('deactivate');
+      },
+      signOut: async () => {
+        steps.push('signOut');
+      },
+    });
+    assert.deepEqual(steps, ['prefill', 'stop', 'signOut']);
+  });
+
+  it('reconciles bgVisible preference OFF when background permission revoked', () => {
+    assert.equal(
+      shouldReconcileBgPreferenceOff({
+        bgVisiblePreference: true,
+        backgroundGranted: false,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldReconcileBgPreferenceOff({
+        bgVisiblePreference: true,
+        backgroundGranted: true,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldReconcileBgPreferenceOff({
+        bgVisiblePreference: false,
+        backgroundGranted: false,
+      }),
+      false,
+    );
+  });
+});
+
 describe('ENH-LOC-01 source contracts', () => {
   it('locationTask re-validates visibility/bgVisible before publish', () => {
     const src = readShared('background/locationTask.android.ts');
@@ -144,6 +210,8 @@ describe('ENH-LOC-01 source contracts', () => {
     assert.match(src, /bgVisible/);
     assert.match(src, /stopTaskCleanly/);
     assert.match(src, /visibility-inactive/);
+    assert.match(src, /firebaseAuth\.currentUser/);
+    assert.match(src, /profile read error/);
   });
 
   it('App bootstrap requires visibility AND bgVisible', () => {
@@ -184,6 +252,8 @@ describe('ENH-LOC-01 source contracts', () => {
     const home = readShared('screens/MainHomeScreen.tsx');
     assert.match(more, /startGatedBackgroundLocation/);
     assert.match(more, /BackgroundLocationDisclosureModal/);
+    assert.match(more, /runContractualAndroidLogout/);
+    assert.match(more, /shouldReconcileBgPreferenceOff/);
     assert.match(home, /startGatedBackgroundLocation/);
     assert.match(home, /maybeOfferBackgroundDisclosure/);
   });

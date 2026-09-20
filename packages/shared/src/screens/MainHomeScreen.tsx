@@ -525,7 +525,23 @@ export default function MainHomeScreen({ navigation }: Props) {
 
           // Existing BG reconcile when already ON with permission
           if (remote && foregroundGranted) {
-            if (profile.bgVisible) {
+            const bgPerm = await Location.getBackgroundPermissionsAsync();
+            const bgGranted = bgPerm.status === 'granted';
+            if (
+              profile.bgVisible &&
+              !bgGranted
+            ) {
+              // Preference stale vs OS — reconcile OFF without touching Visibility.
+              const { updateUserProfilePartial } = await import(
+                '../services/firestoreService'
+              );
+              await updateUserProfilePartial(uid, {
+                bgVisible: false,
+                updatedAt: Date.now(),
+              }).catch(() => {});
+              setProfile((p) => ({ ...p, bgVisible: false }));
+              await stopBackgroundLocation().catch(() => {});
+            } else if (profile.bgVisible) {
               await startGatedBackgroundIfAllowed(uid);
             } else {
               await stopBackgroundLocation().catch(() => {});

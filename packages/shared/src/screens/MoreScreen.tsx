@@ -58,6 +58,12 @@ import {
 } from '../location/backgroundEducationStorage';
 import { requiresSettingsForBackgroundPermission } from '../location/backgroundPublicationGate';
 import { BackgroundLocationDisclosureModal } from '../components/BackgroundLocationDisclosureModal';
+import {
+  runContractualAndroidLogout,
+  shouldReconcileBgPreferenceOff,
+} from '../location/contractualLogout';
+import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
+import { deactivateVisibilityFlow } from '../visibility/orchestration';
 import { evaluateBackgroundLocationSettingsReturn } from '../visibility/settingsRecovery';
 import {
   ageFromBirthDate,
@@ -296,10 +302,42 @@ export default function MoreScreen() {
     setVisibleToMaxAge(
       typeof data.visibleToMaxAge === 'number' ? data.visibleToMaxAge : null,
     );
-    setBgVisible(!!data.bgVisible);
+    let bgPref = !!data.bgVisible;
     setVisibilityOn(!!data.visibility);
+    try {
+      if (Platform.OS !== 'web') {
+        const snap = await getLocationPermissionSnapshot();
+        if (
+          shouldReconcileBgPreferenceOff({
+            bgVisiblePreference: bgPref,
+            backgroundGranted: snap.backgroundGranted,
+          })
+        ) {
+          await updateUserProfilePartial(uid, {
+            bgVisible: false,
+            updatedAt: Date.now(),
+          });
+          await stopBackgroundLocation().catch(() => {});
+          bgPref = false;
+        } else if (bgPref && data.visibility) {
+          // Ensure runtime matches preference when both allow.
+          await startGatedBackgroundLocation({
+            uid,
+            visibility: true,
+            bgVisible: true,
+            requestPermissions: false,
+            ...backgroundLocationNotificationCopy(t),
+          }).catch(() => {});
+        } else {
+          await stopBackgroundLocation().catch(() => {});
+        }
+      }
+    } catch {
+      // best-effort reconcile
+    }
+    setBgVisible(bgPref);
     setLoading(false);
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     reloadProfile().catch((e: any) => {
@@ -766,9 +804,18 @@ export default function MoreScreen() {
 
   const handleLogout = async () => {
     try {
-      clearPendingSocialProfilePrefill();
-      await stopBackgroundLocation().catch(() => {});
-      await firebaseAuth.signOut();
+      await runContractualAndroidLogout({
+        clearSocialPrefill: () => clearPendingSocialProfilePrefill(),
+        stopBackground: () => stopBackgroundLocation(),
+        isVisibilityActive: () => visibilityOnRef.current,
+        deactivateVisibility: async () => {
+          const client = await getVisibilityDiscoveryClient();
+          await deactivateVisibilityFlow(client);
+        },
+        signOut: async () => {
+          await firebaseAuth.signOut();
+        },
+      });
       const parent = navigation.getParent?.() as any;
       if (parent?.reset) {
         parent.reset({ index: 0, routes: [{ name: 'Login' }] });

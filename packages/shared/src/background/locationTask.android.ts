@@ -2,7 +2,7 @@
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { firestoreDb } from '../config/firebaseConfig';
+import { firestoreDb, firebaseAuth } from '../config/firebaseConfig';
 import { buildLocationPayload } from '../utils/locationPayload';
 import { decideBackgroundPublication } from '../location/backgroundPublicationGate';
 
@@ -53,6 +53,13 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
       return;
     }
 
+    // Auth null / account switch: NEARSY_BG_UID alone must never publish.
+    const authUid = firebaseAuth.currentUser?.uid ?? null;
+    if (!authUid || authUid !== storedUid) {
+      await stopTaskCleanly();
+      return;
+    }
+
     const fg = await Location.getForegroundPermissionsAsync();
     const bg = await Location.getBackgroundPermissionsAsync();
     const foregroundGranted = fg.status === 'granted' || !!fg.granted;
@@ -68,6 +75,7 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
       visibility = !!profile?.visibility;
       bgVisible = !!profile?.bgVisible;
     } catch (e) {
+      // Transient profile read failure: do not publish, do not clear preference.
       if (__DEV__) console.warn('[BG Task] profile read error:', e);
       return;
     }
@@ -79,7 +87,7 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
       foregroundGranted,
       backgroundGranted,
       storedTaskUid: storedUid,
-      currentUid: storedUid,
+      currentUid: authUid,
     });
 
     if (decision.action !== 'publish' && decision.action !== 'start') {
