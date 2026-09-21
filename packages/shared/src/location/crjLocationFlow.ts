@@ -137,7 +137,9 @@ export function reduceCrjLocationStep(
       if (!state.educationVisible || state.buttonLocked) return state;
       return { ...state, buttonLocked: true };
     case 'OPEN_SETTINGS':
-      if (!state.educationVisible || state.buttonLocked) return state;
+      // Allowed while education is showing even if BG_REQUEST already locked
+      // the primary button (API 30+ Settings CTA after Enable).
+      if (!state.educationVisible) return state;
       return {
         ...state,
         buttonLocked: true,

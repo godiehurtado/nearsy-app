@@ -136,6 +136,21 @@ describe('backgroundPublicationGate', () => {
     assert.equal(isAndroidFineLocationGranted('fine'), true);
     assert.equal(isAndroidFineLocationGranted(null), true);
   });
+
+  it('approximate / coarse stops publication gate', () => {
+    const d = decideBackgroundPublication({
+      authenticated: true,
+      visibility: true,
+      bgVisible: true,
+      foregroundGranted: true,
+      fineLocationGranted: false,
+      backgroundGranted: true,
+      storedTaskUid: 'u1',
+      currentUid: 'u1',
+    });
+    assert.equal(d.action, 'stop');
+    assert.equal(d.reason, 'foreground-denied');
+  });
 });
 
 describe('backgroundEducationStorage', () => {
@@ -230,8 +245,8 @@ describe('preparation timing (no artificial delay)', () => {
   it('CRJ and Home reinstall must not use preparation coordinator', () => {
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
     const home = readShared('screens/MainHomeScreen.tsx');
-    assert.doesNotMatch(crj, /LocationPreparationModal|beginPostForegroundDisclosureJourney/);
-    assert.doesNotMatch(home, /LocationPreparationModal|setLocationPreparing\(true\)/);
+    assert.doesNotMatch(crj, /LocationPreparationModal|beginPostForegroundDisclosureJourney|locationJourneyCoordinator/);
+    assert.doesNotMatch(home, /LocationPreparationModal|setLocationPreparing\(true\)|locationJourneyCoordinator/);
   });
 });
 
@@ -388,6 +403,20 @@ describe('backgroundRuntimeAuth callback gate', () => {
         storedTaskUid: 'u1',
         runtimeAuth: null,
         foregroundGranted: true,
+        backgroundGranted: true,
+      }),
+      'stop',
+    );
+  });
+
+  it('callback stop when fineLocationGranted is false', () => {
+    assert.equal(
+      decideCallbackPublication({
+        authUid: 'u1',
+        storedTaskUid: 'u1',
+        runtimeAuth: auth,
+        foregroundGranted: true,
+        fineLocationGranted: false,
         backgroundGranted: true,
       }),
       'stop',

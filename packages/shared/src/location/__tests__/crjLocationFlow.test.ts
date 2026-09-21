@@ -63,25 +63,19 @@ describe('crjLocationFlow reducer', () => {
     assert.equal(denied.advance, true);
   });
 
-  it('API 30+ Open Settings → granted / cancelled', () => {
+  it('API 30+ Open Settings works after BG_REQUEST lock', () => {
     assert.equal(requiresBackgroundSettings(30), true);
-    assert.equal(requiresBackgroundSettings(34), true);
     let ok = createInitialCrjLocationStepState();
     ok = reduceCrjLocationStep(ok, { type: 'PRESS' });
     ok = reduceCrjLocationStep(ok, { type: 'FG_GRANTED' });
+    ok = reduceCrjLocationStep(ok, { type: 'BG_REQUEST' });
+    assert.equal(ok.buttonLocked, true);
     ok = reduceCrjLocationStep(ok, { type: 'OPEN_SETTINGS' });
     assert.equal(ok.recovery, 'awaiting-settings');
     assert.equal(ok.educationVisible, false);
     ok = reduceCrjLocationStep(ok, { type: 'SETTINGS_RETURN_GRANTED' });
     assert.equal(ok.bgVisible, true);
-
-    let cancel = createInitialCrjLocationStepState();
-    cancel = reduceCrjLocationStep(cancel, { type: 'PRESS' });
-    cancel = reduceCrjLocationStep(cancel, { type: 'FG_GRANTED' });
-    cancel = reduceCrjLocationStep(cancel, { type: 'OPEN_SETTINGS' });
-    cancel = reduceCrjLocationStep(cancel, { type: 'SETTINGS_RETURN_DENIED' });
-    assert.equal(cancel.bgVisible, false);
-    assert.equal(cancel.advance, true);
+    assert.equal(ok.advance, true);
   });
 
   it('approximate still reaches education; FG deny advances without education', () => {

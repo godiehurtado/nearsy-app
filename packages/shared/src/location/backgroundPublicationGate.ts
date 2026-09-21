@@ -12,6 +12,8 @@ export type BackgroundPublicationInputs = {
   bgVisible: boolean;
   /** OS foreground location granted */
   foregroundGranted: boolean;
+  /** OS Precise / fine location (not Approximate/coarse). */
+  fineLocationGranted?: boolean;
   /** OS background location granted */
   backgroundGranted: boolean;
   /** UID stored for the background task (may be stale). */
@@ -52,6 +54,9 @@ export function decideBackgroundPublication(
   if (!input.foregroundGranted) {
     return { action: 'stop', reason: 'foreground-denied' };
   }
+  if (input.fineLocationGranted === false) {
+    return { action: 'stop', reason: 'foreground-denied' };
+  }
   if (!input.backgroundGranted) {
     return { action: 'stop', reason: 'background-denied' };
   }
@@ -74,6 +79,7 @@ export function shouldStartBackgroundLocationService(input: {
   bgVisible: boolean;
   foregroundGranted: boolean;
   backgroundGranted: boolean;
+  fineLocationGranted?: boolean;
 }): boolean {
   const decision = decideBackgroundPublication({
     ...input,

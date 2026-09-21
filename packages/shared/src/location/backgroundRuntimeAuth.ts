@@ -64,6 +64,7 @@ export function decideCallbackPublication(input: {
   storedTaskUid: string | null;
   runtimeAuth: BackgroundRuntimeAuth | null;
   foregroundGranted: boolean;
+  fineLocationGranted?: boolean;
   backgroundGranted: boolean;
 }): 'publish' | 'stop' | 'skip' {
   if (!input.authUid || !input.storedTaskUid) return 'stop';
@@ -72,5 +73,6 @@ export function decideCallbackPublication(input: {
     return 'stop';
   }
   if (!input.foregroundGranted || !input.backgroundGranted) return 'stop';
+  if (input.fineLocationGranted === false) return 'stop';
   return 'publish';
 }

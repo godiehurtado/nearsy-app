@@ -68,12 +68,21 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
     const bg = await Location.getBackgroundPermissionsAsync();
     const foregroundGranted = fg.status === 'granted' || !!fg.granted;
     const backgroundGranted = bg.status === 'granted' || !!bg.granted;
+    const androidAccuracy =
+      ((fg as { android?: { accuracy?: string } }).android?.accuracy as
+        | 'fine'
+        | 'coarse'
+        | 'none'
+        | undefined) ?? null;
+    const fineLocationGranted =
+      androidAccuracy == null || androidAccuracy === 'fine';
 
     const decision = decideCallbackPublication({
       authUid,
       storedTaskUid: storedUid,
       runtimeAuth,
       foregroundGranted,
+      fineLocationGranted,
       backgroundGranted,
     });
 

@@ -144,11 +144,17 @@ export async function startGatedBackgroundLocation(
     bgSnap = await getLocationPermissionSnapshot();
   }
 
+  if (!bgSnap.fineLocationGranted) {
+    await stopBackgroundLocation().catch(() => {});
+    return { ok: false, reason: 'gate', gateReason: 'approximate' };
+  }
+
   const decision = decideBackgroundPublication({
     authenticated: true,
     visibility: opts.visibility,
     bgVisible: opts.bgVisible,
     foregroundGranted: bgSnap.foregroundGranted,
+    fineLocationGranted: bgSnap.fineLocationGranted,
     backgroundGranted: bgSnap.backgroundGranted,
     storedTaskUid: opts.uid,
     currentUid: opts.uid,
@@ -164,6 +170,7 @@ export async function startGatedBackgroundLocation(
     visibility: opts.visibility,
     bgVisible: opts.bgVisible,
     foregroundGranted: bgSnap.foregroundGranted,
+    fineLocationGranted: bgSnap.fineLocationGranted,
     backgroundGranted: bgSnap.backgroundGranted,
   })) {
     await stopBackgroundLocation().catch(() => {});
