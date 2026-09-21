@@ -33,6 +33,10 @@ import {
   type BackgroundRuntimeAuth,
 } from '../backgroundRuntimeAuth.ts';
 import {
+  disposeBackgroundPublishFailure,
+  isHeadlessPublishEnvironmentReady,
+} from '../backgroundPublishDisposition.ts';
+import {
   bindLocationJourneySessionUid,
   beginLocationJourney,
   endLocationJourney,
@@ -412,6 +416,79 @@ describe('visibilityHydration', () => {
   });
 });
 
+describe('backgroundPublishDisposition', () => {
+  it('permanent auth / App Check / visibility-inactive → stop', () => {
+    assert.equal(
+      disposeBackgroundPublishFailure({ code: 'unauthenticated' }),
+      'stop',
+    );
+    assert.equal(
+      disposeBackgroundPublishFailure({ code: 'permission-denied' }),
+      'stop',
+    );
+    assert.equal(
+      disposeBackgroundPublishFailure({
+        code: 'failed-precondition',
+        message: 'App Check token was rejected by the backend.',
+      }),
+      'stop',
+    );
+    assert.equal(
+      disposeBackgroundPublishFailure({
+        reason: 'visibility-inactive',
+        retryable: false,
+      }),
+      'stop',
+    );
+    assert.equal(
+      disposeBackgroundPublishFailure({ kind: 'permission-denied' }),
+      'stop',
+    );
+  });
+
+  it('transient sample / network → skip', () => {
+    assert.equal(
+      disposeBackgroundPublishFailure({ kind: 'invalid-accuracy' }),
+      'skip',
+    );
+    assert.equal(
+      disposeBackgroundPublishFailure({ kind: 'unavailable' }),
+      'skip',
+    );
+    assert.equal(
+      disposeBackgroundPublishFailure({
+        code: 'unavailable',
+        retryable: true,
+      }),
+      'skip',
+    );
+  });
+
+  it('headless ready requires Auth + App Check ready', () => {
+    assert.equal(
+      isHeadlessPublishEnvironmentReady({
+        hasCurrentUser: true,
+        appCheckStatus: 'ready',
+      }),
+      true,
+    );
+    assert.equal(
+      isHeadlessPublishEnvironmentReady({
+        hasCurrentUser: false,
+        appCheckStatus: 'ready',
+      }),
+      false,
+    );
+    assert.equal(
+      isHeadlessPublishEnvironmentReady({
+        hasCurrentUser: true,
+        appCheckStatus: 'pending',
+      }),
+      false,
+    );
+  });
+});
+
 describe('backgroundRuntimeAuth callback gate', () => {
   const auth: BackgroundRuntimeAuth = {
     uid: 'u1',
@@ -488,13 +565,20 @@ describe('backgroundRuntimeAuth callback gate', () => {
 });
 
 describe('ENH-LOC-01 source contracts', () => {
-  it('locationTask uses runtime auth — no profile get per tick', () => {
+  it('locationTask uses runtime auth + publishLocation — no client users merge', () => {
     const src = readShared('background/locationTask.android.ts');
     assert.match(src, /decideCallbackPublication/);
     assert.match(src, /readBackgroundRuntimeAuth/);
     assert.match(src, /firebaseAuth\.currentUser/);
+    assert.match(src, /publishLocationFlow/);
+    assert.match(src, /isHeadlessPublishEnvironmentReady/);
+    assert.match(src, /disposeBackgroundPublishFailure/);
+    assert.match(src, /ensureAppCheckInitialized/);
     assert.match(src, /visibility-inactive/);
-    assert.match(src, /legacy direct Firestore merge/i);
+    assert.doesNotMatch(src, /\.collection\(['\"]users['\"]\)/);
+    assert.doesNotMatch(src, /legacy direct Firestore merge/i);
+    assert.doesNotMatch(src, /lastBgUpdateAt/);
+    assert.doesNotMatch(src, /firestoreDb/);
     assert.doesNotMatch(src, /\.collection\('users'\)[\s\S]*\.get\(\)/);
     assert.doesNotMatch(src, /decideBackgroundPublication/);
   });
