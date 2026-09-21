@@ -40,6 +40,13 @@ yarn-error.*
 
 # Local Android QA / release forensics (never commit)
 .qa-j05/
+.qa-*/
+.aab-verify-*/
+.eas-build-*.json
+apps/nearsy-android/.metro-8082.log
+apps/nearsy-android/.metro-8082.log.err
+.qa-screen.png
+.qa-uidump.xml
 
 # typescript
 *.tsbuildinfo

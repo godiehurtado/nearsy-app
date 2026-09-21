@@ -149,10 +149,10 @@ describe('Android post-MVP batch 1 source contracts', () => {
       more,
       /import\s*\{\s*clearPendingSocialProfilePrefill\s*\}\s*from\s*'\.\.\/authentication\/social'/,
     );
-    assert.match(
-      more,
-      /const handleLogout = async \(\) => \{[\s\S]*?clearPendingSocialProfilePrefill\(\);[\s\S]*?firebaseAuth\.signOut\(\)/,
-    );
+    assert.match(more, /runContractualAndroidLogout/);
+    assert.match(more, /deactivateVisibilityFlow/);
+    assert.match(more, /stopBackgroundLocation/);
+    assert.match(more, /firebaseAuth\.signOut/);
     assert.doesNotMatch(
       more,
       /await import\(\s*['"]\.\.\/authentication\/social['"]\s*\)/,

@@ -19,15 +19,24 @@ import AppNavigator, { buildNavigationTheme } from './navigation/AppNavigator';
 import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 
 import * as Notifications from 'expo-notifications';
-import { registerPushToken } from './services/pushTokens';
-import {
-  startBackgroundLocation,
-  stopBackgroundLocation,
-} from './services/backgroundLocation';
-
 import * as WebBrowser from 'expo-web-browser';
+import { registerPushToken } from './services/pushTokens';
+import { stopBackgroundLocation as stopBackgroundLocationService } from './services/backgroundLocation';
+import { startGatedBackgroundLocation } from './location/startGatedBackgroundLocation';
+import { clearBackgroundRuntimeAuth } from './location/backgroundRuntimeAuth';
+import { hasSeenBackgroundLocationEducation } from './location/backgroundEducationStorage';
+import {
+  bindLocationJourneySessionUid,
+  resetLocationJourneySession,
+  markPostLoginLocationRecoveryNeeded,
+} from './location/locationJourneySession';
+
 WebBrowser.maybeCompleteAuthSession();
 
+async function stopBackgroundLocation(): Promise<void> {
+  await stopBackgroundLocationService();
+  await clearBackgroundRuntimeAuth().catch(() => {});
+}
 // ===== Handler global de notificaciones =====
 Notifications.setNotificationHandler({
   handleNotification:
@@ -72,13 +81,17 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
           if (Platform.OS !== 'web') {
             await stopBackgroundLocation().catch(() => {});
           }
+          resetLocationJourneySession();
           return;
         }
 
         if (Platform.OS === 'web') return;
 
+        bindLocationJourneySessionUid(user.uid);
+
         try {
           let bgVisible = false;
+          let visibility = false;
           let profileSetupCompleted = false;
 
           try {
@@ -90,6 +103,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
                 .get();
               const data = snap?.exists ? snap.data() : null;
               bgVisible = !!data?.bgVisible;
+              visibility = !!data?.visibility;
               profileSetupCompleted = data?.profileSetupCompleted === true;
             } else {
               // Web SDK Firestore (iOS)
@@ -98,6 +112,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
               const snap = await getDoc(ref);
               const data = snap.exists() ? snap.data() : null;
               bgVisible = !!data?.bgVisible;
+              visibility = !!data?.visibility;
               profileSetupCompleted = data?.profileSetupCompleted === true;
             }
           } catch (e) {
@@ -115,8 +130,37 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
             }
           }
 
-          if (bgVisible) {
-            await startBackgroundLocation({ uid: user.uid });
+          // Never auto-start from bgVisible alone. Never open permission UI.
+          // Missing local education mark (reinstall) → Home owns one recovery.
+          if (profileSetupCompleted) {
+            try {
+              const educationSeen =
+                await hasSeenBackgroundLocationEducation().catch(() => false);
+              const Location = await import('expo-location');
+              const fg = await Location.getForegroundPermissionsAsync();
+              const fgOk = fg.status === 'granted' || !!fg.granted;
+              const bg = await Location.getBackgroundPermissionsAsync();
+              const bgOk = bg.status === 'granted' || !!bg.granted;
+
+              if (!educationSeen) {
+                markPostLoginLocationRecoveryNeeded(user.uid);
+                await stopBackgroundLocation().catch(() => {});
+              } else if (visibility && bgVisible && fgOk && bgOk) {
+                await startGatedBackgroundLocation({
+                  uid: user.uid,
+                  visibility: true,
+                  bgVisible: true,
+                  requestPermissions: false,
+                });
+              } else {
+                if (visibility && !fgOk) {
+                  markPostLoginLocationRecoveryNeeded(user.uid);
+                }
+                await stopBackgroundLocation().catch(() => {});
+              }
+            } catch {
+              await stopBackgroundLocation().catch(() => {});
+            }
           } else {
             await stopBackgroundLocation().catch(() => {});
           }

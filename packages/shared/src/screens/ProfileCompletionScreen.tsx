@@ -18,6 +18,8 @@ import {
   Image,
   Alert,
   Linking,
+  Platform,
+  AppState,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -44,6 +46,24 @@ import {
   type CrjProgressPhase,
 } from '../components/registration/crjProgress';
 import { PrimaryButton, SecondaryButton } from '../components/PrimaryButton';
+import { BackgroundLocationDisclosureModal } from '../components/BackgroundLocationDisclosureModal';
+import {
+  markBackgroundLocationEducationSeen,
+  type BackgroundDisclosureVariant,
+} from '../location/backgroundEducationStorage';
+import {
+  getLocationPermissionSnapshot,
+  startGatedBackgroundLocation,
+} from '../location/startGatedBackgroundLocation';
+import { backgroundLocationNotificationCopy } from '../location/backgroundLocationCopy';
+import {
+  createInitialCrjLocationStepState,
+  reduceCrjLocationStep,
+  isBackgroundImplicitWithForeground,
+  canRequestBackgroundViaDialog,
+  requiresBackgroundSettings,
+  type CrjLocationStepState,
+} from '../location/crjLocationFlow';
 import AnimatedNearsyLogo from '../components/auth/AnimatedNearsyLogo';
 import { useAppTheme } from '../theme/ThemeContext';
 import { fontSize, fontWeight } from '../theme/typography';
@@ -384,6 +404,20 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   );
   const [galleryPermissionDenied, setGalleryPermissionDenied] =
     useState(false);
+  const [bgDisclosureVisible, setBgDisclosureVisible] = useState(false);
+  const [bgDisclosureVariant, setBgDisclosureVariant] =
+    useState<BackgroundDisclosureVariant>('full');
+  const [bgDisclosureBusy, setBgDisclosureBusy] = useState(false);
+  const [crjLocation, setCrjLocation] = useState<CrjLocationStepState>(
+    createInitialCrjLocationStepState,
+  );
+  const crjLocationRef = useRef(crjLocation);
+  crjLocationRef.current = crjLocation;
+  const pendingCrjBgSettingsRef = useRef(false);
+  const apiLevel =
+    typeof Platform.Version === 'number'
+      ? Platform.Version
+      : Number.parseInt(String(Platform.Version), 10) || 30;
   const [activeInterestGroupByCategory, setActiveInterestGroupByCategory] =
     useState<Partial<Record<OnboardingInterestCategoryId, string>>>({});
   const [shellData, setShellData] = useState<Record<string, unknown> | null>(
@@ -416,6 +450,73 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   useEffect(() => {
     setAffiliationSearchUi(IDLE_AFFILIATION_SEARCH_UI);
   }, [step.kind, affiliationCategoryIndex]);
+
+  useEffect(() => {
+    return () => {
+      setCrjLocation((s) => reduceCrjLocationStep(s, { type: 'UNMOUNT' }));
+      pendingCrjBgSettingsRef.current = false;
+      setBgDisclosureVisible(false);
+    };
+  }, []);
+
+  // Persist bgVisible + advance when reducer signals completion.
+  useEffect(() => {
+    if (!crjLocation.advance) return;
+    const preference = crjLocation.bgVisible;
+    const recovery = crjLocation.recovery;
+    (async () => {
+      try {
+        if (uid && preference !== null) {
+          await updateUserProfilePartial(uid, {
+            bgVisible: preference,
+            updatedAt: Date.now(),
+          }).catch(() => {});
+        }
+        if (recovery === 'foreground-denied') {
+          Alert.alert(
+            t('onboarding.profileCompletion.location.deniedTitle'),
+            t('onboarding.profileCompletion.location.deniedMessage'),
+          );
+        }
+      } finally {
+        setCrjLocation((s) =>
+          reduceCrjLocationStep(s, { type: 'ADVANCE_CONSUMED' }),
+        );
+        setBgDisclosureVisible(false);
+        setBgDisclosureBusy(false);
+        setStepIndex((i) => i + 1);
+      }
+    })();
+  }, [crjLocation.advance, crjLocation.bgVisible, crjLocation.recovery, uid, t]);
+
+  useEffect(() => {
+    setBgDisclosureVisible(crjLocation.educationVisible);
+  }, [crjLocation.educationVisible]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (next) => {
+      if (next !== 'active' || !pendingCrjBgSettingsRef.current) return;
+      pendingCrjBgSettingsRef.current = false;
+      try {
+        const bg = await Location.getBackgroundPermissionsAsync().catch(
+          () => null,
+        );
+        const granted = bg?.status === 'granted' || !!bg?.granted;
+        setCrjLocation((s) =>
+          reduceCrjLocationStep(s, {
+            type: granted
+              ? 'SETTINGS_RETURN_GRANTED'
+              : 'SETTINGS_RETURN_DENIED',
+          }),
+        );
+      } catch {
+        setCrjLocation((s) =>
+          reduceCrjLocationStep(s, { type: 'SETTINGS_RETURN_DENIED' }),
+        );
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   const progressPhase = progressPhaseForStep(step);
   const progressValue =
@@ -1040,19 +1141,102 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   }
 
   async function requestLocation() {
-    const current = await Location.getForegroundPermissionsAsync();
-    if (current.granted) {
-      setStepIndex((i) => i + 1);
+    const prev = crjLocationRef.current;
+    const next = reduceCrjLocationStep(prev, { type: 'PRESS' });
+    if (next === prev) return; // double-tap guard
+    setCrjLocation(next);
+
+    try {
+      const current = await Location.getForegroundPermissionsAsync();
+      let granted = current.granted || current.status === 'granted';
+      if (!granted) {
+        const req = await Location.requestForegroundPermissionsAsync();
+        granted = req.granted || req.status === 'granted';
+      }
+      if (!granted) {
+        setCrjLocation((s) =>
+          reduceCrjLocationStep(s, { type: 'FG_DENIED' }),
+        );
+        return;
+      }
+
+      const snap = await getLocationPermissionSnapshot();
+      if (!snap.fineLocationGranted) {
+        Alert.alert(
+          t('settings.backgroundVisibility.approximateTitle'),
+          t('settings.backgroundVisibility.approximateMessage'),
+          [
+            { text: t('common.actions.cancel'), style: 'cancel' },
+            {
+              text: t('settings.backgroundVisibility.openSettings'),
+              onPress: () => void Linking.openSettings(),
+            },
+          ],
+        );
+        setCrjLocation((s) =>
+          reduceCrjLocationStep(s, { type: 'FG_APPROXIMATE' }),
+        );
+        setBgDisclosureVariant('full');
+        return;
+      }
+
+      // API ≤28: BG effective with FG — still show education for preference.
+      setCrjLocation((s) => reduceCrjLocationStep(s, { type: 'FG_GRANTED' }));
+      setBgDisclosureVariant('full');
+    } catch {
+      setCrjLocation((s) => reduceCrjLocationStep(s, { type: 'FG_ERROR' }));
+    }
+  }
+
+  async function finishCrjBackgroundDisclosure(enable: boolean) {
+    if (!enable) {
+      setCrjLocation((s) => reduceCrjLocationStep(s, { type: 'NOT_NOW' }));
+      void markBackgroundLocationEducationSeen().catch(() => {});
       return;
     }
-    const req = await Location.requestForegroundPermissionsAsync();
-    if (!req.granted) {
-      Alert.alert(
-        t('onboarding.profileCompletion.location.deniedTitle'),
-        t('onboarding.profileCompletion.location.deniedMessage'),
+
+    setBgDisclosureBusy(true);
+    setCrjLocation((s) => reduceCrjLocationStep(s, { type: 'BG_REQUEST' }));
+    try {
+      await markBackgroundLocationEducationSeen().catch(() => {});
+
+      if (isBackgroundImplicitWithForeground(apiLevel)) {
+        setCrjLocation((s) =>
+          reduceCrjLocationStep(s, { type: 'BG_GRANTED' }),
+        );
+        return;
+      }
+
+      if (requiresBackgroundSettings(apiLevel)) {
+        setCrjLocation((s) =>
+          reduceCrjLocationStep(s, { type: 'OPEN_SETTINGS' }),
+        );
+        pendingCrjBgSettingsRef.current = true;
+        void Linking.openSettings();
+        return;
+      }
+
+      if (canRequestBackgroundViaDialog(apiLevel)) {
+        const bg = await Location.requestBackgroundPermissionsAsync();
+        setCrjLocation((s) =>
+          reduceCrjLocationStep(s, {
+            type: bg.status === 'granted' ? 'BG_GRANTED' : 'BG_DENIED',
+          }),
+        );
+        return;
+      }
+
+      // Fallback: treat like Settings path.
+      setCrjLocation((s) =>
+        reduceCrjLocationStep(s, { type: 'OPEN_SETTINGS' }),
       );
+      pendingCrjBgSettingsRef.current = true;
+      void Linking.openSettings();
+    } catch {
+      setCrjLocation((s) => reduceCrjLocationStep(s, { type: 'BG_ERROR' }));
+    } finally {
+      setBgDisclosureBusy(false);
     }
-    setStepIndex((i) => i + 1);
   }
 
   async function requestNotifications() {
@@ -1095,9 +1279,17 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       });
       clearPendingSocialProfilePrefill();
 
+      try {
+        const client = await getVisibilityDiscoveryClient();
+        await syncDiscoveryProfileContextAfterSave(client);
+      } catch {
+        // best-effort — do not reopen CRJ
+      }
+
       // First-time onboarding only: attempt GLOBAL visibility ON when
       // foreground location is usable. Failures must not reopen CRJ.
       // Explicit Off later is owned by Home deactivateVisibility — not here.
+      // Do not reopen education or Settings from finishOnboarding.
       const activation = await attemptInitialVisibilityAfterCrjCompletion({
         getClient: getVisibilityDiscoveryClient,
       });
@@ -1105,6 +1297,26 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         console.warn('[CRJ] initial visibility activation skipped', {
           reason: activation.reason,
         });
+      }
+
+      // Start FGS only when Visibility activated AND all gated inputs pass.
+      if (activation.activated && uid) {
+        try {
+          const profile = (await getUserProfile(uid)) as
+            | { bgVisible?: boolean }
+            | null;
+          if (profile?.bgVisible) {
+            await startGatedBackgroundLocation({
+              uid,
+              visibility: true,
+              bgVisible: true,
+              requestPermissions: false,
+              ...backgroundLocationNotificationCopy(t),
+            });
+          }
+        } catch {
+          // best-effort — CRJ must complete; Home remains usable
+        }
       }
 
       navigation.reset({
@@ -2068,6 +2280,14 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
           )}
         </RegistrationFadeSlideIn>
       </ScrollView>
+      <BackgroundLocationDisclosureModal
+        visible={bgDisclosureVisible}
+        variant={bgDisclosureVariant}
+        busy={bgDisclosureBusy || crjLocation.buttonLocked}
+        settingsPath={requiresBackgroundSettings(apiLevel)}
+        onEnable={() => void finishCrjBackgroundDisclosure(true)}
+        onNotNow={() => void finishCrjBackgroundDisclosure(false)}
+      />
     </RegistrationLayout>
   );
 }
