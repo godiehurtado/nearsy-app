@@ -46,7 +46,9 @@ import {
   type CrjProgressPhase,
 } from '../components/registration/crjProgress';
 import { PrimaryButton, SecondaryButton } from '../components/PrimaryButton';
+import { BackgroundLocationEducationModal } from '../components/BackgroundLocationEducationModal';
 import AnimatedNearsyLogo from '../components/auth/AnimatedNearsyLogo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAppTheme } from '../theme/ThemeContext';
 import { fontSize, fontWeight } from '../theme/typography';
 import { spacing } from '../theme/spacing';
@@ -66,6 +68,19 @@ import {
   shouldResyncProfessionalActiveModeAfterSave,
 } from '../visibility/activeProfileModeSync';
 import { attemptInitialVisibilityAfterCrjCompletion } from '../visibility/initialCrjVisibilityActivation';
+import { markFullBackgroundEducationSeen } from '../visibility/locationEducation';
+import {
+  isBackgroundPermissionEffectivelyGranted,
+  locationServicesEnabled,
+  readBackgroundPermissionSnapshot,
+  syncBackgroundLocationRuntime,
+} from '../visibility/backgroundLocationRuntime';
+import {
+  createInitialCrjLocationStepState,
+  reduceCrjLocationStep,
+  type CrjLocationStepEvent,
+  type CrjLocationStepState,
+} from '../visibility/crjLocationFlow';
 import { uploadProfileImage, uploadAffiliationImage, uploadGalleryImage, deleteGalleryStorageObject } from '../services/storageService';
 import { registerPushToken } from '../services/pushTokens';
 import {
@@ -384,6 +399,22 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   );
   const [galleryPermissionDenied, setGalleryPermissionDenied] =
     useState(false);
+  const [crjLocation, setCrjLocation] = useState<CrjLocationStepState>(
+    createInitialCrjLocationStepState,
+  );
+  const crjLocationRef = useRef(crjLocation);
+  crjLocationRef.current = crjLocation;
+  const crjLocationMountedRef = useRef(true);
+  useEffect(() => {
+    crjLocationMountedRef.current = true;
+    return () => {
+      crjLocationMountedRef.current = false;
+      crjLocationRef.current = reduceCrjLocationStep(crjLocationRef.current, {
+        type: 'UNMOUNT',
+      });
+    };
+  }, []);
+  const [crjVisibilityOn, setCrjVisibilityOn] = useState(false);
   const [activeInterestGroupByCategory, setActiveInterestGroupByCategory] =
     useState<Partial<Record<OnboardingInterestCategoryId, string>>>({});
   const [shellData, setShellData] = useState<Record<string, unknown> | null>(
@@ -1057,20 +1088,132 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     }
   }
 
-  async function requestLocation() {
-    const current = await Location.getForegroundPermissionsAsync();
-    if (current.granted) {
-      setStepIndex((i) => i + 1);
-      return;
+  function commitCrjLocation(event: CrjLocationStepEvent): CrjLocationStepState {
+    const prev = crjLocationRef.current;
+    const next = reduceCrjLocationStep(prev, event);
+    crjLocationRef.current = next;
+    if (crjLocationMountedRef.current && next !== prev) {
+      setCrjLocation(next);
     }
-    const req = await Location.requestForegroundPermissionsAsync();
-    if (!req.granted) {
+    return next;
+  }
+
+  function showForegroundRecovery(): Promise<void> {
+    return new Promise((resolve) => {
       Alert.alert(
         t('onboarding.profileCompletion.location.deniedTitle'),
         t('onboarding.profileCompletion.location.deniedMessage'),
+        [{ text: t('common.cancel'), onPress: () => resolve() }],
       );
-    }
+    });
+  }
+
+  async function advanceCrjLocationIfNeeded(state: CrjLocationStepState) {
+    if (!state.advance || !crjLocationMountedRef.current) return;
+    commitCrjLocation({ type: 'ADVANCE_CONSUMED' });
     setStepIndex((i) => i + 1);
+  }
+
+  /**
+   * Location step = permissions + bgVisible only.
+   * Do NOT activateVisibility, start runtime, sync Discovery, or open Settings.
+   */
+  async function requestLocation() {
+    // Do NOT activateVisibility here — profile still incomplete (profile-incomplete).
+    const before = crjLocationRef.current.foregroundRequestCount;
+    const pressed = commitCrjLocation({ type: 'PRESS' });
+    if (pressed.foregroundRequestCount === before) return;
+
+    try {
+      const servicesOn = await locationServicesEnabled();
+      if (!crjLocationMountedRef.current) return;
+      if (!servicesOn) {
+        const denied = commitCrjLocation({ type: 'FG_DENIED' });
+        await showForegroundRecovery();
+        await advanceCrjLocationIfNeeded(denied);
+        return;
+      }
+
+      const current = await Location.getForegroundPermissionsAsync();
+      let granted = !!current.granted || current.status === 'granted';
+      if (!granted) {
+        await Location.requestForegroundPermissionsAsync();
+        const after = await Location.getForegroundPermissionsAsync();
+        granted = !!after.granted || after.status === 'granted';
+      }
+      if (!crjLocationMountedRef.current) return;
+
+      if (!granted) {
+        const denied = commitCrjLocation({ type: 'FG_DENIED' });
+        await showForegroundRecovery();
+        await advanceCrjLocationIfNeeded(denied);
+        return;
+      }
+
+      // Foreground granted → education directly. No preparation modal.
+      commitCrjLocation({ type: 'FG_GRANTED' });
+    } catch {
+      if (crjLocationMountedRef.current) {
+        commitCrjLocation({ type: 'FG_ERROR' });
+      }
+    } finally {
+      if (!crjLocationMountedRef.current) {
+        crjLocationRef.current = reduceCrjLocationStep(crjLocationRef.current, {
+          type: 'UNMOUNT',
+        });
+      }
+    }
+  }
+
+  async function handleCrjEnableBackground() {
+    const before = crjLocationRef.current;
+    const locked = commitCrjLocation({ type: 'BG_REQUEST' });
+    if (locked === before) return;
+
+    let granted = false;
+    let threw = false;
+    try {
+      await Location.requestBackgroundPermissionsAsync();
+      const snap = await readBackgroundPermissionSnapshot();
+      granted = isBackgroundPermissionEffectivelyGranted(snap);
+    } catch {
+      threw = true;
+    } finally {
+      const next = commitCrjLocation(
+        threw
+          ? { type: 'BG_ERROR' }
+          : granted
+            ? { type: 'BG_GRANTED' }
+            : { type: 'BG_DENIED' },
+      );
+      if (uid && next.bgVisible !== null) {
+        await updateUserProfilePartial(uid, { bgVisible: next.bgVisible }).catch(
+          () => {},
+        );
+      }
+      await markFullBackgroundEducationSeen(AsyncStorage).catch(() => {});
+      await advanceCrjLocationIfNeeded(next);
+    }
+  }
+
+  async function handleCrjBackgroundNotNow() {
+    if (
+      !crjLocationRef.current.educationVisible ||
+      crjLocationRef.current.buttonLocked
+    ) {
+      return;
+    }
+    try {
+      if (uid) {
+        await updateUserProfilePartial(uid, { bgVisible: false }).catch(
+          () => {},
+        );
+      }
+      await markFullBackgroundEducationSeen(AsyncStorage).catch(() => {});
+    } finally {
+      const next = commitCrjLocation({ type: 'NOT_NOW' });
+      await advanceCrjLocationIfNeeded(next);
+    }
   }
 
   async function requestNotifications() {
@@ -1132,12 +1275,49 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         }
       }
 
-      // First-time onboarding only: attempt GLOBAL visibility ON when
-      // foreground location is usable. Failures must not reopen CRJ.
-      // Explicit Off later is owned by Home deactivateVisibility — not here.
+      // Contractual Visibility activate ONLY after profileSetupCompleted +
+      // discovery context sync. Location step must not call activateVisibility
+      // (profile still incomplete → backend profile-incomplete / failed-precondition).
+      // No permission/Settings UI here — permissions were decided in Location.
       const activation = await attemptInitialVisibilityAfterCrjCompletion({
         getClient: getVisibilityDiscoveryClient,
       });
+      const activated = activation.activated === true;
+      setCrjVisibilityOn(activated);
+      if (activated) {
+        // Start BG runtime only after contractual activate success + bgVisible.
+        try {
+          const profile = await getUserProfile(uid);
+          const bgVisible = !!(profile as any)?.bgVisible;
+          await syncBackgroundLocationRuntime({
+            uid,
+            visibilityOn: true,
+            bgVisible,
+          });
+        } catch {
+          await syncBackgroundLocationRuntime({
+            uid,
+            visibilityOn: true,
+            bgVisible: false,
+          });
+        }
+      } else if (
+        activation.activated === false &&
+        activation.reason !== 'permission-denied'
+      ) {
+        // Correct activation recovery copy — never "Location not enabled".
+        await new Promise<void>((resolve) => {
+          Alert.alert(
+            t(
+              'onboarding.profileCompletion.location.activationIssueTitle' as any,
+            ),
+            t(
+              'onboarding.profileCompletion.location.activationIssueMessage' as any,
+            ),
+            [{ text: t('common.cancel'), onPress: () => resolve() }],
+          );
+        });
+      }
       if (__DEV__ && activation.activated === false) {
         console.warn('[CRJ] initial visibility activation skipped', {
           reason: activation.reason,
@@ -1358,6 +1538,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     .join(' ');
 
   return (
+    <>
     <RegistrationLayout
       footer={
         showFooterContinue ? (
@@ -1484,7 +1665,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               onPress={() => {
                 void requestLocation();
               }}
-              loading={submitting}
+              disabled={
+                crjLocation.buttonLocked && !crjLocation.educationVisible
+              }
+              loading={
+                crjLocation.buttonLocked && !crjLocation.educationVisible
+              }
             />
             <SecondaryButton
               label={t('onboarding.profileCompletion.location.skip')}
@@ -2094,6 +2280,18 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         </RegistrationFadeSlideIn>
       </ScrollView>
     </RegistrationLayout>
+      <BackgroundLocationEducationModal
+        visible={crjLocation.educationVisible}
+        variant="full"
+        busy={crjLocation.buttonLocked && crjLocation.educationVisible}
+        onEnableBackground={() => {
+          void handleCrjEnableBackground();
+        }}
+        onNotNow={() => {
+          void handleCrjBackgroundNotNow();
+        }}
+      />
+    </>
   );
 }
 

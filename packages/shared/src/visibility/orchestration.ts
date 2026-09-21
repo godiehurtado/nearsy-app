@@ -52,6 +52,15 @@ export async function ensureForegroundPermission(): Promise<{
 }
 
 export async function obtainValidLocationSample(): Promise<LocationSampleResult> {
+  try {
+    const servicesOn = await Location.hasServicesEnabledAsync();
+    if (!servicesOn) {
+      return { ok: false, kind: 'unavailable' };
+    }
+  } catch {
+    // If the probe fails, continue — getCurrentPosition will surface unavailability.
+  }
+
   const permission = await ensureForegroundPermission();
   if (permission.status !== 'granted') {
     return {

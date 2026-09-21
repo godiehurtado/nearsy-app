@@ -39,13 +39,37 @@ import {
   type SupportedLanguage,
 } from '../i18n';
 import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { MoreStackParamList } from '../navigation/MoreStack';
 import {
   isBackgroundLocationPermissionError,
-  startBackgroundLocation,
-  stopBackgroundLocation,
 } from '../services/backgroundLocation';
+import {
+  isBackgroundPermissionEffectivelyGranted,
+  locationServicesEnabled,
+  readBackgroundPermissionSnapshot,
+  readForegroundPermissionSnapshot,
+  reconcileBgVisibleWithBackgroundPermission,
+  requestAndApplyBackgroundLocation,
+  stopBackgroundLocationRuntime,
+  syncBackgroundLocationRuntime,
+} from '../visibility/backgroundLocationRuntime';
+import {
+  decideBackgroundEducationOffer,
+  markFullBackgroundEducationSeen,
+  type BackgroundEducationVariant,
+} from '../visibility/locationEducation';
+import {
+  beginLocationPermissionJourney,
+  clearLocationPermissionJourneySession,
+  endLocationPermissionJourney,
+  shouldShowLocationPreparation,
+} from '../visibility/locationPermissionJourney';
+import { BackgroundLocationEducationModal } from '../components/BackgroundLocationEducationModal';
+import { LocationPreparingModal } from '../components/LocationPreparingModal';
 import { evaluateBackgroundLocationSettingsReturn } from '../visibility/settingsRecovery';
+import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
+import { deactivateVisibilityFlow } from '../visibility/orchestration';
 import {
   ageFromBirthDate,
   applyBirthDateTextChange,
@@ -95,6 +119,7 @@ type ProfileDoc = {
   visibleToMinAge?: number | null;
   visibleToMaxAge?: number | null;
   bgVisible?: boolean;
+  visibility?: boolean;
 };
 
 type EditorKind = 'phone' | 'birthDate' | 'visibilityAge' | null;
@@ -194,13 +219,24 @@ export default function MoreScreen() {
   const [visibleToMinAge, setVisibleToMinAge] = useState<number | null>(null);
   const [visibleToMaxAge, setVisibleToMaxAge] = useState<number | null>(null);
   const [bgVisible, setBgVisible] = useState(false);
+  const [visibilityOn, setVisibilityOn] = useState(false);
   const [bgChanging, setBgChanging] = useState(false);
+  const [bgEducationOpen, setBgEducationOpen] = useState(false);
+  const [bgEducationVariant, setBgEducationVariant] =
+    useState<BackgroundEducationVariant>('brief');
+  const [bgEducationBusy, setBgEducationBusy] = useState(false);
+  const [locationPreparing, setLocationPreparing] = useState(false);
+  const bgEducationResolverRef = useRef<((accepted: boolean) => void) | null>(
+    null,
+  );
   const appStateRef = useRef(AppState.currentState);
   const pendingBgEnableIntentRef = useRef(false);
   const bgChangingRef = useRef(bgChanging);
   bgChangingRef.current = bgChanging;
   const bgVisibleRef = useRef(bgVisible);
   bgVisibleRef.current = bgVisible;
+  const visibilityOnRef = useRef(visibilityOn);
+  visibilityOnRef.current = visibilityOn;
 
   const [editor, setEditor] = useState<EditorKind>(null);
   const [languageModalOpen, setLanguageModalOpen] = useState(false);
@@ -278,7 +314,33 @@ export default function MoreScreen() {
     setVisibleToMaxAge(
       typeof data.visibleToMaxAge === 'number' ? data.visibleToMaxAge : null,
     );
-    setBgVisible(!!data.bgVisible);
+    setVisibilityOn(!!data.visibility);
+
+    const preferenceBgVisible = !!data.bgVisible;
+    let backgroundGranted = false;
+    try {
+      const bg = await readBackgroundPermissionSnapshot();
+      backgroundGranted = isBackgroundPermissionEffectivelyGranted(bg);
+    } catch {
+      backgroundGranted = false;
+    }
+    const reconciled = reconcileBgVisibleWithBackgroundPermission({
+      preferenceBgVisible,
+      backgroundGranted,
+    });
+    setBgVisible(reconciled.toggleOn);
+    if (reconciled.stopRuntime) {
+      await stopBackgroundLocationRuntime().catch(() => {});
+    }
+    if (reconciled.clearPreference && preferenceBgVisible) {
+      // Reflect effective OFF without touching Visibility / foreground.
+      await setDoc(
+        doc(firestoreDb, 'users', uid),
+        { bgVisible: false, updatedAt: Date.now() },
+        { merge: true },
+      ).catch(() => {});
+    }
+
     setLoading(false);
   }, []);
 
@@ -434,6 +496,61 @@ export default function MoreScreen() {
     }
   };
 
+  const closeBgEducation = (accepted: boolean) => {
+    setBgEducationOpen(false);
+    setBgEducationBusy(false);
+    const resolve = bgEducationResolverRef.current;
+    bgEducationResolverRef.current = null;
+    resolve?.(accepted);
+  };
+
+  const offerMoreBackgroundEducation = async (): Promise<boolean> => {
+    const bg = await readBackgroundPermissionSnapshot();
+    const offer = await decideBackgroundEducationOffer({
+      storage: AsyncStorage,
+      backgroundGranted: bg.granted,
+      bgVisible: false,
+    });
+    if (!offer.offer) {
+      return bg.granted;
+    }
+    setBgEducationVariant(offer.variant);
+    return await new Promise<boolean>((resolve) => {
+      bgEducationResolverRef.current = resolve;
+      setBgEducationOpen(true);
+    });
+  };
+
+  const persistBgVisible = async (uid: string, value: boolean) => {
+    await setDoc(
+      doc(firestoreDb, 'users', uid),
+      { bgVisible: value, updatedAt: Date.now() },
+      { merge: true },
+    );
+    setBgVisible(value);
+  };
+
+  const showNeedsAlwaysSettings = () => {
+    pendingBgEnableIntentRef.current = true;
+    Alert.alert(
+      t('common.appName'),
+      t('settings.backgroundVisibility.needsAlwaysPermission'),
+      [
+        {
+          text: t('common.cancel'),
+          style: 'cancel',
+          onPress: () => {
+            pendingBgEnableIntentRef.current = false;
+          },
+        },
+        {
+          text: t('settings.backgroundVisibility.openSettings'),
+          onPress: () => void Linking.openSettings(),
+        },
+      ],
+    );
+  };
+
   const handleToggleBg = async (next: boolean) => {
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) {
@@ -450,60 +567,172 @@ export default function MoreScreen() {
       );
       return;
     }
+
+    // Keep toggle visually OFF until enable succeeds (no optimistic ON).
+    if (!next) {
+      try {
+        setBgChanging(true);
+        await stopBackgroundLocationRuntime();
+        await persistBgVisible(uid, false);
+        Alert.alert(
+          t('settings.backgroundVisibility.disabledTitle' as any),
+          t('settings.backgroundVisibility.disabled'),
+          [
+            {
+              text: t('settings.backgroundVisibility.disabledDone' as any),
+            },
+            {
+              text: t('settings.backgroundVisibility.openSettings'),
+              onPress: () => void Linking.openSettings(),
+            },
+          ],
+        );
+      } catch (e: any) {
+        setBgVisible(false);
+        Alert.alert(
+          t('common.error'),
+          e?.message || t('settings.backgroundVisibility.error'),
+        );
+      } finally {
+        setBgChanging(false);
+      }
+      return;
+    }
+
     try {
       setBgChanging(true);
-      if (next) {
-        // Permission + task first; only then persist preference.
-        await startBackgroundLocation({ uid });
-        await setDoc(
-          doc(firestoreDb, 'users', uid),
-          { bgVisible: true, updatedAt: Date.now() },
-          { merge: true },
+      setBgVisible(false);
+
+      const servicesOn = await locationServicesEnabled();
+      if (!servicesOn) {
+        Alert.alert(
+          t('settings.backgroundVisibility.servicesOffTitle' as any),
+          t('settings.backgroundVisibility.servicesOffMessage' as any),
+          [
+            { text: t('common.cancel'), style: 'cancel' },
+            {
+              text: t('settings.backgroundVisibility.openSettings' as any),
+              onPress: () => {
+                pendingBgEnableIntentRef.current = true;
+                void Linking.openSettings();
+              },
+            },
+          ],
         );
-        setBgVisible(true);
+        return;
+      }
+
+      let fg = await readForegroundPermissionSnapshot();
+      const beforeFgGranted = fg.granted;
+      if (!fg.granted) {
+        if (fg.canAskAgain || fg.status === 'undetermined') {
+          const req = await Location.requestForegroundPermissionsAsync();
+          fg = {
+            status: String(req.status),
+            granted: !!req.granted || req.status === 'granted',
+            canAskAgain: !!req.canAskAgain,
+            sessionOnly: req.expires !== 'never',
+            iosScope: (req.ios?.scope as any) ?? null,
+          };
+        }
+      }
+      if (!fg.granted) {
+        if (!fg.canAskAgain) {
+          showNeedsAlwaysSettings();
+        } else {
+          Alert.alert(
+            t('common.error'),
+            t('settings.backgroundVisibility.needsAlwaysPermission'),
+          );
+        }
+        return;
+      }
+
+      const fgNewlyGranted = !beforeFgGranted && fg.granted;
+      const journeyToken = beginLocationPermissionJourney(uid, 'more');
+      try {
+        if (
+          shouldShowLocationPreparation({
+            foregroundGranted: true,
+            willRunActivationWork: fgNewlyGranted,
+          })
+        ) {
+          setLocationPreparing(true);
+          try {
+            // Real work: resolve BG snapshot / education decision after FG grant.
+            await readBackgroundPermissionSnapshot();
+          } finally {
+            setLocationPreparing(false);
+          }
+        }
+
+      const bg = await readBackgroundPermissionSnapshot();
+      if (isBackgroundPermissionEffectivelyGranted(bg)) {
+        await persistBgVisible(uid, true);
+        await syncBackgroundLocationRuntime({
+          uid,
+          visibilityOn: visibilityOnRef.current,
+          bgVisible: true,
+        });
+        Alert.alert(
+          t('common.appName'),
+          t('settings.backgroundVisibility.enabled'),
+        );
+        return;
+      }
+
+      if (!bg.canAskAgain && bg.status !== 'undetermined') {
+        showNeedsAlwaysSettings();
+        return;
+      }
+
+      const accepted = await offerMoreBackgroundEducation();
+      if (!accepted) {
+        await persistBgVisible(uid, false).catch(() => {});
+        return;
+      }
+
+      await markFullBackgroundEducationSeen(AsyncStorage);
+      const result = await requestAndApplyBackgroundLocation({
+        uid,
+        visibilityOn: visibilityOnRef.current,
+      });
+      const effectiveBg = await readBackgroundPermissionSnapshot();
+      if (
+        result.ok ||
+        isBackgroundPermissionEffectivelyGranted(effectiveBg)
+      ) {
+        pendingBgEnableIntentRef.current = false;
+        await persistBgVisible(uid, true);
         Alert.alert(
           t('common.appName'),
           t('settings.backgroundVisibility.enabled'),
         );
       } else {
-        // Stop Nearsy background updates; iOS Always cannot be revoked in-app.
-        await stopBackgroundLocation();
-        await setDoc(
-          doc(firestoreDb, 'users', uid),
-          { bgVisible: false, updatedAt: Date.now() },
-          { merge: true },
-        );
-        setBgVisible(false);
-        Alert.alert(
-          t('common.appName'),
-          t('settings.backgroundVisibility.disabled'),
-        );
+        await persistBgVisible(uid, false).catch(() => {});
+        if (result.code === 'services-off') {
+          Alert.alert(
+            t('settings.backgroundVisibility.servicesOffTitle' as any),
+            t('settings.backgroundVisibility.servicesOffMessage' as any),
+          );
+        } else if (!result.canAskAgain) {
+          showNeedsAlwaysSettings();
+        } else {
+          Alert.alert(
+            t('common.error'),
+            t('settings.backgroundVisibility.needsAlwaysPermission'),
+          );
+        }
+      }
+      } finally {
+        if (journeyToken) endLocationPermissionJourney(journeyToken);
+        setLocationPreparing(false);
       }
     } catch (e: any) {
       setBgVisible(false);
       if (isBackgroundLocationPermissionError(e)) {
-        const openSettings = () => {
-          pendingBgEnableIntentRef.current = true;
-          void Linking.openSettings();
-        };
         if (!e.canAskAgain) {
-          Alert.alert(
-            t('common.appName'),
-            t('settings.backgroundVisibility.needsAlwaysPermission'),
-            [
-              {
-                text: t('common.cancel'),
-                style: 'cancel',
-                onPress: () => {
-                  pendingBgEnableIntentRef.current = false;
-                },
-              },
-              {
-                text: t('settings.backgroundVisibility.openSettings'),
-                onPress: openSettings,
-              },
-            ],
-          );
+          showNeedsAlwaysSettings();
         } else {
           pendingBgEnableIntentRef.current = false;
           Alert.alert(
@@ -559,13 +788,12 @@ export default function MoreScreen() {
 
           try {
             setBgChanging(true);
-            await startBackgroundLocation({ uid });
-            await setDoc(
-              doc(firestoreDb, 'users', uid),
-              { bgVisible: true, updatedAt: Date.now() },
-              { merge: true },
-            );
-            setBgVisible(true);
+            await persistBgVisible(uid, true);
+            await syncBackgroundLocationRuntime({
+              uid,
+              visibilityOn: visibilityOnRef.current,
+              bgVisible: true,
+            });
             Alert.alert(
               t('common.appName'),
               t('settings.backgroundVisibility.enabled'),
@@ -575,6 +803,8 @@ export default function MoreScreen() {
           } finally {
             setBgChanging(false);
           }
+        } else if (evaluation.clearIntent) {
+          setBgVisible(false);
         }
       }
     });
@@ -606,6 +836,19 @@ export default function MoreScreen() {
         '../authentication/social'
       );
       clearPendingSocialProfilePrefill();
+      // Contractual logout order (ENH-LOC-01):
+      // 1) stop background task/runtime (+ clear local UID / runtime-allowed)
+      // 2) deactivate Visibility via callable when possible
+      // 3) signOut
+      // 4) navigation reset
+      await stopBackgroundLocationRuntime().catch(() => {});
+      clearLocationPermissionJourneySession();
+      try {
+        const client = await getVisibilityDiscoveryClient();
+        await deactivateVisibilityFlow(client);
+      } catch {
+        // Best-effort contractual Visibility close before sign-out.
+      }
       await firebaseAuth.signOut();
       const parent = navigation.getParent?.() as any;
       if (parent?.reset) {
@@ -1320,6 +1563,19 @@ export default function MoreScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+      <LocationPreparingModal visible={locationPreparing} />
+      <BackgroundLocationEducationModal
+        visible={bgEducationOpen && !locationPreparing}
+        variant={bgEducationVariant}
+        busy={bgEducationBusy}
+        onEnableBackground={() => {
+          closeBgEducation(true);
+        }}
+        onNotNow={() => {
+          void markFullBackgroundEducationSeen(AsyncStorage);
+          closeBgEducation(false);
+        }}
+      />
     </View>
   );
 }

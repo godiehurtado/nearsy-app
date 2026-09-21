@@ -95,14 +95,12 @@ describe('iOS post-MVP batch 2.1 — MoreScreen Background Location auto-continu
   it('wires pending background enable intent on Open Settings and reconciles on foregrounding', () => {
     const more = readSharedSource('screens/MoreScreen.tsx');
     assert.match(more, /pendingBgEnableIntentRef/);
-    assert.match(
-      more,
-      /pendingBgEnableIntentRef\.current\s*=\s*true;\s*void Linking\.openSettings\(\)/,
-    );
+    assert.match(more, /pendingBgEnableIntentRef\.current\s*=\s*true/);
+    assert.match(more, /Linking\.openSettings/);
     assert.match(more, /AppState\.addEventListener\('change'/);
     assert.match(more, /evaluateBackgroundLocationSettingsReturn/);
-    assert.match(more, /startBackgroundLocation\(\{ uid \}\)/);
-    assert.match(more, /setBgVisible\(true\)/);
+    assert.match(more, /syncBackgroundLocationRuntime/);
+    assert.match(more, /persistBgVisible\(uid, true\)/);
   });
 });
 

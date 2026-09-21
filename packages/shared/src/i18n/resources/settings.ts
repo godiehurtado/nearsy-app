@@ -45,14 +45,42 @@ export default {
       'Keep your location updated so others can discover you nearby even when the app is closed.',
     hint: 'Requires Always location permission. On iOS, a blue indicator may appear while Nearsy updates your location in the background.',
     enabled: 'Background visibility is on',
+    disabledTitle: 'Background updates are off',
     disabled:
-      'Background visibility is off in Nearsy. iOS may still show Always access until you change it in Settings.',
+      'Nearsy will no longer update your location in the background. You can manage the system permission in iPhone Settings.',
+    disabledDone: 'Done',
     unsupported: 'Background location is not available on web.',
     authRequired: 'Please log in again.',
     error: 'Could not update background location.',
     openSettings: 'Open Settings',
     needsAlwaysPermission:
       'Nearsy needs Always location access to stay visible in the background. Enable it in iOS Settings.',
+    education: {
+      full: {
+        title: 'Stay discoverable nearby',
+        body:
+          'Nearsy can keep your location updated in the background while Visibility is on, so people who are truly nearby can find you even when the app is closed. Background location is not used when Visibility is off.',
+      },
+      brief: {
+        title: 'Enable background location?',
+        body:
+          'Background updates keep you discoverable nearby while Visibility is on. You can turn this off anytime in More.',
+      },
+      controlNote:
+        'You stay in control. Background location is optional and never required to use Nearsy.',
+      enableBackground: 'Enable background location',
+      notNow: 'Not now',
+    },
+    preparing: {
+      title: 'Almost there!',
+      body: 'We’re getting your location ready. One more quick step is coming up.',
+    },
+    servicesOffTitle: 'Location Services are off',
+    servicesOffMessage:
+      'Turn on Location Services in iOS Settings to use Visibility and nearby discovery.',
+    accuracyTitle: 'More precise location needed',
+    accuracyMessage:
+      'Nearsy needs more precise location to show people within about 200 feet. Enable Precise Location for Nearsy in iOS Settings.',
   },
   language: {
     title: 'Language',

@@ -496,6 +496,9 @@ export default {
       deniedTitle: 'Location not enabled',
       deniedMessage:
         'You can turn it on later in Settings. You can still continue.',
+      activationIssueTitle: 'Couldn’t update visibility',
+      activationIssueMessage:
+        'We couldn’t update your visibility right now. Your location permission is ready, and you can try again shortly.',
     },
     notifications: {
       title: 'Stay in the loop',

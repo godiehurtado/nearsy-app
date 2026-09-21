@@ -11,6 +11,11 @@ type StartOpts = {
   distanceInterval?: number; // metros mínimos para disparar update
   timeIntervalMs?: number; // ms mínimos entre updates (Android respeta más este)
   showsIndicatorIOS?: boolean;
+  /**
+   * When false, only checks existing permissions (no native prompts).
+   * Used by gated runtime sync after education / Settings return.
+   */
+  requestPermissions?: boolean;
 };
 
 export type BackgroundLocationPermissionFailure = {
@@ -40,25 +45,20 @@ export function isBackgroundLocationPermissionError(
   return err instanceof BackgroundLocationPermissionError;
 }
 
-export async function startBackgroundLocation({
-  uid,
-  accuracy = Location.Accuracy.Highest,
-  distanceInterval = 1,
-  timeIntervalMs = 15_000,
-  showsIndicatorIOS = true,
-}: StartOpts) {
-  if (!uid) {
-    throw new Error('Missing uid for background location');
-  }
-
-  // Guarda uid para que la Task lo recupere
-  await AsyncStorage.setItem('NEARSY_BG_UID', uid);
-
-  // ===== Permisos (check → request only when iOS can still prompt) =====
-
+/**
+ * Check/request FG + Always without starting the background task.
+ * Callers that only need permission (education → Always) must use this so a
+ * Visibility=OFF preference cannot briefly start updates.
+ */
+export async function ensureBackgroundLocationPermissions(
+  requestPermissions = true,
+): Promise<void> {
   let fg = await Location.getForegroundPermissionsAsync();
   if (fg.status !== 'granted') {
-    if (fg.status === 'undetermined' || fg.canAskAgain) {
+    if (
+      requestPermissions &&
+      (fg.status === 'undetermined' || fg.canAskAgain)
+    ) {
       fg = await Location.requestForegroundPermissionsAsync();
     }
   }
@@ -70,17 +70,43 @@ export async function startBackgroundLocation({
   }
 
   let bg = await Location.getBackgroundPermissionsAsync();
-  if (bg.status !== 'granted') {
-    if (bg.status === 'undetermined' || bg.canAskAgain) {
+  const scopeAlways = (p: { ios?: { scope?: string }; status: string; granted?: boolean }) =>
+    p.ios?.scope === 'always' || p.status === 'granted' || !!p.granted;
+
+  if (!scopeAlways(bg)) {
+    if (
+      requestPermissions &&
+      (bg.status === 'undetermined' || bg.canAskAgain)
+    ) {
       bg = await Location.requestBackgroundPermissionsAsync();
     }
   }
-  if (bg.status !== 'granted') {
+  // Re-read effective status — iOS may defer Always, or report scope before status.
+  bg = await Location.getBackgroundPermissionsAsync();
+  if (!scopeAlways(bg)) {
     throw new BackgroundLocationPermissionError({
       code: 'background-denied',
       canAskAgain: !!bg.canAskAgain,
     });
   }
+}
+
+export async function startBackgroundLocation({
+  uid,
+  accuracy = Location.Accuracy.Highest,
+  distanceInterval = 1,
+  timeIntervalMs = 15_000,
+  showsIndicatorIOS = true,
+  requestPermissions = true,
+}: StartOpts) {
+  if (!uid) {
+    throw new Error('Missing uid for background location');
+  }
+
+  // Guarda uid para que la Task lo recupere (must match authenticated account)
+  await AsyncStorage.setItem('NEARSY_BG_UID', uid);
+
+  await ensureBackgroundLocationPermissions(requestPermissions);
 
   // ===== Reinicia la task para aplicar SIEMPRE la configuración nueva =====
 
