@@ -217,7 +217,7 @@ describe('ENH-LOC-01 wiring contracts', () => {
     assert.doesNotMatch(crj, /beginLocationPermissionJourney\(uid, 'crj'\)/);
   });
 
-  it('Home recovery + activate use preparation and presentation hydration', () => {
+  it('Home recovery + activate use presentation hydration; recovery skips preparation', () => {
     const home = readShared('screens/MainHomeScreen.tsx');
     assert.match(home, /resolveVisibilityPresentation/);
     assert.match(home, /LocationPreparingModal/);
@@ -225,12 +225,16 @@ describe('ENH-LOC-01 wiring contracts', () => {
     assert.match(home, /visualActive/);
     assert.match(home, /setVisibilityValidationPending\(true\)/);
     assert.match(home, /allowToggle/);
+    const restore = home.slice(
+      home.indexOf('runPostGrantRestore'),
+      home.indexOf("decision.action === 'preserve-intent-then-deactivate'"),
+    );
+    assert.doesNotMatch(restore, /setLocationPreparing\(true\)/);
     // During preserve-intent, do not immediately flip local visibility OFF before FG attempt.
     const preserveSlice = home.slice(
       home.indexOf("decision.action === 'preserve-intent-then-deactivate'"),
       home.indexOf("decision.action === 'activate-from-intent'"),
     );
-    assert.match(preserveSlice, /Stop runtime only/);
     assert.match(preserveSlice, /runPostGrantRestore/);
   });
 

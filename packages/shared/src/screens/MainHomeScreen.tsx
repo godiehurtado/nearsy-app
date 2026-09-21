@@ -372,6 +372,129 @@ export default function MainHomeScreen({ navigation }: Props) {
     })();
   }, []);
 
+  const clearHomeLocationPresentation = useCallback(() => {
+    setLocationPreparing(false);
+    setBgEducationOpen(false);
+    setBgEducationBusy(false);
+    const resolve = bgEducationResolverRef.current;
+    bgEducationResolverRef.current = null;
+    resolve?.();
+  }, []);
+
+  const closeBgEducation = useCallback(() => {
+    setBgEducationOpen(false);
+    setBgEducationBusy(false);
+    const resolve = bgEducationResolverRef.current;
+    bgEducationResolverRef.current = null;
+    resolve?.();
+  }, []);
+
+  const handleHomeEnableBackground = useCallback(async () => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid || bgEducationBusy) return;
+    setBgEducationBusy(true);
+    try {
+      await markFullBackgroundEducationSeen(AsyncStorage);
+      const result = await requestAndApplyBackgroundLocation({
+        uid,
+        visibilityOn: !!profileRef.current.visibility,
+      });
+      const effectiveBg = await readBackgroundPermissionSnapshot();
+      if (
+        result.ok ||
+        isBackgroundPermissionEffectivelyGranted(effectiveBg)
+      ) {
+        pendingVisibilityIntentRef.current = false;
+        await updateUserProfilePartial(uid, { bgVisible: true });
+        setProfile((p) => ({ ...p, bgVisible: true }));
+        setValidatedEffectiveVisibility(true);
+        setVisibilityValidationPending(false);
+        hydrationValidationDoneRef.current = true;
+        return;
+      }
+      // Automatic Home recovery: background optional → foreground-only, no Settings.
+      await updateUserProfilePartial(uid, { bgVisible: false }).catch(
+        () => {},
+      );
+      setProfile((p) => ({ ...p, bgVisible: false }));
+    } catch {
+      const effectiveBg = await readBackgroundPermissionSnapshot().catch(
+        () => null,
+      );
+      if (effectiveBg && isBackgroundPermissionEffectivelyGranted(effectiveBg)) {
+        pendingVisibilityIntentRef.current = false;
+        await updateUserProfilePartial(uid, { bgVisible: true }).catch(
+          () => {},
+        );
+        setProfile((p) => ({ ...p, bgVisible: true }));
+        return;
+      }
+      await updateUserProfilePartial(uid, { bgVisible: false }).catch(() => {});
+      setProfile((p) => ({ ...p, bgVisible: false }));
+    } finally {
+      closeBgEducation();
+    }
+  }, [bgEducationBusy, closeBgEducation]);
+
+  const handleHomeBackgroundNotNow = useCallback(async () => {
+    const uid = firebaseAuth.currentUser?.uid;
+    await markFullBackgroundEducationSeen(AsyncStorage);
+    if (uid) {
+      await updateUserProfilePartial(uid, { bgVisible: false }).catch(() => {});
+      setProfile((p) => ({ ...p, bgVisible: false }));
+    }
+    // Do not undo foreground or Visibility.
+    closeBgEducation();
+  }, [closeBgEducation]);
+
+  /**
+   * Reinstall / first-session: if the local education mark is absent, always
+   * show education after FG — even when OS Always is still granted.
+   * Never leave a preparation overlay between FG and education.
+   */
+  const offerBackgroundEducationIfNeeded = useCallback(async () => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) return;
+    const fullSeen = await hasSeenFullBackgroundEducation(AsyncStorage);
+    const bg = await readBackgroundPermissionSnapshot();
+    const bgGranted = isBackgroundPermissionEffectivelyGranted(bg);
+
+    if (fullSeen) {
+      const offer = await decideBackgroundEducationOffer({
+        storage: AsyncStorage,
+        backgroundGranted: bgGranted,
+        bgVisible: !!profileRef.current.bgVisible,
+      });
+      if (!offer.offer) {
+        if (bgGranted) {
+          if (!profileRef.current.bgVisible) {
+            await updateUserProfilePartial(uid, { bgVisible: true }).catch(
+              () => {},
+            );
+            setProfile((p) => ({ ...p, bgVisible: true }));
+          }
+          await syncBackgroundLocationRuntime({
+            uid,
+            visibilityOn: !!profileRef.current.visibility,
+            bgVisible: true,
+          });
+        }
+        return;
+      }
+      setBgEducationVariant(offer.variant);
+    } else {
+      setBgEducationVariant('full');
+    }
+
+    // Direct education — no preparation modal between FG and this sheet.
+    setLocationPreparing(false);
+    await new Promise<void>((resolve) => {
+      bgEducationResolverRef.current = resolve;
+      setBgEducationOpen(true);
+    });
+    markSessionBackgroundEducationOffered(uid);
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -404,84 +527,60 @@ export default function MainHomeScreen({ navigation }: Props) {
             recoveryIntent,
           });
 
-          const runPostGrantRestore = async (newlyGranted: boolean) => {
+          /**
+           * Automatic Home recovery (reinstall / FG missing):
+           * FG → activate (no preparation overlay) → education → cleanup.
+           * Never skip education when the local reinstall mark is absent.
+           * Never leave an invisible Modal between prep and education.
+           */
+          const runPostGrantRestore = async (_newlyGranted: boolean) => {
             const token = beginLocationPermissionJourney(uid, 'home-recovery');
             if (!token) {
-              // Another owner (CRJ / More / activate) holds the journey —
-              // never convert unknown into deactivate / locked Inactive.
               return;
             }
             recoveryJourneyRunningRef.current = true;
             setRecoveryBusy(true);
+            // No preparation modal — activate is contractual, education is next.
+            setLocationPreparing(false);
             try {
-              const showPrep = shouldShowLocationPreparation({
-                foregroundGranted: true,
-                willRunActivationWork: true,
-              });
-              if (showPrep) setLocationPreparing(true);
               let restoreOk = false;
               try {
                 const restore = await activateVisibilityFlow(client);
-                if (cancelled) return;
                 restoreOk = restore.ok === true;
                 if (restoreOk) {
                   await clearVisibilityRecoveryIntent(AsyncStorage);
                   setProfile((p) => ({ ...p, visibility: true }));
                   finishValidation(true);
                 } else {
-                  // Contractual activate failed — do not claim Active, and do not
-                  // deactivate for unknown/transient errors (remote may stay true).
                   finishValidation(false);
                 }
-              } finally {
-                setLocationPreparing(false);
+              } catch {
+                finishValidation(false);
               }
 
-              // BG education follows FG grant. Reinstall: full education absent
-              // must still offer even when Visibility was already persisted.
-              const fullEducationSeen = await hasSeenFullBackgroundEducation(
-                AsyncStorage,
-              );
-              const offerEducation =
-                shouldContinueToBackgroundEducation({
-                  foregroundGranted: true,
-                  foregroundNewlyGranted: newlyGranted,
-                  requireNewlyGranted: fullEducationSeen,
-                  uid,
-                  alreadyOfferedThisSession:
-                    hasSessionBackgroundEducationOffered(uid),
-                }) ||
-                (!fullEducationSeen &&
-                  !hasSessionBackgroundEducationOffered(uid));
-
-              if (offerEducation) {
-                await offerBackgroundEducationIfNeeded();
-              } else if (restoreOk && profileRef.current.bgVisible) {
-                await syncBackgroundLocationRuntime({
-                  uid,
-                  visibilityOn: true,
-                  bgVisible: true,
-                });
-              } else if (restoreOk) {
-                await stopBackgroundLocationRuntime();
-              }
+              // Education after FG — reinstall without local mark always shows the sheet.
+              // Snapshot/profile churn must not cancel this (deps no longer include profile).
+              await offerBackgroundEducationIfNeeded();
             } finally {
               endLocationPermissionJourney(token);
               recoveryJourneyRunningRef.current = false;
               setRecoveryBusy(false);
+              setLocationPreparing(false);
+              if (!bgEducationResolverRef.current) {
+                setBgEducationOpen(false);
+                setBgEducationBusy(false);
+              }
             }
           };
 
           if (decision.action === 'preserve-intent-then-deactivate') {
-            // Visual stays Active (validation pending). Do not flip Inactive yet.
-            // Stop runtime only — contractual deactivate after FG denied/failed.
             await stopBackgroundLocationRuntime();
             await writeVisibilityRecoveryIntent(AsyncStorage, uid).catch(
               () => {},
             );
 
             if (fgBefore.status === 'undetermined' || fgBefore.canAskAgain) {
-              const req = await Location.requestForegroundPermissionsAsync().catch(
+              await Location.requestForegroundPermissionsAsync().catch(
                 () => null,
               );
               if (cancelled) return;
@@ -494,7 +593,6 @@ export default function MainHomeScreen({ navigation }: Props) {
               }
             }
 
-            // FG denied / unavailable → contractual deactivate, then Inactive.
             const result = await reconcileVisibilityWithForegroundPermission({
               remoteVisibility: true,
               client,
@@ -546,7 +644,6 @@ export default function MainHomeScreen({ navigation }: Props) {
               !fullEducationSeen &&
               !hasSessionBackgroundEducationOffered(uid)
             ) {
-              // Reinstall / first session: persisted Active still needs BG education.
               await offerBackgroundEducationIfNeeded();
             } else if (profileRef.current.bgVisible) {
               await syncBackgroundLocationRuntime({
@@ -565,13 +662,16 @@ export default function MainHomeScreen({ navigation }: Props) {
           }
         } catch {
           finishValidation(!!profileRef.current.visibility);
+          clearHomeLocationPresentation();
         }
       })();
       return () => {
         cancelled = true;
       };
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- offerBackgroundEducationIfNeeded stable enough via refs
-    }, [profile.visibility, profile.bgVisible, loading]),
+      // Do not depend on profile.visibility / bgVisible — snapshot churn must not
+      // remount this effect mid-recovery (that skipped education and left overlays).
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loading]),
   );
 
   const showVisibilityError = (
@@ -677,106 +777,6 @@ export default function MainHomeScreen({ navigation }: Props) {
     },
     [announceInterestLimit, mode, officialInterestIds, t],
   );
-
-  const closeBgEducation = useCallback(() => {
-    setBgEducationOpen(false);
-    setBgEducationBusy(false);
-    const resolve = bgEducationResolverRef.current;
-    bgEducationResolverRef.current = null;
-    resolve?.();
-  }, []);
-
-  const handleHomeEnableBackground = useCallback(async () => {
-    const uid = firebaseAuth.currentUser?.uid;
-    if (!uid || bgEducationBusy) return;
-    setBgEducationBusy(true);
-    try {
-      await markFullBackgroundEducationSeen(AsyncStorage);
-      const result = await requestAndApplyBackgroundLocation({
-        uid,
-        visibilityOn: !!profileRef.current.visibility,
-      });
-      const effectiveBg = await readBackgroundPermissionSnapshot();
-      if (
-        result.ok ||
-        isBackgroundPermissionEffectivelyGranted(effectiveBg)
-      ) {
-        pendingVisibilityIntentRef.current = false;
-        await updateUserProfilePartial(uid, { bgVisible: true });
-        setProfile((p) => ({ ...p, bgVisible: true }));
-        setValidatedEffectiveVisibility(true);
-        setVisibilityValidationPending(false);
-        hydrationValidationDoneRef.current = true;
-        return;
-      }
-      // Automatic Home recovery: background optional → foreground-only, no Settings.
-      await updateUserProfilePartial(uid, { bgVisible: false }).catch(
-        () => {},
-      );
-      setProfile((p) => ({ ...p, bgVisible: false }));
-    } catch {
-      const effectiveBg = await readBackgroundPermissionSnapshot().catch(
-        () => null,
-      );
-      if (effectiveBg && isBackgroundPermissionEffectivelyGranted(effectiveBg)) {
-        pendingVisibilityIntentRef.current = false;
-        await updateUserProfilePartial(uid, { bgVisible: true }).catch(
-          () => {},
-        );
-        setProfile((p) => ({ ...p, bgVisible: true }));
-        return;
-      }
-      await updateUserProfilePartial(uid, { bgVisible: false }).catch(() => {});
-      setProfile((p) => ({ ...p, bgVisible: false }));
-    } finally {
-      closeBgEducation();
-    }
-  }, [bgEducationBusy, closeBgEducation]);
-
-  const handleHomeBackgroundNotNow = useCallback(async () => {
-    const uid = firebaseAuth.currentUser?.uid;
-    await markFullBackgroundEducationSeen(AsyncStorage);
-    if (uid) {
-      await updateUserProfilePartial(uid, { bgVisible: false }).catch(() => {});
-      setProfile((p) => ({ ...p, bgVisible: false }));
-    }
-    // Do not undo foreground or Visibility.
-    closeBgEducation();
-  }, [closeBgEducation]);
-
-  const offerBackgroundEducationIfNeeded = useCallback(async () => {
-    const uid = firebaseAuth.currentUser?.uid;
-    if (!uid) return;
-    const bg = await readBackgroundPermissionSnapshot();
-    const offer = await decideBackgroundEducationOffer({
-      storage: AsyncStorage,
-      backgroundGranted: isBackgroundPermissionEffectivelyGranted(bg),
-      bgVisible: !!profileRef.current.bgVisible,
-    });
-    if (!offer.offer) {
-      if (isBackgroundPermissionEffectivelyGranted(bg)) {
-        if (!profileRef.current.bgVisible) {
-          await updateUserProfilePartial(uid, { bgVisible: true }).catch(
-            () => {},
-          );
-          setProfile((p) => ({ ...p, bgVisible: true }));
-        }
-        await syncBackgroundLocationRuntime({
-          uid,
-          visibilityOn: !!profileRef.current.visibility,
-          bgVisible: true,
-        });
-      }
-      return;
-    }
-    setBgEducationVariant(offer.variant);
-    await new Promise<void>((resolve) => {
-      bgEducationResolverRef.current = resolve;
-      setBgEducationOpen(true);
-    });
-    // Mark only after the owner responds — never before the modal resolves.
-    markSessionBackgroundEducationOffered(uid);
-  }, []);
 
   const activateVisibility = useCallback(async () => {
     if (statusUpdatingRef.current) return;
@@ -1396,7 +1396,7 @@ export default function MainHomeScreen({ navigation }: Props) {
     </ScrollView>
       <LocationPreparingModal visible={locationPreparing} />
       <BackgroundLocationEducationModal
-        visible={bgEducationOpen && !locationPreparing}
+        visible={bgEducationOpen}
         variant={bgEducationVariant}
         busy={bgEducationBusy}
         onEnableBackground={() => {

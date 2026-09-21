@@ -44,8 +44,9 @@ export function BackgroundLocationEducationModal({
       : 'settings.backgroundVisibility.education.full';
 
   return (
+    visible ? (
     <Modal
-      visible={visible}
+      visible
       transparent
       animationType="fade"
       onRequestClose={() => {
@@ -116,6 +117,7 @@ export function BackgroundLocationEducationModal({
         </View>
       </View>
     </Modal>
+    ) : null
   );
 }
 

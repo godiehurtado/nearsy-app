@@ -91,11 +91,9 @@ describe('Owner retest — FG→education invariant (activate-independent)', () 
       home.indexOf('runPostGrantRestore'),
       home.indexOf('preserve-intent-then-deactivate'),
     );
-    assert.match(restore, /BG education follows FG grant/);
-    assert.match(
-      restore,
-      /shouldContinueToBackgroundEducation\(\{[\s\S]*foregroundGranted:\s*true/,
-    );
+    assert.match(restore, /offerBackgroundEducationIfNeeded/);
+    assert.match(restore, /No preparation modal/);
+    assert.doesNotMatch(restore, /setLocationPreparing\(true\)/);
     assert.doesNotMatch(
       restore,
       /restoreOk &&\s*shouldContinueToBackgroundEducation/,

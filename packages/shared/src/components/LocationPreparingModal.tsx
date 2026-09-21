@@ -27,8 +27,9 @@ export function LocationPreparingModal({ visible }: Props) {
   const insets = useSafeAreaInsets();
 
   return (
+    visible ? (
     <Modal
-      visible={visible}
+      visible
       transparent
       animationType="fade"
       // No user dismiss while preparation is in progress.
@@ -69,6 +70,7 @@ export function LocationPreparingModal({ visible }: Props) {
         </View>
       </View>
     </Modal>
+    ) : null
   );
 }
 
