@@ -74,6 +74,9 @@ yarn-error.*
 firebase-debug.log
 firebase-debug.*.log
 
+# Local Owner QA / Metro capture logs (never commit)
+.qa-logs/
+
 # macOS
 .DS_Store
 *.pem
