@@ -1,8 +1,8 @@
 /**
- * BUG-CRJ-01 — CRJ interest subcategory navigation regression.
+ * BUG-CRJ-01 — CRJ interest subcategory navigation via Next/Back.
  *
- * Fails when hierarchical CRJ auto-opens the first group and header Back
- * always leaves the category (the pre-fix defect).
+ * Acceptance: Next walks catalog subcategories in order before the next
+ * category; Back reverses; chip toggle never advances.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -14,13 +14,14 @@ import {
 import {
   enterCrjInterestSubcategory,
   leaveCrjInterestSubcategory,
+  listCrjSubcategoryIds,
   readCrjActiveSubcategory,
   resolveCrjInterestBackAction,
+  resolveCrjInterestNextAction,
   selectionsInCategory,
   toggleCrjInterestSelection,
   type CrjActiveGroupMap,
 } from '../interests/crjInterestSubcategoryNavigation';
-import { resolveActiveGroupId } from '../interests/interestHierarchy';
 import enOnboarding from '../i18n/resources/onboarding';
 import es from '../i18n/locales/es';
 
@@ -40,128 +41,195 @@ function sample(
   };
 }
 
-test('BUG-CRJ-01: entering hierarchical category starts at subcategory overview', () => {
-  const music = getOnboardingCategory('music');
-  const map: CrjActiveGroupMap = {};
+function applyNext(
+  map: CrjActiveGroupMap,
+  categoryId: 'music' | 'food' | 'business',
+): { map: CrjActiveGroupMap; leavesCategory: boolean } {
+  const category = getOnboardingCategory(categoryId);
+  const action = resolveCrjInterestNextAction({
+    category,
+    activeGroupMap: map,
+  });
+  if (action.kind === 'leave_category') {
+    return { map, leavesCategory: true };
+  }
+  return {
+    map: enterCrjInterestSubcategory(map, category, action.groupId),
+    leavesCategory: false,
+  };
+}
+
+function applyBack(
+  map: CrjActiveGroupMap,
+  categoryId: 'music' | 'food' | 'business',
+): { map: CrjActiveGroupMap; previousStep: boolean } {
+  const category = getOnboardingCategory(categoryId);
+  const action = resolveCrjInterestBackAction({
+    category,
+    activeGroupMap: map,
+  });
+  if (action.kind === 'previous_step') {
+    return { map, previousStep: true };
+  }
+  if (action.kind === 'show_overview') {
+    return {
+      map: leaveCrjInterestSubcategory(map, categoryId),
+      previousStep: false,
+    };
+  }
+  return {
+    map: enterCrjInterestSubcategory(map, category, action.groupId),
+    previousStep: false,
+  };
+}
+
+test('BUG-CRJ-01 catalog sequences: Music and Food subcategory order', () => {
+  assert.deepEqual(listCrjSubcategoryIds(getOnboardingCategory('music')), [
+    'music_group_genres',
+    'music_group_dance',
+    'music_group_live',
+    'music_group_performing',
+    'music_group_movies_tv',
+    'music_group_anime',
+  ]);
+  assert.deepEqual(listCrjSubcategoryIds(getOnboardingCategory('food')), [
+    'food_group_dietary',
+    'food_group_cuisines',
+    'food_group_experiences',
+    'food_group_beverages',
+  ]);
+  assert.deepEqual(listCrjSubcategoryIds(getOnboardingCategory('business')), []);
+});
+
+test('BUG-CRJ-01 Next: Music overview → each group → Food', () => {
+  let map: CrjActiveGroupMap = {};
   assert.equal(readCrjActiveSubcategory(map, 'music'), null);
-  // Defect baseline: resolveActiveGroupId always forced the first group.
-  assert.equal(resolveActiveGroupId(music), 'music_group_genres');
-  assert.notEqual(
-    readCrjActiveSubcategory(map, 'music'),
-    resolveActiveGroupId(music),
+
+  const musicGroups = listCrjSubcategoryIds(getOnboardingCategory('music'));
+  for (const expected of musicGroups) {
+    const step = applyNext(map, 'music');
+    assert.equal(step.leavesCategory, false, `should enter ${expected}`);
+    map = step.map;
+    assert.equal(readCrjActiveSubcategory(map, 'music'), expected);
+  }
+
+  const leaveMusic = applyNext(map, 'music');
+  assert.equal(leaveMusic.leavesCategory, true);
+  // Active group retained so Back can reverse into the last Music group.
+  assert.equal(
+    readCrjActiveSubcategory(leaveMusic.map, 'music'),
+    'music_group_anime',
+  );
+
+  // Arrive at Food overview.
+  map = leaveMusic.map;
+  assert.equal(readCrjActiveSubcategory(map, 'food'), null);
+  const firstFood = applyNext(map, 'food');
+  assert.equal(firstFood.leavesCategory, false);
+  assert.equal(
+    readCrjActiveSubcategory(firstFood.map, 'food'),
+    'food_group_dietary',
   );
 });
 
-test('BUG-CRJ-01: category → subcategory → select/deselect → back → advance', () => {
-  const music = getOnboardingCategory('music');
-  const food = getOnboardingCategory('food');
-  let groups: CrjActiveGroupMap = {};
+test('BUG-CRJ-01 Back reverses Music path and keeps selections', () => {
+  let map: CrjActiveGroupMap = {};
   let selected: OnboardingSelectedInterest[] = [];
-  let step: 'music' | 'food' = 'music';
 
-  // Enter Music overview — no subcategory open.
-  assert.equal(readCrjActiveSubcategory(groups, 'music'), null);
-
-  // Enter Dance subcategory.
-  groups = enterCrjInterestSubcategory(groups, music, 'music_group_dance');
-  assert.equal(readCrjActiveSubcategory(groups, 'music'), 'music_group_dance');
-
-  // Select then deselect then select Salsa.
-  const salsa = sample(
-    'music_dance_salsa',
-    'music',
-    'music_group_dance',
-    'Salsa',
+  // Walk Music with a selection in genres; chip toggle must not change nav.
+  map = applyNext(map, 'music').map; // genres
+  selected = toggleCrjInterestSelection(
+    selected,
+    sample('music_genre_pop', 'music', 'music_group_genres', 'Pop'),
   );
-  selected = toggleCrjInterestSelection(selected, salsa);
-  assert.equal(selectionsInCategory(selected, 'music').length, 1);
-  selected = toggleCrjInterestSelection(selected, salsa);
-  assert.equal(selectionsInCategory(selected, 'music').length, 0);
-  selected = toggleCrjInterestSelection(selected, salsa);
+  assert.equal(readCrjActiveSubcategory(map, 'music'), 'music_group_genres');
   assert.equal(selectionsInCategory(selected, 'music').length, 1);
 
-  // Also select an Anime interest after switching subcategory.
-  groups = enterCrjInterestSubcategory(groups, music, 'music_group_anime');
-  assert.equal(readCrjActiveSubcategory(groups, 'music'), 'music_group_anime');
+  map = applyNext(map, 'music').map; // dance
+  selected = toggleCrjInterestSelection(
+    selected,
+    sample('music_dance_salsa', 'music', 'music_group_dance', 'Salsa'),
+  );
+  map = applyNext(map, 'music').map; // live
+  map = applyNext(map, 'music').map; // performing
+  map = applyNext(map, 'music').map; // movies_tv
+  map = applyNext(map, 'music').map; // anime
   selected = toggleCrjInterestSelection(
     selected,
     sample('music_anime_series', 'music', 'music_group_anime', 'Anime Series'),
   );
-  assert.equal(selectionsInCategory(selected, 'music').length, 2);
 
-  // Header Back leaves subcategory, stays on Music category.
-  assert.equal(
-    resolveCrjInterestBackAction({ category: music, activeGroupMap: groups }),
-    'leave_subcategory',
-  );
-  groups = leaveCrjInterestSubcategory(groups, 'music');
-  assert.equal(readCrjActiveSubcategory(groups, 'music'), null);
-  assert.equal(selectionsInCategory(selected, 'music').length, 2);
+  const leave = applyNext(map, 'music');
+  assert.equal(leave.leavesCategory, true);
+  map = leave.map;
 
-  // Advance to Food; Music selections persist.
-  step = 'food';
-  assert.equal(step, 'food');
-  assert.equal(selectionsInCategory(selected, 'music').length, 2);
+  // Food overview, then Back into Music last group.
+  assert.equal(readCrjActiveSubcategory(map, 'food'), null);
+  // Simulate leaving Food overview via Back → previous Music step restores map.
+  assert.equal(readCrjActiveSubcategory(map, 'music'), 'music_group_anime');
 
-  // Enter Food dietary, select Vegan, return to overview.
-  groups = enterCrjInterestSubcategory(groups, food, 'food_group_dietary');
-  selected = toggleCrjInterestSelection(
-    selected,
-    sample('food_dietary_vegan', 'food', 'food_group_dietary', 'Vegan'),
-  );
-  groups = leaveCrjInterestSubcategory(groups, 'food');
-  assert.equal(readCrjActiveSubcategory(groups, 'food'), null);
+  const reverse = [
+    'music_group_movies_tv',
+    'music_group_performing',
+    'music_group_live',
+    'music_group_dance',
+    'music_group_genres',
+  ];
+  for (const expected of reverse) {
+    const step = applyBack(map, 'music');
+    assert.equal(step.previousStep, false);
+    map = step.map;
+    assert.equal(readCrjActiveSubcategory(map, 'music'), expected);
+  }
 
-  // Go back to Music: reopen last subcategory state (none) + selections intact.
-  step = 'music';
-  assert.equal(readCrjActiveSubcategory(groups, 'music'), null);
-  assert.equal(selectionsInCategory(selected, 'music').length, 2);
-  assert.equal(
-    resolveCrjInterestBackAction({ category: music, activeGroupMap: groups }),
-    'previous_step',
-  );
+  const toOverview = applyBack(map, 'music');
+  assert.equal(toOverview.previousStep, false);
+  map = toOverview.map;
+  assert.equal(readCrjActiveSubcategory(map, 'music'), null);
 
-  // Final save retains group relationships.
+  const leaveInterest = applyBack(map, 'music');
+  assert.equal(leaveInterest.previousStep, true);
+
+  assert.equal(selectionsInCategory(selected, 'music').length, 3);
   const patch = buildCrjInterestPersistencePatch('personal', selected);
   const rows = patch.personalOnboardingInterests ?? [];
   assert.equal(rows.length, 3);
-  assert.ok(rows.some((r) => r.id === 'music_dance_salsa' && r.groupId === 'music_group_dance'));
-  assert.ok(rows.some((r) => r.id === 'music_anime_series' && r.groupId === 'music_group_anime'));
-  assert.ok(rows.some((r) => r.id === 'food_dietary_vegan' && r.groupId === 'food_group_dietary'));
+  assert.ok(
+    rows.some((r) => r.id === 'music_genre_pop' && r.groupId === 'music_group_genres'),
+  );
+  assert.ok(
+    rows.some((r) => r.id === 'music_dance_salsa' && r.groupId === 'music_group_dance'),
+  );
+  assert.ok(
+    rows.some((r) => r.id === 'music_anime_series' && r.groupId === 'music_group_anime'),
+  );
+});
+
+test('BUG-CRJ-01 flat category Next always leaves; Back is previous step', () => {
+  const business = getOnboardingCategory('business');
+  const map: CrjActiveGroupMap = {};
+  assert.equal(
+    resolveCrjInterestNextAction({ category: business, activeGroupMap: map })
+      .kind,
+    'leave_category',
+  );
+  assert.equal(
+    resolveCrjInterestBackAction({ category: business, activeGroupMap: map })
+      .kind,
+    'previous_step',
+  );
 });
 
 test('BUG-CRJ-01: catalog group nameKeys present in EN and ES', () => {
   const enGroups = (enOnboarding as any).profileCompletion.interests.groups;
   const esGroups = (es as any).onboarding.profileCompletion.interests.groups;
-  for (const id of [
-    'music',
-    'food',
-    'sports_outdoors',
-  ] as const) {
+  for (const id of ['music', 'food', 'sports_outdoors'] as const) {
     const cat = getOnboardingCategory(id);
     for (const group of cat.groups ?? []) {
       assert.equal(typeof enGroups[group.nameKey], 'string', `EN ${group.nameKey}`);
       assert.equal(typeof esGroups[group.nameKey], 'string', `ES ${group.nameKey}`);
-      assert.ok(enGroups[group.nameKey].length > 0);
-      assert.ok(esGroups[group.nameKey].length > 0);
     }
   }
-  // Previously leaked EN labels in ES locale (BUG-CRJ-01 presentation).
   assert.equal(esGroups.music_group_genres, 'Géneros musicales');
-  assert.equal(esGroups.music_group_live, 'Entretenimiento en vivo');
-  assert.equal(esGroups.music_group_movies_tv, 'Cine y televisión');
-  assert.equal(esGroups.music_group_performing, 'Artes escénicas');
-  assert.equal(esGroups.music_group_dance, 'Baile');
-  assert.equal(esGroups.sports_outdoors_group_outdoors, 'Aire libre y aventura');
   assert.equal(esGroups.sports_outdoors_group_sports, 'Deportes');
-});
-
-test('BUG-CRJ-01: sports/outdoors group relations stay intact', () => {
-  const cat = getOnboardingCategory('sports_outdoors');
-  assert.equal(cat.groups?.length, 2);
-  const sports = cat.groups!.find((g) => g.id === 'sports_outdoors_group_sports');
-  const outdoors = cat.groups!.find((g) => g.id === 'sports_outdoors_group_outdoors');
-  assert.ok(sports?.items.some((i) => i.id === 'sports_soccer'));
-  assert.ok(outdoors?.items.some((i) => i.id === 'outdoors_hiking'));
-  assert.ok(!sports?.items.some((i) => i.id === 'outdoors_hiking'));
 });

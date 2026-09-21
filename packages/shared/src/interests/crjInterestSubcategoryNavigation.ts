@@ -1,8 +1,8 @@
 /**
  * BUG-CRJ-01 — CRJ hierarchical interest subcategory navigation.
  *
- * Category overview (no active group) → enter subcategory → select/deselect →
- * back to overview → advance. Selections persist across group and category moves.
+ * Next walks overview → each catalog group in order → next category.
+ * Back reverses that path. Chip selection never advances navigation.
  *
  * Post-CRJ InterestsScreen keeps auto-selecting the first group; this module is
  * for ProfileCompletion CRJ only.
@@ -13,6 +13,7 @@ import type {
   OnboardingSelectedInterest,
 } from './onboardingInterestCatalog';
 import {
+  getHierarchicalGroups,
   isHierarchicalInterestCategory,
   resolveActiveGroupId,
 } from './interestHierarchy';
@@ -20,6 +21,23 @@ import {
 export type CrjActiveGroupMap = Partial<
   Record<OnboardingInterestCategoryId, string>
 >;
+
+export type CrjInterestNextAction =
+  | { kind: 'enter_subcategory'; groupId: string }
+  | { kind: 'leave_category' };
+
+export type CrjInterestBackAction =
+  | { kind: 'show_overview' }
+  | { kind: 'enter_subcategory'; groupId: string }
+  | { kind: 'previous_step' };
+
+/** Catalog order of subcategory ids (empty for flat categories). */
+export function listCrjSubcategoryIds(
+  category: OnboardingInterestCategory,
+): string[] {
+  if (!isHierarchicalInterestCategory(category)) return [];
+  return getHierarchicalGroups(category).map((group) => group.id);
+}
 
 /** null = category overview (subcategory list); string = browsed group. */
 export function readCrjActiveSubcategory(
@@ -54,22 +72,63 @@ export function leaveCrjInterestSubcategory(
 }
 
 /**
- * CRJ header Back while on an interest step:
- * - hierarchical + open subcategory → close subcategory (stay on category)
- * - otherwise → previous wizard step
+ * Next within an interest category:
+ * overview → first group → … → last group → leave category.
+ * Flat categories always leave.
  */
-export function resolveCrjInterestBackAction(input: {
+export function resolveCrjInterestNextAction(input: {
   category: OnboardingInterestCategory;
   activeGroupMap: CrjActiveGroupMap;
-}): 'leave_subcategory' | 'previous_step' {
-  if (!isHierarchicalInterestCategory(input.category)) {
-    return 'previous_step';
+}): CrjInterestNextAction {
+  const groupIds = listCrjSubcategoryIds(input.category);
+  if (groupIds.length === 0) {
+    return { kind: 'leave_category' };
   }
+
   const open = readCrjActiveSubcategory(
     input.activeGroupMap,
     input.category.id,
   );
-  return open ? 'leave_subcategory' : 'previous_step';
+  if (open == null) {
+    return { kind: 'enter_subcategory', groupId: groupIds[0]! };
+  }
+
+  const index = groupIds.indexOf(open);
+  if (index < 0) {
+    return { kind: 'enter_subcategory', groupId: groupIds[0]! };
+  }
+  if (index >= groupIds.length - 1) {
+    return { kind: 'leave_category' };
+  }
+  return { kind: 'enter_subcategory', groupId: groupIds[index + 1]! };
+}
+
+/**
+ * Back reverses Next:
+ * group[i] → group[i-1] → overview → previous wizard step.
+ */
+export function resolveCrjInterestBackAction(input: {
+  category: OnboardingInterestCategory;
+  activeGroupMap: CrjActiveGroupMap;
+}): CrjInterestBackAction {
+  const groupIds = listCrjSubcategoryIds(input.category);
+  if (groupIds.length === 0) {
+    return { kind: 'previous_step' };
+  }
+
+  const open = readCrjActiveSubcategory(
+    input.activeGroupMap,
+    input.category.id,
+  );
+  if (open == null) {
+    return { kind: 'previous_step' };
+  }
+
+  const index = groupIds.indexOf(open);
+  if (index <= 0) {
+    return { kind: 'show_overview' };
+  }
+  return { kind: 'enter_subcategory', groupId: groupIds[index - 1]! };
 }
 
 export function toggleCrjInterestSelection(
