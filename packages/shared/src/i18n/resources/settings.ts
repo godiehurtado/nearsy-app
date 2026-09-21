@@ -46,7 +46,7 @@ export default {
     hint: 'Requires Always location permission. On iOS, a blue indicator may appear while Nearsy updates your location in the background.',
     enabled: 'Background visibility is on',
     disabled:
-      'Background visibility is off in Nearsy. iOS may still show Always access until you change it in Settings.',
+      'Turning this off stops Nearsy from updating your location in the background. You can manage the system permission in iPhone Settings.',
     unsupported: 'Background location is not available on web.',
     authRequired: 'Please log in again.',
     error: 'Could not update background location.',

@@ -70,7 +70,10 @@ export async function ensureBackgroundLocationPermissions(
   }
 
   let bg = await Location.getBackgroundPermissionsAsync();
-  if (bg.status !== 'granted') {
+  const scopeAlways = (p: { ios?: { scope?: string }; status: string; granted?: boolean }) =>
+    p.ios?.scope === 'always' || p.status === 'granted' || !!p.granted;
+
+  if (!scopeAlways(bg)) {
     if (
       requestPermissions &&
       (bg.status === 'undetermined' || bg.canAskAgain)
@@ -78,9 +81,9 @@ export async function ensureBackgroundLocationPermissions(
       bg = await Location.requestBackgroundPermissionsAsync();
     }
   }
-  // Re-read effective status — iOS may defer/dismiss Always without granting.
+  // Re-read effective status — iOS may defer Always, or report scope before status.
   bg = await Location.getBackgroundPermissionsAsync();
-  if (bg.status !== 'granted') {
+  if (!scopeAlways(bg)) {
     throw new BackgroundLocationPermissionError({
       code: 'background-denied',
       canAskAgain: !!bg.canAskAgain,

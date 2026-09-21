@@ -1376,7 +1376,7 @@ const es: TranslationResources = {
       hint: 'Requiere permiso de ubicación Siempre. En iOS puede aparecer un indicador azul mientras Nearsy actualiza tu ubicación en segundo plano.',
       enabled: 'La visibilidad en segundo plano está activada',
       disabled:
-        'La visibilidad en segundo plano está desactivada en Nearsy. iOS puede seguir mostrando acceso Siempre hasta que lo cambies en Ajustes.',
+        'Al desactivar esta opción, Nearsy dejará de actualizar tu ubicación en segundo plano. Puedes administrar el permiso del sistema en Configuración del iPhone.',
       unsupported:
         'La ubicación en segundo plano no está disponible en la web.',
       authRequired: 'Vuelve a iniciar sesión.',

@@ -19,6 +19,7 @@ import {
 } from '../services/backgroundLocation';
 import {
   BG_RUNTIME_ALLOWED_KEY,
+  isBackgroundPermissionEffectivelyGranted,
   isPublishAllowedByRuntimeFlags,
   shouldRunBackgroundLocationRuntime,
   snapshotFromPermissionResponse,
@@ -34,6 +35,7 @@ export {
 };
 export {
   BG_RUNTIME_ALLOWED_KEY,
+  isBackgroundPermissionEffectivelyGranted,
   isPublishAllowedByRuntimeFlags,
   isSessionOnlyGrant,
   shouldRunBackgroundLocationRuntime,
@@ -91,7 +93,7 @@ export async function syncBackgroundLocationRuntime(
 
   const fg = await readForegroundPermissionSnapshot();
   const bg = await readBackgroundPermissionSnapshot();
-  if (!fg.granted || !bg.granted) {
+  if (!fg.granted || !isBackgroundPermissionEffectivelyGranted(bg)) {
     await stopBackgroundLocation().catch(() => {});
     await clearRuntimeAllowed();
     return 'stopped';
@@ -136,6 +138,16 @@ export async function requestAndApplyBackgroundLocation(input: {
   try {
     await ensureBackgroundLocationPermissions(true);
   } catch (err) {
+    // Re-read before failing — iOS may already reflect Always via scope.
+    const afterErr = await readBackgroundPermissionSnapshot();
+    if (isBackgroundPermissionEffectivelyGranted(afterErr)) {
+      await syncBackgroundLocationRuntime({
+        uid: input.uid,
+        visibilityOn: input.visibilityOn,
+        bgVisible: true,
+      });
+      return { ok: true };
+    }
     if (isBackgroundLocationPermissionError(err)) {
       return {
         ok: false,
@@ -146,9 +158,9 @@ export async function requestAndApplyBackgroundLocation(input: {
     return { ok: false, code: 'background-denied', canAskAgain: true };
   }
 
-  // Effective status after prompt — never treat a deferred Always as success.
+  // Effective status after prompt — scope `always` counts even if status lags.
   const bg = await readBackgroundPermissionSnapshot();
-  if (!bg.granted) {
+  if (!isBackgroundPermissionEffectivelyGranted(bg)) {
     return {
       ok: false,
       code: 'background-denied',

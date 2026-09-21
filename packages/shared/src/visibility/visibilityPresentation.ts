@@ -15,6 +15,11 @@ export type VisibilityPresentationInput = {
    * true/false = effective after validation (or known without pending work).
    */
   validatedEffective: boolean | null;
+  /**
+   * Concrete in-flight op (activate/deactivate/prep/education busy).
+   * Always/background granted must never set this.
+   */
+  operationBusy?: boolean;
 };
 
 export type VisibilityPresentation = {
@@ -29,10 +34,14 @@ export type VisibilityPresentation = {
  * Persisted true + validating → visual Active (no runtime).
  * Persisted false → Inactive immediately.
  * Unknown profile → neutral (null), never invent false.
+ * Once validatedEffective is true, allowToggle stays true unless operationBusy
+ * (defensive against stale validationPending from profile snapshot churn).
  */
 export function resolveVisibilityPresentation(
   input: VisibilityPresentationInput,
 ): VisibilityPresentation {
+  const busy = input.operationBusy === true;
+
   if (!input.profileLoaded) {
     return {
       visualActive: null,
@@ -46,12 +55,21 @@ export function resolveVisibilityPresentation(
   if (!persistedOn) {
     return {
       visualActive: false,
-      allowToggle: !input.validationPending,
+      allowToggle: !busy && !input.validationPending,
       canStartRuntime: false,
     };
   }
 
-  // Persisted Active
+  // Validated ON wins over stale pending flags (snapshot churn / concurrent journey).
+  if (input.validatedEffective === true) {
+    return {
+      visualActive: true,
+      allowToggle: !busy,
+      canStartRuntime: true,
+    };
+  }
+
+  // Persisted Active, not yet concluded
   if (input.validationPending || input.validatedEffective === null) {
     return {
       visualActive: true,
@@ -61,8 +79,8 @@ export function resolveVisibilityPresentation(
   }
 
   return {
-    visualActive: input.validatedEffective === true,
-    allowToggle: true,
-    canStartRuntime: input.validatedEffective === true,
+    visualActive: false,
+    allowToggle: !busy,
+    canStartRuntime: false,
   };
 }

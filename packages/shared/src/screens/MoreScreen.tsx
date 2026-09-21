@@ -45,6 +45,7 @@ import {
   isBackgroundLocationPermissionError,
 } from '../services/backgroundLocation';
 import {
+  isBackgroundPermissionEffectivelyGranted,
   locationServicesEnabled,
   readBackgroundPermissionSnapshot,
   readForegroundPermissionSnapshot,
@@ -319,7 +320,7 @@ export default function MoreScreen() {
     let backgroundGranted = false;
     try {
       const bg = await readBackgroundPermissionSnapshot();
-      backgroundGranted = bg.granted;
+      backgroundGranted = isBackgroundPermissionEffectivelyGranted(bg);
     } catch {
       backgroundGranted = false;
     }
@@ -576,6 +577,13 @@ export default function MoreScreen() {
         Alert.alert(
           t('common.appName'),
           t('settings.backgroundVisibility.disabled'),
+          [
+            { text: t('common.cancel'), style: 'cancel' },
+            {
+              text: t('settings.backgroundVisibility.openSettings'),
+              onPress: () => void Linking.openSettings(),
+            },
+          ],
         );
       } catch (e: any) {
         setBgVisible(false);
@@ -657,7 +665,7 @@ export default function MoreScreen() {
         }
 
       const bg = await readBackgroundPermissionSnapshot();
-      if (bg.granted) {
+      if (isBackgroundPermissionEffectivelyGranted(bg)) {
         await persistBgVisible(uid, true);
         await syncBackgroundLocationRuntime({
           uid,
@@ -687,7 +695,18 @@ export default function MoreScreen() {
         uid,
         visibilityOn: visibilityOnRef.current,
       });
-      if (!result.ok) {
+      const effectiveBg = await readBackgroundPermissionSnapshot();
+      if (
+        result.ok ||
+        isBackgroundPermissionEffectivelyGranted(effectiveBg)
+      ) {
+        pendingBgEnableIntentRef.current = false;
+        await persistBgVisible(uid, true);
+        Alert.alert(
+          t('common.appName'),
+          t('settings.backgroundVisibility.enabled'),
+        );
+      } else {
         await persistBgVisible(uid, false).catch(() => {});
         if (result.code === 'services-off') {
           Alert.alert(
@@ -702,12 +721,6 @@ export default function MoreScreen() {
             t('settings.backgroundVisibility.needsAlwaysPermission'),
           );
         }
-      } else {
-        await persistBgVisible(uid, true);
-        Alert.alert(
-          t('common.appName'),
-          t('settings.backgroundVisibility.enabled'),
-        );
       }
       } finally {
         if (journeyToken) endLocationPermissionJourney(journeyToken);

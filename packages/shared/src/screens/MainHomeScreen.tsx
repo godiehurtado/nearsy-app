@@ -94,6 +94,7 @@ import {
   isBackgroundLocationPermissionError,
 } from '../services/backgroundLocation';
 import {
+  isBackgroundPermissionEffectivelyGranted,
   locationServicesEnabled,
   readBackgroundPermissionSnapshot,
   readForegroundPermissionSnapshot,
@@ -208,6 +209,9 @@ export default function MainHomeScreen({ navigation }: Props) {
   const [validatedEffectiveVisibility, setValidatedEffectiveVisibility] =
     useState<boolean | null>(null);
   const recoveryJourneyRunningRef = useRef(false);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  /** Once FG/activation validation concludes for this mount, do not re-lock on profile snapshot churn (e.g. bgVisible writes). */
+  const hydrationValidationDoneRef = useRef(false);
 
   const officialInterestIds = useMemo(() => officialCatalogInterestIdSet(), []);
   const mode: ProfileMode = resolveActiveMode(profile) ?? 'personal';
@@ -234,6 +238,8 @@ export default function MainHomeScreen({ navigation }: Props) {
     persistedVisibility: profile.visibility,
     validationPending: visibilityValidationPending,
     validatedEffective: validatedEffectiveVisibility,
+    operationBusy:
+      statusUpdating || locationPreparing || bgEducationBusy || recoveryBusy,
   });
   const pillActive = visibilityUi.visualActive === true;
   const pillNeutral = visibilityUi.visualActive === null;
@@ -298,10 +304,15 @@ export default function MainHomeScreen({ navigation }: Props) {
           );
           setProfile(data);
           if (data.visibility === true) {
-            // Keep visual Active while FG/activation validation runs — no Inactive flicker.
-            setVisibilityValidationPending(true);
-            setValidatedEffectiveVisibility(null);
+            // Keep visual Active while first FG/activation validation runs.
+            // Do NOT reset validatedEffective on every snapshot (bgVisible writes
+            // otherwise permanently lock allowToggle while recovery is mid-flight).
+            if (!hydrationValidationDoneRef.current) {
+              setVisibilityValidationPending(true);
+              setValidatedEffectiveVisibility(null);
+            }
           } else {
+            hydrationValidationDoneRef.current = true;
             setVisibilityValidationPending(false);
             setValidatedEffectiveVisibility(false);
           }
@@ -366,6 +377,7 @@ export default function MainHomeScreen({ navigation }: Props) {
 
         const finishValidation = (effective: boolean) => {
           if (cancelled) return;
+          hydrationValidationDoneRef.current = true;
           setValidatedEffectiveVisibility(effective);
           setVisibilityValidationPending(false);
         };
@@ -389,10 +401,12 @@ export default function MainHomeScreen({ navigation }: Props) {
           const runPostGrantRestore = async (newlyGranted: boolean) => {
             const token = beginLocationPermissionJourney(uid, 'home-recovery');
             if (!token) {
-              finishValidation(false);
+              // Another owner (CRJ / More / activate) holds the journey —
+              // never convert unknown into deactivate / locked Inactive.
               return;
             }
             recoveryJourneyRunningRef.current = true;
+            setRecoveryBusy(true);
             try {
               const showPrep = shouldShowLocationPreparation({
                 foregroundGranted: true,
@@ -439,6 +453,7 @@ export default function MainHomeScreen({ navigation }: Props) {
             } finally {
               endLocationPermissionJourney(token);
               recoveryJourneyRunningRef.current = false;
+              setRecoveryBusy(false);
             }
           };
 
@@ -657,34 +672,54 @@ export default function MainHomeScreen({ navigation }: Props) {
         uid,
         visibilityOn: true,
       });
-      if (!result.ok) {
-        await updateUserProfilePartial(uid, { bgVisible: false }).catch(
-          () => {},
-        );
-        setProfile((p) => ({ ...p, bgVisible: false }));
-        if (result.code === 'services-off') {
-          Alert.alert(
-            t('settings.backgroundVisibility.servicesOffTitle' as any),
-            t('settings.backgroundVisibility.servicesOffMessage' as any),
-          );
-        } else if (!result.canAskAgain) {
-          Alert.alert(
-            t('common.appName'),
-            t('settings.backgroundVisibility.needsAlwaysPermission' as any),
-            [
-              { text: t('common.cancel'), style: 'cancel' },
-              {
-                text: t('settings.backgroundVisibility.openSettings' as any),
-                onPress: () => void Linking.openSettings(),
-              },
-            ],
-          );
-        }
-      } else {
+      // Re-read effective Always before any Settings recovery UI.
+      const effectiveBg = await readBackgroundPermissionSnapshot();
+      if (
+        result.ok ||
+        isBackgroundPermissionEffectivelyGranted(effectiveBg)
+      ) {
+        pendingVisibilityIntentRef.current = false;
         await updateUserProfilePartial(uid, { bgVisible: true });
         setProfile((p) => ({ ...p, bgVisible: true }));
+        setValidatedEffectiveVisibility(true);
+        setVisibilityValidationPending(false);
+        hydrationValidationDoneRef.current = true;
+        return;
+      }
+      await updateUserProfilePartial(uid, { bgVisible: false }).catch(
+        () => {},
+      );
+      setProfile((p) => ({ ...p, bgVisible: false }));
+      if (result.code === 'services-off') {
+        Alert.alert(
+          t('settings.backgroundVisibility.servicesOffTitle' as any),
+          t('settings.backgroundVisibility.servicesOffMessage' as any),
+        );
+      } else if (!result.canAskAgain) {
+        Alert.alert(
+          t('common.appName'),
+          t('settings.backgroundVisibility.needsAlwaysPermission' as any),
+          [
+            { text: t('common.cancel'), style: 'cancel' },
+            {
+              text: t('settings.backgroundVisibility.openSettings' as any),
+              onPress: () => void Linking.openSettings(),
+            },
+          ],
+        );
       }
     } catch (err) {
+      const effectiveBg = await readBackgroundPermissionSnapshot().catch(
+        () => null,
+      );
+      if (effectiveBg && isBackgroundPermissionEffectivelyGranted(effectiveBg)) {
+        pendingVisibilityIntentRef.current = false;
+        await updateUserProfilePartial(uid, { bgVisible: true }).catch(
+          () => {},
+        );
+        setProfile((p) => ({ ...p, bgVisible: true }));
+        return;
+      }
       await updateUserProfilePartial(uid, { bgVisible: false }).catch(() => {});
       setProfile((p) => ({ ...p, bgVisible: false }));
       if (isBackgroundLocationPermissionError(err)) {
@@ -715,11 +750,11 @@ export default function MainHomeScreen({ navigation }: Props) {
     const bg = await readBackgroundPermissionSnapshot();
     const offer = await decideBackgroundEducationOffer({
       storage: AsyncStorage,
-      backgroundGranted: bg.granted,
+      backgroundGranted: isBackgroundPermissionEffectivelyGranted(bg),
       bgVisible: !!profileRef.current.bgVisible,
     });
     if (!offer.offer) {
-      if (bg.granted) {
+      if (isBackgroundPermissionEffectivelyGranted(bg)) {
         if (!profileRef.current.bgVisible) {
           await updateUserProfilePartial(uid, { bgVisible: true }).catch(
             () => {},
@@ -735,11 +770,12 @@ export default function MainHomeScreen({ navigation }: Props) {
       return;
     }
     setBgEducationVariant(offer.variant);
-    markSessionBackgroundEducationOffered(uid);
     await new Promise<void>((resolve) => {
       bgEducationResolverRef.current = resolve;
       setBgEducationOpen(true);
     });
+    // Mark only after the owner responds — never before the modal resolves.
+    markSessionBackgroundEducationOffered(uid);
   }, []);
 
   const activateVisibility = useCallback(async () => {
@@ -857,6 +893,7 @@ export default function MainHomeScreen({ navigation }: Props) {
       setProfile((p) => ({ ...p, visibility: true }));
       setValidatedEffectiveVisibility(true);
       setVisibilityValidationPending(false);
+      hydrationValidationDoneRef.current = true;
       await clearVisibilityRecoveryIntent(AsyncStorage).catch(() => {});
 
       if (

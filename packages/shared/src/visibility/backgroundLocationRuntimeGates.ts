@@ -38,6 +38,19 @@ export function snapshotFromPermissionResponse(perm: {
   };
 }
 
+/**
+ * Effective Always / background grant.
+ * iOS may briefly report status≠granted while ios.scope is already `always`
+ * after the system prompt — treat scope as authoritative when present.
+ */
+export function isBackgroundPermissionEffectivelyGranted(
+  snap: LocationPermissionSnapshot,
+): boolean {
+  if (snap.iosScope === 'always') return true;
+  if (snap.iosScope === 'whenInUse' || snap.iosScope === 'none') return false;
+  return snap.granted === true;
+}
+
 export type BackgroundRuntimeGates = {
   uid: string | null | undefined;
   visibilityOn: boolean;

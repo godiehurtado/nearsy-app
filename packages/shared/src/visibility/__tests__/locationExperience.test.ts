@@ -17,6 +17,7 @@ import {
 } from '../locationEducation';
 import {
   BG_RUNTIME_ALLOWED_KEY,
+  isBackgroundPermissionEffectivelyGranted,
   isPublishAllowedByRuntimeFlags,
   isSessionOnlyGrant,
   LOGOUT_CLEANUP_ORDER,
@@ -165,6 +166,18 @@ describe('ENH-LOC-01 permission semantics (behavioral)', () => {
     });
     assert.equal(always.sessionOnly, false);
     assert.equal(always.iosScope, 'always');
+    assert.equal(isBackgroundPermissionEffectivelyGranted(always), true);
+    assert.equal(
+      isBackgroundPermissionEffectivelyGranted(
+        snapshotFromPermissionResponse({
+          status: 'denied',
+          granted: false,
+          canAskAgain: false,
+          ios: { scope: 'always' },
+        }),
+      ),
+      true,
+    );
   });
 
   it('detects first-time foreground grant for education offer', () => {
