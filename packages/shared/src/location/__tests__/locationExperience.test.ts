@@ -1,5 +1,5 @@
 /**
- * ENH-LOC-01 — background publication gates + education storage + Android policy.
+ * ENH-LOC-01 — background publication gates + education + journey + runtime auth.
  *
  * Run:
  *   node --experimental-strip-types --test packages/shared/src/location/__tests__/locationExperience.test.ts
@@ -28,6 +28,24 @@ import {
   runContractualAndroidLogout,
   shouldReconcileBgPreferenceOff,
 } from '../contractualLogout.ts';
+import {
+  decideCallbackPublication,
+  type BackgroundRuntimeAuth,
+} from '../backgroundRuntimeAuth.ts';
+import {
+  bindLocationJourneySessionUid,
+  beginLocationJourney,
+  endLocationJourney,
+  markBackgroundDisclosureOfferedThisSession,
+  markPostLoginLocationRecoveryNeeded,
+  consumePostLoginLocationRecovery,
+  peekPostLoginLocationRecovery,
+  resetLocationJourneySession,
+  shouldOfferBackgroundDisclosureAfterFgGrant,
+  shouldRenderPreparationForElapsedMs,
+  wasBackgroundDisclosureOfferedThisSession,
+} from '../locationJourneySession.ts';
+import { evaluateVisibilityHydration } from '../visibilityHydration.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -202,22 +220,213 @@ describe('contractualLogout + preference reconcile', () => {
   });
 });
 
-describe('ENH-LOC-01 source contracts', () => {
-  it('locationTask re-validates visibility/bgVisible before publish', () => {
-    const src = readShared('background/locationTask.android.ts');
-    assert.match(src, /decideBackgroundPublication/);
-    assert.match(src, /visibility/);
-    assert.match(src, /bgVisible/);
-    assert.match(src, /stopTaskCleanly/);
-    assert.match(src, /visibility-inactive/);
-    assert.match(src, /firebaseAuth\.currentUser/);
-    assert.match(src, /profile read error/);
+describe('preparation timing (no artificial delay)', () => {
+  it('does not render for near-instant work', () => {
+    assert.equal(shouldRenderPreparationForElapsedMs(0), false);
+    assert.equal(shouldRenderPreparationForElapsedMs(79), false);
+    assert.equal(shouldRenderPreparationForElapsedMs(80), true);
   });
 
-  it('App bootstrap requires visibility AND bgVisible', () => {
+  it('coordinator exposes preparation + journey helpers', () => {
+    const src = readShared('location/locationJourneyCoordinator.ts');
+    assert.match(src, /runWithPreparationUi/);
+    assert.match(src, /beginPostForegroundDisclosureJourney/);
+    assert.match(src, /shouldRenderPreparationForElapsedMs/);
+    assert.doesNotMatch(src, /setTimeout\(\s*\(\)\s*=>\s*\{\s*\/\* artificial/);
+  });
+});
+
+describe('locationJourneySession', () => {
+  it('FG grant offers disclosure unless BG already granted or already offered', () => {
+    assert.equal(
+      shouldOfferBackgroundDisclosureAfterFgGrant({
+        backgroundAlreadyGranted: true,
+        disclosureOfferedThisSession: false,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldOfferBackgroundDisclosureAfterFgGrant({
+        backgroundAlreadyGranted: false,
+        disclosureOfferedThisSession: true,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldOfferBackgroundDisclosureAfterFgGrant({
+        backgroundAlreadyGranted: false,
+        disclosureOfferedThisSession: false,
+      }),
+      true,
+    );
+  });
+
+  it('journey lock is single-flight; account switch resets', () => {
+    resetLocationJourneySession();
+    bindLocationJourneySessionUid('u1');
+    assert.equal(beginLocationJourney(), true);
+    assert.equal(beginLocationJourney(), false);
+    endLocationJourney();
+    assert.equal(beginLocationJourney(), true);
+    markBackgroundDisclosureOfferedThisSession();
+    assert.equal(wasBackgroundDisclosureOfferedThisSession(), true);
+    bindLocationJourneySessionUid('u2');
+    assert.equal(wasBackgroundDisclosureOfferedThisSession(), false);
+    resetLocationJourneySession();
+  });
+
+  it('post-login recovery is one-shot per uid', () => {
+    resetLocationJourneySession();
+    markPostLoginLocationRecoveryNeeded('u1');
+    assert.equal(peekPostLoginLocationRecovery('u1'), true);
+    assert.equal(peekPostLoginLocationRecovery('u2'), false);
+    assert.equal(consumePostLoginLocationRecovery('u2'), false);
+    assert.equal(consumePostLoginLocationRecovery('u1'), true);
+    assert.equal(consumePostLoginLocationRecovery('u1'), false);
+  });
+});
+
+describe('visibilityHydration', () => {
+  it('unknown profile → neutral, not false Inactive', () => {
+    const h = evaluateVisibilityHydration({
+      profileLoaded: false,
+      persistedVisibility: undefined,
+      permissionValidationPending: false,
+    });
+    assert.equal(h.phase, 'unknown');
+    assert.equal(h.displayActive, false);
+    assert.equal(h.runtimeEligible, false);
+    assert.equal(h.toggleDisabled, true);
+  });
+
+  it('persisted false → Inactive immediate', () => {
+    const h = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: false,
+      permissionValidationPending: false,
+    });
+    assert.equal(h.phase, 'inactive');
+    assert.equal(h.displayActive, false);
+    assert.equal(h.runtimeEligible, false);
+  });
+
+  it('persisted true + validating → provisional Active, no runtime', () => {
+    const h = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: true,
+      permissionValidationPending: true,
+    });
+    assert.equal(h.phase, 'validating');
+    assert.equal(h.displayActive, true);
+    assert.equal(h.runtimeEligible, false);
+    assert.equal(h.toggleDisabled, true);
+  });
+
+  it('persisted true + valid perms → Active + runtime', () => {
+    const h = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: true,
+      permissionValidationPending: false,
+      permissionsValid: true,
+    });
+    assert.equal(h.phase, 'active');
+    assert.equal(h.displayActive, true);
+    assert.equal(h.runtimeEligible, true);
+  });
+
+  it('persisted true + invalid perms → deactivate + Inactive', () => {
+    const h = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: true,
+      permissionValidationPending: false,
+      permissionsValid: false,
+    });
+    assert.equal(h.phase, 'inactive');
+    assert.equal(h.displayActive, false);
+    assert.equal(h.shouldDeactivate, true);
+    assert.equal(h.runtimeEligible, false);
+  });
+});
+
+describe('backgroundRuntimeAuth callback gate', () => {
+  const auth: BackgroundRuntimeAuth = {
+    uid: 'u1',
+    allowedAt: 1,
+    visibility: true,
+    bgVisible: true,
+  };
+
+  it('publishes when auth UID + runtime auth + perms align', () => {
+    assert.equal(
+      decideCallbackPublication({
+        authUid: 'u1',
+        storedTaskUid: 'u1',
+        runtimeAuth: auth,
+        foregroundGranted: true,
+        backgroundGranted: true,
+      }),
+      'publish',
+    );
+  });
+
+  it('auth UID mismatch → stop', () => {
+    assert.equal(
+      decideCallbackPublication({
+        authUid: 'u2',
+        storedTaskUid: 'u1',
+        runtimeAuth: auth,
+        foregroundGranted: true,
+        backgroundGranted: true,
+      }),
+      'stop',
+    );
+  });
+
+  it('missing runtime auth → stop (no Firestore profile read required)', () => {
+    assert.equal(
+      decideCallbackPublication({
+        authUid: 'u1',
+        storedTaskUid: 'u1',
+        runtimeAuth: null,
+        foregroundGranted: true,
+        backgroundGranted: true,
+      }),
+      'stop',
+    );
+  });
+
+  it('permission revoked → stop', () => {
+    assert.equal(
+      decideCallbackPublication({
+        authUid: 'u1',
+        storedTaskUid: 'u1',
+        runtimeAuth: auth,
+        foregroundGranted: true,
+        backgroundGranted: false,
+      }),
+      'stop',
+    );
+  });
+});
+
+describe('ENH-LOC-01 source contracts', () => {
+  it('locationTask uses runtime auth — no profile get per tick', () => {
+    const src = readShared('background/locationTask.android.ts');
+    assert.match(src, /decideCallbackPublication/);
+    assert.match(src, /readBackgroundRuntimeAuth/);
+    assert.match(src, /firebaseAuth\.currentUser/);
+    assert.match(src, /visibility-inactive/);
+    assert.match(src, /legacy direct Firestore merge/i);
+    assert.doesNotMatch(src, /\.collection\('users'\)[\s\S]*\.get\(\)/);
+    assert.doesNotMatch(src, /decideBackgroundPublication/);
+  });
+
+  it('App bootstrap marks post-login recovery; gated start needs visibility+bgVisible', () => {
     const src = readShared('App.tsx');
-    assert.match(src, /bgVisible && visibility/);
+    assert.match(src, /markPostLoginLocationRecoveryNeeded/);
     assert.match(src, /startGatedBackgroundLocation/);
+    assert.match(src, /bindLocationJourneySessionUid/);
+    assert.match(src, /resetLocationJourneySession/);
     assert.doesNotMatch(
       src,
       /if \(bgVisible\) \{\s*await startBackgroundLocation/,
@@ -230,31 +439,46 @@ describe('ENH-LOC-01 source contracts', () => {
     assert.match(src, /while Visibility is on/);
   });
 
-  it('disclosure EN/ES keys exist', () => {
+  it('disclosure + preparation EN/ES keys exist', () => {
     const en = readShared('i18n/resources/settings.ts');
     const es = readShared('i18n/locales/es.ts');
     assert.match(en, /disclosure:\s*\{/);
     assert.match(en, /fullTitle:/);
     assert.match(en, /notNow:/);
+    assert.match(en, /Almost there!/);
     assert.match(es, /disclosure:\s*\{/);
     assert.match(es, /Ahora no/);
+    assert.match(es, /¡Ya casi!/);
   });
 
-  it('CRJ offers disclosure after FG grant', () => {
+  it('CRJ offers preparation then disclosure after FG grant', () => {
     const src = readShared('screens/ProfileCompletionScreen.tsx');
     assert.match(src, /BackgroundLocationDisclosureModal/);
+    assert.match(src, /LocationPreparationModal/);
+    assert.match(src, /beginPostForegroundDisclosureJourney/);
     assert.match(src, /finishCrjBackgroundDisclosure/);
-    assert.match(src, /resolveBackgroundDisclosureVariant/);
   });
 
-  it('More/Home use gated start and disclosure', () => {
+  it('More/Home use gated start, preparation, disclosure, hydration', () => {
     const more = readShared('screens/MoreScreen.tsx');
     const home = readShared('screens/MainHomeScreen.tsx');
     assert.match(more, /startGatedBackgroundLocation/);
     assert.match(more, /BackgroundLocationDisclosureModal/);
+    assert.match(more, /LocationPreparationModal/);
     assert.match(more, /runContractualAndroidLogout/);
     assert.match(more, /shouldReconcileBgPreferenceOff/);
+    assert.match(more, /beginPostForegroundDisclosureJourney/);
     assert.match(home, /startGatedBackgroundLocation/);
     assert.match(home, /maybeOfferBackgroundDisclosure/);
+    assert.match(home, /LocationPreparationModal/);
+    assert.match(home, /evaluateVisibilityHydration/);
+    assert.match(home, /consumePostLoginLocationRecovery/);
+    assert.match(home, /runtimeEligible|permissionsValid/);
+  });
+
+  it('startGated sets runtime auth; stop clears it', () => {
+    const src = readShared('location/startGatedBackgroundLocation.ts');
+    assert.match(src, /setBackgroundRuntimeAuth/);
+    assert.match(src, /clearBackgroundRuntimeAuth/);
   });
 });

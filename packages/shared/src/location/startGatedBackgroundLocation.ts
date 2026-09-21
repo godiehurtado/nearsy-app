@@ -8,7 +8,7 @@ import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   startBackgroundLocation,
-  stopBackgroundLocation,
+  stopBackgroundLocation as stopBackgroundLocationService,
   BackgroundLocationPermissionError,
   isBackgroundLocationPermissionError,
 } from '../services/backgroundLocation';
@@ -18,12 +18,20 @@ import {
   isAndroidFineLocationGranted,
   shouldStartBackgroundLocationService,
 } from './backgroundPublicationGate';
+import {
+  clearBackgroundRuntimeAuth,
+  setBackgroundRuntimeAuth,
+} from './backgroundRuntimeAuth';
 
 export {
   BackgroundLocationPermissionError,
   isBackgroundLocationPermissionError,
-  stopBackgroundLocation,
 };
+
+export async function stopBackgroundLocation(): Promise<void> {
+  await stopBackgroundLocationService();
+  await clearBackgroundRuntimeAuth().catch(() => {});
+}
 
 export type LocationPermissionSnapshot = {
   foregroundStatus: string;
@@ -168,8 +176,15 @@ export async function startGatedBackgroundLocation(
       notificationTitle: opts.notificationTitle,
       notificationBody: opts.notificationBody,
     });
+    await setBackgroundRuntimeAuth({
+      uid: opts.uid,
+      allowedAt: Date.now(),
+      visibility: true,
+      bgVisible: true,
+    });
     return { ok: true };
   } catch (error) {
+    await clearBackgroundRuntimeAuth().catch(() => {});
     if (isBackgroundLocationPermissionError(error)) {
       return {
         ok: false,

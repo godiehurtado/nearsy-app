@@ -47,8 +47,8 @@ import {
 } from '../components/registration/crjProgress';
 import { PrimaryButton, SecondaryButton } from '../components/PrimaryButton';
 import { BackgroundLocationDisclosureModal } from '../components/BackgroundLocationDisclosureModal';
+import { LocationPreparationModal } from '../components/LocationPreparationModal';
 import {
-  resolveBackgroundDisclosureVariant,
   markBackgroundLocationEducationSeen,
   type BackgroundDisclosureVariant,
 } from '../location/backgroundEducationStorage';
@@ -58,6 +58,10 @@ import {
 } from '../location/startGatedBackgroundLocation';
 import { requiresSettingsForBackgroundPermission } from '../location/backgroundPublicationGate';
 import { backgroundLocationNotificationCopy } from '../location/backgroundLocationCopy';
+import {
+  beginPostForegroundDisclosureJourney,
+  closePreparationOnTerminal,
+} from '../location/locationJourneyCoordinator';
 import AnimatedNearsyLogo from '../components/auth/AnimatedNearsyLogo';
 import { useAppTheme } from '../theme/ThemeContext';
 import { fontSize, fontWeight } from '../theme/typography';
@@ -402,6 +406,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [bgDisclosureVariant, setBgDisclosureVariant] =
     useState<BackgroundDisclosureVariant>('full');
   const [bgDisclosureBusy, setBgDisclosureBusy] = useState(false);
+  const [locationPreparing, setLocationPreparing] = useState(false);
+  const locationPrepCancelledRef = useRef(false);
   const pendingCrjBgSettingsRef = useRef(false);
   const [activeInterestGroupByCategory, setActiveInterestGroupByCategory] =
     useState<Partial<Record<OnboardingInterestCategoryId, string>>>({});
@@ -435,6 +441,17 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   useEffect(() => {
     setAffiliationSearchUi(IDLE_AFFILIATION_SEARCH_UI);
   }, [step.kind, affiliationCategoryIndex]);
+
+  useEffect(() => {
+    locationPrepCancelledRef.current = false;
+    return () => {
+      locationPrepCancelledRef.current = true;
+      closePreparationOnTerminal({
+        setVisible: setLocationPreparing,
+        isCancelled: () => true,
+      });
+    };
+  }, []);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', async (next) => {
@@ -1083,6 +1100,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       granted = req.granted || req.status === 'granted';
     }
     if (!granted) {
+      // FG denied → no preparation, no background disclosure.
+      setLocationPreparing(false);
       Alert.alert(
         t('onboarding.profileCompletion.location.deniedTitle'),
         t('onboarding.profileCompletion.location.deniedMessage'),
@@ -1091,8 +1110,35 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       return;
     }
 
-    const snap = await getLocationPermissionSnapshot();
-    if (!snap.fineLocationGranted) {
+    let fineOk = true;
+    const plan = await beginPostForegroundDisclosureJourney({
+      backgroundGranted: false,
+      preparationUi: {
+        setVisible: setLocationPreparing,
+        isCancelled: () => locationPrepCancelledRef.current,
+      },
+      prepareWork: async () => {
+        const snap = await getLocationPermissionSnapshot();
+        fineOk = snap.fineLocationGranted;
+        if (snap.backgroundGranted && uid) {
+          await updateUserProfilePartial(uid, {
+            bgVisible: true,
+            updatedAt: Date.now(),
+          }).catch(() => {});
+        }
+        return { backgroundGranted: snap.backgroundGranted };
+      },
+      forceOffer: true,
+    });
+
+    if (locationPrepCancelledRef.current) return;
+
+    if (plan?.action === 'none' && plan.reason === 'background-already-granted') {
+      setStepIndex((i) => i + 1);
+      return;
+    }
+
+    if (!fineOk) {
       Alert.alert(
         t('settings.backgroundVisibility.approximateTitle'),
         t('settings.backgroundVisibility.approximateMessage'),
@@ -1104,23 +1150,14 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
           },
         ],
       );
-      // Foreground may still be usable later; continue CRJ without claiming adequacy.
     }
 
-    if (snap.backgroundGranted) {
-      // Already have BG — persist preference only; FGS starts after Visibility ON.
-      if (uid) {
-        await updateUserProfilePartial(uid, {
-          bgVisible: true,
-          updatedAt: Date.now(),
-        }).catch(() => {});
-      }
+    if (!plan || plan.action !== 'show-disclosure') {
       setStepIndex((i) => i + 1);
       return;
     }
 
-    const variant = await resolveBackgroundDisclosureVariant();
-    setBgDisclosureVariant(variant);
+    setBgDisclosureVariant(plan.variant);
     setBgDisclosureVisible(true);
   }
 
@@ -2196,6 +2233,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
           )}
         </RegistrationFadeSlideIn>
       </ScrollView>
+      <LocationPreparationModal visible={locationPreparing && !bgDisclosureVisible} />
       <BackgroundLocationDisclosureModal
         visible={bgDisclosureVisible}
         variant={bgDisclosureVariant}

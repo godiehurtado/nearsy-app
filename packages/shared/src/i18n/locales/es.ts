@@ -321,6 +321,10 @@ export const es: TranslationResources = {
         enable: 'Activar ubicación en segundo plano',
         notNow: 'Ahora no',
       },
+      preparation: {
+        title: '¡Ya casi!',
+        body: 'Estamos preparando tu ubicación. Enseguida viene un último paso.',
+      },
     },
     language: {
       title: 'Idioma',

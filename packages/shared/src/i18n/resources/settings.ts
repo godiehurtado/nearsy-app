@@ -81,6 +81,10 @@ export default {
       enable: 'Enable background location',
       notNow: 'Not now',
     },
+    preparation: {
+      title: 'Almost there!',
+      body: 'We’re getting your location ready. One more quick step is coming up.',
+    },
   },
   language: {
     title: 'Language',

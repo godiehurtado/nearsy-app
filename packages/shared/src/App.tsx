@@ -19,13 +19,23 @@ import AppNavigator, { buildNavigationTheme } from './navigation/AppNavigator';
 import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 
 import * as Notifications from 'expo-notifications';
-import { registerPushToken } from './services/pushTokens';
-import { stopBackgroundLocation } from './services/backgroundLocation';
-import { startGatedBackgroundLocation } from './location/startGatedBackgroundLocation';
-
 import * as WebBrowser from 'expo-web-browser';
+import { registerPushToken } from './services/pushTokens';
+import { stopBackgroundLocation as stopBackgroundLocationService } from './services/backgroundLocation';
+import { startGatedBackgroundLocation } from './location/startGatedBackgroundLocation';
+import { clearBackgroundRuntimeAuth } from './location/backgroundRuntimeAuth';
+import {
+  bindLocationJourneySessionUid,
+  resetLocationJourneySession,
+  markPostLoginLocationRecoveryNeeded,
+} from './location/locationJourneySession';
+
 WebBrowser.maybeCompleteAuthSession();
 
+async function stopBackgroundLocation(): Promise<void> {
+  await stopBackgroundLocationService();
+  await clearBackgroundRuntimeAuth().catch(() => {});
+}
 // ===== Handler global de notificaciones =====
 Notifications.setNotificationHandler({
   handleNotification:
@@ -70,10 +80,13 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
           if (Platform.OS !== 'web') {
             await stopBackgroundLocation().catch(() => {});
           }
+          resetLocationJourneySession();
           return;
         }
 
         if (Platform.OS === 'web') return;
+
+        bindLocationJourneySessionUid(user.uid);
 
         try {
           let bgVisible = false;
@@ -116,14 +129,42 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
             }
           }
 
-          // Hard gate: never start FGS from bgVisible alone.
-          if (bgVisible && visibility) {
-            await startGatedBackgroundLocation({
-              uid: user.uid,
-              visibility: true,
-              bgVisible: true,
-              requestPermissions: false,
-            });
+          // Reinstall / existing account: Visibility persisted but OS perms gone.
+          // Do not prompt from App — Home consumes one recovery journey.
+          // Never start FGS without permissions (requestPermissions: false).
+          if (visibility && profileSetupCompleted) {
+            try {
+              const Location = await import('expo-location');
+              const fg = await Location.getForegroundPermissionsAsync();
+              const fgOk = fg.status === 'granted' || !!fg.granted;
+              if (!fgOk) {
+                markPostLoginLocationRecoveryNeeded(user.uid);
+                await stopBackgroundLocation().catch(() => {});
+              } else if (bgVisible) {
+                const started = await startGatedBackgroundLocation({
+                  uid: user.uid,
+                  visibility: true,
+                  bgVisible: true,
+                  requestPermissions: false,
+                });
+                if (!started.ok) {
+                  const bg = await Location.getBackgroundPermissionsAsync();
+                  const bgOk = bg.status === 'granted' || !!bg.granted;
+                  if (!bgOk) {
+                    markPostLoginLocationRecoveryNeeded(user.uid);
+                  }
+                }
+              } else {
+                const bg = await Location.getBackgroundPermissionsAsync();
+                const bgOk = bg.status === 'granted' || !!bg.granted;
+                if (!bgOk) {
+                  markPostLoginLocationRecoveryNeeded(user.uid);
+                }
+                await stopBackgroundLocation().catch(() => {});
+              }
+            } catch {
+              await stopBackgroundLocation().catch(() => {});
+            }
           } else {
             await stopBackgroundLocation().catch(() => {});
           }
