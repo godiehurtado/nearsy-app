@@ -239,7 +239,7 @@ describe('ENH-LOC-01 education persistence (behavioral)', () => {
 });
 
 describe('ENH-LOC-01 journey wiring (same-pass connection)', () => {
-  it('CRJ: FG grant → activate → education await → Enable/Not now handlers', () => {
+  it('CRJ: FG grant → education await → Enable/Not now; activate after finishOnboarding', () => {
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
     const requestStart = crj.indexOf('async function requestLocation()');
     const enableStart = crj.indexOf('async function handleCrjEnableBackground()');
@@ -248,10 +248,13 @@ describe('ENH-LOC-01 journey wiring (same-pass connection)', () => {
 
     const body = crj.slice(requestStart, enableStart);
     assert.match(body, /requestForegroundPermissionsAsync/);
-    assert.match(body, /attemptInitialVisibilityAfterCrjCompletion/);
+    assert.doesNotMatch(body, /attemptInitialVisibilityAfterCrjCompletion/);
     assert.match(body, /decideBackgroundEducationOffer/);
     assert.match(body, /setBgEducationOpen\(true\)/);
     assert.match(body, /await new Promise/);
+
+    const finish = crj.slice(crj.indexOf('async function finishOnboarding()'));
+    assert.match(finish, /attemptInitialVisibilityAfterCrjCompletion/);
 
     const notNow = crj.slice(notNowStart, notNowStart + 500);
     assert.match(notNow, /Do not undo foreground or Visibility/);

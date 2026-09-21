@@ -108,15 +108,10 @@ describe('Owner retest — FG→education invariant (activate-independent)', () 
       crj.indexOf('async function requestLocation()'),
       crj.indexOf('async function handleCrjEnableBackground()'),
     );
-    assert.match(req, /ACTIVATION_ISSUE_ACKNOWLEDGED/);
-    assert.match(req, /activationIssueTitle/);
+    // Location no longer activates — education follows FG without activationResult.
+    assert.doesNotMatch(req, /attemptInitialVisibilityAfterCrjCompletion/);
     assert.match(req, /foregroundGranted:\s*true/);
-    const alertIdx = req.indexOf('reportingActivationIssue');
-    const eduIdx = req.search(
-      /await new Promise<void>\(\(resolve\) => \{[\s\S]*?setBgEducationOpen\(true\)/,
-    );
-    assert.ok(eduIdx >= 0);
-    assert.ok(alertIdx < 0 || eduIdx > alertIdx || req.indexOf('ACTIVATION_ISSUE_ACKNOWLEDGED') < eduIdx);
+    assert.match(req, /setBgEducationOpen\(true\)/);
   });
 
   it('activation failure does not mark Visibility Active in CRJ', () => {
@@ -125,8 +120,9 @@ describe('Owner retest — FG→education invariant (activate-independent)', () 
       crj.indexOf('async function requestLocation()'),
       crj.indexOf('async function handleCrjEnableBackground()'),
     );
-    assert.match(req, /visibilityOn = activation\.activated === true/);
-    assert.match(req, /setCrjVisibilityOn\(visibilityOn\)/);
+    assert.doesNotMatch(req, /setCrjVisibilityOn\(true\)/);
+    const finish = crj.slice(crj.indexOf('async function finishOnboarding()'));
+    assert.match(finish, /setCrjVisibilityOn\(activated\)/);
   });
 });
 
@@ -168,25 +164,26 @@ describe('Owner retest — Always effective grant (defect B Settings false posit
     assert.equal(evaluation.shouldActivate, true);
   });
 
-  it('Home/CRJ/More re-read effective Always before Settings alert', () => {
+  it('Home/CRJ/More re-read effective Always; Settings only from More', () => {
     const home = readShared('screens/MainHomeScreen.tsx');
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
     const more = readShared('screens/MoreScreen.tsx');
     for (const src of [home, crj, more]) {
       assert.match(src, /isBackgroundPermissionEffectivelyGranted/);
-      assert.match(src, /readBackgroundPermissionSnapshot\(\)/);
     }
-    // Settings alert only on the failure branch after effective re-read
-    const enable = home.slice(
+    // Automatic owners: no BG Settings alert
+    const homeEnable = home.slice(
       home.indexOf('handleHomeEnableBackground'),
       home.indexOf('handleHomeBackgroundNotNow'),
     );
-    assert.match(enable, /isBackgroundPermissionEffectivelyGranted\(effectiveBg\)/);
-    assert.match(enable, /needsAlwaysPermission/);
-    assert.ok(
-      enable.indexOf('isBackgroundPermissionEffectivelyGranted(effectiveBg)') <
-        enable.indexOf('needsAlwaysPermission'),
+    assert.doesNotMatch(homeEnable, /needsAlwaysPermission/);
+    const crjEnable = crj.slice(
+      crj.indexOf('async function handleCrjEnableBackground()'),
+      crj.indexOf('async function handleCrjBackgroundNotNow()'),
     );
+    assert.doesNotMatch(crjEnable, /needsAlwaysPermission/);
+    // More may offer Settings
+    assert.match(more, /needsAlwaysPermission/);
   });
 });
 
@@ -311,18 +308,19 @@ describe('Owner retest — CRJ atomic education (defect A)', () => {
     );
   });
 
-  it('10–12: finishOnboarding is idempotent safety net; Location owns education', () => {
+  it('10–12: finishOnboarding activates after completion; Location owns permissions only', () => {
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
     const finish = crj.slice(crj.indexOf('async function finishOnboarding()'));
-    assert.match(finish, /NEVER reopen education\/Settings UI/);
+    assert.match(finish, /profileSetupCompleted: true/);
+    assert.match(finish, /attemptInitialVisibilityAfterCrjCompletion/);
     assert.doesNotMatch(finish, /setBgEducationOpen\(true\)/);
+    assert.doesNotMatch(finish, /needsAlwaysPermission/);
     assert.match(finish, /navigation\.reset/);
     const req = crj.slice(
       crj.indexOf('async function requestLocation()'),
       crj.indexOf('async function handleCrjEnableBackground()'),
     );
-    assert.match(req, /ACTIVATION_ISSUE_ACKNOWLEDGED/);
-    assert.match(req, /activationIssueTitle/);
+    assert.doesNotMatch(req, /attemptInitialVisibilityAfterCrjCompletion/);
   });
 
   it('11: CRJ journey blocks Home recovery steal', () => {

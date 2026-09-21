@@ -696,7 +696,6 @@ export default function MainHomeScreen({ navigation }: Props) {
         uid,
         visibilityOn: !!profileRef.current.visibility,
       });
-      // Re-read effective Always before any Settings recovery UI.
       const effectiveBg = await readBackgroundPermissionSnapshot();
       if (
         result.ok ||
@@ -710,29 +709,12 @@ export default function MainHomeScreen({ navigation }: Props) {
         hydrationValidationDoneRef.current = true;
         return;
       }
+      // Automatic Home recovery: background optional → foreground-only, no Settings.
       await updateUserProfilePartial(uid, { bgVisible: false }).catch(
         () => {},
       );
       setProfile((p) => ({ ...p, bgVisible: false }));
-      if (result.code === 'services-off') {
-        Alert.alert(
-          t('settings.backgroundVisibility.servicesOffTitle' as any),
-          t('settings.backgroundVisibility.servicesOffMessage' as any),
-        );
-      } else if (!result.canAskAgain) {
-        Alert.alert(
-          t('common.appName'),
-          t('settings.backgroundVisibility.needsAlwaysPermission' as any),
-          [
-            { text: t('common.cancel'), style: 'cancel' },
-            {
-              text: t('settings.backgroundVisibility.openSettings' as any),
-              onPress: () => void Linking.openSettings(),
-            },
-          ],
-        );
-      }
-    } catch (err) {
+    } catch {
       const effectiveBg = await readBackgroundPermissionSnapshot().catch(
         () => null,
       );
@@ -746,16 +728,10 @@ export default function MainHomeScreen({ navigation }: Props) {
       }
       await updateUserProfilePartial(uid, { bgVisible: false }).catch(() => {});
       setProfile((p) => ({ ...p, bgVisible: false }));
-      if (isBackgroundLocationPermissionError(err)) {
-        Alert.alert(
-          t('common.appName'),
-          t('settings.backgroundVisibility.needsAlwaysPermission' as any),
-        );
-      }
     } finally {
       closeBgEducation();
     }
-  }, [bgEducationBusy, closeBgEducation, t]);
+  }, [bgEducationBusy, closeBgEducation]);
 
   const handleHomeBackgroundNotNow = useCallback(async () => {
     const uid = firebaseAuth.currentUser?.uid;

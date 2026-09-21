@@ -36,7 +36,7 @@ beforeEach(() => {
 });
 
 describe('location journey machine — CRJ happy path', () => {
-  it('idle → FG → preparing → education → BG request → completed → can navigate', () => {
+  it('idle → FG → education → BG request → completed → can navigate', () => {
     let s = createInitialLocationJourneyState();
     s = reduceLocationJourney(s, {
       type: 'START',
@@ -48,13 +48,6 @@ describe('location journey machine — CRJ happy path', () => {
     assert.equal(canAdvanceNavigation(s), false);
 
     s = reduceLocationJourney(s, { type: 'FOREGROUND_RESULT', granted: true });
-    assert.equal(s.phase, 'preparing');
-    assert.equal(deriveJourneyPresentation(s), 'preparing');
-
-    s = reduceLocationJourney(s, {
-      type: 'ACTIVATION_RESULT',
-      result: 'success',
-    });
     assert.equal(s.phase, 'showingBackgroundEducation');
     assert.equal(deriveJourneyPresentation(s), 'backgroundEducation');
 
@@ -77,7 +70,7 @@ describe('location journey machine — CRJ happy path', () => {
 });
 
 describe('location journey machine — activation failure', () => {
-  it('stores activation failure, reports issue, then continues to education', () => {
+  it('activation issue is outside permission FG→education path', () => {
     let s = createInitialLocationJourneyState();
     s = reduceLocationJourney(s, {
       type: 'START',
@@ -86,18 +79,9 @@ describe('location journey machine — activation failure', () => {
       token: 't1',
     });
     s = reduceLocationJourney(s, { type: 'FOREGROUND_RESULT', granted: true });
-    s = reduceLocationJourney(s, {
-      type: 'ACTIVATION_RESULT',
-      result: 'network_or_backend',
-    });
-    assert.equal(s.phase, 'reportingActivationIssue');
-    assert.equal(s.activationResult, 'network_or_backend');
-    assert.equal(deriveJourneyPresentation(s), 'activationIssue');
-    assert.equal(canAdvanceNavigation(s), false);
-
-    s = reduceLocationJourney(s, { type: 'ACTIVATION_ISSUE_ACKNOWLEDGED' });
     assert.equal(s.phase, 'showingBackgroundEducation');
-    assert.equal(s.foregroundEffective, true);
+    // Permission journey does not require ACTIVATION_RESULT to educate.
+    assert.equal(s.activationResult, null);
   });
 
   it('maps callable/unavailable to network_or_backend — not Location not enabled', () => {
@@ -131,10 +115,6 @@ describe('location journey machine — Always / Settings', () => {
     });
     s = reduceLocationJourney(s, { type: 'FOREGROUND_RESULT', granted: true });
     s = reduceLocationJourney(s, {
-      type: 'ACTIVATION_RESULT',
-      result: 'success',
-    });
-    s = reduceLocationJourney(s, {
       type: 'BACKGROUND_DECISION',
       decision: 'enable',
     });
@@ -148,7 +128,7 @@ describe('location journey machine — Always / Settings', () => {
     assert.equal(canPresentSettingsAlert(s, 'crj'), false);
   });
 
-  it('Settings alert only while waitingForSettingsReturn + same owner', () => {
+  it('CRJ/bootstrap background deny completes without Settings wait', () => {
     let s = createInitialLocationJourneyState();
     s = reduceLocationJourney(s, {
       type: 'START',
@@ -158,9 +138,27 @@ describe('location journey machine — Always / Settings', () => {
     });
     s = reduceLocationJourney(s, { type: 'FOREGROUND_RESULT', granted: true });
     s = reduceLocationJourney(s, {
-      type: 'ACTIVATION_RESULT',
-      result: 'success',
+      type: 'BACKGROUND_DECISION',
+      decision: 'enable',
     });
+    s = reduceLocationJourney(s, {
+      type: 'BACKGROUND_RESULT',
+      effectiveGranted: false,
+      needsSettings: true,
+    });
+    assert.equal(s.phase, 'completed');
+    assert.equal(canPresentSettingsAlert(s, 'crj'), false);
+  });
+
+  it('Settings alert only for More owner waitingForSettingsReturn', () => {
+    let s = createInitialLocationJourneyState();
+    s = reduceLocationJourney(s, {
+      type: 'START',
+      owner: 'more',
+      uidFingerprint: 'u1',
+      token: 't1',
+    });
+    s = reduceLocationJourney(s, { type: 'FOREGROUND_RESULT', granted: true });
     s = reduceLocationJourney(s, {
       type: 'BACKGROUND_DECISION',
       decision: 'enable',
@@ -171,15 +169,15 @@ describe('location journey machine — Always / Settings', () => {
       needsSettings: true,
     });
     assert.equal(s.phase, 'waitingForSettingsReturn');
-    assert.equal(canPresentSettingsAlert(s, 'crj'), true);
-    assert.equal(canPresentSettingsAlert(s, 'home'), false);
+    assert.equal(canPresentSettingsAlert(s, 'more'), true);
+    assert.equal(canPresentSettingsAlert(s, 'crj'), false);
 
     s = reduceLocationJourney(s, {
       type: 'SETTINGS_RETURN',
       backgroundGranted: false,
     });
     assert.equal(s.phase, 'completed');
-    assert.equal(canPresentSettingsAlert(s, 'crj'), false);
+    assert.equal(canPresentSettingsAlert(s, 'more'), false);
   });
 });
 
@@ -232,15 +230,24 @@ describe('location journey machine — locks', () => {
 });
 
 describe('location journey machine — wiring', () => {
-  it('CRJ awaits activation issue before education; finishOnboarding has no permission UI', () => {
+  it('CRJ Location has no activateVisibility; finishOnboarding activates after completion', () => {
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
-    assert.match(crj, /reportingActivationIssue|ACTIVATION_ISSUE_ACKNOWLEDGED/);
-    assert.match(crj, /activationIssueTitle/);
-    assert.match(crj, /canPresentSettingsAlert/);
+    const req = crj.slice(
+      crj.indexOf('async function requestLocation()'),
+      crj.indexOf('async function handleCrjEnableBackground()'),
+    );
+    assert.doesNotMatch(req, /attemptInitialVisibilityAfterCrjCompletion/);
+    assert.doesNotMatch(req, /activateVisibilityFlow/);
+    assert.match(req, /Do NOT activateVisibility|profile still incomplete|profile-incomplete/);
     const finish = crj.slice(crj.indexOf('async function finishOnboarding()'));
-    assert.match(finish, /NEVER reopen education\/Settings UI/);
-    assert.doesNotMatch(finish, /setBgEducationOpen\(true\)/);
+    assert.match(finish, /profileSetupCompleted: true/);
+    assert.match(finish, /attemptInitialVisibilityAfterCrjCompletion/);
+    assert.match(finish, /syncDiscoveryProfileContextFlow/);
+    const setupIdx = finish.indexOf('profileSetupCompleted: true');
+    const activateIdx = finish.indexOf('attemptInitialVisibilityAfterCrjCompletion');
+    assert.ok(setupIdx >= 0 && activateIdx > setupIdx);
     assert.doesNotMatch(finish, /needsAlwaysPermission/);
+    assert.doesNotMatch(req, /needsAlwaysPermission/);
   });
 
   it('Home toggle locks only on statusUpdating — not education/Always', () => {

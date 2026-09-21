@@ -261,17 +261,21 @@ export function reduceLocationJourney(
           'cancelled',
         );
       }
+      // Permission journey: FG grant continues to BG education.
+      // Contractual Visibility activate is NOT part of this journey.
       return {
         ...state,
         foregroundEffective: true,
-        phase: 'preparing',
+        phase: 'showingBackgroundEducation',
       };
     }
 
     case 'ENTER_PREPARING': {
+      // Optional brief preparing (e.g. permission re-read) — not activateVisibility.
       if (
-        state.phase !== 'preparing' &&
-        state.phase !== 'requestingForeground'
+        state.phase !== 'showingBackgroundEducation' &&
+        state.phase !== 'requestingForeground' &&
+        state.phase !== 'preparing'
       ) {
         return state;
       }
@@ -279,7 +283,14 @@ export function reduceLocationJourney(
     }
 
     case 'ACTIVATION_RESULT': {
-      if (state.phase !== 'preparing') return state;
+      // Legacy/home visibility coordinator may still emit this; it does not gate
+      // background education. Prefer completing activation outside the permission machine.
+      if (
+        state.phase !== 'preparing' &&
+        state.phase !== 'showingBackgroundEducation'
+      ) {
+        return state;
+      }
       if (event.result === 'success') {
         return {
           ...state,
@@ -357,11 +368,15 @@ export function reduceLocationJourney(
           'completed',
         );
       }
-      if (event.needsSettings) {
+      // Automatic owners never enter Settings wait — foreground-only complete.
+      if (
+        event.needsSettings &&
+        state.owner === 'more'
+      ) {
         return {
           ...state,
           backgroundEffective: false,
-          settingsIntentOwner: state.owner,
+          settingsIntentOwner: 'more',
           phase: 'waitingForSettingsReturn',
         };
       }
@@ -422,17 +437,19 @@ export function reduceLocationJourney(
 }
 
 /**
- * Whether a Settings Open alert may be shown — only while machine is waiting
- * and owner still matches (never after navigation / terminal).
+ * Whether a Background Settings Open alert may be shown.
+ * Only More (explicit user action) may create/consume background Settings intent.
+ * CRJ / bootstrap / automatic Home recovery must never present BG Settings.
  */
 export function canPresentSettingsAlert(
   state: LocationJourneyState,
   expectedOwner: LocationJourneyOwner,
 ): boolean {
+  if (expectedOwner !== 'more') return false;
   return (
     state.phase === 'waitingForSettingsReturn' &&
-    state.owner === expectedOwner &&
-    state.settingsIntentOwner === expectedOwner
+    state.owner === 'more' &&
+    state.settingsIntentOwner === 'more'
   );
 }
 

@@ -83,17 +83,14 @@ import {
 } from '../visibility/backgroundLocationRuntime';
 import {
   beginLocationPermissionJourney,
-  canPresentSettingsAlert,
   dispatchLocationJourney,
   endLocationPermissionJourney,
   getLocationJourneyState,
   hasSessionBackgroundEducationOffered,
-  mapCrjActivationReasonToResult,
   shouldContinueToBackgroundEducation,
   shouldShowLocationPreparation,
   shouldUseLocationNotEnabledCopy,
 } from '../visibility/locationPermissionJourney';
-import { isBackgroundLocationPermissionError } from '../services/backgroundLocation';
 import { uploadProfileImage, uploadAffiliationImage, uploadGalleryImage, deleteGalleryStorageObject } from '../services/storageService';
 import { registerPushToken } from '../services/pushTokens';
 import {
@@ -1139,8 +1136,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       }
 
       const current = await Location.getForegroundPermissionsAsync();
-      const beforeGranted = !!current.granted || current.status === 'granted';
-      let granted = beforeGranted;
+      let granted = !!current.granted || current.status === 'granted';
       if (!granted) {
         const req = await Location.requestForegroundPermissionsAsync();
         granted = !!req.granted || req.status === 'granted';
@@ -1160,123 +1156,71 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             t('onboarding.profileCompletion.location.deniedMessage'),
           );
         }
-        setCrjVisibilityOn(false);
+        // Permissions denied — contractual activate happens later only if FG exists.
         setStepIndex((i) => i + 1);
         return;
       }
 
+      // Location step = permission journey ONLY. Do NOT activateVisibility here:
+      // profileSetupCompleted is still false and CRJ is incomplete (profile-incomplete).
+      // Optional brief prep while re-reading BG permission / education decision.
       const showPrep = shouldShowLocationPreparation({
         foregroundGranted: true,
         willRunActivationWork: true,
       });
-      if (showPrep) setLocationPreparing(true);
-      dispatchLocationJourney({ type: 'ENTER_PREPARING' });
+      if (showPrep) {
+        setLocationPreparing(true);
+        dispatchLocationJourney({ type: 'ENTER_PREPARING' });
+      }
 
-      let visibilityOn = false;
-      let activationReason:
-        | 'permission-denied'
-        | 'unavailable'
-        | 'invalid-accuracy'
-        | 'callable'
-        | 'skipped'
-        | null = null;
+      let continueEducation = false;
+      let bgGranted = false;
       try {
-        const activation = await attemptInitialVisibilityAfterCrjCompletion({
-          getClient: getVisibilityDiscoveryClient,
+        const bg = await readBackgroundPermissionSnapshot();
+        bgGranted = isBackgroundPermissionEffectivelyGranted(bg);
+        continueEducation = shouldContinueToBackgroundEducation({
+          foregroundGranted: true,
+          foregroundNewlyGranted: true,
+          requireNewlyGranted: false,
+          uid,
+          alreadyOfferedThisSession: hasSessionBackgroundEducationOffered(uid),
         });
-        visibilityOn = activation.activated === true;
-        setCrjVisibilityOn(visibilityOn);
-        if (activation.activated === false) {
-          activationReason = activation.reason;
+        if (continueEducation) {
+          const offer = await decideBackgroundEducationOffer({
+            storage: AsyncStorage,
+            backgroundGranted: bgGranted,
+            bgVisible: false,
+          });
+          continueEducation = offer.offer === true;
+          if (offer.offer) {
+            setBgEducationVariant(offer.variant);
+          }
         }
-        dispatchLocationJourney({
-          type: 'ACTIVATION_RESULT',
-          result: visibilityOn
-            ? 'success'
-            : mapCrjActivationReasonToResult(activationReason),
-        });
       } finally {
         setLocationPreparing(false);
       }
 
-      // Sequential: resolve activation issue BEFORE education (never concurrent).
-      if (getLocationJourneyState().phase === 'reportingActivationIssue') {
-        if (activationReason === 'invalid-accuracy') {
-          await awaitAlert(
-            t('settings.backgroundVisibility.accuracyTitle' as any),
-            t('settings.backgroundVisibility.accuracyMessage' as any),
-            [
-              { text: t('common.cancel'), style: 'cancel' },
-              {
-                text: t('settings.backgroundVisibility.openSettings' as any),
-                onPress: () => void Linking.openSettings(),
-              },
-            ],
-          );
-        } else {
-          await awaitAlert(
-            t(
-              'onboarding.profileCompletion.location.activationIssueTitle' as any,
-            ),
-            t(
-              'onboarding.profileCompletion.location.activationIssueMessage' as any,
-            ),
-          );
-        }
-        dispatchLocationJourney({ type: 'ACTIVATION_ISSUE_ACKNOWLEDGED' });
-      }
-
-      const continueEducation = shouldContinueToBackgroundEducation({
-        foregroundGranted: true,
-        foregroundNewlyGranted: !beforeGranted && granted,
-        requireNewlyGranted: false,
-        uid,
-        alreadyOfferedThisSession: hasSessionBackgroundEducationOffered(uid),
-      });
-
-      const bg = await readBackgroundPermissionSnapshot();
       if (continueEducation) {
-        const offer = await decideBackgroundEducationOffer({
-          storage: AsyncStorage,
-          backgroundGranted: isBackgroundPermissionEffectivelyGranted(bg),
-          bgVisible: false,
+        dispatchLocationJourney({ type: 'ENTER_BACKGROUND_EDUCATION' });
+        await new Promise<void>((resolve) => {
+          bgEducationResolverRef.current = resolve;
+          setBgEducationOpen(true);
         });
-        if (offer.offer) {
-          setBgEducationVariant(offer.variant);
-          dispatchLocationJourney({ type: 'ENTER_BACKGROUND_EDUCATION' });
-          await new Promise<void>((resolve) => {
-            bgEducationResolverRef.current = resolve;
-            setBgEducationOpen(true);
-          });
-          // Education handlers transition the machine to terminal before resolve.
-        } else if (isBackgroundPermissionEffectivelyGranted(bg)) {
-          await updateUserProfilePartial(uid, { bgVisible: true }).catch(
-            () => {},
-          );
-          await syncBackgroundLocationRuntime({
-            uid,
-            visibilityOn,
-            bgVisible: true,
-          });
-          dispatchLocationJourney({ type: 'COMPLETE' });
-        } else {
-          dispatchLocationJourney({ type: 'COMPLETE' });
-        }
+      } else if (bgGranted) {
+        await updateUserProfilePartial(uid, { bgVisible: true }).catch(
+          () => {},
+        );
+        // Runtime stays stopped until post-CRJ contractual activate succeeds.
+        await syncBackgroundLocationRuntime({
+          uid,
+          visibilityOn: false,
+          bgVisible: true,
+        });
+        dispatchLocationJourney({ type: 'COMPLETE' });
       } else {
-        if (isBackgroundPermissionEffectivelyGranted(bg)) {
-          await updateUserProfilePartial(uid, { bgVisible: true }).catch(
-            () => {},
-          );
-          await syncBackgroundLocationRuntime({
-            uid,
-            visibilityOn,
-            bgVisible: true,
-          });
-        }
         dispatchLocationJourney({ type: 'COMPLETE' });
       }
 
-      // Navigation only after terminal journey phase.
       if (
         getLocationJourneyState().phase === 'completed' ||
         getLocationJourneyState().phase === 'cancelled' ||
@@ -1310,11 +1254,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         type: 'BACKGROUND_DECISION',
         decision: 'enable',
       });
-      dispatchLocationJourney({ type: 'ENTER_REQUESTING_BACKGROUND' });
 
+      // Visibility not contractually Active yet — request Always only; no runtime.
       const result = await requestAndApplyBackgroundLocation({
         uid,
-        visibilityOn: crjVisibilityOn,
+        visibilityOn: false,
       });
       const effectiveBg = await readBackgroundPermissionSnapshot();
       const granted = isBackgroundPermissionEffectivelyGranted(effectiveBg);
@@ -1331,91 +1275,22 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         return;
       }
 
+      // Automatic CRJ journey: background optional → foreground-only, no Settings.
       await updateUserProfilePartial(uid, { bgVisible: false }).catch(
         () => {},
       );
-
-      if (result.code === 'services-off') {
-        await new Promise<void>((resolve) => {
-          Alert.alert(
-            t('settings.backgroundVisibility.servicesOffTitle' as any),
-            t('settings.backgroundVisibility.servicesOffMessage' as any),
-            [{ text: t('common.cancel'), onPress: () => resolve() }],
-          );
-        });
-        dispatchLocationJourney({
-          type: 'BACKGROUND_RESULT',
-          effectiveGranted: false,
-          needsSettings: false,
-        });
-        return;
-      }
-
-      const needsSettings = !result.canAskAgain;
       dispatchLocationJourney({
         type: 'BACKGROUND_RESULT',
         effectiveGranted: false,
-        needsSettings,
+        needsSettings: false,
       });
-
-      // Settings alert ONLY while machine still waiting and owner is CRJ.
-      if (
-        needsSettings &&
-        canPresentSettingsAlert(getLocationJourneyState(), 'crj')
-      ) {
-        await new Promise<void>((resolve) => {
-          Alert.alert(
-            t('common.appName'),
-            t('settings.backgroundVisibility.needsAlwaysPermission' as any),
-            [
-              {
-                text: t('common.cancel'),
-                style: 'cancel',
-                onPress: () => resolve(),
-              },
-              {
-                text: t('settings.backgroundVisibility.openSettings' as any),
-                onPress: () => {
-                  void Linking.openSettings();
-                  resolve();
-                },
-              },
-            ],
-          );
-        });
-        dispatchLocationJourney({
-          type: 'SETTINGS_RETURN',
-          backgroundGranted: false,
-        });
-      } else if (!needsSettings) {
-        await new Promise<void>((resolve) => {
-          Alert.alert(
-            t('common.appName'),
-            t('settings.backgroundVisibility.needsAlwaysPermission' as any),
-            [{ text: t('common.cancel'), onPress: () => resolve() }],
-          );
-        });
-      }
-    } catch (e) {
-      const effectiveBg = await readBackgroundPermissionSnapshot().catch(
-        () => null,
-      );
-      if (effectiveBg && isBackgroundPermissionEffectivelyGranted(effectiveBg)) {
-        await updateUserProfilePartial(uid, { bgVisible: true }).catch(
-          () => {},
-        );
-        dispatchLocationJourney({
-          type: 'BACKGROUND_RESULT',
-          effectiveGranted: true,
-          needsSettings: false,
-        });
-        return;
-      }
+    } catch {
       await updateUserProfilePartial(uid, { bgVisible: false }).catch(() => {});
-      dispatchLocationJourney({ type: 'FAIL' });
-      if (isBackgroundLocationPermissionError(e)) {
-        // No late Settings after fail — machine already terminal.
-      }
+      dispatchLocationJourney({
+        type: 'BACKGROUND_RESULT',
+        effectiveGranted: false,
+        needsSettings: false,
+      });
     } finally {
       closeBgEducation();
     }
@@ -1499,20 +1374,53 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         }
       }
 
-      // Location step owns the full permission journey. finishOnboarding must
-      // NEVER reopen education/Settings UI — silent activate retry only.
-      if (!crjVisibilityOn) {
-        const activation = await attemptInitialVisibilityAfterCrjCompletion({
-          getClient: getVisibilityDiscoveryClient,
-        });
-        if (activation.activated) {
-          setCrjVisibilityOn(true);
-        }
-        if (__DEV__ && activation.activated === false) {
-          console.warn('[CRJ] initial visibility activation skipped', {
-            reason: activation.reason,
+      // Contractual Visibility activate ONLY after profileSetupCompleted +
+      // discovery context sync. Location step must not call activateVisibility
+      // (profile still incomplete → backend profile-incomplete / failed-precondition).
+      // No permission/Settings UI here — permissions were decided in Location.
+      const activation = await attemptInitialVisibilityAfterCrjCompletion({
+        getClient: getVisibilityDiscoveryClient,
+      });
+      const activated = activation.activated === true;
+      setCrjVisibilityOn(activated);
+      if (activated) {
+        // Start BG runtime only after contractual activate success + bgVisible.
+        try {
+          const profile = await getUserProfile(uid);
+          const bgVisible = !!(profile as any)?.bgVisible;
+          await syncBackgroundLocationRuntime({
+            uid,
+            visibilityOn: true,
+            bgVisible,
+          });
+        } catch {
+          await syncBackgroundLocationRuntime({
+            uid,
+            visibilityOn: true,
+            bgVisible: false,
           });
         }
+      } else if (
+        activation.activated === false &&
+        activation.reason !== 'permission-denied'
+      ) {
+        // Correct activation recovery copy — never "Location not enabled".
+        await new Promise<void>((resolve) => {
+          Alert.alert(
+            t(
+              'onboarding.profileCompletion.location.activationIssueTitle' as any,
+            ),
+            t(
+              'onboarding.profileCompletion.location.activationIssueMessage' as any,
+            ),
+            [{ text: t('common.cancel'), onPress: () => resolve() }],
+          );
+        });
+      }
+      if (__DEV__ && activation.activated === false) {
+        console.warn('[CRJ] initial visibility activation skipped', {
+          reason: activation.reason,
+        });
       }
 
       navigation.reset({
