@@ -249,16 +249,16 @@ describe('ENH-LOC-01 journey wiring (same-pass connection)', () => {
     const body = crj.slice(requestStart, enableStart);
     assert.match(body, /requestForegroundPermissionsAsync/);
     assert.doesNotMatch(body, /attemptInitialVisibilityAfterCrjCompletion/);
-    assert.match(body, /decideBackgroundEducationOffer/);
-    assert.match(body, /setBgEducationOpen\(true\)/);
-    assert.match(body, /await new Promise/);
+    assert.match(body, /FG_GRANTED/);
+    assert.doesNotMatch(body, /await new Promise/);
+    assert.doesNotMatch(body, /beginLocationPermissionJourney/);
 
     const finish = crj.slice(crj.indexOf('async function finishOnboarding()'));
     assert.match(finish, /attemptInitialVisibilityAfterCrjCompletion/);
 
-    const notNow = crj.slice(notNowStart, notNowStart + 500);
-    assert.match(notNow, /Do not undo foreground or Visibility/);
+    const notNow = crj.slice(notNowStart, notNowStart + 700);
     assert.match(notNow, /bgVisible: false/);
+    assert.match(notNow, /NOT_NOW/);
     assert.doesNotMatch(notNow, /startBackgroundLocation|requestAndApply/);
   });
 

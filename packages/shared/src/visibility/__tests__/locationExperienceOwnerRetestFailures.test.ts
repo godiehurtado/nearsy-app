@@ -110,8 +110,8 @@ describe('Owner retest — FG→education invariant (activate-independent)', () 
     );
     // Location no longer activates — education follows FG without activationResult.
     assert.doesNotMatch(req, /attemptInitialVisibilityAfterCrjCompletion/);
-    assert.match(req, /foregroundGranted:\s*true/);
-    assert.match(req, /setBgEducationOpen\(true\)/);
+    assert.match(req, /FG_GRANTED/);
+    assert.doesNotMatch(req, /LocationPreparingModal/);
   });
 
   it('activation failure does not mark Visibility Active in CRJ', () => {
@@ -264,20 +264,17 @@ describe('Owner retest — Visibility toggle unlock (defect B/G)', () => {
 });
 
 describe('Owner retest — CRJ atomic education (defect A)', () => {
-  it('1–7: education promise stays pending until Enable/Not now; mark after await', () => {
+  it('1–7: education stays up until Enable/Not now; Location does not await a modal', () => {
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
     const reqStart = crj.indexOf('async function requestLocation()');
     const reqEnd = crj.indexOf('async function handleCrjEnableBackground()');
     const body = crj.slice(reqStart, reqEnd);
-    const awaitEdu = body.search(
-      /await new Promise<void>\(\(resolve\) => \{[\s\S]*?setBgEducationOpen\(true\)/,
-    );
-    assert.ok(awaitEdu >= 0, 'education await present');
-    // Session mark is owned by BACKGROUND_DECISION in handlers (after user choice).
+    assert.match(body, /FG_GRANTED/);
+    assert.doesNotMatch(body, /await new Promise/);
+    assert.doesNotMatch(body, /setLocationPreparing\(true\)/);
     const enable = crj.slice(crj.indexOf('async function handleCrjEnableBackground()'));
-    assert.match(enable, /BACKGROUND_DECISION/);
-    const stepAfter = body.lastIndexOf('setStepIndex((i) => i + 1)');
-    assert.ok(stepAfter > awaitEdu);
+    assert.match(enable, /BG_GRANTED/);
+    assert.match(enable, /advanceCrjLocationIfNeeded/);
   });
 
   it('6–9: continueEducation gates on FG grant, not activate; Not now does not undo Visibility', () => {
@@ -302,9 +299,13 @@ describe('Owner retest — CRJ atomic education (defect A)', () => {
       false,
     );
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
-    assert.match(
-      crj,
-      /handleCrjBackgroundNotNow[\s\S]*Do not undo foreground or Visibility/,
+    assert.match(crj, /handleCrjBackgroundNotNow[\s\S]*bgVisible: false/);
+    assert.doesNotMatch(
+      crj.slice(
+        crj.indexOf('async function handleCrjBackgroundNotNow()'),
+        crj.indexOf('async function requestNotifications()'),
+      ),
+      /setCrjVisibilityOn\(false\)/,
     );
   });
 

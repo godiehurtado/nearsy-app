@@ -31,10 +31,10 @@ describe('ENH-LOC-01 CRJ activation timing architecture', () => {
       crj.indexOf('async function requestLocation()'),
       crj.indexOf('async function handleCrjEnableBackground()'),
     );
-    assert.match(req, /shouldContinueToBackgroundEducation/);
-    assert.match(req, /decideBackgroundEducationOffer/);
-    assert.match(req, /setBgEducationOpen\(true\)/);
+    assert.match(req, /FG_GRANTED/);
+    assert.match(req, /requestForegroundPermissionsAsync/);
     assert.doesNotMatch(req, /attemptInitialVisibilityAfterCrjCompletion/);
+    assert.doesNotMatch(req, /LocationPreparingModal|setLocationPreparing/);
   });
 
   it('finishOnboarding persists profileSetupCompleted before activate', () => {
@@ -67,7 +67,8 @@ describe('ENH-LOC-01 CRJ activation timing architecture', () => {
       crj.indexOf('async function handleCrjEnableBackground()'),
       crj.indexOf('async function handleCrjBackgroundNotNow()'),
     );
-    assert.match(enable, /needsSettings:\s*false/);
+    assert.match(enable, /BG_DENIED/);
+    assert.match(enable, /BG_ERROR/);
     assert.doesNotMatch(enable, /needsAlwaysPermission/);
     assert.doesNotMatch(enable, /Linking\.openSettings/);
   });

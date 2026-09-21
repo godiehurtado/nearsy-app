@@ -208,17 +208,13 @@ describe('ENH-LOC-01 Visibility presentation hydration', () => {
 });
 
 describe('ENH-LOC-01 wiring contracts', () => {
-  it('6–7: CRJ uses preparation then education; closes prep on failure path', () => {
+  it('6–7: CRJ goes FG → education with no preparation modal; Home still prepares', () => {
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
-    assert.match(crj, /LocationPreparingModal/);
-    assert.match(crj, /setLocationPreparing\(true\)/);
-    assert.match(crj, /setLocationPreparing\(false\)/);
-    assert.match(crj, /shouldShowLocationPreparation/);
-    assert.match(crj, /beginLocationPermissionJourney\(uid, 'crj'\)/);
-    const prepBeforeEdu =
-      crj.indexOf('setLocationPreparing(true)') <
-      crj.indexOf('setBgEducationOpen(true)');
-    assert.equal(prepBeforeEdu, true);
+    assert.doesNotMatch(crj, /LocationPreparingModal/);
+    assert.doesNotMatch(crj, /setLocationPreparing\(true\)/);
+    assert.match(crj, /FG_GRANTED/);
+    assert.match(crj, /BackgroundLocationEducationModal/);
+    assert.doesNotMatch(crj, /beginLocationPermissionJourney\(uid, 'crj'\)/);
   });
 
   it('Home recovery + activate use preparation and presentation hydration', () => {
