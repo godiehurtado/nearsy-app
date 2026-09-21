@@ -29,6 +29,7 @@ import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 import * as Notifications from 'expo-notifications';
 import { registerPushToken } from './services/pushTokens';
 import { stopBackgroundLocationRuntime, syncBackgroundLocationRuntime } from './visibility/backgroundLocationRuntime';
+import { clearLocationPermissionJourneySession } from './visibility/locationPermissionJourney';
 
 import * as WebBrowser from 'expo-web-browser';
 WebBrowser.maybeCompleteAuthSession();
@@ -148,14 +149,23 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
   }, []);
 
   useEffect(() => {
+    let lastUid: string | null = null;
     const unsubscribe = firebaseAuth.onAuthStateChanged(
       async (user: any | null) => {
         if (!user) {
           if (Platform.OS !== 'web') {
             await stopBackgroundLocationRuntime().catch(() => {});
           }
+          clearLocationPermissionJourneySession();
+          lastUid = null;
           return;
         }
+
+        if (lastUid && lastUid !== user.uid) {
+          // Account switch: cancel prior journey / session education guard.
+          clearLocationPermissionJourneySession();
+        }
+        lastUid = user.uid;
 
         try {
           await registerPushToken();

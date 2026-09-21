@@ -58,7 +58,14 @@ import {
   markFullBackgroundEducationSeen,
   type BackgroundEducationVariant,
 } from '../visibility/locationEducation';
+import {
+  beginLocationPermissionJourney,
+  clearLocationPermissionJourneySession,
+  endLocationPermissionJourney,
+  shouldShowLocationPreparation,
+} from '../visibility/locationPermissionJourney';
 import { BackgroundLocationEducationModal } from '../components/BackgroundLocationEducationModal';
+import { LocationPreparingModal } from '../components/LocationPreparingModal';
 import { evaluateBackgroundLocationSettingsReturn } from '../visibility/settingsRecovery';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 import { deactivateVisibilityFlow } from '../visibility/orchestration';
@@ -217,6 +224,7 @@ export default function MoreScreen() {
   const [bgEducationVariant, setBgEducationVariant] =
     useState<BackgroundEducationVariant>('brief');
   const [bgEducationBusy, setBgEducationBusy] = useState(false);
+  const [locationPreparing, setLocationPreparing] = useState(false);
   const bgEducationResolverRef = useRef<((accepted: boolean) => void) | null>(
     null,
   );
@@ -605,6 +613,7 @@ export default function MoreScreen() {
       }
 
       let fg = await readForegroundPermissionSnapshot();
+      const beforeFgGranted = fg.granted;
       if (!fg.granted) {
         if (fg.canAskAgain || fg.status === 'undetermined') {
           const req = await Location.requestForegroundPermissionsAsync();
@@ -628,6 +637,24 @@ export default function MoreScreen() {
         }
         return;
       }
+
+      const fgNewlyGranted = !beforeFgGranted && fg.granted;
+      const journeyToken = beginLocationPermissionJourney(uid, 'more');
+      try {
+        if (
+          shouldShowLocationPreparation({
+            foregroundGranted: true,
+            willRunActivationWork: fgNewlyGranted,
+          })
+        ) {
+          setLocationPreparing(true);
+          try {
+            // Real work: resolve BG snapshot / education decision after FG grant.
+            await readBackgroundPermissionSnapshot();
+          } finally {
+            setLocationPreparing(false);
+          }
+        }
 
       const bg = await readBackgroundPermissionSnapshot();
       if (bg.granted) {
@@ -681,6 +708,10 @@ export default function MoreScreen() {
           t('common.appName'),
           t('settings.backgroundVisibility.enabled'),
         );
+      }
+      } finally {
+        if (journeyToken) endLocationPermissionJourney(journeyToken);
+        setLocationPreparing(false);
       }
     } catch (e: any) {
       setBgVisible(false);
@@ -796,6 +827,7 @@ export default function MoreScreen() {
       // 3) signOut
       // 4) navigation reset
       await stopBackgroundLocationRuntime().catch(() => {});
+      clearLocationPermissionJourneySession();
       try {
         const client = await getVisibilityDiscoveryClient();
         await deactivateVisibilityFlow(client);
@@ -1516,8 +1548,9 @@ export default function MoreScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+      <LocationPreparingModal visible={locationPreparing} />
       <BackgroundLocationEducationModal
-        visible={bgEducationOpen}
+        visible={bgEducationOpen && !locationPreparing}
         variant={bgEducationVariant}
         busy={bgEducationBusy}
         onEnableBackground={() => {

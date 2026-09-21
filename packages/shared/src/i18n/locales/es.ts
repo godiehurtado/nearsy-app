@@ -1400,6 +1400,11 @@ const es: TranslationResources = {
         enableBackground: 'Activar ubicación en segundo plano',
         notNow: 'Ahora no',
       },
+      preparing: {
+        title: '¡Ya casi!',
+        body:
+          'Estamos preparando tu ubicación. Enseguida viene un último paso.',
+      },
       servicesOffTitle: 'Los servicios de ubicación están desactivados',
       servicesOffMessage:
         'Activa los Servicios de ubicación en Ajustes de iOS para usar Visibilidad y el descubrimiento cercano.',

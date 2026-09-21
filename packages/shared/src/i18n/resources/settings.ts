@@ -69,6 +69,10 @@ export default {
       enableBackground: 'Enable background location',
       notNow: 'Not now',
     },
+    preparing: {
+      title: 'Almost there!',
+      body: 'We’re getting your location ready. One more quick step is coming up.',
+    },
     servicesOffTitle: 'Location Services are off',
     servicesOffMessage:
       'Turn on Location Services in iOS Settings to use Visibility and nearby discovery.',
