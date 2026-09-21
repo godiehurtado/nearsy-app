@@ -423,16 +423,18 @@ export default function MainHomeScreen({ navigation }: Props) {
                   setProfile((p) => ({ ...p, visibility: true }));
                   finishValidation(true);
                 } else {
+                  // Contractual activate failed — do not claim Active, and do not
+                  // deactivate for unknown/transient errors (remote may stay true).
                   finishValidation(false);
                 }
               } finally {
                 setLocationPreparing(false);
               }
 
+              // BG education follows FG grant, not activate success.
               if (
-                restoreOk &&
                 shouldContinueToBackgroundEducation({
-                  activationOk: true,
+                  foregroundGranted: true,
                   foregroundNewlyGranted: newlyGranted,
                   requireNewlyGranted: true,
                   uid,
@@ -670,7 +672,7 @@ export default function MainHomeScreen({ navigation }: Props) {
       await markFullBackgroundEducationSeen(AsyncStorage);
       const result = await requestAndApplyBackgroundLocation({
         uid,
-        visibilityOn: true,
+        visibilityOn: !!profileRef.current.visibility,
       });
       // Re-read effective Always before any Settings recovery UI.
       const effectiveBg = await readBackgroundPermissionSnapshot();
@@ -763,7 +765,7 @@ export default function MainHomeScreen({ navigation }: Props) {
         }
         await syncBackgroundLocationRuntime({
           uid,
-          visibilityOn: true,
+          visibilityOn: !!profileRef.current.visibility,
           bgVisible: true,
         });
       }
@@ -855,6 +857,7 @@ export default function MainHomeScreen({ navigation }: Props) {
       if (outcome.ok === false) {
         setValidatedEffectiveVisibility(false);
         setVisibilityValidationPending(false);
+        hydrationValidationDoneRef.current = true;
         if (outcome.kind === 'permission-denied') {
           showVisibilityPermissionDenied(
             presentVisibilityLocalError('permission-denied', t),
@@ -887,6 +890,19 @@ export default function MainHomeScreen({ navigation }: Props) {
         } else {
           showVisibilityError(presentUnknownVisibilityError(t));
         }
+        // FG may already be granted — continue to BG education in this journey.
+        if (
+          shouldContinueToBackgroundEducation({
+            foregroundGranted: afterFg.granted,
+            foregroundNewlyGranted: newlyGranted,
+            requireNewlyGranted: true,
+            uid,
+            alreadyOfferedThisSession:
+              hasSessionBackgroundEducationOffered(uid),
+          })
+        ) {
+          await offerBackgroundEducationIfNeeded();
+        }
         return;
       }
 
@@ -898,7 +914,7 @@ export default function MainHomeScreen({ navigation }: Props) {
 
       if (
         shouldContinueToBackgroundEducation({
-          activationOk: true,
+          foregroundGranted: true,
           foregroundNewlyGranted: newlyGranted,
           requireNewlyGranted: true,
           uid,

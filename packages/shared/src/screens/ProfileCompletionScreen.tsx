@@ -1154,7 +1154,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         | 'skipped'
         | null = null;
       try {
-        // FG granted → activate Visibility in this same journey, then offer BG.
+        // FG granted → attempt contractual activate, then ALWAYS offer BG
+        // education in this same journey (activate failure must not skip it).
         const activation = await attemptInitialVisibilityAfterCrjCompletion({
           getClient: getVisibilityDiscoveryClient,
         });
@@ -1167,7 +1168,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         setLocationPreparing(false);
       }
 
-      // Activation failure → surface recovery; never open BG education.
+      // Surface activation recovery without consuming the BG education slot.
       if (!visibilityOn) {
         if (activationReason === 'invalid-accuracy') {
           Alert.alert(
@@ -1184,19 +1185,18 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         } else if (
           activationReason === 'unavailable' ||
           activationReason === 'callable' ||
-          activationReason === 'permission-denied'
+          activationReason === 'permission-denied' ||
+          activationReason === 'skipped'
         ) {
           Alert.alert(
             t('onboarding.profileCompletion.location.deniedTitle'),
             t('onboarding.profileCompletion.location.deniedMessage'),
           );
         }
-        setStepIndex((i) => i + 1);
-        return;
       }
 
       const continueEducation = shouldContinueToBackgroundEducation({
-        activationOk: true,
+        foregroundGranted: true,
         foregroundNewlyGranted: newlyGranted,
         requireNewlyGranted: false,
         uid,
@@ -1224,7 +1224,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
           );
           await syncBackgroundLocationRuntime({
             uid,
-            visibilityOn: true,
+            visibilityOn,
             bgVisible: true,
           });
         }
@@ -1234,7 +1234,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         );
         await syncBackgroundLocationRuntime({
           uid,
-          visibilityOn: true,
+          visibilityOn,
           bgVisible: true,
         });
       }
@@ -1389,40 +1389,43 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         }
       }
 
-      // Location step owns FG → prep → activate → education. Only retry activate
-      // here when the location step did not already succeed. If we activate now,
-      // we must still await BG education before navigating (atomic CRJ contract).
-      if (!crjVisibilityOn) {
-        const journeyToken = beginLocationPermissionJourney(uid, 'crj');
-        try {
-          setLocationPreparing(true);
-          let activated = false;
-          try {
-            const activation = await attemptInitialVisibilityAfterCrjCompletion({
-              getClient: getVisibilityDiscoveryClient,
-            });
-            activated = activation.activated === true;
-            setCrjVisibilityOn(activated);
-            if (__DEV__ && activation.activated === false) {
-              console.warn('[CRJ] initial visibility activation skipped', {
-                reason: activation.reason,
-              });
-            }
-          } finally {
-            setLocationPreparing(false);
-          }
+      // Location step owns FG → prep → activate → education.
+      // finishOnboarding is an idempotent safety net only: retry activate if
+      // needed, and offer education only when Location never resolved a decision
+      // (no second prep modal; session guard prevents duplicate education).
+      let visibilityOn = crjVisibilityOn;
+      if (!visibilityOn) {
+        const activation = await attemptInitialVisibilityAfterCrjCompletion({
+          getClient: getVisibilityDiscoveryClient,
+        });
+        visibilityOn = activation.activated === true;
+        if (visibilityOn) {
+          setCrjVisibilityOn(true);
+        }
+        if (__DEV__ && activation.activated === false) {
+          console.warn('[CRJ] initial visibility activation skipped', {
+            reason: activation.reason,
+          });
+        }
+      }
 
-          if (
-            activated &&
-            shouldContinueToBackgroundEducation({
-              activationOk: true,
-              foregroundNewlyGranted: false,
-              requireNewlyGranted: false,
-              uid,
-              alreadyOfferedThisSession:
-                hasSessionBackgroundEducationOffered(uid),
-            })
-          ) {
+      if (!hasSessionBackgroundEducationOffered(uid)) {
+        const fg = await Location.getForegroundPermissionsAsync().catch(
+          () => null,
+        );
+        const fgGranted =
+          !!fg && (!!fg.granted || fg.status === 'granted');
+        if (
+          shouldContinueToBackgroundEducation({
+            foregroundGranted: fgGranted,
+            foregroundNewlyGranted: false,
+            requireNewlyGranted: false,
+            uid,
+            alreadyOfferedThisSession: false,
+          })
+        ) {
+          const journeyToken = beginLocationPermissionJourney(uid, 'crj');
+          try {
             const bg = await readBackgroundPermissionSnapshot();
             const offer = await decideBackgroundEducationOffer({
               storage: AsyncStorage,
@@ -1443,14 +1446,13 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               );
               await syncBackgroundLocationRuntime({
                 uid,
-                visibilityOn: true,
+                visibilityOn,
                 bgVisible: true,
               });
             }
+          } finally {
+            if (journeyToken) endLocationPermissionJourney(journeyToken);
           }
-        } finally {
-          if (journeyToken) endLocationPermissionJourney(journeyToken);
-          setLocationPreparing(false);
         }
       }
 

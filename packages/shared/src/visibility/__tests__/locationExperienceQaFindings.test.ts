@@ -73,10 +73,10 @@ describe('ENH-LOC-01 preparation modal decisions', () => {
     );
   });
 
-  it('4–5: education only after activation success; not after failure', () => {
+  it('4–5: education after FG grant even when activation fails; not without FG', () => {
     assert.equal(
       shouldContinueToBackgroundEducation({
-        activationOk: true,
+        foregroundGranted: true,
         foregroundNewlyGranted: true,
         requireNewlyGranted: true,
         uid: 'u1',
@@ -86,8 +86,8 @@ describe('ENH-LOC-01 preparation modal decisions', () => {
     );
     assert.equal(
       shouldContinueToBackgroundEducation({
-        activationOk: false,
-        foregroundNewlyGranted: true,
+        foregroundGranted: false,
+        foregroundNewlyGranted: false,
         requireNewlyGranted: true,
         uid: 'u1',
         alreadyOfferedThisSession: false,
@@ -124,7 +124,7 @@ describe('ENH-LOC-01 reinstall / education session', () => {
     markSessionBackgroundEducationOffered('u1');
     assert.equal(
       shouldContinueToBackgroundEducation({
-        activationOk: true,
+        foregroundGranted: true,
         foregroundNewlyGranted: true,
         requireNewlyGranted: true,
         uid: 'u1',

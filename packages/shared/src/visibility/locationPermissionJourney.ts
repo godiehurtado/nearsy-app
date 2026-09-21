@@ -83,19 +83,22 @@ export function shouldShowLocationPreparation(input: {
 }
 
 /**
- * BG education after successful activation.
- * Home/More recovery: require a new FG grant this attempt.
- * CRJ: product location step may already hold FG — still offer once per session.
+ * BG education after effective foreground is granted in this journey.
+ *
+ * Contractual activateVisibility success/failure is independent — network,
+ * callable, App Check, accuracy, or backend errors must not skip education.
+ * Home recovery may still require a new FG grant this attempt.
  */
 export function shouldContinueToBackgroundEducation(input: {
-  activationOk: boolean;
+  /** Effective foreground permission is granted. */
+  foregroundGranted: boolean;
   uid: string;
   alreadyOfferedThisSession: boolean;
   /** When true, only continue if FG was newly granted this attempt. */
   requireNewlyGranted: boolean;
   foregroundNewlyGranted: boolean;
 }): boolean {
-  if (!input.activationOk || input.alreadyOfferedThisSession) return false;
+  if (!input.foregroundGranted || input.alreadyOfferedThisSession) return false;
   if (!input.uid.trim()) return false;
   if (input.requireNewlyGranted && !input.foregroundNewlyGranted) return false;
   return true;

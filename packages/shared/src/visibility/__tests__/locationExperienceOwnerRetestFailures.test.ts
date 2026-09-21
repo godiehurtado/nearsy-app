@@ -50,6 +50,85 @@ beforeEach(() => {
   clearLocationPermissionJourneySession();
 });
 
+describe('Owner retest — FG→education invariant (activate-independent)', () => {
+  it('truth table: FG granted → education regardless of activate outcome', () => {
+    const base = {
+      uid: 'u1',
+      alreadyOfferedThisSession: false,
+      requireNewlyGranted: false,
+      foregroundNewlyGranted: false,
+    };
+    // FG absent → no education
+    assert.equal(
+      shouldContinueToBackgroundEducation({
+        ...base,
+        foregroundGranted: false,
+      }),
+      false,
+    );
+    // FG granted + (conceptual) activate success → education
+    assert.equal(
+      shouldContinueToBackgroundEducation({
+        ...base,
+        foregroundGranted: true,
+      }),
+      true,
+    );
+    // FG granted + network/callable/inactive — same helper, still true
+    assert.equal(
+      shouldContinueToBackgroundEducation({
+        ...base,
+        foregroundGranted: true,
+        foregroundNewlyGranted: true,
+      }),
+      true,
+    );
+  });
+
+  it('Home recovery offers education after FG even when restoreOk is false', () => {
+    const home = readShared('screens/MainHomeScreen.tsx');
+    const restore = home.slice(
+      home.indexOf('runPostGrantRestore'),
+      home.indexOf('preserve-intent-then-deactivate'),
+    );
+    assert.match(restore, /BG education follows FG grant/);
+    assert.match(
+      restore,
+      /shouldContinueToBackgroundEducation\(\{[\s\S]*foregroundGranted:\s*true/,
+    );
+    assert.doesNotMatch(
+      restore,
+      /restoreOk &&\s*shouldContinueToBackgroundEducation/,
+    );
+  });
+
+  it('CRJ requestLocation does not return early before education on activate fail', () => {
+    const crj = readShared('screens/ProfileCompletionScreen.tsx');
+    const req = crj.slice(
+      crj.indexOf('async function requestLocation()'),
+      crj.indexOf('async function handleCrjEnableBackground()'),
+    );
+    assert.match(req, /activate failure must not skip/);
+    assert.match(req, /foregroundGranted:\s*true/);
+    // Activation alerts exist, then education continues (no early return after alerts)
+    const alertIdx = req.indexOf('invalid-accuracy');
+    const eduIdx = req.search(
+      /await new Promise<void>\(\(resolve\) => \{[\s\S]*?setBgEducationOpen\(true\)/,
+    );
+    assert.ok(alertIdx >= 0 && eduIdx > alertIdx);
+  });
+
+  it('activation failure does not mark Visibility Active in CRJ', () => {
+    const crj = readShared('screens/ProfileCompletionScreen.tsx');
+    const req = crj.slice(
+      crj.indexOf('async function requestLocation()'),
+      crj.indexOf('async function handleCrjEnableBackground()'),
+    );
+    assert.match(req, /visibilityOn = activation\.activated === true/);
+    assert.match(req, /setCrjVisibilityOn\(visibilityOn\)/);
+  });
+});
+
 describe('Owner retest — Always effective grant (defect B Settings false positive)', () => {
   it('15–16: ios.scope always is effective grant even if status lags', () => {
     const lagging = snapshotFromPermissionResponse({
@@ -202,24 +281,24 @@ describe('Owner retest — CRJ atomic education (defect A)', () => {
     assert.ok(stepAfter > awaitEdu);
   });
 
-  it('6–9: continueEducation gates on activationOk; Not now does not undo Visibility', () => {
+  it('6–9: continueEducation gates on FG grant, not activate; Not now does not undo Visibility', () => {
     assert.equal(
       shouldContinueToBackgroundEducation({
-        activationOk: true,
+        foregroundGranted: true,
+        foregroundNewlyGranted: false,
+        requireNewlyGranted: false,
         uid: 'u1',
         alreadyOfferedThisSession: false,
-        requireNewlyGranted: false,
-        foregroundNewlyGranted: false,
       }),
       true,
     );
     assert.equal(
       shouldContinueToBackgroundEducation({
-        activationOk: false,
+        foregroundGranted: false,
+        foregroundNewlyGranted: false,
+        requireNewlyGranted: false,
         uid: 'u1',
         alreadyOfferedThisSession: false,
-        requireNewlyGranted: false,
-        foregroundNewlyGranted: true,
       }),
       false,
     );
@@ -230,15 +309,25 @@ describe('Owner retest — CRJ atomic education (defect A)', () => {
     );
   });
 
-  it('10–12: finishOnboarding skips re-activate when crjVisibilityOn; education before navigate when activating late', () => {
+  it('10–12: finishOnboarding is idempotent safety net; Location owns education', () => {
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
     const finish = crj.slice(crj.indexOf('async function finishOnboarding()'));
-    assert.match(finish, /if \(!crjVisibilityOn\)/);
-    assert.match(finish, /setBgEducationOpen\(true\)/);
+    assert.match(finish, /hasSessionBackgroundEducationOffered\(uid\)/);
+    assert.match(finish, /idempotent safety net/);
     assert.match(finish, /navigation\.reset/);
-    const edu = finish.indexOf('setBgEducationOpen(true)');
-    const nav = finish.indexOf('navigation.reset');
-    assert.ok(edu >= 0 && nav > edu);
+    // Location requestLocation must not early-return before education on activate fail
+    const req = crj.slice(
+      crj.indexOf('async function requestLocation()'),
+      crj.indexOf('async function handleCrjEnableBackground()'),
+    );
+    assert.doesNotMatch(
+      req,
+      /Activation failure → surface recovery; never open BG education/,
+    );
+    assert.match(
+      req,
+      /activate failure must not skip/,
+    );
   });
 
   it('11: CRJ journey blocks Home recovery steal', () => {
