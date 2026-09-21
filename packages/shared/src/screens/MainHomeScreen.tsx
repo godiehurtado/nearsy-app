@@ -97,23 +97,23 @@ import {
 } from '../location/startGatedBackgroundLocation';
 import { backgroundLocationNotificationCopy } from '../location/backgroundLocationCopy';
 import {
+  hasSeenBackgroundLocationEducation,
   markBackgroundLocationEducationSeen,
+  resolveBackgroundDisclosureVariant,
   type BackgroundDisclosureVariant,
 } from '../location/backgroundEducationStorage';
 import { requiresSettingsForBackgroundPermission } from '../location/backgroundPublicationGate';
 import {
-  beginPostForegroundDisclosureJourney,
-  closePreparationOnTerminal,
-  runWithPreparationUi,
-} from '../location/locationJourneyCoordinator';
-import {
   consumePostLoginLocationRecovery,
-  peekPostLoginLocationRecovery,
+  markBackgroundDisclosureOfferedThisSession,
   wasBackgroundDisclosureOfferedThisSession,
 } from '../location/locationJourneySession';
 import { evaluateVisibilityHydration } from '../location/visibilityHydration';
+import {
+  isVisibilityToggleDisabled,
+  shouldForceFullBackgroundEducation,
+} from '../location/homeLocationRecovery';
 import { BackgroundLocationDisclosureModal } from '../components/BackgroundLocationDisclosureModal';
-import { LocationPreparationModal } from '../components/LocationPreparationModal';
 import {
   logVisibilityErrorDiagnostic,
   presentUnknownVisibilityError,
@@ -195,16 +195,14 @@ export default function MainHomeScreen({ navigation }: Props) {
   const [bgDisclosureVariant, setBgDisclosureVariant] =
     useState<BackgroundDisclosureVariant>('full');
   const [bgDisclosureBusy, setBgDisclosureBusy] = useState(false);
-  const [locationPreparing, setLocationPreparing] = useState(false);
-  const locationPrepCancelledRef = useRef(false);
   const [permissionValidationPending, setPermissionValidationPending] =
     useState(false);
   const [permissionsValid, setPermissionsValid] = useState<
     boolean | undefined
   >(undefined);
-  const pendingBgDisclosureIntentRef = useRef(false);
   const pendingBgEnableFromSettingsRef = useRef(false);
   const postLoginRecoveryStartedRef = useRef(false);
+  const educationOfferInFlightRef = useRef(false);
 
   const officialInterestIds = useMemo(() => officialCatalogInterestIdSet(), []);
   const mode: ProfileMode = resolveActiveMode(profile) ?? 'personal';
@@ -230,40 +228,62 @@ export default function MainHomeScreen({ navigation }: Props) {
     [fgsCopy],
   );
 
-  const maybeOfferBackgroundDisclosure = useCallback(async () => {
-    if (Platform.OS === 'web') return;
-    const snap = await getLocationPermissionSnapshot();
-    if (snap.backgroundGranted) {
-      if (profileRef.current.bgVisible && profileRef.current.visibility) {
-        const uid = firebaseAuth.currentUser?.uid;
-        if (uid) await startGatedBackgroundIfAllowed(uid);
+  /**
+   * Offer background education without preparation overlay.
+   * forceFull: reinstall — show even if OS BG already granted.
+   */
+  const offerBackgroundEducationIfNeeded = useCallback(
+    async (opts?: { forceFull?: boolean }) => {
+      if (Platform.OS === 'web') return;
+      if (educationOfferInFlightRef.current || bgDisclosureVisible) return;
+      if (
+        !opts?.forceFull &&
+        wasBackgroundDisclosureOfferedThisSession()
+      ) {
+        return;
       }
-      return;
-    }
-    if (wasBackgroundDisclosureOfferedThisSession()) return;
 
-    const plan = await beginPostForegroundDisclosureJourney({
-      backgroundGranted: false,
-      preparationUi: {
-        setVisible: setLocationPreparing,
-        isCancelled: () => locationPrepCancelledRef.current,
-      },
-      forceOffer: false,
-    });
-    if (!plan || plan.action !== 'show-disclosure') return;
-    setBgDisclosureVariant(plan.variant);
-    setBgDisclosureVisible(true);
-  }, [startGatedBackgroundIfAllowed]);
+      educationOfferInFlightRef.current = true;
+      try {
+        const snap = await getLocationPermissionSnapshot();
+        if (!opts?.forceFull && snap.backgroundGranted) {
+          if (profileRef.current.bgVisible && profileRef.current.visibility) {
+            const uid = firebaseAuth.currentUser?.uid;
+            if (uid) await startGatedBackgroundIfAllowed(uid);
+          }
+          return;
+        }
+
+        const variant = opts?.forceFull
+          ? 'full'
+          : await resolveBackgroundDisclosureVariant();
+        markBackgroundDisclosureOfferedThisSession();
+        setBgDisclosureVariant(variant);
+        setBgDisclosureVisible(true);
+      } finally {
+        educationOfferInFlightRef.current = false;
+      }
+    },
+    [bgDisclosureVisible, startGatedBackgroundIfAllowed],
+  );
 
   const completeBackgroundDisclosure = useCallback(
     async (enable: boolean) => {
       const uid = firebaseAuth.currentUser?.uid;
       setBgDisclosureBusy(true);
       try {
-        if (bgDisclosureVariant === 'full') {
-          await markBackgroundLocationEducationSeen().catch(() => {});
-        }
+        await markBackgroundLocationEducationSeen().catch(() => {});
         if (!enable || !uid) {
+          const { updateUserProfilePartial } = await import(
+            '../services/firestoreService'
+          );
+          if (uid) {
+            await updateUserProfilePartial(uid, {
+              bgVisible: false,
+              updatedAt: Date.now(),
+            }).catch(() => {});
+            setProfile((p) => ({ ...p, bgVisible: false }));
+          }
           setBgDisclosureVisible(false);
           return;
         }
@@ -309,37 +329,21 @@ export default function MainHomeScreen({ navigation }: Props) {
             updatedAt: Date.now(),
           });
           setProfile((p) => ({ ...p, bgVisible: true }));
-        } else {
-          const fail = result;
-          if (fail.reason === 'needs-settings') {
-            pendingBgEnableFromSettingsRef.current = true;
-            void Linking.openSettings();
-          } else if (
-            fail.reason === 'background-denied' ||
-            fail.reason === 'foreground-denied'
-          ) {
-            pendingBgEnableFromSettingsRef.current = true;
-            Alert.alert(
-              t('common.appName'),
-              fail.reason === 'foreground-denied'
-                ? t('settings.backgroundVisibility.needsForegroundPermission')
-                : t('settings.backgroundVisibility.needsBackgroundPermission'),
-              [
-                { text: t('common.actions.cancel'), style: 'cancel' },
-                {
-                  text: t('settings.backgroundVisibility.openSettings'),
-                  onPress: () => void Linking.openSettings(),
-                },
-              ],
-            );
-          }
+        } else if (result.reason === 'needs-settings') {
+          pendingBgEnableFromSettingsRef.current = true;
+          void Linking.openSettings();
+        } else if (
+          result.reason === 'background-denied' ||
+          result.reason === 'foreground-denied'
+        ) {
+          await stopBackgroundLocation().catch(() => {});
         }
       } finally {
         setBgDisclosureBusy(false);
         setBgDisclosureVisible(false);
       }
     },
-    [bgDisclosureVariant, fgsCopy, t],
+    [fgsCopy, t],
   );
 
   const activePrefs = selectPreferencesForMode(prefs, mode);
@@ -400,13 +404,9 @@ export default function MainHomeScreen({ navigation }: Props) {
         };
 
   useEffect(() => {
-    locationPrepCancelledRef.current = false;
     return () => {
-      locationPrepCancelledRef.current = true;
-      closePreparationOnTerminal({
-        setVisible: setLocationPreparing,
-        isCancelled: () => true,
-      });
+      setBgDisclosureVisible(false);
+      educationOfferInFlightRef.current = false;
     };
   }, []);
 
@@ -482,26 +482,13 @@ export default function MainHomeScreen({ navigation }: Props) {
     (async () => {
       setPermissionValidationPending(true);
       try {
-        const uid = firebaseAuth.currentUser?.uid;
         const fg = await Location.getForegroundPermissionsAsync();
         const ok = fg.status === 'granted' || !!fg.granted;
         if (cancelled) return;
         setPermissionsValid(ok);
         setPermissionValidationPending(false);
-        if (!ok) {
-          // Reinstall / post-login recovery owns the FG prompt + optional deactivate.
-          if (uid && peekPostLoginLocationRecovery(uid)) {
-            return;
-          }
-          if (!uid) return;
-          const client = await getVisibilityDiscoveryClient();
-          const outcome = await deactivateVisibilityFlow(client);
-          if (cancelled) return;
-          if (outcome.ok) {
-            setProfile((p) => ({ ...p, visibility: false }));
-            await stopBackgroundLocation().catch(() => {});
-          }
-        }
+        // Reinstall education owns FG prompt when recovery flagged — do not
+        // deactivate here while post-login recovery is pending.
       } catch {
         if (!cancelled) {
           setPermissionValidationPending(false);
@@ -523,6 +510,8 @@ export default function MainHomeScreen({ navigation }: Props) {
     })();
   }, []);
 
+  // Focus recovery depends only on loading — profile.visibility/bgVisible churn
+  // must not cancel reinstall education (iOS-approved pattern).
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -530,55 +519,41 @@ export default function MainHomeScreen({ navigation }: Props) {
         const uid = firebaseAuth.currentUser?.uid;
         if (!uid || loading) return;
         try {
-          // Reinstall / existing-account post-login: App marks recovery; Home owns journey once.
-          if (
-            !postLoginRecoveryStartedRef.current &&
-            consumePostLoginLocationRecovery(uid)
-          ) {
-            postLoginRecoveryStartedRef.current = true;
-            const client = await getVisibilityDiscoveryClient();
-            const perm = await ensureForegroundPermission();
-            if (cancelled) return;
-            if (perm.status !== 'granted') {
-              setPermissionsValid(false);
+          // Reinstall / existing account: local education mark absent → full education
+          // even if Visibility/bgVisible remote true and OS BG still granted.
+          if (!postLoginRecoveryStartedRef.current) {
+            const recoveryFlag = consumePostLoginLocationRecovery(uid);
+            const localSeen = await hasSeenBackgroundLocationEducation();
+            if (
+              shouldForceFullBackgroundEducation({
+                localEducationSeen: localSeen,
+                recoveryNeeded: recoveryFlag || !localSeen,
+              })
+            ) {
+              postLoginRecoveryStartedRef.current = true;
+              const perm = await ensureForegroundPermission();
+              if (cancelled) return;
+              if (perm.status !== 'granted') {
+                setPermissionsValid(false);
+                setPermissionValidationPending(false);
+                const client = await getVisibilityDiscoveryClient();
+                const outcome = await deactivateVisibilityFlow(client);
+                if (outcome.ok) {
+                  setProfile((p) => ({ ...p, visibility: false }));
+                }
+                await stopBackgroundLocation().catch(() => {});
+                return;
+              }
+              setPermissionsValid(true);
               setPermissionValidationPending(false);
-              const outcome = await deactivateVisibilityFlow(client);
-              if (outcome.ok) {
-                setProfile((p) => ({ ...p, visibility: false }));
-              }
-              await stopBackgroundLocation().catch(() => {});
+              // No preparation between FG and education.
+              await offerBackgroundEducationIfNeeded({ forceFull: true });
               return;
             }
-            setPermissionsValid(true);
-            setPermissionValidationPending(false);
-
-            const snap = await getLocationPermissionSnapshot();
-            if (snap.backgroundGranted) {
-              if (profileRef.current.bgVisible) {
-                await startGatedBackgroundIfAllowed(uid);
-              }
-              return;
-            }
-
-            const plan = await beginPostForegroundDisclosureJourney({
-              backgroundGranted: false,
-              preparationUi: {
-                setVisible: setLocationPreparing,
-                isCancelled: () =>
-                  cancelled || locationPrepCancelledRef.current,
-              },
-              forceOffer: true,
-            });
-            if (cancelled) return;
-            if (plan?.action === 'show-disclosure') {
-              setBgDisclosureVariant(plan.variant);
-              setBgDisclosureVisible(true);
-            }
-            return;
           }
 
           const client = await getVisibilityDiscoveryClient();
-          const remote = !!profile.visibility;
+          const remote = !!profileRef.current.visibility;
           const recoveryIntent = await readVisibilityRecoveryIntent(
             AsyncStorage,
           );
@@ -604,23 +579,6 @@ export default function MainHomeScreen({ navigation }: Props) {
               setProfile((p) => ({ ...p, visibility: false }));
               await stopBackgroundLocation().catch(() => {});
             }
-            if (fg.status === 'undetermined' || fg.canAskAgain) {
-              await Location.requestForegroundPermissionsAsync().catch(
-                () => undefined,
-              );
-              if (cancelled) return;
-              const after = await Location.getForegroundPermissionsAsync();
-              if (after.status === 'granted') {
-                const restore = await activateVisibilityFlow(client);
-                if (cancelled) return;
-                if (restore.ok) {
-                  await clearVisibilityRecoveryIntent(AsyncStorage);
-                  setProfile((p) => ({ ...p, visibility: true }));
-                  setPermissionsValid(true);
-                  await maybeOfferBackgroundDisclosure();
-                }
-              }
-            }
             return;
           }
 
@@ -631,29 +589,12 @@ export default function MainHomeScreen({ navigation }: Props) {
               await clearVisibilityRecoveryIntent(AsyncStorage);
               setProfile((p) => ({ ...p, visibility: true }));
               setPermissionsValid(true);
-              await maybeOfferBackgroundDisclosure();
+              await offerBackgroundEducationIfNeeded();
             }
             return;
           }
 
           if (decision.action === 'await-permission') {
-            if (fg.status === 'undetermined' || fg.canAskAgain) {
-              await Location.requestForegroundPermissionsAsync().catch(
-                () => undefined,
-              );
-              if (cancelled) return;
-              const after = await Location.getForegroundPermissionsAsync();
-              if (after.status === 'granted') {
-                const restore = await activateVisibilityFlow(client);
-                if (cancelled) return;
-                if (restore.ok) {
-                  await clearVisibilityRecoveryIntent(AsyncStorage);
-                  setProfile((p) => ({ ...p, visibility: true }));
-                  setPermissionsValid(true);
-                  await maybeOfferBackgroundDisclosure();
-                }
-              }
-            }
             await stopBackgroundLocation().catch(() => {});
             return;
           }
@@ -662,11 +603,10 @@ export default function MainHomeScreen({ navigation }: Props) {
             await clearVisibilityRecoveryIntent(AsyncStorage);
           }
 
-          // Runtime reconcile only when permissions validated (not provisional Active).
           if (remote && foregroundGranted && permissionsValid === true) {
             const bgPerm = await Location.getBackgroundPermissionsAsync();
             const bgGranted = bgPerm.status === 'granted';
-            if (profile.bgVisible && !bgGranted) {
+            if (profileRef.current.bgVisible && !bgGranted) {
               const { updateUserProfilePartial } = await import(
                 '../services/firestoreService'
               );
@@ -676,7 +616,7 @@ export default function MainHomeScreen({ navigation }: Props) {
               }).catch(() => {});
               setProfile((p) => ({ ...p, bgVisible: false }));
               await stopBackgroundLocation().catch(() => {});
-            } else if (profile.bgVisible) {
+            } else if (profileRef.current.bgVisible) {
               await startGatedBackgroundIfAllowed(uid);
             } else {
               await stopBackgroundLocation().catch(() => {});
@@ -691,14 +631,7 @@ export default function MainHomeScreen({ navigation }: Props) {
       return () => {
         cancelled = true;
       };
-    }, [
-      profile.visibility,
-      profile.bgVisible,
-      loading,
-      permissionsValid,
-      startGatedBackgroundIfAllowed,
-      maybeOfferBackgroundDisclosure,
-    ]),
+    }, [loading, startGatedBackgroundIfAllowed, offerBackgroundEducationIfNeeded]),
   );
 
   const showVisibilityError = (
@@ -812,24 +745,7 @@ export default function MainHomeScreen({ navigation }: Props) {
     setVisibilityError(null);
     try {
       const client = await getVisibilityDiscoveryClient();
-      const perm = await ensureForegroundPermission();
-      if (perm.status !== 'granted') {
-        showVisibilityPermissionDenied(
-          presentVisibilityLocalError('permission-denied', t),
-          perm.canAskAgain,
-        );
-        return;
-      }
-
-      // Preparation covers post-FG validation (sample + activate callable).
-      const outcome = await runWithPreparationUi(
-        {
-          setVisible: setLocationPreparing,
-          isCancelled: () => locationPrepCancelledRef.current,
-        },
-        () => activateVisibilityFlow(client),
-      );
-
+      const outcome = await activateVisibilityFlow(client);
       if (outcome.ok === false) {
         if (outcome.kind === 'permission-denied') {
           showVisibilityPermissionDenied(
@@ -871,16 +787,14 @@ export default function MainHomeScreen({ navigation }: Props) {
         } else {
           showVisibilityError(presentUnknownVisibilityError(t));
         }
-        setLocationPreparing(false);
         return;
       }
       setProfile((p) => ({ ...p, visibility: true }));
       setPermissionsValid(true);
       setPermissionValidationPending(false);
       await clearVisibilityRecoveryIntent(AsyncStorage).catch(() => {});
-      await maybeOfferBackgroundDisclosure();
+      await offerBackgroundEducationIfNeeded();
     } catch (err) {
-      setLocationPreparing(false);
       if (isVisibilityDiscoveryClientError(err)) {
         showVisibilityError(presentVisibilityCallableError(err, t), err);
       } else {
@@ -889,12 +803,14 @@ export default function MainHomeScreen({ navigation }: Props) {
     } finally {
       setStatusUpdating(false);
     }
-  }, [t, maybeOfferBackgroundDisclosure]);
+  }, [t, offerBackgroundEducationIfNeeded]);
 
   const handleToggleActive = async () => {
-    if (statusUpdating || visibilityHydration.toggleDisabled || locationPreparing) {
-      return;
-    }
+    const toggleDisabled = isVisibilityToggleDisabled({
+      hydrating: visibilityHydration.toggleDisabled,
+      mutating: statusUpdating || statusUpdatingRef.current,
+    });
+    if (toggleDisabled) return;
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) return;
 
@@ -1129,19 +1045,19 @@ export default function MainHomeScreen({ navigation }: Props) {
               ? t('home.visibility.active')
               : t('home.visibility.inactive')
           }
-          disabled={
-            statusUpdating ||
-            visibilityHydration.toggleDisabled ||
-            locationPreparing
-          }
+          disabled={isVisibilityToggleDisabled({
+            hydrating: visibilityHydration.toggleDisabled,
+            mutating: statusUpdating,
+          })}
           onPress={handleToggleActive}
           style={({ pressed }) => [
             styles.statusPill,
             {
               backgroundColor: pillColors.bg,
               borderColor: pillColors.border,
-              opacity:
-                statusUpdating || visibilityHydration.toggleDisabled ? 0.7 : 1,
+              opacity: statusUpdating || visibilityHydration.toggleDisabled
+                ? 0.7
+                : 1,
               ...pressTransformStyle(pressed),
             },
           ]}
@@ -1362,13 +1278,11 @@ export default function MainHomeScreen({ navigation }: Props) {
         )}
       </View>
     </ScrollView>
-    <LocationPreparationModal
-      visible={locationPreparing && !bgDisclosureVisible}
-    />
     <BackgroundLocationDisclosureModal
       visible={bgDisclosureVisible}
       variant={bgDisclosureVariant}
       busy={bgDisclosureBusy}
+      settingsPath={requiresSettingsForBackgroundPermission(Platform.Version)}
       onEnable={() => void completeBackgroundDisclosure(true)}
       onNotNow={() => void completeBackgroundDisclosure(false)}
     />

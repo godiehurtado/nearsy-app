@@ -227,12 +227,11 @@ describe('preparation timing (no artificial delay)', () => {
     assert.equal(shouldRenderPreparationForElapsedMs(80), true);
   });
 
-  it('coordinator exposes preparation + journey helpers', () => {
-    const src = readShared('location/locationJourneyCoordinator.ts');
-    assert.match(src, /runWithPreparationUi/);
-    assert.match(src, /beginPostForegroundDisclosureJourney/);
-    assert.match(src, /shouldRenderPreparationForElapsedMs/);
-    assert.doesNotMatch(src, /setTimeout\(\s*\(\)\s*=>\s*\{\s*\/\* artificial/);
+  it('CRJ and Home reinstall must not use preparation coordinator', () => {
+    const crj = readShared('screens/ProfileCompletionScreen.tsx');
+    const home = readShared('screens/MainHomeScreen.tsx');
+    assert.doesNotMatch(crj, /LocationPreparationModal|beginPostForegroundDisclosureJourney/);
+    assert.doesNotMatch(home, /LocationPreparationModal|setLocationPreparing\(true\)/);
   });
 });
 
@@ -442,38 +441,36 @@ describe('ENH-LOC-01 source contracts', () => {
   it('disclosure + preparation EN/ES keys exist', () => {
     const en = readShared('i18n/resources/settings.ts');
     const es = readShared('i18n/locales/es.ts');
-    assert.match(en, /disclosure:\s*\{/);
-    assert.match(en, /fullTitle:/);
-    assert.match(en, /notNow:/);
-    assert.match(en, /Almost there!/);
-    assert.match(es, /disclosure:\s*\{/);
-    assert.match(es, /Ahora no/);
-    assert.match(es, /¡Ya casi!/);
+    assert.match(en, /education:\s*\{/);
+    assert.match(en, /Stay discoverable nearby/);
+    assert.match(en, /Allow all the time/);
+    assert.match(en, /Background updates are off/);
+    assert.match(es, /Mantente visible cerca/);
+    assert.match(es, /Permitir todo el tiempo/);
+    assert.match(es, /Actualizaciones en segundo plano desactivadas/);
+    assert.doesNotMatch(en, /iPhone/);
+    assert.doesNotMatch(es, /iPhone/);
   });
 
-  it('CRJ offers preparation then disclosure after FG grant', () => {
+  it('CRJ offers education after FG grant via local reducer', () => {
     const src = readShared('screens/ProfileCompletionScreen.tsx');
     assert.match(src, /BackgroundLocationDisclosureModal/);
-    assert.match(src, /LocationPreparationModal/);
-    assert.match(src, /beginPostForegroundDisclosureJourney/);
     assert.match(src, /finishCrjBackgroundDisclosure/);
+    assert.match(src, /reduceCrjLocationStep/);
+    assert.doesNotMatch(src, /LocationPreparationModal/);
   });
 
-  it('More/Home use gated start, preparation, disclosure, hydration', () => {
+  it('More/Home use gated start and disclosure', () => {
     const more = readShared('screens/MoreScreen.tsx');
     const home = readShared('screens/MainHomeScreen.tsx');
     assert.match(more, /startGatedBackgroundLocation/);
     assert.match(more, /BackgroundLocationDisclosureModal/);
-    assert.match(more, /LocationPreparationModal/);
     assert.match(more, /runContractualAndroidLogout/);
     assert.match(more, /shouldReconcileBgPreferenceOff/);
-    assert.match(more, /beginPostForegroundDisclosureJourney/);
+    assert.match(more, /disabledDone/);
     assert.match(home, /startGatedBackgroundLocation/);
-    assert.match(home, /maybeOfferBackgroundDisclosure/);
-    assert.match(home, /LocationPreparationModal/);
-    assert.match(home, /evaluateVisibilityHydration/);
-    assert.match(home, /consumePostLoginLocationRecovery/);
-    assert.match(home, /runtimeEligible|permissionsValid/);
+    assert.match(home, /offerBackgroundEducationIfNeeded/);
+    assert.match(home, /isVisibilityToggleDisabled/);
   });
 
   it('startGated sets runtime auth; stop clears it', () => {

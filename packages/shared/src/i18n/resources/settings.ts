@@ -43,10 +43,12 @@ export default {
     title: 'Stay visible in background',
     description:
       'Keep your location updated so others can discover you nearby even when the app is closed.',
-    hint: 'Requires background location permission. Android may ask you to allow location “all the time” in Settings.',
+    hint: 'Requires background location permission. On Android 11 and newer, choose Allow all the time in system Settings.',
     enabled: 'Background visibility is on',
+    disabledTitle: 'Background updates are off',
     disabled:
-      'Background visibility is off in Nearsy. Location may still be allowed in system Settings until you change it there.',
+      'Nearsy will no longer update your location in the background. The system permission may still be allowed until you change it in Settings.',
+    disabledDone: 'Done',
     unsupported: 'Background location is not available on web.',
     authRequired: 'Please log in again.',
     error: 'Could not update background location.',
@@ -60,24 +62,46 @@ export default {
       'Location may update in the background while Visibility is on',
     approximateTitle: 'Precise location needed',
     approximateMessage:
-      'Nearsy uses an approximate 200 ft radius. Approximate or coarse location is not accurate enough. Enable precise location in system Settings.',
+      'Nearsy needs precise location for about 200 ft nearby. Choose Precise for Nearsy in system Settings.',
     gpsOffTitle: 'Location services are off',
     gpsOffMessage:
       'Turn on Location Services / GPS in system Settings so Nearsy can find people nearby.',
+    education: {
+      full: {
+        title: 'Stay discoverable nearby',
+        body:
+          'Nearsy can update your location in the background while Visibility is on, so people who are truly nearby can find you even when the app is closed. Background location is not used when Visibility is off.',
+      },
+      brief: {
+        title: 'Enable background location?',
+        body:
+          'Background updates keep you discoverable nearby while Visibility is on. You can turn this off anytime in More.',
+      },
+      settingsHint:
+        'To stay visible when Nearsy is closed, set location to Allow all the time in system Settings.',
+      controlNote:
+        'You stay in control. Background location is optional and never required to use Nearsy.',
+      optionalNote:
+        'Background location is optional. You can use Nearsy with foreground location only.',
+      enableBackground: 'Enable background location',
+      notNow: 'Not now',
+    },
+    // Legacy keys kept for any remaining call sites during transition.
     disclosure: {
-      fullTitle: 'Stay discoverable in the background?',
+      fullTitle: 'Stay discoverable nearby',
       fullBody:
-        'Nearsy collects and uses your location in the background only while Visibility is active. This keeps your location current so you can meet people who are actually nearby — even when the app is not open.',
+        'Nearsy can update your location in the background while Visibility is on, so people who are truly nearby can find you even when the app is closed. Background location is not used when Visibility is off.',
       briefTitle: 'Enable background location?',
       briefBody:
-        'Background location is used only while Visibility is on, so nearby discovery can stay up to date when Nearsy is not open.',
+        'Background updates keep you discoverable nearby while Visibility is on. You can turn this off anytime in More.',
       bulletVisibility:
         'Background location is not used when Visibility is off.',
       bulletNearby:
         'It helps keep encounters limited to people who are really close.',
       bulletControl:
         'You can turn this off anytime in More → Stay visible in background.',
-      optionalNote: 'Background location is optional. You can use Nearsy with foreground location only.',
+      optionalNote:
+        'Background location is optional. You can use Nearsy with foreground location only.',
       enable: 'Enable background location',
       notNow: 'Not now',
     },

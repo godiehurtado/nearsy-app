@@ -1,6 +1,6 @@
 /**
  * Prominent disclosure before Android background location request / Settings.
- * Full (first time) vs brief (retries). EN/ES via i18n. Light/Dark via theme.
+ * Full (first time) vs brief (retries). Unmounts when not visible (no ghost overlay).
  */
 
 import React from 'react';
@@ -23,6 +23,9 @@ export type BackgroundLocationDisclosureModalProps = {
   visible: boolean;
   variant: BackgroundDisclosureVariant;
   busy?: boolean;
+  /** When true, show API 30+ Settings guidance under the body. */
+  settingsPath?: boolean;
+  primaryLabelKey?: string;
   onEnable: () => void;
   onNotNow: () => void;
 };
@@ -31,6 +34,8 @@ export function BackgroundLocationDisclosureModal({
   visible,
   variant,
   busy = false,
+  settingsPath = false,
+  primaryLabelKey,
   onEnable,
   onNotNow,
 }: BackgroundLocationDisclosureModalProps) {
@@ -39,16 +44,22 @@ export function BackgroundLocationDisclosureModal({
   const insets = useSafeAreaInsets();
   const isFull = variant === 'full';
 
+  // Fully unmount when hidden — prevents invisible backdrop/modal races.
+  if (!visible) return null;
+
   return (
     <Modal
-      visible={visible}
+      visible
       animationType="slide"
       transparent
       onRequestClose={() => {
         if (!busy) onNotNow();
       }}
     >
-      <View style={styles.backdrop}>
+      <View
+        style={styles.backdrop}
+        accessibilityViewIsModal
+      >
         <View
           style={[
             styles.sheet,
@@ -67,32 +78,29 @@ export function BackgroundLocationDisclosureModal({
             <Text style={[styles.title, { color: palette.textPrimary }]}>
               {t(
                 isFull
-                  ? 'settings.backgroundVisibility.disclosure.fullTitle'
-                  : 'settings.backgroundVisibility.disclosure.briefTitle',
+                  ? 'settings.backgroundVisibility.education.full.title'
+                  : 'settings.backgroundVisibility.education.brief.title',
               )}
             </Text>
             <Text style={[styles.body, { color: palette.textSecondary }]}>
               {t(
                 isFull
-                  ? 'settings.backgroundVisibility.disclosure.fullBody'
-                  : 'settings.backgroundVisibility.disclosure.briefBody',
+                  ? 'settings.backgroundVisibility.education.full.body'
+                  : 'settings.backgroundVisibility.education.brief.body',
               )}
             </Text>
+            {settingsPath ? (
+              <Text style={[styles.body, { color: palette.textSecondary }]}>
+                {t('settings.backgroundVisibility.education.settingsHint')}
+              </Text>
+            ) : null}
             {isFull ? (
-              <View style={styles.bullets}>
-                <Text style={[styles.bullet, { color: palette.textSecondary }]}>
-                  • {t('settings.backgroundVisibility.disclosure.bulletVisibility')}
-                </Text>
-                <Text style={[styles.bullet, { color: palette.textSecondary }]}>
-                  • {t('settings.backgroundVisibility.disclosure.bulletNearby')}
-                </Text>
-                <Text style={[styles.bullet, { color: palette.textSecondary }]}>
-                  • {t('settings.backgroundVisibility.disclosure.bulletControl')}
-                </Text>
-              </View>
+              <Text style={[styles.footnote, { color: palette.textMuted }]}>
+                {t('settings.backgroundVisibility.education.controlNote')}
+              </Text>
             ) : null}
             <Text style={[styles.footnote, { color: palette.textMuted }]}>
-              {t('settings.backgroundVisibility.disclosure.optionalNote')}
+              {t('settings.backgroundVisibility.education.optionalNote')}
             </Text>
           </ScrollView>
 
@@ -109,7 +117,12 @@ export function BackgroundLocationDisclosureModal({
             ]}
           >
             <Text style={[styles.primaryText, { color: '#FFFFFF' }]}>
-              {t('settings.backgroundVisibility.disclosure.enable')}
+              {t(
+                primaryLabelKey ??
+                  (settingsPath
+                    ? 'settings.backgroundVisibility.openSettings'
+                    : 'settings.backgroundVisibility.education.enableBackground'),
+              )}
             </Text>
           </Pressable>
 
@@ -122,8 +135,10 @@ export function BackgroundLocationDisclosureModal({
               { opacity: busy ? 0.6 : pressed ? 0.7 : 1 },
             ]}
           >
-            <Text style={[styles.secondaryText, { color: palette.textSecondary }]}>
-              {t('settings.backgroundVisibility.disclosure.notNow')}
+            <Text
+              style={[styles.secondaryText, { color: palette.textSecondary }]}
+            >
+              {t('settings.backgroundVisibility.education.notNow')}
             </Text>
           </Pressable>
         </View>
@@ -158,14 +173,6 @@ const styles = StyleSheet.create({
   body: {
     fontSize: 15,
     lineHeight: 22,
-  },
-  bullets: {
-    marginTop: spacing.sm,
-    gap: 6,
-  },
-  bullet: {
-    fontSize: 14,
-    lineHeight: 20,
   },
   footnote: {
     marginTop: spacing.md,

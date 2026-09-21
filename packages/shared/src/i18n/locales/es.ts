@@ -281,10 +281,12 @@ export const es: TranslationResources = {
       title: 'Permanecer visible en segundo plano',
       description:
         'Mantén tu ubicación actualizada para que otros puedan descubrirte cerca aunque la app esté cerrada.',
-      hint: 'Requiere permiso de ubicación en segundo plano. Android puede pedirte permitir la ubicación “todo el tiempo” en Ajustes.',
+      hint: 'Requiere permiso de ubicación en segundo plano. En Android 11 o superior, elige Permitir todo el tiempo en Ajustes del sistema.',
       enabled: 'La visibilidad en segundo plano está activada',
+      disabledTitle: 'Actualizaciones en segundo plano desactivadas',
       disabled:
-        'La visibilidad en segundo plano está desactivada en Nearsy. La ubicación puede seguir permitida en Ajustes del sistema hasta que la cambies allí.',
+        'Nearsy ya no actualizará tu ubicación en segundo plano. El permiso del sistema puede seguir activo hasta que lo cambies en Ajustes.',
+      disabledDone: 'Listo',
       unsupported:
         'La ubicación en segundo plano no está disponible en la web.',
       authRequired: 'Vuelve a iniciar sesión.',
@@ -299,17 +301,37 @@ export const es: TranslationResources = {
         'La ubicación puede actualizarse en segundo plano mientras Visibility esté activa',
       approximateTitle: 'Se necesita ubicación precisa',
       approximateMessage:
-        'Nearsy usa un radio aproximado de 200 ft. La ubicación aproximada o imprecisa no es suficiente. Activa la ubicación precisa en Ajustes del sistema.',
+        'Nearsy necesita ubicación precisa para un radio cercano de unos 200 ft. Elige Precisa para Nearsy en Ajustes del sistema.',
       gpsOffTitle: 'Los servicios de ubicación están desactivados',
       gpsOffMessage:
         'Activa los servicios de ubicación / GPS en Ajustes del sistema para que Nearsy pueda encontrar personas cerca.',
+      education: {
+        full: {
+          title: 'Mantente visible cerca',
+          body:
+            'Nearsy puede actualizar tu ubicación en segundo plano mientras Visibility esté activa, para que personas realmente cercanas te encuentren aunque la app esté cerrada. No se usa con Visibility desactivada.',
+        },
+        brief: {
+          title: '¿Activar ubicación en segundo plano?',
+          body:
+            'Las actualizaciones en segundo plano te mantienen visible cerca con Visibility activa. Puedes desactivarlo en cualquier momento en Más.',
+        },
+        settingsHint:
+          'Para permanecer visible con Nearsy cerrada, elige Permitir todo el tiempo en Ajustes del sistema.',
+        controlNote:
+          'Tú tienes el control. La ubicación en segundo plano es opcional y nunca es obligatoria para usar Nearsy.',
+        optionalNote:
+          'La ubicación en segundo plano es opcional. Puedes usar Nearsy solo con ubicación en primer plano.',
+        enableBackground: 'Activar ubicación en segundo plano',
+        notNow: 'Ahora no',
+      },
       disclosure: {
-        fullTitle: '¿Permanecer visible en segundo plano?',
+        fullTitle: 'Mantente visible cerca',
         fullBody:
-          'Nearsy recopila y usa tu ubicación en segundo plano solo mientras Visibility esté activa. Así mantenemos tu ubicación al día para que puedas encontrarte con personas realmente cercanas, incluso si la app no está abierta.',
+          'Nearsy puede actualizar tu ubicación en segundo plano mientras Visibility esté activa, para que personas realmente cercanas te encuentren aunque la app esté cerrada. No se usa con Visibility desactivada.',
         briefTitle: '¿Activar ubicación en segundo plano?',
         briefBody:
-          'La ubicación en segundo plano se usa solo con Visibility activada, para mantener el descubrimiento cercano al día cuando Nearsy no está abierta.',
+          'Las actualizaciones en segundo plano te mantienen visible cerca con Visibility activa. Puedes desactivarlo en cualquier momento en Más.',
         bulletVisibility:
           'No se usa ubicación en segundo plano con Visibility desactivada.',
         bulletNearby:

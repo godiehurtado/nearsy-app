@@ -24,6 +24,7 @@ import { registerPushToken } from './services/pushTokens';
 import { stopBackgroundLocation as stopBackgroundLocationService } from './services/backgroundLocation';
 import { startGatedBackgroundLocation } from './location/startGatedBackgroundLocation';
 import { clearBackgroundRuntimeAuth } from './location/backgroundRuntimeAuth';
+import { hasSeenBackgroundLocationEducation } from './location/backgroundEducationStorage';
 import {
   bindLocationJourneySessionUid,
   resetLocationJourneySession,
@@ -129,35 +130,30 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
             }
           }
 
-          // Reinstall / existing account: Visibility persisted but OS perms gone.
-          // Do not prompt from App — Home consumes one recovery journey.
-          // Never start FGS without permissions (requestPermissions: false).
-          if (visibility && profileSetupCompleted) {
+          // Never auto-start from bgVisible alone. Never open permission UI.
+          // Missing local education mark (reinstall) → Home owns one recovery.
+          if (profileSetupCompleted) {
             try {
+              const educationSeen =
+                await hasSeenBackgroundLocationEducation().catch(() => false);
               const Location = await import('expo-location');
               const fg = await Location.getForegroundPermissionsAsync();
               const fgOk = fg.status === 'granted' || !!fg.granted;
-              if (!fgOk) {
+              const bg = await Location.getBackgroundPermissionsAsync();
+              const bgOk = bg.status === 'granted' || !!bg.granted;
+
+              if (!educationSeen) {
                 markPostLoginLocationRecoveryNeeded(user.uid);
                 await stopBackgroundLocation().catch(() => {});
-              } else if (bgVisible) {
-                const started = await startGatedBackgroundLocation({
+              } else if (visibility && bgVisible && fgOk && bgOk) {
+                await startGatedBackgroundLocation({
                   uid: user.uid,
                   visibility: true,
                   bgVisible: true,
                   requestPermissions: false,
                 });
-                if (!started.ok) {
-                  const bg = await Location.getBackgroundPermissionsAsync();
-                  const bgOk = bg.status === 'granted' || !!bg.granted;
-                  if (!bgOk) {
-                    markPostLoginLocationRecoveryNeeded(user.uid);
-                  }
-                }
               } else {
-                const bg = await Location.getBackgroundPermissionsAsync();
-                const bgOk = bg.status === 'granted' || !!bg.granted;
-                if (!bgOk) {
+                if (visibility && !fgOk) {
                   markPostLoginLocationRecoveryNeeded(user.uid);
                 }
                 await stopBackgroundLocation().catch(() => {});

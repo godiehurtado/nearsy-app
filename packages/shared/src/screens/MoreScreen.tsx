@@ -53,19 +53,15 @@ import {
 import { backgroundLocationNotificationCopy } from '../location/backgroundLocationCopy';
 import {
   markBackgroundLocationEducationSeen,
+  resolveBackgroundDisclosureVariant,
   type BackgroundDisclosureVariant,
 } from '../location/backgroundEducationStorage';
 import { requiresSettingsForBackgroundPermission } from '../location/backgroundPublicationGate';
 import { BackgroundLocationDisclosureModal } from '../components/BackgroundLocationDisclosureModal';
-import { LocationPreparationModal } from '../components/LocationPreparationModal';
 import {
   runContractualAndroidLogout,
   shouldReconcileBgPreferenceOff,
 } from '../location/contractualLogout';
-import {
-  beginPostForegroundDisclosureJourney,
-  closePreparationOnTerminal,
-} from '../location/locationJourneyCoordinator';
 import { resetLocationJourneySession } from '../location/locationJourneySession';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 import { deactivateVisibilityFlow } from '../visibility/orchestration';
@@ -225,25 +221,12 @@ export default function MoreScreen() {
   const [bgDisclosureVariant, setBgDisclosureVariant] =
     useState<BackgroundDisclosureVariant>('full');
   const [bgDisclosureBusy, setBgDisclosureBusy] = useState(false);
-  const [locationPreparing, setLocationPreparing] = useState(false);
-  const locationPrepCancelledRef = useRef(false);
   const appStateRef = useRef(AppState.currentState);
   const pendingBgEnableIntentRef = useRef(false);
   const bgChangingRef = useRef(bgChanging);
   bgChangingRef.current = bgChanging;
   const bgVisibleRef = useRef(bgVisible);
   bgVisibleRef.current = bgVisible;
-
-  useEffect(() => {
-    locationPrepCancelledRef.current = false;
-    return () => {
-      locationPrepCancelledRef.current = true;
-      closePreparationOnTerminal({
-        setVisible: setLocationPreparing,
-        isCancelled: () => true,
-      });
-    };
-  }, []);
 
   const [editor, setEditor] = useState<EditorKind>(null);
   const [languageModalOpen, setLanguageModalOpen] = useState(false);
@@ -648,8 +631,18 @@ export default function MoreScreen() {
         await stopBackgroundLocation();
         await persistBgPreference(uid, false);
         Alert.alert(
-          t('common.appName'),
+          t('settings.backgroundVisibility.disabledTitle'),
           t('settings.backgroundVisibility.disabled'),
+          [
+            {
+              text: t('settings.backgroundVisibility.disabledDone'),
+              style: 'cancel',
+            },
+            {
+              text: t('settings.backgroundVisibility.openSettings'),
+              onPress: () => void Linking.openSettings(),
+            },
+          ],
         );
         return;
       }
@@ -685,7 +678,7 @@ export default function MoreScreen() {
         return;
       }
 
-      // New FG grant → preparation → disclosure; FG already present → disclosure (brief ok).
+      // Explicit More action: brief if education seen; API 30+ Open Settings via modal.
       let foregroundGranted = snap.foregroundGranted;
       if (!foregroundGranted) {
         let fg = await Location.getForegroundPermissionsAsync();
@@ -716,18 +709,8 @@ export default function MoreScreen() {
         }
       }
 
-      const plan = await beginPostForegroundDisclosureJourney({
-        backgroundGranted: false,
-        preparationUi: {
-          setVisible: setLocationPreparing,
-          isCancelled: () => locationPrepCancelledRef.current,
-        },
-        forceOffer: true,
-      });
-      if (!plan || plan.action !== 'show-disclosure') {
-        return;
-      }
-      setBgDisclosureVariant(plan.variant);
+      const variant = await resolveBackgroundDisclosureVariant();
+      setBgDisclosureVariant(variant);
       setBgDisclosureVisible(true);
     } catch (e: any) {
       setBgVisible(false);
@@ -862,11 +845,7 @@ export default function MoreScreen() {
 
   const handleLogout = async () => {
     try {
-      locationPrepCancelledRef.current = true;
-      closePreparationOnTerminal({
-        setVisible: setLocationPreparing,
-        isCancelled: () => true,
-      });
+      setBgDisclosureVisible(false);
       resetLocationJourneySession();
       await runContractualAndroidLogout({
         clearSocialPrefill: () => clearPendingSocialProfilePrefill(),
@@ -1593,13 +1572,11 @@ export default function MoreScreen() {
           </Pressable>
         </Pressable>
       </Modal>
-      <LocationPreparationModal
-        visible={locationPreparing && !bgDisclosureVisible}
-      />
       <BackgroundLocationDisclosureModal
         visible={bgDisclosureVisible}
         variant={bgDisclosureVariant}
         busy={bgDisclosureBusy}
+        settingsPath={requiresSettingsForBackgroundPermission(Platform.Version)}
         onEnable={() => void runBackgroundEnableAfterDisclosure()}
         onNotNow={() => {
           void markBackgroundLocationEducationSeen().catch(() => {});
