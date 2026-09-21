@@ -108,7 +108,10 @@ import {
   markBackgroundDisclosureOfferedThisSession,
   wasBackgroundDisclosureOfferedThisSession,
 } from '../location/locationJourneySession';
-import { evaluateVisibilityHydration } from '../location/visibilityHydration';
+import {
+  evaluateVisibilityHydration,
+  shouldResetPermissionValidationOnVisibilityChange,
+} from '../location/visibilityHydration';
 import {
   isVisibilityToggleDisabled,
   shouldForceFullBackgroundEducation,
@@ -200,6 +203,7 @@ export default function MainHomeScreen({ navigation }: Props) {
   const [permissionsValid, setPermissionsValid] = useState<
     boolean | undefined
   >(undefined);
+  const previousVisibilityRef = useRef<boolean | undefined>(undefined);
   const pendingBgEnableFromSettingsRef = useRef(false);
   const postLoginRecoveryStartedRef = useRef(false);
   const educationOfferInFlightRef = useRef(false);
@@ -472,6 +476,20 @@ export default function MainHomeScreen({ navigation }: Props) {
 
     return () => unsub();
   }, [t, unit, officialInterestIds]);
+
+  // When Visibility flips to true (CRJ activate / restore), drop sticky
+  // permissionsValid=false left by a cached pre-activate snapshot.
+  useEffect(() => {
+    const next = profile.visibility;
+    const prev = previousVisibilityRef.current;
+    previousVisibilityRef.current = next;
+    if (
+      shouldResetPermissionValidationOnVisibilityChange(prev, next)
+    ) {
+      setPermissionsValid(undefined);
+      setPermissionValidationPending(true);
+    }
+  }, [profile.visibility]);
 
   // Permission validation for hydration — provisional Active does not start runtime.
   useEffect(() => {

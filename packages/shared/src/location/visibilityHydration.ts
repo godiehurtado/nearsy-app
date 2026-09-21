@@ -3,6 +3,19 @@
  * Provisional Active during permission validation does NOT authorize runtime.
  */
 
+/**
+ * After CRJ activateVisibility (or toggle restore), the first Firestore snapshot
+ * may still be a cached `visibility:false`. Home must not leave
+ * `permissionsValid===false` sticky when Visibility later becomes true — that
+ * incorrectly renders Inactive while runtime/gates already treat Visibility ON.
+ */
+export function shouldResetPermissionValidationOnVisibilityChange(
+  previousVisibility: boolean | undefined,
+  nextVisibility: boolean | undefined,
+): boolean {
+  return nextVisibility === true && previousVisibility !== true;
+}
+
 export type VisibilityHydrationPhase =
   | 'unknown'
   | 'validating'

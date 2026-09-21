@@ -45,7 +45,10 @@ import {
   shouldRenderPreparationForElapsedMs,
   wasBackgroundDisclosureOfferedThisSession,
 } from '../locationJourneySession.ts';
-import { evaluateVisibilityHydration } from '../visibilityHydration.ts';
+import {
+  evaluateVisibilityHydration,
+  shouldResetPermissionValidationOnVisibilityChange,
+} from '../visibilityHydration.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -360,6 +363,53 @@ describe('visibilityHydration', () => {
     assert.equal(h.shouldDeactivate, true);
     assert.equal(h.runtimeEligible, false);
   });
+
+  it('CRJ/Home: visibility false→true clears sticky permissionsValid=false', () => {
+    assert.equal(
+      shouldResetPermissionValidationOnVisibilityChange(false, true),
+      true,
+    );
+    assert.equal(
+      shouldResetPermissionValidationOnVisibilityChange(undefined, true),
+      true,
+    );
+    assert.equal(
+      shouldResetPermissionValidationOnVisibilityChange(true, true),
+      false,
+    );
+    assert.equal(
+      shouldResetPermissionValidationOnVisibilityChange(true, false),
+      false,
+    );
+  });
+
+  it('sticky false + Visibility true would render Inactive until reset', () => {
+    const sticky = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: true,
+      permissionValidationPending: false,
+      permissionsValid: false,
+    });
+    assert.equal(sticky.displayActive, false);
+
+    const afterReset = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: true,
+      permissionValidationPending: true,
+      permissionsValid: undefined,
+    });
+    assert.equal(afterReset.phase, 'validating');
+    assert.equal(afterReset.displayActive, true);
+
+    const afterFgOk = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: true,
+      permissionValidationPending: false,
+      permissionsValid: true,
+    });
+    assert.equal(afterFgOk.displayActive, true);
+    assert.equal(afterFgOk.runtimeEligible, true);
+  });
 });
 
 describe('backgroundRuntimeAuth callback gate', () => {
@@ -500,6 +550,7 @@ describe('ENH-LOC-01 source contracts', () => {
     assert.match(home, /startGatedBackgroundLocation/);
     assert.match(home, /offerBackgroundEducationIfNeeded/);
     assert.match(home, /isVisibilityToggleDisabled/);
+    assert.match(home, /shouldResetPermissionValidationOnVisibilityChange/);
   });
 
   it('startGated sets runtime auth; stop clears it', () => {
