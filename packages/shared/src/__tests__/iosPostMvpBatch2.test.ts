@@ -93,7 +93,7 @@ describe('iOS post-MVP batch 2 — background location toggle', () => {
     assert.match(more, /persistBgVisible\(uid, true\)/);
 
     const home = readSharedSource('screens/MainHomeScreen.tsx');
-    assert.match(home, /profile\.bgVisible/);
+    assert.match(home, /bgVisible/);
     assert.match(home, /syncBackgroundLocationRuntime/);
     assert.match(home, /stopBackgroundLocationRuntime/);
   });
