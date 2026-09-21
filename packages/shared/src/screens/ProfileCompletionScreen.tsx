@@ -117,10 +117,13 @@ import {
   type OnboardingInterestCategoryId,
   type OnboardingSelectedInterest,
 } from '../interests/onboardingInterestCatalog';
+import { isHierarchicalInterestCategory } from '../interests/interestHierarchy';
 import {
-  isHierarchicalInterestCategory,
-  resolveActiveGroupId,
-} from '../interests/interestHierarchy';
+  enterCrjInterestSubcategory,
+  leaveCrjInterestSubcategory,
+  readCrjActiveSubcategory,
+  resolveCrjInterestBackAction,
+} from '../interests/crjInterestSubcategoryNavigation';
 import {
   listOnboardingAffiliationCategoryIds,
   type OnboardingAffiliationCategoryId,
@@ -1503,6 +1506,19 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
 
   function goBack() {
     if (step.kind === 'success' || stepIndex <= 0) return;
+    if (step.kind === 'interest') {
+      const interestCategory = getOnboardingCategory(step.categoryId);
+      const backAction = resolveCrjInterestBackAction({
+        category: interestCategory,
+        activeGroupMap: activeInterestGroupByCategory,
+      });
+      if (backAction === 'leave_subcategory') {
+        setActiveInterestGroupByCategory((prev) =>
+          leaveCrjInterestSubcategory(prev, step.categoryId),
+        );
+        return;
+      }
+    }
     setStepIndex((i) => i - 1);
   }
 
@@ -2098,10 +2114,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
           {step.kind === 'interest' && (() => {
             const interestCategory = getOnboardingCategory(step.categoryId);
             const hierarchical = isHierarchicalInterestCategory(interestCategory);
+            // CRJ: null = subcategory overview (do not auto-open first group).
             const activeGroupId = hierarchical
-              ? resolveActiveGroupId(
-                  interestCategory,
-                  activeInterestGroupByCategory[step.categoryId],
+              ? readCrjActiveSubcategory(
+                  activeInterestGroupByCategory,
+                  step.categoryId,
                 )
               : undefined;
             return (
@@ -2111,10 +2128,13 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                 onChangeSelected={setSelectedInterests}
                 activeGroupId={activeGroupId}
                 onActiveGroupChange={(groupId) => {
-                  setActiveInterestGroupByCategory((prev) => ({
-                    ...prev,
-                    [step.categoryId]: groupId,
-                  }));
+                  setActiveInterestGroupByCategory((prev) =>
+                    enterCrjInterestSubcategory(
+                      prev,
+                      interestCategory,
+                      groupId,
+                    ),
+                  );
                 }}
               />
             );

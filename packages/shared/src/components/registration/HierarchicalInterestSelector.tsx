@@ -21,7 +21,11 @@ type ChipRenderArgs = {
 type Props = {
   categoryId: OnboardingInterestCategoryId;
   groups: OnboardingInterestGroup[];
-  activeGroupId: string;
+  /**
+   * Active subcategory id, or null for category overview (pills only).
+   * CRJ uses null until the user enters a subcategory (BUG-CRJ-01).
+   */
+  activeGroupId: string | null;
   onSelectGroup: (groupId: string) => void;
   groupLabel: (nameKey: string, fallback: string) => string;
   renderChip: (args: ChipRenderArgs) => React.ReactNode;
@@ -39,9 +43,11 @@ export function HierarchicalInterestSelector({
 }: Props) {
   const { palette } = useAppTheme();
   const activeGroup =
-    groups.find((g) => g.id === activeGroupId) ?? groups[0];
+    activeGroupId == null
+      ? null
+      : (groups.find((g) => g.id === activeGroupId) ?? groups[0] ?? null);
 
-  if (!groups.length || !activeGroup) {
+  if (!groups.length) {
     if (__DEV__) {
       console.error(
         `[HierarchicalInterestSelector] No groups to render for ${categoryId}`,
@@ -57,42 +63,46 @@ export function HierarchicalInterestSelector({
           <InterestGroupPill
             key={g.id}
             label={groupLabel(g.nameKey, g.name)}
-            active={g.id === activeGroup.id}
+            active={activeGroup != null && g.id === activeGroup.id}
             onPress={() => onSelectGroup(g.id)}
           />
         ))}
       </View>
 
-      <View
-        style={[styles.divider, { backgroundColor: palette.border }]}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-      />
+      {activeGroup ? (
+        <>
+          <View
+            style={[styles.divider, { backgroundColor: palette.border }]}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          />
 
-      <View
-        style={[
-          styles.level2Panel,
-          {
-            backgroundColor: palette.surface,
-            borderColor: palette.border,
-          },
-        ]}
-      >
-        <View style={styles.chipWrap}>
-          {activeGroup.items.map((it) =>
-            renderChip({
-              id: it.id,
-              name: it.name,
-              nameKey: it.nameKey,
-              icon: it.icon,
-              iconColor: it.iconColor,
-              isOther: it.isOther,
-              groupId: activeGroup.id,
-            }),
-          )}
-        </View>
-        {composer}
-      </View>
+          <View
+            style={[
+              styles.level2Panel,
+              {
+                backgroundColor: palette.surface,
+                borderColor: palette.border,
+              },
+            ]}
+          >
+            <View style={styles.chipWrap}>
+              {activeGroup.items.map((it) =>
+                renderChip({
+                  id: it.id,
+                  name: it.name,
+                  nameKey: it.nameKey,
+                  icon: it.icon,
+                  iconColor: it.iconColor,
+                  isOther: it.isOther,
+                  groupId: activeGroup.id,
+                }),
+              )}
+            </View>
+            {composer}
+          </View>
+        </>
+      ) : null}
     </View>
   );
 }
