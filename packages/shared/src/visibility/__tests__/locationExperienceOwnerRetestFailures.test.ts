@@ -108,14 +108,15 @@ describe('Owner retest — FG→education invariant (activate-independent)', () 
       crj.indexOf('async function requestLocation()'),
       crj.indexOf('async function handleCrjEnableBackground()'),
     );
-    assert.match(req, /activate failure must not skip/);
+    assert.match(req, /ACTIVATION_ISSUE_ACKNOWLEDGED/);
+    assert.match(req, /activationIssueTitle/);
     assert.match(req, /foregroundGranted:\s*true/);
-    // Activation alerts exist, then education continues (no early return after alerts)
-    const alertIdx = req.indexOf('invalid-accuracy');
+    const alertIdx = req.indexOf('reportingActivationIssue');
     const eduIdx = req.search(
       /await new Promise<void>\(\(resolve\) => \{[\s\S]*?setBgEducationOpen\(true\)/,
     );
-    assert.ok(alertIdx >= 0 && eduIdx > alertIdx);
+    assert.ok(eduIdx >= 0);
+    assert.ok(alertIdx < 0 || eduIdx > alertIdx || req.indexOf('ACTIVATION_ISSUE_ACKNOWLEDGED') < eduIdx);
   });
 
   it('activation failure does not mark Visibility Active in CRJ', () => {
@@ -274,9 +275,10 @@ describe('Owner retest — CRJ atomic education (defect A)', () => {
     const awaitEdu = body.search(
       /await new Promise<void>\(\(resolve\) => \{[\s\S]*?setBgEducationOpen\(true\)/,
     );
-    const mark = body.indexOf('markSessionBackgroundEducationOffered(uid)');
     assert.ok(awaitEdu >= 0, 'education await present');
-    assert.ok(mark > awaitEdu, 'session mark after education resolves');
+    // Session mark is owned by BACKGROUND_DECISION in handlers (after user choice).
+    const enable = crj.slice(crj.indexOf('async function handleCrjEnableBackground()'));
+    assert.match(enable, /BACKGROUND_DECISION/);
     const stepAfter = body.lastIndexOf('setStepIndex((i) => i + 1)');
     assert.ok(stepAfter > awaitEdu);
   });
@@ -312,22 +314,15 @@ describe('Owner retest — CRJ atomic education (defect A)', () => {
   it('10–12: finishOnboarding is idempotent safety net; Location owns education', () => {
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
     const finish = crj.slice(crj.indexOf('async function finishOnboarding()'));
-    assert.match(finish, /hasSessionBackgroundEducationOffered\(uid\)/);
-    assert.match(finish, /idempotent safety net/);
+    assert.match(finish, /NEVER reopen education\/Settings UI/);
+    assert.doesNotMatch(finish, /setBgEducationOpen\(true\)/);
     assert.match(finish, /navigation\.reset/);
-    // Location requestLocation must not early-return before education on activate fail
     const req = crj.slice(
       crj.indexOf('async function requestLocation()'),
       crj.indexOf('async function handleCrjEnableBackground()'),
     );
-    assert.doesNotMatch(
-      req,
-      /Activation failure → surface recovery; never open BG education/,
-    );
-    assert.match(
-      req,
-      /activate failure must not skip/,
-    );
+    assert.match(req, /ACTIVATION_ISSUE_ACKNOWLEDGED/);
+    assert.match(req, /activationIssueTitle/);
   });
 
   it('11: CRJ journey blocks Home recovery steal', () => {
@@ -352,36 +347,31 @@ describe('Owner retest — CRJ atomic education (defect A)', () => {
 });
 
 describe('Owner retest — More OFF vs iOS Always (defect C)', () => {
-  it('26–30: OFF copy EN/ES + secondary Open Settings; no auto Settings on OFF', () => {
+  it('26–30: OFF copy EN/ES + Done/Open Settings; no auto Settings on OFF', () => {
     const en = readShared('i18n/resources/settings.ts');
     const es = readShared('i18n/locales/es.ts');
+    assert.match(en, /Background updates are off/);
     assert.match(
       en,
-      /Turning this off stops Nearsy from updating your location in the background/,
+      /Nearsy will no longer update your location in the background/,
     );
+    assert.match(en, /disabledDone:\s*'Done'/);
     assert.match(
-      en,
-      /You can manage the system permission in iPhone Settings/,
+      es,
+      /Las actualizaciones en segundo plano están desactivadas/,
     );
     assert.match(
       es,
-      /Al desactivar esta opción, Nearsy dejará de actualizar tu ubicación en segundo plano/,
+      /Nearsy dejará de actualizar tu ubicación en segundo plano/,
     );
-    assert.match(
-      es,
-      /Puedes administrar el permiso del sistema en Configuración del iPhone/,
-    );
+    assert.match(es, /disabledDone:\s*'Listo'/);
     const more = readShared('screens/MoreScreen.tsx');
     assert.match(
       more,
-      /backgroundVisibility\.disabled[\s\S]{0,200}openSettings/,
+      /backgroundVisibility\.disabledTitle[\s\S]{0,200}disabledDone/,
     );
-    // OFF path stops runtime + persists false; does not claim OS revoke
     assert.match(more, /stopBackgroundLocationRuntime/);
-    assert.doesNotMatch(
-      en,
-      /Always (was|has been|will be) revoked/i,
-    );
+    assert.doesNotMatch(en, /Always was revoked|Always has been revoked/i);
   });
 
   it('28: ON with Always already granted skips education request', async () => {

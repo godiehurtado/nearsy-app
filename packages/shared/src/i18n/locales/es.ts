@@ -858,6 +858,9 @@ const es: TranslationResources = {
         deniedTitle: 'Ubicación no activada',
         deniedMessage:
           'Puedes activarla después en Ajustes. Aún puedes continuar.',
+        activationIssueTitle: 'No pudimos actualizar la visibilidad',
+        activationIssueMessage:
+          'No pudimos actualizar tu visibilidad en este momento. Tu permiso de ubicación está listo y puedes intentarlo nuevamente en unos instantes.',
       },
       notifications: {
         title: 'Mantente al día',
@@ -1375,8 +1378,10 @@ const es: TranslationResources = {
         'Mantén tu ubicación actualizada para que otros puedan descubrirte cerca aunque la app esté cerrada.',
       hint: 'Requiere permiso de ubicación Siempre. En iOS puede aparecer un indicador azul mientras Nearsy actualiza tu ubicación en segundo plano.',
       enabled: 'La visibilidad en segundo plano está activada',
+      disabledTitle: 'Las actualizaciones en segundo plano están desactivadas',
       disabled:
-        'Al desactivar esta opción, Nearsy dejará de actualizar tu ubicación en segundo plano. Puedes administrar el permiso del sistema en Configuración del iPhone.',
+        'Nearsy dejará de actualizar tu ubicación en segundo plano. Puedes administrar el permiso del sistema en Configuración del iPhone.',
+      disabledDone: 'Listo',
       unsupported:
         'La ubicación en segundo plano no está disponible en la web.',
       authRequired: 'Vuelve a iniciar sesión.',

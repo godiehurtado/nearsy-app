@@ -105,12 +105,14 @@ import {
 } from '../visibility/backgroundLocationRuntime';
 import {
   decideBackgroundEducationOffer,
+  hasSeenFullBackgroundEducation,
   markFullBackgroundEducationSeen,
   type BackgroundEducationVariant,
 } from '../visibility/locationEducation';
 import {
   beginLocationPermissionJourney,
   clearLocationPermissionJourneySession,
+  dispatchLocationJourney,
   endLocationPermissionJourney,
   hasSessionBackgroundEducationOffered,
   markSessionBackgroundEducationOffered,
@@ -238,8 +240,8 @@ export default function MainHomeScreen({ navigation }: Props) {
     persistedVisibility: profile.visibility,
     validationPending: visibilityValidationPending,
     validatedEffective: validatedEffectiveVisibility,
-    operationBusy:
-      statusUpdating || locationPreparing || bgEducationBusy || recoveryBusy,
+    // Education / Always / Settings must never lock Visibility.
+    operationBusy: statusUpdating,
   });
   const pillActive = visibilityUi.visualActive === true;
   const pillNeutral = visibilityUi.visualActive === null;
@@ -305,16 +307,19 @@ export default function MainHomeScreen({ navigation }: Props) {
           setProfile(data);
           if (data.visibility === true) {
             // Keep visual Active while first FG/activation validation runs.
-            // Do NOT reset validatedEffective on every snapshot (bgVisible writes
-            // otherwise permanently lock allowToggle while recovery is mid-flight).
             if (!hydrationValidationDoneRef.current) {
               setVisibilityValidationPending(true);
               setValidatedEffectiveVisibility(null);
+              dispatchLocationJourney({
+                type: 'SET_HYDRATION_PENDING',
+                pending: true,
+              });
             }
           } else {
             hydrationValidationDoneRef.current = true;
             setVisibilityValidationPending(false);
             setValidatedEffectiveVisibility(false);
+            dispatchLocationJourney({ type: 'HYDRATION_DONE' });
           }
           // After any local edit, draft owns the truth until remount.
           // While writes are in flight, never rehydrate prefs from snapshots.
@@ -380,6 +385,7 @@ export default function MainHomeScreen({ navigation }: Props) {
           hydrationValidationDoneRef.current = true;
           setValidatedEffectiveVisibility(effective);
           setVisibilityValidationPending(false);
+          dispatchLocationJourney({ type: 'HYDRATION_DONE' });
         };
 
         try {
@@ -431,17 +437,24 @@ export default function MainHomeScreen({ navigation }: Props) {
                 setLocationPreparing(false);
               }
 
-              // BG education follows FG grant, not activate success.
-              if (
+              // BG education follows FG grant. Reinstall: full education absent
+              // must still offer even when Visibility was already persisted.
+              const fullEducationSeen = await hasSeenFullBackgroundEducation(
+                AsyncStorage,
+              );
+              const offerEducation =
                 shouldContinueToBackgroundEducation({
                   foregroundGranted: true,
                   foregroundNewlyGranted: newlyGranted,
-                  requireNewlyGranted: true,
+                  requireNewlyGranted: fullEducationSeen,
                   uid,
                   alreadyOfferedThisSession:
                     hasSessionBackgroundEducationOffered(uid),
-                })
-              ) {
+                }) ||
+                (!fullEducationSeen &&
+                  !hasSessionBackgroundEducationOffered(uid));
+
+              if (offerEducation) {
                 await offerBackgroundEducationIfNeeded();
               } else if (restoreOk && profileRef.current.bgVisible) {
                 await syncBackgroundLocationRuntime({
@@ -526,7 +539,16 @@ export default function MainHomeScreen({ navigation }: Props) {
 
           if (remote && foregroundGranted) {
             finishValidation(true);
-            if (profileRef.current.bgVisible) {
+            const fullEducationSeen = await hasSeenFullBackgroundEducation(
+              AsyncStorage,
+            );
+            if (
+              !fullEducationSeen &&
+              !hasSessionBackgroundEducationOffered(uid)
+            ) {
+              // Reinstall / first session: persisted Active still needs BG education.
+              await offerBackgroundEducationIfNeeded();
+            } else if (profileRef.current.bgVisible) {
               await syncBackgroundLocationRuntime({
                 uid,
                 visibilityOn: true,
@@ -789,6 +811,7 @@ export default function MainHomeScreen({ navigation }: Props) {
     if (!journeyToken) return;
 
     setStatusUpdating(true);
+    dispatchLocationJourney({ type: 'SET_VISIBILITY_MUTATION', inFlight: true });
     setVisibilityError(null);
     try {
       const servicesOn = await locationServicesEnabled();
@@ -942,6 +965,10 @@ export default function MainHomeScreen({ navigation }: Props) {
       endLocationPermissionJourney(journeyToken);
       setLocationPreparing(false);
       setStatusUpdating(false);
+      dispatchLocationJourney({
+        type: 'SET_VISIBILITY_MUTATION',
+        inFlight: false,
+      });
     }
   }, [offerBackgroundEducationIfNeeded, t]);
 
@@ -958,6 +985,7 @@ export default function MainHomeScreen({ navigation }: Props) {
     }
 
     setStatusUpdating(true);
+    dispatchLocationJourney({ type: 'SET_VISIBILITY_MUTATION', inFlight: true });
     setVisibilityError(null);
     try {
       const client = await getVisibilityDiscoveryClient();
@@ -982,6 +1010,10 @@ export default function MainHomeScreen({ navigation }: Props) {
       }
     } finally {
       setStatusUpdating(false);
+      dispatchLocationJourney({
+        type: 'SET_VISIBILITY_MUTATION',
+        inFlight: false,
+      });
     }
   };
 

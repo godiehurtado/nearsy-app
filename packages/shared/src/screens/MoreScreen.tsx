@@ -575,10 +575,12 @@ export default function MoreScreen() {
         await stopBackgroundLocationRuntime();
         await persistBgVisible(uid, false);
         Alert.alert(
-          t('common.appName'),
+          t('settings.backgroundVisibility.disabledTitle' as any),
           t('settings.backgroundVisibility.disabled'),
           [
-            { text: t('common.cancel'), style: 'cancel' },
+            {
+              text: t('settings.backgroundVisibility.disabledDone' as any),
+            },
             {
               text: t('settings.backgroundVisibility.openSettings'),
               onPress: () => void Linking.openSettings(),

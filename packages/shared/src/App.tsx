@@ -29,7 +29,7 @@ import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 import * as Notifications from 'expo-notifications';
 import { registerPushToken } from './services/pushTokens';
 import { stopBackgroundLocationRuntime, syncBackgroundLocationRuntime } from './visibility/backgroundLocationRuntime';
-import { clearLocationPermissionJourneySession } from './visibility/locationPermissionJourney';
+import { clearLocationPermissionJourneySession, reconcileLocationJourneyOnColdStart } from './visibility/locationPermissionJourney';
 
 import * as WebBrowser from 'expo-web-browser';
 WebBrowser.maybeCompleteAuthSession();
@@ -146,6 +146,11 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
 
   useEffect(() => {
     ensureAndroidChannel();
+  }, []);
+
+  useEffect(() => {
+    // Ephemeral journey locks must never survive cold start / Metro reload.
+    reconcileLocationJourneyOnColdStart();
   }, []);
 
   useEffect(() => {
