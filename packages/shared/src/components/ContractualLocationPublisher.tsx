@@ -82,7 +82,7 @@ export default function ContractualLocationPublisher() {
     return () => sub.remove();
   }, []);
 
-  // Light foreground cadence while Visibility is ON (~12 min)
+  // Light foreground cadence while Visibility is ON (~2 min; under 5-minute TTL)
   useEffect(() => {
     const id = setInterval(() => {
       if (AppState.currentState !== 'active') return;

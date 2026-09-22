@@ -8,10 +8,10 @@
 export const CONTRACTUAL_PUBLISH_MIN_INTERVAL_MS = 60_000;
 
 /**
- * Foreground cadence while Visibility is ON (comfortably under 60-minute TTL).
+ * Foreground cadence while Visibility is ON (comfortably under 5-minute Discovery TTL).
  * Nearby open / Retry always publish regardless of this cadence.
  */
-export const FOREGROUND_CONTRACTUAL_CADENCE_MS = 12 * 60_000;
+export const FOREGROUND_CONTRACTUAL_CADENCE_MS = 2 * 60_000;
 
 let lastSuccessfulPublishAtMs = 0;
 

@@ -101,10 +101,10 @@ describe('contractual publish guard (BUG-DISC-02)', () => {
     assert.equal(shouldAttemptContractualPublish(1_000 + 60_000), true);
   });
 
-  it('foreground cadence is under Discovery TTL (60m) and in 10–15m band', () => {
-    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS >= 10 * 60_000);
-    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS <= 15 * 60_000);
-    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS < 60 * 60_000);
+  it('foreground cadence is under Discovery TTL (5m) and in 1–3m band', () => {
+    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS >= 60_000);
+    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS <= 3 * 60_000);
+    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS < 5 * 60_000);
   });
 });
 

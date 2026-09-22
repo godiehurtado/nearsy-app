@@ -5,6 +5,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
+  AppState,
+  type AppStateStatus,
   FlatList,
   Image,
   Pressable,
@@ -15,7 +17,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Localization from 'expo-localization';
 import { firebaseAuth } from '../config/firebaseConfig';
@@ -54,6 +56,7 @@ import {
 import { loadNearbyWithContractualRefresh } from '../visibility/nearbyDiscoveryLoad';
 import {
   isNearbyViewerVisibilityConfirmedOff,
+  shouldApplyNearbyLoadOutcome,
   shouldClearNearbyItemsOnOutcomeFailure,
   shouldShowNearbyEmptyState,
   shouldShowNearbyFullScreenLoading,
@@ -93,6 +96,10 @@ export default function NearbySearchScreen() {
   const initialFetchCompletedRef = useRef(false);
   /** True after first profile snapshot — avoids false "Visibility is off". */
   const [profileHydrated, setProfileHydrated] = useState(false);
+  /** Bumps on every loadData entry; stale async outcomes are ignored (BUG-DISC-05). */
+  const loadGenerationRef = useRef(0);
+  const isFocusedRef = useRef(false);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   const translateItem = useCallback(
     (nameKey: string, fallback: string) =>
@@ -129,6 +136,10 @@ export default function NearbySearchScreen() {
 
   const loadData = useCallback(
     async (showFullScreenLoader: boolean) => {
+      const generation = ++loadGenerationRef.current;
+      const stillCurrent = () =>
+        shouldApplyNearbyLoadOutcome(generation, loadGenerationRef.current);
+
       if (showFullScreenLoader) {
         setLoading(true);
         setErrorKind('none');
@@ -137,6 +148,7 @@ export default function NearbySearchScreen() {
       try {
         const uid = firebaseAuth.currentUser?.uid;
         if (!uid) {
+          if (!stillCurrent()) return;
           if (shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader })) {
             setItems([]);
           }
@@ -154,6 +166,7 @@ export default function NearbySearchScreen() {
             visibility: profile.visibility,
           })
         ) {
+          if (!stillCurrent()) return;
           if (shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader })) {
             setItems([]);
           }
@@ -169,6 +182,8 @@ export default function NearbySearchScreen() {
           client,
           limit: 50,
         });
+
+        if (!stillCurrent()) return;
 
         if (outcome.ok === false) {
           if (shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader })) {
@@ -227,6 +242,7 @@ export default function NearbySearchScreen() {
           return;
         }
 
+        // Success replaces the list with the latest discoverNearby set.
         setItems(outcome.results);
         if (outcome.results.length === 0) {
           setErrorKind('empty');
@@ -236,6 +252,7 @@ export default function NearbySearchScreen() {
           setErrorMessage(null);
         }
       } catch (err) {
+        if (!stillCurrent()) return;
         if (__DEV__) console.error('[NearbySearch] loadData', err);
         if (shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader })) {
           setItems([]);
@@ -260,6 +277,7 @@ export default function NearbySearchScreen() {
           setErrorMessage(t('nearby.errorGeneric'));
         }
       } finally {
+        if (!stillCurrent()) return;
         if (!profileHydrated && firebaseAuth.currentUser?.uid) {
           // Keep initial full-screen loading until visibility is known.
           if (showFullScreenLoader) setLoading(true);
@@ -277,6 +295,38 @@ export default function NearbySearchScreen() {
     // Full-screen loader only until the first fetch completes; later
     // loadData identity changes (e.g. visibility snapshot) stay silent.
     void loadData(!initialFetchCompletedRef.current);
+  }, [loadData]);
+
+  // BUG-DISC-05: re-query when returning to Nearby (e.g. detail → back).
+  // Skip the first focus while the mount effect still owns the initial load.
+  useFocusEffect(
+    useCallback(() => {
+      isFocusedRef.current = true;
+      if (initialFetchCompletedRef.current) {
+        void loadData(false);
+      }
+      return () => {
+        isFocusedRef.current = false;
+      };
+    }, [loadData]),
+  );
+
+  // BUG-DISC-05: re-query when the app returns to foreground while Nearby is focused.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      const wasBg = appStateRef.current.match(/inactive|background/);
+      const isActive = next === 'active';
+      appStateRef.current = next;
+      if (
+        wasBg &&
+        isActive &&
+        isFocusedRef.current &&
+        initialFetchCompletedRef.current
+      ) {
+        void loadData(false);
+      }
+    });
+    return () => sub.remove();
   }, [loadData]);
 
   const onRefresh = useCallback(async () => {
