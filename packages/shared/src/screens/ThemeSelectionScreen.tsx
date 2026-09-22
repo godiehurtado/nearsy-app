@@ -150,7 +150,7 @@ export default function ThemeSelectionScreen({ navigation }: Props) {
             Set the mood
           </Text>
           <Text style={[styles.subtitle, { color: muted }]}>
-            Choose how Nearsy looks. You can change it later in your profile.
+            Choose how Nearsy looks. You can change it later in More.
           </Text>
         </View>
 
