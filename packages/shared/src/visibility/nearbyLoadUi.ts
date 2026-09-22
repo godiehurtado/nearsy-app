@@ -83,6 +83,40 @@ export function shouldApplyNearbyLoadResult(input: {
 }
 
 /**
+ * Soft rediscover (focus / app_foreground / interval) must not start while the
+ * first Visibility-ON cycle is still unresolved. Otherwise a silent request can
+ * supersede the fullscreen owner and leave loading stuck (BUG-DISC-05).
+ */
+export function shouldAllowNearbySilentRediscover(input: {
+  reason: NearbyLoadReason;
+  initialDiscoveryPending: boolean;
+}): boolean {
+  if (
+    input.reason === 'focus' ||
+    input.reason === 'app_foreground' ||
+    input.reason === 'interval'
+  ) {
+    return !input.initialDiscoveryPending;
+  }
+  return true;
+}
+
+/**
+ * Clear the fullscreen loader when this request still owns the claim:
+ * current fullscreen completion, or a stale fullscreen owner superseded by a
+ * silent load that never took the claim.
+ */
+export function shouldClearNearbyFullScreenLoader(input: {
+  ownedFullscreen: boolean;
+  isCurrent: boolean;
+  claimMatchesRequest: boolean;
+}): boolean {
+  if (!input.ownedFullscreen) return false;
+  if (input.isCurrent) return true;
+  return input.claimMatchesRequest;
+}
+
+/**
  * Profile bootstrap: wait for first snapshot before treating missing
  * visibility as intentional OFF.
  */

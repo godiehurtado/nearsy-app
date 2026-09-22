@@ -115,25 +115,67 @@ export async function loadNearbyWithContractualRefresh(
 
   let published = false;
   if (needPublish) {
+    const publishStartedAt = Date.now();
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      // Redacted: no uid / coords.
+      console.log('[NearbyDiscover] publishLocation start', {
+        forcePublish,
+      });
+    }
     const publish =
       input.publish ??
       (await import('./orchestration')).publishLocationFlow;
     const publishOutcome = await publish(input.client);
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.log('[NearbyDiscover] publishLocation end', {
+        ok: publishOutcome.ok,
+        kind: publishOutcome.ok === false ? publishOutcome.kind : undefined,
+        ms: Date.now() - publishStartedAt,
+      });
+    }
     if (publishOutcome.ok === false) {
       return mapPublishFailure(publishOutcome);
     }
     noteContractualPublishSuccess(Date.now());
     published = true;
+  } else if (typeof __DEV__ !== 'undefined' && __DEV__) {
+    console.log('[NearbyDiscover] publishLocation skipped', { forcePublish });
   }
 
+  const discoverStartedAt = Date.now();
+  if (typeof __DEV__ !== 'undefined' && __DEV__) {
+    console.log('[NearbyDiscover] discoverNearby start', {
+      limit: input.limit ?? null,
+    });
+  }
   try {
     const response = await input.client.discoverNearby(
       buildDiscoverNearbyRequest(
         input.limit !== undefined ? { limit: input.limit } : undefined,
       ),
     );
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.log('[NearbyDiscover] discoverNearby end', {
+        ok: true,
+        resultCount: Array.isArray(response.results)
+          ? response.results.length
+          : 0,
+        published,
+        ms: Date.now() - discoverStartedAt,
+      });
+    }
     return { ok: true, results: response.results, published };
   } catch (err) {
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      const normalized = isVisibilityDiscoveryClientError(err)
+        ? err
+        : normalizeVisibilityCallableError(err);
+      console.log('[NearbyDiscover] discoverNearby end', {
+        ok: false,
+        retryable: normalized.retryable,
+        ms: Date.now() - discoverStartedAt,
+      });
+    }
     return {
       ok: false,
       kind: 'callable',

@@ -8,7 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import {
+  shouldAllowNearbySilentRediscover,
   shouldApplyNearbyLoadResult,
+  shouldClearNearbyFullScreenLoader,
   shouldPreserveNearbyResultsDuringLoad,
   shouldShowNearbyEmptyChrome,
   shouldUseNearbyFullScreenLoader,
@@ -123,6 +125,71 @@ describe('nearbyLoadUi — loader / preserve', () => {
     );
   });
 
+  it('blocks silent rediscover while initial discovery is pending', () => {
+    for (const reason of ['focus', 'app_foreground', 'interval'] as const) {
+      assert.equal(
+        shouldAllowNearbySilentRediscover({
+          reason,
+          initialDiscoveryPending: true,
+        }),
+        false,
+      );
+      assert.equal(
+        shouldAllowNearbySilentRediscover({
+          reason,
+          initialDiscoveryPending: false,
+        }),
+        true,
+      );
+    }
+    assert.equal(
+      shouldAllowNearbySilentRediscover({
+        reason: 'effect',
+        initialDiscoveryPending: true,
+      }),
+      true,
+    );
+  });
+
+  it('clears fullscreen when claim still owned after silent supersede', () => {
+    // Current fullscreen completion clears.
+    assert.equal(
+      shouldClearNearbyFullScreenLoader({
+        ownedFullscreen: true,
+        isCurrent: true,
+        claimMatchesRequest: true,
+      }),
+      true,
+    );
+    // Stale fullscreen still owning claim (silent successor) clears stuck loader.
+    assert.equal(
+      shouldClearNearbyFullScreenLoader({
+        ownedFullscreen: true,
+        isCurrent: false,
+        claimMatchesRequest: true,
+      }),
+      true,
+    );
+    // Stale fullscreen superseded by a newer fullscreen owner does not clear.
+    assert.equal(
+      shouldClearNearbyFullScreenLoader({
+        ownedFullscreen: true,
+        isCurrent: false,
+        claimMatchesRequest: false,
+      }),
+      false,
+    );
+    // Silent load never owned fullscreen.
+    assert.equal(
+      shouldClearNearbyFullScreenLoader({
+        ownedFullscreen: false,
+        isCurrent: true,
+        claimMatchesRequest: false,
+      }),
+      false,
+    );
+  });
+
   it('retry does not preserve stale results', () => {
     assert.equal(
       shouldPreserveNearbyResultsDuringLoad({
@@ -156,6 +223,10 @@ describe('NearbySearchScreen wiring', () => {
     assert.match(src, /app_foreground/);
     assert.match(src, /NEARBY_FOCUSED_REDISCOVER_MS/);
     assert.match(src, /shouldSkipDuplicateNearbyRediscover/);
+    assert.match(src, /shouldAllowNearbySilentRediscover/);
+    assert.match(src, /shouldClearNearbyFullScreenLoader/);
+    assert.match(src, /fullscreenClaimIdRef/);
+    assert.match(src, /loadDataRef/);
     // Empty chrome must not be the unconditional ListEmptyComponent body
     assert.match(src, /showEmptyChrome/);
   });

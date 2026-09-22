@@ -60,7 +60,9 @@ import {
   shouldSkipDuplicateNearbyRediscover,
 } from '../visibility/contractualLocationRefresh';
 import {
+  shouldAllowNearbySilentRediscover,
   shouldApplyNearbyLoadResult,
+  shouldClearNearbyFullScreenLoader,
   shouldPreserveNearbyResultsDuringLoad,
   shouldShowNearbyEmptyChrome,
   shouldUseNearbyFullScreenLoader,
@@ -105,12 +107,21 @@ export default function NearbySearchScreen() {
   itemsRef.current = items;
   /** Monotonic load generation — only the latest completion may mutate list/error UI. */
   const loadRequestIdRef = useRef(0);
+  /**
+   * Request id that currently owns the fullscreen loader claim. Silent loads do
+   * not take the claim, so a superseded fullscreen owner can still clear loading.
+   */
+  const fullscreenClaimIdRef = useRef(0);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const screenFocusedRef = useRef(false);
   /** First focus is covered by the loadData effect; later focuses rediscover. */
   const skipNextFocusRediscoverRef = useRef(true);
   /** Dedupes focus / app_foreground / interval so resume-while-focused is one query. */
   const lastRediscoverStartedAtRef = useRef(0);
+  /** Stable indirection so focus / AppState / interval do not rebind on loadData identity. */
+  const loadDataRef = useRef<(reason: NearbyLoadReason) => Promise<void>>(
+    async () => {},
+  );
 
   const translateItem = useCallback(
     (nameKey: string, fallback: string) =>
@@ -160,12 +171,26 @@ export default function NearbySearchScreen() {
     async (reason: NearbyLoadReason) => {
       const nowMs = Date.now();
       if (
+        !shouldAllowNearbySilentRediscover({
+          reason,
+          initialDiscoveryPending: initialDiscoveryPendingRef.current,
+        })
+      ) {
+        if (__DEV__) {
+          console.log('[NearbySearch] load skipped (pending)', { reason });
+        }
+        return;
+      }
+      if (
         shouldSkipDuplicateNearbyRediscover({
           reason,
           nowMs,
           lastStartedAtMs: lastRediscoverStartedAtRef.current,
         })
       ) {
+        if (__DEV__) {
+          console.log('[NearbySearch] load skipped (dedupe)', { reason });
+        }
         return;
       }
       if (
@@ -188,13 +213,17 @@ export default function NearbySearchScreen() {
         itemCount: itemsRef.current.length,
       });
 
-      if (fullScreenLoader) setLoading(true);
+      if (fullScreenLoader) {
+        fullscreenClaimIdRef.current = requestId;
+        setLoading(true);
+      }
       if (!preserveResults) {
         setErrorKind('none');
         setErrorMessage(null);
       }
 
       let releaseFullScreenLoader = fullScreenLoader;
+      const startedAt = nowMs;
 
       const isCurrent = () =>
         shouldApplyNearbyLoadResult({
@@ -207,10 +236,28 @@ export default function NearbySearchScreen() {
         setInitialDiscoveryPending(false);
       };
 
+      if (__DEV__) {
+        // Redacted: no uid / coords.
+        console.log('[NearbySearch] load start', {
+          reason,
+          requestId,
+          fullScreenLoader,
+          pending,
+          forcePublish: shouldForceNearbyContractualPublish(reason),
+        });
+      }
+
       try {
         if (shouldWaitForNearbyProfile({ profileReady })) {
           // Keep the initial loader until the profile snapshot arrives.
+          // Do not hold the claim — the next effect (profileReady) must own it.
+          if (fullscreenClaimIdRef.current === requestId) {
+            fullscreenClaimIdRef.current = 0;
+          }
           releaseFullScreenLoader = false;
+          if (__DEV__) {
+            console.log('[NearbySearch] load wait profile', { requestId });
+          }
           return;
         }
 
@@ -240,6 +287,19 @@ export default function NearbySearchScreen() {
           limit: 50,
           forcePublish: shouldForceNearbyContractualPublish(reason),
         });
+
+        if (__DEV__) {
+          console.log('[NearbySearch] load end', {
+            reason,
+            requestId,
+            isCurrent: isCurrent(),
+            ok: outcome.ok,
+            resultCount: outcome.ok ? outcome.results.length : undefined,
+            kind: outcome.ok === false ? outcome.kind : undefined,
+            published: outcome.ok ? outcome.published : undefined,
+            ms: Date.now() - startedAt,
+          });
+        }
 
         if (!isCurrent()) return;
 
@@ -345,28 +405,42 @@ export default function NearbySearchScreen() {
         }
         markInitialResolved();
       } finally {
-        if (releaseFullScreenLoader && isCurrent()) setLoading(false);
+        const claimMatches = fullscreenClaimIdRef.current === requestId;
+        if (
+          shouldClearNearbyFullScreenLoader({
+            ownedFullscreen: releaseFullScreenLoader,
+            isCurrent: isCurrent(),
+            claimMatchesRequest: claimMatches,
+          })
+        ) {
+          setLoading(false);
+          if (claimMatches) fullscreenClaimIdRef.current = 0;
+        }
       }
     },
     [profile.visibility, profileReady, t],
   );
 
+  loadDataRef.current = loadData;
+
   useEffect(() => {
     void loadData('effect');
   }, [loadData]);
 
+  // Stable focus callback: loadData identity changes must not fake a blur→focus
+  // rediscover that supersedes the initial fullscreen load.
   useFocusEffect(
     useCallback(() => {
       screenFocusedRef.current = true;
       if (skipNextFocusRediscoverRef.current) {
         skipNextFocusRediscoverRef.current = false;
       } else {
-        void loadData('focus');
+        void loadDataRef.current('focus');
       }
       return () => {
         screenFocusedRef.current = false;
       };
-    }, [loadData]),
+    }, []),
   );
 
   useEffect(() => {
@@ -375,21 +449,21 @@ export default function NearbySearchScreen() {
       const isActive = next === 'active';
       appStateRef.current = next;
       if (wasBg && isActive && screenFocusedRef.current) {
-        void loadData('app_foreground');
+        void loadDataRef.current('app_foreground');
       }
     });
     return () => sub.remove();
-  }, [loadData]);
+  }, []);
 
   // Periodic rediscover while Nearby is focused and the app is active.
   useEffect(() => {
     const id = setInterval(() => {
       if (!screenFocusedRef.current) return;
       if (AppState.currentState !== 'active') return;
-      void loadData('interval');
+      void loadDataRef.current('interval');
     }, NEARBY_FOCUSED_REDISCOVER_MS);
     return () => clearInterval(id);
-  }, [loadData]);
+  }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

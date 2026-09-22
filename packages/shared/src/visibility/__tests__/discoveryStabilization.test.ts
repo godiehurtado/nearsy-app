@@ -462,12 +462,14 @@ describe('wiring static checks', () => {
   it('Nearby rediscovers on focus, app foreground, and focused interval (BUG-DISC-05)', () => {
     const nearby = readSrc('screens/NearbySearchScreen.tsx');
     assert.match(nearby, /useFocusEffect/);
-    assert.match(nearby, /loadData\('focus'\)/);
+    assert.match(nearby, /loadDataRef\.current\('focus'\)/);
     assert.match(nearby, /AppState\.addEventListener\('change'/);
-    assert.match(nearby, /loadData\('app_foreground'\)/);
+    assert.match(nearby, /loadDataRef\.current\('app_foreground'\)/);
     assert.match(nearby, /NEARBY_FOCUSED_REDISCOVER_MS/);
-    assert.match(nearby, /loadData\('interval'\)/);
+    assert.match(nearby, /loadDataRef\.current\('interval'\)/);
     assert.match(nearby, /shouldSkipDuplicateNearbyRediscover/);
+    assert.match(nearby, /shouldAllowNearbySilentRediscover/);
+    assert.match(nearby, /shouldClearNearbyFullScreenLoader/);
     assert.match(nearby, /shouldForceNearbyContractualPublish/);
     assert.match(nearby, /forcePublish:/);
     assert.match(nearby, /shouldApplyNearbyLoadResult/);
