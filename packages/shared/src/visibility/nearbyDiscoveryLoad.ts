@@ -11,7 +11,11 @@ import {
   type VisibilityDiscoveryClient,
   type VisibilityDiscoveryClientError,
 } from './callables';
-import { noteContractualPublishSuccess } from './contractualLocationRefresh';
+import {
+  FOREGROUND_CONTRACTUAL_CADENCE_MS,
+  noteContractualPublishSuccess,
+  shouldAttemptContractualPublish,
+} from './contractualLocationRefresh';
 
 export type NearbyDiscoveryLoadFailureKind =
   | 'unauthenticated'
@@ -48,6 +52,15 @@ export type LoadNearbyWithContractualRefreshInput = {
   visibility: boolean;
   client: VisibilityDiscoveryClient;
   limit?: number;
+  /**
+   * When true (default), always publishLocation before discoverNearby
+   * (Nearby open / Retry / pull-to-refresh).
+   * When false (soft rediscover: focus / foreground / interval), skip
+   * publish if a successful publish already happened within the FG cadence
+   * window — still run discoverNearby so the list renews without doubling
+   * ContractualLocationPublisher’s 2-minute publish.
+   */
+  forcePublish?: boolean;
   /**
    * Injectable for tests / composition. Defaults to publishLocationFlow
    * (sync require — avoids Metro lazy `import()` chunk resolution under
@@ -99,7 +112,7 @@ function defaultPublishLocationFlow(): NonNullable<
 }
 
 /**
- * Visibility ON → publish current contractual location → discoverNearby.
+ * Visibility ON → (optional) publish current contractual location → discoverNearby.
  * Visibility OFF → inactive (never activates Visibility).
  */
 export async function loadNearbyWithContractualRefresh(
@@ -112,12 +125,22 @@ export async function loadNearbyWithContractualRefresh(
     return { ok: false, kind: 'inactive' };
   }
 
-  const publish = input.publish ?? defaultPublishLocationFlow();
-  const publishOutcome = await publish(input.client);
-  if (publishOutcome.ok === false) {
-    return mapPublishFailure(publishOutcome);
+  const forcePublish = input.forcePublish !== false;
+  const shouldPublish =
+    forcePublish ||
+    shouldAttemptContractualPublish(
+      Date.now(),
+      FOREGROUND_CONTRACTUAL_CADENCE_MS,
+    );
+
+  if (shouldPublish) {
+    const publish = input.publish ?? defaultPublishLocationFlow();
+    const publishOutcome = await publish(input.client);
+    if (publishOutcome.ok === false) {
+      return mapPublishFailure(publishOutcome);
+    }
+    noteContractualPublishSuccess(Date.now());
   }
-  noteContractualPublishSuccess(Date.now());
 
   try {
     const response = await input.client.discoverNearby(

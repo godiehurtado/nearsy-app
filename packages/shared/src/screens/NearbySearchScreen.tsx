@@ -5,6 +5,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
+  AppState,
+  type AppStateStatus,
   FlatList,
   Image,
   Pressable,
@@ -15,7 +17,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Localization from 'expo-localization';
 import { firebaseAuth } from '../config/firebaseConfig';
@@ -53,7 +55,12 @@ import {
 } from '../visibility/interestDisplay';
 import { loadNearbyWithContractualRefresh } from '../visibility/nearbyDiscoveryLoad';
 import {
+  NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS,
+  shouldAttemptNearbyRediscover,
+} from '../visibility/contractualLocationRefresh';
+import {
   isNearbyViewerVisibilityConfirmedOff,
+  shouldApplyNearbyLoadOutcome,
   shouldClearNearbyItemsOnOutcomeFailure,
   shouldShowNearbyEmptyState,
   shouldShowNearbyFullScreenLoading,
@@ -93,6 +100,18 @@ export default function NearbySearchScreen() {
   const initialFetchCompletedRef = useRef(false);
   /** True after first profile snapshot — avoids false "Visibility is off". */
   const [profileHydrated, setProfileHydrated] = useState(false);
+  /** Bumps on every loadData entry; stale async outcomes are ignored (BUG-DISC-05). */
+  const loadGenerationRef = useRef(0);
+  const isFocusedRef = useRef(false);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  /** Coalesce focus / AppState / periodic rediscover (BUG-DISC-05). */
+  const lastRediscoverAttemptAtRef = useRef(0);
+  const loadDataRef = useRef<
+    (
+      showFullScreenLoader: boolean,
+      options?: { forcePublish?: boolean },
+    ) => Promise<void>
+  >(async () => {});
 
   const translateItem = useCallback(
     (nameKey: string, fallback: string) =>
@@ -128,7 +147,17 @@ export default function NearbySearchScreen() {
   }, [profile.mode, profile.searchPreferences]);
 
   const loadData = useCallback(
-    async (showFullScreenLoader: boolean) => {
+    async (
+      showFullScreenLoader: boolean,
+      options?: { forcePublish?: boolean },
+    ) => {
+      const generation = ++loadGenerationRef.current;
+      // Any load counts as a rediscover attempt so timer/focus/AppState can debounce.
+      lastRediscoverAttemptAtRef.current = Date.now();
+      const stillCurrent = () =>
+        shouldApplyNearbyLoadOutcome(generation, loadGenerationRef.current);
+      const forcePublish = options?.forcePublish !== false;
+
       if (showFullScreenLoader) {
         setLoading(true);
         setErrorKind('none');
@@ -137,6 +166,7 @@ export default function NearbySearchScreen() {
       try {
         const uid = firebaseAuth.currentUser?.uid;
         if (!uid) {
+          if (!stillCurrent()) return;
           if (shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader })) {
             setItems([]);
           }
@@ -154,6 +184,7 @@ export default function NearbySearchScreen() {
             visibility: profile.visibility,
           })
         ) {
+          if (!stillCurrent()) return;
           if (shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader })) {
             setItems([]);
           }
@@ -168,7 +199,10 @@ export default function NearbySearchScreen() {
           visibility: true,
           client,
           limit: 50,
+          forcePublish,
         });
+
+        if (!stillCurrent()) return;
 
         if (outcome.ok === false) {
           if (shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader })) {
@@ -227,6 +261,7 @@ export default function NearbySearchScreen() {
           return;
         }
 
+        // Success replaces the list with the latest discoverNearby set.
         setItems(outcome.results);
         if (outcome.results.length === 0) {
           setErrorKind('empty');
@@ -236,6 +271,7 @@ export default function NearbySearchScreen() {
           setErrorMessage(null);
         }
       } catch (err) {
+        if (!stillCurrent()) return;
         if (__DEV__) console.error('[NearbySearch] loadData', err);
         if (shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader })) {
           setItems([]);
@@ -260,6 +296,7 @@ export default function NearbySearchScreen() {
           setErrorMessage(t('nearby.errorGeneric'));
         }
       } finally {
+        if (!stillCurrent()) return;
         if (!profileHydrated && firebaseAuth.currentUser?.uid) {
           // Keep initial full-screen loading until visibility is known.
           if (showFullScreenLoader) setLoading(true);
@@ -273,11 +310,61 @@ export default function NearbySearchScreen() {
     [profile.visibility, profileHydrated, t],
   );
 
+  loadDataRef.current = loadData;
+
+  const trySilentRediscover = useCallback(() => {
+    if (!initialFetchCompletedRef.current) return;
+    const now = Date.now();
+    if (
+      !shouldAttemptNearbyRediscover(now, lastRediscoverAttemptAtRef.current)
+    ) {
+      return;
+    }
+    // Claim the debounce slot before the async load starts (focus+AppState coalesce).
+    lastRediscoverAttemptAtRef.current = now;
+    void loadDataRef.current(false, { forcePublish: false });
+  }, []);
+
   useEffect(() => {
     // Full-screen loader only until the first fetch completes; later
     // loadData identity changes (e.g. visibility snapshot) stay silent.
     void loadData(!initialFetchCompletedRef.current);
   }, [loadData]);
+
+  // BUG-DISC-05: re-query when returning to Nearby (e.g. detail → back).
+  // Skip the first focus while the mount effect still owns the initial load.
+  useFocusEffect(
+    useCallback(() => {
+      isFocusedRef.current = true;
+      trySilentRediscover();
+      return () => {
+        isFocusedRef.current = false;
+      };
+    }, [trySilentRediscover]),
+  );
+
+  // BUG-DISC-05: re-query when the app returns to foreground while Nearby is focused.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      const wasBg = appStateRef.current.match(/inactive|background/);
+      const isActive = next === 'active';
+      appStateRef.current = next;
+      if (wasBg && isActive && isFocusedRef.current) {
+        trySilentRediscover();
+      }
+    });
+    return () => sub.remove();
+  }, [trySilentRediscover]);
+
+  // BUG-DISC-05: periodic rediscover while Nearby stays focused (half-TTL / iOS band).
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!isFocusedRef.current) return;
+      if (AppState.currentState !== 'active') return;
+      trySilentRediscover();
+    }, NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [trySilentRediscover]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

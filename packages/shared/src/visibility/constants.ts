@@ -9,8 +9,8 @@ export const CONTRACT_VERSION = 1 as const;
 /** users / discoveryProfiles schema version for Nearsy 2.0 Visibility. */
 export const SCHEMA_VERSION = 2 as const;
 
-/** Location freshness TTL: 60 minutes (inclusive). */
-export const LOCATION_TTL_MS = 3_600_000;
+/** Location freshness TTL: 5 minutes (inclusive). */
+export const LOCATION_TTL_MS = 5 * 60_000;
 
 /**
  * Maximum horizontal accuracy accepted for activate / publish.

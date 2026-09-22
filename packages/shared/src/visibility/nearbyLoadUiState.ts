@@ -47,6 +47,17 @@ export function shouldClearNearbyItemsOnOutcomeFailure(input: {
 }
 
 /**
+ * BUG-DISC-05 — drop stale async outcomes when a newer loadData started.
+ * Only the latest generation may mutate list / error chrome.
+ */
+export function shouldApplyNearbyLoadOutcome(
+  requestGeneration: number,
+  latestGeneration: number,
+): boolean {
+  return requestGeneration === latestGeneration;
+}
+
+/**
  * Viewer visibility is known only after the profile snapshot hydrates.
  * Until then, do not treat missing `visibility` as confirmed off.
  */

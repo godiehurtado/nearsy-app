@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   isNearbyViewerVisibilityConfirmedOff,
+  shouldApplyNearbyLoadOutcome,
   shouldClearNearbyItemsOnOutcomeFailure,
   shouldShowNearbyEmptyState,
   shouldShowNearbyFullScreenLoading,
@@ -201,6 +202,13 @@ describe('BUG-DISC-04 nearby load UI derivation', () => {
       true,
     );
   });
+
+  it('8. Out-of-order load generation is ignored (BUG-DISC-05)', () => {
+    assert.equal(shouldApplyNearbyLoadOutcome(1, 1), true);
+    assert.equal(shouldApplyNearbyLoadOutcome(2, 2), true);
+    assert.equal(shouldApplyNearbyLoadOutcome(1, 2), false);
+    assert.equal(shouldApplyNearbyLoadOutcome(3, 2), false);
+  });
 });
 
 describe('BUG-DISC-04 NearbySearchScreen wiring', () => {
@@ -254,6 +262,59 @@ describe('BUG-DISC-04 NearbySearchScreen wiring', () => {
   it('Discovery Reliability contract helpers remain wired', () => {
     assert.match(nearby, /loadNearbyWithContractualRefresh/);
     assert.match(nearby, /limit:\s*50/);
+  });
+});
+
+describe('BUG-DISC-05 Nearby focus / foreground refresh wiring', () => {
+  const nearby = readSrc('screens/NearbySearchScreen.tsx');
+  const publisher = readSrc('components/ContractualLocationPublisher.tsx');
+  const cadence = readSrc('visibility/contractualLocationRefresh.ts');
+  const bgTask = readSrc('background/locationTask.android.ts');
+
+  it('reconsults on screen focus, AppState active, and periodic timer while focused', () => {
+    assert.match(nearby, /useFocusEffect/);
+    assert.match(nearby, /AppState\.addEventListener/);
+    assert.match(nearby, /setInterval/);
+    assert.match(nearby, /NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS/);
+    assert.match(nearby, /trySilentRediscover/);
+    assert.match(nearby, /shouldAttemptNearbyRediscover/);
+    assert.match(nearby, /forcePublish:\s*false/);
+    assert.match(nearby, /isFocusedRef/);
+    assert.match(nearby, /initialFetchCompletedRef\.current/);
+    assert.match(nearby, /shouldApplyNearbyLoadOutcome/);
+    assert.match(nearby, /loadGenerationRef/);
+  });
+
+  it('success path still replaces items; silent failure does not clear', () => {
+    assert.match(nearby, /setItems\(outcome\.results\)/);
+    assert.match(nearby, /shouldClearNearbyItemsOnOutcomeFailure/);
+    assert.equal(
+      shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader: false }),
+      false,
+    );
+  });
+
+  it('does not invent local freshness / proximity filters on discoverNearby rows', () => {
+    assert.doesNotMatch(nearby, /confirmedAt/);
+    assert.doesNotMatch(nearby, /isLocationFresh/);
+    assert.doesNotMatch(nearby, /LOCATION_TTL/);
+    assert.doesNotMatch(
+      nearby,
+      /filter\([\s\S]*distanceMeters\s*[<>]/,
+    );
+  });
+
+  it('foreground publish + rediscover cadence stay under 5-minute Discovery TTL', () => {
+    assert.match(cadence, /FOREGROUND_CONTRACTUAL_CADENCE_MS\s*=\s*2\s*\*\s*60_000/);
+    assert.match(cadence, /NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS/);
+    assert.match(cadence, /NEARBY_REDISCOVER_DEBOUNCE_MS\s*=\s*5_000/);
+    assert.match(publisher, /FOREGROUND_CONTRACTUAL_CADENCE_MS/);
+    assert.match(publisher, /publishLocationFlow/);
+  });
+
+  it('Android background task still publishes via publishLocationFlow', () => {
+    assert.match(bgTask, /publishLocationFlow/);
+    assert.doesNotMatch(bgTask, /\.collection\(['\"]users['\"]\)/);
   });
 });
 

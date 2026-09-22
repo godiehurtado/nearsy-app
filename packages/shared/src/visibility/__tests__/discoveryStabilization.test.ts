@@ -19,11 +19,15 @@ import {
 import type { VisibilityDiscoveryClient } from '../callables/port.ts';
 import {
   FOREGROUND_CONTRACTUAL_CADENCE_MS,
+  NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS,
+  NEARBY_REDISCOVER_DEBOUNCE_MS,
   resetContractualPublishGuardForTests,
   shouldAttemptContractualPublish,
+  shouldAttemptNearbyRediscover,
   noteContractualPublishSuccess,
   getLastContractualPublishAtMs,
 } from '../contractualLocationRefresh.ts';
+import { LOCATION_TTL_MS } from '../constants.ts';
 import {
   loadNearbyWithContractualRefresh,
   type NearbyDiscoveryPublishOutcome,
@@ -101,10 +105,30 @@ describe('contractual publish guard (BUG-DISC-02)', () => {
     assert.equal(shouldAttemptContractualPublish(1_000 + 60_000), true);
   });
 
-  it('foreground cadence is under Discovery TTL (60m) and in 10–15m band', () => {
-    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS >= 10 * 60_000);
-    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS <= 15 * 60_000);
-    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS < 60 * 60_000);
+  it('foreground cadence is under Discovery TTL (5m) and in 1–3m band', () => {
+    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS >= 60_000);
+    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS <= 3 * 60_000);
+    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS < LOCATION_TTL_MS);
+    assert.equal(LOCATION_TTL_MS, 5 * 60_000);
+  });
+
+  it('Nearby focused rediscover matches FG cadence (iOS half-TTL band)', () => {
+    assert.equal(
+      NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS,
+      FOREGROUND_CONTRACTUAL_CADENCE_MS,
+    );
+    assert.ok(NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS < LOCATION_TTL_MS);
+    assert.ok(NEARBY_REDISCOVER_DEBOUNCE_MS < NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS);
+  });
+
+  it('rediscover debounce coalesces near-simultaneous triggers', () => {
+    const t0 = 1_000_000;
+    assert.equal(shouldAttemptNearbyRediscover(t0, 0), true);
+    assert.equal(shouldAttemptNearbyRediscover(t0 + 1_000, t0), false);
+    assert.equal(
+      shouldAttemptNearbyRediscover(t0 + NEARBY_REDISCOVER_DEBOUNCE_MS, t0),
+      true,
+    );
   });
 });
 
@@ -152,6 +176,92 @@ describe('loadNearbyWithContractualRefresh (BUG-DISC-02)', () => {
     assert.deepEqual(order, ['publishLocation', 'discoverNearby']);
     assert.equal(client.calls[0]?.name, 'publishLocation');
     assert.equal(client.calls[1]?.name, 'discoverNearby');
+  });
+
+  it('soft rediscover skips publish within FG cadence but still discovers (BUG-DISC-05)', async () => {
+    const order: string[] = [];
+    const client = createFakeVisibilityDiscoveryClient({
+      discoverNearby: async () => {
+        order.push('discoverNearby');
+        return {
+          contractVersion: 1,
+          results: [],
+          nextCursor: null,
+          serverTime: 4,
+        };
+      },
+    });
+
+    noteContractualPublishSuccess(Date.now());
+    const outcome = await loadNearbyWithContractualRefresh({
+      uid: 'a',
+      visibility: true,
+      client,
+      limit: 50,
+      forcePublish: false,
+      publish: trackingPublish(order),
+    });
+
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(order, ['discoverNearby']);
+    assert.equal(client.calls.length, 1);
+    assert.equal(client.calls[0]?.name, 'discoverNearby');
+  });
+
+  it('soft rediscover publishes when FG cadence elapsed', async () => {
+    const order: string[] = [];
+    const client = createFakeVisibilityDiscoveryClient({
+      discoverNearby: async () => {
+        order.push('discoverNearby');
+        return {
+          contractVersion: 1,
+          results: [],
+          nextCursor: null,
+          serverTime: 4,
+        };
+      },
+    });
+
+    noteContractualPublishSuccess(Date.now() - FOREGROUND_CONTRACTUAL_CADENCE_MS);
+    const outcome = await loadNearbyWithContractualRefresh({
+      uid: 'a',
+      visibility: true,
+      client,
+      limit: 50,
+      forcePublish: false,
+      publish: trackingPublish(order),
+    });
+
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(order, ['publishLocation', 'discoverNearby']);
+  });
+
+  it('forcePublish still publishes even after a recent success', async () => {
+    const order: string[] = [];
+    const client = createFakeVisibilityDiscoveryClient({
+      discoverNearby: async () => {
+        order.push('discoverNearby');
+        return {
+          contractVersion: 1,
+          results: [],
+          nextCursor: null,
+          serverTime: 4,
+        };
+      },
+    });
+
+    noteContractualPublishSuccess(Date.now());
+    const outcome = await loadNearbyWithContractualRefresh({
+      uid: 'a',
+      visibility: true,
+      client,
+      limit: 50,
+      forcePublish: true,
+      publish: trackingPublish(order),
+    });
+
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(order, ['publishLocation', 'discoverNearby']);
   });
 
   it('Retry after location-stale: publish runs before discover', async () => {
