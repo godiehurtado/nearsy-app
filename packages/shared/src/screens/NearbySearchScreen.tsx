@@ -56,6 +56,7 @@ import {
 import { loadNearbyWithContractualRefresh } from '../visibility/nearbyDiscoveryLoad';
 import {
   NEARBY_FOCUSED_REDISCOVER_MS,
+  shouldForceNearbyContractualPublish,
   shouldSkipDuplicateNearbyRediscover,
 } from '../visibility/contractualLocationRefresh';
 import {
@@ -237,6 +238,7 @@ export default function NearbySearchScreen() {
           visibility: true,
           client,
           limit: 50,
+          forcePublish: shouldForceNearbyContractualPublish(reason),
         });
 
         if (!isCurrent()) return;

@@ -3,8 +3,9 @@
  * Discovery freshness uses backend confirmedAt via publishLocation / activateVisibility —
  * never legacy location.updatedAt.
  *
- * Shared iOS/Android targets (Android still on 12m FG cadence until its BUG-DISC-05):
+ * Aligned with Android #66 (2cd0292):
  *   FOREGROUND_CONTRACTUAL_CADENCE_MS === NEARBY_FOCUSED_REDISCOVER_MS === 2 min
+ *   LOCATION_TTL_MS === 5 min
  */
 
 /** Skip resume/cadence republish if a successful publish happened within this window. */
@@ -13,15 +14,18 @@ export const CONTRACTUAL_PUBLISH_MIN_INTERVAL_MS = 60_000;
 /**
  * Foreground cadence while Visibility is ON.
  * Sized under a 5-minute Discovery TTL (comfortably ≤ ~half TTL).
- * Nearby open / Retry always publish regardless of this cadence.
+ * Nearby open / Retry / PTR always force-publish regardless of this cadence.
  */
 export const FOREGROUND_CONTRACTUAL_CADENCE_MS = 2 * 60_000;
 
 /**
- * While Nearby is focused (and app active), re-run publish→discover at this interval.
- * Keep equal to FOREGROUND_CONTRACTUAL_CADENCE_MS so list and self-location stay aligned.
+ * While Nearby is focused (and app active), re-run discover (and publish if due)
+ * at this interval. Same value as Android `NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS`.
  */
 export const NEARBY_FOCUSED_REDISCOVER_MS = FOREGROUND_CONTRACTUAL_CADENCE_MS;
+
+/** Android #66 alias — keep exports discoverable across platforms. */
+export const NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS = NEARBY_FOCUSED_REDISCOVER_MS;
 
 /**
  * Collapse focus + app-foreground (and interval edge) into one in-flight window
@@ -88,4 +92,14 @@ export function shouldSkipDuplicateNearbyRediscover(input: {
     return false;
   }
   return input.nowMs - input.lastStartedAtMs < dedupeMs;
+}
+
+/**
+ * Initial open / Retry / PTR must always publishLocation before discover.
+ * Silent rediscovers (focus / app_foreground / interval) publish only when due,
+ * sharing the guard with ContractualLocationPublisher so both 2-min timers
+ * do not double-call publishLocation.
+ */
+export function shouldForceNearbyContractualPublish(reason: string): boolean {
+  return reason === 'effect' || reason === 'retry' || reason === 'ptr';
 }

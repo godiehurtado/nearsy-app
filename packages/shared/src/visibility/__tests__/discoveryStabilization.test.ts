@@ -22,6 +22,7 @@ import {
   NEARBY_FOCUSED_REDISCOVER_MS,
   resetContractualPublishGuardForTests,
   shouldAttemptContractualPublish,
+  shouldForceNearbyContractualPublish,
   shouldSkipDuplicateNearbyRediscover,
   noteContractualPublishSuccess,
   getLastContractualPublishAtMs,
@@ -140,6 +141,15 @@ describe('contractual publish guard (BUG-DISC-02)', () => {
       }),
       false,
     );
+  });
+
+  it('force-publish only for effect/retry/ptr; silent rediscover is soft', () => {
+    assert.equal(shouldForceNearbyContractualPublish('effect'), true);
+    assert.equal(shouldForceNearbyContractualPublish('retry'), true);
+    assert.equal(shouldForceNearbyContractualPublish('ptr'), true);
+    assert.equal(shouldForceNearbyContractualPublish('focus'), false);
+    assert.equal(shouldForceNearbyContractualPublish('app_foreground'), false);
+    assert.equal(shouldForceNearbyContractualPublish('interval'), false);
   });
 });
 
@@ -292,6 +302,60 @@ describe('loadNearbyWithContractualRefresh (BUG-DISC-02)', () => {
     if (outcome.ok === false) assert.equal(outcome.kind, 'permission-denied');
     assert.equal(discovered, false);
   });
+
+  it('forcePublish false skips publish when contractual guard is fresh, still discovers', async () => {
+    const order: string[] = [];
+    noteContractualPublishSuccess(Date.now());
+    const client = createFakeVisibilityDiscoveryClient({
+      discoverNearby: async () => {
+        order.push('discoverNearby');
+        return {
+          contractVersion: 1,
+          results: [],
+          nextCursor: null,
+          serverTime: 4,
+        };
+      },
+    });
+    const outcome = await loadNearbyWithContractualRefresh({
+      uid: 'a',
+      visibility: true,
+      client,
+      forcePublish: false,
+      publish: trackingPublish(order),
+    });
+    assert.equal(outcome.ok, true);
+    if (outcome.ok) assert.equal(outcome.published, false);
+    assert.deepEqual(order, ['discoverNearby']);
+    assert.equal(client.calls.length, 1);
+    assert.equal(client.calls[0]?.name, 'discoverNearby');
+  });
+
+  it('forcePublish false still publishes when guard says due', async () => {
+    const order: string[] = [];
+    resetContractualPublishGuardForTests();
+    const client = createFakeVisibilityDiscoveryClient({
+      discoverNearby: async () => {
+        order.push('discoverNearby');
+        return {
+          contractVersion: 1,
+          results: [],
+          nextCursor: null,
+          serverTime: 4,
+        };
+      },
+    });
+    const outcome = await loadNearbyWithContractualRefresh({
+      uid: 'a',
+      visibility: true,
+      client,
+      forcePublish: false,
+      publish: trackingPublish(order),
+    });
+    assert.equal(outcome.ok, true);
+    if (outcome.ok) assert.equal(outcome.published, true);
+    assert.deepEqual(order, ['publishLocation', 'discoverNearby']);
+  });
 });
 
 describe('visibility recovery intent (BUG-DISC-01)', () => {
@@ -404,6 +468,8 @@ describe('wiring static checks', () => {
     assert.match(nearby, /NEARBY_FOCUSED_REDISCOVER_MS/);
     assert.match(nearby, /loadData\('interval'\)/);
     assert.match(nearby, /shouldSkipDuplicateNearbyRediscover/);
+    assert.match(nearby, /shouldForceNearbyContractualPublish/);
+    assert.match(nearby, /forcePublish:/);
     assert.match(nearby, /shouldApplyNearbyLoadResult/);
     assert.doesNotMatch(nearby, /location\.updatedAt/);
   });

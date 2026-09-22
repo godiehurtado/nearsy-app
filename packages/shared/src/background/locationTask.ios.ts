@@ -85,7 +85,7 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
         accuracyMeters,
         observedAt: Date.now(),
       });
-      if (outcome.ok) {
+      if (outcome.ok === true) {
         const confirmedAt =
           typeof outcome.response?.confirmedAt === 'number'
             ? outcome.response.confirmedAt
@@ -100,13 +100,14 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
             confirmedAt,
           });
         }
-      } else {
+      } else if (outcome.ok === false) {
+        const failKind = outcome.kind;
         await recordBgPublishProbe({
           ok: false,
-          kind: outcome.kind,
+          kind: failKind,
         });
         if (__DEV__) {
-          console.warn('[BG Task iOS] publishLocation soft-fail', outcome.kind);
+          console.warn('[BG Task iOS] publishLocation soft-fail', failKind);
         }
       }
     } catch (e) {

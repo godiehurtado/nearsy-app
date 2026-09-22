@@ -1,6 +1,6 @@
 /**
- * Nearby Discovery load with contractual location refresh (BUG-DISC-02).
- * publishLocation → discoverNearby. Never writes authoritative location to Firestore.
+ * Nearby Discovery load with contractual location refresh (BUG-DISC-02 / BUG-DISC-05).
+ * publishLocation (when due) → discoverNearby. Never writes authoritative location to Firestore.
  */
 
 import {
@@ -11,7 +11,10 @@ import {
   type VisibilityDiscoveryClient,
   type VisibilityDiscoveryClientError,
 } from './callables';
-import { noteContractualPublishSuccess } from './contractualLocationRefresh';
+import {
+  noteContractualPublishSuccess,
+  shouldAttemptContractualPublish,
+} from './contractualLocationRefresh';
 
 export type NearbyDiscoveryLoadFailureKind =
   | 'unauthenticated'
@@ -35,7 +38,7 @@ export type NearbyDiscoveryPublishOutcome =
     };
 
 export type NearbyDiscoveryLoadOutcome =
-  | { ok: true; results: DiscoverNearbyResult[] }
+  | { ok: true; results: DiscoverNearbyResult[]; published: boolean }
   | {
       ok: false;
       kind: NearbyDiscoveryLoadFailureKind;
@@ -48,6 +51,13 @@ export type LoadNearbyWithContractualRefreshInput = {
   visibility: boolean;
   client: VisibilityDiscoveryClient;
   limit?: number;
+  /**
+   * When true (default), always publishLocation before discoverNearby.
+   * When false, publish only if the shared contractual guard says a publish is due
+   * (avoids doubling ContractualLocationPublisher’s 2-min FG cadence).
+   * discoverNearby always runs after a successful/skipped publish path.
+   */
+  forcePublish?: boolean;
   /**
    * Injectable for tests / composition. Defaults to publishLocationFlow
    * (lazy-loaded so Node unit tests can avoid expo-location).
@@ -85,7 +95,7 @@ function mapPublishFailure(
 }
 
 /**
- * Visibility ON → publish current contractual location → discoverNearby.
+ * Visibility ON → (optional) publish current contractual location → discoverNearby.
  * Visibility OFF → inactive (never activates Visibility).
  */
 export async function loadNearbyWithContractualRefresh(
@@ -98,14 +108,23 @@ export async function loadNearbyWithContractualRefresh(
     return { ok: false, kind: 'inactive' };
   }
 
-  const publish =
-    input.publish ??
-    (await import('./orchestration')).publishLocationFlow;
-  const publishOutcome = await publish(input.client);
-  if (publishOutcome.ok === false) {
-    return mapPublishFailure(publishOutcome);
+  const forcePublish = input.forcePublish !== false;
+  const nowMs = Date.now();
+  const needPublish =
+    forcePublish || shouldAttemptContractualPublish(nowMs);
+
+  let published = false;
+  if (needPublish) {
+    const publish =
+      input.publish ??
+      (await import('./orchestration')).publishLocationFlow;
+    const publishOutcome = await publish(input.client);
+    if (publishOutcome.ok === false) {
+      return mapPublishFailure(publishOutcome);
+    }
+    noteContractualPublishSuccess(Date.now());
+    published = true;
   }
-  noteContractualPublishSuccess(Date.now());
 
   try {
     const response = await input.client.discoverNearby(
@@ -113,7 +132,7 @@ export async function loadNearbyWithContractualRefresh(
         input.limit !== undefined ? { limit: input.limit } : undefined,
       ),
     );
-    return { ok: true, results: response.results };
+    return { ok: true, results: response.results, published };
   } catch (err) {
     return {
       ok: false,
