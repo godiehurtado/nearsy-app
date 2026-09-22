@@ -107,6 +107,8 @@ import {
   spacing,
   useAppTheme,
 } from '../theme';
+import type { ThemeName } from '../theme/colors';
+import { AppearanceToggle } from '../components/AppearanceToggle';
 
 type ProfileDoc = {
   phone?: string | null;
@@ -183,7 +185,7 @@ export default function MoreScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<MoreStackParamList>>();
   const insets = useSafeAreaInsets();
-  const { palette, theme } = useAppTheme();
+  const { palette, theme, commitTheme } = useAppTheme();
   const { t, i18n } = useTranslation();
   const { height: windowHeight } = useWindowDimensions();
   const NativeDateTimePicker = useMemo(() => loadIosDateTimePicker(), []);
@@ -206,6 +208,10 @@ export default function MoreScreen() {
     currentLanguage === 'es'
       ? t('settings.language.spanish')
       : t('settings.language.english');
+  const currentAppearanceLabel =
+    theme === 'clear'
+      ? t('settings.appearance.light')
+      : t('settings.appearance.dark');
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -231,6 +237,8 @@ export default function MoreScreen() {
   const [editor, setEditor] = useState<EditorKind>(null);
   const [languageModalOpen, setLanguageModalOpen] = useState(false);
   const [languageChanging, setLanguageChanging] = useState(false);
+  const [appearanceModalOpen, setAppearanceModalOpen] = useState(false);
+  const [appearanceChanging, setAppearanceChanging] = useState(false);
   const [countryModalOpen, setCountryModalOpen] = useState(false);
 
   const [selectedCountry, setSelectedCountry] = useState<CountryPhoneOption>(
@@ -843,6 +851,23 @@ export default function MoreScreen() {
     }
   };
 
+  const handleSelectAppearance = async (next: ThemeName) => {
+    if (next === theme) {
+      setAppearanceModalOpen(false);
+      return;
+    }
+    try {
+      setAppearanceChanging(true);
+      await commitTheme(next);
+      setAppearanceModalOpen(false);
+      Alert.alert(t('common.appName'), t('settings.appearance.changeSuccess'));
+    } catch (e: any) {
+      Alert.alert(t('common.error'), e?.message || t('common.error'));
+    } finally {
+      setAppearanceChanging(false);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       setBgDisclosureVisible(false);
@@ -1000,6 +1025,12 @@ export default function MoreScreen() {
             title={t('settings.language.title')}
             value={currentLanguageLabel}
             onPress={() => setLanguageModalOpen(true)}
+          />
+          <SettingsRow
+            icon="contrast-outline"
+            title={t('settings.appearance.title')}
+            value={currentAppearanceLabel}
+            onPress={() => setAppearanceModalOpen(true)}
             isLast
           />
         </SettingsSection>
@@ -1564,6 +1595,49 @@ export default function MoreScreen() {
             <Pressable
               style={[styles.closeBtn, { backgroundColor: palette.chipBg }]}
               onPress={() => setLanguageModalOpen(false)}
+            >
+              <Text style={{ color: palette.chipText, fontWeight: '700' }}>
+                {t('common.buttons.close')}
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={appearanceModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAppearanceModalOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setAppearanceModalOpen(false)}
+        >
+          <Pressable
+            style={[styles.modalCard, { backgroundColor: palette.surface }]}
+          >
+            <Text style={[styles.modalTitle, { color: palette.textPrimary }]}>
+              {t('settings.appearance.title')}
+            </Text>
+            <Text style={[styles.hint, { color: palette.textMuted }]}>
+              {t('settings.appearance.description')}
+            </Text>
+            <View style={{ marginTop: spacing.md, marginBottom: spacing.sm }}>
+              <AppearanceToggle
+                value={theme}
+                onChange={(next) => {
+                  if (appearanceChanging) return;
+                  void handleSelectAppearance(next);
+                }}
+                groupLabel={t('settings.appearance.title')}
+                lightLabel={t('settings.appearance.light')}
+                darkLabel={t('settings.appearance.dark')}
+              />
+            </View>
+            <Pressable
+              style={[styles.closeBtn, { backgroundColor: palette.chipBg }]}
+              onPress={() => setAppearanceModalOpen(false)}
             >
               <Text style={{ color: palette.chipText, fontWeight: '700' }}>
                 {t('common.buttons.close')}

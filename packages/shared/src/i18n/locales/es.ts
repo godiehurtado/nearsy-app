@@ -356,6 +356,13 @@ export const es: TranslationResources = {
       current: 'Actual: {{language}}',
       changeSuccess: 'Idioma actualizado',
     },
+    appearance: {
+      title: 'Apariencia',
+      description: 'Elige Claro u Oscuro para la interfaz de la aplicación',
+      light: 'Claro',
+      dark: 'Oscuro',
+      changeSuccess: 'Apariencia actualizada',
+    },
     logout: {
       title: 'Cerrar sesión',
       error: 'No se pudo cerrar la sesión.',
