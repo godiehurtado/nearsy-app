@@ -118,6 +118,13 @@ export default {
     current: 'Current: {{language}}',
     changeSuccess: 'Language updated',
   },
+  appearance: {
+    title: 'Appearance',
+    description: 'Choose Light or Dark for the app interface',
+    light: 'Light',
+    dark: 'Dark',
+    changeSuccess: 'Appearance updated',
+  },
   logout: {
     title: 'Log out',
     error: 'Could not log out.',

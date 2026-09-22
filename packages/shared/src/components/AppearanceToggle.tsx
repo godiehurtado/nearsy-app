@@ -9,6 +9,10 @@ interface Props {
   /** null = no selection (first-run neutral state). No default is allowed. */
   value: ThemeName | null;
   onChange: (t: ThemeName) => void;
+  /** Optional i18n labels (Theme Selection keeps English defaults). */
+  groupLabel?: string;
+  lightLabel?: string;
+  darkLabel?: string;
 }
 
 const TOKENS = {
@@ -55,7 +59,13 @@ function CheckBadge({ bg, fg }: { bg: string; fg: string }) {
  * AppearanceToggle — SegmentedToggle for Theme Selection.
  * Icons: Ionicons (same font family already used by Login on iOS).
  */
-export function AppearanceToggle({ value, onChange }: Props) {
+export function AppearanceToggle({
+  value,
+  onChange,
+  groupLabel = 'Appearance',
+  lightLabel = 'Light',
+  darkLabel = 'Dark',
+}: Props) {
   const t = TOKENS[value ?? 'none'];
   const lightActive = value === 'clear';
   const darkActive = value === 'dark';
@@ -63,7 +73,7 @@ export function AppearanceToggle({ value, onChange }: Props) {
   return (
     <View
       accessibilityRole="radiogroup"
-      accessibilityLabel="Appearance"
+      accessibilityLabel={groupLabel}
       style={[
         styles.track,
         {
@@ -76,7 +86,7 @@ export function AppearanceToggle({ value, onChange }: Props) {
       <Pressable
         accessibilityRole="radio"
         accessibilityState={{ checked: lightActive }}
-        accessibilityLabel="Light appearance"
+        accessibilityLabel={lightLabel}
         onPress={() => onChange('clear')}
         style={[
           styles.segment,
@@ -101,7 +111,7 @@ export function AppearanceToggle({ value, onChange }: Props) {
             },
           ]}
         >
-          Light
+          {lightLabel}
         </Text>
         {lightActive ? <CheckBadge bg="#2E5CC0" fg="#FFFFFF" /> : null}
       </Pressable>
@@ -109,7 +119,7 @@ export function AppearanceToggle({ value, onChange }: Props) {
       <Pressable
         accessibilityRole="radio"
         accessibilityState={{ checked: darkActive }}
-        accessibilityLabel="Dark appearance"
+        accessibilityLabel={darkLabel}
         onPress={() => onChange('dark')}
         style={[
           styles.segment,
@@ -134,7 +144,7 @@ export function AppearanceToggle({ value, onChange }: Props) {
             },
           ]}
         >
-          Dark
+          {darkLabel}
         </Text>
         {darkActive ? <CheckBadge bg="#5BAAFF" fg="#0C1936" /> : null}
       </Pressable>
