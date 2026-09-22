@@ -34,8 +34,13 @@ type Props = {
   categoryId: OnboardingInterestCategoryId;
   selected: OnboardingSelectedInterest[];
   onChangeSelected: (next: OnboardingSelectedInterest[]) => void;
-  /** Required for hierarchical categories — owned by ProfileCompletionScreen. */
-  activeGroupId?: string;
+  /**
+   * Hierarchical browse state owned by the parent screen.
+   * - `string` — open subcategory
+   * - `null` — CRJ category overview (BUG-CRJ-01; pills only)
+   * - `undefined` — post-CRJ default: auto-select first group
+   */
+  activeGroupId?: string | null;
   onActiveGroupChange?: (groupId: string) => void;
   customRemoveAccessibilityLabel?: (name: string) => string;
 };
@@ -65,6 +70,8 @@ export function OnboardingInterestCategoryPanel({
 
   const resolvedActiveGroupId = useMemo(() => {
     if (!hierarchical) return null;
+    // CRJ overview: do not auto-open the first subcategory.
+    if (activeGroupId === null) return null;
     return resolveActiveGroupId(category, activeGroupId);
   }, [activeGroupId, category, hierarchical]);
 
@@ -241,7 +248,7 @@ export function OnboardingInterestCategoryPanel({
         })}
       </Text>
 
-      {hierarchical && resolvedActiveGroupId ? (
+      {hierarchical ? (
         <HierarchicalInterestSelector
           categoryId={categoryId}
           groups={groups}
@@ -252,12 +259,12 @@ export function OnboardingInterestCategoryPanel({
           }}
           groupLabel={groupLabel}
           renderChip={renderChip}
-          composer={renderComposer(resolvedActiveGroupId)}
+          composer={
+            resolvedActiveGroupId
+              ? renderComposer(resolvedActiveGroupId)
+              : null
+          }
         />
-      ) : hierarchical ? (
-        <Text style={{ color: palette.danger }}>
-          {t('common.error')}
-        </Text>
       ) : (
         <>
           <View style={styles.chipWrap}>
