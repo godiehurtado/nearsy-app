@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import {
+  shouldApplyNearbyLoadResult,
   shouldPreserveNearbyResultsDuringLoad,
   shouldShowNearbyEmptyChrome,
   shouldUseNearbyFullScreenLoader,
@@ -91,6 +92,37 @@ describe('nearbyLoadUi — loader / preserve', () => {
     );
   });
 
+  it('focus and app_foreground preserve profiles and skip full-screen loader', () => {
+    for (const reason of ['focus', 'app_foreground'] as const) {
+      assert.equal(
+        shouldUseNearbyFullScreenLoader({
+          reason,
+          initialDiscoveryPending: false,
+        }),
+        false,
+      );
+      assert.equal(
+        shouldPreserveNearbyResultsDuringLoad({
+          reason,
+          initialDiscoveryPending: false,
+          itemCount: 2,
+        }),
+        true,
+      );
+    }
+  });
+
+  it('applies only the latest load generation (out-of-order guard)', () => {
+    assert.equal(
+      shouldApplyNearbyLoadResult({ requestId: 3, latestRequestId: 3 }),
+      true,
+    );
+    assert.equal(
+      shouldApplyNearbyLoadResult({ requestId: 2, latestRequestId: 3 }),
+      false,
+    );
+  });
+
   it('retry does not preserve stale results', () => {
     assert.equal(
       shouldPreserveNearbyResultsDuringLoad({
@@ -117,8 +149,11 @@ describe('NearbySearchScreen wiring', () => {
     assert.match(src, /shouldShowNearbyEmptyChrome/);
     assert.match(src, /shouldPreserveNearbyResultsDuringLoad/);
     assert.match(src, /shouldUseNearbyFullScreenLoader/);
+    assert.match(src, /shouldApplyNearbyLoadResult/);
     assert.match(src, /initialDiscoveryPendingRef/);
     assert.match(src, /loadNearbyWithContractualRefresh/);
+    assert.match(src, /useFocusEffect/);
+    assert.match(src, /app_foreground/);
     // Empty chrome must not be the unconditional ListEmptyComponent body
     assert.match(src, /showEmptyChrome/);
   });

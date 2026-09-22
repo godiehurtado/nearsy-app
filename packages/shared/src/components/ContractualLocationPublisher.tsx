@@ -1,5 +1,5 @@
 /**
- * Foreground contractual location publisher (BUG-DISC-02).
+ * Foreground contractual location publisher (BUG-DISC-02 / BUG-DISC-05).
  * Publishes via publishLocation when Visibility is ON — resume + light cadence.
  * Does not depend on Background Location. Legacy LiveLocationTracker remains.
  */
@@ -81,7 +81,7 @@ export default function ContractualLocationPublisher() {
     return () => sub.remove();
   }, []);
 
-  // Light foreground cadence while Visibility is ON (~12 min)
+  // Light foreground cadence while Visibility is ON (~2 min; under 5m TTL)
   useEffect(() => {
     const id = setInterval(() => {
       if (AppState.currentState !== 'active') return;

@@ -101,10 +101,10 @@ describe('contractual publish guard (BUG-DISC-02)', () => {
     assert.equal(shouldAttemptContractualPublish(1_000 + 60_000), true);
   });
 
-  it('foreground cadence is under Discovery TTL (60m) and in 10–15m band', () => {
-    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS >= 10 * 60_000);
-    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS <= 15 * 60_000);
-    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS < 60 * 60_000);
+  it('foreground cadence is under a 5-minute Discovery TTL band', () => {
+    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS >= 60_000);
+    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS <= 2.5 * 60_000);
+    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS < 5 * 60_000);
   });
 });
 
@@ -360,9 +360,25 @@ describe('wiring static checks', () => {
     assert.match(nearby, /limit:\s*50/);
   });
 
+  it('Nearby rediscovers on focus and app foreground (BUG-DISC-05)', () => {
+    const nearby = readSrc('screens/NearbySearchScreen.tsx');
+    assert.match(nearby, /useFocusEffect/);
+    assert.match(nearby, /loadData\('focus'\)/);
+    assert.match(nearby, /AppState\.addEventListener\('change'/);
+    assert.match(nearby, /loadData\('app_foreground'\)/);
+    assert.match(nearby, /shouldApplyNearbyLoadResult/);
+    assert.doesNotMatch(nearby, /location\.updatedAt/);
+  });
+
   it('HomeStack mounts ContractualLocationPublisher', () => {
     const stack = readSrc('navigation/HomeStack.tsx');
     assert.match(stack, /ContractualLocationPublisher/);
+  });
+
+  it('ContractualLocationPublisher cadence uses FOREGROUND_CONTRACTUAL_CADENCE_MS', () => {
+    const publisher = readSrc('components/ContractualLocationPublisher.tsx');
+    assert.match(publisher, /FOREGROUND_CONTRACTUAL_CADENCE_MS/);
+    assert.match(publisher, /AppState\.currentState !== 'active'/);
   });
 
   it('MainHome preserves recovery intent and clears on explicit OFF', () => {

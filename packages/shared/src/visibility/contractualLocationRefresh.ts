@@ -1,5 +1,5 @@
 /**
- * Contractual location publish cadence / debounce (BUG-DISC-02).
+ * Contractual location publish cadence / debounce (BUG-DISC-02 / BUG-DISC-05).
  * Discovery freshness uses backend confirmedAt via publishLocation / activateVisibility —
  * never legacy location.updatedAt.
  */
@@ -8,10 +8,11 @@
 export const CONTRACTUAL_PUBLISH_MIN_INTERVAL_MS = 60_000;
 
 /**
- * Foreground cadence while Visibility is ON (comfortably under 60-minute TTL).
+ * Foreground cadence while Visibility is ON.
+ * Sized under a 5-minute Discovery TTL (comfortably ≤ ~half TTL).
  * Nearby open / Retry always publish regardless of this cadence.
  */
-export const FOREGROUND_CONTRACTUAL_CADENCE_MS = 12 * 60_000;
+export const FOREGROUND_CONTRACTUAL_CADENCE_MS = 2 * 60_000;
 
 let lastSuccessfulPublishAtMs = 0;
 

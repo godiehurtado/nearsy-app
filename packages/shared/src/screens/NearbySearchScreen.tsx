@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
   Image,
   Pressable,
@@ -13,9 +14,10 @@ import {
   Text,
   TextInput,
   View,
+  type AppStateStatus,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Localization from 'expo-localization';
 import { firebaseAuth } from '../config/firebaseConfig';
@@ -53,6 +55,7 @@ import {
 } from '../visibility/interestDisplay';
 import { loadNearbyWithContractualRefresh } from '../visibility/nearbyDiscoveryLoad';
 import {
+  shouldApplyNearbyLoadResult,
   shouldPreserveNearbyResultsDuringLoad,
   shouldShowNearbyEmptyChrome,
   shouldUseNearbyFullScreenLoader,
@@ -95,6 +98,12 @@ export default function NearbySearchScreen() {
   const [initialDiscoveryPending, setInitialDiscoveryPending] = useState(true);
   const itemsRef = useRef(items);
   itemsRef.current = items;
+  /** Monotonic load generation — only the latest completion may mutate list/error UI. */
+  const loadRequestIdRef = useRef(0);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const screenFocusedRef = useRef(false);
+  /** First focus is covered by the loadData effect; later focuses rediscover. */
+  const skipNextFocusRediscoverRef = useRef(true);
 
   const translateItem = useCallback(
     (nameKey: string, fallback: string) =>
@@ -142,6 +151,7 @@ export default function NearbySearchScreen() {
 
   const loadData = useCallback(
     async (reason: NearbyLoadReason) => {
+      const requestId = ++loadRequestIdRef.current;
       const pending = initialDiscoveryPendingRef.current;
       const fullScreenLoader = shouldUseNearbyFullScreenLoader({
         reason,
@@ -161,6 +171,12 @@ export default function NearbySearchScreen() {
 
       let releaseFullScreenLoader = fullScreenLoader;
 
+      const isCurrent = () =>
+        shouldApplyNearbyLoadResult({
+          requestId,
+          latestRequestId: loadRequestIdRef.current,
+        });
+
       const markInitialResolved = () => {
         initialDiscoveryPendingRef.current = false;
         setInitialDiscoveryPending(false);
@@ -175,6 +191,7 @@ export default function NearbySearchScreen() {
 
         const uid = firebaseAuth.currentUser?.uid;
         if (!uid) {
+          if (!isCurrent()) return;
           setItems([]);
           setErrorKind('generic');
           setErrorMessage(t('nearby.errorGeneric'));
@@ -182,6 +199,7 @@ export default function NearbySearchScreen() {
           return;
         }
         if (!profile.visibility) {
+          if (!isCurrent()) return;
           setItems([]);
           setErrorKind('inactive');
           setErrorMessage(t('nearby.inactiveBody'));
@@ -197,9 +215,11 @@ export default function NearbySearchScreen() {
           limit: 50,
         });
 
+        if (!isCurrent()) return;
+
         if (outcome.ok === false) {
           if (preserveResults) {
-            // Background / PTR failure: keep current profiles on screen.
+            // Background / PTR / focus / foreground failure: keep current profiles.
             return;
           }
           setItems([]);
@@ -261,6 +281,7 @@ export default function NearbySearchScreen() {
           return;
         }
 
+        // Successful response replaces the list (OOO-safe via isCurrent).
         setItems(outcome.results);
         if (outcome.results.length === 0) {
           setErrorKind('empty');
@@ -272,6 +293,7 @@ export default function NearbySearchScreen() {
         markInitialResolved();
       } catch (err) {
         if (__DEV__) console.error('[NearbySearch] loadData', err);
+        if (!isCurrent()) return;
         if (preserveResults) {
           return;
         }
@@ -297,7 +319,7 @@ export default function NearbySearchScreen() {
         }
         markInitialResolved();
       } finally {
-        if (releaseFullScreenLoader) setLoading(false);
+        if (releaseFullScreenLoader && isCurrent()) setLoading(false);
       }
     },
     [profile.visibility, profileReady, t],
@@ -305,6 +327,32 @@ export default function NearbySearchScreen() {
 
   useEffect(() => {
     void loadData('effect');
+  }, [loadData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      screenFocusedRef.current = true;
+      if (skipNextFocusRediscoverRef.current) {
+        skipNextFocusRediscoverRef.current = false;
+      } else {
+        void loadData('focus');
+      }
+      return () => {
+        screenFocusedRef.current = false;
+      };
+    }, [loadData]),
+  );
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      const wasBg = appStateRef.current.match(/inactive|background/);
+      const isActive = next === 'active';
+      appStateRef.current = next;
+      if (wasBg && isActive && screenFocusedRef.current) {
+        void loadData('app_foreground');
+      }
+    });
+    return () => sub.remove();
   }, [loadData]);
 
   const onRefresh = useCallback(async () => {
