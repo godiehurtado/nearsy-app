@@ -55,6 +55,10 @@ import {
 } from '../visibility/interestDisplay';
 import { loadNearbyWithContractualRefresh } from '../visibility/nearbyDiscoveryLoad';
 import {
+  NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS,
+  shouldAttemptNearbyRediscover,
+} from '../visibility/contractualLocationRefresh';
+import {
   isNearbyViewerVisibilityConfirmedOff,
   shouldApplyNearbyLoadOutcome,
   shouldClearNearbyItemsOnOutcomeFailure,
@@ -100,6 +104,11 @@ export default function NearbySearchScreen() {
   const loadGenerationRef = useRef(0);
   const isFocusedRef = useRef(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  /** Coalesce focus / AppState / periodic rediscover (BUG-DISC-05). */
+  const lastRediscoverAttemptAtRef = useRef(0);
+  const loadDataRef = useRef<(showFullScreenLoader: boolean) => Promise<void>>(
+    async () => {},
+  );
 
   const translateItem = useCallback(
     (nameKey: string, fallback: string) =>
@@ -137,6 +146,8 @@ export default function NearbySearchScreen() {
   const loadData = useCallback(
     async (showFullScreenLoader: boolean) => {
       const generation = ++loadGenerationRef.current;
+      // Any load counts as a rediscover attempt so timer/focus/AppState can debounce.
+      lastRediscoverAttemptAtRef.current = Date.now();
       const stillCurrent = () =>
         shouldApplyNearbyLoadOutcome(generation, loadGenerationRef.current);
 
@@ -291,6 +302,21 @@ export default function NearbySearchScreen() {
     [profile.visibility, profileHydrated, t],
   );
 
+  loadDataRef.current = loadData;
+
+  const trySilentRediscover = useCallback(() => {
+    if (!initialFetchCompletedRef.current) return;
+    const now = Date.now();
+    if (
+      !shouldAttemptNearbyRediscover(now, lastRediscoverAttemptAtRef.current)
+    ) {
+      return;
+    }
+    // Claim the debounce slot before the async load starts (focus+AppState coalesce).
+    lastRediscoverAttemptAtRef.current = now;
+    void loadDataRef.current(false);
+  }, []);
+
   useEffect(() => {
     // Full-screen loader only until the first fetch completes; later
     // loadData identity changes (e.g. visibility snapshot) stay silent.
@@ -302,13 +328,11 @@ export default function NearbySearchScreen() {
   useFocusEffect(
     useCallback(() => {
       isFocusedRef.current = true;
-      if (initialFetchCompletedRef.current) {
-        void loadData(false);
-      }
+      trySilentRediscover();
       return () => {
         isFocusedRef.current = false;
       };
-    }, [loadData]),
+    }, [trySilentRediscover]),
   );
 
   // BUG-DISC-05: re-query when the app returns to foreground while Nearby is focused.
@@ -317,17 +341,22 @@ export default function NearbySearchScreen() {
       const wasBg = appStateRef.current.match(/inactive|background/);
       const isActive = next === 'active';
       appStateRef.current = next;
-      if (
-        wasBg &&
-        isActive &&
-        isFocusedRef.current &&
-        initialFetchCompletedRef.current
-      ) {
-        void loadData(false);
+      if (wasBg && isActive && isFocusedRef.current) {
+        trySilentRediscover();
       }
     });
     return () => sub.remove();
-  }, [loadData]);
+  }, [trySilentRediscover]);
+
+  // BUG-DISC-05: periodic rediscover while Nearby stays focused (half-TTL / iOS band).
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!isFocusedRef.current) return;
+      if (AppState.currentState !== 'active') return;
+      trySilentRediscover();
+    }, NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [trySilentRediscover]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

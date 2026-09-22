@@ -271,12 +271,15 @@ describe('BUG-DISC-05 Nearby focus / foreground refresh wiring', () => {
   const cadence = readSrc('visibility/contractualLocationRefresh.ts');
   const bgTask = readSrc('background/locationTask.android.ts');
 
-  it('reconsults on screen focus and AppState active while focused', () => {
+  it('reconsults on screen focus, AppState active, and periodic timer while focused', () => {
     assert.match(nearby, /useFocusEffect/);
     assert.match(nearby, /AppState\.addEventListener/);
+    assert.match(nearby, /setInterval/);
+    assert.match(nearby, /NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS/);
+    assert.match(nearby, /trySilentRediscover/);
+    assert.match(nearby, /shouldAttemptNearbyRediscover/);
     assert.match(nearby, /isFocusedRef/);
     assert.match(nearby, /initialFetchCompletedRef\.current/);
-    assert.match(nearby, /loadData\(false\)/);
     assert.match(nearby, /shouldApplyNearbyLoadOutcome/);
     assert.match(nearby, /loadGenerationRef/);
   });
@@ -300,8 +303,10 @@ describe('BUG-DISC-05 Nearby focus / foreground refresh wiring', () => {
     );
   });
 
-  it('foreground publish cadence stays under 5-minute Discovery TTL', () => {
+  it('foreground publish + rediscover cadence stay under 5-minute Discovery TTL', () => {
     assert.match(cadence, /FOREGROUND_CONTRACTUAL_CADENCE_MS\s*=\s*2\s*\*\s*60_000/);
+    assert.match(cadence, /NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS/);
+    assert.match(cadence, /NEARBY_REDISCOVER_DEBOUNCE_MS\s*=\s*5_000/);
     assert.match(publisher, /FOREGROUND_CONTRACTUAL_CADENCE_MS/);
     assert.match(publisher, /publishLocationFlow/);
   });

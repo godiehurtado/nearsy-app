@@ -64,7 +64,7 @@ describe('visibility constants', () => {
   it('freezes contract and schema versions', () => {
     assert.equal(CONTRACT_VERSION, 1);
     assert.equal(SCHEMA_VERSION, 2);
-    assert.equal(LOCATION_TTL_MS, 3_600_000);
+    assert.equal(LOCATION_TTL_MS, 5 * 60_000);
     assert.equal(MAX_LOCATION_ACCURACY_METERS, 100);
     assert.equal(MIN_VISIBILITY_AGE, 18);
     assert.equal(MAX_VISIBILITY_AGE, 99);
@@ -309,7 +309,7 @@ describe('interests', () => {
 });
 
 describe('freshness and accuracy', () => {
-  it('treats confirmedAt == now and exactly 60 minutes as fresh', () => {
+  it('treats confirmedAt == now and exactly 5 minutes as fresh (inclusive TTL)', () => {
     const confirmedAt = 1_000_000;
     assert.equal(isLocationFresh(confirmedAt, confirmedAt), true);
     assert.equal(
@@ -320,6 +320,7 @@ describe('freshness and accuracy', () => {
       isLocationFresh(confirmedAt, confirmedAt + LOCATION_TTL_MS + 1),
       false,
     );
+    assert.equal(LOCATION_TTL_MS, 300_000);
   });
 
   it('rejects confirmedAt in the future as not fresh', () => {

@@ -19,11 +19,15 @@ import {
 import type { VisibilityDiscoveryClient } from '../callables/port.ts';
 import {
   FOREGROUND_CONTRACTUAL_CADENCE_MS,
+  NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS,
+  NEARBY_REDISCOVER_DEBOUNCE_MS,
   resetContractualPublishGuardForTests,
   shouldAttemptContractualPublish,
+  shouldAttemptNearbyRediscover,
   noteContractualPublishSuccess,
   getLastContractualPublishAtMs,
 } from '../contractualLocationRefresh.ts';
+import { LOCATION_TTL_MS } from '../constants.ts';
 import {
   loadNearbyWithContractualRefresh,
   type NearbyDiscoveryPublishOutcome,
@@ -104,7 +108,27 @@ describe('contractual publish guard (BUG-DISC-02)', () => {
   it('foreground cadence is under Discovery TTL (5m) and in 1–3m band', () => {
     assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS >= 60_000);
     assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS <= 3 * 60_000);
-    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS < 5 * 60_000);
+    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS < LOCATION_TTL_MS);
+    assert.equal(LOCATION_TTL_MS, 5 * 60_000);
+  });
+
+  it('Nearby focused rediscover matches FG cadence (iOS half-TTL band)', () => {
+    assert.equal(
+      NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS,
+      FOREGROUND_CONTRACTUAL_CADENCE_MS,
+    );
+    assert.ok(NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS < LOCATION_TTL_MS);
+    assert.ok(NEARBY_REDISCOVER_DEBOUNCE_MS < NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS);
+  });
+
+  it('rediscover debounce coalesces near-simultaneous triggers', () => {
+    const t0 = 1_000_000;
+    assert.equal(shouldAttemptNearbyRediscover(t0, 0), true);
+    assert.equal(shouldAttemptNearbyRediscover(t0 + 1_000, t0), false);
+    assert.equal(
+      shouldAttemptNearbyRediscover(t0 + NEARBY_REDISCOVER_DEBOUNCE_MS, t0),
+      true,
+    );
   });
 });
 
