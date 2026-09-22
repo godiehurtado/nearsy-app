@@ -331,7 +331,7 @@ describe('ENH-LOC-01 copy / theme / native intact', () => {
     assert.match(modal, /accessibilityRole/);
   });
 
-  it('keeps Info.plist location strings and LOCATION_TTL_MS unchanged', () => {
+  it('keeps Info.plist location strings; LOCATION_TTL_MS is 5 minutes', () => {
     const appJson = readFileSync(
       join(here, '..', '..', '..', '..', '..', 'apps', 'nearsy-ios', 'app.json'),
       'utf8',
@@ -341,6 +341,6 @@ describe('ENH-LOC-01 copy / theme / native intact', () => {
     assert.match(appJson, /"location"/);
 
     const constants = readShared('visibility/constants.ts');
-    assert.match(constants, /LOCATION_TTL_MS = 3_600_000/);
+    assert.match(constants, /LOCATION_TTL_MS = 5 \* 60_000/);
   });
 });

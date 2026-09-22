@@ -92,8 +92,8 @@ describe('nearbyLoadUi — loader / preserve', () => {
     );
   });
 
-  it('focus and app_foreground preserve profiles and skip full-screen loader', () => {
-    for (const reason of ['focus', 'app_foreground'] as const) {
+  it('focus, app_foreground, and interval preserve profiles and skip full-screen loader', () => {
+    for (const reason of ['focus', 'app_foreground', 'interval'] as const) {
       assert.equal(
         shouldUseNearbyFullScreenLoader({
           reason,
@@ -154,6 +154,8 @@ describe('NearbySearchScreen wiring', () => {
     assert.match(src, /loadNearbyWithContractualRefresh/);
     assert.match(src, /useFocusEffect/);
     assert.match(src, /app_foreground/);
+    assert.match(src, /NEARBY_FOCUSED_REDISCOVER_MS/);
+    assert.match(src, /shouldSkipDuplicateNearbyRediscover/);
     // Empty chrome must not be the unconditional ListEmptyComponent body
     assert.match(src, /showEmptyChrome/);
   });

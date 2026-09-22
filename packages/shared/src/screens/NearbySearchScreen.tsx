@@ -55,6 +55,10 @@ import {
 } from '../visibility/interestDisplay';
 import { loadNearbyWithContractualRefresh } from '../visibility/nearbyDiscoveryLoad';
 import {
+  NEARBY_FOCUSED_REDISCOVER_MS,
+  shouldSkipDuplicateNearbyRediscover,
+} from '../visibility/contractualLocationRefresh';
+import {
   shouldApplyNearbyLoadResult,
   shouldPreserveNearbyResultsDuringLoad,
   shouldShowNearbyEmptyChrome,
@@ -104,6 +108,8 @@ export default function NearbySearchScreen() {
   const screenFocusedRef = useRef(false);
   /** First focus is covered by the loadData effect; later focuses rediscover. */
   const skipNextFocusRediscoverRef = useRef(true);
+  /** Dedupes focus / app_foreground / interval so resume-while-focused is one query. */
+  const lastRediscoverStartedAtRef = useRef(0);
 
   const translateItem = useCallback(
     (nameKey: string, fallback: string) =>
@@ -151,6 +157,24 @@ export default function NearbySearchScreen() {
 
   const loadData = useCallback(
     async (reason: NearbyLoadReason) => {
+      const nowMs = Date.now();
+      if (
+        shouldSkipDuplicateNearbyRediscover({
+          reason,
+          nowMs,
+          lastStartedAtMs: lastRediscoverStartedAtRef.current,
+        })
+      ) {
+        return;
+      }
+      if (
+        reason === 'focus' ||
+        reason === 'app_foreground' ||
+        reason === 'interval'
+      ) {
+        lastRediscoverStartedAtRef.current = nowMs;
+      }
+
       const requestId = ++loadRequestIdRef.current;
       const pending = initialDiscoveryPendingRef.current;
       const fullScreenLoader = shouldUseNearbyFullScreenLoader({
@@ -219,7 +243,7 @@ export default function NearbySearchScreen() {
 
         if (outcome.ok === false) {
           if (preserveResults) {
-            // Background / PTR / focus / foreground failure: keep current profiles.
+            // Background / PTR / focus / foreground / interval failure: keep rows.
             return;
           }
           setItems([]);
@@ -353,6 +377,16 @@ export default function NearbySearchScreen() {
       }
     });
     return () => sub.remove();
+  }, [loadData]);
+
+  // Periodic rediscover while Nearby is focused and the app is active.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!screenFocusedRef.current) return;
+      if (AppState.currentState !== 'active') return;
+      void loadData('interval');
+    }, NEARBY_FOCUSED_REDISCOVER_MS);
+    return () => clearInterval(id);
   }, [loadData]);
 
   const onRefresh = useCallback(async () => {

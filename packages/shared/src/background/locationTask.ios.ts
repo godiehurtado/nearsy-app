@@ -98,7 +98,6 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
         if (__DEV__) {
           console.log('[BG Task iOS] publishLocation ok', {
             confirmedAt,
-            accuracyMeters,
           });
         }
       } else {

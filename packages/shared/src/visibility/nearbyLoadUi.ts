@@ -8,7 +8,8 @@ export type NearbyLoadReason =
   | 'retry'
   | 'ptr'
   | 'focus'
-  | 'app_foreground';
+  | 'app_foreground'
+  | 'interval';
 
 export type NearbyUiPhaseInput = {
   /** True until the first Visibility-ON publish→discover cycle finishes (or inactive resolved). */
@@ -39,7 +40,7 @@ export function shouldShowNearbyEmptyChrome(input: {
 
 /**
  * Full-screen loading for first entry / Retry. Never for pull-to-refresh,
- * focus rediscover, or app-foreground rediscover after the first resolve.
+ * focus / app-foreground / interval rediscover after the first resolve.
  */
 export function shouldUseNearbyFullScreenLoader(input: {
   reason: NearbyLoadReason;
@@ -48,7 +49,8 @@ export function shouldUseNearbyFullScreenLoader(input: {
   if (
     input.reason === 'ptr' ||
     input.reason === 'focus' ||
-    input.reason === 'app_foreground'
+    input.reason === 'app_foreground' ||
+    input.reason === 'interval'
   ) {
     return false;
   }
@@ -57,7 +59,7 @@ export function shouldUseNearbyFullScreenLoader(input: {
 }
 
 /**
- * Preserve on-screen profiles during background / PTR / focus / foreground refresh.
+ * Preserve on-screen profiles during background / PTR / focus / foreground / interval refresh.
  * Initial + Retry may clear.
  */
 export function shouldPreserveNearbyResultsDuringLoad(input: {

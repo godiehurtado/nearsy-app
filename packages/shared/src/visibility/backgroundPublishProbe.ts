@@ -1,20 +1,43 @@
 /**
  * Lightweight BG publish probe for Owner physical QA (BUG-DISC-05).
- * Persists last attempt outcome so silent task failures are observable
- * without relying on Metro logs alone. Not used for Discovery freshness.
+ * Persists accepted-publish timestamps so silent gaps vs a 5-minute TTL are measurable.
+ * Evidence must never include coordinates or UID.
  */
 
+import { LOCATION_TTL_MS } from './constants';
+
 export const BG_PUBLISH_PROBE_KEY = 'NEARSY_BG_PUBLISH_PROBE' as const;
+
+/** Cap ring so a long Always session cannot unbounded-grow AsyncStorage. */
+export const BG_PUBLISH_PROBE_MAX_ACCEPTED = 64;
 
 export type BgPublishProbeSnapshot = {
   lastAttemptAt: number;
   lastOk: boolean;
   /** publishLocationFlow kind or 'callable' / 'exception' when failed */
   lastKind: string | null;
-  /** Server confirmedAt when last publish succeeded */
+  /** Server confirmedAt when last publish succeeded (epoch ms; not a coordinate). */
   lastConfirmedAt: number | null;
   okCount: number;
   failCount: number;
+  /**
+   * Epoch ms of accepted (ok) publishes, oldest→newest, capped.
+   * Used to measure inter-publish gaps during a 10–15 min BG window.
+   */
+  acceptedAts: number[];
+};
+
+export type BgPublishWindowSummary = {
+  acceptedAtsInWindow: number[];
+  acceptedCount: number;
+  /** Max gap between consecutive accepted publishes in-window; null if <2. */
+  maxInterPublishGapMs: number | null;
+  /** Gap from last accepted-in-window to windowEndMs; null if none. */
+  gapToWindowEndMs: number | null;
+  /** max(inter gaps, gap to end); null if no accepted publishes. */
+  maxGapMs: number | null;
+  /** True when maxGapMs is defined and ≤ LOCATION_TTL_MS (inclusive). */
+  sustainsTtl: boolean;
 };
 
 export function emptyBgPublishProbe(): BgPublishProbeSnapshot {
@@ -25,7 +48,21 @@ export function emptyBgPublishProbe(): BgPublishProbeSnapshot {
     lastConfirmedAt: null,
     okCount: 0,
     failCount: 0,
+    acceptedAts: [],
   };
+}
+
+function sanitizeAcceptedAts(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return [];
+  const out: number[] = [];
+  for (const v of raw) {
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) {
+      out.push(Math.floor(v));
+    }
+  }
+  out.sort((a, b) => a - b);
+  if (out.length <= BG_PUBLISH_PROBE_MAX_ACCEPTED) return out;
+  return out.slice(out.length - BG_PUBLISH_PROBE_MAX_ACCEPTED);
 }
 
 export function parseBgPublishProbe(raw: string | null): BgPublishProbeSnapshot {
@@ -52,6 +89,7 @@ export function parseBgPublishProbe(raw: string | null): BgPublishProbeSnapshot 
         typeof parsed.failCount === 'number' && Number.isFinite(parsed.failCount)
           ? Math.max(0, Math.floor(parsed.failCount))
           : 0,
+      acceptedAts: sanitizeAcceptedAts(parsed.acceptedAts),
     };
   } catch {
     return emptyBgPublishProbe();
@@ -72,6 +110,7 @@ export function applyBgPublishProbeAttempt(
     lastAttemptAt: input.nowMs,
     lastOk: input.ok,
     lastKind: input.kind,
+    acceptedAts: [...prev.acceptedAts],
   };
   if (input.ok) {
     next.okCount = prev.okCount + 1;
@@ -79,6 +118,11 @@ export function applyBgPublishProbeAttempt(
       typeof input.confirmedAt === 'number' && Number.isFinite(input.confirmedAt)
         ? input.confirmedAt
         : prev.lastConfirmedAt;
+    const stamp =
+      typeof input.confirmedAt === 'number' && Number.isFinite(input.confirmedAt)
+        ? Math.floor(input.confirmedAt)
+        : Math.floor(input.nowMs);
+    next.acceptedAts = sanitizeAcceptedAts([...next.acceptedAts, stamp]);
   } else {
     next.failCount = prev.failCount + 1;
   }
@@ -95,4 +139,88 @@ export function didConfirmedAtRenewDuringWindow(input: {
   if (after == null || !Number.isFinite(after)) return false;
   if (before == null || !Number.isFinite(before)) return true;
   return after > before;
+}
+
+/**
+ * Summarize accepted-publish timestamps inside [windowStartMs, windowEndMs].
+ * okCount ≥ 1 alone is insufficient: maxGapMs must be ≤ TTL to sustain Discovery.
+ */
+export function summarizeBgPublishWindow(input: {
+  acceptedAts: number[];
+  windowStartMs: number;
+  windowEndMs: number;
+  ttlMs?: number;
+}): BgPublishWindowSummary {
+  const ttlMs = input.ttlMs ?? LOCATION_TTL_MS;
+  const start = input.windowStartMs;
+  const end = input.windowEndMs;
+  const inWindow = sanitizeAcceptedAts(input.acceptedAts).filter(
+    (t) => t >= start && t <= end,
+  );
+
+  let maxInter: number | null = null;
+  for (let i = 1; i < inWindow.length; i += 1) {
+    const gap = inWindow[i]! - inWindow[i - 1]!;
+    maxInter = maxInter == null ? gap : Math.max(maxInter, gap);
+  }
+
+  const last = inWindow.length > 0 ? inWindow[inWindow.length - 1]! : null;
+  const gapToEnd = last != null ? end - last : null;
+
+  let maxGap: number | null = null;
+  if (maxInter != null) maxGap = maxInter;
+  if (gapToEnd != null) {
+    maxGap = maxGap == null ? gapToEnd : Math.max(maxGap, gapToEnd);
+  }
+
+  const sustainsTtl =
+    inWindow.length >= 2 &&
+    maxGap != null &&
+    Number.isFinite(ttlMs) &&
+    maxGap <= ttlMs;
+
+  return {
+    acceptedAtsInWindow: inWindow,
+    acceptedCount: inWindow.length,
+    maxInterPublishGapMs: maxInter,
+    gapToWindowEndMs: gapToEnd,
+    maxGapMs: maxGap,
+    sustainsTtl,
+  };
+}
+
+/**
+ * QA evidence payload — timestamps only. Never include coordinates or UID.
+ */
+export function formatBgPublishProbeEvidence(input: {
+  windowStartMs: number;
+  windowEndMs: number;
+  probe: BgPublishProbeSnapshot;
+  ttlMs?: number;
+}): {
+  windowStartMs: number;
+  windowEndMs: number;
+  windowDurationMs: number;
+  okCount: number;
+  failCount: number;
+  lastKind: string | null;
+  lastConfirmedAt: number | null;
+  summary: BgPublishWindowSummary;
+} {
+  const summary = summarizeBgPublishWindow({
+    acceptedAts: input.probe.acceptedAts,
+    windowStartMs: input.windowStartMs,
+    windowEndMs: input.windowEndMs,
+    ttlMs: input.ttlMs,
+  });
+  return {
+    windowStartMs: input.windowStartMs,
+    windowEndMs: input.windowEndMs,
+    windowDurationMs: input.windowEndMs - input.windowStartMs,
+    okCount: input.probe.okCount,
+    failCount: input.probe.failCount,
+    lastKind: input.probe.lastKind,
+    lastConfirmedAt: input.probe.lastConfirmedAt,
+    summary,
+  };
 }

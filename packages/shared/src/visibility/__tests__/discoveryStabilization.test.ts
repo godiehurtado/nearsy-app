@@ -19,11 +19,14 @@ import {
 import type { VisibilityDiscoveryClient } from '../callables/port.ts';
 import {
   FOREGROUND_CONTRACTUAL_CADENCE_MS,
+  NEARBY_FOCUSED_REDISCOVER_MS,
   resetContractualPublishGuardForTests,
   shouldAttemptContractualPublish,
+  shouldSkipDuplicateNearbyRediscover,
   noteContractualPublishSuccess,
   getLastContractualPublishAtMs,
 } from '../contractualLocationRefresh.ts';
+import { LOCATION_TTL_MS } from '../constants.ts';
 import {
   loadNearbyWithContractualRefresh,
   type NearbyDiscoveryPublishOutcome,
@@ -101,10 +104,42 @@ describe('contractual publish guard (BUG-DISC-02)', () => {
     assert.equal(shouldAttemptContractualPublish(1_000 + 60_000), true);
   });
 
-  it('foreground cadence is under a 5-minute Discovery TTL band', () => {
+  it('foreground cadence and Nearby interval match under 5-minute TTL', () => {
+    assert.equal(LOCATION_TTL_MS, 5 * 60_000);
     assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS >= 60_000);
     assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS <= 2.5 * 60_000);
-    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS < 5 * 60_000);
+    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS < LOCATION_TTL_MS);
+    assert.equal(NEARBY_FOCUSED_REDISCOVER_MS, FOREGROUND_CONTRACTUAL_CADENCE_MS);
+  });
+
+  it('dedupes focus/resume rediscover within the soft window', () => {
+    assert.equal(
+      shouldSkipDuplicateNearbyRediscover({
+        reason: 'app_foreground',
+        nowMs: 10_000,
+        lastStartedAtMs: 5_000,
+        dedupeMs: 15_000,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldSkipDuplicateNearbyRediscover({
+        reason: 'focus',
+        nowMs: 20_000,
+        lastStartedAtMs: 5_000,
+        dedupeMs: 15_000,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldSkipDuplicateNearbyRediscover({
+        reason: 'ptr',
+        nowMs: 10_000,
+        lastStartedAtMs: 5_000,
+        dedupeMs: 15_000,
+      }),
+      false,
+    );
   });
 });
 
@@ -360,12 +395,15 @@ describe('wiring static checks', () => {
     assert.match(nearby, /limit:\s*50/);
   });
 
-  it('Nearby rediscovers on focus and app foreground (BUG-DISC-05)', () => {
+  it('Nearby rediscovers on focus, app foreground, and focused interval (BUG-DISC-05)', () => {
     const nearby = readSrc('screens/NearbySearchScreen.tsx');
     assert.match(nearby, /useFocusEffect/);
     assert.match(nearby, /loadData\('focus'\)/);
     assert.match(nearby, /AppState\.addEventListener\('change'/);
     assert.match(nearby, /loadData\('app_foreground'\)/);
+    assert.match(nearby, /NEARBY_FOCUSED_REDISCOVER_MS/);
+    assert.match(nearby, /loadData\('interval'\)/);
+    assert.match(nearby, /shouldSkipDuplicateNearbyRediscover/);
     assert.match(nearby, /shouldApplyNearbyLoadResult/);
     assert.doesNotMatch(nearby, /location\.updatedAt/);
   });
