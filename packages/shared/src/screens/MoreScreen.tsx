@@ -31,6 +31,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { SettingsSection } from '../components/settings/SettingsSection';
 import { SettingsRow } from '../components/settings/SettingsRow';
 import { SettingsToggleRow } from '../components/settings/SettingsToggleRow';
+import { getServedGitSha, getServedGitShaShort } from '../dev/bundleIdentity';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import {
   changeAppLanguage,
@@ -39,8 +40,12 @@ import {
   type SupportedLanguage,
 } from '../i18n';
 import * as Location from 'expo-location';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { MoreStackParamList } from '../navigation/MoreStack';
+import {
+  clearBgPublishProbeForQa,
+  formatBgPublishProbeEvidenceForAlert,
+  readBgPublishProbeEvidence,
+  startBgPublishProbeWindow,
+} from '../visibility/readBgPublishProbeEvidence';
 import {
   isBackgroundLocationPermissionError,
 } from '../services/backgroundLocation';
@@ -855,6 +860,40 @@ export default function MoreScreen() {
     }
   };
 
+  const handleStartBgProbeWindow = async () => {
+    try {
+      const { windowStartMs } = await startBgPublishProbeWindow();
+      Alert.alert(
+        'BG probe window started',
+        `windowStartMs=${windowStartMs}\nSHA=${getServedGitShaShort()}\nPut the app in background 10–15 min, then tap Read.`,
+      );
+    } catch (e: any) {
+      Alert.alert(t('common.error'), e?.message || t('common.error'));
+    }
+  };
+
+  const handleReadBgProbeEvidence = async () => {
+    try {
+      const evidence = await readBgPublishProbeEvidence();
+      const body = formatBgPublishProbeEvidenceForAlert(evidence);
+      if (__DEV__) {
+        console.log('[BUG-DISC-05] BG probe evidence', evidence);
+      }
+      Alert.alert('BG probe evidence', body);
+    } catch (e: any) {
+      Alert.alert(t('common.error'), e?.message || t('common.error'));
+    }
+  };
+
+  const handleClearBgProbe = async () => {
+    try {
+      await clearBgPublishProbeForQa();
+      Alert.alert('BG probe cleared', `SHA=${getServedGitShaShort()}`);
+    } catch (e: any) {
+      Alert.alert(t('common.error'), e?.message || t('common.error'));
+    }
+  };
+
   const handleLogout = async () => {
     try {
       const { clearPendingSocialProfilePrefill } = await import(
@@ -1025,6 +1064,35 @@ export default function MoreScreen() {
             isLast
           />
         </SettingsSection>
+
+        {__DEV__ ? (
+          <SettingsSection title="DEV · BUG-DISC-05 probe">
+            <SettingsRow
+              icon="git-commit-outline"
+              title="Bundle SHA"
+              value={getServedGitShaShort()}
+              onPress={() =>
+                Alert.alert('Bundle SHA', getServedGitSha())
+              }
+            />
+            <SettingsRow
+              icon="play-outline"
+              title="Start BG probe window"
+              onPress={() => void handleStartBgProbeWindow()}
+            />
+            <SettingsRow
+              icon="document-text-outline"
+              title="Read BG probe evidence"
+              onPress={() => void handleReadBgProbeEvidence()}
+            />
+            <SettingsRow
+              icon="trash-outline"
+              title="Clear BG probe"
+              onPress={() => void handleClearBgProbe()}
+              isLast
+            />
+          </SettingsSection>
+        ) : null}
 
         <View style={styles.actions}>
           <Pressable

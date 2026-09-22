@@ -119,6 +119,13 @@ describe('backgroundPublishProbe', () => {
       kind: 'ok',
       confirmedAt: 120_000,
     });
+    snap = applyBgPublishProbeAttempt(snap, {
+      nowMs: 130_000,
+      ok: false,
+      kind: 'invalid-accuracy',
+    });
+    assert.deepEqual(snap.acceptedAts, [1000, 120_000]);
+    assert.equal(snap.failCount, 1);
     const evidence = formatBgPublishProbeEvidence({
       windowStartMs: 0,
       windowEndMs: 180_000,

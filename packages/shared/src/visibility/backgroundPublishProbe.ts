@@ -21,8 +21,10 @@ export type BgPublishProbeSnapshot = {
   okCount: number;
   failCount: number;
   /**
-   * Epoch ms of accepted (ok) publishes, oldest→newest, capped.
-   * Used to measure inter-publish gaps during a 10–15 min BG window.
+   * Epoch ms of accepted publishLocation successes only (oldest→newest, capped).
+   * Appended exclusively when publishLocationFlow returns ok:true — prefers
+   * response.confirmedAt; falls back to client attempt time if confirmedAt missing.
+   * Failures / soft-fails never append here.
    */
   acceptedAts: number[];
 };
