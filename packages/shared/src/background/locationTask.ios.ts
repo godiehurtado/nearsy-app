@@ -50,12 +50,27 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
         '../visibility/orchestration'
       );
       const client = await getVisibilityDiscoveryClient();
-      await publishLocationFlow(client, {
+      const outcome = await publishLocationFlow(client, {
         latitude,
         longitude,
         accuracyMeters,
         observedAt: Date.now(),
       });
+      if (outcome.ok === true) {
+        if (__DEV__) {
+          const confirmedAt =
+            typeof outcome.response?.confirmedAt === 'number'
+              ? outcome.response.confirmedAt
+              : null;
+          console.log('[BG Task iOS] publishLocation ok', {
+            confirmedAt,
+          });
+        }
+      } else if (outcome.ok === false) {
+        if (__DEV__) {
+          console.warn('[BG Task iOS] publishLocation soft-fail', outcome.kind);
+        }
+      }
     } catch (e) {
       if (__DEV__) console.warn('[BG Task iOS] publishLocation error:', e);
     }

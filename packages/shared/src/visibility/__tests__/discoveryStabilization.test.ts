@@ -19,11 +19,15 @@ import {
 import type { VisibilityDiscoveryClient } from '../callables/port.ts';
 import {
   FOREGROUND_CONTRACTUAL_CADENCE_MS,
+  NEARBY_FOCUSED_REDISCOVER_MS,
   resetContractualPublishGuardForTests,
   shouldAttemptContractualPublish,
+  shouldForceNearbyContractualPublish,
+  shouldSkipDuplicateNearbyRediscover,
   noteContractualPublishSuccess,
   getLastContractualPublishAtMs,
 } from '../contractualLocationRefresh.ts';
+import { LOCATION_TTL_MS } from '../constants.ts';
 import {
   loadNearbyWithContractualRefresh,
   type NearbyDiscoveryPublishOutcome,
@@ -101,10 +105,51 @@ describe('contractual publish guard (BUG-DISC-02)', () => {
     assert.equal(shouldAttemptContractualPublish(1_000 + 60_000), true);
   });
 
-  it('foreground cadence is under Discovery TTL (60m) and in 10–15m band', () => {
-    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS >= 10 * 60_000);
-    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS <= 15 * 60_000);
-    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS < 60 * 60_000);
+  it('foreground cadence and Nearby interval match under 5-minute TTL', () => {
+    assert.equal(LOCATION_TTL_MS, 5 * 60_000);
+    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS >= 60_000);
+    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS <= 2.5 * 60_000);
+    assert.ok(FOREGROUND_CONTRACTUAL_CADENCE_MS < LOCATION_TTL_MS);
+    assert.equal(NEARBY_FOCUSED_REDISCOVER_MS, FOREGROUND_CONTRACTUAL_CADENCE_MS);
+  });
+
+  it('dedupes focus/resume rediscover within the soft window', () => {
+    assert.equal(
+      shouldSkipDuplicateNearbyRediscover({
+        reason: 'app_foreground',
+        nowMs: 10_000,
+        lastStartedAtMs: 5_000,
+        dedupeMs: 15_000,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldSkipDuplicateNearbyRediscover({
+        reason: 'focus',
+        nowMs: 20_000,
+        lastStartedAtMs: 5_000,
+        dedupeMs: 15_000,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldSkipDuplicateNearbyRediscover({
+        reason: 'ptr',
+        nowMs: 10_000,
+        lastStartedAtMs: 5_000,
+        dedupeMs: 15_000,
+      }),
+      false,
+    );
+  });
+
+  it('force-publish only for effect/retry/ptr; silent rediscover is soft', () => {
+    assert.equal(shouldForceNearbyContractualPublish('effect'), true);
+    assert.equal(shouldForceNearbyContractualPublish('retry'), true);
+    assert.equal(shouldForceNearbyContractualPublish('ptr'), true);
+    assert.equal(shouldForceNearbyContractualPublish('focus'), false);
+    assert.equal(shouldForceNearbyContractualPublish('app_foreground'), false);
+    assert.equal(shouldForceNearbyContractualPublish('interval'), false);
   });
 });
 
@@ -257,6 +302,60 @@ describe('loadNearbyWithContractualRefresh (BUG-DISC-02)', () => {
     if (outcome.ok === false) assert.equal(outcome.kind, 'permission-denied');
     assert.equal(discovered, false);
   });
+
+  it('forcePublish false skips publish when contractual guard is fresh, still discovers', async () => {
+    const order: string[] = [];
+    noteContractualPublishSuccess(Date.now());
+    const client = createFakeVisibilityDiscoveryClient({
+      discoverNearby: async () => {
+        order.push('discoverNearby');
+        return {
+          contractVersion: 1,
+          results: [],
+          nextCursor: null,
+          serverTime: 4,
+        };
+      },
+    });
+    const outcome = await loadNearbyWithContractualRefresh({
+      uid: 'a',
+      visibility: true,
+      client,
+      forcePublish: false,
+      publish: trackingPublish(order),
+    });
+    assert.equal(outcome.ok, true);
+    if (outcome.ok) assert.equal(outcome.published, false);
+    assert.deepEqual(order, ['discoverNearby']);
+    assert.equal(client.calls.length, 1);
+    assert.equal(client.calls[0]?.name, 'discoverNearby');
+  });
+
+  it('forcePublish false still publishes when guard says due', async () => {
+    const order: string[] = [];
+    resetContractualPublishGuardForTests();
+    const client = createFakeVisibilityDiscoveryClient({
+      discoverNearby: async () => {
+        order.push('discoverNearby');
+        return {
+          contractVersion: 1,
+          results: [],
+          nextCursor: null,
+          serverTime: 4,
+        };
+      },
+    });
+    const outcome = await loadNearbyWithContractualRefresh({
+      uid: 'a',
+      visibility: true,
+      client,
+      forcePublish: false,
+      publish: trackingPublish(order),
+    });
+    assert.equal(outcome.ok, true);
+    if (outcome.ok) assert.equal(outcome.published, true);
+    assert.deepEqual(order, ['publishLocation', 'discoverNearby']);
+  });
 });
 
 describe('visibility recovery intent (BUG-DISC-01)', () => {
@@ -360,9 +459,32 @@ describe('wiring static checks', () => {
     assert.match(nearby, /limit:\s*50/);
   });
 
+  it('Nearby rediscovers on focus, app foreground, and focused interval (BUG-DISC-05)', () => {
+    const nearby = readSrc('screens/NearbySearchScreen.tsx');
+    assert.match(nearby, /useFocusEffect/);
+    assert.match(nearby, /loadDataRef\.current\('focus'\)/);
+    assert.match(nearby, /AppState\.addEventListener\('change'/);
+    assert.match(nearby, /loadDataRef\.current\('app_foreground'\)/);
+    assert.match(nearby, /NEARBY_FOCUSED_REDISCOVER_MS/);
+    assert.match(nearby, /loadDataRef\.current\('interval'\)/);
+    assert.match(nearby, /shouldSkipDuplicateNearbyRediscover/);
+    assert.match(nearby, /shouldAllowNearbySilentRediscover/);
+    assert.match(nearby, /shouldClearNearbyFullScreenLoader/);
+    assert.match(nearby, /shouldForceNearbyContractualPublish/);
+    assert.match(nearby, /forcePublish:/);
+    assert.match(nearby, /shouldApplyNearbyLoadResult/);
+    assert.doesNotMatch(nearby, /location\.updatedAt/);
+  });
+
   it('HomeStack mounts ContractualLocationPublisher', () => {
     const stack = readSrc('navigation/HomeStack.tsx');
     assert.match(stack, /ContractualLocationPublisher/);
+  });
+
+  it('ContractualLocationPublisher cadence uses FOREGROUND_CONTRACTUAL_CADENCE_MS', () => {
+    const publisher = readSrc('components/ContractualLocationPublisher.tsx');
+    assert.match(publisher, /FOREGROUND_CONTRACTUAL_CADENCE_MS/);
+    assert.match(publisher, /AppState\.currentState !== 'active'/);
   });
 
   it('MainHome preserves recovery intent and clears on explicit OFF', () => {

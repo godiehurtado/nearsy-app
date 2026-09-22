@@ -808,7 +808,7 @@ describe('Alignment SVG dash metrics (I3.3)', () => {
   });
 });
 
-describe('Alignment visual layout contract (I3.1 / I3.3 SVG)', () => {
+describe('Alignment visual layout contract (I3.1 / View ring)', () => {
   const nearbyPath = join(ROOT, 'screens/NearbySearchScreen.tsx');
   const compatPath = join(
     ROOT,
@@ -826,32 +826,24 @@ describe('Alignment visual layout contract (I3.1 / I3.3 SVG)', () => {
   const geomSrc = readFileSync(geomPath, 'utf8');
   const nearbyIconsSrc = readFileSync(nearbyIconsPath, 'utf8');
 
-  it('transform starts at -90°', () => {
-    assert.match(ringSrc, /rotate\(-90 \$\{center\} \$\{center\}\)/);
+  it('uses View half-clips (no react-native-svg) so RNSVG Unimplemented cannot appear', () => {
+    assert.doesNotMatch(ringSrc, /from ['"]react-native-svg['"]/);
+    assert.doesNotMatch(ringSrc, /<Svg\b/);
+    assert.match(ringSrc, /ProgressArc/);
+    assert.match(ringSrc, /halfClip/);
+    assert.match(ringSrc, /firstHalfDegrees - 180/);
+    assert.match(ringSrc, /borderTopColor/);
+    assert.match(ringSrc, /borderRightColor/);
   });
 
-  it('track Circle is rendered before progress Circle', () => {
-    const trackIdx = ringSrc.indexOf('stroke={palette.border}');
-    const progressIdx = ringSrc.indexOf('stroke={palette.primary}');
+  it('track renders before progress arc; percent uses geometry score', () => {
+    const trackIdx = ringSrc.indexOf('borderColor: palette.border');
+    const progressIdx = ringSrc.indexOf('<ProgressArc');
     assert.ok(trackIdx > 0 && progressIdx > trackIdx);
+    assert.match(ringSrc, /formatAlignmentPercent\(geometry\.score\)/);
   });
 
-  it('exactly one progress Circle in source (conditional)', () => {
-    assert.equal((ringSrc.match(/stroke=\{palette\.primary\}/g) ?? []).length, 1);
-    assert.match(ringSrc, /!isEmpty \? \(/);
-    assert.match(ringSrc, /strokeDasharray=\{`\$\{circumference\} \$\{circumference\}`\}/);
-    assert.match(ringSrc, /strokeDashoffset=\{strokeDashoffset\}/);
-  });
-
-  it('no half-clips or border progress hacks', () => {
-    assert.doesNotMatch(ringSrc, /halfClip/);
-    assert.doesNotMatch(ringSrc, /borderTopColor|borderRightColor|borderLeftColor/);
-    assert.doesNotMatch(ringSrc, /firstHalfDegrees - 180/);
-    assert.doesNotMatch(ringSrc, /ProgressArc/);
-    assert.doesNotMatch(ringSrc, /alignment-ring-progress-full/);
-  });
-
-  it('label centered over SVG with pointerEvents none', () => {
+  it('label centered with pointerEvents none', () => {
     assert.match(ringSrc, /styles\.label/);
     assert.match(ringSrc, /pointerEvents="none"/);
     assert.match(ringSrc, /alignItems:\s*'center'/);
@@ -870,11 +862,7 @@ describe('Alignment visual layout contract (I3.1 / I3.3 SVG)', () => {
     assert.match(ringSrc, /fontWeight\.semibold/);
   });
 
-  it('SVG from react-native-svg with round caps and fill none', () => {
-    assert.match(ringSrc, /from 'react-native-svg'/);
-    assert.match(ringSrc, /<Svg/);
-    assert.match(ringSrc, /strokeLinecap="round"/);
-    assert.match(ringSrc, /fill="none"/);
+  it('geometry still exposes SVG dash metrics for score math', () => {
     assert.match(geomSrc, /circumference \* \(1 - geometry\.score \/ 100\)/);
   });
 
@@ -882,7 +870,7 @@ describe('Alignment visual layout contract (I3.1 / I3.3 SVG)', () => {
     assert.match(nearbySrc, /alignmentAccessibilityLabel/);
     assert.match(compatSrc, /alignmentAccessibilityLabel/);
     assert.match(ringSrc, /accessibilityElementsHidden/);
-    assert.match(ringSrc, /formatAlignmentPercent\(clampedScore\)/);
+    assert.match(ringSrc, /formatAlignmentPercent\(geometry\.score\)/);
   });
 
   it('Nearby/Profile layout intact (I3.1)', () => {
