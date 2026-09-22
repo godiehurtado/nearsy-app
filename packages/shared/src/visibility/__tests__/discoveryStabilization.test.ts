@@ -178,6 +178,92 @@ describe('loadNearbyWithContractualRefresh (BUG-DISC-02)', () => {
     assert.equal(client.calls[1]?.name, 'discoverNearby');
   });
 
+  it('soft rediscover skips publish within FG cadence but still discovers (BUG-DISC-05)', async () => {
+    const order: string[] = [];
+    const client = createFakeVisibilityDiscoveryClient({
+      discoverNearby: async () => {
+        order.push('discoverNearby');
+        return {
+          contractVersion: 1,
+          results: [],
+          nextCursor: null,
+          serverTime: 4,
+        };
+      },
+    });
+
+    noteContractualPublishSuccess(Date.now());
+    const outcome = await loadNearbyWithContractualRefresh({
+      uid: 'a',
+      visibility: true,
+      client,
+      limit: 50,
+      forcePublish: false,
+      publish: trackingPublish(order),
+    });
+
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(order, ['discoverNearby']);
+    assert.equal(client.calls.length, 1);
+    assert.equal(client.calls[0]?.name, 'discoverNearby');
+  });
+
+  it('soft rediscover publishes when FG cadence elapsed', async () => {
+    const order: string[] = [];
+    const client = createFakeVisibilityDiscoveryClient({
+      discoverNearby: async () => {
+        order.push('discoverNearby');
+        return {
+          contractVersion: 1,
+          results: [],
+          nextCursor: null,
+          serverTime: 4,
+        };
+      },
+    });
+
+    noteContractualPublishSuccess(Date.now() - FOREGROUND_CONTRACTUAL_CADENCE_MS);
+    const outcome = await loadNearbyWithContractualRefresh({
+      uid: 'a',
+      visibility: true,
+      client,
+      limit: 50,
+      forcePublish: false,
+      publish: trackingPublish(order),
+    });
+
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(order, ['publishLocation', 'discoverNearby']);
+  });
+
+  it('forcePublish still publishes even after a recent success', async () => {
+    const order: string[] = [];
+    const client = createFakeVisibilityDiscoveryClient({
+      discoverNearby: async () => {
+        order.push('discoverNearby');
+        return {
+          contractVersion: 1,
+          results: [],
+          nextCursor: null,
+          serverTime: 4,
+        };
+      },
+    });
+
+    noteContractualPublishSuccess(Date.now());
+    const outcome = await loadNearbyWithContractualRefresh({
+      uid: 'a',
+      visibility: true,
+      client,
+      limit: 50,
+      forcePublish: true,
+      publish: trackingPublish(order),
+    });
+
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(order, ['publishLocation', 'discoverNearby']);
+  });
+
   it('Retry after location-stale: publish runs before discover', async () => {
     let discoverCalls = 0;
     const order: string[] = [];

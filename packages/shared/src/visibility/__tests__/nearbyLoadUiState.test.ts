@@ -278,6 +278,7 @@ describe('BUG-DISC-05 Nearby focus / foreground refresh wiring', () => {
     assert.match(nearby, /NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS/);
     assert.match(nearby, /trySilentRediscover/);
     assert.match(nearby, /shouldAttemptNearbyRediscover/);
+    assert.match(nearby, /forcePublish:\s*false/);
     assert.match(nearby, /isFocusedRef/);
     assert.match(nearby, /initialFetchCompletedRef\.current/);
     assert.match(nearby, /shouldApplyNearbyLoadOutcome/);

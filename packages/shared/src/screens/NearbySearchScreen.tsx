@@ -106,9 +106,12 @@ export default function NearbySearchScreen() {
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   /** Coalesce focus / AppState / periodic rediscover (BUG-DISC-05). */
   const lastRediscoverAttemptAtRef = useRef(0);
-  const loadDataRef = useRef<(showFullScreenLoader: boolean) => Promise<void>>(
-    async () => {},
-  );
+  const loadDataRef = useRef<
+    (
+      showFullScreenLoader: boolean,
+      options?: { forcePublish?: boolean },
+    ) => Promise<void>
+  >(async () => {});
 
   const translateItem = useCallback(
     (nameKey: string, fallback: string) =>
@@ -144,12 +147,16 @@ export default function NearbySearchScreen() {
   }, [profile.mode, profile.searchPreferences]);
 
   const loadData = useCallback(
-    async (showFullScreenLoader: boolean) => {
+    async (
+      showFullScreenLoader: boolean,
+      options?: { forcePublish?: boolean },
+    ) => {
       const generation = ++loadGenerationRef.current;
       // Any load counts as a rediscover attempt so timer/focus/AppState can debounce.
       lastRediscoverAttemptAtRef.current = Date.now();
       const stillCurrent = () =>
         shouldApplyNearbyLoadOutcome(generation, loadGenerationRef.current);
+      const forcePublish = options?.forcePublish !== false;
 
       if (showFullScreenLoader) {
         setLoading(true);
@@ -192,6 +199,7 @@ export default function NearbySearchScreen() {
           visibility: true,
           client,
           limit: 50,
+          forcePublish,
         });
 
         if (!stillCurrent()) return;
@@ -314,7 +322,7 @@ export default function NearbySearchScreen() {
     }
     // Claim the debounce slot before the async load starts (focus+AppState coalesce).
     lastRediscoverAttemptAtRef.current = now;
-    void loadDataRef.current(false);
+    void loadDataRef.current(false, { forcePublish: false });
   }, []);
 
   useEffect(() => {
