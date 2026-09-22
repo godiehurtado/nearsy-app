@@ -122,10 +122,14 @@ import {
   type OnboardingSelectedInterest,
 } from '../interests/onboardingInterestCatalog';
 import { preserveOnboardingInterestsForEditor } from '../interests/onboardingInterestLegacyCatalog';
+import { isHierarchicalInterestCategory } from '../interests/interestHierarchy';
 import {
-  isHierarchicalInterestCategory,
-  resolveActiveGroupId,
-} from '../interests/interestHierarchy';
+  enterCrjInterestSubcategory,
+  leaveCrjInterestSubcategory,
+  readCrjActiveSubcategory,
+  resolveCrjInterestBackAction,
+  resolveCrjInterestNextAction,
+} from '../interests/crjInterestSubcategoryNavigation';
 import {
   listOnboardingAffiliationCategoryIds,
   type OnboardingAffiliationCategoryId,
@@ -1429,8 +1433,30 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
 
   async function advanceInterest(opts: {
     requireCategorySelection: boolean;
+    /** Skip forces leave_category; Next walks subcategories first. */
+    forceLeaveCategory?: boolean;
   }) {
     if (step.kind !== 'interest' || submitting) return;
+
+    const interestCategory = getOnboardingCategory(step.categoryId);
+    const nextAction = opts.forceLeaveCategory
+      ? ({ kind: 'leave_category' } as const)
+      : resolveCrjInterestNextAction({
+          category: interestCategory,
+          activeGroupMap: activeInterestGroupByCategory,
+        });
+
+    if (nextAction.kind === 'enter_subcategory') {
+      setActiveInterestGroupByCategory((prev) =>
+        enterCrjInterestSubcategory(
+          prev,
+          interestCategory,
+          nextAction.groupId,
+        ),
+      );
+      return;
+    }
+
     if (
       opts.requireCategorySelection &&
       selectionsInCurrentCategory() < 1
@@ -1498,6 +1524,29 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
 
   function goBack() {
     if (step.kind === 'success' || stepIndex <= 0) return;
+    if (step.kind === 'interest') {
+      const interestCategory = getOnboardingCategory(step.categoryId);
+      const backAction = resolveCrjInterestBackAction({
+        category: interestCategory,
+        activeGroupMap: activeInterestGroupByCategory,
+      });
+      if (backAction.kind === 'show_overview') {
+        setActiveInterestGroupByCategory((prev) =>
+          leaveCrjInterestSubcategory(prev, step.categoryId),
+        );
+        return;
+      }
+      if (backAction.kind === 'enter_subcategory') {
+        setActiveInterestGroupByCategory((prev) =>
+          enterCrjInterestSubcategory(
+            prev,
+            interestCategory,
+            backAction.groupId,
+          ),
+        );
+        return;
+      }
+    }
     setStepIndex((i) => i - 1);
   }
 
@@ -1521,9 +1570,26 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     step.kind === 'interestsIntro' ||
     step.kind === 'interestsCelebration';
 
+  const interestActiveGroupId =
+    step.kind === 'interest' &&
+    isHierarchicalInterestCategory(getOnboardingCategory(step.categoryId))
+      ? readCrjActiveSubcategory(
+          activeInterestGroupByCategory,
+          step.categoryId,
+        )
+      : null;
+
+  const interestNextLeavesCategory =
+    step.kind === 'interest'
+      ? resolveCrjInterestNextAction({
+          category: getOnboardingCategory(step.categoryId),
+          activeGroupMap: activeInterestGroupByCategory,
+        }).kind === 'leave_category'
+      : true;
+
   const animKey =
     step.kind === 'interest'
-      ? `interest-${step.categoryId}`
+      ? `interest-${step.categoryId}-${interestActiveGroupId ?? 'overview'}`
       : step.kind === 'affiliation'
         ? `affiliation-${step.categoryId}`
         : step.kind;
@@ -1560,9 +1626,14 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               onPress={() => {
                 void advanceInterest({ requireCategorySelection: true });
               }}
-              disabled={selectionsInCurrentCategory() < 1 || submitting}
+              disabled={
+                submitting ||
+                (interestNextLeavesCategory &&
+                  selectionsInCurrentCategory() < 1)
+              }
               loading={submitting}
               disabledReason={
+                interestNextLeavesCategory &&
                 selectionsInCurrentCategory() < 1
                   ? t(
                       'onboarding.profileCompletion.interests.pickRequired',
@@ -1574,7 +1645,10 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               label={t('onboarding.profileCompletion.interests.skip' as any)}
               onPress={() => {
                 if (submitting) return;
-                void advanceInterest({ requireCategorySelection: false });
+                void advanceInterest({
+                  requireCategorySelection: false,
+                  forceLeaveCategory: true,
+                });
               }}
             />
           </View>
@@ -2100,9 +2174,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             const interestCategory = getOnboardingCategory(step.categoryId);
             const hierarchical = isHierarchicalInterestCategory(interestCategory);
             const activeGroupId = hierarchical
-              ? resolveActiveGroupId(
-                  interestCategory,
-                  activeInterestGroupByCategory[step.categoryId],
+              ? readCrjActiveSubcategory(
+                  activeInterestGroupByCategory,
+                  step.categoryId,
                 )
               : undefined;
             return (
@@ -2112,10 +2186,13 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                 onChangeSelected={setSelectedInterests}
                 activeGroupId={activeGroupId}
                 onActiveGroupChange={(groupId) => {
-                  setActiveInterestGroupByCategory((prev) => ({
-                    ...prev,
-                    [step.categoryId]: groupId,
-                  }));
+                  setActiveInterestGroupByCategory((prev) =>
+                    enterCrjInterestSubcategory(
+                      prev,
+                      interestCategory,
+                      groupId,
+                    ),
+                  );
                 }}
               />
             );
