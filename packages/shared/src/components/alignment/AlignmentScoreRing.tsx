@@ -1,11 +1,11 @@
 /**
  * Shared alignment score ring — compact (Nearby) and detail (Profile).
- * True SVG circular progress (react-native-svg); no half-clip border hacks.
- * Uses primary accent neutrally; never encodes low scores as negative.
+ * Pure React Native Views (two semicircle half-clips). Avoids react-native-svg
+ * so Dev Clients / Android builds without RNSVG native do not show the red
+ * “Unimplemented” box. Score % uses the same clamp + formatAlignmentPercent.
  */
 import React from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
 
 import { formatAlignmentPercent } from '../../visibility/alignmentPresentation';
 import { fontWeight, useAppTheme } from '../../theme';
@@ -14,7 +14,8 @@ import {
   ALIGNMENT_RING_COMPACT_STROKE,
   ALIGNMENT_RING_DETAIL_SIZE,
   ALIGNMENT_RING_DETAIL_STROKE,
-  computeAlignmentRingSvgMetrics,
+  computeAlignmentRingGeometry,
+  type AlignmentRingGeometry,
 } from './alignmentRingGeometry';
 
 export type AlignmentScoreRingVariant = 'compact' | 'detail';
@@ -37,6 +38,85 @@ type Props = {
   importantForAccessibility?: 'auto' | 'yes' | 'no' | 'no-hide-descendants';
 };
 
+/**
+ * Two half-clips + 180° semicircle borders (not a full colored ring).
+ * Outer -90deg starts the arc at 12 o'clock; positive rotation is clockwise.
+ */
+function ProgressArc({
+  size,
+  stroke,
+  geometry,
+  color,
+}: {
+  size: number;
+  stroke: number;
+  geometry: AlignmentRingGeometry;
+  color: string;
+}) {
+  if (geometry.isEmpty || geometry.totalDegrees <= 0) {
+    return null;
+  }
+
+  const half = size / 2;
+  const { firstHalfDegrees, secondHalfDegrees, isFull } = geometry;
+
+  const semiBase = {
+    width: size,
+    height: size,
+    borderRadius: half,
+    borderWidth: stroke,
+    borderColor: 'transparent' as const,
+    position: 'absolute' as const,
+    top: 0,
+  };
+
+  return (
+    <View
+      style={[styles.progressRoot, { width: size, height: size }]}
+      pointerEvents="none"
+      {...(isFull ? { testID: 'alignment-ring-progress-full' } : null)}
+    >
+      {/* First 0–50%: right half-clip, max 180° via top+right semicircle */}
+      <View
+        style={[styles.halfClip, { width: half, height: size, left: half }]}
+        collapsable={false}
+      >
+        <View
+          style={[
+            semiBase,
+            {
+              left: -half,
+              borderTopColor: color,
+              borderRightColor: color,
+              transform: [{ rotate: `${firstHalfDegrees - 180}deg` }],
+            },
+          ]}
+        />
+      </View>
+
+      {/* Second 50–100%: left half-clip paints only the excess over 180° */}
+      {secondHalfDegrees > 0 ? (
+        <View
+          style={[styles.halfClip, { width: half, height: size, left: 0 }]}
+          collapsable={false}
+        >
+          <View
+            style={[
+              semiBase,
+              {
+                left: 0,
+                borderBottomColor: color,
+                borderLeftColor: color,
+                transform: [{ rotate: `${secondHalfDegrees - 180}deg` }],
+              },
+            ]}
+          />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 export function AlignmentScoreRing({
   score,
   variant,
@@ -48,19 +128,12 @@ export function AlignmentScoreRing({
   const size = isCompact
     ? ALIGNMENT_RING_COMPACT_SIZE
     : ALIGNMENT_RING_DETAIL_SIZE;
-  const strokeWidth = isCompact
+  const stroke = isCompact
     ? ALIGNMENT_RING_COMPACT_STROKE
     : ALIGNMENT_RING_DETAIL_STROKE;
   const fontSizePx = isCompact ? 14 : 16;
-  const metrics = computeAlignmentRingSvgMetrics(size, strokeWidth, score);
-  const {
-    center,
-    radius,
-    circumference,
-    strokeDashoffset,
-    isEmpty,
-    score: clampedScore,
-  } = metrics;
+  const geometry = computeAlignmentRingGeometry(score);
+  const half = size / 2;
 
   return (
     <View
@@ -74,38 +147,29 @@ export function AlignmentScoreRing({
       accessibilityElementsHidden={accessibilityElementsHidden}
       importantForAccessibility={importantForAccessibility}
     >
-      <Svg
-        width={size}
-        height={size}
-        style={styles.svg}
+      {/* Track — full 360°, same center/radius/stroke as progress */}
+      <View
+        style={[
+          styles.track,
+          {
+            width: size,
+            height: size,
+            borderRadius: half,
+            borderWidth: stroke,
+            borderColor: palette.border,
+          },
+        ]}
         pointerEvents="none"
-      >
-        {/* Track first — full circumference */}
-        <Circle
-          cx={center}
-          cy={center}
-          r={radius}
-          stroke={palette.border}
-          strokeWidth={strokeWidth}
-          fill="none"
-        />
-        {/* Progress on top — omit at 0 to avoid round-cap dot */}
-        {!isEmpty ? (
-          <Circle
-            cx={center}
-            cy={center}
-            r={radius}
-            stroke={palette.primary}
-            strokeWidth={strokeWidth}
-            fill="none"
-            strokeLinecap="round"
-            strokeDasharray={`${circumference} ${circumference}`}
-            strokeDashoffset={strokeDashoffset}
-            transform={`rotate(-90 ${center} ${center})`}
-          />
-        ) : null}
-      </Svg>
+      />
 
+      <ProgressArc
+        size={size}
+        stroke={stroke}
+        geometry={geometry}
+        color={palette.primary}
+      />
+
+      {/* Label centered in the fixed square — outside arc rotation */}
       <View style={styles.label} pointerEvents="none">
         <Text
           style={[
@@ -115,7 +179,7 @@ export function AlignmentScoreRing({
               color: palette.primary,
               fontSize: fontSizePx,
               lineHeight: fontSizePx + 2,
-              maxWidth: size - strokeWidth * 2,
+              maxWidth: size - stroke * 2,
             },
           ]}
           maxFontSizeMultiplier={1.35}
@@ -123,7 +187,7 @@ export function AlignmentScoreRing({
           adjustsFontSizeToFit
           minimumFontScale={0.65}
         >
-          {formatAlignmentPercent(clampedScore)}
+          {formatAlignmentPercent(geometry.score)}
         </Text>
       </View>
     </View>
@@ -136,8 +200,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  svg: {
+  track: {
     ...StyleSheet.absoluteFillObject,
+  },
+  progressRoot: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  halfClip: {
+    position: 'absolute',
+    top: 0,
+    overflow: 'hidden',
   },
   label: {
     ...StyleSheet.absoluteFillObject,
