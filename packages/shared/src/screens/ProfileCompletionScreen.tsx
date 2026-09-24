@@ -1290,8 +1290,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       const activated = activation.activated === true;
       setCrjVisibilityOn(activated);
       if (activated) {
-        // One-shot Home handoff: Active provisional even if first snapshot is cached OFF.
-        armCrjVisibilityActivationHandoff();
+        // Session handoff: Home peeks/subscribes (survives auth-complete→auth-main remount).
+        armCrjVisibilityActivationHandoff(uid);
+        if (__DEV__) {
+          console.log('[BUG-VIS-01] activateVisibility_success_armed_handoff');
+        }
         // Start BG runtime only after contractual activate success + bgVisible.
         try {
           const profile = await getUserProfile(uid);

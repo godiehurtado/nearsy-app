@@ -123,7 +123,12 @@ import {
   resolveVisibilityPresentation,
   shouldRearmVisibilityHydration,
 } from '../visibility/visibilityPresentation';
-import { consumeCrjVisibilityActivationHandoff } from '../visibility/crjVisibilityActivationHandoff';
+import {
+  clearCrjVisibilityActivationHandoff,
+  isCrjVisibilityActivationHandoffArmed,
+  subscribeCrjVisibilityActivationHandoff,
+  syncCrjVisibilityActivationHandoffForUid,
+} from '../visibility/crjVisibilityActivationHandoff';
 import { BackgroundLocationEducationModal } from '../components/BackgroundLocationEducationModal';
 import { LocationPreparingModal } from '../components/LocationPreparingModal';
 import { updateUserProfilePartial } from '../services/firestoreService';
@@ -223,15 +228,16 @@ export default function MainHomeScreen({ navigation }: Props) {
   /** Bumps focus hydration when entering persisted ON after a non-true snapshot. */
   const [visibilityHydrationKick, setVisibilityHydrationKick] = useState(0);
   /**
-   * Mount-scoped CRJ success handoff (consumed once from module). Keeps Active
-   * provisional while a stale cached visibility=false precedes remote true.
+   * Session-scoped CRJ success handoff (peek + subscribe, never consume-on-mount).
+   * AppNavigator remounts MainTabs when profileSetupCompleted flips, often before
+   * arm() — a one-shot consume misses the first visible Home paint.
    */
-  const crjActivationProvisionalRef = useRef(
-    consumeCrjVisibilityActivationHandoff(),
+  const initialCrjArmed = isCrjVisibilityActivationHandoffArmed(
+    firebaseAuth.currentUser?.uid,
   );
-  const [crjActivationProvisional, setCrjActivationProvisional] = useState(
-    () => crjActivationProvisionalRef.current,
-  );
+  const crjActivationProvisionalRef = useRef(initialCrjArmed);
+  const [crjActivationProvisional, setCrjActivationProvisional] =
+    useState(initialCrjArmed);
 
   const officialInterestIds = useMemo(() => officialCatalogInterestIdSet(), []);
   const mode: ProfileMode = resolveActiveMode(profile) ?? 'personal';
@@ -264,6 +270,71 @@ export default function MainHomeScreen({ navigation }: Props) {
   });
   const pillActive = visibilityUi.visualActive === true;
   const pillNeutral = visibilityUi.visualActive === null;
+
+  useEffect(() => {
+    if (typeof __DEV__ === 'undefined' || !__DEV__) return;
+    console.log('[BUG-VIS-01] MainHomeScreen_mount', {
+      provisional: crjActivationProvisionalRef.current,
+    });
+    return () => {
+      console.log('[BUG-VIS-01] MainHomeScreen_unmount');
+    };
+  }, []);
+
+  // Session handoff: survive remount; adopt late arm after Home already mounted.
+  useEffect(() => {
+    const applyArmed = (armed: boolean) => {
+      const was = crjActivationProvisionalRef.current;
+      crjActivationProvisionalRef.current = armed;
+      setCrjActivationProvisional(armed);
+      if (armed && !was) {
+        // Late arm after cached-OFF may have already concluded Inactive.
+        hydrationValidationDoneRef.current = false;
+        setVisibilityValidationPending(true);
+        setValidatedEffectiveVisibility(null);
+        dispatchLocationJourney({
+          type: 'SET_HYDRATION_PENDING',
+          pending: true,
+        });
+        setVisibilityHydrationKick((k) => k + 1);
+      }
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log('[BUG-VIS-01] home_handoff_sync', { armed, was });
+      }
+    };
+
+    const sync = () => {
+      const currentUid = firebaseAuth.currentUser?.uid ?? null;
+      if (!currentUid) {
+        clearCrjVisibilityActivationHandoff('logout');
+        applyArmed(false);
+        return;
+      }
+      applyArmed(syncCrjVisibilityActivationHandoffForUid(currentUid));
+    };
+
+    sync();
+    return subscribeCrjVisibilityActivationHandoff(sync);
+  }, []);
+
+  useEffect(() => {
+    if (typeof __DEV__ === 'undefined' || !__DEV__) return;
+    console.log('[BUG-VIS-01] visibility_presentation', {
+      visualActive: visibilityUi.visualActive,
+      canStartRuntime: visibilityUi.canStartRuntime,
+      validationPending: visibilityValidationPending,
+      validatedEffective: validatedEffectiveVisibility,
+      persistedVisibility: profile.visibility === true,
+      provisional: crjActivationProvisional,
+    });
+  }, [
+    visibilityUi.visualActive,
+    visibilityUi.canStartRuntime,
+    visibilityValidationPending,
+    validatedEffectiveVisibility,
+    profile.visibility,
+    crjActivationProvisional,
+  ]);
 
   const pillColors = pillNeutral
     ? theme === 'dark'
@@ -558,6 +629,12 @@ export default function MainHomeScreen({ navigation }: Props) {
           if (crjActivationProvisionalRef.current) {
             crjActivationProvisionalRef.current = false;
             setCrjActivationProvisional(false);
+          }
+          clearCrjVisibilityActivationHandoff(
+            effective ? 'validated' : 'denied',
+          );
+          if (typeof __DEV__ !== 'undefined' && __DEV__) {
+            console.log('[BUG-VIS-01] finishValidation', { effective });
           }
         };
 
