@@ -114,7 +114,11 @@ import {
   resolvePermissionValidationOnVisibilitySnapshot,
   shouldResetPermissionValidationOnVisibilityChange,
 } from '../location/visibilityHydration';
-import { consumeCrjVisibilityProvisionalActive } from '../visibility/crjVisibilityProvisional';
+import {
+  clearCrjVisibilitySession,
+  isCrjVisibilityProvisional,
+  subscribeCrjVisibilitySession,
+} from '../visibility/crjVisibilityProvisional';
 import {
   isVisibilityToggleDisabled,
   shouldForceFullBackgroundEducation,
@@ -201,22 +205,19 @@ export default function MainHomeScreen({ navigation }: Props) {
   const [bgDisclosureVariant, setBgDisclosureVariant] =
     useState<BackgroundDisclosureVariant>('full');
   const [bgDisclosureBusy, setBgDisclosureBusy] = useState(false);
-  // Consume CRJ activate-success one-shot once on mount so Home can paint
-  // provisional Active while the first snapshot is still cached false.
-  const crjProvisionalSeedRef = useRef<boolean | null>(null);
-  if (crjProvisionalSeedRef.current === null) {
-    const uid = firebaseAuth.currentUser?.uid;
-    crjProvisionalSeedRef.current = uid
-      ? consumeCrjVisibilityProvisionalActive(uid)
-      : false;
-  }
+  // Peek (non-destructive) so Strict Mode / premature remount cannot drop
+  // activation_pending before the first Active provisional paint.
+  const readCrjProvisional = (): boolean => {
+    const id = firebaseAuth.currentUser?.uid;
+    return id ? isCrjVisibilityProvisional(id) : false;
+  };
   const [crjProvisionalActive, setCrjProvisionalActive] = useState(
-    () => crjProvisionalSeedRef.current === true,
+    readCrjProvisional,
   );
   const crjProvisionalActiveRef = useRef(crjProvisionalActive);
   crjProvisionalActiveRef.current = crjProvisionalActive;
   const [permissionValidationPending, setPermissionValidationPending] =
-    useState(() => crjProvisionalSeedRef.current === true);
+    useState(() => readCrjProvisional());
   const [permissionsValid, setPermissionsValid] = useState<
     boolean | undefined
   >(undefined);
@@ -224,6 +225,23 @@ export default function MainHomeScreen({ navigation }: Props) {
   const pendingBgEnableFromSettingsRef = useRef(false);
   const postLoginRecoveryStartedRef = useRef(false);
   const educationOfferInFlightRef = useRef(false);
+
+  // If Home was already mounted (or mounts before arm), pick up pending sync.
+  useEffect(() => {
+    const sync = () => {
+      const next = readCrjProvisional();
+      setCrjProvisionalActive((prev) => {
+        if (prev === next) return prev;
+        if (next) {
+          setPermissionValidationPending(true);
+          setPermissionsValid(undefined);
+        }
+        return next;
+      });
+    };
+    sync();
+    return subscribeCrjVisibilitySession(sync);
+  }, []);
 
   const officialInterestIds = useMemo(() => officialCatalogInterestIdSet(), []);
   const mode: ProfileMode = resolveActiveMode(profile) ?? 'personal';
@@ -556,15 +574,18 @@ export default function MainHomeScreen({ navigation }: Props) {
     };
   }, [loading, profile.visibility, permissionsValid, crjProvisionalActive]);
 
-  // Drop the one-shot CRJ provisional flag once Visibility/permissions conclude.
+  // Drop CRJ provisional session once Visibility/permissions conclude.
   useEffect(() => {
     if (!crjProvisionalActive) return;
+    const id = firebaseAuth.currentUser?.uid;
     if (profile.visibility === true && permissionsValid === true) {
       setCrjProvisionalActive(false);
+      if (id) clearCrjVisibilitySession(id);
       return;
     }
     if (permissionsValid === false && !permissionValidationPending) {
       setCrjProvisionalActive(false);
+      if (id) clearCrjVisibilitySession(id);
     }
   }, [
     crjProvisionalActive,

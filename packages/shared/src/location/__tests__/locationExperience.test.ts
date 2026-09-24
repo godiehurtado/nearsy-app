@@ -56,10 +56,13 @@ import {
   shouldResetPermissionValidationOnVisibilityChange,
 } from '../visibilityHydration.ts';
 import {
-  clearCrjVisibilityProvisionalActive,
+  clearCrjVisibilitySession,
   consumeCrjVisibilityProvisionalActive,
-  markCrjVisibilityProvisionalActive,
+  isCrjVisibilityProvisional,
+  markCrjVisibilityActivationSucceeded,
+  armCrjVisibilityActivationPending,
   peekCrjVisibilityProvisionalActive,
+  resetCrjVisibilitySessionForTests,
 } from '../../visibility/crjVisibilityProvisional.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -526,12 +529,12 @@ describe('visibilityHydration', () => {
   });
 
   it('BUG-VIS-01: CRJ success + cached false → Active provisional, no search/runtime', () => {
-    clearCrjVisibilityProvisionalActive();
-    markCrjVisibilityProvisionalActive('uid-crj');
+    resetCrjVisibilitySessionForTests();
+    armCrjVisibilityActivationPending('uid-crj');
     assert.equal(peekCrjVisibilityProvisionalActive('uid-crj'), true);
-    const consumed = consumeCrjVisibilityProvisionalActive('uid-crj');
-    assert.equal(consumed, true);
-    assert.equal(peekCrjVisibilityProvisionalActive('uid-crj'), false);
+    // Peek/consume must not drop pending (Strict Mode safe).
+    assert.equal(consumeCrjVisibilityProvisionalActive('uid-crj'), true);
+    assert.equal(isCrjVisibilityProvisional('uid-crj'), true);
 
     // Cached false must not sticky-invalidate under CRJ provisional.
     assert.equal(
@@ -560,6 +563,8 @@ describe('visibilityHydration', () => {
       }),
       false,
     );
+
+    markCrjVisibilityActivationSucceeded('uid-crj');
 
     // Still waiting for remote true — remains provisional Active.
     const stillWaiting = evaluateVisibilityHydration({
@@ -612,7 +617,7 @@ describe('visibilityHydration', () => {
   });
 
   it('BUG-VIS-01: no CRJ signal + visibility false → Inactive from start', () => {
-    clearCrjVisibilityProvisionalActive();
+    resetCrjVisibilitySessionForTests();
     assert.equal(consumeCrjVisibilityProvisionalActive('uid-off'), false);
     const h = evaluateVisibilityHydration({
       profileLoaded: true,
@@ -627,11 +632,11 @@ describe('visibilityHydration', () => {
   });
 
   it('BUG-VIS-01: consumed CRJ signal + remount visibility false → Inactive', () => {
-    clearCrjVisibilityProvisionalActive();
-    markCrjVisibilityProvisionalActive('uid-once');
-    assert.equal(consumeCrjVisibilityProvisionalActive('uid-once'), true);
-    // Second mount / remount — no sticky Active.
-    assert.equal(consumeCrjVisibilityProvisionalActive('uid-once'), false);
+    resetCrjVisibilitySessionForTests();
+    armCrjVisibilityActivationPending('uid-once');
+    // Clear after conclusive settle (not mount consume).
+    clearCrjVisibilitySession('uid-once');
+    assert.equal(isCrjVisibilityProvisional('uid-once'), false);
     const h = evaluateVisibilityHydration({
       profileLoaded: true,
       persistedVisibility: false,
@@ -643,7 +648,7 @@ describe('visibilityHydration', () => {
   });
 
   it('BUG-VIS-01: existing account/reinstall never auto-marks CRJ provisional', () => {
-    clearCrjVisibilityProvisionalActive();
+    resetCrjVisibilitySessionForTests();
     assert.equal(peekCrjVisibilityProvisionalActive('uid-reinstall'), false);
     const h = evaluateVisibilityHydration({
       profileLoaded: true,
@@ -676,8 +681,8 @@ describe('visibilityHydration', () => {
   });
 
   it('BUG-VIS-01: CRJ mark is uid-scoped; logout clear drops pending', () => {
-    clearCrjVisibilityProvisionalActive();
-    markCrjVisibilityProvisionalActive('a');
+    resetCrjVisibilitySessionForTests();
+    armCrjVisibilityActivationPending('a');
     assert.equal(peekCrjVisibilityProvisionalActive('b'), false);
     assert.equal(peekCrjVisibilityProvisionalActive('a'), true);
     resetLocationJourneySession();
@@ -906,11 +911,12 @@ describe('ENH-LOC-01 source contracts', () => {
     assert.match(home, /shouldResetPermissionValidationOnVisibilityChange/);
     assert.match(home, /resolvePermissionValidationOnVisibilitySnapshot/);
     assert.match(home, /previousVisibilityRef\.current = nextVisibility/);
-    assert.match(home, /consumeCrjVisibilityProvisionalActive/);
+    assert.match(home, /isCrjVisibilityProvisional|subscribeCrjVisibilitySession/);
     assert.match(home, /crjActivationProvisional/);
     assert.match(home, /isHomeSearchEnabled/);
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
-    assert.match(crj, /markCrjVisibilityProvisionalActive/);
+    assert.match(crj, /armCrjVisibilityActivationPending/);
+    assert.match(crj, /markCrjVisibilityActivationSucceeded/);
   });
 
   it('startGated sets runtime auth; stop clears it', () => {
