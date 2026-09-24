@@ -16,6 +16,41 @@ export function shouldResetPermissionValidationOnVisibilityChange(
   return nextVisibility === true && previousVisibility !== true;
 }
 
+export type VisibilityPermissionValidationPatch = {
+  permissionsValid: boolean | undefined;
+  permissionValidationPending: boolean;
+};
+
+/**
+ * Snapshot-path permission state for Visibility hydration.
+ * Apply in the same update as `setProfile` so rising-edge `true` never paints
+ * sticky Inactive (`permissionsValid===false`) before an effect runs.
+ * Returns null when the snapshot should leave permission state unchanged.
+ */
+export function resolvePermissionValidationOnVisibilitySnapshot(input: {
+  previousVisibility: boolean | undefined;
+  nextVisibility: boolean | undefined;
+}): VisibilityPermissionValidationPatch | null {
+  if (input.nextVisibility === false) {
+    return {
+      permissionsValid: false,
+      permissionValidationPending: false,
+    };
+  }
+  if (
+    shouldResetPermissionValidationOnVisibilityChange(
+      input.previousVisibility,
+      input.nextVisibility,
+    )
+  ) {
+    return {
+      permissionsValid: undefined,
+      permissionValidationPending: true,
+    };
+  }
+  return null;
+}
+
 export type VisibilityHydrationPhase =
   | 'unknown'
   | 'validating'

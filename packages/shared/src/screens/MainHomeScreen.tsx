@@ -110,6 +110,7 @@ import {
 } from '../location/locationJourneySession';
 import {
   evaluateVisibilityHydration,
+  resolvePermissionValidationOnVisibilitySnapshot,
   shouldResetPermissionValidationOnVisibilityChange,
 } from '../location/visibilityHydration';
 import {
@@ -461,9 +462,22 @@ export default function MainHomeScreen({ navigation }: Props) {
             appliedEpochRef.current = localEpochRef.current;
           }
 
-          if (data.visibility === false) {
-            setPermissionValidationPending(false);
-            setPermissionsValid(false);
+          // Same-update path as setProfile: rising-edge true must clear sticky
+          // permissionsValid=false before paint (BUG-VIS-01). Do not wait for effect.
+          const nextVisibility =
+            data.visibility === undefined ? undefined : !!data.visibility;
+          const previousVisibility = previousVisibilityRef.current;
+          previousVisibilityRef.current = nextVisibility;
+          const permissionPatch =
+            resolvePermissionValidationOnVisibilitySnapshot({
+              previousVisibility,
+              nextVisibility,
+            });
+          if (permissionPatch) {
+            setPermissionsValid(permissionPatch.permissionsValid);
+            setPermissionValidationPending(
+              permissionPatch.permissionValidationPending,
+            );
           }
         }
         setLoading(false);
@@ -477,17 +491,20 @@ export default function MainHomeScreen({ navigation }: Props) {
     return () => unsub();
   }, [t, unit, officialInterestIds]);
 
-  // When Visibility flips to true (CRJ activate / restore), drop sticky
-  // permissionsValid=false left by a cached pre-activate snapshot.
+  // Belt for non-snapshot Visibility flips (local setProfile). Snapshot path
+  // already advances previousVisibilityRef + clears sticky synchronously.
   useEffect(() => {
-    const next = profile.visibility;
+    const next =
+      profile.visibility === undefined ? undefined : !!profile.visibility;
     const prev = previousVisibilityRef.current;
+    if (prev === next) return;
     previousVisibilityRef.current = next;
-    if (
-      shouldResetPermissionValidationOnVisibilityChange(prev, next)
-    ) {
+    if (shouldResetPermissionValidationOnVisibilityChange(prev, next)) {
       setPermissionsValid(undefined);
       setPermissionValidationPending(true);
+    } else if (next === false) {
+      setPermissionsValid(false);
+      setPermissionValidationPending(false);
     }
   }, [profile.visibility]);
 

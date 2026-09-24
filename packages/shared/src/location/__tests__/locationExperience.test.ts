@@ -51,6 +51,7 @@ import {
 } from '../locationJourneySession.ts';
 import {
   evaluateVisibilityHydration,
+  resolvePermissionValidationOnVisibilitySnapshot,
   shouldResetPermissionValidationOnVisibilityChange,
 } from '../visibilityHydration.ts';
 
@@ -414,6 +415,108 @@ describe('visibilityHydration', () => {
     assert.equal(afterFgOk.displayActive, true);
     assert.equal(afterFgOk.runtimeEligible, true);
   });
+
+  it('BUG-VIS-01: cached false→true snapshot clears sticky before paint', () => {
+    // Simulated Home permission state after cached visibility:false snapshot.
+    let permissionsValid: boolean | undefined = false;
+    let permissionValidationPending = false;
+    let previousVisibility: boolean | undefined = false;
+
+    const cachedFalse = resolvePermissionValidationOnVisibilitySnapshot({
+      previousVisibility: undefined,
+      nextVisibility: false,
+    });
+    assert.deepEqual(cachedFalse, {
+      permissionsValid: false,
+      permissionValidationPending: false,
+    });
+    permissionsValid = cachedFalse!.permissionsValid;
+    permissionValidationPending = cachedFalse!.permissionValidationPending;
+    previousVisibility = false;
+
+    const rising = resolvePermissionValidationOnVisibilitySnapshot({
+      previousVisibility,
+      nextVisibility: true,
+    });
+    assert.deepEqual(rising, {
+      permissionsValid: undefined,
+      permissionValidationPending: true,
+    });
+    permissionsValid = rising!.permissionsValid;
+    permissionValidationPending = rising!.permissionValidationPending;
+
+    const afterEdge = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: true,
+      permissionValidationPending,
+      permissionsValid,
+    });
+    assert.equal(afterEdge.phase, 'validating');
+    assert.equal(afterEdge.displayActive, true);
+    assert.equal(afterEdge.runtimeEligible, false);
+    assert.notEqual(afterEdge.phase, 'inactive');
+  });
+
+  it('BUG-VIS-01: stable false stays Inactive; no rising-edge patch on true→true', () => {
+    assert.deepEqual(
+      resolvePermissionValidationOnVisibilitySnapshot({
+        previousVisibility: false,
+        nextVisibility: false,
+      }),
+      {
+        permissionsValid: false,
+        permissionValidationPending: false,
+      },
+    );
+    assert.equal(
+      resolvePermissionValidationOnVisibilitySnapshot({
+        previousVisibility: true,
+        nextVisibility: true,
+      }),
+      null,
+    );
+  });
+
+  it('BUG-VIS-01: denied / invalid perms → Inactive; BG Not now irrelevant to pill', () => {
+    const denied = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: true,
+      permissionValidationPending: false,
+      permissionsValid: false,
+    });
+    assert.equal(denied.displayActive, false);
+    assert.equal(denied.runtimeEligible, false);
+    assert.equal(denied.shouldDeactivate, true);
+
+    // Hydration inputs have no bgVisible — Always vs Not now cannot flip the pill.
+    const provisional = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: true,
+      permissionValidationPending: true,
+      permissionsValid: undefined,
+    });
+    assert.equal(provisional.displayActive, true);
+    assert.equal(provisional.runtimeEligible, false);
+  });
+
+  it('BUG-VIS-01: reinstall/existing account undefined→true is provisional Active', () => {
+    const patch = resolvePermissionValidationOnVisibilitySnapshot({
+      previousVisibility: undefined,
+      nextVisibility: true,
+    });
+    assert.deepEqual(patch, {
+      permissionsValid: undefined,
+      permissionValidationPending: true,
+    });
+    const h = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: true,
+      permissionValidationPending: true,
+      permissionsValid: undefined,
+    });
+    assert.equal(h.displayActive, true);
+    assert.equal(h.runtimeEligible, false);
+  });
 });
 
 describe('backgroundPublishDisposition', () => {
@@ -635,6 +738,8 @@ describe('ENH-LOC-01 source contracts', () => {
     assert.match(home, /offerBackgroundEducationIfNeeded/);
     assert.match(home, /isVisibilityToggleDisabled/);
     assert.match(home, /shouldResetPermissionValidationOnVisibilityChange/);
+    assert.match(home, /resolvePermissionValidationOnVisibilitySnapshot/);
+    assert.match(home, /previousVisibilityRef\.current = nextVisibility/);
   });
 
   it('startGated sets runtime auth; stop clears it', () => {
