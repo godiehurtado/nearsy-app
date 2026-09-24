@@ -20,6 +20,12 @@ export type VisibilityPresentationInput = {
    * Always/background granted must never set this.
    */
   operationBusy?: boolean;
+  /**
+   * BUG-VIS-01 — CRJ just activated successfully; keep visual Active while
+   * validating even if the first snapshot is still cached visibility=false.
+   * Never implies canStartRuntime.
+   */
+  crjActivationProvisional?: boolean;
 };
 
 export type VisibilityPresentation = {
@@ -52,11 +58,24 @@ export function shouldRearmVisibilityHydration(input: {
 }
 
 /**
+ * Whether a cached visibility=false snapshot should keep CRJ provisional Active
+ * instead of concluding Inactive.
+ */
+export function shouldKeepCrjProvisionalDespiteCachedOff(input: {
+  crjActivationProvisional: boolean;
+  validatedEffective: boolean | null;
+}): boolean {
+  if (!input.crjActivationProvisional) return false;
+  // Conclusive FG/validation failure ends provisional.
+  if (input.validatedEffective === false) return false;
+  return true;
+}
+
+/**
  * Persisted true + validating → visual Active (no runtime).
- * Persisted false → Inactive immediately.
+ * Persisted false → Inactive immediately, unless CRJ provisional handoff.
  * Unknown profile → neutral (null), never invent false.
- * Once validatedEffective is true, allowToggle stays true unless operationBusy
- * (defensive against stale validationPending from profile snapshot churn).
+ * Runtime requires persisted true AND validatedEffective true.
  */
 export function resolveVisibilityPresentation(
   input: VisibilityPresentationInput,
@@ -72,8 +91,12 @@ export function resolveVisibilityPresentation(
   }
 
   const persistedOn = input.persistedVisibility === true;
+  const provisional = shouldKeepCrjProvisionalDespiteCachedOff({
+    crjActivationProvisional: input.crjActivationProvisional === true,
+    validatedEffective: input.validatedEffective,
+  });
 
-  if (!persistedOn) {
+  if (!persistedOn && !provisional) {
     return {
       visualActive: false,
       allowToggle: !busy && !input.validationPending,
@@ -81,8 +104,8 @@ export function resolveVisibilityPresentation(
     };
   }
 
-  // Validated ON wins over stale pending flags (snapshot churn / concurrent journey).
-  if (input.validatedEffective === true) {
+  // Validated ON + persisted ON → runtime eligible.
+  if (input.validatedEffective === true && persistedOn) {
     return {
       visualActive: true,
       allowToggle: !busy,
@@ -90,8 +113,13 @@ export function resolveVisibilityPresentation(
     };
   }
 
-  // Persisted Active, not yet concluded
-  if (input.validationPending || input.validatedEffective === null) {
+  // Persisted Active (or CRJ provisional) not yet concluded — or validated
+  // before remote true arrives: visual Active, never runtime.
+  if (
+    input.validationPending ||
+    input.validatedEffective === null ||
+    (provisional && !persistedOn)
+  ) {
     return {
       visualActive: true,
       allowToggle: false,

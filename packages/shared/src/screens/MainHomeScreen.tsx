@@ -123,6 +123,7 @@ import {
   resolveVisibilityPresentation,
   shouldRearmVisibilityHydration,
 } from '../visibility/visibilityPresentation';
+import { consumeCrjVisibilityActivationHandoff } from '../visibility/crjVisibilityActivationHandoff';
 import { BackgroundLocationEducationModal } from '../components/BackgroundLocationEducationModal';
 import { LocationPreparingModal } from '../components/LocationPreparingModal';
 import { updateUserProfilePartial } from '../services/firestoreService';
@@ -221,6 +222,16 @@ export default function MainHomeScreen({ navigation }: Props) {
   const lastPersistedVisibilityRef = useRef<boolean | undefined>(undefined);
   /** Bumps focus hydration when entering persisted ON after a non-true snapshot. */
   const [visibilityHydrationKick, setVisibilityHydrationKick] = useState(0);
+  /**
+   * Mount-scoped CRJ success handoff (consumed once from module). Keeps Active
+   * provisional while a stale cached visibility=false precedes remote true.
+   */
+  const crjActivationProvisionalRef = useRef(
+    consumeCrjVisibilityActivationHandoff(),
+  );
+  const [crjActivationProvisional, setCrjActivationProvisional] = useState(
+    () => crjActivationProvisionalRef.current,
+  );
 
   const officialInterestIds = useMemo(() => officialCatalogInterestIdSet(), []);
   const mode: ProfileMode = resolveActiveMode(profile) ?? 'personal';
@@ -249,6 +260,7 @@ export default function MainHomeScreen({ navigation }: Props) {
     validatedEffective: validatedEffectiveVisibility,
     // Education / Always / Settings must never lock Visibility.
     operationBusy: statusUpdating,
+    crjActivationProvisional,
   });
   const pillActive = visibilityUi.visualActive === true;
   const pillNeutral = visibilityUi.visualActive === null;
@@ -339,6 +351,16 @@ export default function MainHomeScreen({ navigation }: Props) {
                 setVisibilityHydrationKick((k) => k + 1);
               }
             }
+          } else if (crjActivationProvisionalRef.current) {
+            // Cached OFF after CRJ activate success — keep provisional Active
+            // until remote true or conclusive FG failure.
+            hydrationValidationDoneRef.current = false;
+            setVisibilityValidationPending(true);
+            setValidatedEffectiveVisibility(null);
+            dispatchLocationJourney({
+              type: 'SET_HYDRATION_PENDING',
+              pending: true,
+            });
           } else {
             hydrationValidationDoneRef.current = true;
             setVisibilityValidationPending(false);
@@ -533,6 +555,10 @@ export default function MainHomeScreen({ navigation }: Props) {
           setValidatedEffectiveVisibility(effective);
           setVisibilityValidationPending(false);
           dispatchLocationJourney({ type: 'HYDRATION_DONE' });
+          if (crjActivationProvisionalRef.current) {
+            crjActivationProvisionalRef.current = false;
+            setCrjActivationProvisional(false);
+          }
         };
 
         try {
@@ -679,6 +705,19 @@ export default function MainHomeScreen({ navigation }: Props) {
               await stopBackgroundLocationRuntime();
             }
           } else if (!remote) {
+            if (crjActivationProvisionalRef.current && foregroundGranted) {
+              // CRJ activated; waiting for remote visibility=true — stay provisional.
+              if (!cancelled) {
+                hydrationValidationDoneRef.current = false;
+                setVisibilityValidationPending(true);
+                setValidatedEffectiveVisibility(null);
+                dispatchLocationJourney({
+                  type: 'SET_HYDRATION_PENDING',
+                  pending: true,
+                });
+              }
+              return;
+            }
             finishValidation(false);
             await stopBackgroundLocationRuntime();
           } else {

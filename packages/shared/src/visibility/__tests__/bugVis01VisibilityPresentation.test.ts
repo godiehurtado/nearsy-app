@@ -7,8 +7,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   resolveVisibilityPresentation,
+  shouldKeepCrjProvisionalDespiteCachedOff,
   shouldRearmVisibilityHydration,
 } from '../visibilityPresentation';
+import {
+  armCrjVisibilityActivationHandoff,
+  consumeCrjVisibilityActivationHandoff,
+  peekCrjVisibilityActivationHandoffForTests,
+  resetCrjVisibilityActivationHandoffForTests,
+} from '../crjVisibilityActivationHandoff';
 
 const sharedSrc = join(__dirname, '../..');
 
@@ -78,6 +85,85 @@ describe('BUG-VIS-01 shouldRearmVisibilityHydration', () => {
   });
 });
 
+describe('BUG-VIS-01 CRJ handoff before remote true', () => {
+  it('CRJ success + cached false → Active provisional, runtime off', () => {
+    const ui = resolveVisibilityPresentation({
+      profileLoaded: true,
+      persistedVisibility: false,
+      validationPending: true,
+      validatedEffective: null,
+      crjActivationProvisional: true,
+    });
+    assert.equal(ui.visualActive, true);
+    assert.equal(ui.canStartRuntime, false);
+    assert.equal(ui.allowToggle, false);
+  });
+
+  it('remote true still delayed → stays Active provisional, runtime off', () => {
+    const ui = resolveVisibilityPresentation({
+      profileLoaded: true,
+      persistedVisibility: false,
+      validationPending: true,
+      validatedEffective: null,
+      crjActivationProvisional: true,
+    });
+    assert.equal(ui.visualActive, true);
+    assert.equal(ui.canStartRuntime, false);
+  });
+
+  it('true + FG validated → Active confirmed with runtime', () => {
+    const ui = resolveVisibilityPresentation({
+      profileLoaded: true,
+      persistedVisibility: true,
+      validationPending: false,
+      validatedEffective: true,
+      crjActivationProvisional: false,
+    });
+    assert.equal(ui.visualActive, true);
+    assert.equal(ui.canStartRuntime, true);
+  });
+
+  it('FG denied / conclusive failure → Inactive even with prior provisional', () => {
+    assert.equal(
+      shouldKeepCrjProvisionalDespiteCachedOff({
+        crjActivationProvisional: true,
+        validatedEffective: false,
+      }),
+      false,
+    );
+    const ui = resolveVisibilityPresentation({
+      profileLoaded: true,
+      persistedVisibility: false,
+      validationPending: false,
+      validatedEffective: false,
+      crjActivationProvisional: true,
+    });
+    assert.equal(ui.visualActive, false);
+    assert.equal(ui.canStartRuntime, false);
+  });
+
+  it('existing account false without handoff → Inactive', () => {
+    const ui = resolveVisibilityPresentation({
+      profileLoaded: true,
+      persistedVisibility: false,
+      validationPending: false,
+      validatedEffective: false,
+      crjActivationProvisional: false,
+    });
+    assert.equal(ui.visualActive, false);
+    assert.equal(ui.canStartRuntime, false);
+  });
+
+  it('handoff is one-shot and does not survive consume', () => {
+    resetCrjVisibilityActivationHandoffForTests();
+    armCrjVisibilityActivationHandoff();
+    assert.equal(peekCrjVisibilityActivationHandoffForTests(), true);
+    assert.equal(consumeCrjVisibilityActivationHandoff(), true);
+    assert.equal(peekCrjVisibilityActivationHandoffForTests(), false);
+    assert.equal(consumeCrjVisibilityActivationHandoff(), false);
+  });
+});
+
 describe('BUG-VIS-01 presentation matrix', () => {
   it('true pending → visual Active, runtime false', () => {
     const ui = resolveVisibilityPresentation({
@@ -123,7 +209,6 @@ describe('BUG-VIS-01 presentation matrix', () => {
   });
 
   it('false→true rearm yields Active provisional (no Inactive paint)', () => {
-    // After shouldRearm: pending true + validated null with persisted true
     const afterRearm = resolveVisibilityPresentation({
       profileLoaded: true,
       persistedVisibility: true,
@@ -135,7 +220,7 @@ describe('BUG-VIS-01 presentation matrix', () => {
   });
 });
 
-describe('BUG-VIS-01 Home wiring', () => {
+describe('BUG-VIS-01 Home / CRJ wiring', () => {
   it('Home rearms on enter-ON and kicks focus validation', () => {
     const home = readShared('screens/MainHomeScreen.tsx');
     assert.match(home, /shouldRearmVisibilityHydration/);
@@ -161,5 +246,17 @@ describe('BUG-VIS-01 Home wiring', () => {
       /canSearch = visibilityUi\.canStartRuntime === true/,
     );
     assert.doesNotMatch(home, /canSearch = pillActive === true/);
+  });
+
+  it('CRJ arms handoff on activate success; Home consumes once', () => {
+    const crj = readShared('screens/ProfileCompletionScreen.tsx');
+    const home = readShared('screens/MainHomeScreen.tsx');
+    assert.match(crj, /armCrjVisibilityActivationHandoff/);
+    assert.match(home, /consumeCrjVisibilityActivationHandoff/);
+    assert.match(home, /crjActivationProvisional/);
+    assert.match(
+      home,
+      /crjActivationProvisionalRef\.current && foregroundGranted/,
+    );
   });
 });

@@ -68,6 +68,7 @@ import {
   shouldResyncProfessionalActiveModeAfterSave,
 } from '../visibility/activeProfileModeSync';
 import { attemptInitialVisibilityAfterCrjCompletion } from '../visibility/initialCrjVisibilityActivation';
+import { armCrjVisibilityActivationHandoff } from '../visibility/crjVisibilityActivationHandoff';
 import { markFullBackgroundEducationSeen } from '../visibility/locationEducation';
 import {
   isBackgroundPermissionEffectivelyGranted,
@@ -1289,6 +1290,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       const activated = activation.activated === true;
       setCrjVisibilityOn(activated);
       if (activated) {
+        // One-shot Home handoff: Active provisional even if first snapshot is cached OFF.
+        armCrjVisibilityActivationHandoff();
         // Start BG runtime only after contractual activate success + bgVisible.
         try {
           const profile = await getUserProfile(uid);
