@@ -1,16 +1,19 @@
 /**
- * BUG-VIS-01 — session-scoped CRJ activation handoff → Home presentation.
+ * BUG-VIS-01 — session CRJ visibility handoff (activation_pending before Home).
  *
- * Not consume-on-mount: AppNavigator remounts MainTabs when profileSetupCompleted
- * flips (auth-complete → auth-main), so a one-shot consume is lost or fires too early.
+ * Causal order: mark pending for uid → THEN persist profileSetupCompleted
+ * (which remounts AppNavigator auth-complete → auth-main). Home peeks pending
+ * synchronously on first render so the first paint is Active provisional.
  *
- * Armed after activateVisibility succeeds; Home peeks + subscribes. Cleared only on
- * conclusive validation, logout, or uid mismatch. Never enables runtime by itself.
+ * Cleared on activation failure, FG/validation deny, logout, uid mismatch.
+ * Never enables runtime by itself. Not persisted across process restarts.
  */
+
+export type CrjVisibilityHandoffPhase = 'pending' | 'succeeded';
 
 type HandoffSession = {
   uid: string;
-  /** Monotonic id so stale validation cycles cannot clear a newer arm. */
+  phase: CrjVisibilityHandoffPhase;
   epoch: number;
 };
 
@@ -23,7 +26,7 @@ function notify(): void {
     try {
       listener();
     } catch {
-      // Listeners must not break arm/clear.
+      // Listeners must not break mark/clear.
     }
   }
 }
@@ -44,16 +47,43 @@ export function logBugVis01Dev(
   console.log(parts.join(' '));
 }
 
-/** Call only after activateVisibility succeeds during CRJ finishOnboarding. */
-export function armCrjVisibilityActivationHandoff(uid: string): void {
+/**
+ * Call synchronously BEFORE persisting profileSetupCompleted=true so Home's
+ * first render already peeks Active provisional.
+ */
+export function markCrjVisibilityActivationPending(uid: string): void {
   const next = String(uid ?? '').trim();
   if (!next) return;
-  session = { uid: next, epoch: nextEpoch++ };
-  logBugVis01Dev('handoff_marked', { epoch: session.epoch });
+  session = { uid: next, phase: 'pending', epoch: nextEpoch++ };
+  logBugVis01Dev('activation_pending', { epoch: session.epoch });
   notify();
 }
 
-/** Peek without clearing — safe across remounts / Strict Mode. */
+/**
+ * After activateVisibility succeeds — keep provisional until snapshot+FG confirm.
+ * Safe if pending was already marked; re-arms if missing (defensive).
+ */
+export function confirmCrjVisibilityActivationHandoff(uid: string): void {
+  const next = String(uid ?? '').trim();
+  if (!next) return;
+  if (session && session.uid === next) {
+    session = { ...session, phase: 'succeeded' };
+  } else {
+    session = { uid: next, phase: 'succeeded', epoch: nextEpoch++ };
+  }
+  logBugVis01Dev('handoff_marked', {
+    epoch: session.epoch,
+    phase: session.phase,
+  });
+  notify();
+}
+
+/** @deprecated Use confirmCrjVisibilityActivationHandoff. */
+export function armCrjVisibilityActivationHandoff(uid: string): void {
+  confirmCrjVisibilityActivationHandoff(uid);
+}
+
+/** True while pending or succeeded for this uid (visual provisional). */
 export function isCrjVisibilityActivationHandoffArmed(
   uid: string | null | undefined,
 ): boolean {
@@ -62,14 +92,20 @@ export function isCrjVisibilityActivationHandoffArmed(
   return session.uid === current;
 }
 
-/** Epoch of the armed handoff, or 0 if none. */
+export function getCrjVisibilityActivationHandoffPhase(
+  uid: string | null | undefined,
+): CrjVisibilityHandoffPhase | null {
+  if (!isCrjVisibilityActivationHandoffArmed(uid) || !session) return null;
+  return session.phase;
+}
+
 export function getCrjVisibilityActivationHandoffEpoch(): number {
   return session?.epoch ?? 0;
 }
 
 /**
  * Bind handoff to the current auth uid. Clears on logout or uid mismatch.
- * Returns whether the handoff is armed for this uid.
+ * Returns whether provisional is active for this uid.
  */
 export function syncCrjVisibilityActivationHandoffForUid(
   uid: string | null | undefined,
@@ -87,10 +123,6 @@ export function syncCrjVisibilityActivationHandoffForUid(
   return true;
 }
 
-/**
- * Clear provisional handoff (validation concluded, logout, uid change).
- * Idempotent.
- */
 export function clearCrjVisibilityActivationHandoff(
   reason:
     | 'validated'
@@ -105,7 +137,6 @@ export function clearCrjVisibilityActivationHandoff(
   notify();
 }
 
-/** Subscribe to arm/clear. Returns unsubscribe. */
 export function subscribeCrjVisibilityActivationHandoff(
   listener: () => void,
 ): () => void {
@@ -115,16 +146,13 @@ export function subscribeCrjVisibilityActivationHandoff(
   };
 }
 
-/** @deprecated Prefer isCrjVisibilityActivationHandoffArmed (non-consuming). */
-export function consumeCrjVisibilityActivationHandoff(): boolean {
-  if (!session) return false;
-  // Do not clear — remount-safe. Callers that still "consume" only peek.
-  return true;
-}
-
 /** Test helpers — do not use in product UI. */
 export function peekCrjVisibilityActivationHandoffForTests(): boolean {
   return session !== null;
+}
+
+export function peekCrjVisibilityActivationHandoffPhaseForTests(): CrjVisibilityHandoffPhase | null {
+  return session?.phase ?? null;
 }
 
 export function peekCrjVisibilityActivationHandoffUidForTests(): string | null {

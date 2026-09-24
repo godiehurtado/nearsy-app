@@ -217,10 +217,6 @@ export default function MainHomeScreen({ navigation }: Props) {
   const [bgEducationBusy, setBgEducationBusy] = useState(false);
   const [locationPreparing, setLocationPreparing] = useState(false);
   const bgEducationResolverRef = useRef<(() => void) | null>(null);
-  const [visibilityValidationPending, setVisibilityValidationPending] =
-    useState(false);
-  const [validatedEffectiveVisibility, setValidatedEffectiveVisibility] =
-    useState<boolean | null>(null);
   const recoveryJourneyRunningRef = useRef(false);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   /** Once FG/activation validation concludes for this mount, do not re-lock on profile snapshot churn (e.g. bgVisible writes). */
@@ -230,9 +226,9 @@ export default function MainHomeScreen({ navigation }: Props) {
   /** Bumps focus hydration when entering persisted ON after a non-true snapshot. */
   const [visibilityHydrationKick, setVisibilityHydrationKick] = useState(0);
   /**
-   * Session-scoped CRJ success handoff (peek + subscribe, never consume-on-mount).
-   * AppNavigator remounts MainTabs when profileSetupCompleted flips, often before
-   * arm() — a one-shot consume misses the first visible Home paint.
+   * Session CRJ handoff: activation_pending is marked BEFORE profileSetupCompleted,
+   * so the first Home render peeks Active provisional (no Inactive frame).
+   * Subscribe covers remount / late confirm; clear on validate/deny/logout.
    */
   const initialCrjArmed = isCrjVisibilityActivationHandoffArmed(
     firebaseAuth.currentUser?.uid,
@@ -240,6 +236,10 @@ export default function MainHomeScreen({ navigation }: Props) {
   const crjActivationProvisionalRef = useRef(initialCrjArmed);
   const [crjActivationProvisional, setCrjActivationProvisional] =
     useState(initialCrjArmed);
+  const [visibilityValidationPending, setVisibilityValidationPending] =
+    useState(initialCrjArmed);
+  const [validatedEffectiveVisibility, setValidatedEffectiveVisibility] =
+    useState<boolean | null>(null);
 
   const officialInterestIds = useMemo(() => officialCatalogInterestIdSet(), []);
   const mode: ProfileMode = resolveActiveMode(profile) ?? 'personal';
