@@ -68,7 +68,7 @@ import {
   shouldResyncProfessionalActiveModeAfterSave,
 } from '../visibility/activeProfileModeSync';
 import { attemptInitialVisibilityAfterCrjCompletion } from '../visibility/initialCrjVisibilityActivation';
-import { armCrjVisibilityActivationHandoff } from '../visibility/crjVisibilityActivationHandoff';
+import { armCrjVisibilityActivationHandoff, logBugVis01Dev } from '../visibility/crjVisibilityActivationHandoff';
 import { markFullBackgroundEducationSeen } from '../visibility/locationEducation';
 import {
   isBackgroundPermissionEffectivelyGranted,
@@ -1289,12 +1289,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       });
       const activated = activation.activated === true;
       setCrjVisibilityOn(activated);
+      logBugVis01Dev('activation_result', {
+        activation_result: activated ? 'success' : 'failure',
+      });
       if (activated) {
         // Session handoff: Home peeks/subscribes (survives auth-complete→auth-main remount).
         armCrjVisibilityActivationHandoff(uid);
-        if (__DEV__) {
-          console.log('[BUG-VIS-01] activateVisibility_success_armed_handoff');
-        }
         // Start BG runtime only after contractual activate success + bgVisible.
         try {
           const profile = await getUserProfile(uid);

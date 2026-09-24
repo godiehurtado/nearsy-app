@@ -71,10 +71,15 @@ describe('Home reinstall recovery — education + no ghost overlay', () => {
 
   it('focus recovery does not remount on profile.visibility / bgVisible churn', () => {
     const home = readShared('screens/MainHomeScreen.tsx');
-    const focus = home.slice(
-      home.indexOf('useFocusEffect('),
-      home.indexOf('const showVisibilityError'),
+    const hydrationFocusStart = home.indexOf(
+      'useFocusEffect(\n    useCallback(() => {\n      let cancelled = false;',
     );
+    // Windows checkouts may use CRLF — fall back to a stable marker.
+    const start =
+      hydrationFocusStart >= 0
+        ? hydrationFocusStart
+        : home.indexOf('let cancelled = false;');
+    const focus = home.slice(start, home.indexOf('const showVisibilityError'));
     assert.doesNotMatch(
       focus,
       /}, \[profile\.visibility, profile\.bgVisible, loading\]\)/,

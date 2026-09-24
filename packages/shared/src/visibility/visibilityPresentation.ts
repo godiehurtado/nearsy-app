@@ -36,6 +36,25 @@ export type VisibilityPresentation = {
   canStartRuntime: boolean;
 };
 
+/** Redacted label for BUG-VIS-01 __DEV__ diagnostics. */
+export type BugVis01PresentationLabel =
+  | 'active_provisional'
+  | 'active_confirmed'
+  | 'inactive'
+  | 'neutral';
+
+export function labelBugVis01Presentation(input: {
+  visualActive: boolean | null;
+  canStartRuntime: boolean;
+  crjActivationProvisional: boolean;
+}): BugVis01PresentationLabel {
+  if (input.visualActive === null) return 'neutral';
+  if (input.visualActive !== true) return 'inactive';
+  if (input.canStartRuntime) return 'active_confirmed';
+  if (input.crjActivationProvisional) return 'active_provisional';
+  return 'active_provisional';
+}
+
 /**
  * BUG-VIS-01 — decide whether Home should re-open hydration validation when a
  * profile snapshot arrives with persisted visibility ON.

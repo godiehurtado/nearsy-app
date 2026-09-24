@@ -10,9 +10,12 @@
 
 type HandoffSession = {
   uid: string;
+  /** Monotonic id so stale validation cycles cannot clear a newer arm. */
+  epoch: number;
 };
 
 let session: HandoffSession | null = null;
+let nextEpoch = 1;
 const listeners = new Set<() => void>();
 
 function notify(): void {
@@ -25,19 +28,28 @@ function notify(): void {
   }
 }
 
-function logDev(message: string, extra?: Record<string, unknown>): void {
-  if (typeof __DEV__ !== 'undefined' && __DEV__) {
-    // Redacted — no uid/tokens/coords.
-    console.log(`[BUG-VIS-01] ${message}`, extra ?? {});
+/** Redacted __DEV__ diagnostics — no uid/tokens/coords. */
+export function logBugVis01Dev(
+  event: string,
+  fields?: Record<string, string | boolean | number | null | undefined>,
+): void {
+  if (typeof __DEV__ === 'undefined' || !__DEV__) return;
+  const parts: string[] = [`[BUG-VIS-01] ${event}`];
+  if (fields) {
+    for (const [key, value] of Object.entries(fields)) {
+      if (value === undefined) continue;
+      parts.push(`${key}=${String(value)}`);
+    }
   }
+  console.log(parts.join(' '));
 }
 
 /** Call only after activateVisibility succeeds during CRJ finishOnboarding. */
 export function armCrjVisibilityActivationHandoff(uid: string): void {
   const next = String(uid ?? '').trim();
   if (!next) return;
-  session = { uid: next };
-  logDev('handoff_armed');
+  session = { uid: next, epoch: nextEpoch++ };
+  logBugVis01Dev('handoff_marked', { epoch: session.epoch });
   notify();
 }
 
@@ -48,6 +60,11 @@ export function isCrjVisibilityActivationHandoffArmed(
   const current = String(uid ?? '').trim();
   if (!current || !session) return false;
   return session.uid === current;
+}
+
+/** Epoch of the armed handoff, or 0 if none. */
+export function getCrjVisibilityActivationHandoffEpoch(): number {
+  return session?.epoch ?? 0;
 }
 
 /**
@@ -84,7 +101,7 @@ export function clearCrjVisibilityActivationHandoff(
 ): void {
   if (!session) return;
   session = null;
-  logDev('handoff_cleared', { reason });
+  logBugVis01Dev('handoff_cleared', { reason });
   notify();
 }
 
@@ -116,5 +133,4 @@ export function peekCrjVisibilityActivationHandoffUidForTests(): string | null {
 
 export function resetCrjVisibilityActivationHandoffForTests(): void {
   session = null;
-  // Do not notify in tests unless needed — keep deterministic.
 }

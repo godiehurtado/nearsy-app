@@ -7,6 +7,7 @@ import { describe, it, beforeEach } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  labelBugVis01Presentation,
   resolveVisibilityPresentation,
   shouldKeepCrjProvisionalDespiteCachedOff,
   shouldRearmVisibilityHydration,
@@ -321,6 +322,31 @@ describe('BUG-VIS-01 realistic lifecycle (Home mounted before arm)', () => {
     assert.equal(isCrjVisibilityActivationHandoffArmed(UID), true);
     assert.equal(peekCrjVisibilityActivationHandoffForTests(), true);
   });
+
+  it('stale Inactive conclusion while handoff armed stays Active provisional', () => {
+    // Mirrors finishValidation(false) guard when late arm races async hydration.
+    armCrjVisibilityActivationHandoff(UID);
+    assert.equal(isCrjVisibilityActivationHandoffArmed(UID), true);
+    // Would-be stale conclusion must not clear presentation while armed.
+    const ui = resolveVisibilityPresentation({
+      profileLoaded: true,
+      persistedVisibility: false,
+      validationPending: true,
+      validatedEffective: null,
+      crjActivationProvisional: true,
+    });
+    assert.equal(ui.visualActive, true);
+    assert.equal(ui.canStartRuntime, false);
+    assert.equal(
+      labelBugVis01Presentation({
+        visualActive: ui.visualActive,
+        canStartRuntime: ui.canStartRuntime,
+        crjActivationProvisional: true,
+      }),
+      'active_provisional',
+    );
+    assert.equal(isCrjVisibilityActivationHandoffArmed(UID), true);
+  });
 });
 
 describe('BUG-VIS-01 presentation matrix', () => {
@@ -411,10 +437,15 @@ describe('BUG-VIS-01 Home / CRJ wiring', () => {
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
     const home = readShared('screens/MainHomeScreen.tsx');
     assert.match(crj, /armCrjVisibilityActivationHandoff\(uid\)/);
+    assert.match(crj, /activation_result/);
     assert.match(home, /isCrjVisibilityActivationHandoffArmed/);
     assert.match(home, /subscribeCrjVisibilityActivationHandoff/);
     assert.match(home, /syncCrjVisibilityActivationHandoffForUid/);
     assert.match(home, /clearCrjVisibilityActivationHandoff/);
+    assert.match(home, /home_subscribed/);
+    assert.match(home, /home_focused/);
+    assert.match(home, /stale_inactive_blocked/);
+    assert.match(home, /labelBugVis01Presentation/);
     assert.doesNotMatch(home, /consumeCrjVisibilityActivationHandoff\(\)/);
     assert.match(home, /crjActivationProvisional/);
     assert.match(

@@ -120,12 +120,14 @@ import {
   shouldShowLocationPreparation,
 } from '../visibility/locationPermissionJourney';
 import {
+  labelBugVis01Presentation,
   resolveVisibilityPresentation,
   shouldRearmVisibilityHydration,
 } from '../visibility/visibilityPresentation';
 import {
   clearCrjVisibilityActivationHandoff,
   isCrjVisibilityActivationHandoffArmed,
+  logBugVis01Dev,
   subscribeCrjVisibilityActivationHandoff,
   syncCrjVisibilityActivationHandoffForUid,
 } from '../visibility/crjVisibilityActivationHandoff';
@@ -270,14 +272,14 @@ export default function MainHomeScreen({ navigation }: Props) {
   });
   const pillActive = visibilityUi.visualActive === true;
   const pillNeutral = visibilityUi.visualActive === null;
+  const applyCrjHandoffArmedRef = useRef<(armed: boolean) => void>(() => {});
 
   useEffect(() => {
-    if (typeof __DEV__ === 'undefined' || !__DEV__) return;
-    console.log('[BUG-VIS-01] MainHomeScreen_mount', {
-      provisional: crjActivationProvisionalRef.current,
+    logBugVis01Dev('home_mount', {
+      provisional_seen: crjActivationProvisionalRef.current,
     });
     return () => {
-      console.log('[BUG-VIS-01] MainHomeScreen_unmount');
+      logBugVis01Dev('home_unmount');
     };
   }, []);
 
@@ -298,10 +300,12 @@ export default function MainHomeScreen({ navigation }: Props) {
         });
         setVisibilityHydrationKick((k) => k + 1);
       }
-      if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        console.log('[BUG-VIS-01] home_handoff_sync', { armed, was });
-      }
+      logBugVis01Dev('provisional_sync', {
+        provisional_seen: armed,
+        was,
+      });
     };
+    applyCrjHandoffArmedRef.current = applyArmed;
 
     const sync = () => {
       const currentUid = firebaseAuth.currentUser?.uid ?? null;
@@ -314,18 +318,43 @@ export default function MainHomeScreen({ navigation }: Props) {
     };
 
     sync();
+    logBugVis01Dev('home_subscribed', {
+      provisional_seen: crjActivationProvisionalRef.current,
+    });
     return subscribeCrjVisibilityActivationHandoff(sync);
   }, []);
 
+  // Re-read handoff when Home becomes visible/focused (pre-mounted CRJ finish).
+  useFocusEffect(
+    useCallback(() => {
+      const currentUid = firebaseAuth.currentUser?.uid ?? null;
+      const armed = currentUid
+        ? syncCrjVisibilityActivationHandoffForUid(currentUid)
+        : false;
+      applyCrjHandoffArmedRef.current(armed);
+      logBugVis01Dev('home_focused', { provisional_seen: armed });
+    }, []),
+  );
+
   useEffect(() => {
-    if (typeof __DEV__ === 'undefined' || !__DEV__) return;
-    console.log('[BUG-VIS-01] visibility_presentation', {
+    const presentation = labelBugVis01Presentation({
       visualActive: visibilityUi.visualActive,
       canStartRuntime: visibilityUi.canStartRuntime,
-      validationPending: visibilityValidationPending,
-      validatedEffective: validatedEffectiveVisibility,
-      persistedVisibility: profile.visibility === true,
-      provisional: crjActivationProvisional,
+      crjActivationProvisional,
+    });
+    const permission_state = visibilityValidationPending
+      ? 'pending'
+      : validatedEffectiveVisibility === true
+        ? 'valid'
+        : validatedEffectiveVisibility === false
+          ? 'invalid'
+          : 'pending';
+    logBugVis01Dev('visibility_presentation', {
+      presentation,
+      runtime_eligible: visibilityUi.canStartRuntime,
+      provisional_seen: crjActivationProvisional,
+      snapshot_visibility: profile.visibility === true,
+      permission_state,
     });
   }, [
     visibilityUi.visualActive,
@@ -399,6 +428,10 @@ export default function MainHomeScreen({ navigation }: Props) {
           const previouslyPersistedOn =
             lastPersistedVisibilityRef.current === true;
           lastPersistedVisibilityRef.current = persistedOn;
+          logBugVis01Dev('snapshot_visibility', {
+            snapshot_visibility: persistedOn,
+            provisional_seen: crjActivationProvisionalRef.current,
+          });
           if (persistedOn) {
             // BUG-VIS-01: entering ON (incl. stale false→true) must not keep a
             // conclusive Inactive from the prior snapshot cycle.
@@ -622,6 +655,27 @@ export default function MainHomeScreen({ navigation }: Props) {
 
         const finishValidation = (effective: boolean) => {
           if (cancelled) return;
+          // Stale Inactive conclusion must not kill a still-armed CRJ handoff
+          // (async focus validation racing a late arm after cached false).
+          if (
+            !effective &&
+            isCrjVisibilityActivationHandoffArmed(uid)
+          ) {
+            crjActivationProvisionalRef.current = true;
+            setCrjActivationProvisional(true);
+            hydrationValidationDoneRef.current = false;
+            setVisibilityValidationPending(true);
+            setValidatedEffectiveVisibility(null);
+            dispatchLocationJourney({
+              type: 'SET_HYDRATION_PENDING',
+              pending: true,
+            });
+            logBugVis01Dev('stale_inactive_blocked', {
+              provisional_seen: true,
+              permission_state: 'pending',
+            });
+            return;
+          }
           hydrationValidationDoneRef.current = true;
           setValidatedEffectiveVisibility(effective);
           setVisibilityValidationPending(false);
@@ -633,9 +687,12 @@ export default function MainHomeScreen({ navigation }: Props) {
           clearCrjVisibilityActivationHandoff(
             effective ? 'validated' : 'denied',
           );
-          if (typeof __DEV__ !== 'undefined' && __DEV__) {
-            console.log('[BUG-VIS-01] finishValidation', { effective });
-          }
+          logBugVis01Dev('finishValidation', {
+            permission_state: effective ? 'valid' : 'invalid',
+            provisional_seen: false,
+            presentation: effective ? 'active_confirmed' : 'inactive',
+            runtime_eligible: effective,
+          });
         };
 
         try {
