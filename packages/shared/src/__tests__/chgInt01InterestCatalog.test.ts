@@ -45,12 +45,12 @@ const NEW_IDS = [
   'technology_digital_innovation',
   'technology_robotics',
   'technology_crypto',
-  'music_genre_reggaeton',
   'music_dance_salsa',
   'music_dance_bachata',
   'music_dance_hip_hop',
   'music_dance_contemporary',
   'food_dietary_organic',
+  'food_dietary_pescatarian',
   'food_cuisine_latin_american',
   'fitness_neighborhood_activities',
 ] as const;
@@ -126,7 +126,6 @@ test('CHG-INT-01: Music genres / dance / live exact', () => {
     'music_genre_jazz_blues',
     'music_genre_classical',
     'music_genre_faith',
-    'music_genre_reggaeton',
     'music_genre_latin',
   ]);
   assert.equal(itemName('music', 'music_genre_classical'), 'Instrumental music');
@@ -158,6 +157,7 @@ test('CHG-INT-01: Food dietary / cuisines exact', () => {
     'food_dietary_halal',
     'food_dietary_plant_based',
     'food_dietary_flexitarian',
+    'food_dietary_pescatarian',
   ]);
   assert.deepEqual(groupItemIds('food', 'food_group_cuisines'), [
     'food_cuisine_italian',
@@ -372,6 +372,7 @@ test('CHG-INT-01: i18n EN/ES coverage for focal keys', () => {
     music_dance_ballroom: { en: 'Ballroom', es: 'Baile de salón' },
     music_live_events: { en: 'Musical events', es: 'Eventos musicales' },
     food_dietary_organic: { en: 'Organic', es: 'Orgánico' },
+    food_dietary_pescatarian: { en: 'Pescatarian', es: 'Pescetariano' },
     food_cuisine_latin_american: {
       en: 'Latin American',
       es: 'Latinoamericana',

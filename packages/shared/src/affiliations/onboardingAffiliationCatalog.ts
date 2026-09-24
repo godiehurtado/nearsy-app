@@ -181,10 +181,7 @@ export const ONBOARDING_AFFILIATION_CATEGORIES: OnboardingAffiliationCategory[] 
       icon: 'sparkles-outline',
       iconColor: '#CA8A04',
       topics: [
-        topic('Zodiac sign', '♈'),
-        topic('Languages', '🗣️'),
         topic('Cultural background', '🌍'),
-        topic('Nationality', '🛂'),
         topic('Hometown', '🏠'),
         topic('Parent', '👶'),
         topic('Pet parent', '🐾'),
