@@ -52,12 +52,12 @@ test('CRJ-I5 catalog: Music hierarchical with 6 groups including Anime', () => {
   assert.ok(anime.items.some((i) => i.id === 'music_anime_series'));
 });
 
-test('CRJ-I5 catalog: Food hierarchical with 4 groups / 39 items', () => {
+test('CRJ-I5 catalog: Food hierarchical with 4 groups / 40 items', () => {
   const food = getOnboardingCategory('food');
   assert.ok(food.groups);
   assert.equal(food.groups.length, 4);
   const itemCount = food.groups.reduce((n, g) => n + g.items.filter((i) => !i.isOther).length, 0);
-  assert.equal(itemCount, 39);
+  assert.equal(itemCount, 40);
   assert.equal(food.name, 'Food, Dining & Dietary Lifestyle');
 });
 

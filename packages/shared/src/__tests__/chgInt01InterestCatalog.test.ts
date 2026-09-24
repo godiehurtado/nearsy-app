@@ -88,7 +88,6 @@ test('CHG-INT-01: Music genres / dance / live match objective', () => {
     'Jazz and blues',
     'Instrumental music',
     'Faith music',
-    'Reggaeton',
     'Latin music',
   ]);
   assert.deepEqual(namesOf('music', 'music_group_dance'), [
@@ -121,6 +120,7 @@ test('CHG-INT-01: Food dietary + cuisines match objective; 4 groups retained', (
     'Halal',
     'Plant-based',
     'Flexitarian',
+    'Pescatarian',
   ]);
   assert.deepEqual(namesOf('food', 'food_group_cuisines'), [
     'Italian',
@@ -239,12 +239,12 @@ test('CHG-INT-01: new IDs unique vs selectable + legacy + customs prefix', () =>
     'technology_digital_innovation',
     'technology_robotics',
     'technology_crypto',
-    'music_genre_reggaeton',
     'music_dance_salsa',
     'music_dance_bachata',
     'music_dance_hip_hop',
     'music_dance_contemporary',
     'food_dietary_organic',
+    'food_dietary_pescatarian',
     'food_cuisine_latin_american',
     'fitness_neighborhood_activities',
   ];
@@ -257,6 +257,8 @@ test('CHG-INT-01: new IDs unique vs selectable + legacy + customs prefix', () =>
     assert.equal(isLegacyDisplayInterestId(id), false);
     assert.ok(!id.startsWith('custom_'));
   }
+  assert.equal(isSelectableCatalogInterestId('music_genre_reggaeton'), false);
+  assert.equal(isLegacyDisplayInterestId('music_genre_reggaeton'), true);
 });
 
 test('CHG-INT-01: new/renamed IDs have EN and ES i18n', () => {
@@ -270,6 +272,7 @@ test('CHG-INT-01: new/renamed IDs have EN and ES i18n', () => {
     'music_dance_hip_hop',
     'music_dance_contemporary',
     'food_dietary_organic',
+    'food_dietary_pescatarian',
     'food_cuisine_latin_american',
     'fitness_neighborhood_activities',
     'music_genre_classical',
