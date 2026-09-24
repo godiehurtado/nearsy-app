@@ -721,7 +721,7 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.match(screenSrc, /zodiacSign=\{profile\.zodiacSign\}/);
   });
 
-  it('places all public interests in the info card, not Alignment card', () => {
+  it('places public interests after Affiliations, not in Alignment card', () => {
     assert.match(screenSrc, /DiscoveryContextCard/);
     assert.match(screenSrc, /discoveryProfile\.interests/);
     assert.match(screenSrc, /resolveInterestChips/);
@@ -730,6 +730,12 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.doesNotMatch(screenSrc, /discoveryProfile\.sharedInterests/);
     assert.doesNotMatch(screenSrc, /DiscoveryCompatibilityCard/);
     assert.match(screenSrc, /InterestChip/);
+    const bio = screenSrc.indexOf('discoveryProfile.biography');
+    const aff = screenSrc.indexOf('<DiscoveryAffiliationsCard');
+    const interests = screenSrc.indexOf("t('discoveryProfile.interests')");
+    assert.ok(bio > 0);
+    assert.ok(aff > bio);
+    assert.ok(interests > aff);
   });
 
   it('wires compact Alignment into identity header', () => {
@@ -760,13 +766,19 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.match(screenSrc, /initialIndex/);
   });
 
-  it('Affiliations card sits between Information and Photos; not pressable', () => {
-    const infoClose = screenSrc.indexOf('{/* Affiliations');
+  it('CHG-PROFILE-01: Biography → Affiliations → Interests → Photos', () => {
+    const bio = screenSrc.indexOf('discoveryProfile.biography');
+    const affComment = screenSrc.indexOf(
+      '{/* Affiliations — Biography → Affiliations → Interests (CHG-PROFILE-01) */}',
+    );
     const affUse = screenSrc.indexOf('<DiscoveryAffiliationsCard');
+    const interests = screenSrc.indexOf("t('discoveryProfile.interests')");
     const photos = screenSrc.indexOf('{/* 6. Photos');
-    assert.ok(affUse > 0);
-    assert.ok(photos > affUse);
-    assert.ok(infoClose > 0 && infoClose < affUse);
+    assert.ok(bio > 0);
+    assert.ok(affComment > bio);
+    assert.ok(affUse > affComment);
+    assert.ok(interests > affUse);
+    assert.ok(photos > interests);
     assert.match(affiliationsSrc, /if \(labeled\.length === 0\) return null/);
     assert.match(affiliationsSrc, /AffiliationLogoMark/);
     assert.match(affiliationsSrc, /AFFILIATION_SELECTED_LOGO_SIZE/);
