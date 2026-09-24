@@ -84,6 +84,7 @@ import {
   setActiveProfileModeFlow,
 } from '../visibility/activeProfileModeSync';
 import { attemptInitialVisibilityAfterCrjCompletion } from '../visibility/initialCrjVisibilityActivation';
+import { markCrjVisibilityProvisionalActive } from '../visibility/crjVisibilityProvisional';
 import { uploadProfileImage, uploadAffiliationImage, uploadGalleryImage, deleteGalleryStorageObject } from '../services/storageService';
 import {
   commitPendingSocialNamePrefill,
@@ -1301,6 +1302,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         console.warn('[CRJ] initial visibility activation skipped', {
           reason: activation.reason,
         });
+      }
+
+      // BUG-VIS-01: one-shot for Home provisional Active before remote true lands.
+      if (activation.activated && uid) {
+        markCrjVisibilityProvisionalActive(uid);
       }
 
       // Start FGS only when Visibility activated AND all gated inputs pass.

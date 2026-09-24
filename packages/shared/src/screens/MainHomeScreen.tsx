@@ -110,9 +110,11 @@ import {
 } from '../location/locationJourneySession';
 import {
   evaluateVisibilityHydration,
+  isHomeSearchEnabled,
   resolvePermissionValidationOnVisibilitySnapshot,
   shouldResetPermissionValidationOnVisibilityChange,
 } from '../location/visibilityHydration';
+import { consumeCrjVisibilityProvisionalActive } from '../visibility/crjVisibilityProvisional';
 import {
   isVisibilityToggleDisabled,
   shouldForceFullBackgroundEducation,
@@ -199,8 +201,22 @@ export default function MainHomeScreen({ navigation }: Props) {
   const [bgDisclosureVariant, setBgDisclosureVariant] =
     useState<BackgroundDisclosureVariant>('full');
   const [bgDisclosureBusy, setBgDisclosureBusy] = useState(false);
+  // Consume CRJ activate-success one-shot once on mount so Home can paint
+  // provisional Active while the first snapshot is still cached false.
+  const crjProvisionalSeedRef = useRef<boolean | null>(null);
+  if (crjProvisionalSeedRef.current === null) {
+    const uid = firebaseAuth.currentUser?.uid;
+    crjProvisionalSeedRef.current = uid
+      ? consumeCrjVisibilityProvisionalActive(uid)
+      : false;
+  }
+  const [crjProvisionalActive, setCrjProvisionalActive] = useState(
+    () => crjProvisionalSeedRef.current === true,
+  );
+  const crjProvisionalActiveRef = useRef(crjProvisionalActive);
+  crjProvisionalActiveRef.current = crjProvisionalActive;
   const [permissionValidationPending, setPermissionValidationPending] =
-    useState(false);
+    useState(() => crjProvisionalSeedRef.current === true);
   const [permissionsValid, setPermissionsValid] = useState<
     boolean | undefined
   >(undefined);
@@ -378,6 +394,7 @@ export default function MainHomeScreen({ navigation }: Props) {
         : !!profile.visibility,
     permissionValidationPending,
     permissionsValid,
+    crjActivationProvisional: crjProvisionalActive,
   });
 
   const pillColors = visibilityHydration.displayActive
@@ -472,6 +489,7 @@ export default function MainHomeScreen({ navigation }: Props) {
             resolvePermissionValidationOnVisibilitySnapshot({
               previousVisibility,
               nextVisibility,
+              crjActivationProvisional: crjProvisionalActiveRef.current,
             });
           if (permissionPatch) {
             setPermissionsValid(permissionPatch.permissionsValid);
@@ -502,15 +520,17 @@ export default function MainHomeScreen({ navigation }: Props) {
     if (shouldResetPermissionValidationOnVisibilityChange(prev, next)) {
       setPermissionsValid(undefined);
       setPermissionValidationPending(true);
-    } else if (next === false) {
+    } else if (next === false && !crjProvisionalActiveRef.current) {
       setPermissionsValid(false);
       setPermissionValidationPending(false);
     }
   }, [profile.visibility]);
 
   // Permission validation for hydration — provisional Active does not start runtime.
+  // Also runs under CRJ provisional while Firestore may still report cached false.
   useEffect(() => {
-    if (loading || profile.visibility !== true) return;
+    if (loading) return;
+    if (profile.visibility !== true && !crjProvisionalActive) return;
     if (permissionsValid !== undefined) return;
 
     let cancelled = false;
@@ -534,7 +554,24 @@ export default function MainHomeScreen({ navigation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [loading, profile.visibility, permissionsValid]);
+  }, [loading, profile.visibility, permissionsValid, crjProvisionalActive]);
+
+  // Drop the one-shot CRJ provisional flag once Visibility/permissions conclude.
+  useEffect(() => {
+    if (!crjProvisionalActive) return;
+    if (profile.visibility === true && permissionsValid === true) {
+      setCrjProvisionalActive(false);
+      return;
+    }
+    if (permissionsValid === false && !permissionValidationPending) {
+      setCrjProvisionalActive(false);
+    }
+  }, [
+    crjProvisionalActive,
+    profile.visibility,
+    permissionsValid,
+    permissionValidationPending,
+  ]);
 
   useEffect(() => {
     (async () => {
@@ -1021,7 +1058,10 @@ export default function MainHomeScreen({ navigation }: Props) {
     );
   }
 
-  const canSearch = visibilityHydration.displayActive && permissionsValid === true;
+  const canSearch = isHomeSearchEnabled({
+    displayActive: visibilityHydration.displayActive,
+    permissionsValid,
+  });
   const modeLabel =
     mode === 'personal'
       ? t('home.modePersonal')

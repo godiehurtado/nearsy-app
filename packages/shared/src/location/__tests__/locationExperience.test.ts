@@ -51,9 +51,16 @@ import {
 } from '../locationJourneySession.ts';
 import {
   evaluateVisibilityHydration,
+  isHomeSearchEnabled,
   resolvePermissionValidationOnVisibilitySnapshot,
   shouldResetPermissionValidationOnVisibilityChange,
 } from '../visibilityHydration.ts';
+import {
+  clearCrjVisibilityProvisionalActive,
+  consumeCrjVisibilityProvisionalActive,
+  markCrjVisibilityProvisionalActive,
+  peekCrjVisibilityProvisionalActive,
+} from '../../visibility/crjVisibilityProvisional.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -517,6 +524,165 @@ describe('visibilityHydration', () => {
     assert.equal(h.displayActive, true);
     assert.equal(h.runtimeEligible, false);
   });
+
+  it('BUG-VIS-01: CRJ success + cached false → Active provisional, no search/runtime', () => {
+    clearCrjVisibilityProvisionalActive();
+    markCrjVisibilityProvisionalActive('uid-crj');
+    assert.equal(peekCrjVisibilityProvisionalActive('uid-crj'), true);
+    const consumed = consumeCrjVisibilityProvisionalActive('uid-crj');
+    assert.equal(consumed, true);
+    assert.equal(peekCrjVisibilityProvisionalActive('uid-crj'), false);
+
+    // Cached false must not sticky-invalidate under CRJ provisional.
+    assert.equal(
+      resolvePermissionValidationOnVisibilitySnapshot({
+        previousVisibility: undefined,
+        nextVisibility: false,
+        crjActivationProvisional: true,
+      }),
+      null,
+    );
+
+    const delayedTrue = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: false,
+      permissionValidationPending: true,
+      permissionsValid: undefined,
+      crjActivationProvisional: true,
+    });
+    assert.equal(delayedTrue.phase, 'validating');
+    assert.equal(delayedTrue.displayActive, true);
+    assert.equal(delayedTrue.runtimeEligible, false);
+    assert.equal(
+      isHomeSearchEnabled({
+        displayActive: delayedTrue.displayActive,
+        permissionsValid: undefined,
+      }),
+      false,
+    );
+
+    // Still waiting for remote true — remains provisional Active.
+    const stillWaiting = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: false,
+      permissionValidationPending: true,
+      permissionsValid: undefined,
+      crjActivationProvisional: true,
+    });
+    assert.equal(stillWaiting.displayActive, true);
+    assert.equal(stillWaiting.runtimeEligible, false);
+
+    // Remote true + FG ok → confirmed Active + search.
+    const confirmed = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: true,
+      permissionValidationPending: false,
+      permissionsValid: true,
+      crjActivationProvisional: true,
+    });
+    assert.equal(confirmed.phase, 'active');
+    assert.equal(confirmed.displayActive, true);
+    assert.equal(confirmed.runtimeEligible, true);
+    assert.equal(
+      isHomeSearchEnabled({
+        displayActive: confirmed.displayActive,
+        permissionsValid: true,
+      }),
+      true,
+    );
+  });
+
+  it('BUG-VIS-01: CRJ provisional + FG denied → Inactive', () => {
+    const denied = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: false,
+      permissionValidationPending: false,
+      permissionsValid: false,
+      crjActivationProvisional: true,
+    });
+    assert.equal(denied.displayActive, false);
+    assert.equal(denied.runtimeEligible, false);
+    assert.equal(
+      isHomeSearchEnabled({
+        displayActive: denied.displayActive,
+        permissionsValid: false,
+      }),
+      false,
+    );
+  });
+
+  it('BUG-VIS-01: no CRJ signal + visibility false → Inactive from start', () => {
+    clearCrjVisibilityProvisionalActive();
+    assert.equal(consumeCrjVisibilityProvisionalActive('uid-off'), false);
+    const h = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: false,
+      permissionValidationPending: false,
+      permissionsValid: false,
+      crjActivationProvisional: false,
+    });
+    assert.equal(h.phase, 'inactive');
+    assert.equal(h.displayActive, false);
+    assert.equal(h.runtimeEligible, false);
+  });
+
+  it('BUG-VIS-01: consumed CRJ signal + remount visibility false → Inactive', () => {
+    clearCrjVisibilityProvisionalActive();
+    markCrjVisibilityProvisionalActive('uid-once');
+    assert.equal(consumeCrjVisibilityProvisionalActive('uid-once'), true);
+    // Second mount / remount — no sticky Active.
+    assert.equal(consumeCrjVisibilityProvisionalActive('uid-once'), false);
+    const h = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: false,
+      permissionValidationPending: false,
+      permissionsValid: false,
+      crjActivationProvisional: false,
+    });
+    assert.equal(h.displayActive, false);
+  });
+
+  it('BUG-VIS-01: existing account/reinstall never auto-marks CRJ provisional', () => {
+    clearCrjVisibilityProvisionalActive();
+    assert.equal(peekCrjVisibilityProvisionalActive('uid-reinstall'), false);
+    const h = evaluateVisibilityHydration({
+      profileLoaded: true,
+      persistedVisibility: false,
+      permissionValidationPending: false,
+      permissionsValid: false,
+    });
+    assert.equal(h.displayActive, false);
+  });
+
+  it('BUG-VIS-01: repeated true snapshot + provisional clear does not sticky-invalidate', () => {
+    let previous: boolean | undefined = true;
+    assert.equal(
+      resolvePermissionValidationOnVisibilitySnapshot({
+        previousVisibility: previous,
+        nextVisibility: true,
+        crjActivationProvisional: false,
+      }),
+      null,
+    );
+    // bgVisible is not an input — churn cannot force revalidation via this helper.
+    previous = true;
+    assert.equal(
+      resolvePermissionValidationOnVisibilitySnapshot({
+        previousVisibility: previous,
+        nextVisibility: true,
+      }),
+      null,
+    );
+  });
+
+  it('BUG-VIS-01: CRJ mark is uid-scoped; logout clear drops pending', () => {
+    clearCrjVisibilityProvisionalActive();
+    markCrjVisibilityProvisionalActive('a');
+    assert.equal(peekCrjVisibilityProvisionalActive('b'), false);
+    assert.equal(peekCrjVisibilityProvisionalActive('a'), true);
+    resetLocationJourneySession();
+    assert.equal(peekCrjVisibilityProvisionalActive('a'), false);
+  });
 });
 
 describe('backgroundPublishDisposition', () => {
@@ -740,6 +906,11 @@ describe('ENH-LOC-01 source contracts', () => {
     assert.match(home, /shouldResetPermissionValidationOnVisibilityChange/);
     assert.match(home, /resolvePermissionValidationOnVisibilitySnapshot/);
     assert.match(home, /previousVisibilityRef\.current = nextVisibility/);
+    assert.match(home, /consumeCrjVisibilityProvisionalActive/);
+    assert.match(home, /crjActivationProvisional/);
+    assert.match(home, /isHomeSearchEnabled/);
+    const crj = readShared('screens/ProfileCompletionScreen.tsx');
+    assert.match(crj, /markCrjVisibilityProvisionalActive/);
   });
 
   it('startGated sets runtime auth; stop clears it', () => {
