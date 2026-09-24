@@ -110,8 +110,15 @@ import {
 } from '../location/locationJourneySession';
 import {
   evaluateVisibilityHydration,
+  isHomeSearchEnabled,
+  resolvePermissionValidationOnVisibilitySnapshot,
   shouldResetPermissionValidationOnVisibilityChange,
 } from '../location/visibilityHydration';
+import {
+  clearCrjVisibilitySession,
+  isCrjVisibilityProvisional,
+  subscribeCrjVisibilitySession,
+} from '../visibility/crjVisibilityProvisional';
 import {
   isVisibilityToggleDisabled,
   shouldForceFullBackgroundEducation,
@@ -198,8 +205,19 @@ export default function MainHomeScreen({ navigation }: Props) {
   const [bgDisclosureVariant, setBgDisclosureVariant] =
     useState<BackgroundDisclosureVariant>('full');
   const [bgDisclosureBusy, setBgDisclosureBusy] = useState(false);
+  // Peek (non-destructive) so Strict Mode / premature remount cannot drop
+  // activation_pending before the first Active provisional paint.
+  const readCrjProvisional = (): boolean => {
+    const id = firebaseAuth.currentUser?.uid;
+    return id ? isCrjVisibilityProvisional(id) : false;
+  };
+  const [crjProvisionalActive, setCrjProvisionalActive] = useState(
+    readCrjProvisional,
+  );
+  const crjProvisionalActiveRef = useRef(crjProvisionalActive);
+  crjProvisionalActiveRef.current = crjProvisionalActive;
   const [permissionValidationPending, setPermissionValidationPending] =
-    useState(false);
+    useState(() => readCrjProvisional());
   const [permissionsValid, setPermissionsValid] = useState<
     boolean | undefined
   >(undefined);
@@ -207,6 +225,23 @@ export default function MainHomeScreen({ navigation }: Props) {
   const pendingBgEnableFromSettingsRef = useRef(false);
   const postLoginRecoveryStartedRef = useRef(false);
   const educationOfferInFlightRef = useRef(false);
+
+  // If Home was already mounted (or mounts before arm), pick up pending sync.
+  useEffect(() => {
+    const sync = () => {
+      const next = readCrjProvisional();
+      setCrjProvisionalActive((prev) => {
+        if (prev === next) return prev;
+        if (next) {
+          setPermissionValidationPending(true);
+          setPermissionsValid(undefined);
+        }
+        return next;
+      });
+    };
+    sync();
+    return subscribeCrjVisibilitySession(sync);
+  }, []);
 
   const officialInterestIds = useMemo(() => officialCatalogInterestIdSet(), []);
   const mode: ProfileMode = resolveActiveMode(profile) ?? 'personal';
@@ -377,6 +412,7 @@ export default function MainHomeScreen({ navigation }: Props) {
         : !!profile.visibility,
     permissionValidationPending,
     permissionsValid,
+    crjActivationProvisional: crjProvisionalActive,
   });
 
   const pillColors = visibilityHydration.displayActive
@@ -461,9 +497,23 @@ export default function MainHomeScreen({ navigation }: Props) {
             appliedEpochRef.current = localEpochRef.current;
           }
 
-          if (data.visibility === false) {
-            setPermissionValidationPending(false);
-            setPermissionsValid(false);
+          // Same-update path as setProfile: rising-edge true must clear sticky
+          // permissionsValid=false before paint (BUG-VIS-01). Do not wait for effect.
+          const nextVisibility =
+            data.visibility === undefined ? undefined : !!data.visibility;
+          const previousVisibility = previousVisibilityRef.current;
+          previousVisibilityRef.current = nextVisibility;
+          const permissionPatch =
+            resolvePermissionValidationOnVisibilitySnapshot({
+              previousVisibility,
+              nextVisibility,
+              crjActivationProvisional: crjProvisionalActiveRef.current,
+            });
+          if (permissionPatch) {
+            setPermissionsValid(permissionPatch.permissionsValid);
+            setPermissionValidationPending(
+              permissionPatch.permissionValidationPending,
+            );
           }
         }
         setLoading(false);
@@ -477,23 +527,28 @@ export default function MainHomeScreen({ navigation }: Props) {
     return () => unsub();
   }, [t, unit, officialInterestIds]);
 
-  // When Visibility flips to true (CRJ activate / restore), drop sticky
-  // permissionsValid=false left by a cached pre-activate snapshot.
+  // Belt for non-snapshot Visibility flips (local setProfile). Snapshot path
+  // already advances previousVisibilityRef + clears sticky synchronously.
   useEffect(() => {
-    const next = profile.visibility;
+    const next =
+      profile.visibility === undefined ? undefined : !!profile.visibility;
     const prev = previousVisibilityRef.current;
+    if (prev === next) return;
     previousVisibilityRef.current = next;
-    if (
-      shouldResetPermissionValidationOnVisibilityChange(prev, next)
-    ) {
+    if (shouldResetPermissionValidationOnVisibilityChange(prev, next)) {
       setPermissionsValid(undefined);
       setPermissionValidationPending(true);
+    } else if (next === false && !crjProvisionalActiveRef.current) {
+      setPermissionsValid(false);
+      setPermissionValidationPending(false);
     }
   }, [profile.visibility]);
 
   // Permission validation for hydration — provisional Active does not start runtime.
+  // Also runs under CRJ provisional while Firestore may still report cached false.
   useEffect(() => {
-    if (loading || profile.visibility !== true) return;
+    if (loading) return;
+    if (profile.visibility !== true && !crjProvisionalActive) return;
     if (permissionsValid !== undefined) return;
 
     let cancelled = false;
@@ -517,7 +572,27 @@ export default function MainHomeScreen({ navigation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [loading, profile.visibility, permissionsValid]);
+  }, [loading, profile.visibility, permissionsValid, crjProvisionalActive]);
+
+  // Drop CRJ provisional session once Visibility/permissions conclude.
+  useEffect(() => {
+    if (!crjProvisionalActive) return;
+    const id = firebaseAuth.currentUser?.uid;
+    if (profile.visibility === true && permissionsValid === true) {
+      setCrjProvisionalActive(false);
+      if (id) clearCrjVisibilitySession(id);
+      return;
+    }
+    if (permissionsValid === false && !permissionValidationPending) {
+      setCrjProvisionalActive(false);
+      if (id) clearCrjVisibilitySession(id);
+    }
+  }, [
+    crjProvisionalActive,
+    profile.visibility,
+    permissionsValid,
+    permissionValidationPending,
+  ]);
 
   useEffect(() => {
     (async () => {
@@ -1004,7 +1079,10 @@ export default function MainHomeScreen({ navigation }: Props) {
     );
   }
 
-  const canSearch = visibilityHydration.displayActive && permissionsValid === true;
+  const canSearch = isHomeSearchEnabled({
+    displayActive: visibilityHydration.displayActive,
+    permissionsValid,
+  });
   const modeLabel =
     mode === 'personal'
       ? t('home.modePersonal')

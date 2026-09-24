@@ -3,6 +3,8 @@
  * Prevents duplicate FG→disclosure prompts across App bootstrap + Home focus.
  */
 
+import { clearCrjVisibilitySession } from '../visibility/crjVisibilityProvisional.ts';
+
 export type LocationJourneySource =
   | 'crj'
   | 'home-visibility'
@@ -32,6 +34,8 @@ export function resetLocationJourneySession(): void {
   session.journeyInFlight = false;
   session.preparing = false;
   session.postLoginRecoveryUid = null;
+  // Avoid sticky CRJ provisional Active across logout / account switch.
+  clearCrjVisibilitySession();
 }
 
 export function bindLocationJourneySessionUid(uid: string | null): void {

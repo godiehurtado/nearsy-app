@@ -84,6 +84,11 @@ import {
   setActiveProfileModeFlow,
 } from '../visibility/activeProfileModeSync';
 import { attemptInitialVisibilityAfterCrjCompletion } from '../visibility/initialCrjVisibilityActivation';
+import {
+  armCrjVisibilityActivationPending,
+  clearCrjVisibilitySession,
+  markCrjVisibilityActivationSucceeded,
+} from '../visibility/crjVisibilityProvisional';
 import { uploadProfileImage, uploadAffiliationImage, uploadGalleryImage, deleteGalleryStorageObject } from '../services/storageService';
 import {
   commitPendingSocialNamePrefill,
@@ -1275,6 +1280,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     if (!uid || !mode || submitting) return;
     try {
       setSubmitting(true);
+
+      // BUG-VIS-01: arm BEFORE profileSetupCompleted=true. The AppNavigator
+      // profile gate remounts MainTabs as soon as that field lands — Home must
+      // already see activation_pending on its first paint.
+      armCrjVisibilityActivationPending(uid);
+
       // profileSetupCompleted is the completion gate for CRJ.
       await updateUserProfilePartial(uid, {
         profileSetupCompleted: true,
@@ -1303,6 +1314,14 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         });
       }
 
+      if (activation.activated && uid) {
+        markCrjVisibilityActivationSucceeded(uid);
+      } else if (uid) {
+        // Contractual activate did not succeed — drop provisional before Home
+        // can keep painting Active.
+        clearCrjVisibilitySession(uid);
+      }
+
       // Start FGS only when Visibility activated AND all gated inputs pass.
       if (activation.activated && uid) {
         try {
@@ -1328,6 +1347,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         routes: [{ name: 'MainTabs' }],
       });
     } catch (e: any) {
+      if (uid) clearCrjVisibilitySession(uid);
       Alert.alert(
         t('onboarding.profileCompletion.saveErrorTitle'),
         e?.message || t('onboarding.profileCompletion.saveErrorMessage'),

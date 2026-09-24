@@ -77,6 +77,14 @@ export const DEPRECATED_INTEREST_DISPLAY_ITEMS: readonly LegacyInterestDisplayIt
       'create-outline',
       '#EA580C',
     ),
+    // Arts
+    legacy(
+      'arts',
+      'arts_dancing',
+      'Dancing',
+      'musical-notes-outline',
+      '#DB2777',
+    ),
     // Music genres
     legacy(
       'music',
@@ -92,6 +100,14 @@ export const DEPRECATED_INTEREST_DISPLAY_ITEMS: readonly LegacyInterestDisplayIt
       'Caribbean & Global Music',
       'globe-outline',
       '#0D9488',
+      'music_group_genres',
+    ),
+    legacy(
+      'music',
+      'music_genre_reggaeton',
+      'Reggaeton',
+      'radio-outline',
+      '#C026D3',
       'music_group_genres',
     ),
     // Music dance (incl. future merge → music_dance_contemporary)
@@ -171,14 +187,6 @@ export const DEPRECATED_INTEREST_DISPLAY_ITEMS: readonly LegacyInterestDisplayIt
     // Food dietary / cuisines (incl. future merges → latin_american)
     legacy(
       'food',
-      'food_dietary_pescatarian',
-      'Pescatarian',
-      'fish-outline',
-      '#0891B2',
-      'food_group_dietary',
-    ),
-    legacy(
-      'food',
       'food_cuisine_costa_rican',
       'Costa Rican',
       'flag-outline',
@@ -208,6 +216,14 @@ export const DEPRECATED_INTEREST_DISPLAY_ITEMS: readonly LegacyInterestDisplayIt
       'star-outline',
       '#CA8A04',
       'food_group_cuisines',
+    ),
+    // Travel
+    legacy(
+      'travel',
+      'travel_immigration',
+      'Immigration Stories',
+      'earth-outline',
+      '#059669',
     ),
   ];
 
