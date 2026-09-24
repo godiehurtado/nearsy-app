@@ -1121,7 +1121,9 @@ export default function MainHomeScreen({ navigation }: Props) {
     );
   }
 
-  const canSearch = pillActive === true;
+  // Discovery CTA requires validated runtime eligibility — provisional Active
+  // (visual only) must not unlock Nearby while FG validation is still open.
+  const canSearch = visibilityUi.canStartRuntime === true;
   const modeLabel =
     mode === 'personal'
       ? t('home.modePersonal')

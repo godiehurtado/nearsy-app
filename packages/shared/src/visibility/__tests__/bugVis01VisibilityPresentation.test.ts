@@ -153,4 +153,13 @@ describe('BUG-VIS-01 Home wiring', () => {
     );
     assert.doesNotMatch(restore, /setLocationPreparing\(true\)/);
   });
+
+  it('Nearby CTA gates on canStartRuntime, not provisional visual Active', () => {
+    const home = readShared('screens/MainHomeScreen.tsx');
+    assert.match(
+      home,
+      /canSearch = visibilityUi\.canStartRuntime === true/,
+    );
+    assert.doesNotMatch(home, /canSearch = pillActive === true/);
+  });
 });
