@@ -119,7 +119,18 @@ import {
   shouldContinueToBackgroundEducation,
   shouldShowLocationPreparation,
 } from '../visibility/locationPermissionJourney';
-import { resolveVisibilityPresentation } from '../visibility/visibilityPresentation';
+import {
+  labelBugVis01Presentation,
+  resolveVisibilityPresentation,
+  shouldRearmVisibilityHydration,
+} from '../visibility/visibilityPresentation';
+import {
+  clearCrjVisibilityActivationHandoff,
+  isCrjVisibilityActivationHandoffArmed,
+  logBugVis01Dev,
+  subscribeCrjVisibilityActivationHandoff,
+  syncCrjVisibilityActivationHandoffForUid,
+} from '../visibility/crjVisibilityActivationHandoff';
 import { BackgroundLocationEducationModal } from '../components/BackgroundLocationEducationModal';
 import { LocationPreparingModal } from '../components/LocationPreparingModal';
 import { updateUserProfilePartial } from '../services/firestoreService';
@@ -206,14 +217,29 @@ export default function MainHomeScreen({ navigation }: Props) {
   const [bgEducationBusy, setBgEducationBusy] = useState(false);
   const [locationPreparing, setLocationPreparing] = useState(false);
   const bgEducationResolverRef = useRef<(() => void) | null>(null);
-  const [visibilityValidationPending, setVisibilityValidationPending] =
-    useState(false);
-  const [validatedEffectiveVisibility, setValidatedEffectiveVisibility] =
-    useState<boolean | null>(null);
   const recoveryJourneyRunningRef = useRef(false);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   /** Once FG/activation validation concludes for this mount, do not re-lock on profile snapshot churn (e.g. bgVisible writes). */
   const hydrationValidationDoneRef = useRef(false);
+  /** Last persisted visibility seen from Firestore (detect false→true for BUG-VIS-01). */
+  const lastPersistedVisibilityRef = useRef<boolean | undefined>(undefined);
+  /** Bumps focus hydration when entering persisted ON after a non-true snapshot. */
+  const [visibilityHydrationKick, setVisibilityHydrationKick] = useState(0);
+  /**
+   * Session CRJ handoff: activation_pending is marked BEFORE profileSetupCompleted,
+   * so the first Home render peeks Active provisional (no Inactive frame).
+   * Subscribe covers remount / late confirm; clear on validate/deny/logout.
+   */
+  const initialCrjArmed = isCrjVisibilityActivationHandoffArmed(
+    firebaseAuth.currentUser?.uid,
+  );
+  const crjActivationProvisionalRef = useRef(initialCrjArmed);
+  const [crjActivationProvisional, setCrjActivationProvisional] =
+    useState(initialCrjArmed);
+  const [visibilityValidationPending, setVisibilityValidationPending] =
+    useState(initialCrjArmed);
+  const [validatedEffectiveVisibility, setValidatedEffectiveVisibility] =
+    useState<boolean | null>(null);
 
   const officialInterestIds = useMemo(() => officialCatalogInterestIdSet(), []);
   const mode: ProfileMode = resolveActiveMode(profile) ?? 'personal';
@@ -242,9 +268,102 @@ export default function MainHomeScreen({ navigation }: Props) {
     validatedEffective: validatedEffectiveVisibility,
     // Education / Always / Settings must never lock Visibility.
     operationBusy: statusUpdating,
+    crjActivationProvisional,
   });
   const pillActive = visibilityUi.visualActive === true;
   const pillNeutral = visibilityUi.visualActive === null;
+  const applyCrjHandoffArmedRef = useRef<(armed: boolean) => void>(() => {});
+
+  useEffect(() => {
+    logBugVis01Dev('home_mount', {
+      provisional_seen: crjActivationProvisionalRef.current,
+    });
+    return () => {
+      logBugVis01Dev('home_unmount');
+    };
+  }, []);
+
+  // Session handoff: survive remount; adopt late arm after Home already mounted.
+  useEffect(() => {
+    const applyArmed = (armed: boolean) => {
+      const was = crjActivationProvisionalRef.current;
+      crjActivationProvisionalRef.current = armed;
+      setCrjActivationProvisional(armed);
+      if (armed && !was) {
+        // Late arm after cached-OFF may have already concluded Inactive.
+        hydrationValidationDoneRef.current = false;
+        setVisibilityValidationPending(true);
+        setValidatedEffectiveVisibility(null);
+        dispatchLocationJourney({
+          type: 'SET_HYDRATION_PENDING',
+          pending: true,
+        });
+        setVisibilityHydrationKick((k) => k + 1);
+      }
+      logBugVis01Dev('provisional_sync', {
+        provisional_seen: armed,
+        was,
+      });
+    };
+    applyCrjHandoffArmedRef.current = applyArmed;
+
+    const sync = () => {
+      const currentUid = firebaseAuth.currentUser?.uid ?? null;
+      if (!currentUid) {
+        clearCrjVisibilityActivationHandoff('logout');
+        applyArmed(false);
+        return;
+      }
+      applyArmed(syncCrjVisibilityActivationHandoffForUid(currentUid));
+    };
+
+    sync();
+    logBugVis01Dev('home_subscribed', {
+      provisional_seen: crjActivationProvisionalRef.current,
+    });
+    return subscribeCrjVisibilityActivationHandoff(sync);
+  }, []);
+
+  // Re-read handoff when Home becomes visible/focused (pre-mounted CRJ finish).
+  useFocusEffect(
+    useCallback(() => {
+      const currentUid = firebaseAuth.currentUser?.uid ?? null;
+      const armed = currentUid
+        ? syncCrjVisibilityActivationHandoffForUid(currentUid)
+        : false;
+      applyCrjHandoffArmedRef.current(armed);
+      logBugVis01Dev('home_focused', { provisional_seen: armed });
+    }, []),
+  );
+
+  useEffect(() => {
+    const presentation = labelBugVis01Presentation({
+      visualActive: visibilityUi.visualActive,
+      canStartRuntime: visibilityUi.canStartRuntime,
+      crjActivationProvisional,
+    });
+    const permission_state = visibilityValidationPending
+      ? 'pending'
+      : validatedEffectiveVisibility === true
+        ? 'valid'
+        : validatedEffectiveVisibility === false
+          ? 'invalid'
+          : 'pending';
+    logBugVis01Dev('visibility_presentation', {
+      presentation,
+      runtime_eligible: visibilityUi.canStartRuntime,
+      provisional_seen: crjActivationProvisional,
+      snapshot_visibility: profile.visibility === true,
+      permission_state,
+    });
+  }, [
+    visibilityUi.visualActive,
+    visibilityUi.canStartRuntime,
+    visibilityValidationPending,
+    validatedEffectiveVisibility,
+    profile.visibility,
+    crjActivationProvisional,
+  ]);
 
   const pillColors = pillNeutral
     ? theme === 'dark'
@@ -305,16 +424,47 @@ export default function MainHomeScreen({ navigation }: Props) {
             uid,
           );
           setProfile(data);
-          if (data.visibility === true) {
-            // Keep visual Active while first FG/activation validation runs.
-            if (!hydrationValidationDoneRef.current) {
+          const persistedOn = data.visibility === true;
+          const previouslyPersistedOn =
+            lastPersistedVisibilityRef.current === true;
+          lastPersistedVisibilityRef.current = persistedOn;
+          logBugVis01Dev('snapshot_visibility', {
+            snapshot_visibility: persistedOn,
+            provisional_seen: crjActivationProvisionalRef.current,
+          });
+          if (persistedOn) {
+            // BUG-VIS-01: entering ON (incl. stale false→true) must not keep a
+            // conclusive Inactive from the prior snapshot cycle.
+            if (
+              shouldRearmVisibilityHydration({
+                persistedOn: true,
+                previouslyPersistedOn,
+                hydrationValidationDone: hydrationValidationDoneRef.current,
+                recoveryInFlight: recoveryJourneyRunningRef.current,
+              })
+            ) {
+              const enteringOn = !previouslyPersistedOn;
+              hydrationValidationDoneRef.current = false;
               setVisibilityValidationPending(true);
               setValidatedEffectiveVisibility(null);
               dispatchLocationJourney({
                 type: 'SET_HYDRATION_PENDING',
                 pending: true,
               });
+              if (enteringOn) {
+                setVisibilityHydrationKick((k) => k + 1);
+              }
             }
+          } else if (crjActivationProvisionalRef.current) {
+            // Cached OFF after CRJ activate success — keep provisional Active
+            // until remote true or conclusive FG failure.
+            hydrationValidationDoneRef.current = false;
+            setVisibilityValidationPending(true);
+            setValidatedEffectiveVisibility(null);
+            dispatchLocationJourney({
+              type: 'SET_HYDRATION_PENDING',
+              pending: true,
+            });
           } else {
             hydrationValidationDoneRef.current = true;
             setVisibilityValidationPending(false);
@@ -505,10 +655,44 @@ export default function MainHomeScreen({ navigation }: Props) {
 
         const finishValidation = (effective: boolean) => {
           if (cancelled) return;
+          // Stale Inactive conclusion must not kill a still-armed CRJ handoff
+          // (async focus validation racing a late arm after cached false).
+          if (
+            !effective &&
+            isCrjVisibilityActivationHandoffArmed(uid)
+          ) {
+            crjActivationProvisionalRef.current = true;
+            setCrjActivationProvisional(true);
+            hydrationValidationDoneRef.current = false;
+            setVisibilityValidationPending(true);
+            setValidatedEffectiveVisibility(null);
+            dispatchLocationJourney({
+              type: 'SET_HYDRATION_PENDING',
+              pending: true,
+            });
+            logBugVis01Dev('stale_inactive_blocked', {
+              provisional_seen: true,
+              permission_state: 'pending',
+            });
+            return;
+          }
           hydrationValidationDoneRef.current = true;
           setValidatedEffectiveVisibility(effective);
           setVisibilityValidationPending(false);
           dispatchLocationJourney({ type: 'HYDRATION_DONE' });
+          if (crjActivationProvisionalRef.current) {
+            crjActivationProvisionalRef.current = false;
+            setCrjActivationProvisional(false);
+          }
+          clearCrjVisibilityActivationHandoff(
+            effective ? 'validated' : 'denied',
+          );
+          logBugVis01Dev('finishValidation', {
+            permission_state: effective ? 'valid' : 'invalid',
+            provisional_seen: false,
+            presentation: effective ? 'active_confirmed' : 'inactive',
+            runtime_eligible: effective,
+          });
         };
 
         try {
@@ -655,6 +839,19 @@ export default function MainHomeScreen({ navigation }: Props) {
               await stopBackgroundLocationRuntime();
             }
           } else if (!remote) {
+            if (crjActivationProvisionalRef.current && foregroundGranted) {
+              // CRJ activated; waiting for remote visibility=true — stay provisional.
+              if (!cancelled) {
+                hydrationValidationDoneRef.current = false;
+                setVisibilityValidationPending(true);
+                setValidatedEffectiveVisibility(null);
+                dispatchLocationJourney({
+                  type: 'SET_HYDRATION_PENDING',
+                  pending: true,
+                });
+              }
+              return;
+            }
             finishValidation(false);
             await stopBackgroundLocationRuntime();
           } else {
@@ -670,8 +867,9 @@ export default function MainHomeScreen({ navigation }: Props) {
       };
       // Do not depend on profile.visibility / bgVisible — snapshot churn must not
       // remount this effect mid-recovery (that skipped education and left overlays).
+      // visibilityHydrationKick only bumps on entering persisted ON (BUG-VIS-01).
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loading]),
+    }, [loading, visibilityHydrationKick]),
   );
 
   const showVisibilityError = (
@@ -1096,7 +1294,9 @@ export default function MainHomeScreen({ navigation }: Props) {
     );
   }
 
-  const canSearch = pillActive === true;
+  // Discovery CTA requires validated runtime eligibility — provisional Active
+  // (visual only) must not unlock Nearby while FG validation is still open.
+  const canSearch = visibilityUi.canStartRuntime === true;
   const modeLabel =
     mode === 'personal'
       ? t('home.modePersonal')

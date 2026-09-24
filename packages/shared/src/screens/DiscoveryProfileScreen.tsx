@@ -343,7 +343,98 @@ export default function DiscoveryProfileScreen() {
             languageCodes={profile.languageCodes}
           />
 
-          {/* 5. Profile information + all public interests */}
+          {/* 5. Profile information (occupation / company / biography) */}
+          {showOccupation || showCompany || showBio ? (
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: palette.panel,
+                  borderColor: palette.border,
+                },
+                cardShadow,
+              ]}
+            >
+              {showOccupation ? (
+                <>
+                  <Text
+                    style={[styles.sectionLabel, { color: palette.textMuted }]}
+                  >
+                    {t('discoveryProfile.occupation')}
+                  </Text>
+                  <Text
+                    style={{
+                      color: palette.textPrimary,
+                      marginTop: 5,
+                      fontWeight: fontWeight.semibold,
+                      fontSize: fontSize.md,
+                      lineHeight: 22,
+                    }}
+                  >
+                    {profile.occupation.trim()}
+                  </Text>
+                </>
+              ) : null}
+
+              {showCompany ? (
+                <>
+                  <Text
+                    style={[
+                      styles.sectionLabel,
+                      {
+                        color: palette.textMuted,
+                        marginTop: showOccupation ? spacing.lg : 0,
+                      },
+                    ]}
+                  >
+                    {t('discoveryProfile.company')}
+                  </Text>
+                  <Text
+                    style={{
+                      color: palette.textPrimary,
+                      marginTop: 5,
+                      fontWeight: fontWeight.semibold,
+                      fontSize: fontSize.md,
+                    }}
+                  >
+                    {profile.company.trim()}
+                  </Text>
+                </>
+              ) : null}
+
+              {showBio ? (
+                <>
+                  <Text
+                    style={[
+                      styles.sectionLabel,
+                      {
+                        color: palette.textMuted,
+                        marginTop:
+                          showOccupation || showCompany ? spacing.lg : 0,
+                      },
+                    ]}
+                  >
+                    {t('discoveryProfile.biography')}
+                  </Text>
+                  <Text
+                    style={{
+                      color: palette.textSecondary,
+                      marginTop: 5,
+                      fontSize: fontSize.base,
+                      lineHeight: 22,
+                    }}
+                  >
+                    {profile.bio.trim()}
+                  </Text>
+                </>
+              ) : null}
+            </View>
+          ) : null}
+
+          {/* Affiliations — after Biography, before Interests; omitted when empty */}
+          <DiscoveryAffiliationsCard affiliations={data.affiliations} />
+
+          {/* Interests — always shown (empty copy when none) */}
           <View
             style={[
               styles.card,
@@ -354,91 +445,8 @@ export default function DiscoveryProfileScreen() {
               cardShadow,
             ]}
           >
-            {showOccupation ? (
-              <>
-                <Text
-                  style={[styles.sectionLabel, { color: palette.textMuted }]}
-                >
-                  {t('discoveryProfile.occupation')}
-                </Text>
-                <Text
-                  style={{
-                    color: palette.textPrimary,
-                    marginTop: 5,
-                    fontWeight: fontWeight.semibold,
-                    fontSize: fontSize.md,
-                    lineHeight: 22,
-                  }}
-                >
-                  {profile.occupation.trim()}
-                </Text>
-              </>
-            ) : null}
-
-            {showCompany ? (
-              <>
-                <Text
-                  style={[
-                    styles.sectionLabel,
-                    {
-                      color: palette.textMuted,
-                      marginTop: showOccupation ? spacing.lg : 0,
-                    },
-                  ]}
-                >
-                  {t('discoveryProfile.company')}
-                </Text>
-                <Text
-                  style={{
-                    color: palette.textPrimary,
-                    marginTop: 5,
-                    fontWeight: fontWeight.semibold,
-                    fontSize: fontSize.md,
-                  }}
-                >
-                  {profile.company.trim()}
-                </Text>
-              </>
-            ) : null}
-
-            {showBio ? (
-              <>
-                <Text
-                  style={[
-                    styles.sectionLabel,
-                    {
-                      color: palette.textMuted,
-                      marginTop:
-                        showOccupation || showCompany ? spacing.lg : 0,
-                    },
-                  ]}
-                >
-                  {t('discoveryProfile.biography')}
-                </Text>
-                <Text
-                  style={{
-                    color: palette.textSecondary,
-                    marginTop: 5,
-                    fontSize: fontSize.base,
-                    lineHeight: 22,
-                  }}
-                >
-                  {profile.bio.trim()}
-                </Text>
-              </>
-            ) : null}
-
             <Text
-              style={[
-                styles.sectionLabel,
-                {
-                  color: palette.textMuted,
-                  marginTop:
-                    showOccupation || showCompany || showBio
-                      ? spacing.lg
-                      : 0,
-                },
-              ]}
+              style={[styles.sectionLabel, { color: palette.textMuted }]}
             >
               {t('discoveryProfile.interests')}
             </Text>
@@ -467,9 +475,6 @@ export default function DiscoveryProfileScreen() {
               </Text>
             )}
           </View>
-
-          {/* Affiliations — between Information and Photos; omitted when empty */}
-          <DiscoveryAffiliationsCard affiliations={data.affiliations} />
 
           {/* 6. Photos */}
           <View style={styles.photosHeader}>

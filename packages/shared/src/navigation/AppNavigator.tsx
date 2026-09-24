@@ -26,6 +26,7 @@ import RootTabs from './RootTabs';
 import { RootStackParamList } from './types';
 import { useAppTheme } from '../theme/ThemeContext';
 import { clearActiveProfileModeConfirmation } from '../visibility/activeProfileModeSync';
+import { clearCrjVisibilityActivationHandoff } from '../visibility/crjVisibilityActivationHandoff';
 import { isAccountDeletionSessionActive } from '../services/accountDeletionSession';
 
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
@@ -100,6 +101,8 @@ export default function AppNavigator() {
       try {
         if (!user) {
           clearActiveProfileModeConfirmation();
+          // Drop CRJ provisional so a later session never inherits Active.
+          clearCrjVisibilityActivationHandoff('logout');
           setUid(null);
           setUserEmail(null);
           setNeedsCompleteProfile(false);

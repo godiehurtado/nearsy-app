@@ -37,13 +37,15 @@ describe('ENH-LOC-01 CRJ activation timing architecture', () => {
     assert.doesNotMatch(req, /LocationPreparingModal|setLocationPreparing/);
   });
 
-  it('finishOnboarding persists profileSetupCompleted before activate', () => {
+  it('finishOnboarding marks activation_pending before profileSetupCompleted, then activate', () => {
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
     const finish = crj.slice(crj.indexOf('async function finishOnboarding()'));
+    const pending = finish.indexOf('markCrjVisibilityActivationPending(uid)');
     const setup = finish.indexOf('profileSetupCompleted: true');
     const sync = finish.indexOf('syncDiscoveryProfileContextFlow');
     const activate = finish.indexOf('attemptInitialVisibilityAfterCrjCompletion');
-    assert.ok(setup >= 0);
+    assert.ok(pending >= 0);
+    assert.ok(setup > pending);
     assert.ok(activate > setup);
     assert.ok(sync > setup && sync < activate);
   });

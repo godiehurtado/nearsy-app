@@ -68,6 +68,12 @@ import {
   shouldResyncProfessionalActiveModeAfterSave,
 } from '../visibility/activeProfileModeSync';
 import { attemptInitialVisibilityAfterCrjCompletion } from '../visibility/initialCrjVisibilityActivation';
+import {
+  clearCrjVisibilityActivationHandoff,
+  confirmCrjVisibilityActivationHandoff,
+  logBugVis01Dev,
+  markCrjVisibilityActivationPending,
+} from '../visibility/crjVisibilityActivationHandoff';
 import { markFullBackgroundEducationSeen } from '../visibility/locationEducation';
 import {
   isBackgroundPermissionEffectivelyGranted,
@@ -1255,6 +1261,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     if (!uid || !mode || submitting) return;
     try {
       setSubmitting(true);
+      // BUG-VIS-01: presume Active before Home can mount. Must run BEFORE
+      // profileSetupCompleted write (that flips auth-complete → auth-main).
+      markCrjVisibilityActivationPending(uid);
       // profileSetupCompleted is the completion gate for CRJ.
       await updateUserProfilePartial(uid, {
         profileSetupCompleted: true,
@@ -1288,7 +1297,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       });
       const activated = activation.activated === true;
       setCrjVisibilityOn(activated);
+      logBugVis01Dev('activation_result', {
+        activation_result: activated ? 'success' : 'failure',
+      });
       if (activated) {
+        confirmCrjVisibilityActivationHandoff(uid);
         // Start BG runtime only after contractual activate success + bgVisible.
         try {
           const profile = await getUserProfile(uid);
@@ -1305,27 +1318,28 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             bgVisible: false,
           });
         }
-      } else if (
-        activation.activated === false &&
-        activation.reason !== 'permission-denied'
-      ) {
-        // Correct activation recovery copy — never "Location not enabled".
-        await new Promise<void>((resolve) => {
-          Alert.alert(
-            t(
-              'onboarding.profileCompletion.location.activationIssueTitle' as any,
-            ),
-            t(
-              'onboarding.profileCompletion.location.activationIssueMessage' as any,
-            ),
-            [{ text: t('common.cancel'), onPress: () => resolve() }],
-          );
-        });
-      }
-      if (__DEV__ && activation.activated === false) {
-        console.warn('[CRJ] initial visibility activation skipped', {
-          reason: activation.reason,
-        });
+      } else {
+        // Activation/permission failure → drop provisional; Home shows Inactive.
+        clearCrjVisibilityActivationHandoff('denied');
+        if (activation.reason !== 'permission-denied') {
+          // Correct activation recovery copy — never "Location not enabled".
+          await new Promise<void>((resolve) => {
+            Alert.alert(
+              t(
+                'onboarding.profileCompletion.location.activationIssueTitle' as any,
+              ),
+              t(
+                'onboarding.profileCompletion.location.activationIssueMessage' as any,
+              ),
+              [{ text: t('common.cancel'), onPress: () => resolve() }],
+            );
+          });
+        }
+        if (__DEV__) {
+          console.warn('[CRJ] initial visibility activation skipped', {
+            reason: activation.reason,
+          });
+        }
       }
 
       navigation.reset({
@@ -1333,6 +1347,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         routes: [{ name: 'MainTabs' }],
       });
     } catch (e: any) {
+      clearCrjVisibilityActivationHandoff('denied');
       Alert.alert(
         t('onboarding.profileCompletion.saveErrorTitle'),
         e?.message || t('onboarding.profileCompletion.saveErrorMessage'),

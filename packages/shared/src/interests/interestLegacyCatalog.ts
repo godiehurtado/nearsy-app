@@ -1,9 +1,9 @@
 /**
- * CHG-INT-01 — legacy / deprecated interest display resolution.
+ * CHG-INT-01 / CHG-INT-02 — legacy / deprecated interest display resolution.
  *
- * Selectable catalog lives in onboardingInterestCatalog.ts (2.0.4).
+ * Selectable catalog lives in onboardingInterestCatalog.ts.
  * IDs listed here are NOT selectable, but keep resolving for profiles
- * that still store them until DATA-INT-01 runs.
+ * that still store them until DATA-INT-02 runs.
  *
  * Do not write Firestore merges here.
  */
@@ -113,12 +113,6 @@ export const LEGACY_DISPLAY_INTEREST_ITEMS: readonly OnboardingInterestItem[] = 
 
   // Food
   legacyItem(
-    'food_dietary_pescatarian',
-    'Pescatarian',
-    'fish-outline',
-    '#0891B2',
-  ),
-  legacyItem(
     'food_cuisine_costa_rican',
     'Costa Rican',
     'flag-outline',
@@ -137,6 +131,26 @@ export const LEGACY_DISPLAY_INTEREST_ITEMS: readonly OnboardingInterestItem[] = 
     '#16A34A',
   ),
   legacyItem('food_cuisine_seafood', 'Seafood', 'star-outline', '#CA8A04'),
+
+  // CHG-INT-02 — retired from selectable catalog (display until DATA-INT-02)
+  legacyItem(
+    'arts_dancing',
+    'Dancing',
+    'musical-notes-outline',
+    '#DB2777',
+  ),
+  legacyItem(
+    'music_genre_reggaeton',
+    'Reggaeton',
+    'headset-outline',
+    '#C026D3',
+  ),
+  legacyItem(
+    'travel_immigration',
+    'Immigration Stories',
+    'earth-outline',
+    '#059669',
+  ),
 ];
 
 const legacyById = new Map(

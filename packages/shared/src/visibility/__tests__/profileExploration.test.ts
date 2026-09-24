@@ -708,7 +708,7 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.doesNotMatch(screenSrc, /metersToFeet/);
   });
 
-  it('places all public interests in the info card, not Compatibility', () => {
+  it('places all public interests after Affiliations, not Compatibility', () => {
     assert.match(screenSrc, /ProfileContextCard/);
     assert.match(screenSrc, /discoveryProfile\.interests/);
     assert.match(screenSrc, /resolveInterestChips/);
@@ -718,6 +718,9 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.doesNotMatch(screenSrc, /sharedPills|sharedIds/);
     assert.doesNotMatch(screenSrc, /DiscoveryCompatibilityCard/);
     assert.match(screenSrc, /InterestChip/);
+    const aff = screenSrc.indexOf('<DiscoveryAffiliationsCard');
+    const interests = screenSrc.indexOf("t('discoveryProfile.interests')");
+    assert.ok(aff > 0 && interests > aff);
   });
 
   it('wires backend alignment into DiscoveryProfileHeader', () => {
@@ -746,13 +749,20 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.match(screenSrc, /initialIndex/);
   });
 
-  it('Affiliations card sits between Information and Photos; not pressable', () => {
-    const infoClose = screenSrc.indexOf('{/* Affiliations');
+  it('Affiliations card sits between Biography and Interests; not pressable', () => {
+    const bio = screenSrc.indexOf("t('discoveryProfile.biography')");
+    const affComment = screenSrc.indexOf('{/* Affiliations');
     const affUse = screenSrc.indexOf('<DiscoveryAffiliationsCard');
+    const interestsComment = screenSrc.indexOf('{/* Interests');
+    const interestsLabel = screenSrc.indexOf("t('discoveryProfile.interests')");
     const photos = screenSrc.indexOf('{/* 6. Photos');
+    assert.ok(bio > 0);
     assert.ok(affUse > 0);
-    assert.ok(photos > affUse);
-    assert.ok(infoClose > 0 && infoClose < affUse);
+    assert.ok(interestsLabel > 0);
+    assert.ok(photos > 0);
+    assert.ok(affComment > bio && affComment < interestsComment);
+    assert.ok(affUse > bio && affUse < interestsLabel);
+    assert.ok(interestsLabel > affUse && interestsLabel < photos);
     assert.match(affiliationsSrc, /if \(labeled\.length === 0\) return null/);
     assert.match(affiliationsSrc, /AffiliationLogoMark/);
     assert.match(affiliationsSrc, /AFFILIATION_SELECTED_LOGO_SIZE/);
@@ -761,6 +771,11 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.doesNotMatch(affiliationsSrc, /onPress|Pressable|Linking/);
     assert.doesNotMatch(affiliationsSrc, /logo_dev|LogoDev|getAffiliationEntitySearch|buildLogoDev/);
     assert.match(screenSrc, /data\.affiliations/);
+    // Info card no longer wraps Interests; empty occ/company/bio omits the card.
+    assert.match(
+      screenSrc,
+      /showOccupation \|\| showCompany \|\| showBio \? \(/,
+    );
   });
 
   it('Affiliation logo mark matches CRJ selected square tokens', () => {
