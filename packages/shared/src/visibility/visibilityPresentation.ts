@@ -31,6 +31,27 @@ export type VisibilityPresentation = {
 };
 
 /**
+ * BUG-VIS-01 — decide whether Home should re-open hydration validation when a
+ * profile snapshot arrives with persisted visibility ON.
+ *
+ * Entering ON (including false→true after a stale cache snapshot) must invalidate
+ * a prior conclusive false so presentation does not paint Inactive. Stable ON
+ * after hydration finished must not re-lock on unrelated snapshot churn.
+ * Recovery journeys own their own finishValidation path.
+ */
+export function shouldRearmVisibilityHydration(input: {
+  persistedOn: boolean;
+  previouslyPersistedOn: boolean;
+  hydrationValidationDone: boolean;
+  recoveryInFlight: boolean;
+}): boolean {
+  if (!input.persistedOn) return false;
+  if (input.recoveryInFlight) return false;
+  if (!input.previouslyPersistedOn) return true;
+  return !input.hydrationValidationDone;
+}
+
+/**
  * Persisted true + validating → visual Active (no runtime).
  * Persisted false → Inactive immediately.
  * Unknown profile → neutral (null), never invent false.

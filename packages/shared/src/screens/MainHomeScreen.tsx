@@ -119,7 +119,10 @@ import {
   shouldContinueToBackgroundEducation,
   shouldShowLocationPreparation,
 } from '../visibility/locationPermissionJourney';
-import { resolveVisibilityPresentation } from '../visibility/visibilityPresentation';
+import {
+  resolveVisibilityPresentation,
+  shouldRearmVisibilityHydration,
+} from '../visibility/visibilityPresentation';
 import { BackgroundLocationEducationModal } from '../components/BackgroundLocationEducationModal';
 import { LocationPreparingModal } from '../components/LocationPreparingModal';
 import { updateUserProfilePartial } from '../services/firestoreService';
@@ -214,6 +217,10 @@ export default function MainHomeScreen({ navigation }: Props) {
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   /** Once FG/activation validation concludes for this mount, do not re-lock on profile snapshot churn (e.g. bgVisible writes). */
   const hydrationValidationDoneRef = useRef(false);
+  /** Last persisted visibility seen from Firestore (detect false→true for BUG-VIS-01). */
+  const lastPersistedVisibilityRef = useRef<boolean | undefined>(undefined);
+  /** Bumps focus hydration when entering persisted ON after a non-true snapshot. */
+  const [visibilityHydrationKick, setVisibilityHydrationKick] = useState(0);
 
   const officialInterestIds = useMemo(() => officialCatalogInterestIdSet(), []);
   const mode: ProfileMode = resolveActiveMode(profile) ?? 'personal';
@@ -305,15 +312,32 @@ export default function MainHomeScreen({ navigation }: Props) {
             uid,
           );
           setProfile(data);
-          if (data.visibility === true) {
-            // Keep visual Active while first FG/activation validation runs.
-            if (!hydrationValidationDoneRef.current) {
+          const persistedOn = data.visibility === true;
+          const previouslyPersistedOn =
+            lastPersistedVisibilityRef.current === true;
+          lastPersistedVisibilityRef.current = persistedOn;
+          if (persistedOn) {
+            // BUG-VIS-01: entering ON (incl. stale false→true) must not keep a
+            // conclusive Inactive from the prior snapshot cycle.
+            if (
+              shouldRearmVisibilityHydration({
+                persistedOn: true,
+                previouslyPersistedOn,
+                hydrationValidationDone: hydrationValidationDoneRef.current,
+                recoveryInFlight: recoveryJourneyRunningRef.current,
+              })
+            ) {
+              const enteringOn = !previouslyPersistedOn;
+              hydrationValidationDoneRef.current = false;
               setVisibilityValidationPending(true);
               setValidatedEffectiveVisibility(null);
               dispatchLocationJourney({
                 type: 'SET_HYDRATION_PENDING',
                 pending: true,
               });
+              if (enteringOn) {
+                setVisibilityHydrationKick((k) => k + 1);
+              }
             }
           } else {
             hydrationValidationDoneRef.current = true;
@@ -670,8 +694,9 @@ export default function MainHomeScreen({ navigation }: Props) {
       };
       // Do not depend on profile.visibility / bgVisible — snapshot churn must not
       // remount this effect mid-recovery (that skipped education and left overlays).
+      // visibilityHydrationKick only bumps on entering persisted ON (BUG-VIS-01).
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loading]),
+    }, [loading, visibilityHydrationKick]),
   );
 
   const showVisibilityError = (

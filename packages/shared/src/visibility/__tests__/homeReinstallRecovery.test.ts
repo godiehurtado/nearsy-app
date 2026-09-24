@@ -79,7 +79,10 @@ describe('Home reinstall recovery — education + no ghost overlay', () => {
       focus,
       /}, \[profile\.visibility, profile\.bgVisible, loading\]\)/,
     );
-    assert.match(focus, /}, \[loading\]\)/);
+    // BUG-VIS-01: kick only on entering persisted ON — never on bgVisible churn.
+    assert.match(focus, /}, \[loading, visibilityHydrationKick\]\)/);
+    assert.doesNotMatch(focus, /}, \[[^\]]*profile\.visibility/);
+    assert.doesNotMatch(focus, /}, \[[^\]]*profile\.bgVisible/);
     assert.match(focus, /snapshot churn must not/);
   });
 

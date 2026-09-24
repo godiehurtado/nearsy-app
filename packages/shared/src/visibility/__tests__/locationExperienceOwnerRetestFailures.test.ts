@@ -248,10 +248,12 @@ describe('Owner retest — Visibility toggle unlock (defect B/G)', () => {
     assert.equal(unknown.visualActive, null);
   });
 
-  it('Home onSnapshot does not re-lock after hydrationValidationDone', () => {
+  it('Home onSnapshot rearms hydration when entering persisted ON (BUG-VIS-01)', () => {
     const home = readShared('screens/MainHomeScreen.tsx');
     assert.match(home, /hydrationValidationDoneRef/);
-    assert.match(home, /if \(!hydrationValidationDoneRef\.current\)/);
+    assert.match(home, /shouldRearmVisibilityHydration/);
+    assert.match(home, /visibilityHydrationKick/);
+    assert.match(home, /lastPersistedVisibilityRef/);
     assert.match(home, /operationBusy:/);
     // Mutex steal must not finishValidation(false)
     assert.doesNotMatch(
