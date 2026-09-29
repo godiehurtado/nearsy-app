@@ -11,8 +11,10 @@
     },
     "development-nearsy-dev": {
       "extends": "development",
+      "environment": "development",
       "env": {
         "NEARSY_FIREBASE_ENV": "development",
+        "EXPO_PUBLIC_NEARSY_FIREBASE_ENV": "development",
         "NEARSY_DEV_CLIENT": "true"
       }
     },

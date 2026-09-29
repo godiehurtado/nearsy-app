@@ -2,8 +2,11 @@
  * Expo config — selects Firebase google-services by environment (J01).
  *
  * Default / production / preview: ./google-services.json (nearsy-pj)
- * Explicit development only when NEARSY_FIREBASE_ENV=development|dev:
- *   ./google-services.nearsy-dev.json (gitignored; never committed)
+ * Explicit development only when NEARSY_FIREBASE_ENV and
+ * EXPO_PUBLIC_NEARSY_FIREBASE_ENV are both development|dev: the EAS file
+ * variable GOOGLE_SERVICES_JSON_DEV (required on EAS Build) or, locally,
+ * ./google-services.nearsy-dev.json (gitignored; never committed).
+ * See plugins/googleServicesConfig.js.
  *
  * Accidental Production activation is avoided: development must be opted in.
  * Emits a single extras shape consumed by packages/shared environment resolver.
@@ -14,21 +17,15 @@ const {
   resolveFacebookAuthConfig,
   withNearsyFacebookAuth,
 } = require('./plugins/facebookAuthConfig');
+const { resolveGoogleServicesConfig } = require('./plugins/googleServicesConfig');
 
-const firebaseEnv = String(process.env.NEARSY_FIREBASE_ENV || '')
-  .trim()
-  .toLowerCase();
-const useNearsyDev = firebaseEnv === 'development' || firebaseEnv === 'dev';
+const { useNearsyDev, googleServicesFile } = resolveGoogleServicesConfig(process.env);
 
 /** Explicit development-client marker (EAS development-nearsy-dev sets this). */
 const nearsyDevClient =
   String(process.env.NEARSY_DEV_CLIENT || '')
     .trim()
     .toLowerCase() === 'true';
-
-const googleServicesFile = useNearsyDev
-  ? './google-services.nearsy-dev.json'
-  : './google-services.json';
 
 /** Canonical labels for JS (never print secrets). */
 const nearsyFirebaseEnv = useNearsyDev ? 'development' : 'production';

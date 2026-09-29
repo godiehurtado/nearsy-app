@@ -7,11 +7,12 @@
  *   node --experimental-strip-types --test packages/shared/src/__tests__/androidFacebookAuth.test.ts
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { describe, it } from 'node:test';
+import { after, describe, it } from 'node:test';
 
 import { authenticationTranslations } from '../i18n/resources/authentication.ts';
 import settingsEn from '../i18n/resources/settings.ts';
@@ -58,7 +59,32 @@ const ENV_KEYS = [
   'EXPO_PUBLIC_FACEBOOK_APP_ID',
   'EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN',
   'NEARSY_FIREBASE_ENV',
+  'EXPO_PUBLIC_NEARSY_FIREBASE_ENV',
+  'GOOGLE_SERVICES_JSON_DEV',
+  'EAS_BUILD',
 ] as const;
+
+const fixtureDir = mkdtempSync(join(tmpdir(), 'nearsy-fb-gs-'));
+const devGoogleServices = join(fixtureDir, 'google-services.dev.json');
+writeFileSync(
+  devGoogleServices,
+  JSON.stringify({
+    project_info: { project_id: 'nearsy-dev' },
+    client: [{ client_info: { android_client_info: { package_name: 'com.nearsy.app' } } }],
+  }),
+);
+after(() => rmSync(fixtureDir, { recursive: true, force: true }));
+
+/** Firebase selector env for app.config.js (development uses a fake nearsy-dev file). */
+function firebaseEnvFor(firebaseEnv: string) {
+  return firebaseEnv === 'development'
+    ? {
+        NEARSY_FIREBASE_ENV: 'development',
+        EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'development',
+        GOOGLE_SERVICES_JSON_DEV: devGoogleServices,
+      }
+    : { NEARSY_FIREBASE_ENV: firebaseEnv };
+}
 
 function loadAppConfig(env: Partial<Record<(typeof ENV_KEYS)[number], string>>): LoadedConfig {
   const previous = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
@@ -97,7 +123,7 @@ describe('App config: Facebook SDK plugin (env-driven)', () => {
 
   it('applies react-native-fbsdk-next 13.4.3 native mods when configured', () => {
     for (const firebaseEnv of ['production', 'development']) {
-      const cfg = loadAppConfig({ ...configured, NEARSY_FIREBASE_ENV: firebaseEnv });
+      const cfg = loadAppConfig({ ...configured, ...firebaseEnvFor(firebaseEnv) });
       assert.deepEqual(cfg.expo._internal?.pluginHistory?.['react-native-fbsdk-next'], {
         name: 'react-native-fbsdk-next',
         version: '13.4.3',
@@ -160,7 +186,7 @@ describe('App config: Facebook SDK plugin (env-driven)', () => {
 
   it('never exposes the Client Token through extra or the serialized public config', () => {
     for (const firebaseEnv of ['production', 'development']) {
-      const cfg = loadAppConfig({ ...configured, NEARSY_FIREBASE_ENV: firebaseEnv });
+      const cfg = loadAppConfig({ ...configured, ...firebaseEnvFor(firebaseEnv) });
       assert.equal(JSON.stringify(cfg.expo.extra).includes(FAKE_TOKEN), false);
       const { mods: _mods, ...publicFields } = cfg.expo;
       assert.equal(JSON.stringify(publicFields).includes(FAKE_TOKEN), false, firebaseEnv);
