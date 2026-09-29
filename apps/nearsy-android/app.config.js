@@ -9,6 +9,10 @@
  * Emits a single extras shape consumed by packages/shared environment resolver.
  */
 const appJson = require('./app.json');
+const {
+  resolveFacebookAuthConfig,
+  buildFacebookPluginEntries,
+} = require('./plugins/facebookAuthConfig');
 
 const firebaseEnv = String(process.env.NEARSY_FIREBASE_ENV || '')
   .trim()
@@ -38,9 +42,24 @@ const logoDevPublishableKey = String(
   process.env.EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY || '',
 ).trim();
 
+/**
+ * Facebook Login (ENH-AUTH-FB-01). App ID + Client Token from env only; the
+ * token is written to native resources by the plugin and never into extra.
+ */
+const facebookAuth = resolveFacebookAuthConfig(process.env);
+if (!facebookAuth.configured) {
+  console.warn(
+    `[app.config] Facebook Login disabled: ${facebookAuth.issues.join(', ')}`,
+  );
+}
+
 module.exports = {
   expo: {
     ...appJson.expo,
+    plugins: [
+      ...(appJson.expo.plugins || []),
+      ...buildFacebookPluginEntries(facebookAuth),
+    ],
     android: {
       ...appJson.expo.android,
       googleServicesFile,
@@ -57,6 +76,8 @@ module.exports = {
        * Combined with nearsyFirebaseEnv for App Check Debug eligibility.
        */
       nearsyDevClient,
+      /** Gates the native Facebook SDK in JS (never the token itself). */
+      facebookAuthConfigured: facebookAuth.configured,
       ...(logoDevPublishableKey.startsWith('pk_')
         ? { EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY: logoDevPublishableKey }
         : {}),
