@@ -77,7 +77,9 @@ function assertNoSecrets(output: string, idToken: string) {
   }
 }
 
-function limitedLoginSdk(idToken: string): FacebookSdkClient {
+const RESIDUAL_ACCESS_TOKEN = 'residualLimitedLoginAccessTokenForTests0001';
+
+function limitedLoginSdk(idToken: string, residualAccessToken?: string): FacebookSdkClient {
   let lastNonce: string | undefined;
   return {
     Settings: { initializeSDK() {} },
@@ -88,7 +90,11 @@ function limitedLoginSdk(idToken: string): FacebookSdkClient {
       },
       logOut() {},
     },
-    AccessToken: { async getCurrentAccessToken() { return null; } },
+    AccessToken: {
+      async getCurrentAccessToken() {
+        return residualAccessToken ? { accessToken: residualAccessToken, userID: FB_USER_ID } : null;
+      },
+    },
     AuthenticationToken: {
       async getAuthenticationTokenIOS() {
         return { authenticationToken: idToken, nonce: lastNonce };
@@ -242,6 +248,35 @@ describe('Facebook auth trace stages (Limited Login)', () => {
     });
     assert.deepEqual(byStage.firebase_sign_in_started, { projectId: 'nearsy-dev' });
     assertNoSecrets(lines.join('\n'), idToken);
+  });
+
+  it('with a residual AccessToken still sends the OIDC credential and leaks nothing', async () => {
+    const lines = captureTrace();
+    const idToken = fakeIdToken();
+    const authenticate = createAuthenticateWithFacebook({
+      registry: createSocialProviderRegistry({
+        facebook: adapter(limitedLoginSdk(idToken, RESIDUAL_ACCESS_TOKEN)),
+      }),
+      firebaseAuth: firebase(async () =>
+        ({ user: { uid: FIREBASE_UID, email: EMAIL, providerData: [{ providerId: 'facebook.com' }] } }) as never,
+      ),
+      getUserProfile: async () => null,
+      isProfileComplete: async () => false,
+    });
+
+    beginFacebookAuthTrace();
+    await authenticate();
+    flushFacebookAuthTrace('test');
+
+    const byStage = Object.fromEntries(getFacebookAuthTrace().map((e) => [e.stage, e.detail]));
+    assert.deepEqual(byStage.access_token_present, { value: true });
+    assert.equal(byStage.token_claims_checked?.nonceClaimMatchesHash, true);
+    assert.equal(byStage.firebase_credential_created?.tokenKind, 'oidc_id_token');
+    assert.equal(byStage.firebase_credential_created?.credentialHasAccessToken, false);
+    assert.equal(byStage.firebase_credential_created?.credentialNonceIsRawNonce, true);
+    const output = lines.join('\n');
+    assertNoSecrets(output, idToken);
+    assert.equal(output.includes(RESIDUAL_ACCESS_TOKEN), false);
   });
 
   it('surfaces the exact Firebase error code, sanitized, and a DEV alert summary', async () => {

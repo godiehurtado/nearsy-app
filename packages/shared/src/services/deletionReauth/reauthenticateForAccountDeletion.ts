@@ -17,6 +17,7 @@ import {
 import {
   SocialAuthError,
 } from '../../authentication/social/domain/socialAuthenticationError';
+import { selectFacebookCredentialTokens } from '../../authentication/social/domain/facebookCredentialPolicy';
 import type { DeletionReauthMethod } from './deletionReauthMethod';
 
 export type AccountDeletionReauthErrorCode =
@@ -269,19 +270,48 @@ async function defaultObtainFacebookTokens(): Promise<FacebookProviderTokens> {
     provider: 'facebook',
     interactive: true,
   });
-  const accessToken = result.accessToken?.trim();
-  const idToken = result.idToken?.trim();
-  const rawNonce = result.rawNonce?.trim();
-  if (!accessToken && !(idToken && rawNonce)) {
+  return toFacebookReauthTokens(result);
+}
+
+/** Same Limited Login policy as sign-in: OIDC + raw nonce first, AccessToken fallback. */
+export function toFacebookReauthTokens(result: {
+  accessToken?: string;
+  idToken?: string;
+  rawNonce?: string;
+  providerUserId?: string;
+}): FacebookProviderTokens {
+  const tokens = selectFacebookCredentialTokens(result);
+  if (!tokens) {
     throw new AccountDeletionReauthError(
       'REAUTH_FAILED',
       'settings.deleteAccount.reauthFailed',
     );
   }
   return {
-    ...(accessToken ? { accessToken } : { idToken, rawNonce }),
+    ...(tokens.kind === 'oidc'
+      ? { idToken: tokens.idToken, rawNonce: tokens.rawNonce }
+      : { accessToken: tokens.accessToken }),
     providerUserId: result.providerUserId?.trim() ?? '',
   };
+}
+
+export function createFacebookReauthCredential(
+  tokens: FacebookProviderTokens,
+): AuthCredential {
+  const selected = selectFacebookCredentialTokens(tokens);
+  if (!selected) {
+    throw new AccountDeletionReauthError(
+      'REAUTH_FAILED',
+      'settings.deleteAccount.reauthFailed',
+    );
+  }
+  if (selected.kind === 'access_token') {
+    return FacebookAuthProvider.credential(selected.accessToken);
+  }
+  return new OAuthProvider('facebook.com').credential({
+    idToken: selected.idToken,
+    rawNonce: selected.rawNonce,
+  });
 }
 
 export function createDefaultReauthenticateForDeletionDependencies(): ReauthenticateForDeletionDependencies {
@@ -305,10 +335,7 @@ export function createDefaultReauthenticateForDeletionDependencies(): Reauthenti
       const provider = new OAuthProvider('apple.com');
       return provider.credential({ idToken, rawNonce });
     },
-    createFacebookCredential: ({ accessToken, idToken, rawNonce }) => {
-      if (accessToken) return FacebookAuthProvider.credential(accessToken);
-      return new OAuthProvider('facebook.com').credential({ idToken, rawNonce });
-    },
+    createFacebookCredential: createFacebookReauthCredential,
     obtainGoogleProviderTokens: defaultObtainGoogleTokens,
     obtainAppleProviderTokens: defaultObtainAppleTokens,
     obtainFacebookProviderTokens: defaultObtainFacebookTokens,

@@ -156,10 +156,10 @@ export function mapFacebookSdkError(err: unknown): SocialAuthError {
 /**
  * Facebook Login provider adapter (iOS, react-native-fbsdk-next).
  *
- * Requests only public_profile + email. Returns the classic Access Token when
- * the SDK provides one; otherwise (no ATT → Limited Login) returns the OIDC
- * authentication token paired with the raw nonce. Never exchanges Firebase
- * credentials, writes Firestore, or navigates.
+ * Requests only public_profile + email through Limited Login. Returns the OIDC
+ * authentication token paired with the raw nonce; the classic Access Token is
+ * only a fallback when the SDK provides no authentication token. Never
+ * exchanges Firebase credentials, writes Firestore, or navigates.
  */
 export function createFacebookProviderAdapter(
   deps: FacebookProviderAdapterDeps = {},
@@ -246,7 +246,7 @@ export function createFacebookProviderAdapter(
         traceFacebookAuth('native_login_started', { platform: platformOS });
         const result = await sdk.LoginManager.logInWithPermissions(
           [...FACEBOOK_LOGIN_PERMISSIONS],
-          'enabled',
+          'limited',
           hashedNonce,
         );
         traceFacebookAuth('native_login_completed', {
@@ -267,37 +267,36 @@ export function createFacebookProviderAdapter(
         const classicToken = trimToUndefined(accessToken?.accessToken);
         traceFacebookAuth('access_token_present', { value: Boolean(classicToken) });
 
-        let idToken: string | undefined;
-        if (!classicToken) {
-          const authToken = await sdk.AuthenticationToken
-            .getAuthenticationTokenIOS()
-            .catch((tokenErr: unknown) => {
-              traceFacebookAuth('native_error', {
-                step: 'get_authentication_token_ios',
-                ...describeErrorForTrace(tokenErr),
-              });
-              return null;
+        // Limited Login may still expose an AccessToken that the Graph API
+        // rejects (code 190); the OIDC authentication token is authoritative.
+        const authToken = await sdk.AuthenticationToken
+          .getAuthenticationTokenIOS()
+          .catch((tokenErr: unknown) => {
+            traceFacebookAuth('native_error', {
+              step: 'get_authentication_token_ios',
+              ...describeErrorForTrace(tokenErr),
             });
-          idToken = trimToUndefined(authToken?.authenticationToken);
-          const tokenNonce = trimToUndefined(authToken?.nonce);
-          traceFacebookAuth('authentication_token_present', { value: Boolean(idToken) });
-          traceFacebookAuth('nonce_present', {
-            sdkNonce: Boolean(tokenNonce),
-            rawNonce: Boolean(rawNonce),
+            return null;
           });
-          traceFacebookAuth('nonce_match', {
-            sdkNonceMatchesHash: tokenNonce === hashedNonce,
-            rawNonceDiffersFromHash: rawNonce !== hashedNonce,
-          });
-          if (idToken && isFacebookAuthTraceEnabled()) {
-            traceFacebookAuth(
-              'token_claims_checked',
-              inspectLimitedLoginTokenForTrace(idToken, { appId, hashedNonce }),
-            );
-          }
-          if (idToken && tokenNonce && tokenNonce !== hashedNonce) {
-            throw facebookError('TOKEN_INVALID', 'FACEBOOK_NONCE_MISMATCH');
-          }
+        const idToken = trimToUndefined(authToken?.authenticationToken);
+        const tokenNonce = trimToUndefined(authToken?.nonce);
+        traceFacebookAuth('authentication_token_present', { value: Boolean(idToken) });
+        traceFacebookAuth('nonce_present', {
+          sdkNonce: Boolean(tokenNonce),
+          rawNonce: Boolean(rawNonce),
+        });
+        traceFacebookAuth('nonce_match', {
+          sdkNonceMatchesHash: tokenNonce === hashedNonce,
+          rawNonceDiffersFromHash: rawNonce !== hashedNonce,
+        });
+        if (idToken && isFacebookAuthTraceEnabled()) {
+          traceFacebookAuth(
+            'token_claims_checked',
+            inspectLimitedLoginTokenForTrace(idToken, { appId, hashedNonce }),
+          );
+        }
+        if (idToken && tokenNonce && tokenNonce !== hashedNonce) {
+          throw facebookError('TOKEN_INVALID', 'FACEBOOK_NONCE_MISMATCH');
         }
 
         if (!classicToken && !idToken) {
@@ -315,9 +314,9 @@ export function createFacebookProviderAdapter(
             trimToUndefined(accessToken?.userID) ??
             trimToUndefined(profile?.userID) ??
             '',
-          ...(classicToken
-            ? { accessToken: classicToken }
-            : { idToken, rawNonce }),
+          ...(idToken
+            ? { idToken, rawNonce }
+            : { accessToken: classicToken }),
           email: emailGranted ? trimToUndefined(profile?.email) : undefined,
           displayName: trimToUndefined(profile?.name),
           givenName: trimToUndefined(profile?.firstName),

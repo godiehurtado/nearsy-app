@@ -34,6 +34,7 @@ import {
   sanitizeSocialErrorForLog,
   SocialAuthError,
 } from '../domain/socialAuthenticationError';
+import { selectFacebookCredentialTokens } from '../domain/facebookCredentialPolicy';
 import type {
   FirebaseAuthenticationPort,
   FirebaseAuthenticationSession,
@@ -243,7 +244,7 @@ describe('Facebook button on Welcome and Login', () => {
 });
 
 describe('Facebook provider adapter', () => {
-  it('SDK login → classic Access Token with only public_profile + email', async () => {
+  it('Limited Login with only public_profile + email; AccessToken only when no AuthenticationToken', async () => {
     const { sdk, calls } = createFakeSdk();
     const adapter = createAdapter(sdk);
 
@@ -252,7 +253,7 @@ describe('Facebook provider adapter', () => {
     assert.deepEqual([...FACEBOOK_LOGIN_PERMISSIONS], ['public_profile', 'email']);
     assert.equal(calls.login.length, 1);
     assert.deepEqual(calls.login[0]?.permissions, ['public_profile', 'email']);
-    assert.equal(calls.login[0]?.tracking, 'enabled');
+    assert.equal(calls.login[0]?.tracking, 'limited');
     assert.equal(calls.login[0]?.nonce, HASHED_NONCE);
     assert.equal(calls.initializeSDK, 1);
     assert.equal(calls.logOut, 1, 'stale Facebook session cleared before login');
@@ -264,12 +265,13 @@ describe('Facebook provider adapter', () => {
     assert.equal(result.email, 'ada@example.test');
   });
 
-  it('without ATT falls back to Limited Login OIDC token + raw nonce', async () => {
-    const { sdk } = createFakeSdk({ accessToken: null, authenticationToken: 'oidc-jwt' });
+  it('Limited Login returns the OIDC token + raw nonce', async () => {
+    const { sdk, calls } = createFakeSdk({ accessToken: null, authenticationToken: 'oidc-jwt' });
     const result = await createAdapter(sdk).authenticate({
       provider: 'facebook',
       interactive: true,
     });
+    assert.equal(calls.login[0]?.tracking, 'limited');
     assert.equal(result.accessToken, undefined);
     assert.equal(result.idToken, 'oidc-jwt');
     assert.equal(result.rawNonce, RAW_NONCE);
@@ -283,6 +285,43 @@ describe('Facebook provider adapter', () => {
       () => createAdapter(mismatch.sdk).authenticate({ provider: 'facebook', interactive: true }),
       (err: unknown) => err instanceof SocialAuthError && err.social.code === 'TOKEN_INVALID',
     );
+  });
+
+  it('prefers the OIDC token even when a residual AccessToken exists (auth/invalid-credential regression)', async () => {
+    const { sdk, calls } = createFakeSdk({ authenticationToken: 'oidc-jwt' });
+    const result = await createAdapter(sdk).authenticate({
+      provider: 'facebook',
+      interactive: true,
+    });
+    assert.equal(calls.login[0]?.tracking, 'limited');
+    assert.equal(calls.login[0]?.nonce, HASHED_NONCE);
+    assert.equal(result.idToken, 'oidc-jwt');
+    assert.equal(result.rawNonce, RAW_NONCE);
+    assert.equal(result.accessToken, undefined, 'residual AccessToken never reaches Firebase');
+  });
+
+  it('a residual AccessToken never bypasses the OIDC nonce check', async () => {
+    const { sdk, calls } = createFakeSdk({
+      authenticationToken: 'oidc-jwt',
+      authenticationNonce: 'other-nonce',
+    });
+    await assert.rejects(
+      () => createAdapter(sdk).authenticate({ provider: 'facebook', interactive: true }),
+      (err: unknown) =>
+        err instanceof SocialAuthError && err.social.diagnosticCode === 'FACEBOOK_NONCE_MISMATCH',
+    );
+    assert.equal(calls.logOut, 2, 'pre-login logout + failure cleanup');
+  });
+
+  it('never requests ATT or enables advertiser tracking', () => {
+    const adapterSource = readSharedSource(
+      'authentication/social/infrastructure/facebook/facebookProviderAdapter.ios.ts',
+    );
+    assert.doesNotMatch(
+      adapterSource,
+      /requestTrackingPermissions|expo-tracking-transparency|setAdvertiserTrackingEnabled|setAdvertiserIDCollectionEnabled|setAutoLogAppEventsEnabled/,
+    );
+    assert.match(adapterSource, /\[\.\.\.FACEBOOK_LOGIN_PERMISSIONS\],\s*'limited',\s*hashedNonce,/);
   });
 
   it('cancel maps to CANCELLED', async () => {
@@ -503,6 +542,62 @@ describe('Firebase Facebook credential', () => {
       () => adapter.signInWithSocialCredential({ provider: 'facebook' }),
       (err: unknown) => err instanceof SocialAuthError && err.social.code === 'TOKEN_MISSING',
     );
+  });
+
+  it('OIDC credential wins over an AccessToken when both are provided', async () => {
+    const seen: unknown[] = [];
+    class MockOAuthProvider {
+      constructor(public providerId: string) {
+        seen.push(providerId);
+      }
+      credential(params: { idToken?: string; rawNonce?: string }) {
+        seen.push(params);
+        return { type: 'oidc-cred' };
+      }
+    }
+    const adapter = createFirebaseJsAuthenticationAdapter({
+      OAuthProvider: MockOAuthProvider as any,
+      FacebookAuthProvider: {
+        credential() {
+          seen.push('classic-credential');
+          return { type: 'fb-cred' };
+        },
+      },
+      async signInWithCredential(_auth, credential) {
+        seen.push(credential);
+        return fakeUserCredential('fb-uid', null);
+      },
+      auth: {},
+    });
+    await adapter.signInWithSocialCredential({
+      provider: 'facebook',
+      accessToken: 'residual-access-token',
+      idToken: 'oidc-jwt',
+      rawNonce: RAW_NONCE,
+    });
+    assert.deepEqual(seen, [
+      'facebook.com',
+      { idToken: 'oidc-jwt', rawNonce: RAW_NONCE },
+      { type: 'oidc-cred' },
+    ]);
+  });
+
+  it('credential policy: OIDC + raw nonce first, AccessToken only as fallback', () => {
+    assert.deepEqual(
+      selectFacebookCredentialTokens({ accessToken: 'tok', idToken: ' jwt ', rawNonce: ' raw ' }),
+      { kind: 'oidc', idToken: 'jwt', rawNonce: 'raw' },
+    );
+    assert.deepEqual(selectFacebookCredentialTokens({ accessToken: 'tok' }), {
+      kind: 'access_token',
+      accessToken: 'tok',
+    });
+    assert.deepEqual(
+      selectFacebookCredentialTokens({ accessToken: 'tok', idToken: 'jwt' }),
+      { kind: 'access_token', accessToken: 'tok' },
+      'an OIDC token without its raw nonce is not a usable credential',
+    );
+    assert.equal(selectFacebookCredentialTokens({ idToken: 'jwt', rawNonce: ' ' }), null);
+    assert.equal(selectFacebookCredentialTokens({}), null);
   });
 
   it('account-exists-with-different-credential → ACCOUNT_CONFLICT, no auto-linking', async () => {

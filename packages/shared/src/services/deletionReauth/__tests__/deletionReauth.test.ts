@@ -12,6 +12,10 @@ import {
   resolveDeletionReauthMethod,
   type ReauthenticateForDeletionDependencies,
 } from '../index';
+import {
+  createFacebookReauthCredential,
+  toFacebookReauthTokens,
+} from '../reauthenticateForAccountDeletion';
 import { createSocialAuthError } from '../../../authentication/social/domain/socialAuthenticationError';
 
 describe('resolveDeletionReauthMethod', () => {
@@ -239,6 +243,60 @@ describe('reauthenticateForAccountDeletion', () => {
     );
     assert.equal(seenCred.idToken, 'oidc-jwt');
     assert.equal(seenCred.rawNonce, 'raw-nonce');
+  });
+
+  it('facebook reauth tokens follow the sign-in Limited Login policy (OIDC first)', () => {
+    assert.deepEqual(
+      toFacebookReauthTokens({
+        accessToken: 'residual-access-token',
+        idToken: 'oidc-jwt',
+        rawNonce: 'raw-nonce',
+        providerUserId: ' fb-app-scoped-1 ',
+      }),
+      { idToken: 'oidc-jwt', rawNonce: 'raw-nonce', providerUserId: 'fb-app-scoped-1' },
+    );
+    assert.deepEqual(toFacebookReauthTokens({ accessToken: 'tok', providerUserId: '' }), {
+      accessToken: 'tok',
+      providerUserId: '',
+    });
+    assert.throws(
+      () => toFacebookReauthTokens({ idToken: 'oidc-jwt', providerUserId: '' }),
+      (err: unknown) => err instanceof AccountDeletionReauthError && err.code === 'REAUTH_FAILED',
+    );
+  });
+
+  it('facebook reauth credential is OAuthProvider(facebook.com) with idToken + raw nonce', () => {
+    const oidc = createFacebookReauthCredential({
+      accessToken: 'residual-access-token',
+      idToken: 'oidc-jwt',
+      rawNonce: 'raw-nonce',
+      providerUserId: '',
+    }).toJSON() as Record<string, unknown>;
+    assert.equal(oidc.providerId, 'facebook.com');
+    assert.equal(oidc.idToken, 'oidc-jwt');
+    assert.equal(oidc.nonce, 'raw-nonce');
+    assert.equal(oidc.accessToken, undefined);
+
+    const classic = createFacebookReauthCredential({
+      accessToken: 'tok',
+      providerUserId: '',
+    }).toJSON() as Record<string, unknown>;
+    assert.equal(classic.providerId, 'facebook.com');
+    assert.equal(classic.accessToken, 'tok');
+  });
+
+  it('default facebook reauth reuses the shared Limited Login adapter and credential policy', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { dirname, join } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '..', 'reauthenticateForAccountDeletion.ts'),
+      'utf8',
+    );
+    assert.match(source, /registry\.get\('facebook'\)/);
+    assert.match(source, /return toFacebookReauthTokens\(result\);/);
+    assert.match(source, /createFacebookCredential: createFacebookReauthCredential,/);
+    assert.doesNotMatch(source, /FacebookAuthProvider\.credential\(accessToken\)/);
   });
 
   it('facebook reauth cancel never reaches credential reauth (account not deleted)', async () => {

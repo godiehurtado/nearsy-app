@@ -10,6 +10,7 @@ import {
   createSocialAuthError,
   messageKeyForCode,
 } from '../../domain/socialAuthenticationError';
+import { selectFacebookCredentialTokens } from '../../domain/facebookCredentialPolicy';
 import type {
   FirebaseAuthenticationPort,
   FirebaseAuthenticationSession,
@@ -238,14 +239,17 @@ export function createFirebaseJsAuthenticationAdapter(
           runtimeOverrides?.signInWithCredential ??
           (signInWithCredential as FirebaseJsAuthRuntime['signInWithCredential']);
 
+        const tokens = selectFacebookCredentialTokens({ accessToken, idToken, rawNonce });
+
         let auth: unknown;
         try {
-          const credential = accessToken
-            ? Facebook.credential(accessToken)
-            : new FacebookOAuth('facebook.com').credential({
-                idToken,
-                rawNonce,
-              });
+          const credential =
+            tokens?.kind === 'access_token'
+              ? Facebook.credential(tokens.accessToken)
+              : new FacebookOAuth('facebook.com').credential({
+                  idToken,
+                  rawNonce,
+                });
           const cred = credential as {
             providerId?: unknown;
             signInMethod?: unknown;
@@ -254,7 +258,7 @@ export function createFirebaseJsAuthenticationAdapter(
             nonce?: unknown;
           };
           traceFacebookAuth('firebase_credential_created', {
-            tokenKind: accessToken ? 'access_token' : 'oidc_id_token',
+            tokenKind: tokens?.kind === 'access_token' ? 'access_token' : 'oidc_id_token',
             providerId: typeof cred.providerId === 'string' ? cred.providerId : 'missing',
             signInMethod: typeof cred.signInMethod === 'string' ? cred.signInMethod : 'missing',
             credentialHasIdToken: typeof cred.idToken === 'string' && cred.idToken.length > 0,
