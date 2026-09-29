@@ -119,7 +119,7 @@ function createFakeSdk(options: FakeSdkOptions = {}) {
         return options.authenticationToken
           ? {
               authenticationToken: options.authenticationToken,
-              nonce: options.authenticationNonce ?? HASHED_NONCE,
+              nonce: options.authenticationNonce ?? calls.login.at(-1)?.nonce ?? HASHED_NONCE,
             }
           : null;
       },
@@ -350,6 +350,88 @@ describe('Facebook provider adapter', () => {
     });
     assert.equal(result.email, undefined);
     assert.equal(result.accessToken, 'fb-access-token');
+  });
+
+  it('each attempt uses a fresh CSPRNG nonce: SDK gets the SHA-256, result keeps the raw nonce', async () => {
+    let seed = 0;
+    const randomCrypto = {
+      ...fakeCrypto,
+      async getRandomBytesAsync(count: number) {
+        seed += 1;
+        return new Uint8Array(count).map((_, i) => (i * 7 + seed * 13) % 62);
+      },
+    };
+    const { sdk, calls } = createFakeSdk({ accessToken: null, authenticationToken: 'oidc-jwt' });
+    const adapter = createFacebookProviderAdapter({
+      sdk,
+      crypto: randomCrypto,
+      resolveAppId: () => FAKE_APP_ID,
+      platformOS: 'ios',
+    });
+
+    const first = await adapter.authenticate({ provider: 'facebook', interactive: true });
+    const second = await adapter.authenticate({ provider: 'facebook', interactive: true });
+
+    for (const [i, result] of [first, second].entries()) {
+      assert.match(result.rawNonce ?? '', /^[0-9A-Za-z]{32}$/);
+      assert.equal(calls.login[i]?.nonce, `sha256(${result.rawNonce})`);
+      assert.notEqual(result.rawNonce, calls.login[i]?.nonce, 'raw nonce, never the hash');
+      assert.equal(result.idToken, 'oidc-jwt');
+      assert.equal(result.accessToken, undefined);
+    }
+    assert.notEqual(first.rawNonce, second.rawNonce, 'nonce is never reused across attempts');
+  });
+
+  it('secure random failure fails closed before opening Facebook Login', async () => {
+    const { sdk, calls } = createFakeSdk();
+    const adapter = createFacebookProviderAdapter({
+      sdk,
+      crypto: {
+        ...fakeCrypto,
+        async getRandomBytesAsync() {
+          throw new Error('no secure random');
+        },
+      },
+      resolveAppId: () => FAKE_APP_ID,
+      platformOS: 'ios',
+    });
+    await assert.rejects(
+      () => adapter.authenticate({ provider: 'facebook', interactive: true }),
+      (err: unknown) =>
+        err instanceof SocialAuthError &&
+        err.social.diagnosticCode === 'FACEBOOK_NONCE_GENERATION_FAILED',
+    );
+    assert.equal(calls.login.length, 0);
+  });
+
+  it('cancelled, mismatched, tokenless or failed attempts log out the Facebook SDK', async () => {
+    const scenarios: FakeSdkOptions[] = [
+      { cancelled: true },
+      { accessToken: null, authenticationToken: 'oidc-jwt', authenticationNonce: 'other-nonce' },
+      { accessToken: null, authenticationToken: null },
+      { loginError: new Error('Login Failed') },
+    ];
+    for (const options of scenarios) {
+      const { sdk, calls } = createFakeSdk(options);
+      await assert.rejects(() =>
+        createAdapter(sdk).authenticate({ provider: 'facebook', interactive: true }),
+      );
+      assert.equal(calls.logOut, 2, 'pre-login logout + failure cleanup');
+    }
+  });
+
+  it('never calls the Graph API or persists tokens/nonce', () => {
+    const adapterSource = readSharedSource(
+      'authentication/social/infrastructure/facebook/facebookProviderAdapter.ios.ts',
+    );
+    const orchestratorSource = readSharedSource(
+      'authentication/social/application/authenticateWithFacebook.ts',
+    );
+    for (const source of [adapterSource, orchestratorSource]) {
+      assert.doesNotMatch(source, /GraphRequest|graph\.facebook\.com/);
+      assert.doesNotMatch(source, /AsyncStorage|SecureStore|setItem\(/);
+      assert.doesNotMatch(source, /console\.(log|warn|error)\([^)]*(token|nonce|email)/i);
+    }
   });
 
   it('clearProviderSession is idempotent and never throws', async () => {

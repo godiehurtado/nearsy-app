@@ -288,6 +288,13 @@ export function createFacebookProviderAdapter(
           grantedScopes: result.grantedPermissions ?? undefined,
         };
       } catch (err) {
+        // A cancelled, rejected or mismatched attempt must not leave a cached
+        // Facebook token/profile behind for a later attempt to pick up.
+        try {
+          sdk.LoginManager.logOut();
+        } catch {
+          // Best-effort cleanup only.
+        }
         throw mapFacebookSdkError(err);
       }
     },

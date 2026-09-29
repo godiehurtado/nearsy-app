@@ -80,6 +80,8 @@ export type ReauthenticateForDeletionDependencies = {
   obtainGoogleProviderTokens: () => Promise<GoogleProviderTokens>;
   obtainAppleProviderTokens: () => Promise<AppleProviderTokens>;
   obtainFacebookProviderTokens: () => Promise<FacebookProviderTokens>;
+  /** Best-effort Facebook SDK logout when a Facebook reauth attempt fails. */
+  clearFacebookProviderSession?: () => Promise<void>;
   reauthWithPassword: (password: string) => Promise<void>;
 };
 
@@ -310,6 +312,13 @@ export function createDefaultReauthenticateForDeletionDependencies(): Reauthenti
     obtainGoogleProviderTokens: defaultObtainGoogleTokens,
     obtainAppleProviderTokens: defaultObtainAppleTokens,
     obtainFacebookProviderTokens: defaultObtainFacebookTokens,
+    clearFacebookProviderSession: async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { clearFacebookProviderSession } = require('../../authentication/social') as {
+        clearFacebookProviderSession: () => Promise<void>;
+      };
+      await clearFacebookProviderSession();
+    },
     reauthWithPassword,
   };
 }
@@ -421,23 +430,34 @@ export async function reauthenticateForAccountDeletion(
         throw mapFirebaseReauthError(err);
       }
     } else if (method.kind === 'facebook') {
-      let tokens: FacebookProviderTokens;
       try {
-        tokens = await deps.obtainFacebookProviderTokens();
+        let tokens: FacebookProviderTokens;
+        try {
+          tokens = await deps.obtainFacebookProviderTokens();
+        } catch (err) {
+          throw mapSocialProviderError(err);
+        }
+
+        if (tokens.providerUserId) {
+          assertProviderIdentityMatch(method.linkedProviderUserId, tokens.providerUserId);
+        }
+
+        const credential = deps.createFacebookCredential(tokens);
+
+        try {
+          await deps.reauthenticateWithCredential(user, credential);
+        } catch (err) {
+          throw mapFirebaseReauthError(err);
+        }
       } catch (err) {
-        throw mapSocialProviderError(err);
-      }
-
-      if (tokens.providerUserId) {
-        assertProviderIdentityMatch(method.linkedProviderUserId, tokens.providerUserId);
-      }
-
-      const credential = deps.createFacebookCredential(tokens);
-
-      try {
-        await deps.reauthenticateWithCredential(user, credential);
-      } catch (err) {
-        throw mapFirebaseReauthError(err);
+        if (deps.clearFacebookProviderSession) {
+          try {
+            await deps.clearFacebookProviderSession();
+          } catch {
+            // Best-effort cleanup only.
+          }
+        }
+        throw err;
       }
     }
 

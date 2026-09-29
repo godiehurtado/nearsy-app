@@ -291,6 +291,48 @@ describe('reauthenticateForAccountDeletion', () => {
     assert.equal(credentialCalls, 0);
   });
 
+  it('failed facebook reauth clears the Facebook session; success keeps it for finalize', async () => {
+    let clears = 0;
+    const clearFacebookProviderSession = async () => {
+      clears += 1;
+    };
+
+    await assert.rejects(() =>
+      reauthenticateForAccountDeletion(
+        { method: { kind: 'facebook', linkedProviderUserId: 'fb-app-scoped-1' } },
+        createMockDeps({
+          clearFacebookProviderSession,
+          obtainFacebookProviderTokens: async () => ({
+            accessToken: 'tok',
+            providerUserId: 'another-facebook-user',
+          }),
+        }),
+      ),
+    );
+    assert.equal(clears, 1, 'identity mismatch clears session');
+
+    __resetAccountDeletionReauthInProgressForTests();
+    await assert.rejects(() =>
+      reauthenticateForAccountDeletion(
+        { method: { kind: 'facebook', linkedProviderUserId: 'fb-app-scoped-1' } },
+        createMockDeps({
+          clearFacebookProviderSession,
+          reauthenticateWithCredential: async () => {
+            throw { code: 'auth/user-mismatch' };
+          },
+        }),
+      ),
+    );
+    assert.equal(clears, 2, 'Firebase reauth failure clears session');
+
+    __resetAccountDeletionReauthInProgressForTests();
+    await reauthenticateForAccountDeletion(
+      { method: { kind: 'facebook', linkedProviderUserId: 'fb-app-scoped-1' } },
+      createMockDeps({ clearFacebookProviderSession }),
+    );
+    assert.equal(clears, 2, 'successful reauth does not clear before deletion');
+  });
+
   it('Delete Account only deletes after a successful reauth', async () => {
     const { readFileSync } = await import('node:fs');
     const { dirname, join } = await import('node:path');
