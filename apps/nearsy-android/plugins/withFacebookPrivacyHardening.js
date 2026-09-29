@@ -10,6 +10,7 @@ const REMOVED_PERMISSIONS = [
   'com.google.android.gms.permission.AD_ID',
   'android.permission.ACCESS_ADSERVICES_AD_ID',
   'android.permission.ACCESS_ADSERVICES_ATTRIBUTION',
+  'android.permission.ACCESS_ADSERVICES_TOPICS',
 ];
 
 const TOOLS_NAMESPACE = 'http://schemas.android.com/tools';

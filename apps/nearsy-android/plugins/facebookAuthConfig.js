@@ -9,6 +9,16 @@ const FACEBOOK_APP_ID_ENV = 'EXPO_PUBLIC_FACEBOOK_APP_ID';
 const FACEBOOK_CLIENT_TOKEN_ENV = 'EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN';
 const FACEBOOK_DISPLAY_NAME = 'Nearsy';
 const FACEBOOK_PRIVACY_PLUGIN = './plugins/withFacebookPrivacyHardening';
+const FACEBOOK_SDK_VERSION_PLUGIN = './plugins/withFacebookAndroidSdkVersion';
+
+/**
+ * Always listed: the Facebook SDK AAR is autolinked even when Login is
+ * unconfigured, so privacy hardening and the SDK version pin must apply.
+ */
+const FACEBOOK_STATIC_PLUGINS = [
+  FACEBOOK_PRIVACY_PLUGIN,
+  FACEBOOK_SDK_VERSION_PLUGIN,
+];
 
 const APP_ID_PATTERN = /^\d{10,20}$/;
 const CLIENT_TOKEN_PATTERN = /^[a-f0-9]{32}$/i;
@@ -46,29 +56,38 @@ function resolveFacebookAuthConfig(env = process.env) {
 }
 
 /**
- * Plugin entries appended to app.json plugins. The privacy plugin is always
- * applied because the Facebook SDK AAR is autolinked even when unconfigured.
+ * react-native-fbsdk-next config plugin props, or null when unconfigured.
  * @param {ReturnType<typeof resolveFacebookAuthConfig>} resolution
  */
-function buildFacebookPluginEntries(resolution) {
-  const entries = [];
-  if (resolution.configured) {
-    entries.push([
-      'react-native-fbsdk-next',
-      {
-        appID: resolution.appId,
-        clientToken: resolution.clientToken,
-        displayName: FACEBOOK_DISPLAY_NAME,
-        scheme: `fb${resolution.appId}`,
-        isAutoInitEnabled: false,
-        autoLogAppEventsEnabled: false,
-        advertiserIDCollectionEnabled: false,
-        iosUserTrackingPermission: false,
-      },
-    ]);
-  }
-  entries.push(FACEBOOK_PRIVACY_PLUGIN);
-  return entries;
+function buildFacebookPluginProps(resolution) {
+  if (!resolution.configured) return null;
+  return {
+    appID: resolution.appId,
+    clientToken: resolution.clientToken,
+    displayName: FACEBOOK_DISPLAY_NAME,
+    scheme: `fb${resolution.appId}`,
+    isAutoInitEnabled: false,
+    autoLogAppEventsEnabled: false,
+    advertiserIDCollectionEnabled: false,
+    iosUserTrackingPermission: false,
+  };
+}
+
+/**
+ * Applies the Facebook config plugin directly instead of listing it in
+ * `plugins`: listed plugin props are serialized into the public Expo config
+ * (dev manifest, embedded app.config), which would duplicate the Client
+ * Token outside the native resources. Mods are stripped from public config.
+ * @param {Record<string, any>} expoConfig
+ * @param {ReturnType<typeof resolveFacebookAuthConfig>} resolution
+ */
+function withNearsyFacebookAuth(expoConfig, resolution) {
+  const props = buildFacebookPluginProps(resolution);
+  if (!props) return expoConfig;
+  // eslint-disable-next-line global-require
+  const pluginModule = require('react-native-fbsdk-next/app.plugin');
+  const withFacebook = pluginModule.default ?? pluginModule;
+  return withFacebook(expoConfig, props);
 }
 
 module.exports = {
@@ -76,6 +95,9 @@ module.exports = {
   FACEBOOK_CLIENT_TOKEN_ENV,
   FACEBOOK_DISPLAY_NAME,
   FACEBOOK_PRIVACY_PLUGIN,
+  FACEBOOK_SDK_VERSION_PLUGIN,
+  FACEBOOK_STATIC_PLUGINS,
   resolveFacebookAuthConfig,
-  buildFacebookPluginEntries,
+  buildFacebookPluginProps,
+  withNearsyFacebookAuth,
 };

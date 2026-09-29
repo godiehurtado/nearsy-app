@@ -40,8 +40,19 @@ type LoadedConfig = {
     plugins?: PluginEntry[];
     android?: { package?: string };
     extra?: Record<string, unknown>;
+    mods?: Record<string, Record<string, unknown>>;
+    _internal?: { pluginHistory?: Record<string, { name: string; version: string }> };
   };
 };
+
+type FacebookAuthConfigModule = {
+  FACEBOOK_STATIC_PLUGINS: string[];
+  resolveFacebookAuthConfig: (env: Record<string, string>) => { configured: boolean; issues: string[] };
+  buildFacebookPluginProps: (resolution: unknown) => Record<string, unknown> | null;
+  withNearsyFacebookAuth: (config: Record<string, unknown>, resolution: unknown) => Record<string, unknown>;
+};
+
+const facebookAuthConfig = requireFromApp('./plugins/facebookAuthConfig') as FacebookAuthConfigModule;
 
 const ENV_KEYS = [
   'EXPO_PUBLIC_FACEBOOK_APP_ID',
@@ -70,11 +81,12 @@ function loadAppConfig(env: Partial<Record<(typeof ENV_KEYS)[number], string>>):
   }
 }
 
-function facebookPlugin(cfg: LoadedConfig) {
-  return (cfg.expo.plugins ?? []).find(
-    (p): p is [string, Record<string, unknown>] =>
-      Array.isArray(p) && p[0] === 'react-native-fbsdk-next',
-  );
+function facebookPluginApplied(cfg: LoadedConfig): boolean {
+  return Boolean(cfg.expo._internal?.pluginHistory?.['react-native-fbsdk-next']);
+}
+
+function facebookProps(env: Record<string, string>) {
+  return facebookAuthConfig.buildFacebookPluginProps(facebookAuthConfig.resolveFacebookAuthConfig(env));
 }
 
 describe('App config: Facebook SDK plugin (env-driven)', () => {
@@ -83,36 +95,80 @@ describe('App config: Facebook SDK plugin (env-driven)', () => {
     EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN: FAKE_TOKEN,
   };
 
-  it('adds react-native-fbsdk-next with env App ID/token, Nearsy name and fb scheme', () => {
+  it('applies react-native-fbsdk-next 13.4.3 native mods when configured', () => {
     for (const firebaseEnv of ['production', 'development']) {
       const cfg = loadAppConfig({ ...configured, NEARSY_FIREBASE_ENV: firebaseEnv });
-      const plugin = facebookPlugin(cfg);
-      assert.ok(plugin, `plugin missing for ${firebaseEnv}`);
-      const props = plugin[1];
-      assert.equal(props.appID, PUBLIC_APP_ID);
-      assert.equal(props.clientToken, FAKE_TOKEN);
-      assert.equal(props.displayName, 'Nearsy');
-      assert.equal(props.scheme, `fb${PUBLIC_APP_ID}`);
+      assert.deepEqual(cfg.expo._internal?.pluginHistory?.['react-native-fbsdk-next'], {
+        name: 'react-native-fbsdk-next',
+        version: '13.4.3',
+      });
+      assert.ok(cfg.expo.mods?.android?.manifest, `android manifest mod missing for ${firebaseEnv}`);
+      assert.ok(cfg.expo.mods?.android?.strings, `android strings mod missing for ${firebaseEnv}`);
       assert.equal(cfg.expo.android?.package, 'com.nearsy.app');
       assert.equal(cfg.expo.extra?.facebookAuthConfigured, true);
     }
   });
 
+  it('plugin props: env App ID/token, Nearsy name and fb scheme', () => {
+    const props = facebookProps(configured)!;
+    assert.equal(props.appID, PUBLIC_APP_ID);
+    assert.equal(props.clientToken, FAKE_TOKEN);
+    assert.equal(props.displayName, 'Nearsy');
+    assert.equal(props.scheme, `fb${PUBLIC_APP_ID}`);
+  });
+
+  it('withNearsyFacebookAuth hands exactly those props to the fbsdk plugin', () => {
+    const pluginPath = requireFromApp.resolve('react-native-fbsdk-next/app.plugin');
+    const configPath = requireFromApp.resolve('./plugins/facebookAuthConfig');
+    const original = requireFromApp.cache[pluginPath];
+    const calls: Array<Record<string, unknown>> = [];
+    requireFromApp.cache[pluginPath] = {
+      exports: { default: (cfg: Record<string, unknown>, props: Record<string, unknown>) => {
+        calls.push(props);
+        return { ...cfg, applied: true };
+      } },
+    } as unknown as NodeJS.Module;
+    delete requireFromApp.cache[configPath];
+    try {
+      const fresh = requireFromApp('./plugins/facebookAuthConfig') as FacebookAuthConfigModule;
+      const resolution = fresh.resolveFacebookAuthConfig(configured);
+      const result = fresh.withNearsyFacebookAuth({ name: 'x' }, resolution);
+      assert.equal(result.applied, true);
+      assert.deepEqual(calls, [fresh.buildFacebookPluginProps(resolution)]);
+
+      const untouched = { name: 'y' };
+      assert.equal(fresh.withNearsyFacebookAuth(untouched, fresh.resolveFacebookAuthConfig({})), untouched);
+      assert.equal(calls.length, 1);
+    } finally {
+      if (original) requireFromApp.cache[pluginPath] = original;
+      else delete requireFromApp.cache[pluginPath];
+      delete requireFromApp.cache[configPath];
+    }
+  });
+
   it('auto-init and automatic App Events are disabled', () => {
-    const props = facebookPlugin(loadAppConfig(configured))![1];
+    const props = facebookProps(configured)!;
     assert.equal(props.isAutoInitEnabled, false);
     assert.equal(props.autoLogAppEventsEnabled, false);
   });
 
   it('advertiser ID collection and tracking prompt are disabled', () => {
-    const props = facebookPlugin(loadAppConfig(configured))![1];
+    const props = facebookProps(configured)!;
     assert.equal(props.advertiserIDCollectionEnabled, false);
     assert.equal(props.iosUserTrackingPermission, false);
   });
 
-  it('never exposes the Client Token through extra', () => {
-    const cfg = loadAppConfig(configured);
-    assert.equal(JSON.stringify(cfg.expo.extra).includes(FAKE_TOKEN), false);
+  it('never exposes the Client Token through extra or the serialized public config', () => {
+    for (const firebaseEnv of ['production', 'development']) {
+      const cfg = loadAppConfig({ ...configured, NEARSY_FIREBASE_ENV: firebaseEnv });
+      assert.equal(JSON.stringify(cfg.expo.extra).includes(FAKE_TOKEN), false);
+      const { mods: _mods, ...publicFields } = cfg.expo;
+      assert.equal(JSON.stringify(publicFields).includes(FAKE_TOKEN), false, firebaseEnv);
+      assert.equal(
+        (cfg.expo.plugins ?? []).some((p) => (Array.isArray(p) ? p[0] : p) === 'react-native-fbsdk-next'),
+        false,
+      );
+    }
   });
 
   it('missing or malformed env → plugin omitted, flag false, diagnostics without values', () => {
@@ -125,14 +181,11 @@ describe('App config: Facebook SDK plugin (env-driven)', () => {
     ];
     for (const env of variants) {
       const cfg = loadAppConfig(env);
-      assert.equal(facebookPlugin(cfg), undefined);
+      assert.equal(facebookPluginApplied(cfg), false);
       assert.equal(cfg.expo.extra?.facebookAuthConfigured, false);
     }
 
-    const { resolveFacebookAuthConfig } = requireFromApp('./plugins/facebookAuthConfig') as {
-      resolveFacebookAuthConfig: (env: Record<string, string>) => { configured: boolean; issues: string[] };
-    };
-    const bad = resolveFacebookAuthConfig({
+    const bad = facebookAuthConfig.resolveFacebookAuthConfig({
       EXPO_PUBLIC_FACEBOOK_APP_ID: PUBLIC_APP_ID,
       EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN: 'not-a-valid-token-value',
     });
@@ -141,10 +194,16 @@ describe('App config: Facebook SDK plugin (env-driven)', () => {
     assert.equal(bad.issues.join(' ').includes('not-a-valid-token-value'), false);
   });
 
-  it('privacy hardening plugin is always applied (configured or not)', () => {
+  it('privacy hardening and SDK version pin are always applied (configured or not)', () => {
+    assert.deepEqual(facebookAuthConfig.FACEBOOK_STATIC_PLUGINS, [
+      './plugins/withFacebookPrivacyHardening',
+      './plugins/withFacebookAndroidSdkVersion',
+    ]);
     for (const env of [{}, configured]) {
       const plugins = loadAppConfig(env).expo.plugins ?? [];
-      assert.ok(plugins.includes('./plugins/withFacebookPrivacyHardening'));
+      for (const plugin of facebookAuthConfig.FACEBOOK_STATIC_PLUGINS) {
+        assert.ok(plugins.includes(plugin), plugin);
+      }
     }
   });
 
@@ -168,6 +227,7 @@ describe('Privacy hardening plugin', () => {
       'com.google.android.gms.permission.AD_ID',
       'android.permission.ACCESS_ADSERVICES_AD_ID',
       'android.permission.ACCESS_ADSERVICES_ATTRIBUTION',
+      'android.permission.ACCESS_ADSERVICES_TOPICS',
     ]);
 
     const manifest = applyFacebookPrivacyHardening({
@@ -194,6 +254,43 @@ describe('Privacy hardening plugin', () => {
   });
 });
 
+describe('Facebook Android SDK version pin', () => {
+  const pin = requireFromApp('./plugins/withFacebookAndroidSdkVersion') as {
+    FACEBOOK_ANDROID_SDK_VERSION: string;
+    applyFacebookAndroidSdkVersion: (contents: string) => string;
+  };
+  const LINE = 'ext.facebookSdkVersion = "18.3.0"';
+
+  it('pins the exact version Gradle resolves for the library default 18.+', () => {
+    assert.equal(pin.FACEBOOK_ANDROID_SDK_VERSION, '18.3.0');
+    const fbsdkGradle = readRepo('node_modules/react-native-fbsdk-next/android/build.gradle');
+    assert.match(fbsdkGradle, /rootProject\.ext\.has\(prop\) \? rootProject\.ext\.get\(prop\) : fallback/);
+    assert.match(fbsdkGradle, /def FACEBOOK_SDK_VERSION = safeExtGet\('facebookSdkVersion', '18\.\+'\)/);
+    assert.match(fbsdkGradle, /facebook-android-sdk:\$\{FACEBOOK_SDK_VERSION\}/);
+  });
+
+  it('appends the ext property once and is idempotent', () => {
+    const base = 'buildscript {\r\n  repositories { google() }\r\n}\r\n\r\napply plugin: "expo-root-project"\r\n';
+    const once = pin.applyFacebookAndroidSdkVersion(base);
+    assert.equal(once.includes('\r'), false);
+    assert.equal(once.split(LINE).length - 1, 1);
+    assert.match(once, /\/\/ NEARSY_FACEBOOK_SDK_VERSION: /);
+    assert.ok(once.startsWith('buildscript {\n'));
+    assert.equal(pin.applyFacebookAndroidSdkVersion(once), once);
+  });
+
+  it('replaces an existing facebookSdkVersion instead of duplicating it', () => {
+    const out = pin.applyFacebookAndroidSdkVersion('ext.facebookSdkVersion = "17.0.0"\napply plugin: "x"\n');
+    assert.equal(out, `${LINE}\napply plugin: "x"\n`);
+  });
+
+  it('only accepts a Groovy root build.gradle', () => {
+    const src = readRepo('apps/nearsy-android/plugins/withFacebookAndroidSdkVersion.js');
+    assert.match(src, /withProjectBuildGradle\(/);
+    assert.match(src, /modResults\.language !== 'groovy'/);
+  });
+});
+
 describe('No App Secret, Client Token or App ID hardcodes', () => {
   const FACEBOOK_FILES = [
     'apps/nearsy-android/app.json',
@@ -201,6 +298,7 @@ describe('No App Secret, Client Token or App ID hardcodes', () => {
     'apps/nearsy-android/eas.json',
     'apps/nearsy-android/plugins/facebookAuthConfig.js',
     'apps/nearsy-android/plugins/withFacebookPrivacyHardening.js',
+    'apps/nearsy-android/plugins/withFacebookAndroidSdkVersion.js',
     'packages/shared/src/authentication/facebook/facebookAuthCore.ts',
     'packages/shared/src/authentication/facebook/facebookDeleteAccount.ts',
     'packages/shared/src/config/facebookAuthConfig.ts',
