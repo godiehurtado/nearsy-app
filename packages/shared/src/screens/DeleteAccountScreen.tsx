@@ -15,6 +15,13 @@ import { useNavigation } from '@react-navigation/native';
 import { deleteAccountAndData } from '../services/accountDeletion';
 import TopHeader from '../components/TopHeader';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
+import { useTranslation } from '../i18n';
+import { resolveDeleteAccountReauthMethod } from '../authentication/facebook/facebookAuthCore';
+import { runFacebookDeleteAccount } from '../authentication/facebook/facebookDeleteAccount';
+import {
+  logOutFacebookSession,
+  reauthenticateWithFacebook,
+} from '../services/facebookSession';
 
 type ProfileDoc = {
   profileImage?: string | null;
@@ -43,8 +50,12 @@ export default function DeleteAccountScreen() {
   const [showReauth, setShowReauth] = useState(false);
 
   const nav = useNavigation<any>();
+  const { t } = useTranslation();
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
+  const usesFacebookReauth =
+    Platform.OS === 'android' &&
+    resolveDeleteAccountReauthMethod(firebaseAuth.currentUser) === 'facebook';
 
   // ui
   const [loading, setLoading] = useState(true);
@@ -88,6 +99,38 @@ export default function DeleteAccountScreen() {
     };
   }, []);
 
+  const handleFacebookDelete = async () => {
+    if (busy) return;
+    try {
+      setBusy(true);
+      const outcome = await runFacebookDeleteAccount({
+        reauthenticate: reauthenticateWithFacebook,
+        deleteAccount: () => deleteAccountAndData(),
+        logOutProviderSession: logOutFacebookSession,
+      });
+      if (outcome.status === 'deleted') {
+        Alert.alert(
+          t('settings.deleteAccount.title'),
+          t('settings.deleteAccount.done'),
+        );
+        return;
+      }
+      if (outcome.status !== 'in_progress') {
+        Alert.alert(
+          t('settings.deleteAccount.title'),
+          t(outcome.messageKey as any),
+        );
+      }
+    } catch {
+      Alert.alert(
+        t('settings.deleteAccount.title'),
+        t('settings.deleteAccount.error'),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleDelete = async () => {
     Alert.alert(
       'Delete account',
@@ -98,6 +141,10 @@ export default function DeleteAccountScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            if (usesFacebookReauth) {
+              await handleFacebookDelete();
+              return;
+            }
             try {
               setBusy(true);
               await deleteAccountAndData();
@@ -226,6 +273,12 @@ export default function DeleteAccountScreen() {
               </View>
             )}
 
+            {!showReauth && usesFacebookReauth && (
+              <Text style={{ color: '#374151', marginBottom: 14 }}>
+                {t('settings.deleteAccount.reauthBodyFacebook')}
+              </Text>
+            )}
+
             {!showReauth && (
               <TouchableOpacity
                 disabled={!canDelete || busy}
@@ -243,7 +296,9 @@ export default function DeleteAccountScreen() {
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <Text style={{ color: '#fff', fontWeight: '800' }}>
-                    Delete permanently
+                    {usesFacebookReauth
+                      ? t('settings.deleteAccount.reauthContinueFacebook')
+                      : 'Delete permanently'}
                   </Text>
                 )}
               </TouchableOpacity>

@@ -33,6 +33,8 @@ import { SettingsRow } from '../components/settings/SettingsRow';
 import { SettingsToggleRow } from '../components/settings/SettingsToggleRow';
 import { firebaseAuth } from '../config/firebaseConfig';
 import { clearPendingSocialProfilePrefill } from '../authentication/social';
+import { hasFacebookProvider } from '../authentication/facebook/facebookAuthCore';
+import { logOutFacebookSession } from '../services/facebookSession';
 import {
   getUserProfile,
   updateUserProfilePartial,
@@ -879,6 +881,11 @@ export default function MoreScreen() {
         deactivateVisibility: async () => {
           const client = await getVisibilityDiscoveryClient();
           await deactivateVisibilityFlow(client);
+        },
+        signOutProviderSessions: () => {
+          if (hasFacebookProvider(firebaseAuth.currentUser)) {
+            logOutFacebookSession();
+          }
         },
         signOut: async () => {
           await firebaseAuth.signOut();
