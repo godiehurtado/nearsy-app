@@ -136,11 +136,16 @@ function withEnv<T>(env: Env, run: (calls: ConsoleCall[]) => T): T {
   const calls: ConsoleCall[] = [];
   const methods = ['log', 'info', 'warn', 'error', 'debug'] as const;
   const originals = methods.map((m) => console[m]);
+  const originalStderrWrite = process.stderr.write;
   methods.forEach((m) => {
     console[m] = (...args: unknown[]) => {
       calls.push({ method: m, text: args.map(String).join(' ') });
     };
   });
+  process.stderr.write = ((chunk: unknown) => {
+    calls.push({ method: 'stderr', text: String(chunk) });
+    return true;
+  }) as typeof process.stderr.write;
   try {
     for (const key of ENV_KEYS) {
       if (env[key] === undefined) delete process.env[key];
@@ -151,6 +156,7 @@ function withEnv<T>(env: Env, run: (calls: ConsoleCall[]) => T): T {
     methods.forEach((m, i) => {
       console[m] = originals[i];
     });
+    process.stderr.write = originalStderrWrite;
     for (const key of ENV_KEYS) {
       if (previous[key] === undefined) delete process.env[key];
       else process.env[key] = previous[key];
@@ -354,6 +360,8 @@ describe('Development never falls back to the production google-services.json', 
       assertNoLeak(error.message, 'error message');
       assertNoLeak(String(error.stack ?? ''), 'error stack');
       for (const call of calls) assertNoLeak(call.text, `console.${call.method}`);
+      const stderr = calls.filter((c) => c.method === 'stderr').map((c) => c.text);
+      assert.deepEqual(stderr, [`${error.message}\n`], 'reason is reported once on stderr (visible in EAS logs)');
     });
   }
 
@@ -393,6 +401,7 @@ describe('No path or content leaks', () => {
     for (const file of ['app.config.js', 'plugins/googleServicesConfig.js']) {
       const src = readFileSync(join(androidAppRoot, file), 'utf8');
       assert.doesNotMatch(src, /console\.\w+\([^)]*(googleServicesFile|devFile|GOOGLE_SERVICES_JSON_DEV|absolutePath|parsed)/, file);
+      assert.doesNotMatch(src, /stderr\.write\([^)]*(googleServicesFile|devFile|absolutePath|parsed|raw)/, file);
     }
     const helper = readFileSync(join(androidAppRoot, 'plugins/googleServicesConfig.js'), 'utf8');
     assert.doesNotMatch(helper, /\$\{(devFile|absolutePath|parsed)[^}]*\}/);

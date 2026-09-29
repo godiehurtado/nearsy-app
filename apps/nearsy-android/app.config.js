@@ -19,7 +19,20 @@ const {
 } = require('./plugins/facebookAuthConfig');
 const { resolveGoogleServicesConfig } = require('./plugins/googleServicesConfig');
 
-const { useNearsyDev, googleServicesFile } = resolveGoogleServicesConfig(process.env);
+/**
+ * `expo config --json` (EAS "Read app config") hides thrown errors, so the
+ * message is also written to stderr. Messages never contain the path or content.
+ */
+function resolveGoogleServicesOrReport() {
+  try {
+    return resolveGoogleServicesConfig(process.env);
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    throw error;
+  }
+}
+
+const { useNearsyDev, googleServicesFile } = resolveGoogleServicesOrReport();
 
 /** Explicit development-client marker (EAS development-nearsy-dev sets this). */
 const nearsyDevClient =
