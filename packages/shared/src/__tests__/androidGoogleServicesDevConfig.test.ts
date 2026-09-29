@@ -36,12 +36,33 @@ type Env = Partial<Record<(typeof ENV_KEYS)[number], string>>;
 const DEV_MARKER = 'fixture-dev-api-key-7f3a';
 const PJ_MARKER = 'fixture-pj-api-key-91c2';
 
-function googleServices(projectId: string, apiKey: string, packageName = 'com.nearsy.app') {
+const EAS_SHA1_HASH = '9c70c79ae4d0fe22e268ea5f50a742b0edf0bc8c';
+const DEBUG_SHA1_HASH = '5e8f16062ea3cd2c4a0d547876baa6f38cabf625';
+
+function googleServices(
+  projectId: string,
+  apiKey: string,
+  packageName = 'com.nearsy.app',
+  options: { certificateHashes?: string[]; storageBucket?: string } = {},
+) {
+  const certificateHashes = options.certificateHashes ?? [EAS_SHA1_HASH];
   return JSON.stringify({
-    project_info: { project_id: projectId, project_number: '000000000000' },
+    project_info: {
+      project_id: projectId,
+      project_number: '000000000000',
+      storage_bucket: options.storageBucket ?? `${projectId}.firebasestorage.app`,
+    },
     client: [
       {
         client_info: { android_client_info: { package_name: packageName } },
+        oauth_client: [
+          ...certificateHashes.map((hash) => ({
+            client_id: `000000000000-${hash.slice(0, 6)}.apps.googleusercontent.com`,
+            client_type: 1,
+            android_info: { package_name: packageName, certificate_hash: hash },
+          })),
+          { client_id: '000000000000-web.apps.googleusercontent.com', client_type: 3 },
+        ],
         api_key: [{ current_key: apiKey }],
       },
     ],
@@ -59,11 +80,26 @@ const otherPackageFile = join(fixtureRoot, 'other-package.json');
 writeFileSync(otherPackageFile, googleServices('nearsy-dev', DEV_MARKER, 'com.example.other'));
 const brokenFile = join(fixtureRoot, 'broken.json');
 writeFileSync(brokenFile, '{not json');
+const debugOnlyFile = join(fixtureRoot, 'debug-only.json');
+writeFileSync(
+  debugOnlyFile,
+  googleServices('nearsy-dev', DEV_MARKER, 'com.nearsy.app', { certificateHashes: [DEBUG_SHA1_HASH] }),
+);
+const noOAuthFile = join(fixtureRoot, 'no-oauth.json');
+writeFileSync(noOAuthFile, googleServices('nearsy-dev', DEV_MARKER, 'com.nearsy.app', { certificateHashes: [] }));
+const pjReferenceFile = join(fixtureRoot, 'pj-reference.json');
+writeFileSync(
+  pjReferenceFile,
+  googleServices('nearsy-dev', DEV_MARKER, 'com.nearsy.app', { storageBucket: 'nearsy-pj.firebasestorage.app' }),
+);
 
 /** Local project roots: one with the gitignored dev file, one with only the prod file. */
 const localWithDev = join(fixtureRoot, 'local-with-dev');
 mkdirSync(localWithDev);
-writeFileSync(join(localWithDev, 'google-services.nearsy-dev.json'), googleServices('nearsy-dev', DEV_MARKER));
+writeFileSync(
+  join(localWithDev, 'google-services.nearsy-dev.json'),
+  googleServices('nearsy-dev', DEV_MARKER, 'com.nearsy.app', { certificateHashes: [DEBUG_SHA1_HASH] }),
+);
 writeFileSync(join(localWithDev, 'google-services.json'), googleServices('nearsy-pj', PJ_MARKER));
 const localProdOnly = join(fixtureRoot, 'local-prod-only');
 mkdirSync(localProdOnly);
@@ -174,7 +210,21 @@ describe('Development uses the GOOGLE_SERVICES_JSON_DEV EAS file variable', () =
     assert.deepEqual(result, { useNearsyDev: true, googleServicesFile: devFile });
   });
 
-  it('local runs without the variable use the gitignored nearsy-dev file', () => {
+  it('accepts certificate hashes written with colons or upper case', () => {
+    const colonFile = join(fixtureRoot, 'colon-hash.json');
+    writeFileSync(
+      colonFile,
+      googleServices('nearsy-dev', DEV_MARKER, 'com.nearsy.app', {
+        certificateHashes: ['9C:70:C7:9A:E4:D0:FE:22:E2:68:EA:5F:50:A7:42:B0:ED:F0:BC:8C'],
+      }),
+    );
+    assert.equal(
+      resolveGoogleServicesConfig({ ...DEV, EAS_BUILD: 'true', GOOGLE_SERVICES_JSON_DEV: colonFile }).googleServicesFile,
+      colonFile,
+    );
+  });
+
+  it('local runs without the variable use the gitignored nearsy-dev file (EAS OAuth client not required)', () => {
     assert.deepEqual(resolveGoogleServicesConfig({ ...DEV }, localWithDev), {
       useNearsyDev: true,
       googleServicesFile: './google-services.nearsy-dev.json',
@@ -264,6 +314,21 @@ describe('Development never falls back to the production google-services.json', 
       name: 'file variable with invalid JSON',
       env: { ...DEV, EAS_BUILD: 'true', GOOGLE_SERVICES_JSON_DEV: brokenFile },
       message: /is missing or is not a valid google-services JSON file/,
+    },
+    {
+      name: 'file variable without the EAS signing OAuth client (debug SHA-1 only)',
+      env: { ...DEV, EAS_BUILD: 'true', GOOGLE_SERVICES_JSON_DEV: debugOnlyFile },
+      message: /has no Android OAuth client for com\.nearsy\.app with the EAS signing certificate SHA-1/,
+    },
+    {
+      name: 'file variable without any Android OAuth client',
+      env: { ...DEV, EAS_BUILD: 'true', GOOGLE_SERVICES_JSON_DEV: noOAuthFile },
+      message: /has no Android OAuth client for com\.nearsy\.app with the EAS signing certificate SHA-1/,
+    },
+    {
+      name: 'file variable with a nearsy-pj reference',
+      env: { ...DEV, EAS_BUILD: 'true', GOOGLE_SERVICES_JSON_DEV: pjReferenceFile },
+      message: /GOOGLE_SERVICES_JSON_DEV references nearsy-pj\./,
     },
     {
       name: 'native selector development, public selector unset',

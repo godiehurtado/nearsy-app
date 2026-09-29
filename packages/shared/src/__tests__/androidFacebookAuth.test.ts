@@ -70,7 +70,20 @@ writeFileSync(
   devGoogleServices,
   JSON.stringify({
     project_info: { project_id: 'nearsy-dev' },
-    client: [{ client_info: { android_client_info: { package_name: 'com.nearsy.app' } } }],
+    client: [
+      {
+        client_info: { android_client_info: { package_name: 'com.nearsy.app' } },
+        oauth_client: [
+          {
+            client_type: 1,
+            android_info: {
+              package_name: 'com.nearsy.app',
+              certificate_hash: '9c70c79ae4d0fe22e268ea5f50a742b0edf0bc8c',
+            },
+          },
+        ],
+      },
+    ],
   }),
 );
 after(() => rmSync(fixtureDir, { recursive: true, force: true }));

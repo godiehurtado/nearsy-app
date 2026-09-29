@@ -8,7 +8,9 @@
  * file comes from the EAS file variable GOOGLE_SERVICES_JSON_DEV (mandatory on
  * EAS Build) or, for local runs only, the gitignored
  * ./google-services.nearsy-dev.json. It must belong to nearsy-dev and
- * com.nearsy.app; development never falls back to the production file.
+ * com.nearsy.app without nearsy-pj references; GOOGLE_SERVICES_JSON_DEV must
+ * also carry the Android OAuth client for the EAS signing SHA-1 (Google
+ * Sign-In). Development never falls back to the production file.
  *
  * Error messages never include the file path or its content.
  */
@@ -21,7 +23,10 @@ const GOOGLE_SERVICES_DEV_FILE_ENV = 'GOOGLE_SERVICES_JSON_DEV';
 const PRODUCTION_GOOGLE_SERVICES_FILE = './google-services.json';
 const LOCAL_DEV_GOOGLE_SERVICES_FILE = './google-services.nearsy-dev.json';
 const DEV_PROJECT_ID = 'nearsy-dev';
+const PRODUCTION_PROJECT_ID = 'nearsy-pj';
 const ANDROID_PACKAGE = 'com.nearsy.app';
+/** Public SHA-1 of the EAS Android signing certificate (Meta key hash nHDH…). */
+const EAS_SIGNING_CERT_SHA1 = '9c70c79ae4d0fe22e268ea5f50a742b0edf0bc8c';
 
 /** @param {Record<string, string | undefined>} env @param {string} name */
 function readEnv(env, name) {
@@ -34,14 +39,42 @@ function isDevelopment(value) {
   return normalized === 'development' || normalized === 'dev';
 }
 
+/** @param {any} client */
+function isNearsyAndroidClient(client) {
+  return Boolean(
+    client &&
+      client.client_info &&
+      client.client_info.android_client_info &&
+      client.client_info.android_client_info.package_name === ANDROID_PACKAGE,
+  );
+}
+
+/** @param {any} client */
+function hasEasSigningOAuthClient(client) {
+  const oauthClients = (client && Array.isArray(client.oauth_client) && client.oauth_client) || [];
+  return oauthClients.some(
+    (oauth) =>
+      oauth &&
+      oauth.client_type === 1 &&
+      oauth.android_info &&
+      oauth.android_info.package_name === ANDROID_PACKAGE &&
+      String(oauth.android_info.certificate_hash || '')
+        .replace(/:/g, '')
+        .toLowerCase() === EAS_SIGNING_CERT_SHA1,
+  );
+}
+
 /**
  * @param {string} absolutePath
  * @param {string} label Safe source description (never the path).
+ * @param {{ requireEasSigningOAuthClient: boolean }} options
  */
-function assertNearsyDevGoogleServices(absolutePath, label) {
+function assertNearsyDevGoogleServices(absolutePath, label, { requireEasSigningOAuthClient }) {
+  let raw;
   let parsed;
   try {
-    parsed = JSON.parse(fs.readFileSync(absolutePath, 'utf8'));
+    raw = fs.readFileSync(absolutePath, 'utf8');
+    parsed = JSON.parse(raw);
   } catch {
     throw new Error(
       `[app.config] ${label} is missing or is not a valid google-services JSON file.`,
@@ -49,16 +82,18 @@ function assertNearsyDevGoogleServices(absolutePath, label) {
   }
   const projectId = parsed && parsed.project_info && parsed.project_info.project_id;
   const clients = (parsed && Array.isArray(parsed.client) && parsed.client) || [];
-  const hasPackage = clients.some(
-    (client) =>
-      client &&
-      client.client_info &&
-      client.client_info.android_client_info &&
-      client.client_info.android_client_info.package_name === ANDROID_PACKAGE,
-  );
-  if (projectId !== DEV_PROJECT_ID || !hasPackage) {
+  const nearsyClients = clients.filter(isNearsyAndroidClient);
+  if (projectId !== DEV_PROJECT_ID || nearsyClients.length === 0) {
     throw new Error(
       `[app.config] ${label} is not the ${DEV_PROJECT_ID} google-services file for ${ANDROID_PACKAGE}.`,
+    );
+  }
+  if (raw.includes(PRODUCTION_PROJECT_ID)) {
+    throw new Error(`[app.config] ${label} references ${PRODUCTION_PROJECT_ID}.`);
+  }
+  if (requireEasSigningOAuthClient && !nearsyClients.some(hasEasSigningOAuthClient)) {
+    throw new Error(
+      `[app.config] ${label} has no Android OAuth client for ${ANDROID_PACKAGE} with the EAS signing certificate SHA-1.`,
     );
   }
 }
@@ -87,6 +122,7 @@ function resolveGoogleServicesConfig(env = process.env, projectRoot = path.join(
     assertNearsyDevGoogleServices(
       path.resolve(projectRoot, devFile),
       GOOGLE_SERVICES_DEV_FILE_ENV,
+      { requireEasSigningOAuthClient: true },
     );
     return { useNearsyDev: true, googleServicesFile: devFile };
   }
@@ -100,6 +136,7 @@ function resolveGoogleServicesConfig(env = process.env, projectRoot = path.join(
   assertNearsyDevGoogleServices(
     path.resolve(projectRoot, LOCAL_DEV_GOOGLE_SERVICES_FILE),
     'Local google-services.nearsy-dev.json',
+    { requireEasSigningOAuthClient: false },
   );
   return { useNearsyDev: true, googleServicesFile: LOCAL_DEV_GOOGLE_SERVICES_FILE };
 }
