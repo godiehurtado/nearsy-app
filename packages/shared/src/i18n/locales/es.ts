@@ -56,7 +56,7 @@ const es: TranslationResources = {
       social: {
         apple: 'Apple',
         google: 'Google',
-        meta: 'Meta',
+        facebook: 'Facebook',
         linkedin: 'LinkedIn',
         appleAlertTitle: 'Iniciar sesión con Apple',
         appleComingSoon: 'Próximamente.',
@@ -89,6 +89,11 @@ const es: TranslationResources = {
           'Ya existe una cuenta con este correo usando otro método de acceso.',
         generic:
           'Algo salió mal al iniciar sesión. Inténtalo de nuevo.',
+      },
+      facebook: {
+        continue: 'Continuar con Facebook',
+        cancelled: 'Se canceló el inicio de sesión con Facebook.',
+        failed: 'No pudimos iniciar sesión con Facebook. Inténtalo nuevamente.',
       },
     },
     forgotPassword: {

@@ -21,7 +21,7 @@ export default {
     social: {
       apple: 'Apple',
       google: 'Google',
-      meta: 'Meta',
+      facebook: 'Facebook',
       linkedin: 'LinkedIn',
       appleAlertTitle: 'Sign in with Apple',
       appleComingSoon: 'Coming soon.',
@@ -52,6 +52,11 @@ export default {
       accountConflict:
         'An account already exists with this email using a different sign-in method.',
       generic: 'Something went wrong with sign-in. Please try again.',
+    },
+    facebook: {
+      continue: 'Continue with Facebook',
+      cancelled: 'Facebook sign-in was canceled.',
+      failed: "We couldn't sign you in with Facebook. Please try again.",
     },
   },
   forgotPassword: {

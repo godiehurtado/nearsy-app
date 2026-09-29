@@ -33,6 +33,7 @@ import { LinkedInA3DevSmokePanel } from '../components/LinkedInA3DevSmokePanel';
 import { shouldShowLinkedInA3DevSmokePanel } from '../authentication/linkedinA3/smoke/devSmokePanelGate';
 import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
 import { useAppleSignInFlow } from '../hooks/useAppleSignInFlow';
+import { useFacebookSignInFlow } from '../hooks/useFacebookSignInFlow';
 import { useLinkedInSignInFlow } from '../hooks/useLinkedInSignInFlow';
 import { applyPostAuthNavigation } from '../phoneOtp/applyPostAuthNavigation';
 import Constants from 'expo-constants';
@@ -43,6 +44,7 @@ export default function LoginScreen({ navigation }: any) {
   const { theme, palette } = useAppTheme();
   const { signInWithGoogle, googleSubmitting } = useGoogleSignInFlow();
   const { signInWithApple, appleSubmitting } = useAppleSignInFlow();
+  const { signInWithFacebook, facebookSubmitting } = useFacebookSignInFlow();
   const { signInWithLinkedIn, linkedInSubmitting } = useLinkedInSignInFlow();
 
   const [email, setEmail] = useState('');
@@ -55,7 +57,8 @@ export default function LoginScreen({ navigation }: any) {
   const [infoModalMessage, setInfoModalMessage] = useState('');
 
   const busy =
-    submitting || googleSubmitting || appleSubmitting || linkedInSubmitting;
+    submitting || googleSubmitting || appleSubmitting || linkedInSubmitting ||
+    facebookSubmitting;
   const isDark = theme === 'dark';
   // Login approved surface: uniform pastel (clear) / navy (dark) — not white card.
   const screenBg = isDark ? palette.background : palette.heroBg;
@@ -219,6 +222,11 @@ export default function LoginScreen({ navigation }: any) {
 
     if (provider === 'apple') {
       void signInWithApple();
+      return;
+    }
+
+    if (provider === 'facebook') {
+      void signInWithFacebook();
       return;
     }
 
@@ -429,8 +437,11 @@ export default function LoginScreen({ navigation }: any) {
               labels={{
                 google: t('authentication.login.social.google'),
                 apple: t('authentication.login.social.apple'),
-                meta: t('authentication.login.social.meta'),
+                facebook: t('authentication.login.social.facebook'),
                 linkedin: t('authentication.login.social.linkedin'),
+              }}
+              accessibilityLabels={{
+                facebook: t('authentication.social.facebook.continue'),
               }}
               onPress={handleSocialPress}
               busy={busy}
@@ -439,9 +450,11 @@ export default function LoginScreen({ navigation }: any) {
                   ? 'google'
                   : appleSubmitting
                     ? 'apple'
-                    : linkedInSubmitting
-                      ? 'linkedin'
-                      : null
+                    : facebookSubmitting
+                      ? 'facebook'
+                      : linkedInSubmitting
+                        ? 'linkedin'
+                        : null
               }
               borderColor={palette.socialBorder}
               textColor={palette.textPrimary}

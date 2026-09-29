@@ -22,13 +22,14 @@ import { radius } from '../theme/radius';
 import { useTranslation } from '../i18n';
 import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
 import { useAppleSignInFlow } from '../hooks/useAppleSignInFlow';
+import { useFacebookSignInFlow } from '../hooks/useFacebookSignInFlow';
 import { useLinkedInSignInFlow } from '../hooks/useLinkedInSignInFlow';
 import { markWelcomeSeen } from '../onboarding/welcomeStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Welcome'>;
 
 /**
- * Welcome — first-launch only entry to Register / Login / Google / Apple / LinkedIn.
+ * Welcome — first-launch only entry to Register / Login / Google / Apple / Facebook / LinkedIn.
  * Marked seen on a valid exit CTA (not on mount).
  * LinkedIn reuses the Login A3 hook (no duplicate Start/Exchange/navigation).
  */
@@ -38,11 +39,12 @@ export default function WelcomeScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const { signInWithGoogle, googleSubmitting } = useGoogleSignInFlow();
   const { signInWithApple, appleSubmitting } = useAppleSignInFlow();
+  const { signInWithFacebook, facebookSubmitting } = useFacebookSignInFlow();
   const { signInWithLinkedIn, linkedInSubmitting } = useLinkedInSignInFlow();
   // Match Login surface so shared brand hero (logo / waves / people) reads the same.
   const screenBg = theme === 'dark' ? palette.background : palette.heroBg;
   const socialBusy =
-    googleSubmitting || appleSubmitting || linkedInSubmitting;
+    googleSubmitting || appleSubmitting || linkedInSubmitting || facebookSubmitting;
 
   async function leaveWelcome(
     action: () => void,
@@ -64,6 +66,12 @@ export default function WelcomeScreen({ navigation }: Props) {
       });
       return;
     }
+    if (p === 'facebook') {
+      void leaveWelcome(() => {
+        void signInWithFacebook();
+      });
+      return;
+    }
     if (p === 'linkedin') {
       void leaveWelcome(() => {
         void signInWithLinkedIn();
@@ -79,8 +87,11 @@ export default function WelcomeScreen({ navigation }: Props) {
   const socialLabels = {
     google: t('authentication.login.social.google'),
     apple: t('authentication.login.social.apple'),
-    meta: t('authentication.login.social.meta'),
+    facebook: t('authentication.login.social.facebook'),
     linkedin: t('authentication.login.social.linkedin'),
+  };
+  const socialAccessibilityLabels = {
+    facebook: t('authentication.social.facebook.continue'),
   };
 
   return (
@@ -115,6 +126,7 @@ export default function WelcomeScreen({ navigation }: Props) {
 
           <AuthSocialButtonRow
             labels={socialLabels}
+            accessibilityLabels={socialAccessibilityLabels}
             onPress={onProvider}
             busy={socialBusy}
             loadingProvider={
@@ -122,9 +134,11 @@ export default function WelcomeScreen({ navigation }: Props) {
                 ? 'google'
                 : appleSubmitting
                   ? 'apple'
-                  : linkedInSubmitting
-                    ? 'linkedin'
-                    : null
+                  : facebookSubmitting
+                    ? 'facebook'
+                    : linkedInSubmitting
+                      ? 'linkedin'
+                      : null
             }
             borderColor={palette.socialBorder}
             textColor={palette.textPrimary}

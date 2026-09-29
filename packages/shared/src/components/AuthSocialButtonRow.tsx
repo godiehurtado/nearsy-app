@@ -18,7 +18,7 @@ import {
  * Preserves the approved Login look: Ionicons logo + provider name + border.
  * Extracted from LoginScreen without changing Login appearance or behaviour.
  */
-export type AuthSocialProvider = 'google' | 'apple' | 'meta' | 'linkedin';
+export type AuthSocialProvider = 'google' | 'apple' | 'facebook' | 'linkedin';
 
 const PROVIDERS: {
   id: AuthSocialProvider;
@@ -26,12 +26,14 @@ const PROVIDERS: {
 }[] = [
   { id: 'google', icon: 'logo-google' },
   { id: 'apple', icon: 'logo-apple' },
-  { id: 'meta', icon: 'logo-facebook' },
+  { id: 'facebook', icon: 'logo-facebook' },
   { id: 'linkedin', icon: 'logo-linkedin' },
 ];
 
 export type AuthSocialButtonRowProps = {
   labels: Record<AuthSocialProvider, string>;
+  /** Optional longer VoiceOver labels (e.g. "Continue with Facebook"). */
+  accessibilityLabels?: Partial<Record<AuthSocialProvider, string>>;
   onPress: (provider: AuthSocialProvider) => void;
   /** Disables all tiles except an optional loading provider. */
   busy?: boolean;
@@ -43,6 +45,7 @@ export type AuthSocialButtonRowProps = {
 
 export function AuthSocialButtonRow({
   labels,
+  accessibilityLabels,
   onPress,
   busy = false,
   loadingProvider = null,
@@ -59,7 +62,9 @@ export function AuthSocialButtonRow({
           <Pressable
             key={provider.id}
             accessibilityRole="button"
-            accessibilityLabel={labels[provider.id]}
+            accessibilityLabel={
+              accessibilityLabels?.[provider.id] ?? labels[provider.id]
+            }
             style={({ pressed }) => [
               styles.socialButton,
               {

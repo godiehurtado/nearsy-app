@@ -1,4 +1,5 @@
 import {
+  FacebookAuthProvider,
   GoogleAuthProvider,
   OAuthProvider,
   signInWithCredential,
@@ -29,6 +30,9 @@ export type FirebaseJsAuthRuntime = {
       rawNonce?: string;
     }) => unknown;
   };
+  FacebookAuthProvider: {
+    credential: (accessToken: string) => unknown;
+  };
   signInWithCredential: (
     auth: unknown,
     credential: unknown,
@@ -54,7 +58,7 @@ function toSession(cred: UserCredential): FirebaseAuthenticationSession {
 }
 
 export function mapFirebaseSocialError(
-  provider: 'google' | 'apple',
+  provider: 'google' | 'apple' | 'facebook',
   err: unknown,
 ): never {
   const firebaseCode =
@@ -119,7 +123,7 @@ function resolveDefaultAuth(): unknown {
 
 /**
  * iOS Firebase adapter using the existing Firebase JavaScript SDK (TS-007).
- * Supports Google and Apple social credentials only — no email-based linking.
+ * Supports Google, Apple and Facebook social credentials — no email-based linking.
  */
 export function createFirebaseJsAuthenticationAdapter(
   runtimeOverrides?: Partial<FirebaseJsAuthRuntime>,
@@ -195,6 +199,52 @@ export function createFirebaseJsAuthenticationAdapter(
           return toSession(userCredential);
         } catch (err: unknown) {
           mapFirebaseSocialError('apple', err);
+        }
+      }
+
+      if (input.provider === 'facebook') {
+        const accessToken = input.accessToken?.trim();
+        const idToken = input.idToken?.trim();
+        const rawNonce = input.rawNonce?.trim();
+
+        if (!accessToken && !idToken) {
+          throw createSocialAuthError({
+            code: 'TOKEN_MISSING',
+            provider: 'facebook',
+            recoverable: false,
+            messageKey: messageKeyForCode('TOKEN_MISSING'),
+            diagnosticCode: 'FACEBOOK_TOKEN_MISSING',
+          });
+        }
+
+        if (!accessToken && !rawNonce) {
+          throw createSocialAuthError({
+            code: 'TOKEN_INVALID',
+            provider: 'facebook',
+            recoverable: false,
+            messageKey: messageKeyForCode('TOKEN_INVALID'),
+            diagnosticCode: 'RAW_NONCE_MISSING',
+          });
+        }
+
+        const Facebook =
+          runtimeOverrides?.FacebookAuthProvider ?? FacebookAuthProvider;
+        const FacebookOAuth = runtimeOverrides?.OAuthProvider ?? OAuthProvider;
+        const signIn =
+          runtimeOverrides?.signInWithCredential ??
+          (signInWithCredential as FirebaseJsAuthRuntime['signInWithCredential']);
+
+        try {
+          const credential = accessToken
+            ? Facebook.credential(accessToken)
+            : new FacebookOAuth('facebook.com').credential({
+                idToken,
+                rawNonce,
+              });
+          const userCredential = await signIn(resolveAuth(), credential);
+          return toSession(userCredential);
+        } catch (err: unknown) {
+          mapFirebaseSocialError('facebook', err);
         }
       }
 

@@ -12,6 +12,16 @@ export type FirebaseSocialCredentialInput =
       provider: 'apple';
       identityToken: string;
       rawNonce: string;
+    }
+  | {
+      /**
+       * Classic Facebook Login provides `accessToken`. Without ATT the iOS SDK
+       * falls back to Limited Login and provides an OIDC `idToken` + `rawNonce`.
+       */
+      provider: 'facebook';
+      accessToken?: string;
+      idToken?: string;
+      rawNonce?: string;
     };
 
 export interface FirebaseAuthenticationSession {
