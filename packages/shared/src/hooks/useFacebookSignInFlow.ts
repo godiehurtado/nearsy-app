@@ -9,6 +9,11 @@ import {
   SocialAuthError,
   sanitizeSocialErrorForLog,
   FACEBOOK_SIGN_IN_FAILED_MESSAGE_KEY,
+  beginFacebookAuthTrace,
+  describeErrorForTrace,
+  flushFacebookAuthTrace,
+  summarizeFacebookAuthTrace,
+  traceFacebookAuth,
 } from '../authentication/social';
 import { applyPostAuthNavigation } from '../phoneOtp/applyPostAuthNavigation';
 
@@ -34,6 +39,7 @@ export function useFacebookSignInFlow() {
     }
 
     setSubmitting(true);
+    beginFacebookAuthTrace();
     try {
       const result = await authenticateWithFacebook();
 
@@ -45,6 +51,19 @@ export function useFacebookSignInFlow() {
         });
       }, 150);
     } catch (err) {
+      traceFacebookAuth(
+        'ui_error',
+        err instanceof SocialAuthError
+          ? { socialCode: err.social.code, diagnosticCode: err.social.diagnosticCode }
+          : { socialCode: 'NON_SOCIAL_ERROR', ...describeErrorForTrace(err) },
+      );
+      const devSuffix = summarizeFacebookAuthTrace();
+      flushFacebookAuthTrace('ui_error');
+      // Re-emit once the dev log socket is back after the Facebook sheet.
+      if (__DEV__) setTimeout(() => flushFacebookAuthTrace('ui_error_delayed'), 2000);
+      const withDevSuffix = (message: string) =>
+        devSuffix ? `${message}\n\n${devSuffix}` : message;
+
       if (err instanceof SocialAuthError) {
         if (__DEV__) {
           console.log(
@@ -59,14 +78,14 @@ export function useFacebookSignInFlow() {
 
         Alert.alert(
           t('authentication.login.alerts.loginErrorTitle'),
-          t(resolveFacebookSignInAlertMessageKey(err.social) as any),
+          withDevSuffix(t(resolveFacebookSignInAlertMessageKey(err.social) as any)),
         );
         return;
       }
 
       Alert.alert(
         t('authentication.login.alerts.loginErrorTitle'),
-        t(FACEBOOK_SIGN_IN_FAILED_MESSAGE_KEY as any),
+        withDevSuffix(t(FACEBOOK_SIGN_IN_FAILED_MESSAGE_KEY as any)),
       );
     } finally {
       setSubmitting(false);

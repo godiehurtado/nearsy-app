@@ -11,6 +11,12 @@ import {
   sha256Hex,
   type SecureNonceCryptoClient,
 } from '../crypto/secureRawNonce';
+import {
+  describeErrorForTrace,
+  inspectLimitedLoginTokenForTrace,
+  isFacebookAuthTraceEnabled,
+  traceFacebookAuth,
+} from '../../application/facebookAuthTrace';
 
 /** Only permissions Nearsy requests from Facebook (no advanced permissions). */
 export const FACEBOOK_LOGIN_PERMISSIONS: readonly string[] = Object.freeze([
@@ -173,7 +179,7 @@ export function createFacebookProviderAdapter(
     }
   };
 
-  const assertConfigured = (): void => {
+  const assertConfigured = (): string => {
     if (platformOS !== 'ios') {
       throw facebookError('PROVIDER_UNAVAILABLE', 'FACEBOOK_NOT_IOS');
     }
@@ -181,6 +187,7 @@ export function createFacebookProviderAdapter(
     if (!appId) {
       throw facebookError('CONFIGURATION_ERROR', 'FACEBOOK_APP_ID_MISSING');
     }
+    return appId;
   };
 
   const configure = async (): Promise<FacebookSdkClient> => {
@@ -216,6 +223,7 @@ export function createFacebookProviderAdapter(
       _request: SocialAuthenticationRequest,
     ): Promise<ProviderAuthenticationResult> {
       const sdk = await configure();
+      const appId = assertConfigured();
       const crypto = deps.crypto ?? resolveDefaultCrypto();
 
       let rawNonce: string;
@@ -235,13 +243,21 @@ export function createFacebookProviderAdapter(
         // never exchanged with Firebase.
         sdk.LoginManager.logOut();
 
+        traceFacebookAuth('native_login_started', { platform: platformOS });
         const result = await sdk.LoginManager.logInWithPermissions(
           [...FACEBOOK_LOGIN_PERMISSIONS],
           'enabled',
           hashedNonce,
         );
+        traceFacebookAuth('native_login_completed', {
+          resultPresent: Boolean(result),
+          isCancelled: Boolean(result?.isCancelled),
+          emailGranted: Boolean(result?.grantedPermissions?.includes('email')),
+          emailDeclined: Boolean(result?.declinedPermissions?.includes('email')),
+        });
 
         if (!result || result.isCancelled) {
+          traceFacebookAuth('cancelled');
           throw facebookError('CANCELLED', 'FACEBOOK_LOGIN_CANCELLED');
         }
 
@@ -249,14 +265,36 @@ export function createFacebookProviderAdapter(
           () => null,
         );
         const classicToken = trimToUndefined(accessToken?.accessToken);
+        traceFacebookAuth('access_token_present', { value: Boolean(classicToken) });
 
         let idToken: string | undefined;
         if (!classicToken) {
           const authToken = await sdk.AuthenticationToken
             .getAuthenticationTokenIOS()
-            .catch(() => null);
+            .catch((tokenErr: unknown) => {
+              traceFacebookAuth('native_error', {
+                step: 'get_authentication_token_ios',
+                ...describeErrorForTrace(tokenErr),
+              });
+              return null;
+            });
           idToken = trimToUndefined(authToken?.authenticationToken);
           const tokenNonce = trimToUndefined(authToken?.nonce);
+          traceFacebookAuth('authentication_token_present', { value: Boolean(idToken) });
+          traceFacebookAuth('nonce_present', {
+            sdkNonce: Boolean(tokenNonce),
+            rawNonce: Boolean(rawNonce),
+          });
+          traceFacebookAuth('nonce_match', {
+            sdkNonceMatchesHash: tokenNonce === hashedNonce,
+            rawNonceDiffersFromHash: rawNonce !== hashedNonce,
+          });
+          if (idToken && isFacebookAuthTraceEnabled()) {
+            traceFacebookAuth(
+              'token_claims_checked',
+              inspectLimitedLoginTokenForTrace(idToken, { appId, hashedNonce }),
+            );
+          }
           if (idToken && tokenNonce && tokenNonce !== hashedNonce) {
             throw facebookError('TOKEN_INVALID', 'FACEBOOK_NONCE_MISMATCH');
           }
@@ -288,6 +326,9 @@ export function createFacebookProviderAdapter(
           grantedScopes: result.grantedPermissions ?? undefined,
         };
       } catch (err) {
+        if (!(err instanceof SocialAuthError)) {
+          traceFacebookAuth('native_error', describeErrorForTrace(err));
+        }
         // A cancelled, rejected or mismatched attempt must not leave a cached
         // Facebook token/profile behind for a later attempt to pick up.
         try {

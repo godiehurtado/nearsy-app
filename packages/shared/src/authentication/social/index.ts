@@ -106,6 +106,13 @@ export {
   shouldSuppressFacebookSignInAlert,
 } from './application/facebookSignInUiPolicy';
 export {
+  beginFacebookAuthTrace,
+  describeErrorForTrace,
+  flushFacebookAuthTrace,
+  summarizeFacebookAuthTrace,
+  traceFacebookAuth,
+} from './application/facebookAuthTrace';
+export {
   createFacebookProviderAdapter,
   FACEBOOK_LOGIN_PERMISSIONS,
 } from './infrastructure/facebook/facebookProviderAdapter';

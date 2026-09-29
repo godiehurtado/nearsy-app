@@ -16,6 +16,7 @@ import {
   clearPendingSocialProfilePrefill,
   setPendingSocialProfilePrefill,
 } from './socialProfilePrefillStore';
+import { describeErrorForTrace, traceFacebookAuth } from './facebookAuthTrace';
 
 export type FacebookSignInProfileRoute = 'MainTabs' | 'CompleteProfile';
 
@@ -156,23 +157,43 @@ export function createAuthenticateWithFacebook(
       }
 
       const email = session.email ?? socialProfile?.email;
-      const profile = await deps.getUserProfile(session.uid);
+      traceFacebookAuth('profile_gate_started', { isNewUser: session.isNewUser });
+      let profile: unknown | null;
+      let complete = false;
+      try {
+        profile = await deps.getUserProfile(session.uid);
+        if (profile) complete = await deps.isProfileComplete(session.uid);
+      } catch (gateErr) {
+        traceFacebookAuth('profile_gate_error', describeErrorForTrace(gateErr));
+        throw gateErr;
+      }
+
       if (!profile) {
+        traceFacebookAuth('profile_gate_success', { route: 'CompleteProfile', profileFound: false });
         return { session, profileRoute: 'CompleteProfile', email, socialProfile };
       }
 
-      const complete = await deps.isProfileComplete(session.uid);
       if (complete) {
+        traceFacebookAuth('profile_gate_success', { route: 'MainTabs', profileFound: true });
         clearPendingSocialProfilePrefill();
         return { session, profileRoute: 'MainTabs', email, socialProfile: undefined };
       }
 
+      traceFacebookAuth('profile_gate_success', { route: 'CompleteProfile', profileFound: true });
       return { session, profileRoute: 'CompleteProfile', email, socialProfile };
     } catch (err) {
       if (err instanceof SocialAuthError) {
+        traceFacebookAuth('orchestrator_error', {
+          socialCode: err.social.code,
+          diagnosticCode: err.social.diagnosticCode,
+        });
         logDev(err);
         throw err;
       }
+      traceFacebookAuth('orchestrator_error', {
+        socialCode: 'UNKNOWN',
+        ...describeErrorForTrace(err),
+      });
 
       const mapped = createSocialAuthError({
         code: 'UNKNOWN',

@@ -15,6 +15,10 @@ import type {
   FirebaseAuthenticationSession,
   FirebaseSocialCredentialInput,
 } from './firebaseAuthenticationPort';
+import {
+  describeErrorForTrace,
+  traceFacebookAuth,
+} from '../../application/facebookAuthTrace';
 
 /** Injectable runtime for unit tests (defaults to Firebase JS SDK). */
 export type FirebaseJsAuthRuntime = {
@@ -234,6 +238,7 @@ export function createFirebaseJsAuthenticationAdapter(
           runtimeOverrides?.signInWithCredential ??
           (signInWithCredential as FirebaseJsAuthRuntime['signInWithCredential']);
 
+        let auth: unknown;
         try {
           const credential = accessToken
             ? Facebook.credential(accessToken)
@@ -241,9 +246,46 @@ export function createFirebaseJsAuthenticationAdapter(
                 idToken,
                 rawNonce,
               });
-          const userCredential = await signIn(resolveAuth(), credential);
+          const cred = credential as {
+            providerId?: unknown;
+            signInMethod?: unknown;
+            idToken?: unknown;
+            accessToken?: unknown;
+            nonce?: unknown;
+          };
+          traceFacebookAuth('firebase_credential_created', {
+            tokenKind: accessToken ? 'access_token' : 'oidc_id_token',
+            providerId: typeof cred.providerId === 'string' ? cred.providerId : 'missing',
+            signInMethod: typeof cred.signInMethod === 'string' ? cred.signInMethod : 'missing',
+            credentialHasIdToken: typeof cred.idToken === 'string' && cred.idToken.length > 0,
+            credentialHasAccessToken:
+              typeof cred.accessToken === 'string' && cred.accessToken.length > 0,
+            credentialNonceIsRawNonce: Boolean(rawNonce) && cred.nonce === rawNonce,
+          });
+
+          auth = resolveAuth();
+          const appOptions = (auth as { app?: { options?: { projectId?: unknown } } })?.app
+            ?.options;
+          traceFacebookAuth('firebase_sign_in_started', {
+            projectId:
+              typeof appOptions?.projectId === 'string' ? appOptions.projectId : 'missing',
+          });
+          const userCredential = await signIn(auth, credential);
+          traceFacebookAuth('firebase_sign_in_success', {
+            isNewUser: Boolean(
+              (userCredential as UserCredential & {
+                additionalUserInfo?: { isNewUser?: boolean };
+              }).additionalUserInfo?.isNewUser,
+            ),
+          });
           return toSession(userCredential);
         } catch (err: unknown) {
+          traceFacebookAuth('firebase_sign_in_error', {
+            ...describeErrorForTrace(err),
+            currentUserPresent: Boolean(
+              (auth as { currentUser?: unknown } | undefined)?.currentUser,
+            ),
+          });
           mapFirebaseSocialError('facebook', err);
         }
       }
