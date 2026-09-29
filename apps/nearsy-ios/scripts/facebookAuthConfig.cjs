@@ -108,6 +108,30 @@ function resolveFacebookAuthEnv(env) {
 }
 
 /**
+ * Facebook config is mandatory on EAS Build, for development config and
+ * whenever any Facebook variable is set. Only a local production-branch
+ * evaluation with neither variable (e.g. the eas-cli parent of
+ * `eas env:exec`, which reads app.config before injecting EAS env) may skip
+ * it; that evaluation never produces a native project.
+ * @param {Record<string, string | undefined>} env
+ * @param {{ isDevelopment: boolean }} context
+ * @returns {{ appID: string, clientToken: string } | null}
+ */
+function resolveFacebookAuthEnvForConfig(env, { isDevelopment }) {
+  const anyPresent =
+    trimmed(env[FACEBOOK_APP_ID_ENV]).length > 0 ||
+    trimmed(env[FACEBOOK_CLIENT_TOKEN_ENV]).length > 0;
+  const required =
+    trimmed(env.EAS_BUILD) === 'true' || isDevelopment || anyPresent;
+  if (required) return resolveFacebookAuthEnv(env);
+
+  for (const name of FORBIDDEN_SECRET_ENV_NAMES) {
+    if (trimmed(env[name])) return resolveFacebookAuthEnv(env);
+  }
+  return null;
+}
+
+/**
  * Props for react-native-fbsdk-next. Privacy flags are fixed OFF; no ATT copy.
  * @param {{ appID: string, clientToken: string }} resolved
  */
@@ -133,5 +157,6 @@ module.exports = {
   FORBIDDEN_SECRET_ENV_NAMES,
   describeFacebookAuthEnv,
   resolveFacebookAuthEnv,
+  resolveFacebookAuthEnvForConfig,
   buildFacebookPluginProps,
 };

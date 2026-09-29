@@ -22,7 +22,7 @@ const {
 } = require('./scripts/logoDevPublishableKey.cjs');
 const {
   FACEBOOK_APP_ID_ENV,
-  resolveFacebookAuthEnv,
+  resolveFacebookAuthEnvForConfig,
   buildFacebookPluginProps,
 } = require('./scripts/facebookAuthConfig.cjs');
 
@@ -184,7 +184,7 @@ module.exports = ({ config }) => {
   assertPlistExists(googleServicesFile);
 
   // ENH-AUTH-FB-01: App ID + Client Token from env only (never the App Secret).
-  const facebook = resolveFacebookAuthEnv(process.env);
+  const facebook = resolveFacebookAuthEnvForConfig(process.env, { isDevelopment });
 
   /** @type {Record<string, string>} */
   let extraBase;
@@ -292,7 +292,9 @@ module.exports = ({ config }) => {
   }
 
   // Public App ID only; the Client Token stays in native Info.plist config.
-  extraBase[FACEBOOK_APP_ID_ENV] = facebook.appID;
+  if (facebook) {
+    extraBase[FACEBOOK_APP_ID_ENV] = facebook.appID;
+  }
 
   return {
     ...config,
@@ -349,7 +351,9 @@ module.exports = ({ config }) => {
           iosUrlScheme,
         },
       ],
-      ['./plugins/withNearsyFacebookAuth', buildFacebookPluginProps(facebook)],
+      ...(facebook
+        ? [['./plugins/withNearsyFacebookAuth', buildFacebookPluginProps(facebook)]]
+        : []),
       'expo-localization',
       'expo-apple-authentication',
       '@react-native-community/datetimepicker',

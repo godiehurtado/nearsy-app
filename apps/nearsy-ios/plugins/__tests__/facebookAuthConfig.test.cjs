@@ -13,6 +13,7 @@ const {
   FACEBOOK_QUERY_SCHEMES,
   describeFacebookAuthEnv,
   resolveFacebookAuthEnv,
+  resolveFacebookAuthEnvForConfig,
   buildFacebookPluginProps,
 } = require('../../scripts/facebookAuthConfig.cjs');
 const withNearsyFacebookAuth = require('../withNearsyFacebookAuth');
@@ -242,6 +243,55 @@ describe('app.config.js Facebook wiring', () => {
           ...validEnv({ [FACEBOOK_CLIENT_TOKEN_ENV]: '' }),
         }),
       new RegExp(FACEBOOK_CLIENT_TOKEN_ENV),
+    );
+  });
+
+  it('EAS Build refuses to evaluate without Facebook env', () => {
+    assert.throws(
+      () =>
+        loadAppConfig({
+          ...productionEnv,
+          EAS_BUILD: 'true',
+          [FACEBOOK_APP_ID_ENV]: '',
+          [FACEBOOK_CLIENT_TOKEN_ENV]: '',
+        }),
+      new RegExp(`Missing required environment variable: ${FACEBOOK_APP_ID_ENV}`),
+    );
+  });
+
+  it('local eas-cli parent evaluation without Facebook env skips the plugin instead of failing', () => {
+    const config = loadAppConfig({
+      ...productionEnv,
+      EAS_BUILD: '',
+      [FACEBOOK_APP_ID_ENV]: '',
+      [FACEBOOK_CLIENT_TOKEN_ENV]: '',
+    });
+    assert.equal(
+      config.plugins.some(
+        (plugin) => Array.isArray(plugin) && plugin[0] === './plugins/withNearsyFacebookAuth',
+      ),
+      false,
+    );
+    assert.equal(FACEBOOK_APP_ID_ENV in config.extra, false);
+  });
+
+  it('development config always requires Facebook env; secrets are always rejected', () => {
+    assert.throws(
+      () => resolveFacebookAuthEnvForConfig({}, { isDevelopment: true }),
+      new RegExp(FACEBOOK_APP_ID_ENV),
+    );
+    assert.equal(resolveFacebookAuthEnvForConfig({}, { isDevelopment: false }), null);
+    assert.throws(
+      () =>
+        resolveFacebookAuthEnvForConfig(
+          { EXPO_PUBLIC_META_APP_SECRET: 'fake-secret-value' },
+          { isDevelopment: false },
+        ),
+      /must never be exposed to the mobile client/,
+    );
+    assert.deepEqual(
+      resolveFacebookAuthEnvForConfig(validEnv(), { isDevelopment: true }),
+      { appID: CONTRACT_APP_ID, clientToken: FAKE_CLIENT_TOKEN },
     );
   });
 });
