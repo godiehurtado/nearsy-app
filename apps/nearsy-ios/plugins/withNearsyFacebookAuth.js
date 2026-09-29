@@ -18,6 +18,7 @@ const {
   FACEBOOK_QUERY_SCHEMES,
   FACEBOOK_NON_CONTRACT_QUERY_SCHEMES,
   FACEBOOK_SKADNETWORK_IDENTIFIERS,
+  resolveFacebookAuthEnv,
 } = require('../scripts/facebookAuthConfig.cjs');
 
 /**
@@ -70,8 +71,19 @@ function stripFacebookSKAdNetworkItems(infoPlist) {
 /**
  * @param {import('@expo/config-plugins').ExportedConfig} config
  * @param {Record<string, unknown>} props Output of buildFacebookPluginProps.
+ * @param {Record<string, string | undefined>} [env]
  */
-function withNearsyFacebookAuth(config, props) {
+function withNearsyFacebookAuth(config, props, env = process.env) {
+  // The Client Token is read here rather than passed as a plugin prop: plugin
+  // props are part of the public Expo config (Metro manifest / embedded app
+  // config), while this value only belongs in the native Info.plist.
+  const { appID, clientToken } = resolveFacebookAuthEnv(env);
+  if (props?.appID !== appID) {
+    throw new Error(
+      '[withNearsyFacebookAuth] Plugin appID does not match EXPO_PUBLIC_FACEBOOK_APP_ID.',
+    );
+  }
+
   // Mods run last-registered-first: registering this Info.plist mod before the
   // fbsdk plugin makes it run after fbsdk's Info.plist mod.
   config = withInfoPlist(config, (cfg) => {
@@ -79,7 +91,11 @@ function withNearsyFacebookAuth(config, props) {
     return cfg;
   });
 
-  config = withFacebook(config, { ...props, iosUserTrackingPermission: false });
+  config = withFacebook(config, {
+    ...props,
+    clientToken,
+    iosUserTrackingPermission: false,
+  });
 
   // fbsdk writes SKAdNetworkItems / tracking copy into static ios.infoPlist.
   if (config.ios?.infoPlist) {

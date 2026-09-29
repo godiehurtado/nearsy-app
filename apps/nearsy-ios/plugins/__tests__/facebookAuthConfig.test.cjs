@@ -51,22 +51,28 @@ async function evaluateInfoPlist(config) {
   return result.modResults;
 }
 
-function loadAppConfig(env) {
+function withEnv(env, fn) {
   const saved = { ...process.env };
-  const configPath = require.resolve('../../app.config.js');
-  delete require.cache[configPath];
   Object.assign(process.env, env);
   try {
-    const appJson = JSON.parse(
-      fs.readFileSync(path.join(APP_ROOT, 'app.json'), 'utf8'),
-    );
-    return require(configPath)({ config: appJson.expo });
+    return fn();
   } finally {
     for (const key of Object.keys(process.env)) {
       if (!(key in saved)) delete process.env[key];
     }
     Object.assign(process.env, saved);
   }
+}
+
+function loadAppConfig(env) {
+  const configPath = require.resolve('../../app.config.js');
+  delete require.cache[configPath];
+  return withEnv(env, () => {
+    const appJson = JSON.parse(
+      fs.readFileSync(path.join(APP_ROOT, 'app.json'), 'utf8'),
+    );
+    return require(configPath)({ config: appJson.expo });
+  });
 }
 
 describe('Facebook auth env validation', () => {
@@ -149,13 +155,22 @@ describe('Facebook plugin props and Info.plist policy', () => {
     assert.equal(props.advertiserIDCollectionEnabled, false);
     assert.equal(props.isAutoInitEnabled, false);
     assert.equal('iosUserTrackingPermission' in props, false);
+    assert.equal('clientToken' in props, false, 'plugin props are public config');
+    assert.equal(JSON.stringify(props).includes(FAKE_CLIENT_TOKEN), false);
   });
 
   it('effective Info.plist matches the contract after the fbsdk mod runs', async () => {
     const props = buildFacebookPluginProps(resolveFacebookAuthEnv(validEnv()));
-    const config = withNearsyFacebookAuth(
-      { name: 'Nearsy', slug: 'nearsy-ios', ios: { infoPlist: {} } },
-      props,
+    const config = withEnv(validEnv(), () =>
+      withNearsyFacebookAuth(
+        { name: 'Nearsy', slug: 'nearsy-ios', ios: { infoPlist: {} } },
+        props,
+      ),
+    );
+    assert.equal(
+      JSON.stringify({ ...config, mods: undefined }).includes(FAKE_CLIENT_TOKEN),
+      false,
+      'client token must only reach the native Info.plist mod',
     );
     const plist = await evaluateInfoPlist(config);
 
@@ -173,6 +188,25 @@ describe('Facebook plugin props and Info.plist policy', () => {
     assert.equal('NSUserTrackingUsageDescription' in plist, false);
     assert.equal('SKAdNetworkItems' in (config.ios?.infoPlist ?? {}), false);
     assert.equal('NSUserTrackingUsageDescription' in (config.ios?.infoPlist ?? {}), false);
+  });
+
+  it('wrapper refuses a missing Client Token or an App ID that differs from env', () => {
+    const props = buildFacebookPluginProps(resolveFacebookAuthEnv(validEnv()));
+    const baseConfig = () => ({ name: 'Nearsy', slug: 'nearsy-ios', ios: { infoPlist: {} } });
+    assert.throws(
+      () =>
+        withEnv(validEnv({ [FACEBOOK_CLIENT_TOKEN_ENV]: '' }), () =>
+          withNearsyFacebookAuth(baseConfig(), props),
+        ),
+      new RegExp(FACEBOOK_CLIENT_TOKEN_ENV),
+    );
+    assert.throws(
+      () =>
+        withEnv(validEnv({ [FACEBOOK_APP_ID_ENV]: '1234567890' }), () =>
+          withNearsyFacebookAuth(baseConfig(), props),
+        ),
+      /does not match/,
+    );
   });
 
   it('policy preserves unrelated query schemes and SKAdNetwork IDs', () => {
@@ -219,6 +253,11 @@ describe('app.config.js Facebook wiring', () => {
       JSON.stringify(config.extra).includes(FAKE_CLIENT_TOKEN),
       false,
       'client token must not be exposed through extra',
+    );
+    assert.equal(
+      JSON.stringify(config.plugins).includes(FAKE_CLIENT_TOKEN),
+      false,
+      'client token must not be exposed through public plugin props',
     );
     assert.equal(
       config.plugins.some((plugin) =>

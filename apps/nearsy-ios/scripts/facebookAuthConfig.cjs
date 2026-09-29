@@ -132,13 +132,14 @@ function resolveFacebookAuthEnvForConfig(env, { isDevelopment }) {
 }
 
 /**
- * Props for react-native-fbsdk-next. Privacy flags are fixed OFF; no ATT copy.
- * @param {{ appID: string, clientToken: string }} resolved
+ * Public props for withNearsyFacebookAuth. Privacy flags are fixed OFF; no ATT
+ * copy. The Client Token is intentionally absent: plugin props are published
+ * in the Expo public config, so the wrapper reads the token from env itself.
+ * @param {{ appID: string }} resolved
  */
 function buildFacebookPluginProps(resolved) {
   return {
     appID: resolved.appID,
-    clientToken: resolved.clientToken,
     displayName: FACEBOOK_DISPLAY_NAME,
     scheme: `fb${resolved.appID}`,
     isAutoInitEnabled: false,
