@@ -335,6 +335,20 @@ describe('app.config.js Facebook wiring', () => {
   });
 });
 
+describe('Dev-client / dev-build EAS env loading', () => {
+  it('loads Facebook env names (never an App Secret) through a gitignored temp dump', () => {
+    const dump = fs.readFileSync(path.join(APP_ROOT, 'scripts', '_dump-eas-env.cjs'), 'utf8');
+    const build = fs.readFileSync(path.join(APP_ROOT, 'scripts', 'eas-build-with-dev-env.cjs'), 'utf8');
+    for (const name of [FACEBOOK_APP_ID_ENV, FACEBOOK_CLIENT_TOKEN_ENV]) {
+      assert.match(dump, new RegExp(`'${name}'`));
+      assert.match(build, new RegExp(`'${name}'`));
+    }
+    assert.doesNotMatch(dump, /APP_SECRET/);
+    const gitignore = fs.readFileSync(path.join(REPO_ROOT, '.gitignore'), 'utf8');
+    assert.match(gitignore, /^\.nearsy-eas-env-dump\.tmp\.json$/m);
+  });
+});
+
 describe('No hardcoded Facebook credentials in source', () => {
   const SOURCE_ROOTS = [
     path.join(APP_ROOT, 'app.config.js'),

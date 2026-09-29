@@ -48,6 +48,8 @@ const required = [
   'EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME',
   'EXPO_PUBLIC_FIREBASE_PROJECT_ID',
   'EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY',
+  'EXPO_PUBLIC_FACEBOOK_APP_ID',
+  'EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN',
 ];
 for (const key of required) {
   if (!loaded[key]) {
