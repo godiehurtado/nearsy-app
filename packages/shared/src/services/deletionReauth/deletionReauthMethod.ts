@@ -6,6 +6,7 @@
 export const FIREBASE_PROVIDER_PASSWORD = 'password' as const;
 export const FIREBASE_PROVIDER_GOOGLE = 'google.com' as const;
 export const FIREBASE_PROVIDER_APPLE = 'apple.com' as const;
+export const FIREBASE_PROVIDER_FACEBOOK = 'facebook.com' as const;
 
 export type FirebaseAuthProviderDataEntry = {
   providerId?: string | null;
@@ -25,6 +26,10 @@ export type DeletionReauthMethod =
       linkedProviderUserId?: string;
     }
   | {
+      kind: 'facebook';
+      linkedProviderUserId?: string;
+    }
+  | {
       kind: 'unavailable';
       reason: 'no_supported_provider' | 'custom_token_only';
     };
@@ -34,6 +39,7 @@ export const DELETION_REAUTH_PRIORITY = [
   FIREBASE_PROVIDER_PASSWORD,
   FIREBASE_PROVIDER_GOOGLE,
   FIREBASE_PROVIDER_APPLE,
+  FIREBASE_PROVIDER_FACEBOOK,
 ] as const;
 
 export function listLinkedProviderIds(
@@ -58,7 +64,7 @@ function findProviderEntry(
 /**
  * Resolve which reauthentication UX/path Delete Account should use.
  *
- * Supported for MVP: password, google.com, apple.com.
+ * Supported: password, google.com, apple.com, facebook.com.
  * Empty providerData (typical custom-token / LinkedIn A3) → unavailable.
  */
 export function resolveDeletionReauthMethod(
@@ -94,6 +100,15 @@ export function resolveDeletionReauthMethod(
           ? linked.uid.trim()
           : undefined;
       return { kind: 'apple', linkedProviderUserId };
+    }
+
+    if (providerId === FIREBASE_PROVIDER_FACEBOOK) {
+      const linked = findProviderEntry(entries, FIREBASE_PROVIDER_FACEBOOK);
+      const linkedProviderUserId =
+        typeof linked?.uid === 'string' && linked.uid.trim()
+          ? linked.uid.trim()
+          : undefined;
+      return { kind: 'facebook', linkedProviderUserId };
     }
   }
 

@@ -71,7 +71,7 @@ describe('resolveDeletionReauthMethod', () => {
 
   it('unsupported-only provider → unavailable, not password', () => {
     const method = resolveDeletionReauthMethod([
-      { providerId: 'facebook.com', uid: 'fb1' },
+      { providerId: 'twitter.com', uid: 'tw1' },
     ]);
     assert.deepEqual(method, {
       kind: 'unavailable',

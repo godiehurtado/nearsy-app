@@ -1,6 +1,6 @@
 /**
  * Delete account — Nearsy 2.0 presentation; preserves deletion service contract.
- * Reauthentication is provider-aware (password / Google / Apple).
+ * Reauthentication is provider-aware (password / Google / Apple / Facebook).
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -83,6 +83,9 @@ export default function DeleteAccountScreen() {
     if (reauthMethod.kind === 'apple') {
       return 'settings.deleteAccount.reauthBodyApple';
     }
+    if (reauthMethod.kind === 'facebook') {
+      return 'settings.deleteAccount.reauthBodyFacebook';
+    }
     return 'settings.deleteAccount.reauthUnavailable';
   }, [reauthMethod.kind]);
 
@@ -111,8 +114,11 @@ export default function DeleteAccountScreen() {
   };
 
   const runSuccessfulDeletionExit = async () => {
-    const { clearPendingSocialProfilePrefill, createDefaultSocialProviderRegistry } =
-      await import('../authentication/social');
+    const {
+      clearPendingSocialProfilePrefill,
+      clearFacebookProviderSession,
+      createDefaultSocialProviderRegistry,
+    } = await import('../authentication/social');
 
     clearPendingSocialProfilePrefill();
 
@@ -122,6 +128,7 @@ export default function DeleteAccountScreen() {
         const registry = createDefaultSocialProviderRegistry();
         await registry.get('google').clearProviderSession();
       },
+      clearFacebookProviderSession,
       ensureSignedOut: async () => {
         if (firebaseAuth.currentUser) {
           await firebaseAuth.signOut();
@@ -274,7 +281,9 @@ export default function DeleteAccountScreen() {
     const labelKey =
       reauthMethod.kind === 'google'
         ? 'settings.deleteAccount.reauthContinueGoogle'
-        : 'settings.deleteAccount.reauthContinueApple';
+        : reauthMethod.kind === 'facebook'
+          ? 'settings.deleteAccount.reauthContinueFacebook'
+          : 'settings.deleteAccount.reauthContinueApple';
 
     return (
       <Pressable

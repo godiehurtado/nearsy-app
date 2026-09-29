@@ -223,6 +223,18 @@ export function createDefaultAuthenticateWithFacebook(
 }
 
 /**
+ * Best-effort, idempotent Facebook SDK logout (LoginManager.logOut).
+ * Never throws; safe when the user never used Facebook.
+ */
+export async function clearFacebookProviderSession(): Promise<void> {
+  try {
+    await createFacebookProviderAdapter().clearProviderSession?.();
+  } catch {
+    // Best-effort.
+  }
+}
+
+/**
  * Validate Google foundation readiness without starting a sign-in flow.
  */
 export function validateGoogleAuthenticationFoundation(

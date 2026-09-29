@@ -1,11 +1,12 @@
 /**
  * Reauthenticate the CURRENT Firebase user before account deletion.
  *
- * Uses provider adapters for Google/Apple token acquisition, then
+ * Uses provider adapters for Google/Apple/Facebook token acquisition, then
  * `reauthenticateWithCredential` — never `signInWithCredential` /
  * `signInWithCustomToken` (those replace or fake the session).
  */
 import {
+  FacebookAuthProvider,
   GoogleAuthProvider,
   OAuthProvider,
   reauthenticateWithCredential,
@@ -52,6 +53,15 @@ type AppleProviderTokens = {
   providerUserId: string;
 };
 
+/** Classic access token, or Limited Login OIDC token + raw nonce. */
+type FacebookProviderTokens = {
+  accessToken?: string;
+  idToken?: string;
+  rawNonce?: string;
+  /** May be empty when the SDK exposes no profile; Firebase still enforces user match. */
+  providerUserId: string;
+};
+
 export type ReauthenticateForDeletionDependencies = {
   getCurrentUser: () => User | null;
   reauthenticateWithCredential: (
@@ -66,8 +76,10 @@ export type ReauthenticateForDeletionDependencies = {
     idToken: string;
     rawNonce: string;
   }) => AuthCredential;
+  createFacebookCredential: (tokens: FacebookProviderTokens) => AuthCredential;
   obtainGoogleProviderTokens: () => Promise<GoogleProviderTokens>;
   obtainAppleProviderTokens: () => Promise<AppleProviderTokens>;
+  obtainFacebookProviderTokens: () => Promise<FacebookProviderTokens>;
   reauthWithPassword: (password: string) => Promise<void>;
 };
 
@@ -230,6 +242,46 @@ async function defaultObtainAppleTokens(): Promise<AppleProviderTokens> {
   };
 }
 
+async function defaultObtainFacebookTokens(): Promise<FacebookProviderTokens> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createDefaultSocialProviderRegistry } = require('../../authentication/social') as {
+    createDefaultSocialProviderRegistry: () => {
+      get: (provider: 'facebook') => {
+        configure: () => Promise<void>;
+        authenticate: (request: {
+          provider: 'facebook';
+          interactive: boolean;
+        }) => Promise<{
+          accessToken?: string;
+          idToken?: string;
+          rawNonce?: string;
+          providerUserId: string;
+        }>;
+      };
+    };
+  };
+  const registry = createDefaultSocialProviderRegistry();
+  const provider = registry.get('facebook');
+  await provider.configure();
+  const result = await provider.authenticate({
+    provider: 'facebook',
+    interactive: true,
+  });
+  const accessToken = result.accessToken?.trim();
+  const idToken = result.idToken?.trim();
+  const rawNonce = result.rawNonce?.trim();
+  if (!accessToken && !(idToken && rawNonce)) {
+    throw new AccountDeletionReauthError(
+      'REAUTH_FAILED',
+      'settings.deleteAccount.reauthFailed',
+    );
+  }
+  return {
+    ...(accessToken ? { accessToken } : { idToken, rawNonce }),
+    providerUserId: result.providerUserId?.trim() ?? '',
+  };
+}
+
 export function createDefaultReauthenticateForDeletionDependencies(): ReauthenticateForDeletionDependencies {
   // Lazy require avoids pulling RN Firebase config into Node unit tests.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -251,8 +303,13 @@ export function createDefaultReauthenticateForDeletionDependencies(): Reauthenti
       const provider = new OAuthProvider('apple.com');
       return provider.credential({ idToken, rawNonce });
     },
+    createFacebookCredential: ({ accessToken, idToken, rawNonce }) => {
+      if (accessToken) return FacebookAuthProvider.credential(accessToken);
+      return new OAuthProvider('facebook.com').credential({ idToken, rawNonce });
+    },
     obtainGoogleProviderTokens: defaultObtainGoogleTokens,
     obtainAppleProviderTokens: defaultObtainAppleTokens,
+    obtainFacebookProviderTokens: defaultObtainFacebookTokens,
     reauthWithPassword,
   };
 }
@@ -357,6 +414,25 @@ export async function reauthenticateForAccountDeletion(
         idToken: tokens.identityToken,
         rawNonce: tokens.rawNonce,
       });
+
+      try {
+        await deps.reauthenticateWithCredential(user, credential);
+      } catch (err) {
+        throw mapFirebaseReauthError(err);
+      }
+    } else if (method.kind === 'facebook') {
+      let tokens: FacebookProviderTokens;
+      try {
+        tokens = await deps.obtainFacebookProviderTokens();
+      } catch (err) {
+        throw mapSocialProviderError(err);
+      }
+
+      if (tokens.providerUserId) {
+        assertProviderIdentityMatch(method.linkedProviderUserId, tokens.providerUserId);
+      }
+
+      const credential = deps.createFacebookCredential(tokens);
 
       try {
         await deps.reauthenticateWithCredential(user, credential);

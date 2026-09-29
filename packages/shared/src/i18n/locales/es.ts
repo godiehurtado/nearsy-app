@@ -1464,10 +1464,13 @@ const es: TranslationResources = {
         'Por seguridad, continúa con Google para confirmar tu identidad antes de eliminar esta cuenta.',
       reauthBodyApple:
         'Por seguridad, continúa con Apple para confirmar tu identidad antes de eliminar esta cuenta.',
+      reauthBodyFacebook:
+        'Por seguridad, continúa con Facebook para confirmar tu identidad antes de eliminar esta cuenta.',
       passwordPlaceholder: 'Contraseña',
       reauthConfirm: 'Confirmar contraseña y eliminar',
       reauthContinueGoogle: 'Continuar con Google y eliminar',
       reauthContinueApple: 'Continuar con Apple y eliminar',
+      reauthContinueFacebook: 'Continuar con Facebook y eliminar',
       reauthError: 'No se pudo confirmar la contraseña.',
       reauthFailed:
         'No se pudo confirmar tu identidad. Tu cuenta no fue eliminada.',

@@ -31,6 +31,7 @@ export type PostAccountDeletionNavigationTarget = {
 export async function finalizePostAccountDeletionSession(input: {
   clearSocialPrefill?: () => void | Promise<void>;
   clearGoogleProviderSession?: () => Promise<void>;
+  clearFacebookProviderSession?: () => Promise<void>;
   ensureSignedOut?: () => Promise<void>;
   navigation?: PostAccountDeletionNavigationTarget | null;
 }): Promise<{ authCleared: boolean; navigationReset: boolean }> {
@@ -41,6 +42,14 @@ export async function finalizePostAccountDeletionSession(input: {
   if (input.clearGoogleProviderSession) {
     try {
       await input.clearGoogleProviderSession();
+    } catch {
+      // Best-effort; never block guest transition.
+    }
+  }
+
+  if (input.clearFacebookProviderSession) {
+    try {
+      await input.clearFacebookProviderSession();
     } catch {
       // Best-effort; never block guest transition.
     }
