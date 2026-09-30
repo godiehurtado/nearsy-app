@@ -7,12 +7,11 @@
  *   node --experimental-strip-types --test packages/shared/src/__tests__/androidFacebookAuth.test.ts
  */
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { after, describe, it } from 'node:test';
+import { describe, it } from 'node:test';
 
 import { authenticationTranslations } from '../i18n/resources/authentication.ts';
 import settingsEn from '../i18n/resources/settings.ts';
@@ -59,45 +58,7 @@ const ENV_KEYS = [
   'EXPO_PUBLIC_FACEBOOK_APP_ID',
   'EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN',
   'NEARSY_FIREBASE_ENV',
-  'EXPO_PUBLIC_NEARSY_FIREBASE_ENV',
-  'GOOGLE_SERVICES_JSON_DEV',
-  'EAS_BUILD',
 ] as const;
-
-const fixtureDir = mkdtempSync(join(tmpdir(), 'nearsy-fb-gs-'));
-const devGoogleServices = join(fixtureDir, 'google-services.dev.json');
-writeFileSync(
-  devGoogleServices,
-  JSON.stringify({
-    project_info: { project_id: 'nearsy-dev' },
-    client: [
-      {
-        client_info: { android_client_info: { package_name: 'com.nearsy.app' } },
-        oauth_client: [
-          {
-            client_type: 1,
-            android_info: {
-              package_name: 'com.nearsy.app',
-              certificate_hash: '9c70c79ae4d0fe22e268ea5f50a742b0edf0bc8c',
-            },
-          },
-        ],
-      },
-    ],
-  }),
-);
-after(() => rmSync(fixtureDir, { recursive: true, force: true }));
-
-/** Firebase selector env for app.config.js (development uses a fake nearsy-dev file). */
-function firebaseEnvFor(firebaseEnv: string) {
-  return firebaseEnv === 'development'
-    ? {
-        NEARSY_FIREBASE_ENV: 'development',
-        EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'development',
-        GOOGLE_SERVICES_JSON_DEV: devGoogleServices,
-      }
-    : { NEARSY_FIREBASE_ENV: firebaseEnv };
-}
 
 function loadAppConfig(env: Partial<Record<(typeof ENV_KEYS)[number], string>>): LoadedConfig {
   const previous = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
@@ -136,7 +97,7 @@ describe('App config: Facebook SDK plugin (env-driven)', () => {
 
   it('applies react-native-fbsdk-next 13.4.3 native mods when configured', () => {
     for (const firebaseEnv of ['production', 'development']) {
-      const cfg = loadAppConfig({ ...configured, ...firebaseEnvFor(firebaseEnv) });
+      const cfg = loadAppConfig({ ...configured, NEARSY_FIREBASE_ENV: firebaseEnv });
       assert.deepEqual(cfg.expo._internal?.pluginHistory?.['react-native-fbsdk-next'], {
         name: 'react-native-fbsdk-next',
         version: '13.4.3',
@@ -199,7 +160,7 @@ describe('App config: Facebook SDK plugin (env-driven)', () => {
 
   it('never exposes the Client Token through extra or the serialized public config', () => {
     for (const firebaseEnv of ['production', 'development']) {
-      const cfg = loadAppConfig({ ...configured, ...firebaseEnvFor(firebaseEnv) });
+      const cfg = loadAppConfig({ ...configured, NEARSY_FIREBASE_ENV: firebaseEnv });
       assert.equal(JSON.stringify(cfg.expo.extra).includes(FAKE_TOKEN), false);
       const { mods: _mods, ...publicFields } = cfg.expo;
       assert.equal(JSON.stringify(publicFields).includes(FAKE_TOKEN), false, firebaseEnv);
@@ -267,6 +228,7 @@ describe('Privacy hardening plugin', () => {
       'android.permission.ACCESS_ADSERVICES_AD_ID',
       'android.permission.ACCESS_ADSERVICES_ATTRIBUTION',
       'android.permission.ACCESS_ADSERVICES_TOPICS',
+      'android.permission.ACCESS_ADSERVICES_CUSTOM_AUDIENCE',
     ]);
 
     const manifest = applyFacebookPrivacyHardening({
@@ -290,6 +252,46 @@ describe('Privacy hardening plugin', () => {
     // Idempotent.
     const again = applyFacebookPrivacyHardening(manifest).manifest['uses-permission'];
     assert.equal(again.length, perms.length);
+  });
+
+  it('removes the AdServices config property from <application> and keeps other entries', () => {
+    const { applyFacebookPrivacyHardening, REMOVED_APPLICATION_PROPERTIES } = requireFromApp(
+      './plugins/withFacebookPrivacyHardening',
+    ) as {
+      applyFacebookPrivacyHardening: (m: any) => any;
+      REMOVED_APPLICATION_PROPERTIES: string[];
+    };
+    assert.deepEqual(REMOVED_APPLICATION_PROPERTIES, ['android.adservices.AD_SERVICES_CONFIG']);
+
+    const autoInit = { $: { 'android:name': 'com.facebook.sdk.AutoInitEnabled', 'android:value': 'false' } };
+    const otherProperty = { $: { 'android:name': 'com.example.OTHER', 'android:value': 'x' } };
+    const manifest = applyFacebookPrivacyHardening({
+      manifest: {
+        $: {},
+        application: [
+          {
+            $: { 'android:name': '.MainApplication' },
+            'meta-data': [autoInit],
+            property: [
+              otherProperty,
+              { $: { 'android:name': 'android.adservices.AD_SERVICES_CONFIG', 'android:resource': '@xml/ad_services_config' } },
+            ],
+          },
+        ],
+      },
+    });
+    const application = manifest.manifest.application[0];
+    assert.deepEqual(application['meta-data'], [autoInit]);
+    assert.deepEqual(application.property, [
+      otherProperty,
+      { $: { 'android:name': 'android.adservices.AD_SERVICES_CONFIG', 'tools:node': 'remove' } },
+    ]);
+
+    const again = applyFacebookPrivacyHardening(manifest).manifest.application[0].property;
+    assert.deepEqual(again, application.property);
+
+    const withoutApplication = applyFacebookPrivacyHardening({ manifest: { $: {} } });
+    assert.equal(withoutApplication.manifest.application, undefined);
   });
 });
 
