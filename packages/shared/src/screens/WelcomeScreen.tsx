@@ -23,7 +23,9 @@ import { radius } from '../theme/radius';
 import { useTranslation } from '../i18n';
 import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
 import { useLinkedInSignInFlow } from '../hooks/useLinkedInSignInFlow';
+import { useFacebookSignInFlow } from '../hooks/useFacebookSignInFlow';
 import { isNearsyLinkedInAuthAllowed } from '../config/nearsyFirebaseEnv';
+import { isNearsyFacebookAuthConfigured } from '../config/facebookAuthConfig';
 import { markWelcomeSeen } from '../onboarding/welcomeStorage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Welcome'>;
@@ -38,9 +40,11 @@ export default function WelcomeScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const { signInWithGoogle, googleSubmitting } = useGoogleSignInFlow();
   const { signInWithLinkedIn, linkedInSubmitting } = useLinkedInSignInFlow();
+  const { signInWithFacebook, facebookSubmitting } = useFacebookSignInFlow();
   // Match Login surface so shared brand hero (logo / waves / people) reads the same.
   const screenBg = theme === 'dark' ? palette.background : palette.heroBg;
-  const socialBusy = googleSubmitting || linkedInSubmitting;
+  const socialBusy =
+    googleSubmitting || linkedInSubmitting || facebookSubmitting;
 
   async function leaveWelcome(
     action: () => void,
@@ -70,6 +74,17 @@ export default function WelcomeScreen({ navigation }: Props) {
       return;
     }
 
+    if (
+      p === 'meta' &&
+      Platform.OS === 'android' &&
+      isNearsyFacebookAuthConfigured()
+    ) {
+      void leaveWelcome(() => {
+        void signInWithFacebook();
+      });
+      return;
+    }
+
     Alert.alert(
       t('authentication.social.comingSoonTitle'),
       t('authentication.social.comingSoonMessage'),
@@ -79,9 +94,16 @@ export default function WelcomeScreen({ navigation }: Props) {
   const socialLabels = {
     google: t('authentication.login.social.google'),
     apple: t('authentication.login.social.apple'),
-    meta: t('authentication.login.social.meta'),
+    meta:
+      Platform.OS === 'android'
+        ? t('authentication.login.social.facebook')
+        : t('authentication.login.social.meta'),
     linkedin: t('authentication.login.social.linkedin'),
   };
+  const socialAccessibilityLabels =
+    Platform.OS === 'android'
+      ? { meta: t('authentication.social.facebook.continue') }
+      : undefined;
 
   return (
     <View style={[styles.root, { backgroundColor: screenBg }]}>
@@ -115,6 +137,7 @@ export default function WelcomeScreen({ navigation }: Props) {
 
           <AuthSocialButtonRow
             labels={socialLabels}
+            accessibilityLabels={socialAccessibilityLabels}
             onPress={onProvider}
             busy={socialBusy}
             loadingProvider={
@@ -122,7 +145,9 @@ export default function WelcomeScreen({ navigation }: Props) {
                 ? 'google'
                 : linkedInSubmitting
                   ? 'linkedin'
-                  : null
+                  : facebookSubmitting
+                    ? 'meta'
+                    : null
             }
             borderColor={palette.socialBorder}
             textColor={palette.textPrimary}

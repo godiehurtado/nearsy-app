@@ -9,6 +9,11 @@
  * Emits a single extras shape consumed by packages/shared environment resolver.
  */
 const appJson = require('./app.json');
+const {
+  FACEBOOK_STATIC_PLUGINS,
+  resolveFacebookAuthConfig,
+  withNearsyFacebookAuth,
+} = require('./plugins/facebookAuthConfig');
 
 const firebaseEnv = String(process.env.NEARSY_FIREBASE_ENV || '')
   .trim()
@@ -38,28 +43,45 @@ const logoDevPublishableKey = String(
   process.env.EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY || '',
 ).trim();
 
-module.exports = {
-  expo: {
-    ...appJson.expo,
-    android: {
-      ...appJson.expo.android,
-      googleServicesFile,
-    },
-    extra: {
-      ...(appJson.expo.extra || {}),
-      /** Canonical environment: development | production */
-      nearsyFirebaseEnv,
-      /** Must pair with nearsyFirebaseEnv (nearsy-dev | nearsy-pj) */
-      nearsyFirebaseProjectId,
-      nearsyFunctionsRegion: 'us-central1',
-      /**
-       * True only when the build opts into the Development client channel.
-       * Combined with nearsyFirebaseEnv for App Check Debug eligibility.
-       */
-      nearsyDevClient,
-      ...(logoDevPublishableKey.startsWith('pk_')
-        ? { EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY: logoDevPublishableKey }
-        : {}),
-    },
+/**
+ * Facebook Login (ENH-AUTH-FB-01). App ID + Client Token from env only; the
+ * token is written to native resources by the plugin, never into extra or
+ * the serialized plugins list.
+ */
+const facebookAuth = resolveFacebookAuthConfig(process.env);
+if (!facebookAuth.configured) {
+  console.warn(
+    `[app.config] Facebook Login disabled: ${facebookAuth.issues.join(', ')}`,
+  );
+}
+
+const expoConfig = {
+  ...appJson.expo,
+  plugins: [...(appJson.expo.plugins || []), ...FACEBOOK_STATIC_PLUGINS],
+  android: {
+    ...appJson.expo.android,
+    googleServicesFile,
   },
+  extra: {
+    ...(appJson.expo.extra || {}),
+    /** Canonical environment: development | production */
+    nearsyFirebaseEnv,
+    /** Must pair with nearsyFirebaseEnv (nearsy-dev | nearsy-pj) */
+    nearsyFirebaseProjectId,
+    nearsyFunctionsRegion: 'us-central1',
+    /**
+     * True only when the build opts into the Development client channel.
+     * Combined with nearsyFirebaseEnv for App Check Debug eligibility.
+     */
+    nearsyDevClient,
+    /** Gates the native Facebook SDK in JS (never the token itself). */
+    facebookAuthConfigured: facebookAuth.configured,
+    ...(logoDevPublishableKey.startsWith('pk_')
+      ? { EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY: logoDevPublishableKey }
+      : {}),
+  },
+};
+
+module.exports = {
+  expo: withNearsyFacebookAuth(expoConfig, facebookAuth),
 };

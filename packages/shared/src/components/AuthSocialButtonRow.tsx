@@ -40,6 +40,8 @@ const PROVIDERS =
 
 export type AuthSocialButtonRowProps = {
   labels: Record<AuthSocialProvider, string>;
+  /** Screen-reader labels when they differ from the short tile text. */
+  accessibilityLabels?: Partial<Record<AuthSocialProvider, string>>;
   onPress: (provider: AuthSocialProvider) => void;
   /** Disables all tiles except an optional loading provider. */
   busy?: boolean;
@@ -51,6 +53,7 @@ export type AuthSocialButtonRowProps = {
 
 export function AuthSocialButtonRow({
   labels,
+  accessibilityLabels,
   onPress,
   busy = false,
   loadingProvider = null,
@@ -67,7 +70,9 @@ export function AuthSocialButtonRow({
           <Pressable
             key={provider.id}
             accessibilityRole="button"
-            accessibilityLabel={labels[provider.id]}
+            accessibilityLabel={
+              accessibilityLabels?.[provider.id] ?? labels[provider.id]
+            }
             style={({ pressed }) => [
               styles.socialButton,
               {

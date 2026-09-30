@@ -6,7 +6,8 @@
  * 1. clear social prefill
  * 2. stop FGS/task (+ clear NEARSY_BG_UID via stop)
  * 3. deactivate Visibility contractually when active
- * 4. signOut
+ * 4. sign out native provider sessions (Facebook), best effort
+ * 5. signOut
  * Navigation reset remains the caller's responsibility.
  */
 
@@ -16,6 +17,8 @@ export type ContractualLogoutDeps = {
   /** Current Visibility ON/OFF (local cache or fresh read). */
   isVisibilityActive: () => boolean | Promise<boolean>;
   deactivateVisibility: () => Promise<void>;
+  /** Idempotent native provider logout; failures never block Firebase signOut. */
+  signOutProviderSessions?: () => void | Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -27,6 +30,11 @@ export async function runContractualAndroidLogout(
   const active = await deps.isVisibilityActive();
   if (active) {
     await deps.deactivateVisibility().catch(() => {});
+  }
+  try {
+    await deps.signOutProviderSessions?.();
+  } catch {
+    // Best effort; Firebase signOut below is the contractual step.
   }
   await deps.signOut();
 }

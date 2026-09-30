@@ -26,6 +26,7 @@ export const authenticationTranslations = {
         google: 'Google',
         apple: 'Apple',
         meta: 'Meta',
+        facebook: 'Facebook',
         linkedin: 'LinkedIn',
       },
       alerts: {
@@ -57,6 +58,13 @@ export const authenticationTranslations = {
           userDisabled:
             'This account has been disabled. Please contact support.',
           generic: 'Something went wrong with Google Sign-In. Please try again.',
+        },
+      },
+      facebook: {
+        continue: 'Continue with Facebook',
+        errors: {
+          cancelled: 'Facebook sign-in was canceled.',
+          generic: 'We couldn’t sign you in with Facebook. Please try again.',
         },
       },
     },
@@ -337,6 +345,7 @@ export const authenticationTranslations = {
         google: 'Google',
         apple: 'Apple',
         meta: 'Meta',
+        facebook: 'Facebook',
         linkedin: 'LinkedIn',
       },
       alerts: {
@@ -372,6 +381,14 @@ export const authenticationTranslations = {
             'Esta cuenta ha sido deshabilitada. Contacta con soporte.',
           generic:
             'Algo salió mal con Google Sign-In. Inténtalo de nuevo.',
+        },
+      },
+      facebook: {
+        continue: 'Continuar con Facebook',
+        errors: {
+          cancelled: 'Se canceló el inicio de sesión con Facebook.',
+          generic:
+            'No pudimos iniciar sesión con Facebook. Inténtalo nuevamente.',
         },
       },
     },
