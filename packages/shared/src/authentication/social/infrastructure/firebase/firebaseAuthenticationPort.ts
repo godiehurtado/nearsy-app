@@ -15,8 +15,9 @@ export type FirebaseSocialCredentialInput =
     }
   | {
       /**
-       * Classic Facebook Login provides `accessToken`. Without ATT the iOS SDK
-       * falls back to Limited Login and provides an OIDC `idToken` + `rawNonce`.
+       * iOS Limited Login: the OIDC `idToken` + original `rawNonce` is the
+       * primary credential. `accessToken` is only a fallback when the SDK
+       * returns no usable AuthenticationToken.
        */
       provider: 'facebook';
       accessToken?: string;
