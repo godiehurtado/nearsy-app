@@ -20,5 +20,16 @@ yarn-error.*
 .env*.local
 *.tsbuildinfo
 
+# Never upload local environment files or QA artifacts to EAS
+.env.eas.*
+.nearsy-eas-env-dump.tmp.json
+.qa-logs/
+# Stale root prebuild and any generated native Android tree of the iOS app
+/android/
+/apps/nearsy-ios/android/
+# Generated Android native tree (gitignored): may hold a debug keystore and a
+# nearsy-dev google-services.json; must never ship in any EAS upload
+apps/nearsy-android/android/
+
 # --- asegúrate que el lockfile SI se incluya en el tar del build ---
 !package-lock.json

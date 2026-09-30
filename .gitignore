@@ -83,6 +83,7 @@ firebase-debug.*.log
 
 # local env files
 .env*.local
+.nearsy-eas-env-dump.tmp.json
 
 # typescript
 *.tsbuildinfo

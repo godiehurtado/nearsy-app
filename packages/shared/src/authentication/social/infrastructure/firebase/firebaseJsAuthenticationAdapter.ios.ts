@@ -1,4 +1,5 @@
 import {
+  FacebookAuthProvider,
   GoogleAuthProvider,
   OAuthProvider,
   signInWithCredential,
@@ -9,11 +10,16 @@ import {
   createSocialAuthError,
   messageKeyForCode,
 } from '../../domain/socialAuthenticationError';
+import { selectFacebookCredentialTokens } from '../../domain/facebookCredentialPolicy';
 import type {
   FirebaseAuthenticationPort,
   FirebaseAuthenticationSession,
   FirebaseSocialCredentialInput,
 } from './firebaseAuthenticationPort';
+import {
+  describeErrorForTrace,
+  traceFacebookAuth,
+} from '../../application/facebookAuthTrace';
 
 /** Injectable runtime for unit tests (defaults to Firebase JS SDK). */
 export type FirebaseJsAuthRuntime = {
@@ -28,6 +34,9 @@ export type FirebaseJsAuthRuntime = {
       idToken?: string;
       rawNonce?: string;
     }) => unknown;
+  };
+  FacebookAuthProvider: {
+    credential: (accessToken: string) => unknown;
   };
   signInWithCredential: (
     auth: unknown,
@@ -54,7 +63,7 @@ function toSession(cred: UserCredential): FirebaseAuthenticationSession {
 }
 
 export function mapFirebaseSocialError(
-  provider: 'google' | 'apple',
+  provider: 'google' | 'apple' | 'facebook',
   err: unknown,
 ): never {
   const firebaseCode =
@@ -119,7 +128,7 @@ function resolveDefaultAuth(): unknown {
 
 /**
  * iOS Firebase adapter using the existing Firebase JavaScript SDK (TS-007).
- * Supports Google and Apple social credentials only — no email-based linking.
+ * Supports Google, Apple and Facebook social credentials — no email-based linking.
  */
 export function createFirebaseJsAuthenticationAdapter(
   runtimeOverrides?: Partial<FirebaseJsAuthRuntime>,
@@ -195,6 +204,93 @@ export function createFirebaseJsAuthenticationAdapter(
           return toSession(userCredential);
         } catch (err: unknown) {
           mapFirebaseSocialError('apple', err);
+        }
+      }
+
+      if (input.provider === 'facebook') {
+        const accessToken = input.accessToken?.trim();
+        const idToken = input.idToken?.trim();
+        const rawNonce = input.rawNonce?.trim();
+
+        if (!accessToken && !idToken) {
+          throw createSocialAuthError({
+            code: 'TOKEN_MISSING',
+            provider: 'facebook',
+            recoverable: false,
+            messageKey: messageKeyForCode('TOKEN_MISSING'),
+            diagnosticCode: 'FACEBOOK_TOKEN_MISSING',
+          });
+        }
+
+        if (!accessToken && !rawNonce) {
+          throw createSocialAuthError({
+            code: 'TOKEN_INVALID',
+            provider: 'facebook',
+            recoverable: false,
+            messageKey: messageKeyForCode('TOKEN_INVALID'),
+            diagnosticCode: 'RAW_NONCE_MISSING',
+          });
+        }
+
+        const Facebook =
+          runtimeOverrides?.FacebookAuthProvider ?? FacebookAuthProvider;
+        const FacebookOAuth = runtimeOverrides?.OAuthProvider ?? OAuthProvider;
+        const signIn =
+          runtimeOverrides?.signInWithCredential ??
+          (signInWithCredential as FirebaseJsAuthRuntime['signInWithCredential']);
+
+        const tokens = selectFacebookCredentialTokens({ accessToken, idToken, rawNonce });
+
+        let auth: unknown;
+        try {
+          const credential =
+            tokens?.kind === 'access_token'
+              ? Facebook.credential(tokens.accessToken)
+              : new FacebookOAuth('facebook.com').credential({
+                  idToken,
+                  rawNonce,
+                });
+          const cred = credential as {
+            providerId?: unknown;
+            signInMethod?: unknown;
+            idToken?: unknown;
+            accessToken?: unknown;
+            nonce?: unknown;
+          };
+          traceFacebookAuth('firebase_credential_created', {
+            tokenKind: tokens?.kind === 'access_token' ? 'access_token' : 'oidc_id_token',
+            providerId: typeof cred.providerId === 'string' ? cred.providerId : 'missing',
+            signInMethod: typeof cred.signInMethod === 'string' ? cred.signInMethod : 'missing',
+            credentialHasIdToken: typeof cred.idToken === 'string' && cred.idToken.length > 0,
+            credentialHasAccessToken:
+              typeof cred.accessToken === 'string' && cred.accessToken.length > 0,
+            credentialNonceIsRawNonce: Boolean(rawNonce) && cred.nonce === rawNonce,
+          });
+
+          auth = resolveAuth();
+          const appOptions = (auth as { app?: { options?: { projectId?: unknown } } })?.app
+            ?.options;
+          traceFacebookAuth('firebase_sign_in_started', {
+            projectId:
+              typeof appOptions?.projectId === 'string' ? appOptions.projectId : 'missing',
+          });
+          const userCredential = await signIn(auth, credential);
+          traceFacebookAuth('firebase_sign_in_success', {
+            isNewUser: Boolean(
+              (userCredential as UserCredential & {
+                additionalUserInfo?: { isNewUser?: boolean };
+              }).additionalUserInfo?.isNewUser,
+            ),
+          });
+          return toSession(userCredential);
+        } catch (err: unknown) {
+          traceFacebookAuth('firebase_sign_in_error', {
+            ...describeErrorForTrace(err),
+            currentUserPresent: Boolean(
+              (auth as { currentUser?: unknown } | undefined)?.currentUser,
+            ),
+          });
+          mapFirebaseSocialError('facebook', err);
         }
       }
 

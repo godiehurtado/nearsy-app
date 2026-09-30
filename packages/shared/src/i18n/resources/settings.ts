@@ -122,10 +122,13 @@ export default {
       'For security, continue with Google to confirm it’s you before deleting this account.',
     reauthBodyApple:
       'For security, continue with Apple to confirm it’s you before deleting this account.',
+    reauthBodyFacebook:
+      'For security, continue with Facebook to confirm it’s you before deleting this account.',
     passwordPlaceholder: 'Password',
     reauthConfirm: 'Confirm password and delete',
     reauthContinueGoogle: 'Continue with Google and delete',
     reauthContinueApple: 'Continue with Apple and delete',
+    reauthContinueFacebook: 'Continue with Facebook and delete',
     reauthError: 'Could not confirm password.',
     reauthFailed: 'Could not confirm your identity. Your account was not deleted.',
     reauthCancelled: 'Sign-in was cancelled. Your account was not deleted.',

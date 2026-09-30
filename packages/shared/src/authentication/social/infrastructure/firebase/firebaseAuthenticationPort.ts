@@ -12,6 +12,17 @@ export type FirebaseSocialCredentialInput =
       provider: 'apple';
       identityToken: string;
       rawNonce: string;
+    }
+  | {
+      /**
+       * iOS Limited Login: the OIDC `idToken` + original `rawNonce` is the
+       * primary credential. `accessToken` is only a fallback when the SDK
+       * returns no usable AuthenticationToken.
+       */
+      provider: 'facebook';
+      accessToken?: string;
+      idToken?: string;
+      rawNonce?: string;
     };
 
 export interface FirebaseAuthenticationSession {

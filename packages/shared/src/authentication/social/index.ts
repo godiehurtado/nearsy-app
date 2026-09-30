@@ -11,6 +11,11 @@ import {
   createAuthenticateWithApple,
   type AuthenticateWithAppleDependencies,
 } from './application/authenticateWithApple';
+import {
+  createAuthenticateWithFacebook,
+  type AuthenticateWithFacebookDependencies,
+} from './application/authenticateWithFacebook';
+import { createFacebookProviderAdapter } from './infrastructure/facebook/facebookProviderAdapter';
 import { resolveGoogleAuthenticationConfiguration } from './infrastructure/google/googleConfiguration';
 import { GOOGLE_IOS_NATIVE_CONFIG } from './infrastructure/google/googleIosNativeConfig';
 import { createGoogleProviderAdapter } from './infrastructure/google/googleProviderAdapter';
@@ -89,6 +94,29 @@ export {
   shouldSuppressAppleSignInAlert,
 } from './application/appleSignInUiPolicy';
 
+export type {
+  AuthenticateWithFacebookDependencies,
+  FacebookSignInSuccess,
+  FacebookSignInProfileRoute,
+} from './application/authenticateWithFacebook';
+export { createAuthenticateWithFacebook } from './application/authenticateWithFacebook';
+export {
+  FACEBOOK_SIGN_IN_FAILED_MESSAGE_KEY,
+  resolveFacebookSignInAlertMessageKey,
+  shouldSuppressFacebookSignInAlert,
+} from './application/facebookSignInUiPolicy';
+export {
+  beginFacebookAuthTrace,
+  describeErrorForTrace,
+  flushFacebookAuthTrace,
+  summarizeFacebookAuthTrace,
+  traceFacebookAuth,
+} from './application/facebookAuthTrace';
+export {
+  createFacebookProviderAdapter,
+  FACEBOOK_LOGIN_PERMISSIONS,
+} from './infrastructure/facebook/facebookProviderAdapter';
+
 export type { SocialProfileData } from './domain/socialProfileData';
 export { normalizeSocialProfileData } from './application/normalizeSocialProfileData';
 export {
@@ -118,12 +146,14 @@ export {
 } from './application/resolveCrjNamePrefill';
 
 /**
- * Default registry: Google + Apple (iOS social providers).
+ * Default registry: Google + Apple + Facebook (iOS social credential providers).
+ * LinkedIn uses the separate A3 custom-token flow.
  */
 export function createDefaultSocialProviderRegistry() {
   return createSocialProviderRegistry({
     google: createGoogleProviderAdapter(),
     apple: createAppleProviderAdapter(),
+    facebook: createFacebookProviderAdapter(),
   });
 }
 
@@ -182,6 +212,33 @@ export function createDefaultAuthenticateWithApple(
     },
     ...overrides,
   });
+}
+
+/**
+ * Production Facebook Login orchestrator for Login / Welcome.
+ */
+export function createDefaultAuthenticateWithFacebook(
+  overrides?: Partial<AuthenticateWithFacebookDependencies>,
+) {
+  return createAuthenticateWithFacebook({
+    registry: createDefaultSocialProviderRegistry(),
+    firebaseAuth: createDefaultFirebaseAuthenticationPort(),
+    getUserProfile,
+    isProfileComplete,
+    ...overrides,
+  });
+}
+
+/**
+ * Best-effort, idempotent Facebook SDK logout (LoginManager.logOut).
+ * Never throws; safe when the user never used Facebook.
+ */
+export async function clearFacebookProviderSession(): Promise<void> {
+  try {
+    await createFacebookProviderAdapter().clearProviderSession?.();
+  } catch {
+    // Best-effort.
+  }
 }
 
 /**

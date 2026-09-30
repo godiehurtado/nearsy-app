@@ -56,7 +56,7 @@ const es: TranslationResources = {
       social: {
         apple: 'Apple',
         google: 'Google',
-        meta: 'Meta',
+        facebook: 'Facebook',
         linkedin: 'LinkedIn',
         appleAlertTitle: 'Iniciar sesión con Apple',
         appleComingSoon: 'Próximamente.',
@@ -89,6 +89,11 @@ const es: TranslationResources = {
           'Ya existe una cuenta con este correo usando otro método de acceso.',
         generic:
           'Algo salió mal al iniciar sesión. Inténtalo de nuevo.',
+      },
+      facebook: {
+        continue: 'Continuar con Facebook',
+        cancelled: 'Se canceló el inicio de sesión con Facebook.',
+        failed: 'No pudimos iniciar sesión con Facebook. Inténtalo nuevamente.',
       },
     },
     forgotPassword: {
@@ -1459,10 +1464,13 @@ const es: TranslationResources = {
         'Por seguridad, continúa con Google para confirmar tu identidad antes de eliminar esta cuenta.',
       reauthBodyApple:
         'Por seguridad, continúa con Apple para confirmar tu identidad antes de eliminar esta cuenta.',
+      reauthBodyFacebook:
+        'Por seguridad, continúa con Facebook para confirmar tu identidad antes de eliminar esta cuenta.',
       passwordPlaceholder: 'Contraseña',
       reauthConfirm: 'Confirmar contraseña y eliminar',
       reauthContinueGoogle: 'Continuar con Google y eliminar',
       reauthContinueApple: 'Continuar con Apple y eliminar',
+      reauthContinueFacebook: 'Continuar con Facebook y eliminar',
       reauthError: 'No se pudo confirmar la contraseña.',
       reauthFailed:
         'No se pudo confirmar tu identidad. Tu cuenta no fue eliminada.',

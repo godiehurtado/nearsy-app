@@ -857,9 +857,8 @@ export default function MoreScreen() {
 
   const handleLogout = async () => {
     try {
-      const { clearPendingSocialProfilePrefill } = await import(
-        '../authentication/social'
-      );
+      const { clearPendingSocialProfilePrefill, clearFacebookProviderSession } =
+        await import('../authentication/social');
       clearPendingSocialProfilePrefill();
       // Contractual logout order (ENH-LOC-01):
       // 1) stop background task/runtime (+ clear local UID / runtime-allowed)
@@ -875,6 +874,8 @@ export default function MoreScreen() {
         // Best-effort contractual Visibility close before sign-out.
       }
       await firebaseAuth.signOut();
+      // Idempotent Facebook SDK logout; never blocks guest navigation.
+      await clearFacebookProviderSession();
       const parent = navigation.getParent?.() as any;
       if (parent?.reset) {
         parent.reset({ index: 0, routes: [{ name: 'Login' }] });

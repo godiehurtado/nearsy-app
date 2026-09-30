@@ -34,7 +34,7 @@ describe('Apple sign-in UI / hook policy', () => {
     assert.equal(shouldSuppressAppleSignInAlert('TOKEN_INVALID'), false);
   });
 
-  it('LoginScreen wires Apple, Google, and LinkedIn; Meta stays coming soon', () => {
+  it('LoginScreen wires Apple, Google, Facebook, and LinkedIn', () => {
     const source = readSharedSource('screens/LoginScreen.tsx');
     assert.match(source, /useAppleSignInFlow/);
     assert.match(source, /signInWithApple/);

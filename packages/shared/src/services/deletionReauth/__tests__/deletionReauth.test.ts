@@ -12,6 +12,10 @@ import {
   resolveDeletionReauthMethod,
   type ReauthenticateForDeletionDependencies,
 } from '../index';
+import {
+  createFacebookReauthCredential,
+  toFacebookReauthTokens,
+} from '../reauthenticateForAccountDeletion';
 import { createSocialAuthError } from '../../../authentication/social/domain/socialAuthenticationError';
 
 describe('resolveDeletionReauthMethod', () => {
@@ -61,6 +65,33 @@ describe('resolveDeletionReauthMethod', () => {
     });
   });
 
+  it('facebook-only → facebook reauth (no password)', () => {
+    const method = resolveDeletionReauthMethod([
+      { providerId: 'facebook.com', uid: 'fb-app-scoped-1' },
+    ]);
+    assert.deepEqual(method, {
+      kind: 'facebook',
+      linkedProviderUserId: 'fb-app-scoped-1',
+    });
+  });
+
+  it('multi-provider apple+facebook → deterministic apple; others keep priority', () => {
+    assert.equal(
+      resolveDeletionReauthMethod([
+        { providerId: 'facebook.com', uid: 'fb1' },
+        { providerId: 'apple.com', uid: 'a1' },
+      ]).kind,
+      'apple',
+    );
+    assert.equal(
+      resolveDeletionReauthMethod([
+        { providerId: 'facebook.com', uid: 'fb1' },
+        { providerId: 'password', uid: 'p1' },
+      ]).kind,
+      'password',
+    );
+  });
+
   it('empty providerData (custom-token / LinkedIn A3) → unavailable, not password', () => {
     const method = resolveDeletionReauthMethod([]);
     assert.deepEqual(method, {
@@ -71,7 +102,7 @@ describe('resolveDeletionReauthMethod', () => {
 
   it('unsupported-only provider → unavailable, not password', () => {
     const method = resolveDeletionReauthMethod([
-      { providerId: 'facebook.com', uid: 'fb1' },
+      { providerId: 'twitter.com', uid: 'tw1' },
     ]);
     assert.deepEqual(method, {
       kind: 'unavailable',
@@ -104,6 +135,12 @@ function createMockDeps(
       identityToken: 'apple-id-token',
       rawNonce: 'raw-nonce',
       providerUserId: 'apple-sub-1',
+    }),
+    createFacebookCredential: (tokens) =>
+      ({ providerId: 'facebook.com', ...tokens }) as any,
+    obtainFacebookProviderTokens: async () => ({
+      accessToken: 'fb-access-token',
+      providerUserId: 'fb-app-scoped-1',
     }),
     reauthWithPassword: async () => undefined,
     ...overrides,
@@ -170,6 +207,207 @@ describe('reauthenticateForAccountDeletion', () => {
       }),
     );
     assert.equal((seenCred as any).providerId, 'apple.com');
+  });
+
+  it('facebook path reauthenticates current user with a fresh Facebook credential', async () => {
+    let seenCred: any;
+    let seenUserUid: string | undefined;
+    await reauthenticateForAccountDeletion(
+      { method: { kind: 'facebook', linkedProviderUserId: 'fb-app-scoped-1' } },
+      createMockDeps({
+        reauthenticateWithCredential: async (user, credential) => {
+          seenUserUid = user.uid;
+          seenCred = credential;
+        },
+      }),
+    );
+    assert.equal(seenUserUid, 'uid-current');
+    assert.equal(seenCred.providerId, 'facebook.com');
+    assert.equal(seenCred.accessToken, 'fb-access-token');
+  });
+
+  it('facebook Limited Login reauth passes idToken + rawNonce', async () => {
+    let seenCred: any;
+    await reauthenticateForAccountDeletion(
+      { method: { kind: 'facebook', linkedProviderUserId: 'fb-app-scoped-1' } },
+      createMockDeps({
+        obtainFacebookProviderTokens: async () => ({
+          idToken: 'oidc-jwt',
+          rawNonce: 'raw-nonce',
+          providerUserId: '',
+        }),
+        reauthenticateWithCredential: async (_user, credential) => {
+          seenCred = credential;
+        },
+      }),
+    );
+    assert.equal(seenCred.idToken, 'oidc-jwt');
+    assert.equal(seenCred.rawNonce, 'raw-nonce');
+  });
+
+  it('facebook reauth tokens follow the sign-in Limited Login policy (OIDC first)', () => {
+    assert.deepEqual(
+      toFacebookReauthTokens({
+        accessToken: 'residual-access-token',
+        idToken: 'oidc-jwt',
+        rawNonce: 'raw-nonce',
+        providerUserId: ' fb-app-scoped-1 ',
+      }),
+      { idToken: 'oidc-jwt', rawNonce: 'raw-nonce', providerUserId: 'fb-app-scoped-1' },
+    );
+    assert.deepEqual(toFacebookReauthTokens({ accessToken: 'tok', providerUserId: '' }), {
+      accessToken: 'tok',
+      providerUserId: '',
+    });
+    assert.throws(
+      () => toFacebookReauthTokens({ idToken: 'oidc-jwt', providerUserId: '' }),
+      (err: unknown) => err instanceof AccountDeletionReauthError && err.code === 'REAUTH_FAILED',
+    );
+  });
+
+  it('facebook reauth credential is OAuthProvider(facebook.com) with idToken + raw nonce', () => {
+    const oidc = createFacebookReauthCredential({
+      accessToken: 'residual-access-token',
+      idToken: 'oidc-jwt',
+      rawNonce: 'raw-nonce',
+      providerUserId: '',
+    }).toJSON() as Record<string, unknown>;
+    assert.equal(oidc.providerId, 'facebook.com');
+    assert.equal(oidc.idToken, 'oidc-jwt');
+    assert.equal(oidc.nonce, 'raw-nonce');
+    assert.equal(oidc.accessToken, undefined);
+
+    const classic = createFacebookReauthCredential({
+      accessToken: 'tok',
+      providerUserId: '',
+    }).toJSON() as Record<string, unknown>;
+    assert.equal(classic.providerId, 'facebook.com');
+    assert.equal(classic.accessToken, 'tok');
+  });
+
+  it('default facebook reauth reuses the shared Limited Login adapter and credential policy', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { dirname, join } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '..', 'reauthenticateForAccountDeletion.ts'),
+      'utf8',
+    );
+    assert.match(source, /registry\.get\('facebook'\)/);
+    assert.match(source, /return toFacebookReauthTokens\(result\);/);
+    assert.match(source, /createFacebookCredential: createFacebookReauthCredential,/);
+    assert.doesNotMatch(source, /FacebookAuthProvider\.credential\(accessToken\)/);
+  });
+
+  it('facebook reauth cancel never reaches credential reauth (account not deleted)', async () => {
+    let credentialCalls = 0;
+    await assert.rejects(
+      () =>
+        reauthenticateForAccountDeletion(
+          { method: { kind: 'facebook', linkedProviderUserId: 'fb-app-scoped-1' } },
+          createMockDeps({
+            obtainFacebookProviderTokens: async () => {
+              throw createSocialAuthError({
+                code: 'CANCELLED',
+                provider: 'facebook',
+                recoverable: true,
+                messageKey: 'authentication.social.errors.cancelled',
+              });
+            },
+            reauthenticateWithCredential: async () => {
+              credentialCalls += 1;
+            },
+          }),
+        ),
+      (err: unknown) =>
+        err instanceof AccountDeletionReauthError &&
+        err.code === 'CANCELLED' &&
+        err.messageKey === 'settings.deleteAccount.reauthCancelled',
+    );
+    assert.equal(credentialCalls, 0);
+  });
+
+  it('facebook identity mismatch aborts before credential reauth', async () => {
+    let credentialCalls = 0;
+    await assert.rejects(
+      () =>
+        reauthenticateForAccountDeletion(
+          { method: { kind: 'facebook', linkedProviderUserId: 'fb-app-scoped-1' } },
+          createMockDeps({
+            obtainFacebookProviderTokens: async () => ({
+              accessToken: 'tok',
+              providerUserId: 'another-facebook-user',
+            }),
+            reauthenticateWithCredential: async () => {
+              credentialCalls += 1;
+            },
+          }),
+        ),
+      (err: unknown) =>
+        err instanceof AccountDeletionReauthError && err.code === 'IDENTITY_MISMATCH',
+    );
+    assert.equal(credentialCalls, 0);
+  });
+
+  it('failed facebook reauth clears the Facebook session; success keeps it for finalize', async () => {
+    let clears = 0;
+    const clearFacebookProviderSession = async () => {
+      clears += 1;
+    };
+
+    await assert.rejects(() =>
+      reauthenticateForAccountDeletion(
+        { method: { kind: 'facebook', linkedProviderUserId: 'fb-app-scoped-1' } },
+        createMockDeps({
+          clearFacebookProviderSession,
+          obtainFacebookProviderTokens: async () => ({
+            accessToken: 'tok',
+            providerUserId: 'another-facebook-user',
+          }),
+        }),
+      ),
+    );
+    assert.equal(clears, 1, 'identity mismatch clears session');
+
+    __resetAccountDeletionReauthInProgressForTests();
+    await assert.rejects(() =>
+      reauthenticateForAccountDeletion(
+        { method: { kind: 'facebook', linkedProviderUserId: 'fb-app-scoped-1' } },
+        createMockDeps({
+          clearFacebookProviderSession,
+          reauthenticateWithCredential: async () => {
+            throw { code: 'auth/user-mismatch' };
+          },
+        }),
+      ),
+    );
+    assert.equal(clears, 2, 'Firebase reauth failure clears session');
+
+    __resetAccountDeletionReauthInProgressForTests();
+    await reauthenticateForAccountDeletion(
+      { method: { kind: 'facebook', linkedProviderUserId: 'fb-app-scoped-1' } },
+      createMockDeps({ clearFacebookProviderSession }),
+    );
+    assert.equal(clears, 2, 'successful reauth does not clear before deletion');
+  });
+
+  it('Delete Account only deletes after a successful reauth', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { dirname, join } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const screen = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'screens', 'DeleteAccountScreen.tsx'),
+      'utf8',
+    );
+    const handler = screen.slice(
+      screen.indexOf('const handleReauthAndDelete'),
+      screen.indexOf('const renderReauthActions'),
+    );
+    const reauthIdx = handler.indexOf('await reauthenticateForAccountDeletion');
+    const deleteIdx = handler.indexOf('await deleteAccountAndData()');
+    assert.ok(reauthIdx > 0 && deleteIdx > reauthIdx);
+    assert.match(screen, /settings\.deleteAccount\.reauthContinueFacebook/);
+    assert.match(screen, /settings\.deleteAccount\.reauthBodyFacebook/);
   });
 
   it('social cancellation does not complete reauth', async () => {

@@ -8,7 +8,10 @@ export interface ProviderAuthenticationResult {
   providerUserId: string;
   idToken?: string;
   accessToken?: string;
-  /** Apple: raw nonce paired with the hashed nonce sent to Apple Sign-In. */
+  /**
+   * Apple / Facebook Limited Login: raw nonce paired with the hashed nonce
+   * sent to the provider SDK.
+   */
   rawNonce?: string;
   authorizationCode?: string;
   email?: string;
