@@ -6,6 +6,7 @@ import NearbySearchScreen from '../screens/NearbySearchScreen';
 import ProfileDetailScreen from '../screens/ProfileDetailScreen';
 import DiscoveryProfileScreen from '../screens/DiscoveryProfileScreen';
 import ProfileGalleryScreen from '../screens/ProfileGalleryScreen';
+import DiscoveryInterestsScreen from '../screens/DiscoveryInterestsScreen';
 import LiveLocationTracker from '../components/LiveLocationTracker';
 import ContractualLocationPublisher from '../components/ContractualLocationPublisher';
 
@@ -24,6 +25,8 @@ export type HomeStackParamList = {
     /** Own Profile editor passes the full stored gallery (no client cap). */
     fullGallery?: boolean;
   };
+  /** Resolved catalog interest IDs only; no uid or profile data. */
+  DiscoveryInterests: { interestIds: string[] };
 };
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
@@ -46,6 +49,10 @@ export default function HomeStack() {
           component={DiscoveryProfileScreen}
         />
         <Stack.Screen name="ProfileGallery" component={ProfileGalleryScreen} />
+        <Stack.Screen
+          name="DiscoveryInterests"
+          component={DiscoveryInterestsScreen}
+        />
       </Stack.Navigator>
     </View>
   );

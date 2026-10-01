@@ -18,6 +18,7 @@ export * from './discoveryAffiliations';
 export * from './discoveryCompatibility';
 export * from './alignmentPresentation';
 export * from './interestDisplay';
+export * from './discoveryInterests';
 export * from './activeProfileModeSync';
 export * from './activeProfileModeReconciliation';
 export * from './setActiveProfileModeClientSemantics';

@@ -2,6 +2,7 @@
  * Profile Exploration — Discovery Profile Detail.
  * Candidate data: getDiscoveryProfile only (no peer users/{uid} read).
  * Interests: all public profile.interestIds (catalog-resolved); not viewer ∩ candidate.
+ * Shown on the read-only DiscoveryInterests screen, opened from an entry row.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -24,7 +25,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { firebaseAuth } from '../config/firebaseConfig';
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { useTranslation } from '../i18n';
-import { InterestChip } from '../components/InterestChip';
+import { useInterestItemTranslator } from '../hooks/useInterestItemTranslator';
 import { MVP_FREE_SHOW_PROFILE_CONNECT_CTA } from '../product/mvpFreePresentation';
 import { DiscoveryAffiliationsCard } from '../components/profileExploration/DiscoveryAffiliationsCard';
 import { DiscoveryContextCard } from '../components/profileExploration/DiscoveryContextCard';
@@ -39,6 +40,7 @@ import {
 } from '../theme';
 import { cardShadow } from '../theme/shadows';
 import {
+  buildDiscoveryInterestsParams,
   buildGetDiscoveryProfileRequest,
   galleryPreviewOverflowCount,
   galleryPreviewUrls,
@@ -87,13 +89,7 @@ export default function DiscoveryProfileScreen() {
   const [blockError, setBlockError] = useState<string | null>(null);
   const blockInFlight = useRef(false);
 
-  const translateItem = useCallback(
-    (nameKey: string, fallback: string) =>
-      t(`onboarding.profileCompletion.interests.items.${nameKey}` as any, {
-        defaultValue: fallback,
-      }),
-    [t],
-  );
+  const translateItem = useInterestItemTranslator();
 
   const loadProfile = useCallback(async () => {
     if (!uid) {
@@ -134,6 +130,11 @@ export default function DiscoveryProfileScreen() {
     if (!data) return [];
     return resolveInterestChips(data.profile.interestIds, translateItem);
   }, [data, translateItem]);
+
+  const interestsParams = useMemo(
+    () => buildDiscoveryInterestsParams(interestPills),
+    [interestPills],
+  );
 
   const modeLabel = useMemo(() => {
     if (!data) return '';
@@ -185,6 +186,11 @@ export default function DiscoveryProfileScreen() {
     },
     [data, navigation, uid],
   );
+
+  const openInterests = useCallback(() => {
+    if (!interestsParams) return;
+    navigation.navigate('DiscoveryInterests', interestsParams);
+  }, [interestsParams, navigation]);
 
   if (loading) {
     return (
@@ -428,46 +434,46 @@ export default function DiscoveryProfileScreen() {
           {/* Affiliations — Biography → Affiliations → Interests (CHG-PROFILE-01) */}
           <DiscoveryAffiliationsCard affiliations={data.affiliations} />
 
-          <View
-            style={[
-              styles.card,
-              {
-                backgroundColor: palette.panel,
-                borderColor: palette.border,
-              },
-              cardShadow,
-            ]}
-          >
-            <Text
-              style={[styles.sectionLabel, { color: palette.textMuted }]}
+          {/* Interests — entry row only; omitted when no interest resolves */}
+          {interestsParams ? (
+            <Pressable
+              onPress={openInterests}
+              accessibilityRole="button"
+              accessibilityLabel={t('discoveryProfile.viewInterests')}
+              style={[
+                styles.card,
+                styles.interestsEntry,
+                {
+                  backgroundColor: palette.panel,
+                  borderColor: palette.border,
+                },
+                cardShadow,
+              ]}
             >
-              {t('discoveryProfile.interests')}
-            </Text>
-            {interestPills.length > 0 ? (
-              <View style={styles.pillsRow}>
-                {interestPills.map((chip) => (
-                  <InterestChip
-                    key={chip.id}
-                    name={chip.label}
-                    icon={chip.icon}
-                    iconColor={chip.iconColor}
-                    selected={false}
-                  />
-                ))}
+              <View style={styles.flex}>
+                <Text
+                  style={[styles.sectionLabel, { color: palette.textMuted }]}
+                >
+                  {t('discoveryProfile.interests')}
+                </Text>
+                <Text
+                  style={{
+                    color: palette.primary,
+                    marginTop: 5,
+                    fontWeight: fontWeight.bold,
+                    fontSize: fontSize.sm,
+                  }}
+                >
+                  {t('discoveryProfile.viewInterests')}
+                </Text>
               </View>
-            ) : (
-              <Text
-                style={{
-                  color: palette.textSecondary,
-                  marginTop: spacing.sm,
-                  fontSize: fontSize.sm,
-                  lineHeight: 20,
-                }}
-              >
-                {t('discoveryProfile.noInterests')}
-              </Text>
-            )}
-          </View>
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={palette.textMuted}
+              />
+            </Pressable>
+          ) : null}
 
           {/* 6. Photos */}
           <View style={styles.photosHeader}>
@@ -821,11 +827,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
-  pillsRow: {
+  interestsEntry: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginTop: spacing.md,
+    alignItems: 'center',
+    gap: spacing.md,
   },
   photosHeader: {
     marginTop: spacing.xl,

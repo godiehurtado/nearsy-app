@@ -107,6 +107,7 @@ export const es: TranslationResources = {
     company: 'Empresa',
     biography: 'Biografía',
     interests: 'Intereses',
+    viewInterests: 'Ver intereses',
     affiliations: 'Afiliaciones',
     compatibility: 'Compatibilidad',
     compatibilityMatch: '{{score}}% Match',
