@@ -464,25 +464,31 @@ describe('Android UI wiring (Welcome / Login)', () => {
 
 describe('Routing reuse (existing profile gate)', () => {
   const hook = readShared('hooks/useFacebookSignInFlow.android.ts');
+  const flow = readShared('authentication/facebook/facebookSignInFlow.ts');
 
   it('existing complete user → clears prefill and resets to MainTabs', () => {
-    assert.match(hook, /const complete = await isProfileComplete\(result\.uid\)/);
-    assert.match(hook, /if \(complete\) \{\s*clearPendingSocialProfilePrefill\(\);\s*navigation\.reset\(\{\s*index: 0,\s*routes: \[\{ name: 'MainTabs' \}\]/);
+    assert.match(flow, /const complete = await deps\.isProfileComplete\(result\.uid\)/);
+    assert.match(flow, /return complete \? \{ kind: 'mainTabs' \} : profileCompletion/);
+    assert.match(hook, /case 'mainTabs':[\s\S]*?clearPendingSocialProfilePrefill\(\);\s*navigation\.reset\(\{\s*index: 0,\s*routes: \[\{ name: 'MainTabs' \}\]/);
   });
 
   it('new or incomplete user → ProfileCompletion (DOB → OTP → CRJ gate)', () => {
-    assert.match(hook, /if \(!profile\) \{\s*setTimeout\(goToProfileCompletion, 150\)/);
+    assert.match(flow, /if \(!profile\) return profileCompletion;/);
+    assert.match(flow, /email: result\.email \?\? ''/);
+    assert.match(hook, /case 'profileCompletion':[\s\S]*?setTimeout\(/);
     assert.match(hook, /name: 'ProfileCompletion'/);
-    assert.match(hook, /email: emailForProfile/);
-    assert.match(hook, /const emailForProfile = result\.email \?\? ''/);
+    assert.match(hook, /email: outcome\.email/);
   });
 
   it('double tap guarded; in-progress silent; cancel and errors use Facebook copy', () => {
     assert.match(hook, /if \(submittingRef\.current\) return;/);
-    assert.match(hook, /if \(err\.code === 'OPERATION_IN_PROGRESS'\) return;/);
-    assert.match(hook, /t\(err\.messageKey as any\)/);
-    assert.match(hook, /t\('authentication\.social\.facebook\.errors\.generic'\)/);
-    assert.doesNotMatch(hook, /console\.log\([^)]*(uid|email|accessToken)/);
+    assert.match(flow, /if \(err\.code === 'OPERATION_IN_PROGRESS'\) return null;/);
+    assert.match(flow, /return \{ titleKey: FACEBOOK_TITLE_KEY, messageKey: err\.messageKey \}/);
+    assert.match(flow, /const FACEBOOK_GENERIC_KEY = 'authentication\.social\.facebook\.errors\.generic'/);
+    assert.match(hook, /t\(outcome\.alert\.messageKey as any\)/);
+    for (const src of [hook, flow]) {
+      assert.doesNotMatch(src, /console\.log\([^)]*(uid|email|accessToken)/);
+    }
   });
 
   it('prefill store is the shared social store (no new persistence)', () => {
