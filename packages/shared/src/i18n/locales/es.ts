@@ -1224,6 +1224,7 @@ const es: TranslationResources = {
     company: 'Empresa',
     biography: 'Biografía',
     interests: 'Intereses',
+    viewInterests: 'Ver intereses',
     sharedInterests: 'Intereses compartidos',
     affiliations: 'Afiliaciones',
     from: 'De {{flag}} {{country}}',

@@ -10,6 +10,7 @@ export default {
   company: 'Company',
   biography: 'Biography',
   interests: 'Interests',
+  viewInterests: 'View interests',
   sharedInterests: 'Shared interests',
   affiliations: 'Affiliations',
   from: 'From {{flag}} {{country}}',

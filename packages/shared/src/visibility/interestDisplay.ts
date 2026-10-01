@@ -61,6 +61,11 @@ export function resolveInterestChips(
   return out;
 }
 
+/** IDs `resolveInterestChips` would render, in the same order. */
+export function resolveVisibleInterestIds(ids: readonly string[]): string[] {
+  return ids.filter((id) => resolveCatalogOrLegacyInterestItem(id) !== undefined);
+}
+
 export type NearbyInterestIconLayout = {
   visibleCount: number;
   overflowCount: number;

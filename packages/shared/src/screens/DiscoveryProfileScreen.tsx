@@ -1,7 +1,8 @@
 /**
  * Profile Exploration — Discovery Profile Detail.
  * Candidate data: getDiscoveryProfile only (no peer users/{uid} read).
- * Public interests: full candidate profile.interestIds (catalog-resolved).
+ * Public interests: full candidate profile.interestIds (catalog-resolved),
+ * shown on the separate DiscoveryInterests screen.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -25,7 +26,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { firebaseAuth } from '../config/firebaseConfig';
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { useTranslation } from '../i18n';
-import { InterestChip } from '../components/InterestChip';
 import { MVP_FREE_SHOW_PROFILE_CONNECT_CTA } from '../product/mvpFreePresentation';
 import { DiscoveryAffiliationsCard } from '../components/profileExploration/DiscoveryAffiliationsCard';
 import { DiscoverySocialMediaRow } from '../components/profileExploration/DiscoverySocialMediaRow';
@@ -49,7 +49,7 @@ import {
   type GetDiscoveryProfileResponse,
   type ProfileMode,
 } from '../visibility';
-import { resolveInterestChips } from '../visibility/interestDisplay';
+import { resolveVisibleInterestIds } from '../visibility/interestDisplay';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 import { blockCandidateUser } from '../visibility/blockCandidate';
 import {
@@ -89,14 +89,6 @@ export default function DiscoveryProfileScreen() {
   const [blockError, setBlockError] = useState<string | null>(null);
   const blockInFlight = useRef(false);
 
-  const translateItem = useCallback(
-    (nameKey: string, fallback: string) =>
-      t(`onboarding.profileCompletion.interests.items.${nameKey}` as any, {
-        defaultValue: fallback,
-      }),
-    [t],
-  );
-
   const loadProfile = useCallback(async () => {
     if (!uid) {
       setErrorKind('missing');
@@ -133,12 +125,9 @@ export default function DiscoveryProfileScreen() {
   }, [loadProfile]);
 
   /** All public candidate interests — not filtered by viewer intersection. */
-  const interestPills = useMemo(
-    () =>
-      data
-        ? resolveInterestChips(data.profile.interestIds, translateItem)
-        : [],
-    [data, translateItem],
+  const visibleInterestIds = useMemo(
+    () => (data ? resolveVisibleInterestIds(data.profile.interestIds) : []),
+    [data],
   );
 
   const modeLabel = useMemo(() => {
@@ -191,6 +180,13 @@ export default function DiscoveryProfileScreen() {
     },
     [data, navigation, uid],
   );
+
+  const openInterests = useCallback(() => {
+    if (visibleInterestIds.length === 0) return;
+    navigation.navigate('DiscoveryInterests', {
+      interestIds: visibleInterestIds,
+    });
+  }, [navigation, visibleInterestIds]);
 
   if (loading) {
     return (
@@ -434,47 +430,46 @@ export default function DiscoveryProfileScreen() {
           {/* Affiliations — after Biography, before Interests; omitted when empty */}
           <DiscoveryAffiliationsCard affiliations={data.affiliations} />
 
-          {/* Interests — always shown (empty copy when none) */}
-          <View
-            style={[
-              styles.card,
-              {
-                backgroundColor: palette.panel,
-                borderColor: palette.border,
-              },
-              cardShadow,
-            ]}
-          >
-            <Text
-              style={[styles.sectionLabel, { color: palette.textMuted }]}
+          {/* Interests — entry to the separate screen; omitted when none visible */}
+          {visibleInterestIds.length > 0 ? (
+            <Pressable
+              onPress={openInterests}
+              accessibilityRole="button"
+              accessibilityLabel={t('discoveryProfile.viewInterests')}
+              style={({ pressed }) => [
+                styles.card,
+                {
+                  backgroundColor: palette.panel,
+                  borderColor: palette.border,
+                  opacity: pressed ? 0.85 : 1,
+                },
+                cardShadow,
+              ]}
             >
-              {t('discoveryProfile.interests')}
-            </Text>
-            {interestPills.length > 0 ? (
-              <View style={styles.pillsRow}>
-                {interestPills.map((chip) => (
-                  <InterestChip
-                    key={chip.id}
-                    name={chip.label}
-                    icon={chip.icon}
-                    iconColor={chip.iconColor}
-                    selected={false}
-                  />
-                ))}
-              </View>
-            ) : (
               <Text
-                style={{
-                  color: palette.textSecondary,
-                  marginTop: spacing.sm,
-                  fontSize: fontSize.sm,
-                  lineHeight: 20,
-                }}
+                style={[styles.sectionLabel, { color: palette.textMuted }]}
               >
-                {t('discoveryProfile.noInterests')}
+                {t('discoveryProfile.interests')}
               </Text>
-            )}
-          </View>
+              <View style={styles.interestsEntryRow}>
+                <Text
+                  style={{
+                    flex: 1,
+                    color: palette.textPrimary,
+                    fontWeight: fontWeight.semibold,
+                    fontSize: fontSize.md,
+                  }}
+                >
+                  {t('discoveryProfile.viewInterests')}
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color={palette.textMuted}
+                />
+              </View>
+            </Pressable>
+          ) : null}
 
           {/* 6. Photos */}
           <View style={styles.photosHeader}>
@@ -805,11 +800,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
-  pillsRow: {
+  interestsEntryRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginTop: spacing.md,
+    alignItems: 'center',
+    marginTop: 5,
   },
   photosHeader: {
     marginTop: spacing.xl,

@@ -392,8 +392,8 @@ describe('ENH-PROFILE-01 Discovery UI contract (static)', () => {
     assert.match(headerSrc, /alignmentUnavailableLabel/);
   });
 
-  it('keeps all public interests via resolveInterestChips', () => {
-    assert.match(screenSrc, /resolveInterestChips/);
+  it('keeps all public interests via the shared catalog/legacy resolver', () => {
+    assert.match(screenSrc, /resolveVisibleInterestIds/);
     assert.doesNotMatch(screenSrc, /intersectOnboardingInterestIds/);
   });
 
