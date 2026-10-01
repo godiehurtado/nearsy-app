@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useTranslation } from '../i18n';
 import {
   createDefaultAuthenticateWithFacebook,
-  resolveFacebookSignInAlertMessageKey,
+  resolveFacebookSignInAlert,
   shouldSuppressFacebookSignInAlert,
   SocialAuthError,
   sanitizeSocialErrorForLog,
@@ -76,10 +76,8 @@ export function useFacebookSignInFlow() {
           return;
         }
 
-        Alert.alert(
-          t('authentication.login.alerts.loginErrorTitle'),
-          withDevSuffix(t(resolveFacebookSignInAlertMessageKey(err.social) as any)),
-        );
+        const { titleKey, messageKey } = resolveFacebookSignInAlert(err.social);
+        Alert.alert(t(titleKey as any), withDevSuffix(t(messageKey as any)));
         return;
       }
 

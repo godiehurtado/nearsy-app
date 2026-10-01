@@ -94,6 +94,9 @@ const es: TranslationResources = {
         continue: 'Continuar con Facebook',
         cancelled: 'Se canceló el inicio de sesión con Facebook.',
         failed: 'No pudimos iniciar sesión con Facebook. Inténtalo nuevamente.',
+        accountExistsTitle: 'Cuenta existente',
+        accountExistsMessage:
+          'Ya existe una cuenta de Nearsy asociada a este correo. Inicia sesión utilizando el método que usaste originalmente.',
       },
     },
     forgotPassword: {
