@@ -65,6 +65,9 @@ export const authenticationTranslations = {
         errors: {
           cancelled: 'Facebook sign-in was canceled.',
           generic: 'We couldn’t sign you in with Facebook. Please try again.',
+          accountExistsTitle: 'Account already exists',
+          accountExists:
+            'A Nearsy account already exists with this email. Sign in using the method you originally used.',
         },
       },
     },
@@ -389,6 +392,9 @@ export const authenticationTranslations = {
           cancelled: 'Se canceló el inicio de sesión con Facebook.',
           generic:
             'No pudimos iniciar sesión con Facebook. Inténtalo nuevamente.',
+          accountExistsTitle: 'Cuenta existente',
+          accountExists:
+            'Ya existe una cuenta de Nearsy asociada a este correo. Inicia sesión utilizando el método que usaste originalmente.',
         },
       },
     },

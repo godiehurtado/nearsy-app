@@ -28,6 +28,7 @@ export type FacebookAuthenticationErrorCode =
   | 'TOKEN_MISSING'
   | 'SDK_ERROR'
   | 'NETWORK_ERROR'
+  | 'ACCOUNT_EXISTS'
   | 'ACCOUNT_CONFLICT'
   | 'USER_MISMATCH'
   | 'INVALID_CREDENTIAL'
@@ -36,6 +37,10 @@ export type FacebookAuthenticationErrorCode =
 
 const CANCELLED_KEY = 'authentication.social.facebook.errors.cancelled';
 const GENERIC_KEY = 'authentication.social.facebook.errors.generic';
+export const FACEBOOK_ACCOUNT_EXISTS_TITLE_KEY =
+  'authentication.social.facebook.errors.accountExistsTitle';
+export const FACEBOOK_ACCOUNT_EXISTS_MESSAGE_KEY =
+  'authentication.social.facebook.errors.accountExists';
 
 const MESSAGE_KEYS: Record<FacebookAuthenticationErrorCode, string> = {
   CANCELLED: CANCELLED_KEY,
@@ -44,6 +49,7 @@ const MESSAGE_KEYS: Record<FacebookAuthenticationErrorCode, string> = {
   TOKEN_MISSING: GENERIC_KEY,
   SDK_ERROR: GENERIC_KEY,
   NETWORK_ERROR: GENERIC_KEY,
+  ACCOUNT_EXISTS: FACEBOOK_ACCOUNT_EXISTS_MESSAGE_KEY,
   ACCOUNT_CONFLICT: GENERIC_KEY,
   USER_MISMATCH: GENERIC_KEY,
   INVALID_CREDENTIAL: GENERIC_KEY,
@@ -193,6 +199,11 @@ export function mapFacebookFirebaseFailure(
   const code = readCode(err);
   switch (code) {
     case 'auth/account-exists-with-different-credential':
+      return new FacebookAuthenticationError(
+        'ACCOUNT_EXISTS',
+        'An account already exists with a different sign-in method.',
+        code,
+      );
     case 'auth/credential-already-in-use':
     case 'auth/email-already-in-use':
       return new FacebookAuthenticationError(
