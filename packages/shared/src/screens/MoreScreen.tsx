@@ -68,8 +68,6 @@ import {
 import { BackgroundLocationEducationModal } from '../components/BackgroundLocationEducationModal';
 import { LocationPreparingModal } from '../components/LocationPreparingModal';
 import { evaluateBackgroundLocationSettingsReturn } from '../visibility/settingsRecovery';
-import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
-import { deactivateVisibilityFlow } from '../visibility/orchestration';
 import {
   ageFromBirthDate,
   applyBirthDateTextChange,
@@ -860,19 +858,14 @@ export default function MoreScreen() {
       const { clearPendingSocialProfilePrefill, clearFacebookProviderSession } =
         await import('../authentication/social');
       clearPendingSocialProfilePrefill();
-      // Contractual logout order (ENH-LOC-01):
+      // Contractual logout order:
       // 1) stop background task/runtime (+ clear local UID / runtime-allowed)
-      // 2) deactivate Visibility via callable when possible
-      // 3) signOut
-      // 4) navigation reset
+      // 2) signOut
+      // 3) navigation reset
+      // Logout never writes Visibility: the account keeps its persisted
+      // preference and returns to it on the next login.
       await stopBackgroundLocationRuntime().catch(() => {});
       clearLocationPermissionJourneySession();
-      try {
-        const client = await getVisibilityDiscoveryClient();
-        await deactivateVisibilityFlow(client);
-      } catch {
-        // Best-effort contractual Visibility close before sign-out.
-      }
       await firebaseAuth.signOut();
       // Idempotent Facebook SDK logout; never blocks guest navigation.
       await clearFacebookProviderSession();

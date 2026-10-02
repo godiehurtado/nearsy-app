@@ -18,8 +18,10 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { navigationRef } from '../navigation/rootNavigationRef';
+import { clearLastKnownVisibility } from '../visibility/visibilityLastKnown';
 import { deleteAccountAndData } from '../services/accountDeletion';
 import { resolveAccountDeletionErrorMessageKey } from '../services/accountDeletionErrorPresentation';
 import {
@@ -113,7 +115,7 @@ export default function DeleteAccountScreen() {
     );
   };
 
-  const runSuccessfulDeletionExit = async () => {
+  const runSuccessfulDeletionExit = async (deletedUid: string | undefined) => {
     const {
       clearPendingSocialProfilePrefill,
       clearFacebookProviderSession,
@@ -121,6 +123,7 @@ export default function DeleteAccountScreen() {
     } = await import('../authentication/social');
 
     clearPendingSocialProfilePrefill();
+    await clearLastKnownVisibility(AsyncStorage, deletedUid);
 
     await finalizePostAccountDeletionSession({
       clearSocialPrefill: () => clearPendingSocialProfilePrefill(),
@@ -165,8 +168,9 @@ export default function DeleteAccountScreen() {
             if (busy) return;
             try {
               setBusy(true);
+              const deletingUid = firebaseAuth.currentUser?.uid;
               await deleteAccountAndData();
-              await runSuccessfulDeletionExit();
+              await runSuccessfulDeletionExit(deletingUid);
             } catch (e: any) {
               const code = e?.code || '';
               if (String(code).includes('auth/requires-recent-login')) {
@@ -207,8 +211,9 @@ export default function DeleteAccountScreen() {
         method: reauthMethod,
         password: pw,
       });
+      const deletingUid = firebaseAuth.currentUser?.uid;
       await deleteAccountAndData();
-      await runSuccessfulDeletionExit();
+      await runSuccessfulDeletionExit(deletingUid);
     } catch (err: unknown) {
       alertDeletionError(err);
     } finally {
