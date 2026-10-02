@@ -21,7 +21,7 @@ import * as Localization from 'expo-localization';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, type DocumentSnapshot } from 'firebase/firestore';
 
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { setContactsSyncEnabled } from '../services/contactsSync';
@@ -39,8 +39,10 @@ import * as Location from 'expo-location';
 import {
   activateVisibilityFlow,
   deactivateVisibilityFlow,
+  publishLocationFlow,
   reconcileVisibilityWithForegroundPermission,
 } from '../visibility/orchestration';
+import { noteContractualPublishSuccess } from '../visibility/contractualLocationRefresh';
 import { evaluateVisibilitySettingsReturn } from '../visibility/settingsRecovery';
 import {
   clearVisibilityRecoveryIntent,
@@ -131,6 +133,12 @@ import {
   subscribeCrjVisibilityActivationHandoff,
   syncCrjVisibilityActivationHandoffForUid,
 } from '../visibility/crjVisibilityActivationHandoff';
+import {
+  peekLastKnownVisibility,
+  readLastKnownVisibility,
+  recordConfirmedVisibility,
+  resolveVisibilitySnapshotHydration,
+} from '../visibility/visibilityLastKnown';
 import { BackgroundLocationEducationModal } from '../components/BackgroundLocationEducationModal';
 import { LocationPreparingModal } from '../components/LocationPreparingModal';
 import { updateUserProfilePartial } from '../services/firestoreService';
@@ -240,6 +248,18 @@ export default function MainHomeScreen({ navigation }: Props) {
     useState(initialCrjArmed);
   const [validatedEffectiveVisibility, setValidatedEffectiveVisibility] =
     useState<boolean | null>(null);
+  /** Last confirmed Visibility for this UID (presentation hint only). */
+  const lastKnownVisibilityRef = useRef<boolean | null>(
+    peekLastKnownVisibility(firebaseAuth.currentUser?.uid),
+  );
+  /** Cached OFF while the last confirmed state was ON — Active provisional. */
+  const [lastKnownActiveProvisional, setLastKnownActiveProvisional] =
+    useState(false);
+  /** A server (non-cache) snapshot was received during this mount. */
+  const persistedConfirmedRef = useRef(false);
+  const [persistedConfirmed, setPersistedConfirmed] = useState(false);
+  /** False while Visibility is unknown → neutral pill, never Inactive. */
+  const [visibilityKnown, setVisibilityKnown] = useState(false);
 
   const officialInterestIds = useMemo(() => officialCatalogInterestIdSet(), []);
   const mode: ProfileMode = resolveActiveMode(profile) ?? 'personal';
@@ -262,13 +282,15 @@ export default function MainHomeScreen({ navigation }: Props) {
   const distStep = unit === 'ft' ? DISTANCE_STEP_FEET : DISTANCE_STEP_METERS;
 
   const visibilityUi = resolveVisibilityPresentation({
-    profileLoaded: !loading,
+    profileLoaded: !loading && (visibilityKnown || crjActivationProvisional),
     persistedVisibility: profile.visibility,
     validationPending: visibilityValidationPending,
     validatedEffective: validatedEffectiveVisibility,
     // Education / Always / Settings must never lock Visibility.
     operationBusy: statusUpdating,
     crjActivationProvisional,
+    lastKnownActiveProvisional,
+    persistedConfirmed,
   });
   const pillActive = visibilityUi.visualActive === true;
   const pillNeutral = visibilityUi.visualActive === null;
@@ -353,6 +375,8 @@ export default function MainHomeScreen({ navigation }: Props) {
       presentation,
       runtime_eligible: visibilityUi.canStartRuntime,
       provisional_seen: crjActivationProvisional,
+      last_known_provisional: lastKnownActiveProvisional,
+      snapshot_confirmed: persistedConfirmed,
       snapshot_visibility: profile.visibility === true,
       permission_state,
     });
@@ -363,6 +387,8 @@ export default function MainHomeScreen({ navigation }: Props) {
     validatedEffectiveVisibility,
     profile.visibility,
     crjActivationProvisional,
+    lastKnownActiveProvisional,
+    persistedConfirmed,
   ]);
 
   const pillColors = pillNeutral
@@ -414,50 +440,73 @@ export default function MainHomeScreen({ navigation }: Props) {
       return;
     }
 
+    let alive = true;
+    let unsub: (() => void) | null = null;
     const ref = doc(firestoreDb, 'users', uid);
-    const unsub = onSnapshot(
-      ref,
-      (snap) => {
-        if (snap.exists()) {
-          const data = reconcileUserDocWithActiveProfileMode(
+
+    const handleSnapshot = (snap: DocumentSnapshot) => {
+      const fromCache = snap.metadata.fromCache;
+      const firstConfirmation = !fromCache && !persistedConfirmedRef.current;
+      if (firstConfirmation) {
+        persistedConfirmedRef.current = true;
+        setPersistedConfirmed(true);
+      }
+      const data = snap.exists()
+        ? reconcileUserDocWithActiveProfileMode(
             (snap.data() as ProfileDoc) ?? {},
             uid,
-          );
-          setProfile(data);
-          const persistedOn = data.visibility === true;
-          const previouslyPersistedOn =
-            lastPersistedVisibilityRef.current === true;
-          lastPersistedVisibilityRef.current = persistedOn;
-          logBugVis01Dev('snapshot_visibility', {
-            snapshot_visibility: persistedOn,
-            provisional_seen: crjActivationProvisionalRef.current,
-          });
-          if (persistedOn) {
-            // BUG-VIS-01: entering ON (incl. stale false→true) must not keep a
-            // conclusive Inactive from the prior snapshot cycle.
-            if (
-              shouldRearmVisibilityHydration({
-                persistedOn: true,
-                previouslyPersistedOn,
-                hydrationValidationDone: hydrationValidationDoneRef.current,
-                recoveryInFlight: recoveryJourneyRunningRef.current,
-              })
-            ) {
-              const enteringOn = !previouslyPersistedOn;
-              hydrationValidationDoneRef.current = false;
-              setVisibilityValidationPending(true);
-              setValidatedEffectiveVisibility(null);
-              dispatchLocationJourney({
-                type: 'SET_HYDRATION_PENDING',
-                pending: true,
-              });
-              if (enteringOn) {
-                setVisibilityHydrationKick((k) => k + 1);
-              }
-            }
-          } else if (crjActivationProvisionalRef.current) {
-            // Cached OFF after CRJ activate success — keep provisional Active
-            // until remote true or conclusive FG failure.
+          )
+        : null;
+      const hydration = resolveVisibilitySnapshotHydration({
+        exists: data !== null,
+        fromCache,
+        persistedVisibility: data?.visibility,
+        lastKnownVisibility: lastKnownVisibilityRef.current,
+      });
+      if (data && !fromCache) {
+        const confirmed = data.visibility === true;
+        lastKnownVisibilityRef.current = confirmed;
+        void recordConfirmedVisibility(
+          AsyncStorage,
+          uid,
+          confirmed,
+          'server_snapshot',
+        );
+      }
+      if (!data && hydration === 'inactive') {
+        // Server-confirmed missing doc: nothing persisted → Inactive.
+        setVisibilityKnown(true);
+      }
+      if (data) {
+        setProfile(data);
+        const persistedOn = data.visibility === true;
+        const previouslyPersistedOn =
+          lastPersistedVisibilityRef.current === true;
+        lastPersistedVisibilityRef.current = persistedOn;
+        logBugVis01Dev('snapshot_visibility', {
+          snapshot_visibility: persistedOn,
+          snapshot_confirmed: !fromCache,
+          hydration,
+          provisional_seen: crjActivationProvisionalRef.current,
+        });
+        if (hydration !== 'last_known_provisional') {
+          setLastKnownActiveProvisional(false);
+        }
+        if (hydration !== 'await_confirmation') {
+          setVisibilityKnown(true);
+        }
+        if (persistedOn) {
+          // BUG-VIS-01: entering ON (incl. stale false→true) must not keep a
+          // conclusive Inactive from the prior snapshot cycle.
+          if (
+            shouldRearmVisibilityHydration({
+              persistedOn: true,
+              previouslyPersistedOn,
+              hydrationValidationDone: hydrationValidationDoneRef.current,
+              recoveryInFlight: recoveryJourneyRunningRef.current,
+            })
+          ) {
+            const enteringOn = !previouslyPersistedOn;
             hydrationValidationDoneRef.current = false;
             setVisibilityValidationPending(true);
             setValidatedEffectiveVisibility(null);
@@ -465,52 +514,93 @@ export default function MainHomeScreen({ navigation }: Props) {
               type: 'SET_HYDRATION_PENDING',
               pending: true,
             });
-          } else {
-            hydrationValidationDoneRef.current = true;
-            setVisibilityValidationPending(false);
-            setValidatedEffectiveVisibility(false);
-            dispatchLocationJourney({ type: 'HYDRATION_DONE' });
+            if (enteringOn) {
+              setVisibilityHydrationKick((k) => k + 1);
+            }
           }
-          // After any local edit, draft owns the truth until remount.
-          // While writes are in flight, never rehydrate prefs from snapshots.
-          if (
-            inFlightWritesRef.current === 0 &&
-            localEpochRef.current === 0
-          ) {
-            const remote = parseSearchPreferencesFromUserDoc(
-              data as Record<string, unknown>,
-              unit,
-              officialInterestIds,
-            );
-            prefsRef.current = remote;
-            setPrefs(remote);
-            appliedEpochRef.current = 0;
-          } else if (
-            shouldApplyRemotePreferences({
-              inFlightWrites: inFlightWritesRef.current,
-              localEpoch: localEpochRef.current,
-              appliedEpoch: appliedEpochRef.current,
-            })
-          ) {
-            const remote = parseSearchPreferencesFromUserDoc(
-              data as Record<string, unknown>,
-              unit,
-              officialInterestIds,
-            );
-            prefsRef.current = remote;
-            setPrefs(remote);
-            appliedEpochRef.current = localEpochRef.current;
+        } else if (
+          crjActivationProvisionalRef.current ||
+          hydration === 'last_known_provisional' ||
+          hydration === 'await_confirmation'
+        ) {
+          // Cached OFF after CRJ activate success, cached OFF while the last
+          // confirmed state for this UID was ON, or unknown: never conclude
+          // Inactive until the server snapshot (or conclusive FG failure).
+          if (hydration === 'last_known_provisional') {
+            setLastKnownActiveProvisional(true);
           }
+          hydrationValidationDoneRef.current = false;
+          setVisibilityValidationPending(true);
+          setValidatedEffectiveVisibility(null);
+          dispatchLocationJourney({
+            type: 'SET_HYDRATION_PENDING',
+            pending: true,
+          });
+        } else {
+          hydrationValidationDoneRef.current = true;
+          setVisibilityValidationPending(false);
+          setValidatedEffectiveVisibility(false);
+          dispatchLocationJourney({ type: 'HYDRATION_DONE' });
         }
-        setLoading(false);
-      },
-      () => {
-        setVisibilityError(presentUnknownVisibilityError(t));
-        setLoading(false);
-      },
-    );
+        if (firstConfirmation && !hydrationValidationDoneRef.current) {
+          // Validation waits for the server snapshot; run it now.
+          setVisibilityHydrationKick((k) => k + 1);
+        }
+        // After any local edit, draft owns the truth until remount.
+        // While writes are in flight, never rehydrate prefs from snapshots.
+        if (
+          inFlightWritesRef.current === 0 &&
+          localEpochRef.current === 0
+        ) {
+          const remote = parseSearchPreferencesFromUserDoc(
+            data as Record<string, unknown>,
+            unit,
+            officialInterestIds,
+          );
+          prefsRef.current = remote;
+          setPrefs(remote);
+          appliedEpochRef.current = 0;
+        } else if (
+          shouldApplyRemotePreferences({
+            inFlightWrites: inFlightWritesRef.current,
+            localEpoch: localEpochRef.current,
+            appliedEpoch: appliedEpochRef.current,
+          })
+        ) {
+          const remote = parseSearchPreferencesFromUserDoc(
+            data as Record<string, unknown>,
+            unit,
+            officialInterestIds,
+          );
+          prefsRef.current = remote;
+          setPrefs(remote);
+          appliedEpochRef.current = localEpochRef.current;
+        }
+      }
+      setLoading(false);
+    };
 
-    return () => unsub();
+    // Resolve the per-UID last confirmed state before the first snapshot so a
+    // cached OFF is never painted as Inactive for an account left Active.
+    void readLastKnownVisibility(AsyncStorage, uid).then((lastKnown) => {
+      if (!alive) return;
+      lastKnownVisibilityRef.current = lastKnown;
+      // Metadata changes deliver the server confirmation of cached data.
+      unsub = onSnapshot(
+        ref,
+        { includeMetadataChanges: true },
+        handleSnapshot,
+        () => {
+          setVisibilityError(presentUnknownVisibilityError(t));
+          setLoading(false);
+        },
+      );
+    });
+
+    return () => {
+      alive = false;
+      unsub?.();
+    };
   }, [t, unit, officialInterestIds]);
 
   useEffect(() => {
@@ -652,6 +742,9 @@ export default function MainHomeScreen({ navigation }: Props) {
         const uid = firebaseAuth.currentUser?.uid;
         if (!uid || loading) return;
         if (recoveryJourneyRunningRef.current) return;
+        // Cached data alone must not validate, deactivate or start runtime;
+        // the first server snapshot bumps visibilityHydrationKick.
+        if (!persistedConfirmedRef.current) return;
 
         const finishValidation = (effective: boolean) => {
           if (cancelled) return;
@@ -734,6 +827,13 @@ export default function MainHomeScreen({ navigation }: Props) {
                 if (restoreOk) {
                   await clearVisibilityRecoveryIntent(AsyncStorage);
                   setProfile((p) => ({ ...p, visibility: true }));
+                  lastKnownVisibilityRef.current = true;
+                  void recordConfirmedVisibility(
+                    AsyncStorage,
+                    uid,
+                    true,
+                    'explicit_action',
+                  );
                   finishValidation(true);
                 } else {
                   finishValidation(false);
@@ -786,6 +886,13 @@ export default function MainHomeScreen({ navigation }: Props) {
             if (cancelled) return;
             if (result.reconciled) {
               setProfile((p) => ({ ...p, visibility: false }));
+              lastKnownVisibilityRef.current = false;
+              void recordConfirmedVisibility(
+                AsyncStorage,
+                uid,
+                false,
+                'explicit_action',
+              );
             }
             finishValidation(false);
             return;
@@ -820,6 +927,21 @@ export default function MainHomeScreen({ navigation }: Props) {
           }
 
           if (remote && foregroundGranted) {
+            if (
+              !hydrationValidationDoneRef.current &&
+              !crjActivationProvisionalRef.current
+            ) {
+              // Presence derives from confirmedAt (Nearby rejects > 5 min):
+              // renew before runtime/Nearby/search are enabled for this session.
+              const renewed = await publishLocationFlow(client);
+              if (cancelled) return;
+              if (renewed.ok === false) {
+                finishValidation(false);
+                await stopBackgroundLocationRuntime();
+                return;
+              }
+              noteContractualPublishSuccess(Date.now());
+            }
             finishValidation(true);
             const fullEducationSeen = await hasSeenFullBackgroundEducation(
               AsyncStorage,
@@ -858,7 +980,10 @@ export default function MainHomeScreen({ navigation }: Props) {
             finishValidation(false);
           }
         } catch {
-          finishValidation(!!profileRef.current.visibility);
+          // A session not yet renewed must not become runtime-eligible on error.
+          finishValidation(
+            hydrationValidationDoneRef.current && !!profileRef.current.visibility,
+          );
           clearHomeLocationPresentation();
         }
       })();
@@ -1107,6 +1232,8 @@ export default function MainHomeScreen({ navigation }: Props) {
       setValidatedEffectiveVisibility(true);
       setVisibilityValidationPending(false);
       hydrationValidationDoneRef.current = true;
+      lastKnownVisibilityRef.current = true;
+      void recordConfirmedVisibility(AsyncStorage, uid, true, 'explicit_action');
       await clearVisibilityRecoveryIntent(AsyncStorage).catch(() => {});
 
       if (
@@ -1174,6 +1301,8 @@ export default function MainHomeScreen({ navigation }: Props) {
       setProfile((p) => ({ ...p, visibility: false }));
       setValidatedEffectiveVisibility(false);
       setVisibilityValidationPending(false);
+      lastKnownVisibilityRef.current = false;
+      void recordConfirmedVisibility(AsyncStorage, uid, false, 'explicit_action');
       await clearVisibilityRecoveryIntent(AsyncStorage).catch(() => {});
       await stopBackgroundLocationRuntime();
     } catch (err) {
@@ -1218,6 +1347,13 @@ export default function MainHomeScreen({ navigation }: Props) {
               if (restore.ok) {
                 await clearVisibilityRecoveryIntent(AsyncStorage);
                 setProfile((p) => ({ ...p, visibility: true }));
+                lastKnownVisibilityRef.current = true;
+                void recordConfirmedVisibility(
+                  AsyncStorage,
+                  uid,
+                  true,
+                  'explicit_action',
+                );
                 pendingVisibilityIntentRef.current = false;
                 if (profileRef.current.bgVisible) {
                   await syncBackgroundLocationRuntime({ uid, visibilityOn: true, bgVisible: !!profileRef.current.bgVisible });

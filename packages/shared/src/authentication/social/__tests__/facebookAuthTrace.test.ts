@@ -14,6 +14,8 @@ import {
   beginFacebookAuthTrace,
   flushFacebookAuthTrace,
   getFacebookAuthTrace,
+  inspectFacebookProfileForTrace,
+  inspectFirebaseFacebookCredentialForTrace,
   inspectLimitedLoginTokenForTrace,
   redactTraceString,
   sanitizeTraceDetail,
@@ -79,7 +81,19 @@ function assertNoSecrets(output: string, idToken: string) {
 
 const RESIDUAL_ACCESS_TOKEN = 'residualLimitedLoginAccessTokenForTests0001';
 
-function limitedLoginSdk(idToken: string, residualAccessToken?: string): FacebookSdkClient {
+type FakeProfile = Awaited<ReturnType<FacebookSdkClient['Profile']['getCurrentProfile']>>;
+
+function limitedLoginSdk(
+  idToken: string,
+  residualAccessToken?: string,
+  profile: FakeProfile = {
+    userID: FB_USER_ID,
+    name: NAME,
+    firstName: 'Ada',
+    lastName: 'Lovelace',
+    email: EMAIL,
+  },
+): FacebookSdkClient {
   let lastNonce: string | undefined;
   return {
     Settings: { initializeSDK() {} },
@@ -102,7 +116,7 @@ function limitedLoginSdk(idToken: string, residualAccessToken?: string): Faceboo
     },
     Profile: {
       async getCurrentProfile() {
-        return { userID: FB_USER_ID, name: NAME, firstName: 'Ada', lastName: 'Lovelace', email: EMAIL };
+        return profile;
       },
     },
   };
@@ -188,6 +202,13 @@ describe('Facebook auth trace redaction', () => {
       notExpired: true,
       nonceClaimPresent: true,
       nonceClaimMatchesHash: true,
+      subClaimPresent: true,
+      nameClaimPresent: true,
+      givenNameClaimPresent: false,
+      familyNameClaimPresent: false,
+      pictureClaimPresent: false,
+      emailClaimKeyPresent: true,
+      emailClaimPresent: true,
     });
     assertNoSecrets(JSON.stringify(detail), idToken);
     const mismatch = inspectLimitedLoginTokenForTrace(fakeIdToken({ nonce: 'other' }), {
@@ -229,6 +250,7 @@ describe('Facebook auth trace stages (Limited Login)', () => {
       'nonce_present',
       'nonce_match',
       'token_claims_checked',
+      'profile_checked',
       'firebase_credential_created',
       'firebase_sign_in_started',
       'firebase_sign_in_success',
@@ -312,5 +334,182 @@ describe('Facebook auth trace stages (Limited Login)', () => {
     assert.match(hook, /socialCode: 'NON_SOCIAL_ERROR'/);
     assert.match(hook, /const devSuffix = summarizeFacebookAuthTrace\(\)/);
     assert.match(hook, /if \(__DEV__\) setTimeout\(\(\) => flushFacebookAuthTrace/);
+  });
+});
+
+describe('Facebook email diagnostics (token / SDK profile / Firebase)', () => {
+  it('distinguishes an absent email claim from an empty one, booleans only', () => {
+    const withoutEmail = fakeIdToken({ email: undefined, picture: 'https://example.test/p.jpg' });
+    const absent = inspectLimitedLoginTokenForTrace(withoutEmail, { appId: APP_ID, hashedNonce: HASHED_NONCE });
+    assert.equal(absent.emailClaimKeyPresent, false);
+    assert.equal(absent.emailClaimPresent, false);
+    assert.equal(absent.subClaimPresent, true);
+    assert.equal(absent.nameClaimPresent, true);
+    assert.equal(absent.pictureClaimPresent, true);
+
+    const empty = inspectLimitedLoginTokenForTrace(fakeIdToken({ email: '' }), {
+      appId: APP_ID,
+      hashedNonce: HASHED_NONCE,
+    });
+    assert.equal(empty.emailClaimKeyPresent, true);
+    assert.equal(empty.emailClaimPresent, false);
+    assertNoSecrets(JSON.stringify([absent, empty]), withoutEmail);
+  });
+
+  it('profile built from this attempt token matches sub/email and is fresh', () => {
+    const idToken = fakeIdToken();
+    const loginStartedAtMs = Date.now();
+    const detail = inspectFacebookProfileForTrace(
+      {
+        userID: FB_USER_ID,
+        name: NAME,
+        imageURL: 'https://example.test/p.jpg',
+        email: EMAIL,
+        refreshDate: new Date(loginStartedAtMs + 500),
+        permissions: ['public_profile', 'email'],
+      },
+      { idToken, loginStartedAtMs },
+    );
+    assert.deepEqual(detail, {
+      profilePresent: true,
+      profileUserIdPresent: true,
+      profileNamePresent: true,
+      profileImagePresent: true,
+      profileEmailPresent: true,
+      profilePermissionsIncludeEmail: true,
+      profileRefreshDatePresent: true,
+      profileRefreshedThisAttempt: true,
+      profileUserIdMatchesTokenSub: true,
+      profileEmailMatchesTokenEmail: true,
+    });
+    assertNoSecrets(JSON.stringify(detail), idToken);
+  });
+
+  it('flags a residual / stale profile and a missing profile', () => {
+    const idToken = fakeIdToken();
+    const loginStartedAtMs = Date.now();
+    const residual = inspectFacebookProfileForTrace(
+      { userID: 'otherFbUserForTests00001', name: NAME, refreshDate: loginStartedAtMs - 60_000 },
+      { idToken, loginStartedAtMs },
+    );
+    assert.equal(residual.profileRefreshedThisAttempt, false);
+    assert.equal(residual.profileUserIdMatchesTokenSub, false);
+    assert.equal(residual.profileEmailPresent, false);
+    assert.equal(residual.profileEmailMatchesTokenEmail, false);
+
+    const missing = inspectFacebookProfileForTrace(null, { idToken, loginStartedAtMs });
+    assert.equal(missing.profilePresent, false);
+    assert.equal(missing.profileEmailPresent, false);
+  });
+
+  it('reports where Firebase kept (or lost) the Facebook email', () => {
+    const detail = inspectFirebaseFacebookCredentialForTrace(
+      {
+        user: {
+          email: null,
+          emailVerified: false,
+          providerData: [{ providerId: 'facebook.com', email: null }],
+        },
+      },
+      { isNewUser: true, providerId: 'facebook.com', profile: { name: NAME, picture: { data: {} } } },
+    );
+    assert.deepEqual(detail, {
+      userEmailPresent: false,
+      userEmailVerified: false,
+      providerDataCount: 1,
+      facebookProviderPresent: true,
+      facebookProviderEmailPresent: false,
+      additionalUserInfoAvailable: true,
+      additionalUserInfoProviderIsFacebook: true,
+      additionalProfilePresent: true,
+      additionalProfileEmailPresent: false,
+      additionalProfileNamePresent: true,
+      additionalProfilePicturePresent: true,
+      isNewUser: true,
+    });
+    assert.equal(JSON.stringify(detail).includes(NAME), false);
+  });
+
+  it('full attempt without email: every layer reports absence and nothing leaks', async () => {
+    const lines = captureTrace();
+    const idToken = fakeIdToken({ email: undefined, picture: 'https://example.test/p.jpg' });
+    const authenticate = createAuthenticateWithFacebook({
+      registry: createSocialProviderRegistry({
+        facebook: adapter(
+          limitedLoginSdk(idToken, undefined, {
+            userID: FB_USER_ID,
+            name: NAME,
+            imageURL: 'https://example.test/p.jpg',
+            email: null,
+            refreshDate: new Date(Date.now() + 10),
+          }),
+        ),
+      }),
+      firebaseAuth: firebase(async () =>
+        ({
+          user: {
+            uid: FIREBASE_UID,
+            email: null,
+            emailVerified: false,
+            isAnonymous: false,
+            providerData: [{ providerId: 'facebook.com', email: null }],
+          },
+          providerId: 'facebook.com',
+          operationType: 'signIn',
+          _tokenResponse: {
+            providerId: 'facebook.com',
+            isNewUser: true,
+            rawUserInfo: JSON.stringify({ name: NAME, id: FB_USER_ID }),
+          },
+        }) as never,
+      ),
+      getUserProfile: async () => null,
+      isProfileComplete: async () => false,
+    });
+
+    beginFacebookAuthTrace();
+    const result = await authenticate();
+    flushFacebookAuthTrace('success');
+
+    assert.equal(result.email, undefined);
+    assert.equal(result.session.isNewUser, true);
+    const byStage = Object.fromEntries(getFacebookAuthTrace().map((e) => [e.stage, e.detail]));
+    assert.equal(byStage.token_claims_checked?.emailClaimPresent, false);
+    assert.equal(byStage.token_claims_checked?.subClaimPresent, true);
+    assert.equal(byStage.token_claims_checked?.pictureClaimPresent, true);
+    assert.equal(byStage.profile_checked?.profilePresent, true);
+    assert.equal(byStage.profile_checked?.profileEmailPresent, false);
+    assert.equal(byStage.profile_checked?.profileUserIdMatchesTokenSub, true);
+    assert.equal(byStage.profile_checked?.profileRefreshedThisAttempt, true);
+    assert.equal(byStage.profile_checked?.profileRefreshApiExposed, false);
+    assert.equal(byStage.profile_checked?.providerResultEmailPresent, false);
+    assert.equal(byStage.firebase_sign_in_success?.userEmailPresent, false);
+    assert.equal(byStage.firebase_sign_in_success?.facebookProviderEmailPresent, false);
+    assert.equal(byStage.firebase_sign_in_success?.additionalUserInfoAvailable, true);
+    assert.equal(byStage.firebase_sign_in_success?.additionalProfileEmailPresent, false);
+    assert.equal(byStage.firebase_sign_in_success?.isNewUser, true);
+    assert.deepEqual(byStage.profile_gate_started, { isNewUser: true });
+
+    const output = lines.join('\n');
+    assertNoSecrets(output, idToken);
+    assert.equal(output.includes('example.test/p.jpg'), false);
+    assert.match(output, /\[facebookAuthTrace:summary\]/);
+  });
+
+  it('hook flushes one summary on success too (and re-emits after the sheet)', () => {
+    const hook = readFileSync(join(here, '..', '..', '..', 'hooks', 'useFacebookSignInFlow.ts'), 'utf8');
+    assert.match(hook, /flushFacebookAuthTrace\('success'\)/);
+    assert.match(hook, /setTimeout\(\(\) => flushFacebookAuthTrace\('success_delayed'\), 2000\)/);
+  });
+
+  it('diagnostics never call Graph API, enable tracking or use the AccessToken as identity', () => {
+    const adapterSource = readFileSync(
+      join(here, '..', 'infrastructure', 'facebook', 'facebookProviderAdapter.ios.ts'),
+      'utf8',
+    );
+    assert.doesNotMatch(adapterSource, /GraphRequest/);
+    assert.doesNotMatch(adapterSource, /'enabled'\s*,\s*hashedNonce/);
+    assert.match(adapterSource, /'limited',\s*hashedNonce/);
+    assert.doesNotMatch(adapterSource, /requestTrackingPermissions|AppTrackingTransparency/);
   });
 });

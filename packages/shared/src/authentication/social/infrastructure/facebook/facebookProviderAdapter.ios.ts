@@ -13,6 +13,7 @@ import {
 } from '../crypto/secureRawNonce';
 import {
   describeErrorForTrace,
+  inspectFacebookProfileForTrace,
   inspectLimitedLoginTokenForTrace,
   isFacebookAuthTraceEnabled,
   traceFacebookAuth,
@@ -37,6 +38,8 @@ export type FacebookProfile = {
   lastName?: string | null;
   imageURL?: string | null;
   email?: string | null;
+  refreshDate?: Date | number | null;
+  permissions?: string[] | null;
 };
 
 /** Testable surface of react-native-fbsdk-next used by Nearsy. */
@@ -244,6 +247,7 @@ export function createFacebookProviderAdapter(
         sdk.LoginManager.logOut();
 
         traceFacebookAuth('native_login_started', { platform: platformOS });
+        const loginStartedAtMs = Date.now();
         const result = await sdk.LoginManager.logInWithPermissions(
           [...FACEBOOK_LOGIN_PERMISSIONS],
           'limited',
@@ -307,6 +311,16 @@ export function createFacebookProviderAdapter(
         const emailGranted =
           !result.declinedPermissions?.includes('email') &&
           (result.grantedPermissions?.includes('email') ?? true);
+        if (isFacebookAuthTraceEnabled()) {
+          traceFacebookAuth('profile_checked', {
+            ...inspectFacebookProfileForTrace(profile, { idToken, loginStartedAtMs }),
+            profileRefreshApiExposed:
+              typeof (sdk.Profile as { loadCurrentProfile?: unknown }).loadCurrentProfile ===
+              'function',
+            providerResultEmailPresent:
+              emailGranted && Boolean(trimToUndefined(profile?.email)),
+          });
+        }
 
         return {
           provider: 'facebook',

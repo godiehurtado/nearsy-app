@@ -57,6 +57,9 @@ export default {
       continue: 'Continue with Facebook',
       cancelled: 'Facebook sign-in was canceled.',
       failed: "We couldn't sign you in with Facebook. Please try again.",
+      accountExistsTitle: 'Account already exists',
+      accountExistsMessage:
+        'A Nearsy account already exists with this email. Sign in using the method you originally used.',
     },
   },
   forgotPassword: {

@@ -1,8 +1,10 @@
 import {
   FacebookAuthProvider,
+  getAdditionalUserInfo,
   GoogleAuthProvider,
   OAuthProvider,
   signInWithCredential,
+  type AdditionalUserInfo,
   type UserCredential,
 } from 'firebase/auth';
 
@@ -18,7 +20,11 @@ import type {
 } from './firebaseAuthenticationPort';
 import {
   describeErrorForTrace,
+  inspectFirebaseFacebookCredentialForTrace,
+  isFacebookAuthTraceEnabled,
   traceFacebookAuth,
+  type AdditionalUserInfoForTrace,
+  type FirebaseCredentialForTrace,
 } from '../../application/facebookAuthTrace';
 
 /** Injectable runtime for unit tests (defaults to Firebase JS SDK). */
@@ -42,10 +48,28 @@ export type FirebaseJsAuthRuntime = {
     auth: unknown,
     credential: unknown,
   ) => Promise<UserCredential>;
+  /** Modular SDK: UserCredential has no `additionalUserInfo` property. */
+  getAdditionalUserInfo: (cred: UserCredential) => AdditionalUserInfo | null;
   auth: unknown;
 };
 
-function toSession(cred: UserCredential): FirebaseAuthenticationSession {
+type ReadAdditionalUserInfo = FirebaseJsAuthRuntime['getAdditionalUserInfo'];
+
+function safeAdditionalUserInfo(
+  read: ReadAdditionalUserInfo,
+  cred: UserCredential,
+): AdditionalUserInfo | null {
+  try {
+    return read(cred);
+  } catch {
+    return null;
+  }
+}
+
+function toSession(
+  cred: UserCredential,
+  readAdditional: ReadAdditionalUserInfo,
+): FirebaseAuthenticationSession {
   const user = cred.user;
   const linkedProviderIds = user.providerData
     .map((entry) => entry.providerId)
@@ -54,10 +78,7 @@ function toSession(cred: UserCredential): FirebaseAuthenticationSession {
   return {
     uid: user.uid,
     email: user.email ?? undefined,
-    isNewUser: Boolean(
-      (cred as UserCredential & { additionalUserInfo?: { isNewUser?: boolean } })
-        .additionalUserInfo?.isNewUser,
-    ),
+    isNewUser: safeAdditionalUserInfo(readAdditional, cred)?.isNewUser === true,
     linkedProviderIds,
   };
 }
@@ -135,6 +156,8 @@ export function createFirebaseJsAuthenticationAdapter(
 ): FirebaseAuthenticationPort {
   const resolveAuth = () =>
     runtimeOverrides?.auth ?? resolveDefaultAuth();
+  const readAdditional: ReadAdditionalUserInfo =
+    runtimeOverrides?.getAdditionalUserInfo ?? getAdditionalUserInfo;
 
   return {
     async signInWithSocialCredential(
@@ -162,7 +185,7 @@ export function createFirebaseJsAuthenticationAdapter(
             input.accessToken,
           );
           const userCredential = await signIn(resolveAuth(), credential);
-          return toSession(userCredential);
+          return toSession(userCredential, readAdditional);
         } catch (err: unknown) {
           mapFirebaseSocialError('google', err);
         }
@@ -201,7 +224,7 @@ export function createFirebaseJsAuthenticationAdapter(
             rawNonce: input.rawNonce,
           });
           const userCredential = await signIn(resolveAuth(), credential);
-          return toSession(userCredential);
+          return toSession(userCredential, readAdditional);
         } catch (err: unknown) {
           mapFirebaseSocialError('apple', err);
         }
@@ -275,14 +298,17 @@ export function createFirebaseJsAuthenticationAdapter(
               typeof appOptions?.projectId === 'string' ? appOptions.projectId : 'missing',
           });
           const userCredential = await signIn(auth, credential);
-          traceFacebookAuth('firebase_sign_in_success', {
-            isNewUser: Boolean(
-              (userCredential as UserCredential & {
-                additionalUserInfo?: { isNewUser?: boolean };
-              }).additionalUserInfo?.isNewUser,
-            ),
-          });
-          return toSession(userCredential);
+          const session = toSession(userCredential, readAdditional);
+          traceFacebookAuth(
+            'firebase_sign_in_success',
+            isFacebookAuthTraceEnabled()
+              ? inspectFirebaseFacebookCredentialForTrace(
+                  userCredential as FirebaseCredentialForTrace,
+                  safeAdditionalUserInfo(readAdditional, userCredential) as AdditionalUserInfoForTrace,
+                )
+              : undefined,
+          );
+          return session;
         } catch (err: unknown) {
           traceFacebookAuth('firebase_sign_in_error', {
             ...describeErrorForTrace(err),

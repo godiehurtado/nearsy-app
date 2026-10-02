@@ -26,6 +26,17 @@ export type VisibilityPresentationInput = {
    * Never implies canStartRuntime.
    */
   crjActivationProvisional?: boolean;
+  /**
+   * Cached snapshot says OFF but the last confirmed state for this UID was ON:
+   * visual Active provisional until the server snapshot concludes.
+   * Never implies canStartRuntime.
+   */
+  lastKnownActiveProvisional?: boolean;
+  /**
+   * False while only cached snapshots were received. Runtime requires a
+   * server-confirmed persisted ON. Defaults to true.
+   */
+  persistedConfirmed?: boolean;
 };
 
 export type VisibilityPresentation = {
@@ -110,8 +121,11 @@ export function resolveVisibilityPresentation(
   }
 
   const persistedOn = input.persistedVisibility === true;
+  const persistedConfirmed = input.persistedConfirmed !== false;
   const provisional = shouldKeepCrjProvisionalDespiteCachedOff({
-    crjActivationProvisional: input.crjActivationProvisional === true,
+    crjActivationProvisional:
+      input.crjActivationProvisional === true ||
+      input.lastKnownActiveProvisional === true,
     validatedEffective: input.validatedEffective,
   });
 
@@ -119,6 +133,15 @@ export function resolveVisibilityPresentation(
     return {
       visualActive: false,
       allowToggle: !busy && !input.validationPending,
+      canStartRuntime: false,
+    };
+  }
+
+  // Cached ON only: Active provisional until the server confirms.
+  if (persistedOn && !persistedConfirmed) {
+    return {
+      visualActive: true,
+      allowToggle: false,
       canStartRuntime: false,
     };
   }

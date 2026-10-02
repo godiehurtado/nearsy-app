@@ -140,7 +140,8 @@ describe('Settings background / language / logout / delete preservation', () => 
     assert.match(screen, /changeAppLanguage/);
     assert.match(screen, /firebaseAuth\.signOut/);
     assert.match(screen, /navigate\('DeleteAccount'\)/);
-    assert.match(screen, /deactivateVisibilityFlow/);
+    // Logout preserves the persisted Visibility preference.
+    assert.doesNotMatch(screen, /deactivateVisibilityFlow/);
   });
 
   it('ENH-SET-01: Preferences exposes Appearance via commitTheme + AppearanceToggle', () => {

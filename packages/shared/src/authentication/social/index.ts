@@ -102,6 +102,7 @@ export type {
 export { createAuthenticateWithFacebook } from './application/authenticateWithFacebook';
 export {
   FACEBOOK_SIGN_IN_FAILED_MESSAGE_KEY,
+  resolveFacebookSignInAlert,
   resolveFacebookSignInAlertMessageKey,
   shouldSuppressFacebookSignInAlert,
 } from './application/facebookSignInUiPolicy';

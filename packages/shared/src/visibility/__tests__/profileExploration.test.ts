@@ -708,16 +708,16 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.doesNotMatch(screenSrc, /metersToFeet/);
   });
 
-  it('places all public interests after Affiliations, not Compatibility', () => {
+  it('places the public interests entry after Affiliations, not Compatibility', () => {
     assert.match(screenSrc, /ProfileContextCard/);
     assert.match(screenSrc, /discoveryProfile\.interests/);
-    assert.match(screenSrc, /resolveInterestChips/);
-    assert.match(screenSrc, /interestPills/);
+    assert.match(screenSrc, /resolveVisibleInterestIds/);
+    assert.match(screenSrc, /visibleInterestIds/);
     assert.doesNotMatch(screenSrc, /intersectOnboardingInterestIds/);
     assert.doesNotMatch(screenSrc, /extractViewerOnboardingInterestIds/);
     assert.doesNotMatch(screenSrc, /sharedPills|sharedIds/);
     assert.doesNotMatch(screenSrc, /DiscoveryCompatibilityCard/);
-    assert.match(screenSrc, /InterestChip/);
+    assert.doesNotMatch(screenSrc, /InterestChip/);
     const aff = screenSrc.indexOf('<DiscoveryAffiliationsCard');
     const interests = screenSrc.indexOf("t('discoveryProfile.interests')");
     assert.ok(aff > 0 && interests > aff);

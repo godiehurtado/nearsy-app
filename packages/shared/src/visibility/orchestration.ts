@@ -21,6 +21,23 @@ import {
 import { MAX_LOCATION_ACCURACY_METERS } from './constants';
 import { isAccuracyValid } from './freshness';
 import { writeVisibilityRecoveryIntent } from './visibilityRecoveryIntent';
+import {
+  captureVisibilitySessionTicket,
+  createVisibilitySessionClosedError,
+  guardPresenceRenewal,
+} from './visibilitySessionGate';
+
+function sessionClosedOutcome(): {
+  ok: false;
+  kind: 'callable';
+  error: VisibilityDiscoveryClientError;
+} {
+  return {
+    ok: false,
+    kind: 'callable',
+    error: normalizeVisibilityCallableError(createVisibilitySessionClosedError()),
+  };
+}
 
 export type LocationSampleResult =
   | { ok: true; location: VisibilityLocationPayload }
@@ -114,6 +131,8 @@ export type ActivateOutcome =
 export async function activateVisibilityFlow(
   client: VisibilityDiscoveryClient,
 ): Promise<ActivateOutcome> {
+  const ticket = captureVisibilitySessionTicket();
+  if (!ticket) return sessionClosedOutcome();
   const sample = await obtainValidLocationSample();
   if (sample.ok === false) {
     return {
@@ -125,10 +144,11 @@ export async function activateVisibilityFlow(
     };
   }
   try {
-    const response = await client.activateVisibility(
-      buildActivateVisibilityRequest(sample.location),
+    const guarded = await guardPresenceRenewal(ticket, () =>
+      client.activateVisibility(buildActivateVisibilityRequest(sample.location)),
     );
-    return { ok: true as const, response };
+    if (guarded.ok === false) return sessionClosedOutcome();
+    return { ok: true as const, response: guarded.value };
   } catch (err) {
     return {
       ok: false as const,
@@ -175,6 +195,8 @@ export async function publishLocationFlow(
     observedAt?: number;
   },
 ): Promise<PublishOutcome> {
+  const ticket = captureVisibilitySessionTicket();
+  if (!ticket) return sessionClosedOutcome();
   let location: VisibilityLocationPayload;
   if (coords) {
     if (!isAccuracyValid(coords.accuracyMeters)) {
@@ -195,10 +217,11 @@ export async function publishLocationFlow(
   }
 
   try {
-    const response = await client.publishLocation(
-      buildPublishLocationRequest(location),
+    const guarded = await guardPresenceRenewal(ticket, () =>
+      client.publishLocation(buildPublishLocationRequest(location)),
     );
-    return { ok: true, response };
+    if (guarded.ok === false) return sessionClosedOutcome();
+    return { ok: true, response: guarded.value };
   } catch (err) {
     return {
       ok: false,

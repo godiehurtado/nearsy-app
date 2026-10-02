@@ -5,6 +5,7 @@ import MainHomeScreen from '../screens/MainHomeScreen';
 import NearbySearchScreen from '../screens/NearbySearchScreen';
 import ProfileDetailScreen from '../screens/ProfileDetailScreen';
 import DiscoveryProfileScreen from '../screens/DiscoveryProfileScreen';
+import DiscoveryInterestsScreen from '../screens/DiscoveryInterestsScreen';
 import ProfileGalleryScreen from '../screens/ProfileGalleryScreen';
 import LiveLocationTracker from '../components/LiveLocationTracker';
 import ContractualLocationPublisher from '../components/ContractualLocationPublisher';
@@ -14,6 +15,8 @@ export type HomeStackParamList = {
   NearbySearch: undefined;
   ProfileDetail: { uid: string };
   DiscoveryProfile: { uid: string };
+  /** Visible catalog/legacy interest IDs only — no uid or profile PII. */
+  DiscoveryInterests: { interestIds: string[] };
   ProfileGallery: {
     uid: string;
     mode?: 'personal' | 'professional';
@@ -44,6 +47,10 @@ export default function HomeStack() {
         <Stack.Screen
           name="DiscoveryProfile"
           component={DiscoveryProfileScreen}
+        />
+        <Stack.Screen
+          name="DiscoveryInterests"
+          component={DiscoveryInterestsScreen}
         />
         <Stack.Screen name="ProfileGallery" component={ProfileGalleryScreen} />
       </Stack.Navigator>

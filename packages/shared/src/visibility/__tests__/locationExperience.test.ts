@@ -275,21 +275,25 @@ describe('ENH-LOC-01 journey wiring (same-pass connection)', () => {
     );
   });
 
-  it('More: toggle ON educates; OFF stops; logout order stop→deactivate→signOut', () => {
+  it('More: toggle ON educates; OFF stops; logout order stop→signOut (no deactivate)', () => {
     const more = readShared('screens/MoreScreen.tsx');
     assert.match(more, /offerMoreBackgroundEducation/);
     assert.match(more, /Keep toggle visually OFF until enable succeeds/);
     assert.match(more, /reconcileBgVisibleWithBackgroundPermission/);
     assert.match(more, /ensureBackgroundLocationPermissions|requestAndApplyBackgroundLocation/);
 
-    const logout = more.slice(more.indexOf('const handleLogout'));
+    const logout = more.slice(
+      more.indexOf('const handleLogout'),
+      more.indexOf('const openCalendar'),
+    );
+    const closeIdx = logout.indexOf('closeVisibilitySessionForLogout');
     const stopIdx = logout.indexOf('stopBackgroundLocationRuntime');
-    const deactIdx = logout.indexOf('deactivateVisibilityFlow');
     const signIdx = logout.indexOf('firebaseAuth.signOut');
-    assert.ok(stopIdx >= 0 && deactIdx > stopIdx && signIdx > deactIdx);
+    assert.ok(closeIdx >= 0 && stopIdx > closeIdx && signIdx > stopIdx);
+    assert.doesNotMatch(logout, /deactivateVisibilityFlow|deactivateVisibility\(/);
     assert.deepEqual([...LOGOUT_CLEANUP_ORDER], [
+      'closeVisibilitySessionForLogout',
       'stopBackgroundLocationRuntime',
-      'deactivateVisibilityFlow',
       'firebaseAuth.signOut',
     ]);
   });

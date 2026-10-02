@@ -19,6 +19,12 @@ import {
   invokeVisibilityCallableHttp,
   type VisibilityDiscoveryClient,
 } from './callables';
+import {
+  captureVisibilitySessionTicket,
+  createVisibilitySessionClosedError,
+  isPresenceRenewingCallable,
+  isVisibilitySessionTicketCurrent,
+} from './visibilitySessionGate';
 
 type Extra = Record<string, unknown>;
 
@@ -104,6 +110,12 @@ export function getVisibilityDiscoveryClient(): Promise<VisibilityDiscoveryClien
       return createVisibilityDiscoveryCallableClient({
         functionsRegion: region,
         invoke: async (name, data) => {
+          const ticket = isPresenceRenewingCallable(name)
+            ? captureVisibilitySessionTicket()
+            : null;
+          if (isPresenceRenewingCallable(name) && !ticket) {
+            throw createVisibilitySessionClosedError();
+          }
           const user = firebaseAuth.currentUser;
           if (!user) {
             throw {
@@ -119,6 +131,10 @@ export function getVisibilityDiscoveryClient(): Promise<VisibilityDiscoveryClien
             };
           }
           const idToken = await user.getIdToken();
+          // Logout or a UID switch while the token was fetched: never send.
+          if (ticket && !isVisibilitySessionTicketCurrent(ticket, user.uid)) {
+            throw createVisibilitySessionClosedError();
+          }
           return port.withToken((appCheckToken) =>
             invokeVisibilityCallableHttp({
               projectId,
