@@ -16,7 +16,7 @@
     "ios": {
       "bundleIdentifier": "com.nearsy.app.client",
       "googleServicesFile": "./GoogleService-Info.plist",
-      "buildNumber": "58",
+      "buildNumber": "59",
       "usesAppleSignIn": true,
       "supportsTablet": false,
       "deviceFamily": [
