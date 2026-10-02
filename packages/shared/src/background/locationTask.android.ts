@@ -21,6 +21,10 @@ import {
   disposeBackgroundPublishFailure,
   isHeadlessPublishEnvironmentReady,
 } from '../location/backgroundPublishDisposition';
+import {
+  acquireBackgroundPublicationTicket,
+  isPublicationTicketCurrent,
+} from '../location/publicationSession';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 import { publishLocationFlow } from '../visibility/orchestration';
 import { locationAccuracyFromCoords } from '../utils/locationPayload';
@@ -77,6 +81,17 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
     const { locations } = (data as LocationTaskData) ?? {};
     if (!locations?.length) return;
 
+    // Taken before any await: a callback that outlives its session (logout,
+    // uid change, pending re-confirmation) can never publish.
+    const authUidAtStart = firebaseAuth.currentUser?.uid ?? null;
+    const ticket = acquireBackgroundPublicationTicket(authUidAtStart);
+    // Signed out falls through to the runtime gate below, which stops the task.
+    if (!ticket && authUidAtStart) return;
+    const sessionGuard = {
+      isCurrent: () =>
+        isPublicationTicketCurrent(ticket, firebaseAuth.currentUser?.uid ?? null),
+    };
+
     const storedUid = await AsyncStorage.getItem('NEARSY_BG_UID');
     const authUid = firebaseAuth.currentUser?.uid ?? null;
     const runtimeAuth = await readBackgroundRuntimeAuth();
@@ -108,6 +123,7 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
       return;
     }
     if (decision === 'skip' || !storedUid) return;
+    if (!sessionGuard.isCurrent()) return;
 
     // Headless: Auth + App Check must be ready before contractual publish.
     const appCheck = await ensureAppCheckInitialized();
@@ -143,14 +159,18 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
 
     try {
       const client = await getVisibilityDiscoveryClient();
-      const outcome = await publishLocationFlow(client, {
-        latitude,
-        longitude,
-        accuracyMeters,
-        observedAt,
-      });
+      const outcome = await publishLocationFlow(
+        client,
+        {
+          latitude,
+          longitude,
+          accuracyMeters,
+          observedAt,
+        },
+        sessionGuard,
+      );
 
-      if (outcome.ok === true) {
+      if (outcome.ok === true || outcome.kind === 'session-closed') {
         return;
       }
 
@@ -176,6 +196,7 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
       }
       // Transient: skip tick; OS timeInterval unchanged.
     } catch (publishErr) {
+      if (!sessionGuard.isCurrent()) return;
       if (__DEV__) console.warn('[BG Task] publish error:', publishErr);
       if (isVisibilityDiscoveryClientError(publishErr)) {
         const disposition = disposeBackgroundPublishFailure({

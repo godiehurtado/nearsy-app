@@ -65,8 +65,10 @@ import {
   shouldReconcileBgPreferenceOff,
 } from '../location/contractualLogout';
 import { resetLocationJourneySession } from '../location/locationJourneySession';
-import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
-import { deactivateVisibilityFlow } from '../visibility/orchestration';
+import {
+  closePublicationSession,
+  drainInFlightPublications,
+} from '../location/publicationSession';
 import { evaluateBackgroundLocationSettingsReturn } from '../visibility/settingsRecovery';
 import {
   ageFromBirthDate,
@@ -876,12 +878,9 @@ export default function MoreScreen() {
       resetLocationJourneySession();
       await runContractualAndroidLogout({
         clearSocialPrefill: () => clearPendingSocialProfilePrefill(),
+        closePublicationGate: () => closePublicationSession(),
         stopBackground: () => stopBackgroundLocation(),
-        isVisibilityActive: () => visibilityOnRef.current,
-        deactivateVisibility: async () => {
-          const client = await getVisibilityDiscoveryClient();
-          await deactivateVisibilityFlow(client);
-        },
+        drainInFlightPublications: () => drainInFlightPublications(),
         signOutProviderSessions: () => {
           if (hasFacebookProvider(firebaseAuth.currentUser)) {
             logOutFacebookSession();

@@ -15,6 +15,7 @@ import {
   Theme as NavigationTheme,
 } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
@@ -44,6 +45,7 @@ import {
   type AuthenticatedProfileFlow,
 } from './profileGate';
 import type { AuthenticatedOnboardingStackRoute } from '../phoneOtp/onboardingResolver';
+import { loadLastConfirmedVisibility } from '../visibility/lastConfirmedVisibility';
 
 export type { RootStackParamList } from './types';
 
@@ -198,6 +200,8 @@ export default function AppNavigator() {
       return;
     }
 
+    // Warm the per-account Visibility hint before Home can mount.
+    void loadLastConfirmedVisibility(uid, AsyncStorage);
     gate.start(uid, setProfileFlow);
     return () => {
       gate.stop();

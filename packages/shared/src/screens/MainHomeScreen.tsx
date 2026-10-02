@@ -24,7 +24,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { firebaseAuth } from '../config/firebaseConfig';
-import { dbOnUserSnapshot } from '../services/db';
+import { dbGetUserFromServer, dbOnUserSnapshot } from '../services/db';
+import {
+  loadLastConfirmedVisibility,
+  peekLastConfirmedVisibility,
+  recordConfirmedVisibility,
+  shouldHoldCachedVisibilitySnapshot,
+  shouldRecordSnapshotVisibility,
+} from '../visibility/lastConfirmedVisibility';
 import { setContactsSyncEnabled } from '../services/contactsSync';
 import { useTranslation } from '../i18n';
 import {
@@ -40,8 +47,18 @@ import {
   activateVisibilityFlow,
   deactivateVisibilityFlow,
   ensureForegroundPermission,
+  publishLocationFlow,
   reconcileVisibilityWithForegroundPermission,
 } from '../visibility/orchestration';
+import { noteContractualPublishSuccess } from '../visibility/contractualLocationRefresh';
+import {
+  acquirePublicationTicket,
+  bindPublicationSession,
+  confirmPublicationSession,
+  isPublicationRuntimeOpen,
+  isPublicationTicketCurrent,
+  subscribePublicationSession,
+} from '../location/publicationSession';
 import { evaluateVisibilitySettingsReturn, evaluateBackgroundLocationSettingsReturn } from '../visibility/settingsRecovery';
 import {
   clearVisibilityRecoveryIntent,
@@ -111,6 +128,7 @@ import {
 import {
   evaluateVisibilityHydration,
   isHomeSearchEnabled,
+  isReadyForRuntimeConfirmation,
   resolvePermissionValidationOnVisibilitySnapshot,
   shouldResetPermissionValidationOnVisibilityChange,
 } from '../location/visibilityHydration';
@@ -221,6 +239,23 @@ export default function MainHomeScreen({ navigation }: Props) {
   const [permissionsValid, setPermissionsValid] = useState<
     boolean | undefined
   >(undefined);
+  const [lastConfirmedVisibility, setLastConfirmedVisibility] = useState(() =>
+    peekLastConfirmedVisibility(firebaseAuth.currentUser?.uid),
+  );
+  const lastConfirmedVisibilityRef = useRef(lastConfirmedVisibility);
+  lastConfirmedVisibilityRef.current = lastConfirmedVisibility;
+  // Cached not-Active snapshot held back until the server confirms it.
+  const [awaitingServerVisibility, setAwaitingServerVisibility] =
+    useState(false);
+  const serverVisibilityCheckRef = useRef(false);
+  // Publication session for this uid: runtime/search/FGS wait for a
+  // confirmed activate/publish after every login or session restore.
+  const [runtimeConfirmed, setRuntimeConfirmed] = useState(() =>
+    isPublicationRuntimeOpen(firebaseAuth.currentUser?.uid),
+  );
+  const [runtimeConfirmationFailed, setRuntimeConfirmationFailed] =
+    useState(false);
+  const runtimeConfirmInFlightRef = useRef(false);
   const previousVisibilityRef = useRef<boolean | undefined>(undefined);
   const pendingBgEnableFromSettingsRef = useRef(false);
   const postLoginRecoveryStartedRef = useRef(false);
@@ -403,17 +438,24 @@ export default function MainHomeScreen({ navigation }: Props) {
   const distMax = unit === 'ft' ? MAX_DISTANCE_FEET : MAX_DISTANCE_METERS_UI;
   const distStep = unit === 'ft' ? DISTANCE_STEP_FEET : DISTANCE_STEP_METERS;
 
-  const visibilityHydration = evaluateVisibilityHydration({
+  const hydrationInput = {
     profileLoaded: !loading,
-    persistedVisibility: loading
-      ? undefined
-      : profile.visibility === undefined
+    persistedVisibility:
+      loading || awaitingServerVisibility
         ? undefined
-        : !!profile.visibility,
+        : profile.visibility === undefined
+          ? undefined
+          : !!profile.visibility,
     permissionValidationPending,
     permissionsValid,
     crjActivationProvisional: crjProvisionalActive,
-  });
+    lastConfirmedVisibility,
+    runtimeConfirmed,
+    runtimeConfirmationFailed,
+  };
+  const visibilityHydration = evaluateVisibilityHydration(hydrationInput);
+  const readyForRuntimeConfirmation =
+    isReadyForRuntimeConfirmation(hydrationInput);
 
   const pillColors = visibilityHydration.displayActive
     ? theme === 'dark'
@@ -457,9 +499,42 @@ export default function MainHomeScreen({ navigation }: Props) {
       return;
     }
 
+    let alive = true;
+    bindPublicationSession(uid);
+    if (lastConfirmedVisibilityRef.current === undefined) {
+      void loadLastConfirmedVisibility(uid, AsyncStorage).then((stored) => {
+        if (alive && stored !== undefined) {
+          setLastConfirmedVisibility((current) => current ?? stored);
+        }
+      });
+    }
+
+    const confirmVisibilityWithServer = async () => {
+      if (serverVisibilityCheckRef.current) return;
+      serverVisibilityCheckRef.current = true;
+      try {
+        const fresh = (await dbGetUserFromServer(uid)) as ProfileDoc | null;
+        if (!alive) return;
+        const confirmed =
+          fresh && typeof fresh.visibility === 'boolean'
+            ? fresh.visibility
+            : undefined;
+        if (confirmed !== undefined) {
+          void recordConfirmedVisibility(uid, confirmed, AsyncStorage);
+          setLastConfirmedVisibility(confirmed);
+          setProfile((p) => ({ ...p, visibility: confirmed }));
+        }
+      } catch {
+        // Server unreachable: the cached value stands (fail closed to Inactive).
+      } finally {
+        serverVisibilityCheckRef.current = false;
+        if (alive) setAwaitingServerVisibility(false);
+      }
+    };
+
     const unsub = dbOnUserSnapshot(
       uid,
-      (raw) => {
+      (raw, meta) => {
         if (raw) {
           const data = reconcileUserDocWithActiveProfileMode(
             (raw as ProfileDoc) ?? {},
@@ -501,6 +576,26 @@ export default function MainHomeScreen({ navigation }: Props) {
           // permissionsValid=false before paint (BUG-VIS-01). Do not wait for effect.
           const nextVisibility =
             data.visibility === undefined ? undefined : !!data.visibility;
+          const fromCache = meta?.fromCache;
+          if (
+            shouldHoldCachedVisibilitySnapshot({
+              fromCache,
+              nextVisibility,
+              lastConfirmedVisibility: lastConfirmedVisibilityRef.current,
+            })
+          ) {
+            setAwaitingServerVisibility(true);
+            void confirmVisibilityWithServer();
+          } else {
+            setAwaitingServerVisibility(false);
+            if (
+              shouldRecordSnapshotVisibility({ fromCache, nextVisibility })
+            ) {
+              const confirmed = nextVisibility as boolean;
+              void recordConfirmedVisibility(uid, confirmed, AsyncStorage);
+              setLastConfirmedVisibility(confirmed);
+            }
+          }
           const previousVisibility = previousVisibilityRef.current;
           previousVisibilityRef.current = nextVisibility;
           const permissionPatch =
@@ -524,7 +619,10 @@ export default function MainHomeScreen({ navigation }: Props) {
       },
     );
 
-    return () => unsub();
+    return () => {
+      alive = false;
+      unsub();
+    };
   }, [t, unit, officialInterestIds]);
 
   // Belt for non-snapshot Visibility flips (local setProfile). Snapshot path
@@ -592,6 +690,65 @@ export default function MainHomeScreen({ navigation }: Props) {
     profile.visibility,
     permissionsValid,
     permissionValidationPending,
+  ]);
+
+  useEffect(() => {
+    const sync = () =>
+      setRuntimeConfirmed(
+        isPublicationRuntimeOpen(firebaseAuth.currentUser?.uid),
+      );
+    sync();
+    return subscribePublicationSession(sync);
+  }, []);
+
+  // A new snapshot value gives the session another confirmation attempt.
+  useEffect(() => {
+    setRuntimeConfirmationFailed(false);
+  }, [profile.visibility]);
+
+  // Persisted Active + validated permissions → confirm the session with a
+  // contractual publish before runtime (FGS, Nearby, cadence) may start.
+  useEffect(() => {
+    if (!readyForRuntimeConfirmation) return;
+    if (runtimeConfirmed || runtimeConfirmationFailed) return;
+    if (runtimeConfirmInFlightRef.current) return;
+    const uid = firebaseAuth.currentUser?.uid;
+    const ticket = acquirePublicationTicket(uid, 'confirm');
+    if (!uid || !ticket) return;
+
+    runtimeConfirmInFlightRef.current = true;
+    void (async () => {
+      try {
+        const client = await getVisibilityDiscoveryClient();
+        const outcome = await publishLocationFlow(client, undefined, {
+          isCurrent: () =>
+            isPublicationTicketCurrent(ticket, firebaseAuth.currentUser?.uid),
+        });
+        if (outcome.ok === false) {
+          if (outcome.kind === 'session-closed') return;
+          if (outcome.kind === 'permission-denied') {
+            setPermissionsValid(false);
+            setPermissionValidationPending(false);
+            return;
+          }
+          setRuntimeConfirmationFailed(true);
+          return;
+        }
+        noteContractualPublishSuccess(Date.now());
+        if (confirmPublicationSession(ticket)) {
+          await startGatedBackgroundIfAllowed(uid);
+        }
+      } catch {
+        setRuntimeConfirmationFailed(true);
+      } finally {
+        runtimeConfirmInFlightRef.current = false;
+      }
+    })();
+  }, [
+    readyForRuntimeConfirmation,
+    runtimeConfirmed,
+    runtimeConfirmationFailed,
+    startGatedBackgroundIfAllowed,
   ]);
 
   useEffect(() => {
@@ -837,8 +994,14 @@ export default function MainHomeScreen({ navigation }: Props) {
     setStatusUpdating(true);
     setVisibilityError(null);
     try {
+      const confirmTicket = acquirePublicationTicket(uid, 'confirm');
       const client = await getVisibilityDiscoveryClient();
       const outcome = await activateVisibilityFlow(client);
+      if (outcome.ok === true) {
+        // Explicit activate confirms this session; runtime may start below.
+        confirmPublicationSession(confirmTicket);
+        setRuntimeConfirmationFailed(false);
+      }
       if (outcome.ok === false) {
         if (outcome.kind === 'permission-denied') {
           showVisibilityPermissionDenied(
@@ -885,6 +1048,8 @@ export default function MainHomeScreen({ navigation }: Props) {
       setProfile((p) => ({ ...p, visibility: true }));
       setPermissionsValid(true);
       setPermissionValidationPending(false);
+      setLastConfirmedVisibility(true);
+      void recordConfirmedVisibility(uid, true, AsyncStorage);
       await clearVisibilityRecoveryIntent(AsyncStorage).catch(() => {});
       await offerBackgroundEducationIfNeeded();
     } catch (err) {
@@ -926,6 +1091,8 @@ export default function MainHomeScreen({ navigation }: Props) {
         return;
       }
       setProfile((p) => ({ ...p, visibility: false }));
+      setLastConfirmedVisibility(false);
+      void recordConfirmedVisibility(uid, false, AsyncStorage);
       await clearVisibilityRecoveryIntent(AsyncStorage).catch(() => {});
       await stopBackgroundLocation().catch(() => {});
     } catch (err) {
@@ -1082,6 +1249,7 @@ export default function MainHomeScreen({ navigation }: Props) {
   const canSearch = isHomeSearchEnabled({
     displayActive: visibilityHydration.displayActive,
     permissionsValid,
+    runtimeEligible: visibilityHydration.runtimeEligible,
   });
   const modeLabel =
     mode === 'personal'

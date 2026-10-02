@@ -30,6 +30,10 @@ import {
   resetLocationJourneySession,
   markPostLoginLocationRecoveryNeeded,
 } from './location/locationJourneySession';
+import {
+  bindPublicationSession,
+  closePublicationSession,
+} from './location/publicationSession';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -78,6 +82,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
     const unsubscribe = firebaseAuth.onAuthStateChanged(
       async (user: any | null) => {
         if (!user) {
+          closePublicationSession();
           if (Platform.OS !== 'web') {
             await stopBackgroundLocation().catch(() => {});
           }
@@ -87,6 +92,9 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
 
         if (Platform.OS === 'web') return;
 
+        // New uid/session starts pending: runtime waits for Home's confirmed
+        // activate/publish (startGatedBackgroundLocation enforces it).
+        bindPublicationSession(user.uid);
         bindLocationJourneySessionUid(user.uid);
 
         try {

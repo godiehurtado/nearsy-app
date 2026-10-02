@@ -22,16 +22,30 @@ export async function dbSetUserMerge(uid: string, data: any) {
   await firestoreDb.collection('users').doc(uid).set(data, { merge: true });
 }
 
+/** Bypasses the local cache; rejects when the server is unreachable. */
+export async function dbGetUserFromServer(uid: string) {
+  const snap = await firestoreDb
+    .collection('users')
+    .doc(uid)
+    .get({ source: 'server' });
+  return snapshotExists(snap) ? snap.data() : null;
+}
+
+export type UserSnapshotMeta = { fromCache: boolean };
+
 export function dbOnUserSnapshot(
   uid: string,
-  onData: (d: any | null) => void,
+  onData: (d: any | null, meta?: UserSnapshotMeta) => void,
   onErr?: (e: SnapErr) => void,
 ) {
   const rnFirestore = firestore();
   const userRef = rnFirestore.collection('users').doc(uid);
 
   return userRef.onSnapshot(
-    (snap: DocSnap) => onData(snapshotExists(snap) ? snap.data() : null),
+    (snap: DocSnap) =>
+      onData(snapshotExists(snap) ? snap.data() : null, {
+        fromCache: snap.metadata?.fromCache === true,
+      }),
     (err: SnapErr) => onErr?.(err as unknown),
   );
 }
