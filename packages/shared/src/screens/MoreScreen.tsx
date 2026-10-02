@@ -68,6 +68,7 @@ import {
 import { BackgroundLocationEducationModal } from '../components/BackgroundLocationEducationModal';
 import { LocationPreparingModal } from '../components/LocationPreparingModal';
 import { evaluateBackgroundLocationSettingsReturn } from '../visibility/settingsRecovery';
+import { closeVisibilitySessionForLogout } from '../visibility/visibilitySessionGate';
 import {
   ageFromBirthDate,
   applyBirthDateTextChange,
@@ -859,12 +860,15 @@ export default function MoreScreen() {
         await import('../authentication/social');
       clearPendingSocialProfilePrefill();
       // Contractual logout order:
-      // 1) stop background task/runtime (+ clear local UID / runtime-allowed)
+      // 1) close the presence gate, stop/unregister the background runtime and
+      //    wait for already-sent publications (each step bounded)
       // 2) signOut
       // 3) navigation reset
       // Logout never writes Visibility: the account keeps its persisted
       // preference and returns to it on the next login.
-      await stopBackgroundLocationRuntime().catch(() => {});
+      await closeVisibilitySessionForLogout({
+        stopRuntime: stopBackgroundLocationRuntime,
+      });
       clearLocationPermissionJourneySession();
       await firebaseAuth.signOut();
       // Idempotent Facebook SDK logout; never blocks guest navigation.

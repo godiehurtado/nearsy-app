@@ -115,10 +115,12 @@ export function wasForegroundNewlyGranted(input: {
 
 /**
  * Contractual logout cleanup order for MoreScreen (source-enforced).
- * stop runtime → signOut → navigation reset. Logout never deactivates
- * Visibility (no remote visibility=false write).
+ * close presence gate → stop runtime → (await in-flight) → signOut →
+ * navigation reset. Logout never deactivates Visibility (no remote
+ * visibility=false write).
  */
 export const LOGOUT_CLEANUP_ORDER = [
+  'closeVisibilitySessionForLogout',
   'stopBackgroundLocationRuntime',
   'firebaseAuth.signOut',
 ] as const;

@@ -39,8 +39,10 @@ import * as Location from 'expo-location';
 import {
   activateVisibilityFlow,
   deactivateVisibilityFlow,
+  publishLocationFlow,
   reconcileVisibilityWithForegroundPermission,
 } from '../visibility/orchestration';
+import { noteContractualPublishSuccess } from '../visibility/contractualLocationRefresh';
 import { evaluateVisibilitySettingsReturn } from '../visibility/settingsRecovery';
 import {
   clearVisibilityRecoveryIntent,
@@ -925,6 +927,21 @@ export default function MainHomeScreen({ navigation }: Props) {
           }
 
           if (remote && foregroundGranted) {
+            if (
+              !hydrationValidationDoneRef.current &&
+              !crjActivationProvisionalRef.current
+            ) {
+              // Presence derives from confirmedAt (Nearby rejects > 5 min):
+              // renew before runtime/Nearby/search are enabled for this session.
+              const renewed = await publishLocationFlow(client);
+              if (cancelled) return;
+              if (renewed.ok === false) {
+                finishValidation(false);
+                await stopBackgroundLocationRuntime();
+                return;
+              }
+              noteContractualPublishSuccess(Date.now());
+            }
             finishValidation(true);
             const fullEducationSeen = await hasSeenFullBackgroundEducation(
               AsyncStorage,
@@ -963,7 +980,10 @@ export default function MainHomeScreen({ navigation }: Props) {
             finishValidation(false);
           }
         } catch {
-          finishValidation(!!profileRef.current.visibility);
+          // A session not yet renewed must not become runtime-eligible on error.
+          finishValidation(
+            hydrationValidationDoneRef.current && !!profileRef.current.visibility,
+          );
           clearHomeLocationPresentation();
         }
       })();
