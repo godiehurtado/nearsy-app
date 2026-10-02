@@ -42,6 +42,8 @@ export function useFacebookSignInFlow() {
     beginFacebookAuthTrace();
     try {
       const result = await authenticateWithFacebook();
+      flushFacebookAuthTrace('success');
+      if (__DEV__) setTimeout(() => flushFacebookAuthTrace('success_delayed'), 2000);
 
       Keyboard.dismiss();
       setTimeout(() => {

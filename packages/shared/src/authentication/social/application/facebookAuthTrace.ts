@@ -16,6 +16,7 @@ export type FacebookAuthTraceStage =
   | 'nonce_present'
   | 'nonce_match'
   | 'token_claims_checked'
+  | 'profile_checked'
   | 'native_error'
   | 'firebase_credential_created'
   | 'firebase_sign_in_started'
@@ -108,6 +109,24 @@ function decodeBase64Url(segment: string): string {
   throw new Error('no_base64_decoder');
 }
 
+type LimitedLoginClaims = Record<string, unknown>;
+
+function decodeLimitedLoginClaims(idToken: string | undefined): LimitedLoginClaims | null {
+  if (!idToken) return null;
+  try {
+    const parts = idToken.split('.');
+    if (parts.length !== 3) return null;
+    const claims = JSON.parse(decodeBase64Url(parts[1]!)) as unknown;
+    return typeof claims === 'object' && claims !== null ? (claims as LimitedLoginClaims) : null;
+  } catch {
+    return null;
+  }
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 /**
  * Boolean-only checks of a Limited Login OIDC token. Claims are compared in
  * memory and never returned; only the well-known issuer URL is echoed.
@@ -116,30 +135,113 @@ export function inspectLimitedLoginTokenForTrace(
   idToken: string,
   expected: { appId?: string; hashedNonce: string; nowMs?: number },
 ): FacebookAuthTraceDetail {
-  try {
-    const parts = idToken.split('.');
-    if (parts.length !== 3) return { tokenDecodable: false, tokenParts: parts.length };
-    const claims = JSON.parse(decodeBase64Url(parts[1]!)) as {
-      iss?: unknown;
-      aud?: unknown;
-      exp?: unknown;
-      nonce?: unknown;
-    };
-    const issuer = typeof claims.iss === 'string' ? claims.iss : '';
-    const knownIssuers = ['https://www.facebook.com', 'https://limited.facebook.com'];
-    const now = expected.nowMs ?? Date.now();
-    return {
-      tokenDecodable: true,
-      issuerKnown: knownIssuers.includes(issuer),
-      issuer: knownIssuers.includes(issuer) ? issuer : 'unexpected',
-      audMatchesAppId: Boolean(expected.appId) && claims.aud === expected.appId,
-      notExpired: typeof claims.exp === 'number' && claims.exp * 1000 > now,
-      nonceClaimPresent: typeof claims.nonce === 'string' && claims.nonce.length > 0,
-      nonceClaimMatchesHash: claims.nonce === expected.hashedNonce,
-    };
-  } catch {
-    return { tokenDecodable: false };
-  }
+  const parts = idToken.split('.');
+  if (parts.length !== 3) return { tokenDecodable: false, tokenParts: parts.length };
+  const claims = decodeLimitedLoginClaims(idToken);
+  if (!claims) return { tokenDecodable: false };
+  const issuer = typeof claims.iss === 'string' ? claims.iss : '';
+  const knownIssuers = ['https://www.facebook.com', 'https://limited.facebook.com'];
+  const now = expected.nowMs ?? Date.now();
+  return {
+    tokenDecodable: true,
+    issuerKnown: knownIssuers.includes(issuer),
+    issuer: knownIssuers.includes(issuer) ? issuer : 'unexpected',
+    audMatchesAppId: Boolean(expected.appId) && claims.aud === expected.appId,
+    notExpired: typeof claims.exp === 'number' && claims.exp * 1000 > now,
+    nonceClaimPresent: nonEmptyString(claims.nonce),
+    nonceClaimMatchesHash: claims.nonce === expected.hashedNonce,
+    subClaimPresent: nonEmptyString(claims.sub),
+    nameClaimPresent: nonEmptyString(claims.name),
+    givenNameClaimPresent: nonEmptyString(claims.given_name),
+    familyNameClaimPresent: nonEmptyString(claims.family_name),
+    pictureClaimPresent: nonEmptyString(claims.picture),
+    emailClaimKeyPresent: Object.prototype.hasOwnProperty.call(claims, 'email'),
+    emailClaimPresent: nonEmptyString(claims.email),
+  };
+}
+
+export type FacebookProfileForTrace = {
+  userID?: string | null;
+  name?: string | null;
+  imageURL?: string | null;
+  email?: string | null;
+  refreshDate?: Date | number | null;
+  permissions?: readonly string[] | null;
+} | null | undefined;
+
+/**
+ * Booleans describing the SDK Profile read right after native login, and
+ * whether it was built from this attempt's OIDC token (compared in memory).
+ */
+export function inspectFacebookProfileForTrace(
+  profile: FacebookProfileForTrace,
+  context: { idToken?: string; loginStartedAtMs: number },
+): FacebookAuthTraceDetail {
+  const claims = decodeLimitedLoginClaims(context.idToken);
+  const refreshMs =
+    profile?.refreshDate instanceof Date
+      ? profile.refreshDate.getTime()
+      : typeof profile?.refreshDate === 'number'
+        ? profile.refreshDate
+        : NaN;
+  const profileEmail = profile?.email;
+  const tokenEmail = claims?.email;
+  return {
+    profilePresent: Boolean(profile),
+    profileUserIdPresent: nonEmptyString(profile?.userID),
+    profileNamePresent: nonEmptyString(profile?.name),
+    profileImagePresent: nonEmptyString(profile?.imageURL),
+    profileEmailPresent: nonEmptyString(profileEmail),
+    profilePermissionsIncludeEmail: Boolean(profile?.permissions?.includes('email')),
+    profileRefreshDatePresent: Number.isFinite(refreshMs),
+    // A residual profile would predate this attempt's native login.
+    profileRefreshedThisAttempt:
+      Number.isFinite(refreshMs) && refreshMs >= context.loginStartedAtMs - 1_000,
+    profileUserIdMatchesTokenSub:
+      nonEmptyString(profile?.userID) && profile?.userID === claims?.sub,
+    profileEmailMatchesTokenEmail:
+      nonEmptyString(profileEmail) && nonEmptyString(tokenEmail) && profileEmail === tokenEmail,
+  };
+}
+
+type UserInfoLike = { providerId?: unknown; email?: unknown };
+
+export type FirebaseCredentialForTrace = {
+  user?: {
+    email?: unknown;
+    emailVerified?: unknown;
+    providerData?: readonly UserInfoLike[] | null;
+  } | null;
+} | null | undefined;
+
+export type AdditionalUserInfoForTrace = {
+  isNewUser?: unknown;
+  providerId?: unknown;
+  profile?: Record<string, unknown> | null;
+} | null | undefined;
+
+/** Booleans describing where (if anywhere) Firebase kept the Facebook email. */
+export function inspectFirebaseFacebookCredentialForTrace(
+  cred: FirebaseCredentialForTrace,
+  additional: AdditionalUserInfoForTrace,
+): FacebookAuthTraceDetail {
+  const providerData = cred?.user?.providerData ?? [];
+  const facebook = providerData.find((entry) => entry?.providerId === 'facebook.com');
+  const rawProfile = additional?.profile ?? null;
+  return {
+    userEmailPresent: nonEmptyString(cred?.user?.email),
+    userEmailVerified: cred?.user?.emailVerified === true,
+    providerDataCount: providerData.length,
+    facebookProviderPresent: Boolean(facebook),
+    facebookProviderEmailPresent: nonEmptyString(facebook?.email),
+    additionalUserInfoAvailable: Boolean(additional),
+    additionalUserInfoProviderIsFacebook: additional?.providerId === 'facebook.com',
+    additionalProfilePresent: Boolean(rawProfile) && Object.keys(rawProfile ?? {}).length > 0,
+    additionalProfileEmailPresent: nonEmptyString(rawProfile?.email),
+    additionalProfileNamePresent: nonEmptyString(rawProfile?.name),
+    additionalProfilePicturePresent: rawProfile?.picture != null,
+    isNewUser: additional?.isNewUser === true,
+  };
 }
 
 function emit(label: string, payload: unknown): void {

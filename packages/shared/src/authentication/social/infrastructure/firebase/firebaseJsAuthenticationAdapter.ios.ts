@@ -20,7 +20,11 @@ import type {
 } from './firebaseAuthenticationPort';
 import {
   describeErrorForTrace,
+  inspectFirebaseFacebookCredentialForTrace,
+  isFacebookAuthTraceEnabled,
   traceFacebookAuth,
+  type AdditionalUserInfoForTrace,
+  type FirebaseCredentialForTrace,
 } from '../../application/facebookAuthTrace';
 
 /** Injectable runtime for unit tests (defaults to Firebase JS SDK). */
@@ -295,9 +299,15 @@ export function createFirebaseJsAuthenticationAdapter(
           });
           const userCredential = await signIn(auth, credential);
           const session = toSession(userCredential, readAdditional);
-          traceFacebookAuth('firebase_sign_in_success', {
-            isNewUser: session.isNewUser,
-          });
+          traceFacebookAuth(
+            'firebase_sign_in_success',
+            isFacebookAuthTraceEnabled()
+              ? inspectFirebaseFacebookCredentialForTrace(
+                  userCredential as FirebaseCredentialForTrace,
+                  safeAdditionalUserInfo(readAdditional, userCredential) as AdditionalUserInfoForTrace,
+                )
+              : undefined,
+          );
           return session;
         } catch (err: unknown) {
           traceFacebookAuth('firebase_sign_in_error', {
