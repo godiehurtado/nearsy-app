@@ -161,6 +161,7 @@ describe('Logout never writes Visibility', () => {
     );
     assert.doesNotMatch(more, /deactivateVisibilityFlow/);
     assert.deepEqual([...LOGOUT_CLEANUP_ORDER], [
+      'closeVisibilitySessionForLogout',
       'stopBackgroundLocationRuntime',
       'firebaseAuth.signOut',
     ]);

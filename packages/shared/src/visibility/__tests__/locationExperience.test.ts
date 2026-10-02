@@ -286,11 +286,13 @@ describe('ENH-LOC-01 journey wiring (same-pass connection)', () => {
       more.indexOf('const handleLogout'),
       more.indexOf('const openCalendar'),
     );
+    const closeIdx = logout.indexOf('closeVisibilitySessionForLogout');
     const stopIdx = logout.indexOf('stopBackgroundLocationRuntime');
     const signIdx = logout.indexOf('firebaseAuth.signOut');
-    assert.ok(stopIdx >= 0 && signIdx > stopIdx);
+    assert.ok(closeIdx >= 0 && stopIdx > closeIdx && signIdx > stopIdx);
     assert.doesNotMatch(logout, /deactivateVisibilityFlow|deactivateVisibility\(/);
     assert.deepEqual([...LOGOUT_CLEANUP_ORDER], [
+      'closeVisibilitySessionForLogout',
       'stopBackgroundLocationRuntime',
       'firebaseAuth.signOut',
     ]);
