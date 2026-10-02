@@ -512,12 +512,14 @@ describe('Contractual logout with Facebook session', () => {
       clearSocialPrefill: () => {
         calls.push('clearPrefill');
       },
+      closePublicationGate: () => {
+        calls.push('closeGate');
+      },
       stopBackground: async () => {
         calls.push('stopBackground');
       },
-      isVisibilityActive: () => false,
-      deactivateVisibility: async () => {
-        calls.push('deactivate');
+      drainInFlightPublications: async () => {
+        calls.push('drain');
       },
       signOutProviderSessions: providerLogout,
       signOut: async () => {
@@ -535,7 +537,9 @@ describe('Contractual logout with Facebook session', () => {
     );
     assert.deepEqual(calls, [
       'clearPrefill',
+      'closeGate',
       'stopBackground',
+      'drain',
       'facebookLogOut',
       'firebaseSignOut',
     ]);
@@ -555,6 +559,12 @@ describe('Contractual logout with Facebook session', () => {
   it('non-Facebook callers (no provider step) keep the previous sequence', async () => {
     const calls: string[] = [];
     await runContractualAndroidLogout(logoutDeps(calls));
-    assert.deepEqual(calls, ['clearPrefill', 'stopBackground', 'firebaseSignOut']);
+    assert.deepEqual(calls, [
+      'clearPrefill',
+      'closeGate',
+      'stopBackground',
+      'drain',
+      'firebaseSignOut',
+    ]);
   });
 });
