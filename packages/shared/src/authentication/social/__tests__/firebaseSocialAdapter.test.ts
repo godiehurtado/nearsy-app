@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import {
@@ -10,6 +13,8 @@ import {
   sanitizeSocialErrorForLog,
 } from '../domain/socialAuthenticationError';
 import type { UserCredential } from 'firebase/auth';
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 function fakeUserCredential(
   overrides: {
@@ -26,9 +31,117 @@ function fakeUserCredential(
         providerId,
       })),
     },
-    additionalUserInfo: { isNewUser: false },
   } as unknown as UserCredential;
 }
+
+/** Shape produced by Firebase JS 1.7.x (`UserCredentialImpl`): no `additionalUserInfo`. */
+function modularUserCredential(tokenResponse: Record<string, unknown> | undefined): UserCredential {
+  return {
+    user: {
+      uid: 'fb-uid',
+      email: null,
+      isAnonymous: false,
+      providerData: [{ providerId: 'facebook.com' }],
+    },
+    providerId: 'facebook.com',
+    operationType: 'signIn',
+    _tokenResponse: tokenResponse,
+  } as unknown as UserCredential;
+}
+
+function facebookOidcAdapter(signIn: () => Promise<UserCredential>) {
+  return createFirebaseJsAuthenticationAdapter({
+    OAuthProvider: class {
+      constructor(private readonly id: string) {}
+      credential(params: { idToken?: string; rawNonce?: string }) {
+        return { providerId: this.id, idToken: params.idToken, nonce: params.rawNonce };
+      }
+    } as never,
+    signInWithCredential: signIn,
+    auth: { name: 'firebase-auth' },
+  });
+}
+
+describe('isNewUser via modular getAdditionalUserInfo()', () => {
+  const input = { provider: 'facebook' as const, idToken: 'oidc-token', rawNonce: 'raw-nonce' };
+
+  it('reports a new user from the Identity Toolkit response (isNewUser: true)', async () => {
+    const adapter = facebookOidcAdapter(async () =>
+      modularUserCredential({ providerId: 'facebook.com', isNewUser: true, rawUserInfo: '{}' }),
+    );
+    const session = await adapter.signInWithSocialCredential(input);
+    assert.equal(session.isNewUser, true);
+  });
+
+  it('reports a new user from a SignupNewUser response kind', async () => {
+    const adapter = facebookOidcAdapter(async () =>
+      modularUserCredential({
+        providerId: 'facebook.com',
+        kind: 'identitytoolkit#SignupNewUserResponse',
+      }),
+    );
+    assert.equal((await adapter.signInWithSocialCredential(input)).isNewUser, true);
+  });
+
+  it('reports a returning user as not new', async () => {
+    const adapter = facebookOidcAdapter(async () =>
+      modularUserCredential({ providerId: 'facebook.com', isNewUser: false }),
+    );
+    assert.equal((await adapter.signInWithSocialCredential(input)).isNewUser, false);
+  });
+
+  it('ignores a legacy namespaced additionalUserInfo property', async () => {
+    const adapter = facebookOidcAdapter(async () =>
+      ({
+        ...modularUserCredential({ providerId: 'facebook.com', isNewUser: false }),
+        additionalUserInfo: { isNewUser: true },
+      }) as unknown as UserCredential,
+    );
+    assert.equal((await adapter.signInWithSocialCredential(input)).isNewUser, false);
+  });
+
+  it('falls back to false when no token response is available', async () => {
+    const adapter = facebookOidcAdapter(async () => modularUserCredential(undefined));
+    assert.equal((await adapter.signInWithSocialCredential(input)).isNewUser, false);
+  });
+
+  it('uses an injected reader and survives a throwing reader', async () => {
+    const injected = createFirebaseJsAuthenticationAdapter({
+      async signInWithCredential() {
+        return fakeUserCredential({ providerIds: ['google.com'] });
+      },
+      getAdditionalUserInfo: () => ({ isNewUser: true, providerId: 'google.com', profile: null }),
+      auth: {},
+    });
+    assert.equal(
+      (await injected.signInWithSocialCredential({ provider: 'google', idToken: 't' })).isNewUser,
+      true,
+    );
+
+    const throwing = createFirebaseJsAuthenticationAdapter({
+      async signInWithCredential() {
+        return fakeUserCredential({ providerIds: ['google.com'] });
+      },
+      getAdditionalUserInfo: () => {
+        throw new Error('boom');
+      },
+      auth: {},
+    });
+    assert.equal(
+      (await throwing.signInWithSocialCredential({ provider: 'google', idToken: 't' })).isNewUser,
+      false,
+    );
+  });
+
+  it('adapter source never reads cred.additionalUserInfo', () => {
+    const source = readFileSync(
+      join(here, '..', 'infrastructure', 'firebase', 'firebaseJsAuthenticationAdapter.ios.ts'),
+      'utf8',
+    );
+    assert.doesNotMatch(source, /\.additionalUserInfo/);
+    assert.match(source, /getAdditionalUserInfo/);
+  });
+});
 
 describe('createFirebaseJsAuthenticationAdapter (Google + Apple)', () => {
   it('preserves Google credential exchange behavior', async () => {
