@@ -10,6 +10,7 @@ export default {
   company: 'Company',
   biography: 'Biography',
   interests: 'Interests',
+  viewInterests: 'View interests',
   affiliations: 'Affiliations',
   compatibility: 'Compatibility',
   compatibilityMatch: '{{score}}% Match',

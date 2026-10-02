@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { Alert, Keyboard } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useTranslation } from '../i18n';
-import { FacebookAuthenticationError } from '../authentication/facebook/facebookAuthCore';
+import { runFacebookSignIn } from '../authentication/facebook/facebookSignInFlow';
 import { authenticateWithFacebook } from '../services/facebookSession.android';
 import { getUserProfile, isProfileComplete } from '../services/firestoreService';
 import { clearPendingSocialProfilePrefill } from '../authentication/social';
@@ -24,67 +24,50 @@ export function useFacebookSignInFlow() {
     submittingRef.current = true;
     setSubmitting(true);
     try {
-      const result = await authenticateWithFacebook();
+      const outcome = await runFacebookSignIn({
+        authenticate: authenticateWithFacebook,
+        getUserProfile,
+        isProfileComplete,
+      });
 
-      const profile: any = await getUserProfile(result.uid);
-      const emailForProfile = result.email ?? '';
-
-      Keyboard.dismiss();
-
-      const goToProfileCompletion = () => {
-        navigation.reset({
-          index: 0,
-          routes: [
-            {
-              name: 'ProfileCompletion',
-              params: {
-                uid: result.uid,
-                email: emailForProfile,
-                inputNonce: Date.now(),
-              },
-            },
-          ],
-        });
-      };
-
-      if (!profile) {
-        setTimeout(goToProfileCompletion, 150);
-        return;
-      }
-
-      const complete = await isProfileComplete(result.uid);
-
-      setTimeout(() => {
-        if (complete) {
-          clearPendingSocialProfilePrefill();
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'MainTabs' }],
-          });
+      switch (outcome.kind) {
+        case 'ignored':
           return;
-        }
-        goToProfileCompletion();
-      }, 150);
-    } catch (err) {
-      if (err instanceof FacebookAuthenticationError) {
-        if (__DEV__) {
-          console.log('[useFacebookSignInFlow]', {
-            code: err.code,
-            diagnosticCode: err.diagnosticCode,
-          });
-        }
-        if (err.code === 'OPERATION_IN_PROGRESS') return;
-        Alert.alert(
-          t('authentication.login.social.facebook'),
-          t(err.messageKey as any),
-        );
-        return;
+        case 'alert':
+          Alert.alert(
+            t(outcome.alert.titleKey as any),
+            t(outcome.alert.messageKey as any),
+          );
+          return;
+        case 'mainTabs':
+          Keyboard.dismiss();
+          setTimeout(() => {
+            clearPendingSocialProfilePrefill();
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'MainTabs' }],
+            });
+          }, 150);
+          return;
+        case 'profileCompletion':
+          Keyboard.dismiss();
+          setTimeout(() => {
+            navigation.reset({
+              index: 0,
+              routes: [
+                {
+                  name: 'ProfileCompletion',
+                  params: {
+                    uid: outcome.uid,
+                    email: outcome.email,
+                    inputNonce: Date.now(),
+                  },
+                },
+              ],
+            });
+          }, 150);
+          return;
       }
-
-      Alert.alert(
-        t('authentication.login.social.facebook'),
-        t('authentication.social.facebook.errors.generic'),
-      );
     } finally {
       submittingRef.current = false;
       setSubmitting(false);

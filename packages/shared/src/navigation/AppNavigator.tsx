@@ -15,6 +15,7 @@ import {
   Theme as NavigationTheme,
 } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
@@ -40,9 +41,11 @@ import {
   createAuthenticatedProfileGate,
   isAuthenticatedProfileLoading,
   PROFILE_GATE_I18N_KEYS,
+  shouldRenderOnboardingStack,
   type AuthenticatedProfileFlow,
 } from './profileGate';
 import type { AuthenticatedOnboardingStackRoute } from '../phoneOtp/onboardingResolver';
+import { loadLastConfirmedVisibility } from '../visibility/lastConfirmedVisibility';
 
 export type { RootStackParamList } from './types';
 
@@ -197,6 +200,8 @@ export default function AppNavigator() {
       return;
     }
 
+    // Warm the per-account Visibility hint before Home can mount.
+    void loadLastConfirmedVisibility(uid, AsyncStorage);
     gate.start(uid, setProfileFlow);
     return () => {
       gate.stop();
@@ -222,10 +227,10 @@ export default function AppNavigator() {
   // Guest key must NOT flip when hasChosenTheme becomes true on Continue —
   // otherwise the stack remounts and races with navigation.replace('Welcome').
   // hasSeenWelcome is also excluded: marking Welcome seen mid-session must not remount.
-  // Incomplete onboarding keys include the authoritative route kind so a race
-  // that briefly resolved to OnboardingBirthDate before createUserProfile wrote
-  // birthDate remounts onto PhoneVerification once the profile snapshot updates.
-  // (initialRouteName only applies on mount / remount.)
+  // Incomplete onboarding keys include the authoritative route kind so the
+  // stack restarts on the resolver's step whenever the profile snapshot
+  // advances (DOB → OTP → CRJ), for every provider. See
+  // shouldRenderOnboardingStack: initialRouteName only applies to a fresh state.
   const flowKey = useMemo(() => {
     if (authLoading || profileLoading || hydrating || welcomeHydrating)
       return 'loading';
@@ -243,6 +248,13 @@ export default function AppNavigator() {
     profileFlow.kind,
     profileReadError,
   ]);
+
+  const [mountedOnboardingKey, setMountedOnboardingKey] = useState<
+    string | null
+  >(null);
+  useEffect(() => {
+    setMountedOnboardingKey(needsOnboarding ? flowKey : null);
+  }, [needsOnboarding, flowKey]);
 
   if (authLoading || profileLoading || hydrating || welcomeHydrating) {
     return <FullScreenLoader />;
@@ -315,6 +327,9 @@ export default function AppNavigator() {
   // Nearsy 2.0 onboarding: one stack; initial route from authoritative resolver.
   // Order: OnboardingBirthDate → PhoneVerification → ProfileCompletion (CRJ).
   if (needsOnboarding) {
+    if (!shouldRenderOnboardingStack({ flowKey, mountedOnboardingKey })) {
+      return <FullScreenLoader />;
+    }
     return (
       <Stack.Navigator
         id="RootAuthenticatedComplete"

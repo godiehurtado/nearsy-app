@@ -150,7 +150,7 @@ describe('Android post-MVP batch 1 source contracts', () => {
       /import\s*\{\s*clearPendingSocialProfilePrefill\s*\}\s*from\s*'\.\.\/authentication\/social'/,
     );
     assert.match(more, /runContractualAndroidLogout/);
-    assert.match(more, /deactivateVisibilityFlow/);
+    assert.doesNotMatch(more, /deactivateVisibilityFlow/);
     assert.match(more, /stopBackgroundLocation/);
     assert.match(more, /firebaseAuth\.signOut/);
     assert.doesNotMatch(

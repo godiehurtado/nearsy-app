@@ -23,7 +23,8 @@ export type NearbyDiscoveryLoadFailureKind =
   | 'permission-denied'
   | 'unavailable'
   | 'invalid-accuracy'
-  | 'callable';
+  | 'callable'
+  | 'session-closed';
 
 export type NearbyDiscoveryPublishOutcome =
   | { ok: true; response?: unknown }
@@ -33,7 +34,8 @@ export type NearbyDiscoveryPublishOutcome =
         | 'permission-denied'
         | 'unavailable'
         | 'invalid-accuracy'
-        | 'callable';
+        | 'callable'
+        | 'session-closed';
       error?: VisibilityDiscoveryClientError;
       canAskAgain?: boolean;
     };
@@ -69,6 +71,12 @@ export type LoadNearbyWithContractualRefreshInput = {
   publish?: (
     client: VisibilityDiscoveryClient,
   ) => Promise<NearbyDiscoveryPublishOutcome>;
+  /**
+   * Publication session check (location/publicationSession). When it reports
+   * false nothing is published or discovered, and a session that closes
+   * mid-load never surfaces results.
+   */
+  sessionIsCurrent?: () => boolean;
 };
 
 function mapPublishFailure(
@@ -89,6 +97,9 @@ function mapPublishFailure(
   if (outcome.kind === 'invalid-accuracy') {
     return { ok: false, kind: 'invalid-accuracy' };
   }
+  if (outcome.kind === 'session-closed') {
+    return { ok: false, kind: 'session-closed' };
+  }
   return {
     ok: false,
     kind: 'callable',
@@ -98,15 +109,17 @@ function mapPublishFailure(
   };
 }
 
-function defaultPublishLocationFlow(): NonNullable<
-  LoadNearbyWithContractualRefreshInput['publish']
-> {
+type GuardedPublish = (
+  client: VisibilityDiscoveryClient,
+  coords: undefined,
+  guard: { isCurrent: () => boolean },
+) => Promise<NearbyDiscoveryPublishOutcome>;
+
+function defaultPublishLocationFlow(): GuardedPublish {
   // Sync require matches initialCrjVisibilityActivation; do not use import().
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const orchestration = require('./orchestration') as {
-    publishLocationFlow: NonNullable<
-      LoadNearbyWithContractualRefreshInput['publish']
-    >;
+    publishLocationFlow: GuardedPublish;
   };
   return orchestration.publishLocationFlow;
 }
@@ -124,6 +137,10 @@ export async function loadNearbyWithContractualRefresh(
   if (!input.visibility) {
     return { ok: false, kind: 'inactive' };
   }
+  const sessionIsCurrent = input.sessionIsCurrent ?? (() => true);
+  if (!sessionIsCurrent()) {
+    return { ok: false, kind: 'session-closed' };
+  }
 
   const forcePublish = input.forcePublish !== false;
   const shouldPublish =
@@ -134,10 +151,16 @@ export async function loadNearbyWithContractualRefresh(
     );
 
   if (shouldPublish) {
-    const publish = input.publish ?? defaultPublishLocationFlow();
-    const publishOutcome = await publish(input.client);
+    const publishOutcome = input.publish
+      ? await input.publish(input.client)
+      : await defaultPublishLocationFlow()(input.client, undefined, {
+          isCurrent: sessionIsCurrent,
+        });
     if (publishOutcome.ok === false) {
       return mapPublishFailure(publishOutcome);
+    }
+    if (!sessionIsCurrent()) {
+      return { ok: false, kind: 'session-closed' };
     }
     noteContractualPublishSuccess(Date.now());
   }
@@ -148,6 +171,9 @@ export async function loadNearbyWithContractualRefresh(
         input.limit !== undefined ? { limit: input.limit } : undefined,
       ),
     );
+    if (!sessionIsCurrent()) {
+      return { ok: false, kind: 'session-closed' };
+    }
     return { ok: true, results: response.results };
   } catch (err) {
     return {

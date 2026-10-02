@@ -79,6 +79,20 @@ export type VisibilityHydrationInput = {
    * the first snapshot is still cached false. Never authorizes runtime.
    */
   crjActivationProvisional?: boolean;
+  /**
+   * Last server-confirmed Visibility for this uid (see lastConfirmedVisibility).
+   * Only fills the gap while the authoritative value is unknown — it never
+   * overrides a loaded value and never authorizes runtime.
+   */
+  lastConfirmedVisibility?: boolean;
+  /**
+   * Publication session confirmed (activate/publish succeeded) for this uid.
+   * false keeps an otherwise Active state provisional with runtime blocked;
+   * undefined = caller does not gate on the session.
+   */
+  runtimeConfirmed?: boolean;
+  /** Confirmation publish failed contractually → Inactive (no deactivate). */
+  runtimeConfirmationFailed?: boolean;
 };
 
 export type VisibilityHydrationResult = {
@@ -97,8 +111,59 @@ export type VisibilityHydrationResult = {
 export function isHomeSearchEnabled(input: {
   displayActive: boolean;
   permissionsValid: boolean | undefined;
+  /** When provided, search also waits for the session's runtime confirmation. */
+  runtimeEligible?: boolean;
 }): boolean {
-  return input.displayActive && input.permissionsValid === true;
+  return (
+    input.displayActive &&
+    input.permissionsValid === true &&
+    input.runtimeEligible !== false
+  );
+}
+
+const ACTIVE: VisibilityHydrationResult = {
+  phase: 'active',
+  displayActive: true,
+  runtimeEligible: true,
+  shouldDeactivate: false,
+  toggleDisabled: false,
+};
+
+function activeOnceRuntimeConfirmed(
+  input: VisibilityHydrationInput,
+): VisibilityHydrationResult {
+  if (input.runtimeConfirmed !== false) return { ...ACTIVE };
+  if (input.runtimeConfirmationFailed) {
+    return {
+      phase: 'inactive',
+      displayActive: false,
+      runtimeEligible: false,
+      shouldDeactivate: false,
+      toggleDisabled: false,
+    };
+  }
+  return {
+    phase: 'validating',
+    displayActive: true,
+    runtimeEligible: false,
+    shouldDeactivate: false,
+    toggleDisabled: true,
+  };
+}
+
+/**
+ * Persisted Active + validated permissions: the point where Home must confirm
+ * the session (activate/publish) before runtime may start.
+ */
+export function isReadyForRuntimeConfirmation(
+  input: VisibilityHydrationInput,
+): boolean {
+  return (
+    input.profileLoaded &&
+    input.persistedVisibility === true &&
+    input.permissionsValid === true &&
+    !input.permissionValidationPending
+  );
 }
 
 export function evaluateVisibilityHydration(
@@ -124,13 +189,7 @@ export function evaluateVisibilityHydration(
       input.permissionsValid === true &&
       !input.permissionValidationPending
     ) {
-      return {
-        phase: 'active',
-        displayActive: true,
-        runtimeEligible: true,
-        shouldDeactivate: false,
-        toggleDisabled: false,
-      };
+      return activeOnceRuntimeConfirmed(input);
     }
     return {
       phase: 'validating',
@@ -142,6 +201,15 @@ export function evaluateVisibilityHydration(
   }
 
   if (!input.profileLoaded || input.persistedVisibility === undefined) {
+    if (input.lastConfirmedVisibility === true) {
+      return {
+        phase: 'validating',
+        displayActive: true,
+        runtimeEligible: false,
+        shouldDeactivate: false,
+        toggleDisabled: true,
+      };
+    }
     return {
       phase: 'unknown',
       displayActive: false,
@@ -173,13 +241,7 @@ export function evaluateVisibilityHydration(
   }
 
   if (input.permissionsValid) {
-    return {
-      phase: 'active',
-      displayActive: true,
-      runtimeEligible: true,
-      shouldDeactivate: false,
-      toggleDisabled: false,
-    };
+    return activeOnceRuntimeConfirmed(input);
   }
 
   return {

@@ -729,7 +729,8 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.doesNotMatch(screenSrc, /resolveSharedInterestPills/);
     assert.doesNotMatch(screenSrc, /discoveryProfile\.sharedInterests/);
     assert.doesNotMatch(screenSrc, /DiscoveryCompatibilityCard/);
-    assert.match(screenSrc, /InterestChip/);
+    assert.doesNotMatch(screenSrc, /<InterestChip/);
+    assert.match(screenSrc, /discoveryProfile\.viewInterests/);
     const bio = screenSrc.indexOf('discoveryProfile.biography');
     const aff = screenSrc.indexOf('<DiscoveryAffiliationsCard');
     const interests = screenSrc.indexOf("t('discoveryProfile.interests')");

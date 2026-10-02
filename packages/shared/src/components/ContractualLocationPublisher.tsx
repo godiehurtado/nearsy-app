@@ -14,6 +14,10 @@ import {
   noteContractualPublishSuccess,
 } from '../visibility/contractualLocationRefresh';
 import { publishLocationFlow } from '../visibility/orchestration';
+import {
+  acquirePublicationTicket,
+  isPublicationTicketCurrent,
+} from '../location/publicationSession';
 
 type ProfileDoc = {
   visibility?: boolean;
@@ -22,6 +26,9 @@ type ProfileDoc = {
 async function tryContractualPublish(force: boolean): Promise<void> {
   const uid = firebaseAuth.currentUser?.uid;
   if (!uid) return;
+  // Runtime only after this session's confirmed activate/publish (Home).
+  const ticket = acquirePublicationTicket(uid, 'runtime');
+  if (!ticket) return;
 
   const perm = await Location.getForegroundPermissionsAsync();
   if (perm.status !== 'granted') return;
@@ -32,7 +39,10 @@ async function tryContractualPublish(force: boolean): Promise<void> {
 
   try {
     const client = await getVisibilityDiscoveryClient();
-    const outcome = await publishLocationFlow(client);
+    const outcome = await publishLocationFlow(client, undefined, {
+      isCurrent: () =>
+        isPublicationTicketCurrent(ticket, firebaseAuth.currentUser?.uid),
+    });
     if (outcome.ok) {
       noteContractualPublishSuccess(Date.now());
     }

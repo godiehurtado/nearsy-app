@@ -192,40 +192,50 @@ describe('backgroundEducationStorage', () => {
 });
 
 describe('contractualLogout + preference reconcile', () => {
-  it('logout order: stop → deactivate if active → signOut', async () => {
+  it('logout order: prefill → close gate → stop runtime → drain → signOut (no Visibility write)', async () => {
     const steps: string[] = [];
     await runContractualAndroidLogout({
       clearSocialPrefill: () => steps.push('prefill'),
+      closePublicationGate: () => steps.push('closeGate'),
       stopBackground: async () => {
         steps.push('stop');
       },
-      isVisibilityActive: () => true,
-      deactivateVisibility: async () => {
-        steps.push('deactivate');
+      drainInFlightPublications: async () => {
+        steps.push('drain');
       },
       signOut: async () => {
         steps.push('signOut');
       },
     });
-    assert.deepEqual(steps, ['prefill', 'stop', 'deactivate', 'signOut']);
+    assert.deepEqual(steps, ['prefill', 'closeGate', 'stop', 'drain', 'signOut']);
   });
 
-  it('logout skips deactivate when Visibility already OFF', async () => {
+  it('logout signs out even when stopping the runtime or draining fails', async () => {
     const steps: string[] = [];
     await runContractualAndroidLogout({
       clearSocialPrefill: () => steps.push('prefill'),
+      closePublicationGate: () => steps.push('closeGate'),
       stopBackground: async () => {
         steps.push('stop');
+        throw new Error('task not registered');
       },
-      isVisibilityActive: () => false,
-      deactivateVisibility: async () => {
-        steps.push('deactivate');
+      drainInFlightPublications: async () => {
+        steps.push('drain');
+        throw new Error('drain');
       },
       signOut: async () => {
         steps.push('signOut');
       },
     });
-    assert.deepEqual(steps, ['prefill', 'stop', 'signOut']);
+    assert.deepEqual(steps, ['prefill', 'closeGate', 'stop', 'drain', 'signOut']);
+  });
+
+  it('logout source never deactivates Visibility', () => {
+    const src = readFileSync(
+      fileURLToPath(new URL('../contractualLogout.ts', import.meta.url)),
+      'utf8',
+    );
+    assert.doesNotMatch(src, /deactivateVisibility|isVisibilityActive/);
   });
 
   it('reconciles bgVisible preference OFF when background permission revoked', () => {

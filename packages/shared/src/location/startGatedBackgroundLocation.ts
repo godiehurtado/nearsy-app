@@ -22,6 +22,10 @@ import {
   clearBackgroundRuntimeAuth,
   setBackgroundRuntimeAuth,
 } from './backgroundRuntimeAuth';
+import {
+  getPublicationSessionPhase,
+  isPublicationRuntimeOpen,
+} from './publicationSession';
 
 export {
   BackgroundLocationPermissionError,
@@ -99,6 +103,14 @@ export async function startGatedBackgroundLocation(
 ): Promise<GatedStartResult> {
   if (Platform.OS === 'web') {
     return { ok: false, reason: 'gate', gateReason: 'unsupported' };
+  }
+
+  // FGS only after this session's confirmed activate/publish for this uid.
+  if (
+    getPublicationSessionPhase() !== 'unbound' &&
+    !isPublicationRuntimeOpen(opts.uid)
+  ) {
+    return { ok: false, reason: 'gate', gateReason: 'session-unconfirmed' };
   }
 
   const snap = await getLocationPermissionSnapshot();
@@ -183,6 +195,14 @@ export async function startGatedBackgroundLocation(
       notificationTitle: opts.notificationTitle,
       notificationBody: opts.notificationBody,
     });
+    if (
+      getPublicationSessionPhase() !== 'unbound' &&
+      !isPublicationRuntimeOpen(opts.uid)
+    ) {
+      // Session closed (logout / uid change) while the service was starting.
+      await stopBackgroundLocation().catch(() => {});
+      return { ok: false, reason: 'gate', gateReason: 'session-unconfirmed' };
+    }
     await setBackgroundRuntimeAuth({
       uid: opts.uid,
       allowedAt: Date.now(),

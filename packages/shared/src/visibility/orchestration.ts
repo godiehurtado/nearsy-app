@@ -21,6 +21,10 @@ import {
 import { MAX_LOCATION_ACCURACY_METERS } from './constants';
 import { isAccuracyValid } from './freshness';
 import { writeVisibilityRecoveryIntent } from './visibilityRecoveryIntent';
+import {
+  sendGuardedPublication,
+  type PublicationSessionGuard,
+} from '../location/publicationSession';
 
 export type LocationSampleResult =
   | { ok: true; location: VisibilityLocationPayload }
@@ -165,9 +169,21 @@ export type PublishOutcome =
   | { ok: true; response: PublishLocationResponse }
   | {
       ok: false;
-      kind: 'permission-denied' | 'unavailable' | 'invalid-accuracy' | 'callable';
+      kind:
+        | 'permission-denied'
+        | 'unavailable'
+        | 'invalid-accuracy'
+        | 'callable'
+        | 'session-closed';
       error?: VisibilityDiscoveryClientError;
     };
+
+/**
+ * Publication session check (see location/publicationSession). Evaluated
+ * before sampling, right before the callable and after it returns; a stale
+ * session never sends the callable and never reports success.
+ */
+export type PublicationGuard = PublicationSessionGuard;
 
 export async function publishLocationFlow(
   client: VisibilityDiscoveryClient,
@@ -177,7 +193,11 @@ export async function publishLocationFlow(
     accuracyMeters: number;
     observedAt?: number;
   },
+  guard?: PublicationGuard,
 ): Promise<PublishOutcome> {
+  const sessionClosed = { ok: false as const, kind: 'session-closed' as const };
+  if (guard && !guard.isCurrent()) return sessionClosed;
+
   let location: VisibilityLocationPayload;
   if (coords) {
     if (!isAccuracyValid(coords.accuracyMeters)) {
@@ -197,18 +217,18 @@ export async function publishLocationFlow(
     location = sample.location;
   }
 
-  try {
-    const response = await client.publishLocation(
-      buildPublishLocationRequest(location),
-    );
-    return { ok: true, response };
-  } catch (err) {
+  const sent = await sendGuardedPublication(guard, () =>
+    client.publishLocation(buildPublishLocationRequest(location)),
+  );
+  if (sent.status === 'session-closed') return sessionClosed;
+  if (sent.status === 'error') {
     return {
       ok: false,
       kind: 'callable',
-      error: normalizeVisibilityCallableError(err),
+      error: normalizeVisibilityCallableError(sent.error),
     };
   }
+  return { ok: true, response: sent.value };
 }
 
 export type ReconcileVisibilityWithForegroundPermissionInput = {

@@ -1,10 +1,12 @@
 // Android account deletion backed by RNFirebase Auth/Firestore/Storage.
 import auth from '@react-native-firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   firebaseAuth,
   firestoreDb,
   storageWeb,
 } from '../config/firebaseConfig.android';
+import { forgetLastConfirmedVisibility } from '../visibility/lastConfirmedVisibility';
 
 async function deleteFirestoreSubcollection(uid: string, sub: string) {
   const colRef = (firestoreDb as any).collection('users').doc(uid).collection(sub);
@@ -70,6 +72,7 @@ export async function deleteAccountAndData(options?: {
     throw err;
   }
 
+  await forgetLastConfirmedVisibility(uid, AsyncStorage);
   await deleteFirestoreSubcollection(uid, 'contactHashes');
   await deleteStorageFolderRecursive(`users/${uid}`);
   await (firestoreDb as any).collection('users').doc(uid).delete();

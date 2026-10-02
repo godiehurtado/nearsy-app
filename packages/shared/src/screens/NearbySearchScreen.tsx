@@ -55,6 +55,10 @@ import {
 } from '../visibility/interestDisplay';
 import { loadNearbyWithContractualRefresh } from '../visibility/nearbyDiscoveryLoad';
 import {
+  acquirePublicationTicket,
+  isPublicationTicketCurrent,
+} from '../location/publicationSession';
+import {
   NEARBY_FOCUSED_REDISCOVER_INTERVAL_MS,
   shouldAttemptNearbyRediscover,
 } from '../visibility/contractualLocationRefresh';
@@ -193,6 +197,8 @@ export default function NearbySearchScreen() {
           return;
         }
 
+        // Nearby stays blocked until Home confirms this session's Visibility.
+        const ticket = acquirePublicationTicket(uid, 'runtime');
         const client = await getVisibilityDiscoveryClient();
         const outcome = await loadNearbyWithContractualRefresh({
           uid,
@@ -200,6 +206,8 @@ export default function NearbySearchScreen() {
           client,
           limit: 50,
           forcePublish,
+          sessionIsCurrent: () =>
+            isPublicationTicketCurrent(ticket, firebaseAuth.currentUser?.uid),
         });
 
         if (!stillCurrent()) return;
@@ -207,6 +215,11 @@ export default function NearbySearchScreen() {
         if (outcome.ok === false) {
           if (shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader })) {
             setItems([]);
+          }
+          if (outcome.kind === 'session-closed') {
+            setErrorKind('retry');
+            setErrorMessage(t('nearby.errorRetry'));
+            return;
           }
           if (outcome.kind === 'inactive') {
             setErrorKind('inactive');

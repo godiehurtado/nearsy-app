@@ -233,6 +233,20 @@ export function resolveAuthenticatedProfileFlow(
 }
 
 /**
+ * Onboarding stacks share route names, so swapping their React key directly
+ * makes React Navigation rehydrate the previous stack's state and ignore
+ * initialRouteName (DOB stays mounted after the gate advances to OTP).
+ * Render the stack only once the mounted key caught up; the intermediate
+ * loader commit unmounts the old navigator and releases its state.
+ */
+export function shouldRenderOnboardingStack(input: {
+  flowKey: string;
+  mountedOnboardingKey: string | null;
+}): boolean {
+  return input.mountedOnboardingKey === input.flowKey;
+}
+
+/**
  * Full-screen loader must not trap guests: profile gate only applies when
  * authenticated. Without this, `profileFlow.kind === 'loading'` with `!uid`
  * blocks Welcome / Login / Register indefinitely.

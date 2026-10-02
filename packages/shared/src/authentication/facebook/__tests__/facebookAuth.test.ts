@@ -24,6 +24,7 @@ import { runContractualAndroidLogout } from '../../../location/contractualLogout
 
 const CANCELLED_KEY = 'authentication.social.facebook.errors.cancelled';
 const GENERIC_KEY = 'authentication.social.facebook.errors.generic';
+const ACCOUNT_EXISTS_KEY = 'authentication.social.facebook.errors.accountExists';
 
 function session(
   overrides: Partial<FacebookFirebaseSession> = {},
@@ -197,7 +198,7 @@ describe('authenticateWithFacebook', () => {
     }
   });
 
-  it('account-exists-with-different-credential → ACCOUNT_CONFLICT, no linking, no prefill', async () => {
+  it('account-exists-with-different-credential → ACCOUNT_EXISTS, no linking, no prefill', async () => {
     const commits: string[] = [];
     let discarded = 0;
     const authenticate = createAuthenticateWithFacebook(
@@ -215,11 +216,39 @@ describe('authenticateWithFacebook', () => {
         },
       }),
     );
-    await assert.rejects(authenticate, isFbError('ACCOUNT_CONFLICT', GENERIC_KEY));
+    await assert.rejects(authenticate, (err: unknown) => {
+      assert.ok(isFbError('ACCOUNT_EXISTS', ACCOUNT_EXISTS_KEY)(err));
+      assert.equal(
+        (err as FacebookAuthenticationError).diagnosticCode,
+        'auth/account-exists-with-different-credential',
+      );
+      return true;
+    });
     assert.deepEqual(commits, []);
     assert.equal(discarded, 1);
     // The deps contract has no linking capability at all.
     assert.equal('linkWithCredential' in deps(), false);
+  });
+
+  it('other credential conflicts keep ACCOUNT_CONFLICT with the generic copy', async () => {
+    for (const firebaseCode of [
+      'auth/credential-already-in-use',
+      'auth/email-already-in-use',
+    ]) {
+      let discarded = 0;
+      const authenticate = createAuthenticateWithFacebook(
+        deps({
+          signInWithAccessToken: async () => {
+            throw Object.assign(new Error('conflict'), { code: firebaseCode });
+          },
+          discardProviderSession: () => {
+            discarded += 1;
+          },
+        }),
+      );
+      await assert.rejects(authenticate, isFbError('ACCOUNT_CONFLICT', GENERIC_KEY));
+      assert.equal(discarded, 1, firebaseCode);
+    }
   });
 
   it('blocks a double tap while the first attempt is in flight', async () => {
@@ -443,10 +472,20 @@ describe('Facebook reauthentication (Delete Account)', () => {
       },
       deleteAccount: del,
     });
+    const exists = await runFacebookDeleteAccount({
+      reauthenticate: async () => {
+        throw new FacebookAuthenticationError('ACCOUNT_EXISTS', 'x');
+      },
+      deleteAccount: del,
+    });
     assert.equal(deleted, 0);
     assert.equal(mismatch.status, 'reauth_mismatch');
     assert.equal(failed.status, 'reauth_failed');
     assert.equal(busy.status, 'in_progress');
+    assert.deepEqual(exists, {
+      status: 'reauth_failed',
+      messageKey: 'settings.deleteAccount.reauthFailed',
+    });
   });
 
   it('reauth method: password wins; facebook-only uses Facebook; others unchanged', () => {
@@ -473,12 +512,14 @@ describe('Contractual logout with Facebook session', () => {
       clearSocialPrefill: () => {
         calls.push('clearPrefill');
       },
+      closePublicationGate: () => {
+        calls.push('closeGate');
+      },
       stopBackground: async () => {
         calls.push('stopBackground');
       },
-      isVisibilityActive: () => false,
-      deactivateVisibility: async () => {
-        calls.push('deactivate');
+      drainInFlightPublications: async () => {
+        calls.push('drain');
       },
       signOutProviderSessions: providerLogout,
       signOut: async () => {
@@ -496,7 +537,9 @@ describe('Contractual logout with Facebook session', () => {
     );
     assert.deepEqual(calls, [
       'clearPrefill',
+      'closeGate',
       'stopBackground',
+      'drain',
       'facebookLogOut',
       'firebaseSignOut',
     ]);
@@ -516,6 +559,12 @@ describe('Contractual logout with Facebook session', () => {
   it('non-Facebook callers (no provider step) keep the previous sequence', async () => {
     const calls: string[] = [];
     await runContractualAndroidLogout(logoutDeps(calls));
-    assert.deepEqual(calls, ['clearPrefill', 'stopBackground', 'firebaseSignOut']);
+    assert.deepEqual(calls, [
+      'clearPrefill',
+      'closeGate',
+      'stopBackground',
+      'drain',
+      'firebaseSignOut',
+    ]);
   });
 });
