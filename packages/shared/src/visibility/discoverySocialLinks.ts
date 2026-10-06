@@ -3,35 +3,20 @@
  * No usernames, tokens, or private bags — platform + https url only.
  */
 
-import { createContractResponseError } from './callables/errors';
+import {
+  isSocialLinkPlatform,
+  normalizeSocialLinkUrl,
+  SOCIAL_LINK_PLATFORMS,
+  type PublicSocialLink,
+  type SocialLinkPlatform,
+} from '../social/socialLinkUrl.ts';
 
-export type DiscoverySocialPlatform =
-  | 'linkedin'
-  | 'instagram'
-  | 'facebook'
-  | 'youtube'
-  | 'x'
-  | 'tiktok'
-  | 'snapchat'
-  | 'website';
+export type DiscoverySocialPlatform = SocialLinkPlatform;
 
-export type DiscoveryPublicSocialLink = {
-  platform: DiscoverySocialPlatform;
-  url: string;
-};
+export type DiscoveryPublicSocialLink = PublicSocialLink;
 
-export const DISCOVERY_SOCIAL_PLATFORMS: readonly DiscoverySocialPlatform[] = [
-  'linkedin',
-  'instagram',
-  'facebook',
-  'youtube',
-  'x',
-  'tiktok',
-  'snapchat',
-  'website',
-] as const;
-
-const PLATFORM_SET = new Set<string>(DISCOVERY_SOCIAL_PLATFORMS);
+export const DISCOVERY_SOCIAL_PLATFORMS: readonly DiscoverySocialPlatform[] =
+  SOCIAL_LINK_PLATFORMS;
 
 /** Visual tokens aligned with CRJ / approved design (website added for Detail). */
 export type DiscoverySocialPlatformVisual = {
@@ -91,7 +76,7 @@ const SOCIAL_LINK_ALLOWED_KEYS = new Set(['platform', 'url']);
 export function isDiscoverySocialPlatform(
   value: unknown,
 ): value is DiscoverySocialPlatform {
-  return typeof value === 'string' && PLATFORM_SET.has(value);
+  return isSocialLinkPlatform(value);
 }
 
 /**
@@ -112,78 +97,40 @@ export function isAllowedDiscoverySocialHttpsUrl(url: string): boolean {
   return true;
 }
 
-function requireHttpsSocialUrl(value: unknown, path: string): string {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw createContractResponseError(`${path} must be a non-empty string`, value);
-  }
-  const trimmed = value.trim();
-  if (!isAllowedDiscoverySocialHttpsUrl(trimmed)) {
-    throw createContractResponseError(
-      `${path} must be a valid https URL without credentials`,
-      value,
-    );
-  }
-  return trimmed;
-}
-
-function parseSocialLinkItem(
-  value: unknown,
-  path: string,
-): DiscoveryPublicSocialLink {
+function parseSocialLinkItem(value: unknown): DiscoveryPublicSocialLink | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw createContractResponseError(`${path} must be an object`, value);
+    return null;
   }
   const row = value as Record<string, unknown>;
-  for (const key of Object.keys(row)) {
-    if (!SOCIAL_LINK_ALLOWED_KEYS.has(key)) {
-      throw createContractResponseError(
-        `Forbidden socialLinks field "${key}" at ${path}`,
-        value,
-      );
-    }
+  if (Object.keys(row).some((key) => !SOCIAL_LINK_ALLOWED_KEYS.has(key))) {
+    return null;
   }
-  if (!isDiscoverySocialPlatform(row.platform)) {
-    throw createContractResponseError(
-      `${path}.platform must be a known Discovery social platform`,
-      row.platform,
-    );
+  if (!isDiscoverySocialPlatform(row.platform)) return null;
+  if (typeof row.url !== 'string' || !/^https:\/\//i.test(row.url.trim())) {
+    return null;
   }
-  return {
-    platform: row.platform,
-    url: requireHttpsSocialUrl(row.url, `${path}.url`),
-  };
+  const url = normalizeSocialLinkUrl(row.platform, row.url);
+  return url ? { platform: row.platform, url } : null;
 }
 
 /**
  * Wire parser for getDiscoveryProfile.socialLinks.
  *
- * Temporal compat: field absent → []. Present but invalid → invalid-response.
- * Preserves backend order. One entry per platform (duplicates → invalid-response).
+ * Fail-open per entry: absent / non-array → []; malformed, unknown platform, forbidden
+ * fields, non-https, disallowed host or duplicate platform → that entry is dropped.
+ * Never throws, so a bad link cannot fail the whole profile. Preserves backend order.
  */
 export function parseDiscoverySocialLinks(
   raw: unknown,
 ): DiscoveryPublicSocialLink[] {
-  if (raw === undefined) {
-    return [];
-  }
-  if (!Array.isArray(raw)) {
-    throw createContractResponseError(
-      'socialLinks must be an array when present',
-      raw,
-    );
-  }
+  if (!Array.isArray(raw)) return [];
 
   const out: DiscoveryPublicSocialLink[] = [];
   const seenPlatforms = new Set<DiscoverySocialPlatform>();
 
-  for (let i = 0; i < raw.length; i += 1) {
-    const item = parseSocialLinkItem(raw[i], `socialLinks[${i}]`);
-    if (seenPlatforms.has(item.platform)) {
-      throw createContractResponseError(
-        `duplicate socialLinks platform "${item.platform}"`,
-        item.platform,
-      );
-    }
+  for (const entry of raw) {
+    const item = parseSocialLinkItem(entry);
+    if (!item || seenPlatforms.has(item.platform)) continue;
     seenPlatforms.add(item.platform);
     out.push(item);
   }
@@ -191,47 +138,11 @@ export function parseDiscoverySocialLinks(
   return out;
 }
 
-/** @deprecated Prefer parseDiscoverySocialLinks for wire; kept as soft UI omit helper. */
+/** @deprecated Alias of parseDiscoverySocialLinks (already fail-open per entry). */
 export function normalizeDiscoveryPublicSocialLinks(
   raw: unknown,
 ): DiscoveryPublicSocialLink[] {
-  if (raw === undefined || raw === null) return [];
-  try {
-    return parseDiscoverySocialLinks(raw);
-  } catch {
-    return [];
-  }
-}
-
-export type DiscoveryLinkOpener = {
-  canOpenURL: (url: string) => Promise<boolean>;
-  openURL: (url: string) => Promise<void>;
-};
-
-export type OpenDiscoverySocialLinkResult =
-  | 'opened'
-  | 'rejected'
-  | 'failed';
-
-/**
- * Re-check HTTPS then open externally. Never logs the URL.
- * Pass React Native `Linking` (or a test double) as `opener`.
- */
-export async function openDiscoverySocialHttpsUrl(
-  url: string,
-  opener: DiscoveryLinkOpener,
-): Promise<OpenDiscoverySocialLinkResult> {
-  if (!isAllowedDiscoverySocialHttpsUrl(url)) {
-    return 'rejected';
-  }
-  try {
-    const can = await opener.canOpenURL(url);
-    if (!can) return 'failed';
-    await opener.openURL(url);
-    return 'opened';
-  } catch {
-    return 'failed';
-  }
+  return parseDiscoverySocialLinks(raw);
 }
 
 export function discoverySocialPlatformI18nKey(
