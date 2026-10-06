@@ -63,6 +63,7 @@ export default {
   galleryCounter: '{{current}}/{{total}}',
   imageUnavailable: 'Photo unavailable',
   openLinkError: 'Could not open this link.',
+  invalidLinkError: "This link isn't valid or supported.",
   platformLinkedin: 'LinkedIn',
   platformInstagram: 'Instagram',
   platformFacebook: 'Facebook',

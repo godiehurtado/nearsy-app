@@ -3,7 +3,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -28,7 +28,7 @@ import { resolveInterestChips } from '../interestDisplay';
 import {
   DISCOVERY_SOCIAL_PLATFORMS,
   isAllowedDiscoverySocialHttpsUrl,
-  openDiscoverySocialHttpsUrl,
+  openDiscoverySocialLink,
   parseDiscoverySocialLinks,
 } from '../discoverySocialLinks';
 import {
@@ -451,38 +451,46 @@ describe('profile exploration socialLinks wire parser (V1.3)', () => {
   });
 
   it('accepts all eight approved platforms in backend order', () => {
-    const raw = DISCOVERY_SOCIAL_PLATFORMS.map((platform, i) => ({
+    const hosts: Record<string, string> = {
+      linkedin: 'https://www.linkedin.com/in/sample',
+      instagram: 'https://www.instagram.com/sample',
+      facebook: 'https://www.facebook.com/sample',
+      youtube: 'https://www.youtube.com/@sample',
+      x: 'https://x.com/sample',
+      tiktok: 'https://www.tiktok.com/@sample',
+      snapchat: 'https://www.snapchat.com/add/sample',
+      website: 'https://example.com/sample',
+    };
+    const raw = DISCOVERY_SOCIAL_PLATFORMS.map((platform) => ({
       platform,
-      url: `https://example.com/${platform}-${i}`,
+      url: hosts[platform],
     }));
     const links = parseDiscoverySocialLinks(raw);
     assert.deepEqual(
       links.map((l) => l.platform),
       [...DISCOVERY_SOCIAL_PLATFORMS],
     );
-  });
-
-  it('unknown platform → invalid-response', () => {
-    assert.throws(
-      () =>
-        parseDiscoverySocialLinks([
-          { platform: 'myspace', url: 'https://example.com/x' },
-        ]),
-      (err: unknown) =>
-        err instanceof VisibilityDiscoveryClientError &&
-        err.reason.kind === 'known' &&
-        err.reason.value === 'invalid-response',
+    assert.deepEqual(
+      links.map((l) => l.url),
+      DISCOVERY_SOCIAL_PLATFORMS.map((p) => hosts[p]),
     );
   });
 
-  it('HTTP URL → invalid-response', () => {
-    assert.throws(
-      () =>
-        parseDiscoverySocialLinks([
-          { platform: 'website', url: 'http://example.com' },
-        ]),
-      VisibilityDiscoveryClientError,
-    );
+  it('unknown platform is hidden without failing the list', () => {
+    const links = parseDiscoverySocialLinks([
+      { platform: 'myspace', url: 'https://example.com/x' },
+      { platform: 'instagram', url: 'https://www.instagram.com/ok' },
+    ]);
+    assert.deepEqual(links, [
+      { platform: 'instagram', url: 'https://www.instagram.com/ok' },
+    ]);
+  });
+
+  it('HTTP website is upgraded to HTTPS', () => {
+    const links = parseDiscoverySocialLinks([
+      { platform: 'website', url: 'http://example.com' },
+    ]);
+    assert.deepEqual(links, [{ platform: 'website', url: 'https://example.com/' }]);
   });
 
   it('valid HTTPS URL accepted', () => {
@@ -496,37 +504,57 @@ describe('profile exploration socialLinks wire parser (V1.3)', () => {
     assert.equal(links[0].url, 'https://example.com/path');
   });
 
-  it('duplicate platform → invalid-response', () => {
-    assert.throws(
-      () =>
-        parseDiscoverySocialLinks([
-          { platform: 'x', url: 'https://x.com/a' },
-          { platform: 'x', url: 'https://x.com/b' },
-        ]),
-      VisibilityDiscoveryClientError,
-    );
+  it('duplicate platform keeps the first entry', () => {
+    const links = parseDiscoverySocialLinks([
+      { platform: 'x', url: 'https://x.com/a' },
+      { platform: 'x', url: 'https://x.com/b' },
+    ]);
+    assert.deepEqual(links, [{ platform: 'x', url: 'https://x.com/a' }]);
   });
 
-  it('rejects sensitive extra fields and non-array present values', () => {
-    assert.throws(
-      () =>
-        parseDiscoverySocialLinks([
-          {
-            platform: 'linkedin',
-            url: 'https://linkedin.com/in/a',
-            username: 'secret',
-          },
-        ]),
-      VisibilityDiscoveryClientError,
+  it('hides rows with sensitive extra fields; non-array values → []', () => {
+    assert.deepEqual(
+      parseDiscoverySocialLinks([
+        {
+          platform: 'linkedin',
+          url: 'https://linkedin.com/in/a',
+          username: 'secret',
+        },
+      ]),
+      [],
     );
-    assert.throws(
-      () => parseDiscoverySocialLinks(null),
-      VisibilityDiscoveryClientError,
+    assert.deepEqual(parseDiscoverySocialLinks(null), []);
+    assert.deepEqual(parseDiscoverySocialLinks({}), []);
+    assert.deepEqual(parseDiscoverySocialLinks('https://x.com/a'), []);
+  });
+
+  it('invalid rows are hidden individually and never fail the profile', () => {
+    const detail = parseGetDiscoveryProfileResponse(
+      detailPayload({
+        socialLinks: [
+          { platform: 'instagram', url: 'https://instagram.com.evil.example/a' },
+          { platform: 'facebook', url: 'javascript:alert(1)' },
+          { platform: 'website', url: ['https://example.com'] },
+          null,
+          'https://x.com/a',
+          { platform: 'linkedin', url: 'https://www.linkedin.com/company/acme' },
+          { platform: 'instagram', url: '@nearsy' },
+        ],
+      }),
     );
-    assert.throws(
-      () => parseDiscoverySocialLinks({}),
-      VisibilityDiscoveryClientError,
+    assert.equal(detail.profile.displayName, SAMPLE_DETAIL.displayName);
+    assert.deepEqual(detail.socialLinks, [
+      { platform: 'linkedin', url: 'https://www.linkedin.com/company/acme' },
+      { platform: 'instagram', url: 'https://www.instagram.com/nearsy' },
+    ]);
+  });
+
+  it('non-array socialLinks does not fail getDiscoveryProfile', () => {
+    const detail = parseGetDiscoveryProfileResponse(
+      detailPayload({ socialLinks: { instagram: 'https://instagram.com/a' } }),
     );
+    assert.deepEqual(detail.socialLinks, []);
+    assert.equal(detail.gallery.length, 1);
   });
 
   it('rejects javascript/data/file/tel schemes', () => {
@@ -561,44 +589,82 @@ describe('profile exploration socialLinks wire parser (V1.3)', () => {
   });
 });
 
-describe('profile exploration social link open gate', () => {
-  it('press opens only HTTPS URLs', async () => {
+describe('profile exploration social link open', () => {
+  function recordingOpener(fail = false) {
     const opened: string[] = [];
-    const result = await openDiscoverySocialHttpsUrl(
-      'https://instagram.com/ok',
-      {
-        canOpenURL: async () => true,
-        openURL: async (url) => {
+    let canOpenCalls = 0;
+    return {
+      opened,
+      canOpenCalls: () => canOpenCalls,
+      opener: {
+        canOpenURL: async () => {
+          canOpenCalls += 1;
+          return false;
+        },
+        openURL: async (url: string) => {
+          if (fail) throw new Error('boom');
           opened.push(url);
         },
       },
+    };
+  }
+
+  it('opens the canonical HTTPS URL directly, without a canOpenURL barrier', async () => {
+    const rec = recordingOpener();
+    const result = await openDiscoverySocialLink(
+      { platform: 'instagram', url: 'https://instagram.com/ok' },
+      rec.opener,
     );
     assert.equal(result, 'opened');
-    assert.deepEqual(opened, ['https://instagram.com/ok']);
-
-    const rejected = await openDiscoverySocialHttpsUrl('http://evil.example', {
-      canOpenURL: async () => true,
-      openURL: async () => {
-        throw new Error('should not open');
-      },
-    });
-    assert.equal(rejected, 'rejected');
+    assert.deepEqual(rec.opened, ['https://instagram.com/ok']);
+    assert.equal(rec.canOpenCalls(), 0);
   });
 
-  it('failed open surfaces failed result for localized alert', async () => {
-    const failed = await openDiscoverySocialHttpsUrl('https://example.com', {
-      canOpenURL: async () => false,
-      openURL: async () => {},
-    });
-    assert.equal(failed, 'failed');
+  it('opens Instagram given as a handle via its canonical URL', async () => {
+    const rec = recordingOpener();
+    const result = await openDiscoverySocialLink(
+      { platform: 'instagram', url: '@nearsy' },
+      rec.opener,
+    );
+    assert.equal(result, 'opened');
+    assert.deepEqual(rec.opened, ['https://www.instagram.com/nearsy']);
+  });
 
-    const threw = await openDiscoverySocialHttpsUrl('https://example.com', {
-      canOpenURL: async () => true,
-      openURL: async () => {
-        throw new Error('boom');
-      },
-    });
-    assert.equal(threw, 'failed');
+  it('never uses proprietary schemes', async () => {
+    const rec = recordingOpener();
+    for (const platform of DISCOVERY_SOCIAL_PLATFORMS) {
+      await openDiscoverySocialLink({ platform, url: 'sample' }, rec.opener);
+    }
+    assert.ok(rec.opened.length > 0);
+    for (const url of rec.opened) assert.ok(url.startsWith('https://'));
+    const scheme = await openDiscoverySocialLink(
+      { platform: 'instagram', url: 'instagram://user?username=a' },
+      rec.opener,
+    );
+    assert.equal(scheme, 'invalid');
+  });
+
+  it('invalid or off-platform links are not opened', async () => {
+    const rec = recordingOpener();
+    for (const link of [
+      { platform: 'instagram', url: 'https://evil.example/instagram' },
+      { platform: 'website', url: 'javascript:alert(1)' },
+      { platform: 'myspace', url: 'https://example.com' },
+      { platform: 'website', url: ['https://example.com'] },
+      { platform: 'website', url: '' },
+    ]) {
+      assert.equal(await openDiscoverySocialLink(link, rec.opener), 'invalid');
+    }
+    assert.deepEqual(rec.opened, []);
+  });
+
+  it('openURL rejection surfaces failed for the localized alert', async () => {
+    const rec = recordingOpener(true);
+    const result = await openDiscoverySocialLink(
+      { platform: 'website', url: 'https://example.com' },
+      rec.opener,
+    );
+    assert.equal(result, 'failed');
   });
 });
 
@@ -636,6 +702,16 @@ describe('profile exploration i18n EN/ES', () => {
     assert.ok(es.discoveryProfile.sharedInterests);
     assert.ok(enDiscovery.openLinkError);
     assert.ok(es.discoveryProfile.openLinkError);
+    assert.equal(enDiscovery.invalidLinkError, "This link isn't valid or supported.");
+    assert.equal(
+      es.discoveryProfile.invalidLinkError,
+      'Este enlace no es válido o no es compatible.',
+    );
+    assert.notEqual(enDiscovery.invalidLinkError, enDiscovery.openLinkError);
+    assert.notEqual(
+      es.discoveryProfile.invalidLinkError,
+      es.discoveryProfile.openLinkError,
+    );
     assert.ok(enDiscovery.platformLinkedin);
     assert.ok(es.discoveryProfile.platformWebsite);
     assert.ok(enDiscovery.a11ySocialMedia);
@@ -811,10 +887,46 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.match(gallerySrc, /pagingEnabled/);
   });
 
-  it('opens links via HTTPS gate and shows localized open error', () => {
-    assert.match(socialSrc, /openDiscoverySocialHttpsUrl/);
+  it('opens links via the shared normalizer and shows localized errors', () => {
+    assert.match(socialSrc, /openDiscoverySocialLink\(link, Linking\)/);
+    assert.match(socialSrc, /parseDiscoverySocialLinks\(links\)/);
     assert.match(socialSrc, /discoveryProfile\.openLinkError/);
-    assert.doesNotMatch(socialSrc, /WebView/);
+    assert.match(socialSrc, /discoveryProfile\.invalidLinkError/);
+    assert.doesNotMatch(socialSrc, /canOpenURL/);
+    assert.doesNotMatch(
+      socialSrc,
+      /WebView|WebBrowser|openBrowserAsync|SafariView/,
+    );
+  });
+
+  it('legacy ProfileDetail reuses the Discovery screen (same link path)', () => {
+    const legacySrc = readFileSync(
+      join(__dirname, '../../screens/ProfileDetailScreen.tsx'),
+      'utf8',
+    );
+    assert.match(legacySrc, /export \{ default \} from '\.\/DiscoveryProfileScreen'/);
+  });
+
+  it('no other screen opens profile social links on its own', () => {
+    const root = join(__dirname, '../..');
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === '__tests__' || entry.name === 'node_modules') continue;
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+        } else if (/\.tsx?$/.test(entry.name)) {
+          const src = readFileSync(full, 'utf8');
+          if (/canOpenURL\s*\(/.test(src)) offenders.push(full);
+          if (/socialLinks/i.test(src) && /Linking\.openURL/.test(src)) {
+            offenders.push(full);
+          }
+        }
+      }
+    };
+    walk(root);
+    assert.deepEqual(offenders, []);
   });
 
   it('does not peer getDoc candidate users path', () => {
