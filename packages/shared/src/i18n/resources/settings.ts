@@ -154,6 +154,53 @@ export default {
       'They may appear in Nearby again if they meet your discovery settings.',
     unblockError: 'Could not unblock this person. Please try again.',
   },
+  signInMethods: {
+    title: 'Sign-in methods',
+    openHint: 'View and connect the ways you sign in to Nearsy',
+    back: 'Back',
+    description: 'These are the methods linked to your Nearsy account.',
+    linkedLabel: 'Connected',
+    notLinkedLabel: 'Not connected',
+    connectFacebook: 'Connect Facebook',
+    connecting: 'Connecting…',
+    limitationNote: 'Some methods, such as LinkedIn, may not appear in this list.',
+    providers: {
+      password: 'Email and password',
+      google: 'Google',
+      apple: 'Apple',
+      facebook: 'Facebook',
+    },
+    confirm: {
+      title: 'Connect Facebook?',
+      message:
+        'You will sign in with Facebook to link it to this Nearsy account. Afterwards you can use Facebook to sign in to this same account.',
+      cancel: 'Cancel',
+      continue: 'Continue',
+    },
+    success: {
+      title: 'Facebook connected',
+      message: 'You can now sign in to this Nearsy account with Facebook.',
+    },
+    alreadyLinked: {
+      title: 'Facebook already connected',
+      message: 'Facebook is already connected to this Nearsy account.',
+    },
+    errors: {
+      title: "Couldn't connect Facebook",
+      recentLoginTitle: 'Sign in again',
+      notAuthenticated: 'Your session has ended. Sign in again and try once more.',
+      unavailable: 'Facebook is not available right now. Please try again later.',
+      verificationFailed: "We couldn't verify your Facebook account. Please try again.",
+      credentialInUse:
+        'This Facebook account is already associated with another Nearsy account. Nothing was changed.',
+      recentLogin:
+        'For your security, sign out, sign back in to Nearsy and then try connecting Facebook again.',
+      network: 'Check your connection and try again.',
+      identityChanged:
+        'Your session changed during the process. Sign in again and review your sign-in methods.',
+      unknown: "We couldn't connect Facebook. Please try again.",
+    },
+  },
   editor: {
     save: 'Save',
     cancel: 'Cancel',

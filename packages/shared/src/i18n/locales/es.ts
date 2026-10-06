@@ -1504,6 +1504,57 @@ const es: TranslationResources = {
       unblockError:
         'No se pudo desbloquear a esta persona. Inténtalo de nuevo.',
     },
+    signInMethods: {
+      title: 'Métodos de inicio de sesión',
+      openHint: 'Ver y conectar las formas de entrar a Nearsy',
+      back: 'Atrás',
+      description: 'Estos son los métodos vinculados a tu cuenta de Nearsy.',
+      linkedLabel: 'Conectado',
+      notLinkedLabel: 'No conectado',
+      connectFacebook: 'Conectar Facebook',
+      connecting: 'Conectando…',
+      limitationNote:
+        'Algunos métodos, como LinkedIn, pueden no aparecer en esta lista.',
+      providers: {
+        password: 'Correo y contraseña',
+        google: 'Google',
+        apple: 'Apple',
+        facebook: 'Facebook',
+      },
+      confirm: {
+        title: '¿Conectar Facebook?',
+        message:
+          'Iniciarás sesión con Facebook para vincularlo a esta cuenta de Nearsy. Después podrás usar Facebook para entrar a esta misma cuenta.',
+        cancel: 'Cancelar',
+        continue: 'Continuar',
+      },
+      success: {
+        title: 'Facebook conectado',
+        message: 'Ya puedes iniciar sesión en esta cuenta de Nearsy con Facebook.',
+      },
+      alreadyLinked: {
+        title: 'Facebook ya está conectado',
+        message: 'Facebook ya está conectado a esta cuenta de Nearsy.',
+      },
+      errors: {
+        title: 'No se pudo conectar Facebook',
+        recentLoginTitle: 'Vuelve a iniciar sesión',
+        notAuthenticated:
+          'Tu sesión terminó. Vuelve a iniciar sesión e inténtalo de nuevo.',
+        unavailable:
+          'Facebook no está disponible en este momento. Inténtalo más tarde.',
+        verificationFailed:
+          'No pudimos verificar tu cuenta de Facebook. Inténtalo de nuevo.',
+        credentialInUse:
+          'Esta cuenta de Facebook ya está asociada a otra cuenta de Nearsy. No se realizó ningún cambio.',
+        recentLogin:
+          'Por tu seguridad, cierra sesión, vuelve a entrar en Nearsy e intenta conectar Facebook de nuevo.',
+        network: 'Revisa tu conexión e inténtalo de nuevo.',
+        identityChanged:
+          'Tu sesión cambió durante el proceso. Vuelve a iniciar sesión y revisa tus métodos de inicio de sesión.',
+        unknown: 'No pudimos conectar Facebook. Inténtalo de nuevo.',
+      },
+    },
     editor: {
       save: 'Guardar',
       cancel: 'Cancelar',
