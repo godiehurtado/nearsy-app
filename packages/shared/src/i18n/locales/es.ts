@@ -427,6 +427,43 @@ export const es: TranslationResources = {
       unblockError:
         'No se pudo desbloquear a esta persona. Inténtalo de nuevo.',
     },
+    signInMethods: {
+      title: 'Métodos de inicio de sesión',
+      openHint: 'Ver cómo inicias sesión en Nearsy',
+      back: 'Atrás',
+      description: 'Formas en que puedes iniciar sesión en esta cuenta de Nearsy.',
+      methods: {
+        email: 'Correo electrónico',
+        google: 'Google',
+        facebook: 'Facebook',
+        linkedin: 'LinkedIn',
+      },
+      connected: 'Conectado',
+      notConnected: 'No conectado',
+      connectFacebook: 'Conectar Facebook',
+      connectFacebookHint:
+        'Agrega Facebook como otra forma de iniciar sesión en esta misma cuenta de Nearsy.',
+      confirmTitle: '¿Conectar Facebook?',
+      confirmBody:
+        'Iniciarás sesión en Facebook para agregarlo como otra forma de acceder a esta misma cuenta de Nearsy. Tu perfil y tus datos no cambian.',
+      confirmContinue: 'Continuar',
+      confirmCancel: 'Cancelar',
+      linkedTitle: 'Facebook conectado',
+      linkedBody: 'Ahora puedes iniciar sesión en esta cuenta de Nearsy con Facebook.',
+      errors: {
+        title: 'No se pudo conectar Facebook',
+        credentialInUse:
+          'Esta cuenta de Facebook ya está conectada a otra cuenta de Nearsy. No se hicieron cambios.',
+        emailInUse:
+          'No pudimos conectar esta cuenta de Facebook. Tu cuenta de Nearsy no tuvo cambios.',
+        requiresRecentLogin:
+          'Por seguridad, cierra sesión, vuelve a entrar con tu método actual e inténtalo de nuevo.',
+        sessionChanged:
+          'Tu sesión cambió. Vuelve a iniciar sesión e inténtalo de nuevo.',
+        network: 'Error de red. Revisa tu conexión e inténtalo de nuevo.',
+        generic: 'Algo salió mal al conectar Facebook. Inténtalo de nuevo.',
+      },
+    },
     editor: {
       save: 'Guardar',
       cancel: 'Cancelar',

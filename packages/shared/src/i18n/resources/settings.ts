@@ -182,6 +182,42 @@ export default {
       'They may appear in Nearby again if they meet your discovery settings.',
     unblockError: 'Could not unblock this person. Please try again.',
   },
+  signInMethods: {
+    title: 'Sign-in methods',
+    openHint: 'View how you sign in to Nearsy',
+    back: 'Back',
+    description: 'Ways you can sign in to this Nearsy account.',
+    methods: {
+      email: 'Email',
+      google: 'Google',
+      facebook: 'Facebook',
+      linkedin: 'LinkedIn',
+    },
+    connected: 'Connected',
+    notConnected: 'Not connected',
+    connectFacebook: 'Connect Facebook',
+    connectFacebookHint:
+      'Add Facebook as another way to sign in to this same Nearsy account.',
+    confirmTitle: 'Connect Facebook?',
+    confirmBody:
+      'You will sign in to Facebook to add it as another way to access this same Nearsy account. Your profile and data stay the same.',
+    confirmContinue: 'Continue',
+    confirmCancel: 'Cancel',
+    linkedTitle: 'Facebook connected',
+    linkedBody: 'You can now sign in to this Nearsy account with Facebook.',
+    errors: {
+      title: 'Could not connect Facebook',
+      credentialInUse:
+        'This Facebook account is already connected to another Nearsy account. No changes were made.',
+      emailInUse:
+        'We couldn’t connect this Facebook account. No changes were made to your Nearsy account.',
+      requiresRecentLogin:
+        'For security, log out, sign back in with your current method and try again.',
+      sessionChanged: 'Your session changed. Please sign in again and retry.',
+      network: 'Network error. Check your connection and try again.',
+      generic: 'Something went wrong while connecting Facebook. Please try again.',
+    },
+  },
   editor: {
     save: 'Save',
     cancel: 'Cancel',
