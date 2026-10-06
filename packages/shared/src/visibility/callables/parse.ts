@@ -467,7 +467,7 @@ export function parseGetDiscoveryProfileResponse(
     ),
     profile: parseDiscoveryProfileDetail(data.profile),
     gallery: parseGallery(data.gallery),
-    // Temporal compat: missing field → []; present-but-invalid → invalid-response.
+    // Missing field → []; each parser documents its per-entry validation policy.
     socialLinks: parseDiscoverySocialLinks(data.socialLinks),
     affiliations: parseDiscoveryAffiliations(data.affiliations),
     serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
