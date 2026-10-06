@@ -7,12 +7,14 @@ import {
   getOnboardingAffiliationCategory,
   listOnboardingAffiliationCategoryIds,
   type OnboardingAffiliationCategoryId,
-} from '../affiliations/onboardingAffiliationCatalog';
-import { createContractResponseError } from './callables/errors';
-import { isAllowedDiscoverySocialHttpsUrl } from './discoverySocialLinks';
+} from '../affiliations/onboardingAffiliationCatalog.ts';
 
-/** Defensive client cap (backend persists a small active-profile set). */
-export const MAX_DISCOVERY_AFFILIATIONS = 24;
+/** Contract cap — matches backend `MAX_PUBLIC_AFFILIATIONS`. */
+export const MAX_DISCOVERY_AFFILIATIONS = 48;
+
+/** Narrowest tile before the inline grid drops a column. */
+export const DISCOVERY_AFFILIATION_MIN_TILE_WIDTH = 120;
+export const DISCOVERY_AFFILIATION_MAX_COLUMNS = 3;
 
 export type DiscoveryPublicAffiliation = {
   id: string;
@@ -25,119 +27,93 @@ const AFFILIATION_ALLOWED_KEYS = new Set(['id', 'name', 'type', 'logoUrl']);
 
 const KNOWN_CATEGORY_IDS = new Set<string>(listOnboardingAffiliationCategoryIds());
 
-function requireHttpsOrNull(value: unknown, path: string): string | null {
-  if (value === null) return null;
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw createContractResponseError(
-      `${path} must be https URL string or null`,
-      value,
-    );
-  }
+function nonEmptyTrimmed(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
   const trimmed = value.trim();
-  if (!isAllowedDiscoverySocialHttpsUrl(trimmed)) {
-    throw createContractResponseError(
-      `${path} must be a valid https URL or null`,
-      value,
-    );
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/** Invalid / non-https logo → null so the logo mark uses its initials/emoji fallback. */
+function sanitizeLogoUrl(value: unknown): string | null {
+  const trimmed = nonEmptyTrimmed(value);
+  if (!trimmed || !/^https:\/\//i.test(trimmed)) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+      return null;
+    }
+  } catch {
+    return null;
   }
   return trimmed;
 }
 
-function requireTypeOrNull(value: unknown, path: string): string | null {
-  if (value === null) return null;
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw createContractResponseError(
-      `${path} must be a non-empty string or null`,
-      value,
-    );
-  }
-  return value.trim();
-}
-
-function parseAffiliationItem(
-  value: unknown,
-  path: string,
-): DiscoveryPublicAffiliation {
+function parseAffiliationItem(value: unknown): DiscoveryPublicAffiliation | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw createContractResponseError(`${path} must be an object`, value);
+    return null;
   }
   const row = value as Record<string, unknown>;
-  for (const key of Object.keys(row)) {
-    if (!AFFILIATION_ALLOWED_KEYS.has(key)) {
-      throw createContractResponseError(
-        `Forbidden affiliations field "${key}" at ${path}`,
-        value,
-      );
-    }
+  if (Object.keys(row).some((key) => !AFFILIATION_ALLOWED_KEYS.has(key))) {
+    return null;
   }
-
-  const id =
-    typeof row.id === 'string' && row.id.trim().length > 0
-      ? row.id.trim()
-      : null;
-  if (!id) {
-    throw createContractResponseError(`${path}.id must be a non-empty string`, row.id);
-  }
-
-  const name =
-    typeof row.name === 'string' && row.name.trim().length > 0
-      ? row.name.trim()
-      : null;
-  if (!name) {
-    throw createContractResponseError(
-      `${path}.name must be a non-empty string`,
-      row.name,
-    );
-  }
+  const id = nonEmptyTrimmed(row.id);
+  const name = nonEmptyTrimmed(row.name);
+  if (!id || !name) return null;
 
   return {
     id,
     name,
-    type: requireTypeOrNull(row.type, `${path}.type`),
-    logoUrl: requireHttpsOrNull(row.logoUrl, `${path}.logoUrl`),
+    type: nonEmptyTrimmed(row.type),
+    logoUrl: sanitizeLogoUrl(row.logoUrl),
   };
 }
 
 /**
  * Wire parser for getDiscoveryProfile.affiliations.
- * Absent → []. Present but invalid → invalid-response.
- * Preserves order; rejects duplicate IDs.
+ *
+ * Fail-open per entry: absent / non-array → []; malformed rows (non-object, missing
+ * id/name, forbidden private fields) and duplicate IDs are dropped individually.
+ * Never throws, so one bad affiliation cannot fail the whole profile.
+ * Preserves order; keeps at most MAX_DISCOVERY_AFFILIATIONS valid rows.
  */
 export function parseDiscoveryAffiliations(
   raw: unknown,
 ): DiscoveryPublicAffiliation[] {
-  if (raw === undefined) {
-    return [];
-  }
-  if (!Array.isArray(raw)) {
-    throw createContractResponseError(
-      'affiliations must be an array when present',
-      raw,
-    );
-  }
-  if (raw.length > MAX_DISCOVERY_AFFILIATIONS) {
-    throw createContractResponseError(
-      `affiliations exceeds max ${MAX_DISCOVERY_AFFILIATIONS}`,
-      raw.length,
-    );
-  }
+  if (!Array.isArray(raw)) return [];
 
   const out: DiscoveryPublicAffiliation[] = [];
   const seen = new Set<string>();
 
-  for (let i = 0; i < raw.length; i += 1) {
-    const item = parseAffiliationItem(raw[i], `affiliations[${i}]`);
-    if (seen.has(item.id)) {
-      throw createContractResponseError(
-        `duplicate affiliations id "${item.id}"`,
-        item.id,
-      );
-    }
+  for (const entry of raw) {
+    if (out.length >= MAX_DISCOVERY_AFFILIATIONS) break;
+    const item = parseAffiliationItem(entry);
+    if (!item || seen.has(item.id)) continue;
     seen.add(item.id);
     out.push(item);
   }
 
   return out;
+}
+
+/**
+ * Inline grid sizing for Profile Exploration affiliations: about two tiles per row on
+ * phones, fewer on very narrow widths, at most three on wide screens.
+ * Returns null until the container width is known.
+ */
+export function resolveDiscoveryAffiliationGrid(
+  containerWidth: number,
+  gap: number,
+): { columns: number; tileWidth: number } | null {
+  if (!Number.isFinite(containerWidth) || containerWidth <= 0) return null;
+  const safeGap = Math.max(0, gap);
+  const fit = Math.floor(
+    (containerWidth + safeGap) / (DISCOVERY_AFFILIATION_MIN_TILE_WIDTH + safeGap),
+  );
+  const columns = Math.min(DISCOVERY_AFFILIATION_MAX_COLUMNS, Math.max(1, fit));
+  const tileWidth = Math.floor(
+    (containerWidth - safeGap * (columns - 1)) / columns,
+  );
+  return { columns, tileWidth };
 }
 
 /**

@@ -12,6 +12,10 @@ export const AFFILIATION_SELECTED_LOGO_RADIUS = 18;
 export const AFFILIATION_RESULT_LOGO_SIZE = 40;
 export const AFFILIATION_RESULT_LOGO_RADIUS = 12;
 
+/** Profile Exploration compact inline tile (DiscoveryAffiliationsCard). */
+export const AFFILIATION_DISCOVERY_LOGO_SIZE = 44;
+export const AFFILIATION_DISCOVERY_LOGO_RADIUS = 12;
+
 /** Claude `LOGO_PALETTE` — deterministic monogram tints. */
 export const AFFILIATION_LOGO_PALETTE = [
   '#2563EB',
