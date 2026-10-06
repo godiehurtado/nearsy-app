@@ -757,8 +757,9 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.ok(interestsLabel > affUse && interestsLabel < photos);
     assert.match(affiliationsSrc, /if \(labeled\.length === 0\) return null/);
     assert.match(affiliationsSrc, /AffiliationLogoMark/);
-    assert.match(affiliationsSrc, /AFFILIATION_SELECTED_LOGO_SIZE/);
-    assert.match(affiliationsSrc, /AFFILIATION_SELECTED_LOGO_RADIUS/);
+    assert.match(affiliationsSrc, /AFFILIATION_DISCOVERY_LOGO_SIZE/);
+    assert.match(affiliationsSrc, /AFFILIATION_DISCOVERY_LOGO_RADIUS/);
+    assert.doesNotMatch(affiliationsSrc, /AFFILIATION_SELECTED_LOGO_/);
     assert.doesNotMatch(affiliationsSrc, /borderRadius:\s*20|radius\.circle/);
     assert.doesNotMatch(affiliationsSrc, /onPress|Pressable|Linking/);
     assert.doesNotMatch(affiliationsSrc, /logo_dev|LogoDev|getAffiliationEntitySearch|buildLogoDev/);
@@ -785,6 +786,8 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     const crjSrc = readFileSync(crjPath, 'utf8');
     assert.match(logoSrc, /AFFILIATION_SELECTED_LOGO_SIZE = 64/);
     assert.match(logoSrc, /AFFILIATION_SELECTED_LOGO_RADIUS = 18/);
+    assert.match(logoSrc, /AFFILIATION_DISCOVERY_LOGO_SIZE = 44/);
+    assert.match(logoSrc, /AFFILIATION_DISCOVERY_LOGO_RADIUS = 12/);
     assert.match(markSrc, /resizeMode="cover"/);
     assert.match(markSrc, /resolveAffiliationLogoPresentation/);
     assert.match(markSrc, /affiliationInitials|kind === 'initials'/);

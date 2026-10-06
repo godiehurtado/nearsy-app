@@ -8,6 +8,10 @@ import {
 export const AFFILIATION_SELECTED_LOGO_SIZE = 64;
 export const AFFILIATION_SELECTED_LOGO_RADIUS = 18;
 
+/** Discovery profile affiliation tile (inline wrap grid). */
+export const AFFILIATION_DISCOVERY_LOGO_SIZE = 44;
+export const AFFILIATION_DISCOVERY_LOGO_RADIUS = 12;
+
 /** CRJ search-result / upload thumb. */
 export const AFFILIATION_RESULT_LOGO_SIZE = 40;
 export const AFFILIATION_RESULT_LOGO_RADIUS = 12;
