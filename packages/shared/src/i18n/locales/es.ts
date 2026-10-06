@@ -173,6 +173,7 @@ export const es: TranslationResources = {
     galleryCounter: '{{current}}/{{total}}',
     imageUnavailable: 'Foto no disponible',
     openLinkError: 'No se pudo abrir este enlace.',
+    openLinkInvalid: 'Este enlace no es válido o no es compatible.',
     platformLinkedin: 'LinkedIn',
     platformInstagram: 'Instagram',
     platformFacebook: 'Facebook',

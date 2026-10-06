@@ -3,10 +3,8 @@
  * Renders only when getDiscoveryProfile.socialLinks has ≥1 valid entry.
  * Never invents placeholders for missing networks.
  */
-import React, { useCallback } from 'react';
+import React from 'react';
 import {
-  Alert,
-  Linking,
   Pressable,
   StyleSheet,
   View,
@@ -20,10 +18,10 @@ import { cardShadow } from '../../theme/shadows';
 import {
   DISCOVERY_SOCIAL_PLATFORM_VISUAL,
   discoverySocialPlatformI18nKey,
-  openDiscoverySocialHttpsUrl,
   type DiscoveryPublicSocialLink,
   type DiscoverySocialPlatform,
 } from '../../visibility/discoverySocialLinks';
+import { useOpenSocialLink } from './useOpenSocialLink';
 
 type Props = {
   links?: readonly DiscoveryPublicSocialLink[] | null;
@@ -63,16 +61,7 @@ export function DiscoverySocialMediaRow({ links }: Props) {
   const items = Array.isArray(links)
     ? links.filter((l) => l?.platform && l?.url)
     : [];
-
-  const openLink = useCallback(
-    async (url: string) => {
-      const result = await openDiscoverySocialHttpsUrl(url, Linking);
-      if (result !== 'opened') {
-        Alert.alert(t('discoveryProfile.openLinkError'));
-      }
-    },
-    [t],
-  );
+  const openLink = useOpenSocialLink();
 
   if (items.length === 0) return null;
 
@@ -89,7 +78,7 @@ export function DiscoverySocialMediaRow({ links }: Props) {
         return (
           <Pressable
             key={`${link.platform}:${link.url}`}
-            onPress={() => void openLink(link.url)}
+            onPress={() => void openLink(link.platform, link.url)}
             accessibilityRole="link"
             accessibilityLabel={label}
             hitSlop={6}

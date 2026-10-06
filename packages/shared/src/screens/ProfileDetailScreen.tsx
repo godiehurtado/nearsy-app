@@ -9,17 +9,20 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Linking,
   Alert,
   Modal,
   Pressable,
-  Platform,
 } from 'react-native';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
+import { useOpenSocialLink } from '../components/profileExploration/useOpenSocialLink';
+import {
+  readPublicSocialLinks,
+  type SocialLinkPlatform,
+} from '../social/socialLinkUrl.ts';
 import type {
   InterestAffiliations,
   InterestLabel,
@@ -78,13 +81,13 @@ type ProfileDoc = {
 };
 
 const SOCIAL_META: Record<
-  string,
+  SocialLinkPlatform,
   { icon: keyof typeof Ionicons.glyphMap; color: string }
 > = {
   facebook: { icon: 'logo-facebook', color: '#1877F2' },
   instagram: { icon: 'logo-instagram', color: '#E1306C' },
   linkedin: { icon: 'logo-linkedin', color: '#0A66C2' },
-  twitter: { icon: 'logo-twitter', color: '#1DA1F2' },
+  x: { icon: 'logo-twitter', color: '#1DA1F2' },
   youtube: { icon: 'logo-youtube', color: '#FF0000' },
   tiktok: { icon: 'logo-tiktok', color: '#000000' },
   snapchat: { icon: 'logo-snapchat', color: '#fffc00' },
@@ -198,59 +201,6 @@ const INTEREST_CATEGORY_META: Partial<
   },
 };
 
-function normalizeUrl(u: string): string {
-  if (!u) return '';
-
-  let trimmed = u.trim().replace(/ /g, '%20');
-  if (!trimmed) return '';
-
-  if (!/^https?:\/\//i.test(trimmed)) {
-    trimmed = `https://${trimmed}`;
-  }
-
-  return trimmed;
-}
-
-function isHttpUrl(url: string): boolean {
-  return /^https?:\/\//i.test(url);
-}
-
-async function openLink(url: string) {
-  const safe = normalizeUrl(url);
-  if (!safe) {
-    Alert.alert('Invalid link', 'Could not open this link.');
-    return;
-  }
-
-  if (isHttpUrl(safe)) {
-    if (Platform.OS !== 'android') {
-      const can = await Linking.canOpenURL(safe);
-      if (!can) {
-        Alert.alert('Invalid link', 'Could not open this link.');
-        return;
-      }
-    }
-
-    try {
-      await Linking.openURL(safe);
-    } catch {
-      Alert.alert('Invalid link', 'Could not open this link.');
-    }
-    return;
-  }
-
-  try {
-    const can = await Linking.canOpenURL(safe);
-    if (!can) {
-      Alert.alert('Invalid link', 'Could not open this link.');
-      return;
-    }
-    await Linking.openURL(safe);
-  } catch {
-    Alert.alert('Invalid link', 'Could not open this link.');
-  }
-}
-
 export default function ProfileDetailScreen() {
   type NavProp = NativeStackNavigationProp<HomeStackParamList, 'ProfileDetail'>;
   type RouteProps = RouteProp<HomeStackParamList, 'ProfileDetail'>;
@@ -339,14 +289,15 @@ export default function ProfileDetailScreen() {
   }, [uidp]);
 
   // social links según modo del perfil visto
-  const socialForMode = useMemo(() => {
-    if (!p) return {};
-    return (
-      (p.mode === 'professional'
+  const socialLinks = useMemo(() => {
+    if (!p) return [];
+    return readPublicSocialLinks(
+      p.mode === 'professional'
         ? p.socialLinksProfessional
-        : p.socialLinksPersonal) ?? {}
+        : p.socialLinksPersonal,
     );
   }, [p?.mode, p?.socialLinksPersonal, p?.socialLinksProfessional]);
+  const openSocialLink = useOpenSocialLink();
 
   const interestGroups = useMemo(() => {
     const affObj: InterestAffiliations =
@@ -566,23 +517,21 @@ export default function ProfileDetailScreen() {
             </View>
           </View>
 
-          {Object.values(socialForMode).some(Boolean) && (
+          {socialLinks.length > 0 && (
             <View style={styles.socialRow}>
-              {Object.entries(socialForMode)
-                .filter(([, url]) => !!url)
-                .map(([key, url]) => {
-                  const meta = SOCIAL_META[key] || SOCIAL_META.website;
-                  return (
-                    <TouchableOpacity
-                      key={key}
-                      onPress={() => openLink(url!)}
-                      activeOpacity={0.8}
-                      style={styles.socialBtn}
-                    >
-                      <Ionicons name={meta.icon} size={30} color={meta.color} />
-                    </TouchableOpacity>
-                  );
-                })}
+              {socialLinks.map((link) => {
+                const meta = SOCIAL_META[link.platform];
+                return (
+                  <TouchableOpacity
+                    key={link.platform}
+                    onPress={() => void openSocialLink(link.platform, link.url)}
+                    activeOpacity={0.8}
+                    style={styles.socialBtn}
+                  >
+                    <Ionicons name={meta.icon} size={30} color={meta.color} />
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
 
