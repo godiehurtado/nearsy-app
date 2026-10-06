@@ -67,7 +67,7 @@ export const authenticationTranslations = {
           generic: 'We couldn’t sign you in with Facebook. Please try again.',
           accountExistsTitle: 'Account already exists',
           accountExists:
-            'A Nearsy account already exists with this email. Sign in using the method you originally used.',
+            'A Nearsy account already exists with this email. Sign in using one of your current methods and connect Facebook from Sign-in methods.',
         },
       },
     },
@@ -394,7 +394,7 @@ export const authenticationTranslations = {
             'No pudimos iniciar sesión con Facebook. Inténtalo nuevamente.',
           accountExistsTitle: 'Cuenta existente',
           accountExists:
-            'Ya existe una cuenta de Nearsy asociada a este correo. Inicia sesión utilizando el método que usaste originalmente.',
+            'Ya existe una cuenta de Nearsy con este correo. Inicia sesión con uno de tus métodos actuales y conecta Facebook desde Métodos de inicio de sesión.',
         },
       },
     },

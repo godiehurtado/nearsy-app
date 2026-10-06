@@ -82,12 +82,12 @@ describe('Facebook account-exists copy (EN/ES)', () => {
     assert.equal(en.accountExistsTitle, 'Account already exists');
     assert.equal(
       en.accountExists,
-      'A Nearsy account already exists with this email. Sign in using the method you originally used.',
+      'A Nearsy account already exists with this email. Sign in using one of your current methods and connect Facebook from Sign-in methods.',
     );
     assert.equal(es.accountExistsTitle, 'Cuenta existente');
     assert.equal(
       es.accountExists,
-      'Ya existe una cuenta de Nearsy asociada a este correo. Inicia sesión utilizando el método que usaste originalmente.',
+      'Ya existe una cuenta de Nearsy con este correo. Inicia sesión con uno de tus métodos actuales y conecta Facebook desde Métodos de inicio de sesión.',
     );
   });
 
