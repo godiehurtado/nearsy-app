@@ -4,10 +4,12 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import MoreScreen from '../screens/MoreScreen';
 import DeleteAccountScreen from '../screens/DeleteAccountScreen';
 import BlockedPeopleScreen from '../screens/BlockedPeopleScreen';
+import SignInMethodsScreen from '../screens/SignInMethodsScreen';
 
 export type MoreStackParamList = {
   MoreHome: undefined;
   BlockedPeople: undefined;
+  SignInMethods: undefined;
   DeleteAccount: undefined;
 };
 
@@ -18,6 +20,7 @@ export default function MoreStack() {
     <Stack.Navigator id="MoreStack" screenOptions={{ headerShown: false }}>
       <Stack.Screen name="MoreHome" component={MoreScreen} />
       <Stack.Screen name="BlockedPeople" component={BlockedPeopleScreen} />
+      <Stack.Screen name="SignInMethods" component={SignInMethodsScreen} />
       <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
     </Stack.Navigator>
   );

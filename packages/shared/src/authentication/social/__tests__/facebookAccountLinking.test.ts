@@ -616,6 +616,8 @@ describe('Connect Facebook — static safety contract', () => {
     'authentication/social/application/linkFacebookToCurrentUser.ts',
     'authentication/social/infrastructure/firebase/firebaseJsAccountLinkingAdapter.ts',
     'authentication/social/domain/facebookLinkError.ts',
+    'hooks/useConnectFacebookFlow.ts',
+    'screens/SignInMethodsScreen.tsx',
   ];
 
   it('never signs in, creates, merges, unlinks, looks up by email or persists', () => {
@@ -652,6 +654,13 @@ describe('Connect Facebook — static safety contract', () => {
         /linkWithCredential|LinkFacebook|useConnectFacebookFlow|AccountLinking/,
         rel,
       );
+    }
+  });
+
+  it('UI reaches Firebase only through the linking orchestrator / adapter', () => {
+    for (const rel of ['hooks/useConnectFacebookFlow.ts', 'screens/SignInMethodsScreen.tsx']) {
+      const src = readSharedSource(rel);
+      assert.doesNotMatch(src, /from 'firebase\/auth'|linkWithCredential|config\/firebaseConfig/, rel);
     }
   });
 
