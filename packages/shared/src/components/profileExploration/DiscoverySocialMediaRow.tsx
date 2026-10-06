@@ -1,9 +1,10 @@
 /**
  * Social Media icon row for Profile Exploration.
- * Renders only when getDiscoveryProfile.socialLinks has ≥1 valid entry.
+ * Renders only when getDiscoveryProfile.socialLinks has ≥1 valid entry;
+ * invalid entries are hidden individually.
  * Never invents placeholders for missing networks.
  */
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   Alert,
   Linking,
@@ -20,7 +21,8 @@ import { cardShadow } from '../../theme/shadows';
 import {
   DISCOVERY_SOCIAL_PLATFORM_VISUAL,
   discoverySocialPlatformI18nKey,
-  openDiscoverySocialHttpsUrl,
+  openDiscoverySocialLink,
+  parseDiscoverySocialLinks,
   type DiscoveryPublicSocialLink,
   type DiscoverySocialPlatform,
 } from '../../visibility/discoverySocialLinks';
@@ -60,14 +62,14 @@ function PlatformIcon({
 export function DiscoverySocialMediaRow({ links }: Props) {
   const { palette } = useAppTheme();
   const { t } = useTranslation();
-  const items = Array.isArray(links)
-    ? links.filter((l) => l?.platform && l?.url)
-    : [];
+  const items = useMemo(() => parseDiscoverySocialLinks(links), [links]);
 
   const openLink = useCallback(
-    async (url: string) => {
-      const result = await openDiscoverySocialHttpsUrl(url, Linking);
-      if (result !== 'opened') {
+    async (link: DiscoveryPublicSocialLink) => {
+      const result = await openDiscoverySocialLink(link, Linking);
+      if (result === 'invalid') {
+        Alert.alert(t('discoveryProfile.invalidLinkError'));
+      } else if (result === 'failed') {
         Alert.alert(t('discoveryProfile.openLinkError'));
       }
     },
@@ -89,7 +91,7 @@ export function DiscoverySocialMediaRow({ links }: Props) {
         return (
           <Pressable
             key={`${link.platform}:${link.url}`}
-            onPress={() => void openLink(link.url)}
+            onPress={() => void openLink(link)}
             accessibilityRole="link"
             accessibilityLabel={label}
             hitSlop={6}
