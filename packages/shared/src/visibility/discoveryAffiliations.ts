@@ -8,11 +8,10 @@ import {
   listOnboardingAffiliationCategoryIds,
   type OnboardingAffiliationCategoryId,
 } from '../affiliations/onboardingAffiliationCatalog';
-import { createContractResponseError } from './callables/errors';
 import { isAllowedDiscoverySocialHttpsUrl } from './discoverySocialLinks';
 
-/** Defensive client cap (backend persists a small active-profile set). */
-export const MAX_DISCOVERY_AFFILIATIONS = 24;
+/** Contractual cap — mirrors Functions `MAX_PUBLIC_AFFILIATIONS`. */
+export const MAX_DISCOVERY_AFFILIATIONS = 48;
 
 export type DiscoveryPublicAffiliation = {
   id: string;
@@ -25,114 +24,63 @@ const AFFILIATION_ALLOWED_KEYS = new Set(['id', 'name', 'type', 'logoUrl']);
 
 const KNOWN_CATEGORY_IDS = new Set<string>(listOnboardingAffiliationCategoryIds());
 
-function requireHttpsOrNull(value: unknown, path: string): string | null {
-  if (value === null) return null;
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw createContractResponseError(
-      `${path} must be https URL string or null`,
-      value,
-    );
-  }
+function nonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
   const trimmed = value.trim();
-  if (!isAllowedDiscoverySocialHttpsUrl(trimmed)) {
-    throw createContractResponseError(
-      `${path} must be a valid https URL or null`,
-      value,
-    );
-  }
-  return trimmed;
+  return trimmed.length > 0 ? trimmed : null;
 }
 
-function requireTypeOrNull(value: unknown, path: string): string | null {
-  if (value === null) return null;
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw createContractResponseError(
-      `${path} must be a non-empty string or null`,
-      value,
-    );
-  }
-  return value.trim();
+/** Unusable logo → null so the UI falls back to initials / category mark. */
+function httpsLogoOrNull(value: unknown): string | null {
+  const trimmed = nonEmptyString(value);
+  if (!trimmed) return null;
+  return isAllowedDiscoverySocialHttpsUrl(trimmed) ? trimmed : null;
 }
 
-function parseAffiliationItem(
-  value: unknown,
-  path: string,
-): DiscoveryPublicAffiliation {
+/**
+ * One wire row → affiliation, or null when it must be hidden
+ * (not an object, extra/private fields, missing id or name).
+ */
+function parseAffiliationItem(value: unknown): DiscoveryPublicAffiliation | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw createContractResponseError(`${path} must be an object`, value);
+    return null;
   }
   const row = value as Record<string, unknown>;
   for (const key of Object.keys(row)) {
-    if (!AFFILIATION_ALLOWED_KEYS.has(key)) {
-      throw createContractResponseError(
-        `Forbidden affiliations field "${key}" at ${path}`,
-        value,
-      );
-    }
+    if (!AFFILIATION_ALLOWED_KEYS.has(key)) return null;
   }
 
-  const id =
-    typeof row.id === 'string' && row.id.trim().length > 0
-      ? row.id.trim()
-      : null;
-  if (!id) {
-    throw createContractResponseError(`${path}.id must be a non-empty string`, row.id);
-  }
-
-  const name =
-    typeof row.name === 'string' && row.name.trim().length > 0
-      ? row.name.trim()
-      : null;
-  if (!name) {
-    throw createContractResponseError(
-      `${path}.name must be a non-empty string`,
-      row.name,
-    );
-  }
+  const id = nonEmptyString(row.id);
+  const name = nonEmptyString(row.name);
+  if (!id || !name) return null;
 
   return {
     id,
     name,
-    type: requireTypeOrNull(row.type, `${path}.type`),
-    logoUrl: requireHttpsOrNull(row.logoUrl, `${path}.logoUrl`),
+    type: nonEmptyString(row.type),
+    logoUrl: httpsLogoOrNull(row.logoUrl),
   };
 }
 
 /**
  * Wire parser for getDiscoveryProfile.affiliations.
- * Absent → []. Present but invalid → invalid-response.
- * Preserves order; rejects duplicate IDs.
+ *
+ * Fail-open per entry, like the backend: malformed rows are hidden
+ * individually and never fail the profile. Absent / non-array → [].
+ * Preserves order; first row wins per id; reads at most
+ * MAX_DISCOVERY_AFFILIATIONS rows.
  */
 export function parseDiscoveryAffiliations(
   raw: unknown,
 ): DiscoveryPublicAffiliation[] {
-  if (raw === undefined) {
-    return [];
-  }
-  if (!Array.isArray(raw)) {
-    throw createContractResponseError(
-      'affiliations must be an array when present',
-      raw,
-    );
-  }
-  if (raw.length > MAX_DISCOVERY_AFFILIATIONS) {
-    throw createContractResponseError(
-      `affiliations exceeds max ${MAX_DISCOVERY_AFFILIATIONS}`,
-      raw.length,
-    );
-  }
+  if (!Array.isArray(raw)) return [];
 
   const out: DiscoveryPublicAffiliation[] = [];
   const seen = new Set<string>();
 
-  for (let i = 0; i < raw.length; i += 1) {
-    const item = parseAffiliationItem(raw[i], `affiliations[${i}]`);
-    if (seen.has(item.id)) {
-      throw createContractResponseError(
-        `duplicate affiliations id "${item.id}"`,
-        item.id,
-      );
-    }
+  for (const entry of raw.slice(0, MAX_DISCOVERY_AFFILIATIONS)) {
+    const item = parseAffiliationItem(entry);
+    if (!item || seen.has(item.id)) continue;
     seen.add(item.id);
     out.push(item);
   }
