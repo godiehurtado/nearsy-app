@@ -356,40 +356,53 @@ describe('profile exploration affiliations wire parser (V1.4C)', () => {
     );
   });
 
-  it('duplicate id → invalid-response', () => {
-    assert.throws(
-      () =>
-        parseDiscoveryAffiliations([
-          { id: 'dup', name: 'One', type: null, logoUrl: null },
-          { id: 'dup', name: 'Two', type: null, logoUrl: null },
-        ]),
-      VisibilityDiscoveryClientError,
-    );
+  it('duplicate id keeps the first entry', () => {
+    const rows = parseDiscoveryAffiliations([
+      { id: 'dup', name: 'One', type: null, logoUrl: null },
+      { id: 'dup', name: 'Two', type: null, logoUrl: null },
+    ]);
+    assert.deepEqual(rows.map((r) => r.name), ['One']);
   });
 
-  it('empty name → invalid-response', () => {
-    assert.throws(
-      () =>
-        parseDiscoveryAffiliations([
-          { id: 'x', name: '  ', type: null, logoUrl: null },
-        ]),
-      VisibilityDiscoveryClientError,
-    );
+  it('empty name drops only that affiliation', () => {
+    const rows = parseDiscoveryAffiliations([
+      { id: 'x', name: '  ', type: null, logoUrl: null },
+      { id: 'y', name: 'Org', type: null, logoUrl: null },
+    ]);
+    assert.deepEqual(rows.map((r) => r.id), ['y']);
   });
 
-  it('HTTP logoUrl → invalid-response', () => {
-    assert.throws(
-      () =>
-        parseDiscoveryAffiliations([
-          {
-            id: 'x',
-            name: 'Org',
-            type: null,
-            logoUrl: 'http://cdn.example/x.png',
-          },
-        ]),
-      VisibilityDiscoveryClientError,
+  it('HTTP logoUrl falls back to null (logo mark fallback)', () => {
+    const rows = parseDiscoveryAffiliations([
+      {
+        id: 'x',
+        name: 'Org',
+        type: null,
+        logoUrl: 'http://cdn.example/x.png',
+      },
+    ]);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].logoUrl, null);
+  });
+
+  it('more than 48 or malformed affiliations never fail the profile', () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      id: `aff${i}`,
+      name: `Org ${i}`,
+      type: null,
+      logoUrl: null,
+    }));
+    const detail = parseGetDiscoveryProfileResponse(
+      detailPayload({ affiliations: [{ id: 'bad' }, 'oops', ...many] }),
     );
+    assert.equal(detail.profile.displayName, SAMPLE_PROFILE.displayName);
+    assert.equal(detail.affiliations.length, 48);
+    assert.equal(detail.affiliations[0].id, 'aff0');
+    assert.equal(detail.affiliations[47].id, 'aff47');
+    const notArray = parseGetDiscoveryProfileResponse(
+      detailPayload({ affiliations: { id: 'x' } }),
+    );
+    assert.deepEqual(notArray.affiliations, []);
   });
 
   it('null logoUrl accepted; type labels humanize safely', () => {
@@ -407,19 +420,18 @@ describe('profile exploration affiliations wire parser (V1.4C)', () => {
     );
   });
 
-  it('private extra fields → invalid-response', () => {
-    assert.throws(
-      () =>
-        parseDiscoveryAffiliations([
-          {
-            id: 'x',
-            name: 'Org',
-            type: null,
-            logoUrl: null,
-            provider: 'logo_dev',
-          },
-        ]),
-      VisibilityDiscoveryClientError,
+  it('private extra fields drop that affiliation', () => {
+    assert.deepEqual(
+      parseDiscoveryAffiliations([
+        {
+          id: 'x',
+          name: 'Org',
+          type: null,
+          logoUrl: null,
+          provider: 'logo_dev',
+        },
+      ]),
+      [],
     );
   });
 
@@ -782,8 +794,10 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.ok(photos > interests);
     assert.match(affiliationsSrc, /if \(labeled\.length === 0\) return null/);
     assert.match(affiliationsSrc, /AffiliationLogoMark/);
-    assert.match(affiliationsSrc, /AFFILIATION_SELECTED_LOGO_SIZE/);
-    assert.match(affiliationsSrc, /AFFILIATION_SELECTED_LOGO_RADIUS/);
+    assert.match(affiliationsSrc, /AFFILIATION_DISCOVERY_LOGO_SIZE/);
+    assert.match(affiliationsSrc, /AFFILIATION_DISCOVERY_LOGO_RADIUS/);
+    assert.doesNotMatch(affiliationsSrc, /ScrollView|horizontal/);
+    assert.match(affiliationsSrc, /flexWrap: 'wrap'/);
     assert.doesNotMatch(affiliationsSrc, /borderRadius:\s*20|radius\.circle/);
     assert.doesNotMatch(affiliationsSrc, /onPress|Pressable|Linking/);
     assert.doesNotMatch(affiliationsSrc, /logo_dev|LogoDev|getAffiliationEntitySearch|buildLogoDev/);
