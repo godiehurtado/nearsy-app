@@ -1,5 +1,5 @@
 /**
- * iOS 2.0.7 — contractual copy for Facebook `auth/account-exists-with-different-credential`.
+ * iOS 2.0.8 — contractual copy for Facebook `auth/account-exists-with-different-credential`.
  * Fakes only: no real tokens, UIDs, emails or network access.
  */
 import assert from 'node:assert/strict';
@@ -42,10 +42,10 @@ const RAW_NONCE = 'rawNonceForTestsOnly0000000000AB';
 
 const EN_TITLE = 'Account already exists';
 const EN_MESSAGE =
-  'A Nearsy account already exists with this email. Sign in using the method you originally used.';
+  'A Nearsy account already exists with this email. Sign in using one of your current methods and connect Facebook from Sign-in methods.';
 const ES_TITLE = 'Cuenta existente';
 const ES_MESSAGE =
-  'Ya existe una cuenta de Nearsy asociada a este correo. Inicia sesión utilizando el método que usaste originalmente.';
+  'Ya existe una cuenta de Nearsy con este correo. Inicia sesión con uno de tus métodos actuales y conecta Facebook desde Métodos de inicio de sesión.';
 
 /** Resolve `authentication.x.y` against the EN resources / ES locale. */
 function lookup(locale: 'en' | 'es', key: string): unknown {
@@ -149,7 +149,15 @@ describe('Facebook account-exists-with-different-credential', () => {
 
   it('copy never reveals which provider the existing account uses', () => {
     for (const text of [EN_TITLE, EN_MESSAGE, ES_TITLE, ES_MESSAGE]) {
-      assert.doesNotMatch(text, /google|apple|linkedin|facebook|password|contraseña|otp/i);
+      assert.doesNotMatch(text, /google|apple|linkedin|password|contraseña|otp|e-?mail link|sms/i);
+    }
+  });
+
+  it('copy only names Facebook as the method to connect, from Sign-in methods', () => {
+    assert.match(EN_MESSAGE, /connect Facebook from Sign-in methods\.$/);
+    assert.match(ES_MESSAGE, /conecta Facebook desde Métodos de inicio de sesión\.$/);
+    for (const text of [EN_MESSAGE, ES_MESSAGE]) {
+      assert.equal(text.match(/facebook/gi)?.length, 1);
     }
   });
 

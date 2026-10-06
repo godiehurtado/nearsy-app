@@ -59,7 +59,7 @@ export default {
       failed: "We couldn't sign you in with Facebook. Please try again.",
       accountExistsTitle: 'Account already exists',
       accountExistsMessage:
-        'A Nearsy account already exists with this email. Sign in using the method you originally used.',
+        'A Nearsy account already exists with this email. Sign in using one of your current methods and connect Facebook from Sign-in methods.',
     },
   },
   forgotPassword: {
