@@ -23,9 +23,9 @@ import { createAppleProviderAdapter } from './infrastructure/apple/appleProvider
 import { createFirebaseJsAuthenticationAdapter } from './infrastructure/firebase/firebaseJsAuthenticationAdapter';
 import { createFirebaseJsAccountLinkingAdapter } from './infrastructure/firebase/firebaseJsAccountLinkingAdapter';
 import {
-  createLinkFacebookToCurrentUser,
-  type LinkFacebookToCurrentUserDependencies,
-} from './application/linkFacebookToCurrentUser';
+  createLinkProviderToCurrentUser,
+  type LinkProviderToCurrentUserDependencies,
+} from './application/linkProviderToCurrentUser';
 import {
   getUserProfile,
   isProfileComplete,
@@ -124,23 +124,23 @@ export {
 } from './infrastructure/facebook/facebookProviderAdapter';
 
 export type {
-  FacebookLinkOutcome,
-  LinkFacebookToCurrentUser,
-  LinkFacebookToCurrentUserDependencies,
-  LinkFacebookToCurrentUserRequest,
-} from './application/linkFacebookToCurrentUser';
+  AccountLinkOutcome,
+  LinkProviderToCurrentUser,
+  LinkProviderToCurrentUserDependencies,
+  LinkProviderToCurrentUserRequest,
+} from './application/linkProviderToCurrentUser';
+export { createLinkProviderToCurrentUser } from './application/linkProviderToCurrentUser';
+export type { AccountLinkErrorCode, LinkableProvider } from './domain/accountLinkError';
 export {
-  createLinkFacebookToCurrentUser,
-  FACEBOOK_PROVIDER_ID,
-} from './application/linkFacebookToCurrentUser';
-export type { FacebookLinkErrorCode } from './domain/facebookLinkError';
-export {
-  FacebookLinkError,
-  resolveFacebookLinkAlert,
-  shouldSuppressFacebookLinkAlert,
-} from './domain/facebookLinkError';
+  AccountLinkError,
+  LINKABLE_PROVIDER_DISPLAY_NAMES,
+  LINKABLE_PROVIDER_IDS,
+  resolveAccountLinkAlert,
+  shouldSuppressAccountLinkAlert,
+} from './domain/accountLinkError';
 export type {
   FirebaseAccountLinkingPort,
+  LinkCredentialInput,
   LinkedAccountSnapshot,
 } from './infrastructure/firebase/firebaseAccountLinkingPort';
 export { createFirebaseJsAccountLinkingAdapter } from './infrastructure/firebase/firebaseJsAccountLinkingAdapter';
@@ -260,13 +260,14 @@ export function createDefaultAuthenticateWithFacebook(
 }
 
 /**
- * Production "Connect Facebook" orchestrator for Settings → Sign-in methods.
- * Links to the current user only; never part of the Login / Welcome flow.
+ * Production "Connect Google / Apple / Facebook" orchestrator for
+ * Settings → Sign-in methods. Links to the current user only; never part of
+ * the Login / Welcome flow.
  */
-export function createDefaultLinkFacebookToCurrentUser(
-  overrides?: Partial<LinkFacebookToCurrentUserDependencies>,
+export function createDefaultLinkProviderToCurrentUser(
+  overrides?: Partial<LinkProviderToCurrentUserDependencies>,
 ) {
-  return createLinkFacebookToCurrentUser({
+  return createLinkProviderToCurrentUser({
     registry: createDefaultSocialProviderRegistry(),
     accountLinking: createFirebaseJsAccountLinkingAdapter(),
     ...overrides,

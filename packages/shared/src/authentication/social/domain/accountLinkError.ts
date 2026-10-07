@@ -1,9 +1,26 @@
 /**
- * Explicit "Connect Facebook" (account linking) error taxonomy.
+ * Explicit "Connect provider" (account linking) error taxonomy.
  * Separate from SocialAuthError: linking never signs in, never creates users
  * and never resolves conflicts by email.
  */
-export type FacebookLinkErrorCode =
+export type LinkableProvider = 'google' | 'apple' | 'facebook';
+
+export const LINKABLE_PROVIDERS: readonly LinkableProvider[] = ['google', 'apple', 'facebook'];
+
+export const LINKABLE_PROVIDER_IDS: Record<LinkableProvider, string> = {
+  google: 'google.com',
+  apple: 'apple.com',
+  facebook: 'facebook.com',
+};
+
+/** Brand names are not translated. */
+export const LINKABLE_PROVIDER_DISPLAY_NAMES: Record<LinkableProvider, string> = {
+  google: 'Google',
+  apple: 'Apple',
+  facebook: 'Facebook',
+};
+
+export type AccountLinkErrorCode =
   | 'CANCELLED'
   | 'IN_PROGRESS'
   | 'NOT_AUTHENTICATED'
@@ -16,11 +33,11 @@ export type FacebookLinkErrorCode =
   | 'IDENTITY_CHANGED'
   | 'UNKNOWN';
 
-export const FACEBOOK_LINK_ERROR_TITLE_KEY = 'settings.signInMethods.errors.title';
-export const FACEBOOK_LINK_RECENT_LOGIN_TITLE_KEY =
+export const ACCOUNT_LINK_ERROR_TITLE_KEY = 'settings.signInMethods.errors.title';
+export const ACCOUNT_LINK_RECENT_LOGIN_TITLE_KEY =
   'settings.signInMethods.errors.recentLoginTitle';
 
-const MESSAGE_KEYS: Record<FacebookLinkErrorCode, string> = {
+const MESSAGE_KEYS: Record<AccountLinkErrorCode, string> = {
   CANCELLED: 'settings.signInMethods.errors.unknown',
   IN_PROGRESS: 'settings.signInMethods.errors.unknown',
   NOT_AUTHENTICATED: 'settings.signInMethods.errors.notAuthenticated',
@@ -34,40 +51,44 @@ const MESSAGE_KEYS: Record<FacebookLinkErrorCode, string> = {
   UNKNOWN: 'settings.signInMethods.errors.unknown',
 };
 
-export function messageKeyForFacebookLinkCode(code: FacebookLinkErrorCode): string {
+export function messageKeyForAccountLinkCode(code: AccountLinkErrorCode): string {
   return MESSAGE_KEYS[code];
 }
 
-export class FacebookLinkError extends Error {
-  readonly code: FacebookLinkErrorCode;
+export class AccountLinkError extends Error {
+  readonly code: AccountLinkErrorCode;
+  readonly provider: LinkableProvider;
   readonly messageKey: string;
   /** Stable, non-PII diagnostic (Firebase / SDK error code or internal tag). */
   readonly diagnosticCode: string;
 
-  constructor(code: FacebookLinkErrorCode, diagnosticCode: string) {
-    super(`FacebookLinkError:${code}`);
-    this.name = 'FacebookLinkError';
+  constructor(code: AccountLinkErrorCode, provider: LinkableProvider, diagnosticCode: string) {
+    super(`AccountLinkError:${provider}:${code}`);
+    this.name = 'AccountLinkError';
     this.code = code;
+    this.provider = provider;
     this.messageKey = MESSAGE_KEYS[code];
     this.diagnosticCode = diagnosticCode;
   }
 }
 
 /** Cancellation and double-tap never surface an alert. */
-export function shouldSuppressFacebookLinkAlert(code: FacebookLinkErrorCode): boolean {
+export function shouldSuppressAccountLinkAlert(code: AccountLinkErrorCode): boolean {
   return code === 'CANCELLED' || code === 'IN_PROGRESS';
 }
 
-export function resolveFacebookLinkAlert(error: FacebookLinkError): {
+export function resolveAccountLinkAlert(error: AccountLinkError): {
   titleKey: string;
   messageKey: string;
+  params: { provider: string };
 } {
   return {
     titleKey:
       error.code === 'RECENT_LOGIN_REQUIRED'
-        ? FACEBOOK_LINK_RECENT_LOGIN_TITLE_KEY
-        : FACEBOOK_LINK_ERROR_TITLE_KEY,
+        ? ACCOUNT_LINK_RECENT_LOGIN_TITLE_KEY
+        : ACCOUNT_LINK_ERROR_TITLE_KEY,
     messageKey: error.messageKey,
+    params: { provider: LINKABLE_PROVIDER_DISPLAY_NAMES[error.provider] },
   };
 }
 
@@ -81,31 +102,34 @@ export function readFirebaseErrorCode(err: unknown): string | undefined {
 
 /**
  * Maps `linkWithCredential` failures. `auth/provider-already-linked` is
- * resolved by the orchestrator (success only when Facebook is on this user).
+ * resolved by the orchestrator (success only when the provider is on this user).
  * Firebase messages are never surfaced — only stable codes are kept.
  */
-export function mapFirebaseLinkError(err: unknown): FacebookLinkError {
-  if (err instanceof FacebookLinkError) return err;
+export function mapFirebaseLinkError(
+  provider: LinkableProvider,
+  err: unknown,
+): AccountLinkError {
+  if (err instanceof AccountLinkError) return err;
   const code = readFirebaseErrorCode(err);
   switch (code) {
     case 'auth/credential-already-in-use':
     case 'auth/email-already-in-use':
     case 'auth/account-exists-with-different-credential':
-      return new FacebookLinkError('CREDENTIAL_IN_USE', code);
+      return new AccountLinkError('CREDENTIAL_IN_USE', provider, code);
     case 'auth/requires-recent-login':
-      return new FacebookLinkError('RECENT_LOGIN_REQUIRED', code);
+      return new AccountLinkError('RECENT_LOGIN_REQUIRED', provider, code);
     case 'auth/network-request-failed':
-      return new FacebookLinkError('NETWORK_ERROR', code);
+      return new AccountLinkError('NETWORK_ERROR', provider, code);
     case 'auth/invalid-credential':
     case 'auth/invalid-id-token':
     case 'auth/missing-or-invalid-nonce':
-      return new FacebookLinkError('TOKEN_INVALID', code);
+      return new AccountLinkError('TOKEN_INVALID', provider, code);
     case 'auth/user-token-expired':
     case 'auth/user-disabled':
     case 'auth/user-not-found':
     case 'auth/no-such-user':
-      return new FacebookLinkError('NOT_AUTHENTICATED', code);
+      return new AccountLinkError('NOT_AUTHENTICATED', provider, code);
     default:
-      return new FacebookLinkError('UNKNOWN', code ?? 'FIREBASE_LINK_FAILED');
+      return new AccountLinkError('UNKNOWN', provider, code ?? 'FIREBASE_LINK_FAILED');
   }
 }

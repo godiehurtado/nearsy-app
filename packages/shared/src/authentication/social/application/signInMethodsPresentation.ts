@@ -1,3 +1,5 @@
+import type { LinkableProvider } from '../domain/accountLinkError';
+
 /**
  * Sign-in methods shown in Settings, derived only from Firebase `providerData`.
  * LinkedIn (A3 custom token) and phone OTP never appear in `providerData`, so
@@ -19,19 +21,35 @@ export const SIGN_IN_METHOD_LABEL_KEYS: Record<SignInMethodId, string> = {
   'facebook.com': 'settings.signInMethods.providers.facebook',
 };
 
+/** Methods that can be connected explicitly from Settings. Email is not. */
+const CONNECTABLE: Partial<Record<SignInMethodId, LinkableProvider>> = {
+  'google.com': 'google',
+  'apple.com': 'apple',
+  'facebook.com': 'facebook',
+};
+
 export type SignInMethodRow = {
   id: SignInMethodId;
   linked: boolean;
   labelKey: string;
+  /** Present when the method is not linked and can be connected explicitly. */
+  connectProvider?: LinkableProvider;
 };
 
 /**
- * Linked methods in a stable order, followed by Facebook (connected or
- * connectable). Unknown provider ids are ignored.
+ * Email and password only when linked; Google, Apple and Facebook always
+ * (connected, or connectable). Stable order; unknown provider ids are ignored.
  */
 export function buildSignInMethodRows(providerIds: readonly string[]): SignInMethodRow[] {
   const linked = new Set(providerIds);
-  return DISPLAY_ORDER.filter((id) => id === 'facebook.com' || linked.has(id)).map(
-    (id) => ({ id, linked: linked.has(id), labelKey: SIGN_IN_METHOD_LABEL_KEYS[id] }),
-  );
+  return DISPLAY_ORDER.filter((id) => linked.has(id) || CONNECTABLE[id]).map((id) => {
+    const isLinked = linked.has(id);
+    const connectProvider = CONNECTABLE[id];
+    return {
+      id,
+      linked: isLinked,
+      labelKey: SIGN_IN_METHOD_LABEL_KEYS[id],
+      ...(!isLinked && connectProvider ? { connectProvider } : {}),
+    };
+  });
 }

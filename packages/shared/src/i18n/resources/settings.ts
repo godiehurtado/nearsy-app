@@ -161,6 +161,8 @@ export default {
     description: 'These are the methods linked to your Nearsy account.',
     linkedLabel: 'Connected',
     notLinkedLabel: 'Not connected',
+    connectGoogle: 'Connect Google',
+    connectApple: 'Connect Apple',
     connectFacebook: 'Connect Facebook',
     connecting: 'Connecting…',
     limitationNote: 'Some methods, such as LinkedIn, may not appear in this list.',
@@ -171,34 +173,44 @@ export default {
       facebook: 'Facebook',
     },
     confirm: {
-      title: 'Connect Facebook?',
+      title: 'Connect {{provider}}?',
       message:
-        'You will sign in with Facebook to link it to this Nearsy account. Afterwards you can use Facebook to sign in to this same account.',
+        'You will sign in with {{provider}} to link it to this Nearsy account. Afterwards you can use {{provider}} to sign in to this same account.',
       cancel: 'Cancel',
       continue: 'Continue',
     },
     success: {
-      title: 'Facebook connected',
-      message: 'You can now sign in to this Nearsy account with Facebook.',
+      google: {
+        title: 'Google connected',
+        message: 'You can now sign in to Nearsy with Google.',
+      },
+      apple: {
+        title: 'Apple connected',
+        message: 'You can now sign in to Nearsy with Apple.',
+      },
+      facebook: {
+        title: 'Facebook connected',
+        message: 'You can now sign in to Nearsy with Facebook.',
+      },
     },
     alreadyLinked: {
-      title: 'Facebook already connected',
-      message: 'Facebook is already connected to this Nearsy account.',
+      title: '{{provider}} already connected',
+      message: '{{provider}} is already connected to this Nearsy account.',
     },
     errors: {
-      title: "Couldn't connect Facebook",
+      title: "Couldn't connect {{provider}}",
       recentLoginTitle: 'Sign in again',
       notAuthenticated: 'Your session has ended. Sign in again and try once more.',
-      unavailable: 'Facebook is not available right now. Please try again later.',
-      verificationFailed: "We couldn't verify your Facebook account. Please try again.",
+      unavailable: '{{provider}} is not available right now. Please try again later.',
+      verificationFailed: "We couldn't verify your {{provider}} account. Please try again.",
       credentialInUse:
-        'This Facebook account is already associated with another Nearsy account. Nothing was changed.',
+        'This {{provider}} account is already associated with another Nearsy account. Nothing was changed.',
       recentLogin:
-        'For your security, sign out, sign back in to Nearsy and then try connecting Facebook again.',
+        'For your security, sign out, sign back in to Nearsy with your current method and then try connecting {{provider}} again.',
       network: 'Check your connection and try again.',
       identityChanged:
         'Your session changed during the process. Sign in again and review your sign-in methods.',
-      unknown: "We couldn't connect Facebook. Please try again.",
+      unknown: "We couldn't connect {{provider}}. Please try again.",
     },
   },
   editor: {

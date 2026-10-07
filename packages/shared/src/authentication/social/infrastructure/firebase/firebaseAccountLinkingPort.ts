@@ -7,11 +7,16 @@ export interface LinkedAccountSnapshot {
   providerIds: readonly string[];
 }
 
-export interface FirebaseFacebookOidcLinkInput {
-  /** UID captured before the Facebook sheet opened; the link aborts if it changed. */
+/** Fresh provider tokens, held in memory only for one linking attempt. */
+export type LinkCredentialInput =
+  | { provider: 'google'; idToken: string; accessToken?: string }
+  | { provider: 'apple'; idToken: string; rawNonce: string }
+  | { provider: 'facebook'; idToken: string; rawNonce: string };
+
+export interface FirebaseProviderLinkInput {
+  /** UID captured before the provider sheet opened; the link aborts if it changed. */
   expectedUid: string;
-  idToken: string;
-  rawNonce: string;
+  credential: LinkCredentialInput;
 }
 
 /**
@@ -20,8 +25,6 @@ export interface FirebaseFacebookOidcLinkInput {
  */
 export interface FirebaseAccountLinkingPort {
   getCurrentAccount(): LinkedAccountSnapshot | null;
-  linkFacebookOidcCredential(
-    input: FirebaseFacebookOidcLinkInput,
-  ): Promise<LinkedAccountSnapshot>;
+  linkProviderCredential(input: FirebaseProviderLinkInput): Promise<LinkedAccountSnapshot>;
   reloadCurrentAccount(): Promise<LinkedAccountSnapshot | null>;
 }

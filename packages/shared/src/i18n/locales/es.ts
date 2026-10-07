@@ -1511,6 +1511,8 @@ const es: TranslationResources = {
       description: 'Estos son los métodos vinculados a tu cuenta de Nearsy.',
       linkedLabel: 'Conectado',
       notLinkedLabel: 'No conectado',
+      connectGoogle: 'Conectar Google',
+      connectApple: 'Conectar Apple',
       connectFacebook: 'Conectar Facebook',
       connecting: 'Conectando…',
       limitationNote:
@@ -1522,37 +1524,47 @@ const es: TranslationResources = {
         facebook: 'Facebook',
       },
       confirm: {
-        title: '¿Conectar Facebook?',
+        title: '¿Conectar {{provider}}?',
         message:
-          'Iniciarás sesión con Facebook para vincularlo a esta cuenta de Nearsy. Después podrás usar Facebook para entrar a esta misma cuenta.',
+          'Iniciarás sesión con {{provider}} para vincularlo a esta cuenta de Nearsy. Después podrás usar {{provider}} para entrar a esta misma cuenta.',
         cancel: 'Cancelar',
         continue: 'Continuar',
       },
       success: {
-        title: 'Facebook conectado',
-        message: 'Ya puedes iniciar sesión en esta cuenta de Nearsy con Facebook.',
+        google: {
+          title: 'Google conectado',
+          message: 'Ahora puedes iniciar sesión en Nearsy con Google.',
+        },
+        apple: {
+          title: 'Apple conectado',
+          message: 'Ahora puedes iniciar sesión en Nearsy con Apple.',
+        },
+        facebook: {
+          title: 'Facebook conectado',
+          message: 'Ahora puedes iniciar sesión en Nearsy con Facebook.',
+        },
       },
       alreadyLinked: {
-        title: 'Facebook ya está conectado',
-        message: 'Facebook ya está conectado a esta cuenta de Nearsy.',
+        title: '{{provider}} ya está conectado',
+        message: '{{provider}} ya está conectado a esta cuenta de Nearsy.',
       },
       errors: {
-        title: 'No se pudo conectar Facebook',
+        title: 'No se pudo conectar {{provider}}',
         recentLoginTitle: 'Vuelve a iniciar sesión',
         notAuthenticated:
           'Tu sesión terminó. Vuelve a iniciar sesión e inténtalo de nuevo.',
         unavailable:
-          'Facebook no está disponible en este momento. Inténtalo más tarde.',
+          '{{provider}} no está disponible en este momento. Inténtalo más tarde.',
         verificationFailed:
-          'No pudimos verificar tu cuenta de Facebook. Inténtalo de nuevo.',
+          'No pudimos verificar tu cuenta de {{provider}}. Inténtalo de nuevo.',
         credentialInUse:
-          'Esta cuenta de Facebook ya está asociada a otra cuenta de Nearsy. No se realizó ningún cambio.',
+          'Esta cuenta de {{provider}} ya está asociada a otra cuenta de Nearsy. No se realizó ningún cambio.',
         recentLogin:
-          'Por tu seguridad, cierra sesión, vuelve a entrar en Nearsy e intenta conectar Facebook de nuevo.',
+          'Por tu seguridad, cierra sesión, vuelve a entrar en Nearsy con tu método actual e intenta conectar {{provider}} de nuevo.',
         network: 'Revisa tu conexión e inténtalo de nuevo.',
         identityChanged:
           'Tu sesión cambió durante el proceso. Vuelve a iniciar sesión y revisa tus métodos de inicio de sesión.',
-        unknown: 'No pudimos conectar Facebook. Inténtalo de nuevo.',
+        unknown: 'No pudimos conectar {{provider}}. Inténtalo de nuevo.',
       },
     },
     editor: {

@@ -1,6 +1,7 @@
 /**
- * Settings — Sign-in methods (linked providers + explicit "Connect Facebook").
- * State comes only from Firebase `providerData`; no unlink is offered.
+ * Settings — Sign-in methods (linked providers + explicit "Connect Google /
+ * Apple / Facebook"). State comes only from Firebase `providerData`; no unlink
+ * is offered.
  */
 import React, { useCallback, useMemo, useState } from 'react';
 import {
@@ -21,10 +22,11 @@ import { SettingsSection } from '../components/settings/SettingsSection';
 import {
   buildSignInMethodRows,
   createFirebaseJsAccountLinkingAdapter,
+  type LinkableProvider,
   type SignInMethodId,
   type SignInMethodRow,
 } from '../authentication/social';
-import { useConnectFacebookFlow } from '../hooks/useConnectFacebookFlow';
+import { useConnectProviderFlow } from '../hooks/useConnectProviderFlow';
 import { useTranslation } from '../i18n';
 import {
   fontSize,
@@ -47,6 +49,12 @@ const METHOD_ICONS: Record<SignInMethodId, React.ComponentProps<typeof Ionicons>
   'facebook.com': 'logo-facebook',
 };
 
+const CONNECT_LABEL_KEYS: Record<LinkableProvider, string> = {
+  google: 'settings.signInMethods.connectGoogle',
+  apple: 'settings.signInMethods.connectApple',
+  facebook: 'settings.signInMethods.connectFacebook',
+};
+
 export default function SignInMethodsScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -58,67 +66,74 @@ export default function SignInMethodsScreen() {
 
   useFocusEffect(refresh);
 
-  const { connectFacebook, connecting } = useConnectFacebookFlow(refresh);
+  const { connectProvider, connectingProvider } = useConnectProviderFlow(refresh);
   const rows = useMemo(() => buildSignInMethodRows(providerIds), [providerIds]);
   const canConnect = Platform.OS === 'ios';
+  const anyConnecting = connectingProvider !== null;
 
-  const renderConnectRow = (row: SignInMethodRow, isLast: boolean) => (
-    <View
-      key={row.id}
-      style={[
-        styles.row,
-        !isLast && {
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: palette.border,
-        },
-      ]}
-    >
+  const renderConnectRow = (
+    row: SignInMethodRow,
+    provider: LinkableProvider,
+    isLast: boolean,
+  ) => {
+    const connecting = connectingProvider === provider;
+    const label = t(CONNECT_LABEL_KEYS[provider] as any);
+    return (
       <View
+        key={row.id}
         style={[
-          styles.iconChip,
-          { backgroundColor: palette.chipBg, borderColor: palette.border },
+          styles.row,
+          !isLast && {
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderBottomColor: palette.border,
+          },
         ]}
       >
-        <Ionicons name={METHOD_ICONS[row.id]} size={18} color={palette.chipText} />
-      </View>
-      <View style={styles.textCol}>
-        <Text style={[styles.title, { color: palette.textPrimary }]}>
-          {t(row.labelKey as any)}
-        </Text>
-        <Text style={[styles.value, { color: palette.textSecondary }]}>
-          {t('settings.signInMethods.notLinkedLabel')}
-        </Text>
-      </View>
-      {canConnect ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('settings.signInMethods.connectFacebook')}
-          accessibilityState={{ disabled: connecting, busy: connecting }}
-          disabled={connecting}
-          onPress={() => void connectFacebook()}
-          style={({ pressed }) => [
-            styles.connectBtn,
-            {
-              backgroundColor: palette.primary,
-              opacity: connecting ? 0.6 : pressed ? 0.88 : 1,
-            },
+        <View
+          style={[
+            styles.iconChip,
+            { backgroundColor: palette.chipBg, borderColor: palette.border },
           ]}
         >
-          {connecting ? (
-            <ActivityIndicator
-              size="small"
-              color="#fff"
-              accessibilityLabel={t('settings.signInMethods.connecting')}
-            />
-          ) : (
-            <Text style={styles.connectText}>
-              {t('settings.signInMethods.connectFacebook')}
-            </Text>
-          )}
-        </Pressable>
-      ) : null}
-    </View>
-  );
+          <Ionicons name={METHOD_ICONS[row.id]} size={18} color={palette.chipText} />
+        </View>
+        <View style={styles.textCol}>
+          <Text style={[styles.title, { color: palette.textPrimary }]}>
+            {t(row.labelKey as any)}
+          </Text>
+          <Text style={[styles.value, { color: palette.textSecondary }]}>
+            {t('settings.signInMethods.notLinkedLabel')}
+          </Text>
+        </View>
+        {canConnect ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            accessibilityState={{ disabled: anyConnecting, busy: connecting }}
+            disabled={anyConnecting}
+            onPress={() => void connectProvider(provider)}
+            style={({ pressed }) => [
+              styles.connectBtn,
+              {
+                backgroundColor: palette.primary,
+                opacity: anyConnecting ? 0.6 : pressed ? 0.88 : 1,
+              },
+            ]}
+          >
+            {connecting ? (
+              <ActivityIndicator
+                size="small"
+                color="#fff"
+                accessibilityLabel={t('settings.signInMethods.connecting')}
+              />
+            ) : (
+              <Text style={styles.connectText}>{label}</Text>
+            )}
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  };
 
   return (
     <View style={[styles.root, { backgroundColor: palette.background }]}>
@@ -167,7 +182,7 @@ export default function SignInMethodsScreen() {
         <SettingsSection title={t('settings.signInMethods.title')}>
           {rows.map((row, index) => {
             const isLast = index === rows.length - 1;
-            if (!row.linked) return renderConnectRow(row, isLast);
+            if (row.connectProvider) return renderConnectRow(row, row.connectProvider, isLast);
             return (
               <SettingsRow
                 key={row.id}
