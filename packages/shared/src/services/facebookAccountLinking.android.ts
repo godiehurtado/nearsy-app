@@ -1,7 +1,7 @@
 /**
  * Android Facebook account linking entry point (ENH-AUTH-LINK-01).
  * Reuses the native Facebook Login adapter (fresh token, public_profile +
- * email) and its idempotent session logout; links through the dedicated
+ * email) and its idempotent session logout; links through the shared
  * RNFirebase link adapter. Only More → Sign-in methods may use it.
  */
 import { createLinkFacebookToCurrentUser } from '../authentication/facebook/facebookAccountLinking';
@@ -11,21 +11,18 @@ import {
   requestFacebookAccessToken,
 } from './facebookLogin.android';
 import {
-  getFacebookLinkUserSnapshot,
+  getAccountLinkUserSnapshot,
   linkFacebookAccessTokenToCurrentUser,
-  reloadFacebookLinkUser,
-} from './firebaseFacebookLink.android';
-
-export { getFacebookLinkUserSnapshot, reloadFacebookLinkUser };
-
+  reloadAccountLinkUser,
+} from './firebaseAccountLink.android';
 export function createFacebookAccountLinker(confirm: () => Promise<boolean>) {
   return createLinkFacebookToCurrentUser({
-    getCurrentUser: getFacebookLinkUserSnapshot,
+    getCurrentUser: getAccountLinkUserSnapshot,
     confirm,
     isConfigured: isNearsyFacebookAuthConfigured,
     requestAccessToken: requestFacebookAccessToken,
     linkWithAccessToken: linkFacebookAccessTokenToCurrentUser,
-    reloadCurrentUser: reloadFacebookLinkUser,
+    reloadCurrentUser: reloadAccountLinkUser,
     discardProviderSession: logOutFacebookSession,
   });
 }

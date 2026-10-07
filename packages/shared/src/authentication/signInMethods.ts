@@ -4,11 +4,14 @@
  * Evidence only, never inferred from email:
  * - Email / Google / Facebook: Firebase `providerData` provider ids.
  * - LinkedIn: custom-token accounts never appear in `providerData`; the
- *   identity Functions derive their UID as `li_` + SHA-256 (base64url) and
- *   reject any other shape, while Firebase auto-generated UIDs are 28
- *   alphanumeric characters. No other source is trusted.
+ *   identity Functions derive their UID as `li_` + SHA-256 (base64url), reject
+ *   any other shape and use the same prefix to recognize LinkedIn accounts.
+ *   Firebase auto-generated UIDs are 28 alphanumeric characters, and LinkedIn
+ *   sign-in can never reach any other UID. No other source is trusted.
  *
- * Facebook is always listed so the person can connect it.
+ * Google and Facebook are always listed so the person can connect them.
+ * Phone is an identity check in Nearsy, not a sign-in method, so it is never
+ * listed.
  */
 
 export type SignInMethodId = 'email' | 'google' | 'facebook' | 'linkedin';
@@ -16,11 +19,6 @@ export type SignInMethodId = 'email' | 'google' | 'facebook' | 'linkedin';
 export type SignInMethodEntry = { id: SignInMethodId; connected: boolean };
 
 export const LINKEDIN_FIREBASE_UID_PATTERN = /^li_[A-Za-z0-9_-]{5,}$/;
-
-const PROVIDER_METHODS: ReadonlyArray<[string, SignInMethodId]> = [
-  ['password', 'email'],
-  ['google.com', 'google'],
-];
 
 export function resolveSignInMethods(
   user:
@@ -33,10 +31,9 @@ export function resolveSignInMethods(
       (id): id is string => typeof id === 'string',
     ),
   );
-  const entries: SignInMethodEntry[] = PROVIDER_METHODS.filter(([providerId]) =>
-    providerIds.has(providerId),
-  ).map(([, id]) => ({ id, connected: true }));
-
+  const entries: SignInMethodEntry[] = [];
+  if (providerIds.has('password')) entries.push({ id: 'email', connected: true });
+  entries.push({ id: 'google', connected: providerIds.has('google.com') });
   entries.push({ id: 'facebook', connected: providerIds.has('facebook.com') });
 
   const uid = typeof user?.uid === 'string' ? user.uid : '';

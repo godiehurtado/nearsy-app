@@ -6,12 +6,6 @@ import type * as FacebookAccountLinkingAndroid from './facebookAccountLinking.an
 
 type FacebookAccountLinkingApi = typeof FacebookAccountLinkingAndroid;
 
-export const getFacebookLinkUserSnapshot: FacebookAccountLinkingApi['getFacebookLinkUserSnapshot'] =
-  () => null;
-
-export const reloadFacebookLinkUser: FacebookAccountLinkingApi['reloadFacebookLinkUser'] =
-  async () => null;
-
 export const createFacebookAccountLinker: FacebookAccountLinkingApi['createFacebookAccountLinker'] =
   () => async () => ({
     status: 'failed',

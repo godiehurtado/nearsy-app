@@ -188,25 +188,35 @@ export default {
     back: 'Back',
     description: 'Ways you can sign in to this Nearsy account.',
     methods: {
-      email: 'Email',
+      email: 'Email and password',
       google: 'Google',
       facebook: 'Facebook',
       linkedin: 'LinkedIn',
     },
     connected: 'Connected',
     notConnected: 'Not connected',
+    connectGoogle: 'Connect Google',
+    connectGoogleHint:
+      'Add Google as another way to sign in to this same Nearsy account.',
     connectFacebook: 'Connect Facebook',
     connectFacebookHint:
       'Add Facebook as another way to sign in to this same Nearsy account.',
-    confirmTitle: 'Connect Facebook?',
-    confirmBody:
+    confirmGoogleTitle: 'Connect Google?',
+    confirmGoogleBody:
+      'You will choose a Google account to add it as another way to access this same Nearsy account. Your profile and data stay the same.',
+    confirmFacebookTitle: 'Connect Facebook?',
+    confirmFacebookBody:
       'You will sign in to Facebook to add it as another way to access this same Nearsy account. Your profile and data stay the same.',
     confirmContinue: 'Continue',
     confirmCancel: 'Cancel',
-    linkedTitle: 'Facebook connected',
-    linkedBody: 'You can now sign in to this Nearsy account with Facebook.',
+    googleLinkedTitle: 'Google connected',
+    googleLinkedBody: 'You can now sign in to Nearsy with Google.',
+    facebookLinkedTitle: 'Facebook connected',
+    facebookLinkedBody: 'You can now sign in to this Nearsy account with Facebook.',
     errors: {
-      title: 'Could not connect Facebook',
+      googleTitle: 'Could not connect Google',
+      facebookTitle: 'Could not connect Facebook',
+      googleInUse: 'This Google account is already associated with another Nearsy account.',
       credentialInUse:
         'This Facebook account is already connected to another Nearsy account. No changes were made.',
       emailInUse:
@@ -215,7 +225,7 @@ export default {
         'For security, log out, sign back in with your current method and try again.',
       sessionChanged: 'Your session changed. Please sign in again and retry.',
       network: 'Network error. Check your connection and try again.',
-      generic: 'Something went wrong while connecting Facebook. Please try again.',
+      generic: 'Something went wrong while connecting this sign-in method. Please try again.',
     },
   },
   editor: {

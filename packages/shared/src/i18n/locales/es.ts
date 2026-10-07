@@ -433,25 +433,35 @@ export const es: TranslationResources = {
       back: 'Atrás',
       description: 'Formas en que puedes iniciar sesión en esta cuenta de Nearsy.',
       methods: {
-        email: 'Correo electrónico',
+        email: 'Correo y contraseña',
         google: 'Google',
         facebook: 'Facebook',
         linkedin: 'LinkedIn',
       },
       connected: 'Conectado',
       notConnected: 'No conectado',
+      connectGoogle: 'Conectar Google',
+      connectGoogleHint:
+        'Agrega Google como otra forma de iniciar sesión en esta misma cuenta de Nearsy.',
       connectFacebook: 'Conectar Facebook',
       connectFacebookHint:
         'Agrega Facebook como otra forma de iniciar sesión en esta misma cuenta de Nearsy.',
-      confirmTitle: '¿Conectar Facebook?',
-      confirmBody:
+      confirmGoogleTitle: '¿Conectar Google?',
+      confirmGoogleBody:
+        'Elegirás una cuenta de Google para agregarla como otra forma de acceder a esta misma cuenta de Nearsy. Tu perfil y tus datos no cambian.',
+      confirmFacebookTitle: '¿Conectar Facebook?',
+      confirmFacebookBody:
         'Iniciarás sesión en Facebook para agregarlo como otra forma de acceder a esta misma cuenta de Nearsy. Tu perfil y tus datos no cambian.',
       confirmContinue: 'Continuar',
       confirmCancel: 'Cancelar',
-      linkedTitle: 'Facebook conectado',
-      linkedBody: 'Ahora puedes iniciar sesión en esta cuenta de Nearsy con Facebook.',
+      googleLinkedTitle: 'Google conectado',
+      googleLinkedBody: 'Ahora puedes iniciar sesión en Nearsy con Google.',
+      facebookLinkedTitle: 'Facebook conectado',
+      facebookLinkedBody: 'Ahora puedes iniciar sesión en esta cuenta de Nearsy con Facebook.',
       errors: {
-        title: 'No se pudo conectar Facebook',
+        googleTitle: 'No se pudo conectar Google',
+        facebookTitle: 'No se pudo conectar Facebook',
+        googleInUse: 'Esta cuenta de Google ya está asociada a otra cuenta de Nearsy.',
         credentialInUse:
           'Esta cuenta de Facebook ya está conectada a otra cuenta de Nearsy. No se hicieron cambios.',
         emailInUse:
@@ -461,7 +471,8 @@ export const es: TranslationResources = {
         sessionChanged:
           'Tu sesión cambió. Vuelve a iniciar sesión e inténtalo de nuevo.',
         network: 'Error de red. Revisa tu conexión e inténtalo de nuevo.',
-        generic: 'Algo salió mal al conectar Facebook. Inténtalo de nuevo.',
+        generic:
+          'Algo salió mal al conectar este método de inicio de sesión. Inténtalo de nuevo.',
       },
     },
     editor: {

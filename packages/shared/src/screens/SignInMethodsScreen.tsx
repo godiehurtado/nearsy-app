@@ -1,8 +1,8 @@
 /**
  * Settings — Sign-in methods (ENH-AUTH-LINK-01, Android).
  * Methods come from Firebase providerData (+ LinkedIn UID contract) only.
- * The only authorized place to link Facebook to the signed-in account.
- * No unlink.
+ * The only authorized place to link Google or Facebook to the signed-in
+ * account. One linking attempt at a time across providers. No unlink.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -21,20 +21,32 @@ import { Ionicons } from '@expo/vector-icons';
 import { SettingsSection } from '../components/settings/SettingsSection';
 import { SettingsRow } from '../components/settings/SettingsRow';
 import {
+  createExclusiveLinkRunner,
+  type AccountLinkErrorCode,
+  type AccountLinkUserSnapshot,
+} from '../authentication/accountLinking/accountLinkingCore';
+import {
   hasFacebookLinked,
   messageKeyForFacebookLinkError,
-  type FacebookLinkUserSnapshot,
 } from '../authentication/facebook/facebookAccountLinking';
+import {
+  hasGoogleLinked,
+  messageKeyForGoogleLinkError,
+} from '../authentication/google/googleAccountLinking';
 import {
   resolveSignInMethods,
   type SignInMethodId,
 } from '../authentication/signInMethods';
 import { isNearsyFacebookAuthConfigured } from '../config/facebookAuthConfig';
 import {
-  createFacebookAccountLinker,
-  getFacebookLinkUserSnapshot,
-  reloadFacebookLinkUser,
-} from '../services/facebookAccountLinking';
+  getAccountLinkUserSnapshot,
+  reloadAccountLinkUser,
+} from '../services/accountLinkSession';
+import { createFacebookAccountLinker } from '../services/facebookAccountLinking';
+import {
+  createGoogleAccountLinker,
+  isGoogleAccountLinkingConfigured,
+} from '../services/googleAccountLinking';
 import { useTranslation } from '../i18n';
 import {
   fontSize,
@@ -44,6 +56,10 @@ import {
   spacing,
   useAppTheme,
 } from '../theme';
+
+type LinkProvider = 'google' | 'facebook';
+
+const LINK_PROVIDERS: readonly LinkProvider[] = ['google', 'facebook'];
 
 const METHOD_ICONS: Record<
   SignInMethodId,
@@ -55,21 +71,71 @@ const METHOD_ICONS: Record<
   linkedin: 'logo-linkedin',
 };
 
+const PROVIDER_COPY: Record<
+  LinkProvider,
+  {
+    connect: string;
+    connectHint: string;
+    confirmTitle: string;
+    confirmBody: string;
+    linkedTitle: string;
+    linkedBody: string;
+    errorTitle: string;
+  }
+> = {
+  google: {
+    connect: 'settings.signInMethods.connectGoogle',
+    connectHint: 'settings.signInMethods.connectGoogleHint',
+    confirmTitle: 'settings.signInMethods.confirmGoogleTitle',
+    confirmBody: 'settings.signInMethods.confirmGoogleBody',
+    linkedTitle: 'settings.signInMethods.googleLinkedTitle',
+    linkedBody: 'settings.signInMethods.googleLinkedBody',
+    errorTitle: 'settings.signInMethods.errors.googleTitle',
+  },
+  facebook: {
+    connect: 'settings.signInMethods.connectFacebook',
+    connectHint: 'settings.signInMethods.connectFacebookHint',
+    confirmTitle: 'settings.signInMethods.confirmFacebookTitle',
+    confirmBody: 'settings.signInMethods.confirmFacebookBody',
+    linkedTitle: 'settings.signInMethods.facebookLinkedTitle',
+    linkedBody: 'settings.signInMethods.facebookLinkedBody',
+    errorTitle: 'settings.signInMethods.errors.facebookTitle',
+  },
+};
+
+const ERROR_MESSAGE_KEY: Record<
+  LinkProvider,
+  (code: AccountLinkErrorCode) => string
+> = {
+  google: messageKeyForGoogleLinkError,
+  facebook: messageKeyForFacebookLinkError,
+};
+
+function canConnect(
+  provider: LinkProvider,
+  user: AccountLinkUserSnapshot | null,
+): boolean {
+  if (!user) return false;
+  return provider === 'google'
+    ? !hasGoogleLinked(user) && isGoogleAccountLinkingConfigured()
+    : !hasFacebookLinked(user) && isNearsyFacebookAuthConfigured();
+}
+
 export default function SignInMethodsScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { palette } = useAppTheme();
   const { t } = useTranslation();
 
-  const [user, setUser] = useState<FacebookLinkUserSnapshot | null>(() =>
-    getFacebookLinkUserSnapshot(),
+  const [user, setUser] = useState<AccountLinkUserSnapshot | null>(() =>
+    getAccountLinkUserSnapshot(),
   );
-  const [connecting, setConnecting] = useState(false);
-  const connectingRef = useRef(false);
+  const [connecting, setConnecting] = useState<LinkProvider | null>(null);
+  const linkRunner = useRef(createExclusiveLinkRunner<LinkProvider>()).current;
 
   useEffect(() => {
     let active = true;
-    reloadFacebookLinkUser()
+    reloadAccountLinkUser()
       .then((snapshot) => {
         if (active) setUser(snapshot);
       })
@@ -80,11 +146,11 @@ export default function SignInMethodsScreen() {
   }, []);
 
   const confirmConnect = useCallback(
-    () =>
+    (provider: LinkProvider) =>
       new Promise<boolean>((resolve) => {
         Alert.alert(
-          t('settings.signInMethods.confirmTitle'),
-          t('settings.signInMethods.confirmBody'),
+          t(PROVIDER_COPY[provider].confirmTitle),
+          t(PROVIDER_COPY[provider].confirmBody),
           [
             {
               text: t('settings.signInMethods.confirmCancel'),
@@ -104,43 +170,48 @@ export default function SignInMethodsScreen() {
   const confirmRef = useRef(confirmConnect);
   confirmRef.current = confirmConnect;
 
-  const linkFacebook = useMemo(
-    () => createFacebookAccountLinker(() => confirmRef.current()),
+  const linkers = useMemo(
+    () => ({
+      google: createGoogleAccountLinker(() => confirmRef.current('google')),
+      facebook: createFacebookAccountLinker(() => confirmRef.current('facebook')),
+    }),
     [],
   );
 
-  const handleConnectFacebook = useCallback(async () => {
-    if (connectingRef.current) return;
-    connectingRef.current = true;
-    setConnecting(true);
-    try {
-      const outcome = await linkFacebook();
+  const handleConnect = useCallback(
+    async (provider: LinkProvider) => {
+      const outcome = await linkRunner.run(provider, async () => {
+        setConnecting(provider);
+        try {
+          return await linkers[provider]();
+        } finally {
+          setConnecting(null);
+        }
+      });
+      if (outcome.status === 'ignored') return;
+      const copy = PROVIDER_COPY[provider];
       if (outcome.status === 'linked' || outcome.status === 'alreadyLinked') {
         setUser((prev) =>
           prev ? { uid: prev.uid, providerIds: outcome.providerIds } : prev,
         );
-        Alert.alert(
-          t('settings.signInMethods.linkedTitle'),
-          t('settings.signInMethods.linkedBody'),
-        );
+        Alert.alert(t(copy.linkedTitle), t(copy.linkedBody));
         return;
       }
-      setUser(getFacebookLinkUserSnapshot());
+      setUser(getAccountLinkUserSnapshot());
       if (outcome.status === 'failed') {
         Alert.alert(
-          t('settings.signInMethods.errors.title'),
-          t(messageKeyForFacebookLinkError(outcome.code)),
+          t(copy.errorTitle),
+          t(ERROR_MESSAGE_KEY[provider](outcome.code)),
         );
       }
-    } finally {
-      connectingRef.current = false;
-      setConnecting(false);
-    }
-  }, [linkFacebook, t]);
+    },
+    [linkRunner, linkers, t],
+  );
 
   const methods = resolveSignInMethods(user);
-  const canConnectFacebook =
-    !!user && !hasFacebookLinked(user) && isNearsyFacebookAuthConfigured();
+  const connectable = LINK_PROVIDERS.filter((provider) =>
+    canConnect(provider, user),
+  );
 
   return (
     <View style={[styles.root, { backgroundColor: palette.background }]}>
@@ -201,38 +272,39 @@ export default function SignInMethodsScreen() {
               ))}
             </SettingsSection>
 
-            {canConnectFacebook ? (
-              <View style={styles.actions}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t('settings.signInMethods.connectFacebook')}
-                  accessibilityHint={t(
-                    'settings.signInMethods.connectFacebookHint',
-                  )}
-                  accessibilityState={{ disabled: connecting, busy: connecting }}
-                  disabled={connecting}
-                  onPress={() => void handleConnectFacebook()}
-                  style={({ pressed }) => [
-                    styles.connectBtn,
-                    {
-                      backgroundColor: palette.primary,
-                      opacity: connecting ? 0.55 : pressed ? 0.88 : 1,
-                    },
-                  ]}
-                >
-                  {connecting ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.connectText}>
-                      {t('settings.signInMethods.connectFacebook')}
-                    </Text>
-                  )}
-                </Pressable>
-                <Text style={[styles.hint, { color: palette.textMuted }]}>
-                  {t('settings.signInMethods.connectFacebookHint')}
-                </Text>
-              </View>
-            ) : null}
+            {connectable.map((provider) => {
+              const copy = PROVIDER_COPY[provider];
+              const busy = connecting === provider;
+              const locked = connecting !== null;
+              return (
+                <View key={provider} style={styles.actions}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t(copy.connect)}
+                    accessibilityHint={t(copy.connectHint)}
+                    accessibilityState={{ disabled: locked, busy }}
+                    disabled={locked}
+                    onPress={() => void handleConnect(provider)}
+                    style={({ pressed }) => [
+                      styles.connectBtn,
+                      {
+                        backgroundColor: palette.primary,
+                        opacity: locked ? 0.55 : pressed ? 0.88 : 1,
+                      },
+                    ]}
+                  >
+                    {busy ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.connectText}>{t(copy.connect)}</Text>
+                    )}
+                  </Pressable>
+                  <Text style={[styles.hint, { color: palette.textMuted }]}>
+                    {t(copy.connectHint)}
+                  </Text>
+                </View>
+              );
+            })}
           </>
         ) : (
           <Text style={[styles.description, { color: palette.textSecondary }]}>
@@ -268,6 +340,7 @@ const styles = StyleSheet.create({
   },
   actions: {
     paddingHorizontal: screenPadding.horizontal,
+    marginBottom: spacing.lg,
   },
   connectBtn: {
     minHeight: 48,

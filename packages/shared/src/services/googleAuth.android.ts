@@ -282,6 +282,19 @@ export async function requestGoogleIdToken(): Promise<GoogleIdTokenResult> {
   }
 }
 
+/**
+ * Drops the native Google Sign-In session so the next picker is explicit.
+ * Idempotent and best effort; does not touch the Firebase session.
+ */
+export async function discardGoogleSignInSession(): Promise<void> {
+  try {
+    ensureGoogleSignInConfigured();
+    await GoogleSignin.signOut();
+  } catch {
+    // Nothing to drop or SDK unavailable.
+  }
+}
+
 /** Test helper — resets lazy configure state. */
 export function __resetGoogleSignInFoundationForTests(): void {
   state.configured = false;
