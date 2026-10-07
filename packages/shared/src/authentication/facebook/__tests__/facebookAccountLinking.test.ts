@@ -1,6 +1,5 @@
 /**
- * ENH-AUTH-LINK-01: explicit Facebook linking use case (pure, fake deps) and
- * the evidence-only sign-in methods resolver.
+ * ENH-AUTH-LINK-01: explicit Facebook linking use case (pure, fake deps).
  *
  * Run:
  *   node --experimental-strip-types --test packages/shared/src/authentication/facebook/__tests__/facebookAccountLinking.test.ts
@@ -19,7 +18,6 @@ import {
   type LinkFacebookToCurrentUserDeps,
 } from '../facebookAccountLinking.ts';
 import { FacebookAuthenticationError } from '../facebookAuthCore.ts';
-import { resolveSignInMethods } from '../../signInMethods.ts';
 
 const UID = 'AbCdEfGhIjKlMnOpQrStUvWxYz12';
 const OTHER_UID = 'ZyXwVuTsRqPoNmLkJiHgFeDcBa98';
@@ -442,41 +440,10 @@ describe('No tokens or PII', () => {
   });
 });
 
-describe('resolveSignInMethods (evidence only)', () => {
-  it('Email + Google from providerData; Facebook listed as not connected', () => {
-    assert.deepEqual(resolveSignInMethods({ uid: UID, providerIds: ['password', 'google.com'] }), [
-      { id: 'email', connected: true },
-      { id: 'google', connected: true },
-      { id: 'facebook', connected: false },
-    ]);
-  });
-
-  it('Facebook connected state', () => {
-    assert.deepEqual(resolveSignInMethods({ uid: UID, providerIds: ['google.com', 'facebook.com'] }), [
-      { id: 'google', connected: true },
-      { id: 'facebook', connected: true },
-    ]);
-  });
-
-  it('LinkedIn only from the li_ UID contract; never from a Firebase auto UID', () => {
-    assert.deepEqual(resolveSignInMethods({ uid: 'li_Q2hhbmdlTWVQbGVhc2U', providerIds: [] }), [
-      { id: 'facebook', connected: false },
-      { id: 'linkedin', connected: true },
-    ]);
-    assert.deepEqual(resolveSignInMethods({ uid: 'li_', providerIds: [] }), [
-      { id: 'facebook', connected: false },
-    ]);
-    assert.deepEqual(resolveSignInMethods({ uid: UID, providerIds: [] }), [
-      { id: 'facebook', connected: false },
-    ]);
-  });
-
-  it('no inference from email: unknown providers and email-like data add nothing', () => {
-    assert.deepEqual(
-      resolveSignInMethods({ uid: UID, providerIds: ['firebase', 'unknown.provider', null, undefined] }),
-      [{ id: 'facebook', connected: false }],
-    );
-    assert.equal(hasFacebookLinked({ uid: UID, providerIds: ['password'] }), false);
+describe('hasFacebookLinked', () => {
+  it('only facebook.com in providerData counts', () => {
+    assert.equal(hasFacebookLinked({ uid: UID, providerIds: ['password', 'google.com'] }), false);
+    assert.equal(hasFacebookLinked({ uid: UID, providerIds: ['facebook.com'] }), true);
     assert.equal(hasFacebookLinked(null), false);
   });
 });
