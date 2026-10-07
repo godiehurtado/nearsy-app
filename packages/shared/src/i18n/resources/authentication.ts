@@ -35,6 +35,14 @@ export default {
         'Please verify your email using the link we sent you before logging in on this device. If you don’t see the email, please check your Spam or Junk folder.',
       loginErrorTitle: 'Login Error',
     },
+    providerWarning: {
+      title: 'Use another sign-in method',
+      message:
+        'If you already have a Nearsy account created with email, Facebook, or another method, sign in with that method first and connect the new one from More → Sign-in methods.\n\nIf you continue directly, your previous sign-in method may no longer be available.',
+      back: 'Go back',
+      continueGoogle: 'Continue with Google',
+      continueApple: 'Continue with Apple',
+    },
   },
   social: {
     comingSoonTitle: 'Coming soon',

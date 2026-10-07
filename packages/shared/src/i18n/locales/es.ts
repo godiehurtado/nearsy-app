@@ -70,6 +70,14 @@ const es: TranslationResources = {
           'Verifica tu correo con el enlace que te enviamos antes de iniciar sesión en este dispositivo. Si no lo ves, revisa tu carpeta de spam.',
         loginErrorTitle: 'Error al iniciar sesión',
       },
+      providerWarning: {
+        title: 'Usar otro método de inicio de sesión',
+        message:
+          'Si ya tienes una cuenta de Nearsy creada con correo, Facebook u otro método, inicia sesión primero con ese método y conéctalo desde Más → Métodos de inicio de sesión.\n\nSi continúas directamente, tu método anterior podría dejar de estar disponible.',
+        back: 'Volver',
+        continueGoogle: 'Continuar con Google',
+        continueApple: 'Continuar con Apple',
+      },
     },
     social: {
       comingSoonTitle: 'Próximamente',
