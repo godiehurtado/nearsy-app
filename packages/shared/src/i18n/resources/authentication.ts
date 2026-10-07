@@ -41,6 +41,13 @@ export const authenticationTranslations = {
           'Please verify your email using the link we sent you before logging in on this device. If you don’t see the email, please check your Spam or Junk folder.',
         loginErrorTitle: 'Login Error',
       },
+      googleWarning: {
+        title: 'Use another sign-in method',
+        message:
+          'If you already have a Nearsy account created with email, Facebook, or another method, sign in with that method first and connect the new one from More → Sign-in methods.\n\nIf you continue directly, your previous sign-in method may no longer be available.',
+        back: 'Go back',
+        continue: 'Continue with Google',
+      },
     },
     social: {
       comingSoonTitle: 'Coming soon',
@@ -364,6 +371,13 @@ export const authenticationTranslations = {
         emailNotVerifiedMessage:
           'Verifica tu correo con el enlace que te enviamos antes de iniciar sesión en este dispositivo. Si no lo ves, revisa la carpeta de spam o correo no deseado.',
         loginErrorTitle: 'Error al iniciar sesión',
+      },
+      googleWarning: {
+        title: 'Usar otro método de inicio de sesión',
+        message:
+          'Si ya tienes una cuenta de Nearsy creada con correo, Facebook u otro método, inicia sesión primero con ese método y conéctalo desde Más → Métodos de inicio de sesión.\n\nSi continúas directamente, tu método anterior podría dejar de estar disponible.',
+        back: 'Volver',
+        continue: 'Continuar con Google',
       },
     },
     social: {
