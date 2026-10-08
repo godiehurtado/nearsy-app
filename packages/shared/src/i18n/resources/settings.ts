@@ -167,6 +167,9 @@ export default {
     methodsTitle: 'Confirm it’s you',
     methodsBody:
       'For security, confirm your identity with one of your sign-in methods. Your account and data are deleted right after.',
+    methodPassword: 'Password',
+    methodGoogle: 'Google',
+    methodFacebook: 'Facebook',
     linkedInRecentBody:
       'Your account signs in with LinkedIn. You can delete it if you signed in within the last 5 minutes.',
     linkedInGuidance:

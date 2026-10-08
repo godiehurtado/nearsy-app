@@ -411,6 +411,9 @@ export const es: TranslationResources = {
       methodsTitle: 'Confirma que eres tú',
       methodsBody:
         'Por seguridad, confirma tu identidad con uno de tus métodos de inicio de sesión. Tu cuenta y tus datos se eliminan justo después.',
+      methodPassword: 'Contraseña',
+      methodGoogle: 'Google',
+      methodFacebook: 'Facebook',
       linkedInRecentBody:
         'Tu cuenta inicia sesión con LinkedIn. Puedes eliminarla si iniciaste sesión en los últimos 5 minutos.',
       linkedInGuidance:

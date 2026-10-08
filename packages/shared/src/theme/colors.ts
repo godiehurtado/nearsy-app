@@ -25,6 +25,7 @@ export const clearPalette = {
   successBg: '#EAF3EC',
   danger: '#D64545',
   dangerBg: '#FBEAEA',
+  onDanger: '#FFFFFF',
   // Welcome / Login hero
   heroBg: '#EAF4FD',
   heroStar: '#8FB0E0',
@@ -66,6 +67,7 @@ export const darkPalette: Palette = {
   successBg: '#16311F',
   danger: '#E0605F',
   dangerBg: '#3A1A1A',
+  onDanger: '#FFFFFF',
   heroBg: '#0A1330',
   heroStar: '#FFFFFF',
   heroRing: 'rgba(143,203,255,0.55)',

@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import settingsEn from '../i18n/resources/settings.ts';
+import { clearPalette, darkPalette } from '../theme/colors.ts';
 import {
   deleteAccountMessageKey,
   type DeleteAccountFailureKind,
@@ -80,11 +81,9 @@ describe('No client-side deletion', () => {
     }
   });
 
-  it('the screen only reads the profile for header visuals', () => {
+  it('the screen reads no Firestore data', () => {
     const screen = codeOnly(readShared('screens/DeleteAccountScreen.tsx'));
-    const firestoreUses = screen.match(/firestoreDb\.[^;]*/g) ?? [];
-    assert.equal(firestoreUses.length, 1);
-    assert.match(firestoreUses[0], /^firestoreDb\.collection\('users'\)\.doc\(uid\)\.get\(\)/);
+    assert.doesNotMatch(screen, /firestoreDb|firebaseConfig|collection\(/);
   });
 });
 
@@ -250,6 +249,97 @@ describe('Delete Account screen', () => {
   });
 });
 
+describe('Delete Account presentation (Nearsy 2.0 design)', () => {
+  const screen = codeOnly(readShared('screens/DeleteAccountScreen.tsx'));
+
+  it('drops the legacy brand header, logo and avatar', () => {
+    assert.doesNotMatch(screen, /TopHeader|showAvatar|profileImage|topBar(Color|Mode|Image)/);
+    assert.doesNotMatch(screen, /NearsyLogo|Logo\b|Avatar|<Image\b/);
+  });
+
+  it('uses theme tokens only, never hardcoded colors', () => {
+    assert.match(screen, /const \{ palette \} = useAppTheme\(\);/);
+    assert.match(screen, /from '\.\.\/theme';/);
+    assert.doesNotMatch(screen, /#[0-9A-Fa-f]{3,8}\b|rgba?\(|'(white|black|red|gray|grey)'/);
+    assert.match(screen, /styles\.root, \{ backgroundColor: palette\.background \}/);
+  });
+
+  it('every palette token used exists in the clear and dark themes', () => {
+    const used = new Set([...screen.matchAll(/palette\.(\w+)/g)].map((m) => m[1]));
+    assert.ok(used.size > 5);
+    for (const token of used) {
+      assert.equal(typeof (clearPalette as Record<string, unknown>)[token], 'string', `clear ${token}`);
+      assert.equal(typeof (darkPalette as Record<string, unknown>)[token], 'string', `dark ${token}`);
+    }
+  });
+
+  it('follows the new composition: rounded Back, large title, body, red warning, DELETE field', () => {
+    const order = [
+      /styles\.backBtn,/,
+      /name="chevron-back"/,
+      /accessibilityRole="header"\s*style=\{\[styles\.title/,
+      /t\('settings\.deleteAccount\.body'\)/,
+      /styles\.confirmHint, \{ color: palette\.danger \}/,
+      /placeholder=\{t\('settings\.deleteAccount\.placeholder'\)\}/,
+    ];
+    let cursor = 0;
+    for (const pattern of order) {
+      const rest = screen.slice(cursor);
+      const match = rest.match(pattern);
+      assert.ok(match && match.index !== undefined, String(pattern));
+      cursor += match.index + match[0].length;
+    }
+    assert.match(screen, /backBtn: \{[\s\S]*?borderRadius: radius\.md,[\s\S]*?borderWidth: 1,/);
+    assert.match(screen, /title: \{\s*fontSize: fontSize\.xl,\s*fontWeight: fontWeight\.extrabold,/);
+    assert.match(screen, /paddingTop: insets\.top \+ spacing\.md,/);
+  });
+
+  it('the destructive action stays disabled until DELETE is typed exactly', () => {
+    assert.match(screen, /const canDelete = typed\.trim\(\)\.toUpperCase\(\) === 'DELETE';/);
+    assert.match(screen, /const active = enabled && !busy;/);
+    assert.match(screen, /disabled=\{!active\}/);
+    assert.match(screen, /backgroundColor: enabled \? palette\.danger : palette\.borderStrong,/);
+    assert.match(screen, /\? canDelete && Boolean\(password\.trim\(\)\)\s*: canDelete,/);
+    assert.match(screen, /'recent_session',\s*t\('settings\.deleteAccount\.permanently'\),\s*canDelete,/);
+  });
+
+  it('password, Google and Facebook stay selectable when several are linked', () => {
+    for (const map of ['ACTION_LABEL_KEY', 'METHOD_LABEL_KEY', 'METHOD_ICON']) {
+      const block = screen.match(new RegExp(`const ${map}[^=]*= \\{([\\s\\S]*?)\\};`));
+      assert.ok(block, map);
+      const keys = [...block[1].matchAll(/^\s*(\w+):/gm)].map((m) => m[1]);
+      assert.deepEqual(keys, ['password', 'google', 'facebook'], map);
+    }
+    assert.match(screen, /\{options\.methods\.length > 1 && renderMethodSelector\(\)\}/);
+    assert.match(screen, /\{options\.methods\.map\(\(method, index\) => \{/);
+    assert.match(screen, /accessibilityRole="radio"/);
+    assert.match(screen, /accessibilityState=\{\{ checked: selected, disabled: busy \}\}/);
+    assert.match(screen, /\(\) => options\.methods\[0\] \?\? null,/);
+    assert.match(screen, /\{selectedMethod === 'password' && \(/);
+    assert.match(screen, /renderDangerAction\(\s*selectedMethod,\s*t\(ACTION_LABEL_KEY\[selectedMethod\] as any\),/);
+  });
+
+  it('switching method never runs an attempt and is blocked while busy', () => {
+    const select = screen.match(/const selectMethod = [\s\S]*?\n {2}\};/);
+    assert.ok(select);
+    assert.match(select[0], /if \(busy \|\| method === selectedMethod\) return;/);
+    assert.doesNotMatch(select[0], /confirmAndDelete|deleteMyAccountWithReauth|Alert/);
+    assert.deepEqual(screen.match(/confirmAndDelete\([^)]*\)/g), ['confirmAndDelete(method)']);
+  });
+
+  it('LinkedIn has no method row, icon or OAuth entry point', () => {
+    assert.doesNotMatch(screen, /logo-linkedin|methodLinkedIn|linkedin:/i);
+    assert.doesNotMatch(screen, OUT_OF_SCOPE_PROVIDER);
+  });
+
+  it('long text wraps instead of being clipped', () => {
+    assert.doesNotMatch(screen, /numberOfLines|adjustsFontSizeToFit|allowFontScaling=\{false\}/);
+    assert.match(screen, /dangerBtn: \{[\s\S]*?minHeight: 50,[\s\S]*?paddingVertical: spacing\.md,/);
+    assert.match(screen, /methodRow: \{\s*minHeight: 52,/);
+    assert.match(screen, /<ScrollView/);
+  });
+});
+
 describe('Copy EN/ES', () => {
   const esSource = readShared('i18n/locales/es.ts');
   const esDeleteAccount = esSource.slice(
@@ -289,8 +379,12 @@ describe('Copy EN/ES', () => {
     'reauthContinueGoogle',
     'reauthContinueFacebook',
     'linkedInRecentBody',
+    'confirm',
     'methodsTitle',
     'methodsBody',
+    'methodPassword',
+    'methodGoogle',
+    'methodFacebook',
     'reauthUnavailable',
     'linkedInGuidance',
     'errorUnknown',

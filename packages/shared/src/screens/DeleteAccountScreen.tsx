@@ -4,17 +4,26 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
+  Pressable,
   Alert,
   ActivityIndicator,
   ScrollView,
   Platform,
   KeyboardAvoidingView,
+  StyleSheet,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import TopHeader from '../components/TopHeader';
-import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '../i18n';
+import {
+  fontSize,
+  fontWeight,
+  radius,
+  screenPadding,
+  spacing,
+  useAppTheme,
+} from '../theme';
 import {
   deleteMyAccountWithReauth,
   getDeleteAccountOptions,
@@ -24,33 +33,28 @@ import type {
   DeleteAccountMethod,
 } from '../accountDeletion/deleteAccountCore';
 
-type ProfileDoc = {
-  profileImage?: string | null;
-  topBarColor?: string;
-  topBarImage?: string | null;
-  topBarMode?: 'color' | 'image';
-};
-
-const CONTINUE_LABEL_KEY: Record<Exclude<DeleteAccountMethod, 'password'>, string> = {
+const ACTION_LABEL_KEY: Record<DeleteAccountMethod, string> = {
+  password: 'settings.deleteAccount.reauthConfirm',
   google: 'settings.deleteAccount.reauthContinueGoogle',
   facebook: 'settings.deleteAccount.reauthContinueFacebook',
 };
 
-const inputStyle = {
-  borderWidth: 1,
-  borderColor: '#E5E7EB',
-  borderRadius: 12,
-  padding: 12,
-  marginBottom: 12,
-} as const;
+const METHOD_LABEL_KEY: Record<DeleteAccountMethod, string> = {
+  password: 'settings.deleteAccount.methodPassword',
+  google: 'settings.deleteAccount.methodGoogle',
+  facebook: 'settings.deleteAccount.methodFacebook',
+};
+
+const METHOD_ICON: Record<DeleteAccountMethod, keyof typeof Ionicons.glyphMap> = {
+  password: 'key-outline',
+  google: 'logo-google',
+  facebook: 'logo-facebook',
+};
 
 export default function DeleteAccountScreen() {
-  const [topBarColor, setTopBarColor] = useState('#3B5A85');
-  const [topBarMode, setTopBarMode] = useState<'color' | 'image'>('color');
-  const [topBarImage, setTopBarImage] = useState<string | null>(null);
-  const [profileImage, setProfileImage] = useState<string | null>(null);
-
   const nav = useNavigation<any>();
+  const insets = useSafeAreaInsets();
+  const { palette } = useAppTheme();
   const { t } = useTranslation();
   const [typed, setTyped] = useState('');
   const [password, setPassword] = useState('');
@@ -61,6 +65,9 @@ export default function DeleteAccountScreen() {
   const mountedRef = useRef(true);
 
   const options = useMemo(() => getDeleteAccountOptions(), []);
+  const [selectedMethod, setSelectedMethod] = useState<DeleteAccountMethod | null>(
+    () => options.methods[0] ?? null,
+  );
   const canDelete = typed.trim().toUpperCase() === 'DELETE';
   const busy = busyMethod !== null;
 
@@ -68,33 +75,6 @@ export default function DeleteAccountScreen() {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const uid = firebaseAuth.currentUser?.uid;
-        if (!uid) return;
-        const snap = await firestoreDb.collection('users').doc(uid).get();
-        const exists =
-          typeof snap.exists === 'function' ? snap.exists() : snap.exists;
-        if (!cancelled && exists) {
-          const data = snap.data() as ProfileDoc;
-          setTopBarColor(data.topBarColor ?? '#3B5A85');
-          setTopBarMode(
-            data.topBarMode ?? (data.topBarImage ? 'image' : 'color'),
-          );
-          setTopBarImage(data.topBarImage ?? null);
-          setProfileImage(data.profileImage ?? null);
-        }
-      } catch {
-        // Header visuals are decorative; keep the defaults.
-      }
-    })();
-    return () => {
-      cancelled = true;
     };
   }, []);
 
@@ -174,158 +154,327 @@ export default function DeleteAccountScreen() {
     );
   };
 
-  const renderAction = (
+  const selectMethod = (method: DeleteAccountMethod) => {
+    if (busy || method === selectedMethod) return;
+    setPassword('');
+    setSelectedMethod(method);
+  };
+
+  const inputColors = {
+    color: palette.textPrimary,
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+  };
+
+  const renderDangerAction = (
     method: DeleteAccountAttemptMethod,
     label: string,
     enabled: boolean,
   ) => {
     const active = enabled && !busy;
     return (
-      <TouchableOpacity
+      <Pressable
         key={method}
         onPress={() => confirmAndDelete(method)}
         disabled={!active}
-        activeOpacity={0.9}
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityState={{ disabled: !active, busy: busyMethod === method }}
-        style={{
-          backgroundColor: enabled ? '#B91C1C' : '#9CA3AF',
-          paddingVertical: 14,
-          paddingHorizontal: 12,
-          borderRadius: 12,
-          alignItems: 'center',
-          marginBottom: 12,
-          opacity: busy ? 0.8 : 1,
-        }}
+        style={({ pressed }) => [
+          styles.dangerBtn,
+          {
+            backgroundColor: enabled ? palette.danger : palette.borderStrong,
+            opacity: busy || pressed ? 0.85 : 1,
+          },
+        ]}
       >
         {busyMethod === method ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={palette.onDanger} />
         ) : (
-          <Text style={{ color: '#fff', fontWeight: '800', textAlign: 'center' }}>
+          <Text style={[styles.dangerBtnText, { color: palette.onDanger }]}>
             {label}
           </Text>
         )}
-      </TouchableOpacity>
+      </Pressable>
     );
   };
+
+  const renderMethodSelector = () => (
+    <View
+      accessibilityRole="radiogroup"
+      style={[
+        styles.methodList,
+        { backgroundColor: palette.panel, borderColor: palette.border },
+      ]}
+    >
+      {options.methods.map((method, index) => {
+        const selected = method === selectedMethod;
+        return (
+          <Pressable
+            key={method}
+            onPress={() => selectMethod(method)}
+            disabled={busy}
+            accessibilityRole="radio"
+            accessibilityLabel={t(METHOD_LABEL_KEY[method] as any)}
+            accessibilityState={{ checked: selected, disabled: busy }}
+            style={({ pressed }) => [
+              styles.methodRow,
+              index > 0 && {
+                borderTopWidth: StyleSheet.hairlineWidth,
+                borderTopColor: palette.border,
+              },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Ionicons
+              name={METHOD_ICON[method]}
+              size={20}
+              color={palette.textPrimary}
+            />
+            <Text style={[styles.methodLabel, { color: palette.textPrimary }]}>
+              {t(METHOD_LABEL_KEY[method] as any)}
+            </Text>
+            <Ionicons
+              name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+              size={22}
+              color={selected ? palette.primary : palette.textMuted}
+            />
+          </Pressable>
+        );
+      })}
+    </View>
+  );
 
   const hasAnyAction = options.methods.length > 0 || options.recentSessionOnly;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+    <View style={[styles.root, { backgroundColor: palette.background }]}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
       >
         <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: 110 }}
+          contentContainerStyle={{
+            paddingTop: insets.top + spacing.md,
+            paddingBottom: spacing.xxxl + insets.bottom,
+            paddingHorizontal: screenPadding.horizontal,
+          }}
           keyboardShouldPersistTaps="handled"
         >
-          <TopHeader
-            topBarMode={topBarMode}
-            topBarColor={topBarColor}
-            topBarImage={topBarImage}
-            profileImage={profileImage}
-            showAvatar
+          <Pressable
+            onPress={() => nav.goBack()}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.actions.back')}
+            hitSlop={8}
+            style={[
+              styles.backBtn,
+              { backgroundColor: palette.panel, borderColor: palette.border },
+            ]}
+          >
+            <Ionicons name="chevron-back" size={22} color={palette.textPrimary} />
+          </Pressable>
+
+          <Text
+            accessibilityRole="header"
+            style={[styles.title, { color: palette.textPrimary }]}
+          >
+            {t('settings.deleteAccount.title')}
+          </Text>
+          <Text style={[styles.body, { color: palette.textSecondary }]}>
+            {t('settings.deleteAccount.body')}
+          </Text>
+          <Text style={[styles.confirmHint, { color: palette.danger }]}>
+            {t('settings.deleteAccount.confirm')}
+          </Text>
+
+          <TextInput
+            value={typed}
+            onChangeText={setTyped}
+            placeholder={t('settings.deleteAccount.placeholder')}
+            placeholderTextColor={palette.placeholder}
+            accessibilityLabel={t('settings.deleteAccount.placeholder')}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            editable={!busy}
+            style={[styles.input, inputColors]}
           />
-          <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
-            <Text
-              accessibilityRole="header"
-              style={{ fontSize: 20, fontWeight: '800', marginBottom: 10 }}
-            >
-              {t('settings.deleteAccount.title')}
-            </Text>
 
-            <Text style={{ color: '#374151', marginBottom: 14 }}>
-              {t('settings.deleteAccount.body')}
-            </Text>
-
-            <TextInput
-              value={typed}
-              onChangeText={setTyped}
-              placeholder={t('settings.deleteAccount.placeholder')}
-              accessibilityLabel={t('settings.deleteAccount.placeholder')}
-              autoCapitalize="characters"
-              editable={!busy}
-              style={{ ...inputStyle, marginBottom: 20 }}
-            />
-
-            {options.methods.length > 0 && (
-              <>
-                <Text style={{ fontSize: 16, fontWeight: '800', marginBottom: 6 }}>
-                  {t('settings.deleteAccount.methodsTitle')}
-                </Text>
-                <Text style={{ color: '#374151', marginBottom: 14 }}>
-                  {t('settings.deleteAccount.methodsBody')}
-                </Text>
-              </>
-            )}
-            {!hasAnyAction && (
-              <Text style={{ color: '#374151', marginBottom: 14 }}>
-                {t('settings.deleteAccount.reauthUnavailable')}
+          {options.methods.length > 0 && selectedMethod && (
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: palette.textPrimary }]}>
+                {t('settings.deleteAccount.methodsTitle')}
               </Text>
-            )}
+              <Text style={[styles.body, { color: palette.textSecondary }]}>
+                {t('settings.deleteAccount.methodsBody')}
+              </Text>
+              {options.methods.length > 1 && renderMethodSelector()}
+              {selectedMethod === 'password' && (
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder={t('settings.deleteAccount.passwordPlaceholder')}
+                  placeholderTextColor={palette.placeholder}
+                  accessibilityLabel={t('settings.deleteAccount.passwordPlaceholder')}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!busy}
+                  style={[styles.input, inputColors]}
+                />
+              )}
+              {renderDangerAction(
+                selectedMethod,
+                t(ACTION_LABEL_KEY[selectedMethod] as any),
+                selectedMethod === 'password'
+                  ? canDelete && Boolean(password.trim())
+                  : canDelete,
+              )}
+            </View>
+          )}
 
-            {options.methods.map((method) =>
-              method === 'password' ? (
-                <View key={method}>
-                  <TextInput
-                    value={password}
-                    onChangeText={setPassword}
-                    placeholder={t('settings.deleteAccount.passwordPlaceholder')}
-                    accessibilityLabel={t(
-                      'settings.deleteAccount.passwordPlaceholder',
-                    )}
-                    secureTextEntry
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={!busy}
-                    style={inputStyle}
-                  />
-                  {renderAction(
-                    method,
-                    t('settings.deleteAccount.reauthConfirm'),
-                    canDelete && Boolean(password.trim()),
-                  )}
-                </View>
-              ) : (
-                renderAction(method, t(CONTINUE_LABEL_KEY[method] as any), canDelete)
-              ),
-            )}
-
-            {options.recentSessionOnly && (
-              <View style={{ marginTop: 4 }}>
-                <Text style={{ color: '#374151', marginBottom: 12 }}>
+          {options.recentSessionOnly && (
+            <View style={styles.section}>
+              <View
+                accessibilityLiveRegion="polite"
+                style={[
+                  styles.notice,
+                  showLinkedInGuidance
+                    ? { backgroundColor: palette.dangerBg, borderColor: palette.danger }
+                    : { backgroundColor: palette.panel, borderColor: palette.border },
+                ]}
+              >
+                <Text style={[styles.noticeText, { color: palette.textPrimary }]}>
                   {t(
                     showLinkedInGuidance
                       ? 'settings.deleteAccount.linkedInGuidance'
                       : 'settings.deleteAccount.linkedInRecentBody',
                   )}
                 </Text>
-                {renderAction(
-                  'recent_session',
-                  t('settings.deleteAccount.permanently'),
-                  canDelete,
-                )}
               </View>
-            )}
+              {renderDangerAction(
+                'recent_session',
+                t('settings.deleteAccount.permanently'),
+                canDelete,
+              )}
+            </View>
+          )}
 
-            <TouchableOpacity
-              onPress={() => nav.goBack()}
-              disabled={busy}
-              accessibilityRole="button"
-              style={{ marginTop: 14, alignItems: 'center' }}
-            >
-              <Text style={{ color: '#3B5A85', fontWeight: '700' }}>
-                {t('common.actions.back')}
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {!hasAnyAction && (
+            <Text style={[styles.body, { color: palette.textSecondary }]}>
+              {t('settings.deleteAccount.reauthUnavailable')}
+            </Text>
+          )}
+
+          <Pressable
+            onPress={() => nav.goBack()}
+            disabled={busy}
+            accessibilityRole="button"
+            style={styles.backLink}
+          >
+            <Text style={[styles.backLinkText, { color: palette.primary }]}>
+              {t('common.actions.back')}
+            </Text>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  flex: { flex: 1 },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  title: {
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.extrabold,
+    marginBottom: spacing.sm,
+  },
+  body: {
+    fontSize: fontSize.base,
+    lineHeight: fontSize.base * 1.45,
+    marginBottom: spacing.sm,
+  },
+  confirmHint: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+    marginBottom: spacing.md,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    fontSize: fontSize.base,
+    minHeight: 48,
+  },
+  section: {
+    marginTop: spacing.sm,
+  },
+  sectionTitle: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.extrabold,
+    marginBottom: spacing.xs,
+  },
+  methodList: {
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+    overflow: 'hidden',
+  },
+  methodRow: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  methodLabel: {
+    flex: 1,
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.semibold,
+  },
+  notice: {
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  noticeText: {
+    fontSize: fontSize.base,
+    lineHeight: fontSize.base * 1.45,
+  },
+  dangerBtn: {
+    minHeight: 50,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  dangerBtnText: {
+    fontWeight: fontWeight.extrabold,
+    fontSize: fontSize.md,
+    textAlign: 'center',
+  },
+  backLink: {
+    marginTop: spacing.lg,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  backLinkText: {
+    fontWeight: fontWeight.bold,
+  },
+});
