@@ -149,6 +149,7 @@ export default function DeleteAccountScreen() {
     const clearFacebookProviderSession = social?.clearFacebookProviderSession;
 
     await finalizePostAccountDeletionSession({
+      deletedUid,
       closeVisibilityAndLocation: () =>
         closeVisibilitySessionForLogout({ stopRuntime: stopBackgroundLocationRuntime }),
       clearLocalState: () => clearLastKnownVisibility(AsyncStorage, deletedUid),
@@ -163,14 +164,12 @@ export default function DeleteAccountScreen() {
           await firebaseAuth.signOut();
         }
       },
-      navigation: navigationRef.isReady()
-        ? {
-            isReady: () => navigationRef.isReady(),
-            reset: (state) => {
-              (navigationRef as any).reset(state);
-            },
-          }
-        : null,
+      navigation: {
+        isReady: () => navigationRef.isReady(),
+        reset: (state) => {
+          (navigationRef as any).reset(state);
+        },
+      },
     });
 
     Alert.alert(t('common.appName'), t('settings.deleteAccount.done'));

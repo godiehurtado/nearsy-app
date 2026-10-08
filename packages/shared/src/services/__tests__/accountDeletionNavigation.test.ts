@@ -42,6 +42,7 @@ describe('accountDeletionSession + post-delete navigation', () => {
     assert.equal(isAccountDeletionSessionActive(), true);
 
     const finalized = await finalizePostAccountDeletionSession({
+      deletedUid: 'uid-del',
       closeVisibilityAndLocation: async () => {
         order.push('visibility+location');
       },
@@ -84,6 +85,7 @@ describe('accountDeletionSession + post-delete navigation', () => {
   it('a failing local cleanup step never blocks sign-out or the guest transition', async () => {
     const order: string[] = [];
     await finalizePostAccountDeletionSession({
+      deletedUid: 'uid-del',
       closeVisibilityAndLocation: async () => {
         throw new Error('runtime stop failed');
       },

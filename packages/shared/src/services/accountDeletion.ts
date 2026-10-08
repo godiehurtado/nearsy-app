@@ -10,6 +10,7 @@
 import {
   beginAccountDeletionSession,
   endAccountDeletionSession,
+  markAccountDeletionClosing,
 } from './accountDeletionSession';
 import {
   AccountDeletionReauthError,
@@ -164,7 +165,9 @@ export async function deleteAccountWithBackend(
       if (!failure.serverMayHaveDeleted) endAccountDeletionSession();
       return failedFromDeleteError(failure);
     }
-    // Session flag stays active until finalizePostAccountDeletionSession.
+    // Session flag stays active until finalizePostAccountDeletionSession; the
+    // closure barrier stays until Auth reports the signed-out state.
+    markAccountDeletionClosing(uid);
     return { status: 'deleted', uid, backendStatus: response.status };
   } finally {
     inFlight = false;

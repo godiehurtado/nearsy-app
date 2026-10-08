@@ -1,5 +1,5 @@
 // src/navigation/AppNavigator.tsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { View, ActivityIndicator, Platform } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import {
@@ -31,7 +31,14 @@ import {
   closeVisibilitySessionGate,
   openVisibilitySessionGate,
 } from '../visibility/visibilitySessionGate';
-import { isAccountDeletionSessionActive } from '../services/accountDeletionSession';
+import {
+  acknowledgeAuthUserForAccountDeletion,
+  getAccountDeletionClosure,
+  isAccountClosedByDeletion,
+  isAccountDeletionSessionActive,
+  subscribeAccountDeletionClosure,
+} from '../services/accountDeletionSession';
+import { resolveProfileSubscriptionUid, resolveRootFlowKind } from './rootFlowDecision';
 
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
@@ -85,6 +92,12 @@ export default function AppNavigator() {
   const [onboardingInitialRoute, setOnboardingInitialRoute] =
     useState<AuthenticatedOnboardingStackRoute>('ProfileCompletion');
 
+  const accountClosure = useSyncExternalStore(
+    subscribeAccountDeletionClosure,
+    getAccountDeletionClosure,
+  );
+  const profileUid = resolveProfileSubscriptionUid(uid, accountClosure);
+
   useEffect(() => {
     let alive = true;
     loadHasSeenWelcome()
@@ -102,6 +115,7 @@ export default function AppNavigator() {
   // 1) Auth
   useEffect(() => {
     const unsubscribe = firebaseAuth.onAuthStateChanged(async (user) => {
+      acknowledgeAuthUserForAccountDeletion(user?.uid ?? null);
       try {
         if (!user) {
           closeVisibilitySessionGate();
@@ -132,6 +146,9 @@ export default function AppNavigator() {
           return;
         }
 
+        // A deleted account must not reopen Visibility while it signs out.
+        if (isAccountClosedByDeletion(refreshedUser.uid)) return;
+
         openVisibilitySessionGate(refreshedUser.uid);
         setUid(refreshedUser.uid);
         setUserEmail(refreshedUser.email ?? null);
@@ -147,9 +164,9 @@ export default function AppNavigator() {
     return () => unsubscribe();
   }, []);
 
-  // 2) Profile
+  // 2) Profile — never for an account closed by deletion.
   useEffect(() => {
-    if (!uid) {
+    if (!profileUid) {
       setProfileLoading(false);
       setNeedsCompleteProfile(false);
       return;
@@ -157,11 +174,13 @@ export default function AppNavigator() {
 
     setProfileLoading(true);
 
-    const userRef = doc(firestoreDb, 'users', uid);
+    const userRef = doc(firestoreDb, 'users', profileUid);
 
     const unsubscribe = onSnapshot(
       userRef,
       async (snap) => {
+        // Snapshots already queued when the closure barrier engaged.
+        if (isAccountClosedByDeletion(profileUid)) return;
         if (!snap.exists() && isAccountDeletionSessionActive()) {
           // users/{uid} is removed before Auth delete. Do not remount into
           // CompleteProfile and tear down DeleteAccount mid-flow.
@@ -175,6 +194,7 @@ export default function AppNavigator() {
         setProfileLoading(false);
       },
       async () => {
+        if (isAccountClosedByDeletion(profileUid)) return;
         if (isAccountDeletionSessionActive()) {
           setNeedsCompleteProfile(false);
           setProfileLoading(false);
@@ -182,6 +202,7 @@ export default function AppNavigator() {
         }
         try {
           const snap = await getDoc(userRef);
+          if (isAccountClosedByDeletion(profileUid)) return;
           const data = snap.exists() ? (snap.data() as any) : null;
           setNeedsCompleteProfile(!isProfileDocumentComplete(data));
           setOnboardingInitialRoute(resolveAuthenticatedStackInitialRoute(data));
@@ -194,27 +215,24 @@ export default function AppNavigator() {
     );
 
     return () => unsubscribe();
-  }, [uid]);
+  }, [profileUid]);
+
+  const rootFlow = resolveRootFlowKind({
+    loading: authLoading || profileLoading || hydrating || welcomeHydrating,
+    uid,
+    needsCompleteProfile,
+    closure: accountClosure,
+  });
 
   // Guest key must NOT flip when hasChosenTheme becomes true on Continue —
   // otherwise the stack remounts and races with navigation.replace('Welcome').
   // hasSeenWelcome is also excluded: marking Welcome seen mid-session must not remount.
   const flowKey = useMemo(() => {
-    if (authLoading || profileLoading || hydrating || welcomeHydrating)
-      return 'loading';
-    if (!uid) return 'guest';
-    if (needsCompleteProfile) return `auth-complete-${uid}`;
-    return `auth-main-${uid}`;
-  }, [
-    authLoading,
-    profileLoading,
-    hydrating,
-    welcomeHydrating,
-    uid,
-    needsCompleteProfile,
-  ]);
+    if (rootFlow === 'loading' || rootFlow === 'guest') return rootFlow;
+    return `${rootFlow}-${uid}`;
+  }, [rootFlow, uid]);
 
-  if (authLoading || profileLoading || hydrating || welcomeHydrating) {
+  if (rootFlow === 'loading') {
     return <FullScreenLoader />;
   }
 
@@ -224,12 +242,14 @@ export default function AppNavigator() {
    *          -> Welcome (first launch only) -> Login | Register | Google
    *   Later cold starts (Welcome already seen) -> Login
    */
-  if (!uid) {
+  if (rootFlow === 'guest' || !uid) {
     return (
       <Stack.Navigator
         id="RootGuest"
         key={flowKey}
-        initialRouteName={guestInitialRoute(hasChosenTheme, hasSeenWelcome)}
+        initialRouteName={
+          accountClosure ? 'Login' : guestInitialRoute(hasChosenTheme, hasSeenWelcome)
+        }
         screenOptions={guestScreenOptions(palette.background)}
       >
         <Stack.Screen
