@@ -123,10 +123,14 @@ describe('Callable adapter', () => {
     assert.match(android, /logOutFacebookSession\(\);\s*await discardGoogleSignInSession\(\);/);
     assert.match(android, /forgetLastConfirmedVisibility\(deletedUid, AsyncStorage\)/);
     assert.match(core, /runContractualAndroidLogout\(deps\)/);
-    const flow = core.slice(core.indexOf('export function createDeleteAccountFlow'));
-    assert.ok(
-      flow.indexOf('readConfirmedDeletion(data)') < flow.indexOf('deps.cleanupAfterDeletion(uid)'),
-    );
+    const flow = codeOnly(core.slice(core.indexOf('export function createDeleteAccountFlow')));
+    // Cleanup only behind the exit barrier: confirmed reply, Auth gone, or an explicit exit.
+    assert.equal(flow.match(/deps\.cleanupAfterDeletion\(uid\)/g)?.length, 2);
+    assert.match(flow, /barrier\?\.confirmDeletion\(\);\s*try \{\s*await deps\.cleanupAfterDeletion\(uid\);/);
+    assert.match(flow, /barrier\?\.confirmDeletion\(\);\s*try \{\s*if \(uid\) await deps\.cleanupAfterDeletion\(uid\);/);
+    assert.equal(flow.match(/finishDeleted\(uid, /g)?.length, 3);
+    assert.match(flow, /if \(auth === 'gone'\) return finishDeleted\(uid, true\);/);
+    assert.match(flow, /if \(!status\) \{[\s\S]*?\}\s*return finishDeleted\(uid, status === 'ALREADY_DELETED'\);/);
   });
 
   it('no linking, email lookups or token persistence', () => {
@@ -184,7 +188,8 @@ describe('LinkedIn is never reauthenticated inline', () => {
   it('LinkedIn-only accounts use the recent session; guidance never signs out', () => {
     const core = codeOnly(readShared('accountDeletion/deleteAccountCore.ts'));
     assert.match(core, /if \(request\.method === 'recent_session'\) \{\s*if \(!isLinkedInOnlyAccount\(user\)\) return failed\('method_unavailable'\);/);
-    assert.match(core, /request\.method === 'recent_session' && kind === 'stale_session'[\s\S]{0,40}kind = 'linkedin_guidance'/);
+    assert.match(core, /return await callBackend\(uid, request\.method === 'recent_session', false\);/);
+    assert.match(core, /if \(recentSession && kind === 'stale_session'\) \{\s*kind = 'linkedin_guidance';/);
     const screen = codeOnly(readShared('screens/DeleteAccountScreen.tsx'));
     assert.doesNotMatch(screen, /signOut/);
   });
@@ -237,7 +242,7 @@ describe('Post-deletion exit barrier wiring', () => {
     assert.match(navigator, /createDeletionAwareProfileGate\(\{/);
     assert.match(navigator, /exit: accountDeletionExit,/);
     assert.match(navigator, /useEffect\(\(\) => gate\.connect\(\), \[gate\]\);/);
-    assert.match(navigator, /\}, \[uid, profileGateSuspended, gate\]\);/);
+    assert.match(navigator, /\}, \[uid, profileGateSuspended, deletionHydrating, gate\]\);/);
     assert.match(navigator, /const rootView = resolveRootView\(\{/);
     assert.match(navigator, /if \(rootView === 'loader'\) \{/);
     assert.match(navigator, /if \(rootView === 'guest'\) \{/);
@@ -250,10 +255,65 @@ describe('Post-deletion exit barrier wiring', () => {
   });
 
   it('the barrier never writes, recreates or deletes profiles', () => {
-    for (const file of ['accountDeletion/accountDeletionExit.ts', 'navigation/accountDeletionRootGate.ts']) {
+    for (const file of [
+      'accountDeletion/accountDeletionExit.ts',
+      'navigation/accountDeletionRootGate.ts',
+      'screens/AccountDeletionPendingScreen.tsx',
+    ]) {
       const code = codeOnly(readShared(file));
-      assert.doesNotMatch(code, /\bset\(|setDoc|update\(|(?<!listeners)\.delete\(|deleteDoc|createUserProfile|firestore|AsyncStorage|console\./, file);
+      assert.doesNotMatch(code, /\bset\(|setDoc|update\(|(?<!listeners)\.delete\(|deleteDoc|createUserProfile|firestore|dbGetUser|dbOnUserSnapshot|services\/db|AsyncStorage|console\./, file);
     }
+  });
+
+  it('the persisted marker is a bare flag: no UID, email or token', () => {
+    const exit = codeOnly(readShared('accountDeletion/accountDeletionExit.ts'));
+    assert.match(exit, /PENDING_DELETION_STORAGE_KEY = 'nearsy\.accountDeletion\.pending'/);
+    assert.match(exit, /storage\.setItem\(PENDING_DELETION_STORAGE_KEY, '1'\)/);
+    assert.equal(exit.match(/setItem\(/g)?.length, 1);
+  });
+
+  it('ambiguous results are reconciled with a forced Auth reload, never with the profile', () => {
+    assert.match(android, /async function reconcileAuth\(uid: string\): Promise<AuthReconciliation> \{/);
+    assert.match(android, /await user\.reload\(\);/);
+    assert.match(android, /IDENTITY_GONE_CODES = new Set\(\['auth\/user-not-found', 'auth\/user-token-expired'\]\)/);
+    assert.match(android, /\n  reconcileAuth,\n/);
+    assert.doesNotMatch(android, /dbGetUser|dbOnUserSnapshot|services\/db|collection\(|firestore/i);
+  });
+
+  it('AppNavigator hydrates the marker before the profile gate and renders the pending state', () => {
+    assert.match(navigator, /accountDeletionExit\.attachMarker\(createPendingDeletionMarker\(AsyncStorage\)\);/);
+    assert.match(navigator, /accountDeletionExit\.hydrate\(\)/);
+    assert.match(navigator, /if \(!uid \|\| profileGateSuspended \|\| deletionHydrating\) \{/);
+    assert.match(navigator, /authLoading \|\| hydrating \|\| welcomeHydrating \|\| deletionHydrating/);
+    assert.match(navigator, /if \(rootView === 'deletion_pending'\) \{\s*return <AccountDeletionPendingScreen \/>;/);
+  });
+});
+
+describe('Account deletion pending screen', () => {
+  const pending = codeOnly(readShared('screens/AccountDeletionPendingScreen.tsx'));
+
+  it('checks Auth on mount, retries the idempotent call and offers an explicit sign out', () => {
+    assert.match(pending, /resolvePendingAccountDeletion\(\{ retry: false \}\)/);
+    assert.match(pending, /resolvePendingAccountDeletion\(\{ retry: true \}\)/);
+    assert.match(pending, /leavePendingAccountDeletion\(\)/);
+    assert.doesNotMatch(pending, /deleteMyAccountWithReauth|navigate\(|\.reset\(|settings\.deleteAccount\.done/);
+  });
+
+  it('theme tokens and translated copy only', () => {
+    assert.match(pending, /const \{ palette \} = useAppTheme\(\);/);
+    assert.doesNotMatch(pending, /#[0-9A-Fa-f]{3,8}\b|rgba?\(|'(white|black|red|gray|grey)'/);
+    const used = new Set([...pending.matchAll(/palette\.(\w+)/g)].map((m) => m[1]));
+    for (const token of used) {
+      assert.equal(typeof (clearPalette as Record<string, unknown>)[token], 'string', token);
+      assert.equal(typeof (darkPalette as Record<string, unknown>)[token], 'string', token);
+    }
+    assert.doesNotMatch(pending, />[A-Za-z][^<{]*</);
+  });
+
+  it('the stub keeps the same API without any deletion capability', () => {
+    const stub = codeOnly(readShared('accountDeletion/deleteAccount.ts'));
+    assert.match(stub, /export const resolvePendingAccountDeletion/);
+    assert.match(stub, /export const leavePendingAccountDeletion/);
   });
 });
 
@@ -427,6 +487,11 @@ describe('Copy EN/ES', () => {
     'reauthUnavailable',
     'linkedInGuidance',
     'errorUnknown',
+    'pendingTitle',
+    'pendingBody',
+    'pendingSignInAgain',
+    'pendingRetry',
+    'pendingSignOut',
   ];
 
   it('every outcome and screen key exists in EN and ES', () => {
@@ -457,6 +522,10 @@ describe('Copy EN/ES', () => {
   it('failure copy never claims the account was deleted', () => {
     for (const kind of kinds) {
       const leaf = deleteAccountMessageKey(kind).replace('settings.deleteAccount.', '');
+      const en = (settingsEn.deleteAccount as Record<string, string>)[leaf];
+      assert.doesNotMatch(en, /has been deleted/i, leaf);
+    }
+    for (const leaf of ['pendingTitle', 'pendingBody', 'pendingSignInAgain']) {
       const en = (settingsEn.deleteAccount as Record<string, string>)[leaf];
       assert.doesNotMatch(en, /has been deleted/i, leaf);
     }

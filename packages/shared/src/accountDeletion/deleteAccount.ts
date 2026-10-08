@@ -7,12 +7,24 @@ import { deleteAccountMessageKey } from './deleteAccountCore';
 
 type DeleteAccountApi = typeof DeleteAccountAndroid;
 
+const unavailable = async () =>
+  ({
+    status: 'failed',
+    kind: 'method_unavailable',
+    messageKey: deleteAccountMessageKey('method_unavailable'),
+  }) as const;
+
 export const getDeleteAccountOptions: DeleteAccountApi['getDeleteAccountOptions'] =
   () => ({ methods: [], recentSessionOnly: false });
 
 export const deleteMyAccountWithReauth: DeleteAccountApi['deleteMyAccountWithReauth'] =
-  async () => ({
-    status: 'failed',
-    kind: 'method_unavailable',
-    messageKey: deleteAccountMessageKey('method_unavailable'),
+  Object.assign(unavailable, {
+    resolvePending: unavailable,
+    leavePending: async () => undefined,
   });
+
+export const resolvePendingAccountDeletion: DeleteAccountApi['resolvePendingAccountDeletion'] =
+  unavailable;
+
+export const leavePendingAccountDeletion: DeleteAccountApi['leavePendingAccountDeletion'] =
+  async () => undefined;

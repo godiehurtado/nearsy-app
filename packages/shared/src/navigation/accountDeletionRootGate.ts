@@ -26,7 +26,7 @@ type DeletionPhaseSource = {
 };
 
 export function isProfileGateSuspended(phase: AccountDeletionPhase): boolean {
-  return phase === 'exiting' || phase === 'signed_out';
+  return phase === 'unresolved' || phase === 'exiting' || phase === 'signed_out';
 }
 
 /** The deleted session counts as signed out even if Auth has not caught up. */
@@ -37,7 +37,13 @@ export function resolveSessionUid(
   return phase === 'signed_out' ? null : uid;
 }
 
-export type RootView = 'loader' | 'guest' | 'profile_error' | 'onboarding' | 'main';
+export type RootView =
+  | 'loader'
+  | 'deletion_pending'
+  | 'guest'
+  | 'profile_error'
+  | 'onboarding'
+  | 'main';
 
 export function resolveRootView(input: {
   deletionPhase: AccountDeletionPhase;
@@ -47,6 +53,7 @@ export function resolveRootView(input: {
 }): RootView {
   const { deletionPhase, uid, startupLoading, profileFlowKind } = input;
   if (startupLoading || deletionPhase === 'exiting') return 'loader';
+  if (deletionPhase === 'unresolved') return uid ? 'deletion_pending' : 'loader';
   // Auth dropped mid-request: wait for the outcome before mounting a stack.
   if (deletionPhase === 'deleting' && !uid) return 'loader';
   const sessionUid = resolveSessionUid(deletionPhase, uid);
@@ -67,10 +74,12 @@ export function resolveRootView(input: {
 /**
  * Profile gate that honours the deletion barrier:
  * - idle: flows pass through.
- * - deleting: the latest flow is held (the profile document may already be
- *   gone) and delivered only if the request is abandoned.
- * - exiting / signed_out: the gate is stopped, held flows are dropped and the
- *   listener receives `loading` once; `start` and `retry` are no-ops.
+ * - deleting: flows are swallowed (the profile document may already be gone)
+ *   and never replayed, so a released request keeps the current tree. Until
+ *   the gate starts again, that session only accepts `MainTabs`: a late
+ *   absent-document confirmation can never turn it into a new account.
+ * - unresolved / exiting / signed_out: the gate is stopped and the listener
+ *   receives `loading` once; `start` and `retry` are no-ops.
  */
 export function createDeletionAwareProfileGate(deps: {
   gate: ProfileGate;
@@ -78,37 +87,25 @@ export function createDeletionAwareProfileGate(deps: {
 }) {
   const { gate, exit } = deps;
   let onFlow: FlowListener | null = null;
-  let held: AuthenticatedProfileFlow | null = null;
   let lastPhase = exit.getPhase();
+  let afterDeletionAttempt = false;
 
   function deliver(listener: FlowListener, flow: AuthenticatedProfileFlow) {
-    if (listener !== onFlow) return;
-    const phase = exit.getPhase();
-    if (phase === 'idle') {
-      listener(flow);
-    } else if (phase === 'deleting') {
-      held = flow;
-    }
+    if (listener !== onFlow || exit.getPhase() !== 'idle') return;
+    if (afterDeletionAttempt && flow.kind !== 'MainTabs') return;
+    listener(flow);
   }
 
   function onPhaseChange() {
     const phase = exit.getPhase();
     const previous = lastPhase;
     lastPhase = phase;
-    if (isProfileGateSuspended(phase)) {
-      if (isProfileGateSuspended(previous)) return;
-      gate.stop();
-      held = null;
-      const listener = onFlow;
-      onFlow = null;
-      listener?.({ kind: 'loading' });
-      return;
-    }
-    if (phase === 'idle' && previous === 'deleting' && held && onFlow) {
-      const flow = held;
-      held = null;
-      onFlow(flow);
-    }
+    if (previous === 'deleting' && phase === 'idle') afterDeletionAttempt = true;
+    if (!isProfileGateSuspended(phase) || isProfileGateSuspended(previous)) return;
+    gate.stop();
+    const listener = onFlow;
+    onFlow = null;
+    listener?.({ kind: 'loading' });
   }
 
   function run(
@@ -117,7 +114,7 @@ export function createDeletionAwareProfileGate(deps: {
     listener: FlowListener,
   ): void {
     if (isProfileGateSuspended(exit.getPhase())) return;
-    held = null;
+    afterDeletionAttempt = false;
     onFlow = listener;
     gate[method](uid, (flow) => deliver(listener, flow));
   }
@@ -127,7 +124,6 @@ export function createDeletionAwareProfileGate(deps: {
     retry: (uid: string, listener: FlowListener) => run('retry', uid, listener),
     stop(): void {
       onFlow = null;
-      held = null;
       gate.stop();
     },
     /** Subscribes to the barrier; returns the matching unsubscribe. */

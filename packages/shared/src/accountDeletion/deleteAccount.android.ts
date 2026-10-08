@@ -37,7 +37,9 @@ import {
   createDeleteAccountFlow,
   resolveDeleteAccountOptions,
   runAccountDeletionCleanup,
+  type AuthReconciliation,
   type DeleteAccountOptions,
+  type DeleteAccountOutcome,
   type DeleteAccountUserSnapshot,
 } from './deleteAccountCore';
 
@@ -83,6 +85,24 @@ async function invokeCallable(
   });
   const result = await callable(payload);
   return result.data;
+}
+
+/** Reload errors that prove the Auth identity no longer exists. */
+const IDENTITY_GONE_CODES = new Set(['auth/user-not-found', 'auth/user-token-expired']);
+
+async function reconcileAuth(uid: string): Promise<AuthReconciliation> {
+  const user = firebaseAuth.currentUser;
+  if (!user) return 'gone';
+  if (user.uid !== uid) return 'unknown';
+  try {
+    await user.reload();
+  } catch (err) {
+    const code = (err as { code?: unknown })?.code;
+    return typeof code === 'string' && IDENTITY_GONE_CODES.has(code) ? 'gone' : 'unknown';
+  }
+  const reloaded = firebaseAuth.currentUser;
+  if (!reloaded) return 'gone';
+  return reloaded.uid === uid ? 'exists' : 'unknown';
 }
 
 async function reauthenticateWithGoogle(): Promise<void> {
@@ -147,8 +167,20 @@ export const deleteMyAccountWithReauth = createDeleteAccountFlow({
   },
   invokeCallable,
   cleanupAfterDeletion,
+  reconcileAuth,
   exitBarrier: accountDeletionExit,
   logDev: (entry) => {
     if (__DEV__) console.log('[deleteAccount]', entry);
   },
 });
+
+/** Pending state: `retry: false` only reconciles with Auth. */
+export function resolvePendingAccountDeletion(options: {
+  retry: boolean;
+}): Promise<DeleteAccountOutcome> {
+  return deleteMyAccountWithReauth.resolvePending(options);
+}
+
+export function leavePendingAccountDeletion(): Promise<void> {
+  return deleteMyAccountWithReauth.leavePending();
+}

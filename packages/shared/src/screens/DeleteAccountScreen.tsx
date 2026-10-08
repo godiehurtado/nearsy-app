@@ -84,7 +84,8 @@ export default function DeleteAccountScreen() {
       method,
       password: method === 'password' ? password : undefined,
     });
-    if (outcome.status === 'in_progress') return;
+    // Unresolved: the root replaces this screen with the pending state.
+    if (outcome.status === 'in_progress' || outcome.status === 'unresolved') return;
     if (outcome.status === 'deleted') {
       // The root navigator owns the exit: it mounts the guest stack (Login)
       // once the deletion barrier is released.

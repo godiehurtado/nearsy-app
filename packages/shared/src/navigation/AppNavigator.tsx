@@ -48,7 +48,11 @@ import {
   isProfileGateSuspended,
   resolveRootView,
 } from './accountDeletionRootGate';
-import { accountDeletionExit } from '../accountDeletion/accountDeletionExit';
+import {
+  accountDeletionExit,
+  createPendingDeletionMarker,
+} from '../accountDeletion/accountDeletionExit';
+import AccountDeletionPendingScreen from '../screens/AccountDeletionPendingScreen';
 import type { AuthenticatedOnboardingStackRoute } from '../phoneOtp/onboardingResolver';
 import { loadLastConfirmedVisibility } from '../visibility/lastConfirmedVisibility';
 
@@ -143,6 +147,20 @@ export default function AppNavigator() {
   }, []);
   const profileGateSuspended = isProfileGateSuspended(deletionPhase);
 
+  // A deletion left unresolved by a previous run must be known before the
+  // profile gate may read anything.
+  const [deletionHydrating, setDeletionHydrating] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    accountDeletionExit.attachMarker(createPendingDeletionMarker(AsyncStorage));
+    void accountDeletionExit.hydrate().finally(() => {
+      if (alive) setDeletionHydrating(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const [gate] = useState(() =>
     createDeletionAwareProfileGate({
       gate: createAuthenticatedProfileGate({
@@ -215,9 +233,9 @@ export default function AppNavigator() {
   }, []);
 
   // 2) Profile gate (shared by Google / password / LinkedIn — no provider branch)
-  // A confirmed account deletion suspends it until Auth has no user.
+  // An account deletion that is closing or unresolved suspends it.
   useEffect(() => {
-    if (!uid || profileGateSuspended) {
+    if (!uid || profileGateSuspended || deletionHydrating) {
       gate.stop();
       setProfileFlow({ kind: 'loading' });
       return;
@@ -229,10 +247,10 @@ export default function AppNavigator() {
     return () => {
       gate.stop();
     };
-  }, [uid, profileGateSuspended, gate]);
+  }, [uid, profileGateSuspended, deletionHydrating, gate]);
 
   const retryProfileGate = () => {
-    if (!uid || profileGateSuspended) return;
+    if (!uid || profileGateSuspended || deletionHydrating) return;
     gate.retry(uid, setProfileFlow);
   };
 
@@ -241,7 +259,8 @@ export default function AppNavigator() {
   const rootView = resolveRootView({
     deletionPhase,
     uid,
-    startupLoading: authLoading || hydrating || welcomeHydrating,
+    startupLoading:
+      authLoading || hydrating || welcomeHydrating || deletionHydrating,
     profileFlowKind: profileFlow.kind,
   });
   const needsOnboarding = rootView === 'onboarding';
@@ -266,6 +285,8 @@ export default function AppNavigator() {
     switch (rootView) {
       case 'loader':
         return 'loading';
+      case 'deletion_pending':
+        return 'deletion-pending';
       case 'guest':
         return 'guest';
       case 'profile_error':
@@ -288,6 +309,11 @@ export default function AppNavigator() {
   // navigator so the guest stack below mounts fresh on its initial route.
   if (rootView === 'loader') {
     return <FullScreenLoader />;
+  }
+
+  // Unknown deletion outcome: no navigator, no profile gate.
+  if (rootView === 'deletion_pending') {
+    return <AccountDeletionPendingScreen />;
   }
 
   /**

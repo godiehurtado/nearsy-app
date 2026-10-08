@@ -17,6 +17,7 @@ import {
   resolveDeleteAccountMethods,
   resolveDeleteAccountOptions,
   runAccountDeletionCleanup,
+  type AuthReconciliation,
   type DeleteAccountDevLog,
   type DeleteAccountFlowDeps,
   type DeleteAccountMethod,
@@ -723,6 +724,7 @@ describe('Exit barrier ordering', () => {
     h.deps.exitBarrier = {
       beginRequest: record('begin'),
       abandonRequest: record('abandon'),
+      markUnresolved: record('unresolved'),
       confirmDeletion: record('confirm'),
       finishCleanup: record('finish'),
     };
@@ -790,5 +792,150 @@ describe('Exit barrier ordering', () => {
     };
     await createDeleteAccountFlow(swapped.deps)({ method: 'google' });
     assert.ok(!swapped.calls.some((c) => c.startsWith('barrier:')));
+  });
+
+  function reconciling(result: AuthReconciliation | Error, overrides: Partial<DeleteAccountFlowDeps> = {}) {
+    const h = withBarrier(user(PASSWORD_UID, 'password'), {
+      invokeCallable: rejectWith('functions/deadline-exceeded'),
+      ...overrides,
+    });
+    const invoke = h.deps.invokeCallable;
+    h.deps.invokeCallable = (name, payload) => {
+      h.calls.push(`callable:${name}`);
+      return invoke(name, payload);
+    };
+    h.deps.reconcileAuth = async (uid) => {
+      h.calls.push(`reconcile:${uid === PASSWORD_UID ? 'same-uid' : 'other'}`);
+      if (result instanceof Error) throw result;
+      return result;
+    };
+    return h;
+  }
+  const attempt = (h: Harness) =>
+    createDeleteAccountFlow(h.deps)({ method: 'password', password: SECRET_PASSWORD });
+  const barrierAndCleanup = (h: Harness) =>
+    h.calls.filter((c) => /^(barrier|cleanup|reconcile)/.test(c));
+
+  it('ambiguous result + Auth gone → treated as deleted: confirm, cleanup, finish', async () => {
+    const h = reconciling('gone');
+    const outcome = await attempt(h);
+    assert.deepEqual(outcome, { status: 'deleted', alreadyDeleted: true });
+    assert.deepEqual(barrierAndCleanup(h), [
+      'barrier:begin',
+      'reconcile:same-uid',
+      'barrier:confirm',
+      'cleanup:same-uid',
+      'barrier:finish',
+    ]);
+  });
+
+  it('ambiguous result + same user exists → released, original retryable message, no cleanup', async () => {
+    const h = reconciling('exists', { invokeCallable: rejectWith('functions/unavailable') });
+    const outcome = await attempt(h);
+    assert.equal(outcome.status === 'failed' && outcome.kind, 'network');
+    assert.deepEqual(barrierAndCleanup(h), ['barrier:begin', 'reconcile:same-uid', 'barrier:abandon']);
+  });
+
+  it('ambiguous result + Auth unreachable (or reconcile throws) → unresolved, no cleanup, no success', async () => {
+    for (const result of ['unknown', new Error('offline')] as const) {
+      const h = reconciling(result);
+      const outcome = await attempt(h);
+      assert.deepEqual(outcome, { status: 'unresolved' });
+      assert.deepEqual(barrierAndCleanup(h), ['barrier:begin', 'reconcile:same-uid', 'barrier:unresolved']);
+    }
+  });
+
+  it('unconfirmed replies and post-data backend errors are reconciled too', async () => {
+    for (const invokeCallable of [
+      async () => ({ ok: true }),
+      rejectWith('functions/internal', { reason: 'DELETION_RETRYABLE' }),
+      rejectWith('functions/internal', { reason: 'DELETION_FAILED' }),
+      rejectWith('auth/user-not-found'),
+    ]) {
+      const h = reconciling('gone', { invokeCallable });
+      const outcome = await attempt(h);
+      assert.equal(outcome.status, 'deleted');
+    }
+  });
+
+  it('rejections before any data never reconcile', async () => {
+    for (const reason of ['RECENT_LOGIN_REQUIRED', 'APP_CHECK_REQUIRED', 'UNAUTHENTICATED']) {
+      const h = reconciling('gone', {
+        invokeCallable: rejectWith('functions/failed-precondition', { reason }),
+      });
+      const outcome = await attempt(h);
+      assert.equal(outcome.status, 'failed');
+      assert.deepEqual(barrierAndCleanup(h), ['barrier:begin', 'barrier:abandon']);
+    }
+  });
+
+  it('pending: reconcile only, then retry the idempotent callable without reauthentication', async () => {
+    const checking = reconciling('exists', {
+      invokeCallable: async () => ({ ok: true, status: 'ALREADY_DELETED' }),
+    });
+    const flow = createDeleteAccountFlow(checking.deps);
+    assert.deepEqual(await flow.resolvePending({ retry: false }), { status: 'unresolved' });
+    assert.ok(!checking.calls.some((c) => c.startsWith('callable')));
+
+    const retried = await flow.resolvePending({ retry: true });
+    assert.deepEqual(retried, { status: 'deleted', alreadyDeleted: true });
+    assert.ok(!checking.calls.some((c) => c.startsWith('reauth')));
+    assert.equal(checking.calls.filter((c) => c.startsWith('callable')).length, 1);
+  });
+
+  it('pending: Auth unreachable never calls the backend; Auth gone closes without a call', async () => {
+    const offline = reconciling('unknown');
+    assert.deepEqual(
+      await createDeleteAccountFlow(offline.deps).resolvePending({ retry: true }),
+      { status: 'unresolved' },
+    );
+    assert.ok(!offline.calls.some((c) => c.startsWith('callable')));
+
+    const gone = reconciling('gone');
+    const outcome = await createDeleteAccountFlow(gone.deps).resolvePending({ retry: true });
+    assert.deepEqual(outcome, { status: 'deleted', alreadyDeleted: true });
+    assert.ok(!gone.calls.some((c) => c.startsWith('callable')));
+  });
+
+  it('pending: a failed retry keeps the state unresolved (never releases the barrier)', async () => {
+    for (const invokeCallable of [
+      rejectWith('functions/failed-precondition', { reason: 'RECENT_LOGIN_REQUIRED' }),
+      rejectWith('functions/unavailable'),
+    ]) {
+      const h = reconciling('exists', { invokeCallable });
+      const outcome = await createDeleteAccountFlow(h.deps).resolvePending({ retry: true });
+      assert.notEqual(outcome.status, 'deleted');
+      assert.ok(!h.calls.includes('barrier:abandon'));
+      assert.ok(!h.calls.some((c) => c.startsWith('cleanup')));
+    }
+  });
+
+  it('pending: leaving runs the contractual cleanup behind the exit barrier', async () => {
+    const h = reconciling('unknown');
+    await createDeleteAccountFlow(h.deps).leavePending();
+    assert.deepEqual(barrierAndCleanup(h), ['barrier:confirm', 'cleanup:same-uid', 'barrier:finish']);
+  });
+
+  it('pending actions share the single-attempt lock', async () => {
+    let release!: () => void;
+    const h = reconciling('exists', {
+      invokeCallable: () =>
+        new Promise((resolve) => {
+          release = () => resolve({ ok: true, status: 'DELETED' });
+        }),
+    });
+    const flow = createDeleteAccountFlow(h.deps);
+    const running = flow({ method: 'password', password: SECRET_PASSWORD });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual(await flow.resolvePending({ retry: true }), { status: 'in_progress' });
+    release();
+    assert.equal((await running).status, 'deleted');
+  });
+
+  it('reconcile logs carry only the result', async () => {
+    const h = reconciling('unknown');
+    await attempt(h);
+    const entry = h.logs.find((l) => l.stage === 'reconcile');
+    assert.deepEqual(entry, { stage: 'reconcile', reason: 'unknown' });
   });
 });

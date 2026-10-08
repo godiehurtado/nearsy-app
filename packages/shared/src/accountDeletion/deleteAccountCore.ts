@@ -272,10 +272,22 @@ export type DeleteAccountRequest = {
 export type DeleteAccountOutcome =
   | { status: 'deleted'; alreadyDeleted: boolean }
   | { status: 'in_progress' }
+  /** Outcome unknown and Auth unreachable: the root shows the pending state. */
+  | { status: 'unresolved' }
   | { status: 'failed'; kind: DeleteAccountFailureKind; messageKey: string };
 
+/** Firebase Auth after a forced reload of the signed-in user. */
+export type AuthReconciliation = 'gone' | 'exists' | 'unknown';
+
+/** The backend rejects these before touching any data (auth, App Check, auth_time). */
+const PRE_DATA_REJECTIONS: ReadonlySet<DeleteAccountFailureKind> = new Set([
+  'stale_session',
+  'app_check',
+  'unauthenticated',
+]);
+
 export type DeleteAccountDevLog = {
-  stage: 'reauth' | 'callable' | 'response' | 'cleanup';
+  stage: 'reauth' | 'callable' | 'response' | 'reconcile' | 'cleanup';
   kind?: DeleteAccountFailureKind;
   code?: string;
   reason?: string;
@@ -288,6 +300,12 @@ export type DeleteAccountFlowDeps = {
   >;
   invokeCallable: (name: string, payload: Record<string, never>) => Promise<unknown>;
   cleanupAfterDeletion: (uid: string) => Promise<void>;
+  /**
+   * Forced reload of the signed-in Auth user after an ambiguous callable
+   * result. Never reads the profile. Without it the account is assumed to
+   * still exist.
+   */
+  reconcileAuth?: (uid: string) => Promise<AuthReconciliation>;
   /** Keeps the root navigator off the profile gate from the call to Login. */
   exitBarrier?: AccountDeletionExitBarrier;
   /** Codes and reasons only — never tokens, emails, UIDs or passwords. */
@@ -303,9 +321,18 @@ function failed(kind: DeleteAccountFailureKind): DeleteAccountOutcome {
  * current session) → same UID → `deleteMyAccount({})` → local cleanup only
  * after the backend confirms. Any failure leaves the session, local state and
  * data untouched so the person can retry.
+ *
+ * Ambiguous results (timeout, lost connection, backend errors after the data
+ * stages may have run, unconfirmed replies) are reconciled with a forced Auth
+ * reload, never with the profile:
+ * - Auth user gone → treated as deleted (cleanup, then Login).
+ * - same user still exists → barrier released, retryable message.
+ * - Auth unreachable → `unresolved`: the root keeps the profile gate off and
+ *   shows the pending state (`resolvePending` / `leavePending`).
  */
 export function createDeleteAccountFlow(deps: DeleteAccountFlowDeps) {
   let inProgress = false;
+  const barrier = deps.exitBarrier;
   const log = (entry: DeleteAccountDevLog) => {
     try {
       deps.logDev?.(entry);
@@ -314,7 +341,132 @@ export function createDeleteAccountFlow(deps: DeleteAccountFlowDeps) {
     }
   };
 
-  return async function deleteAccount(
+  const currentUid = (): string | null => {
+    const uid = deps.getCurrentUser()?.uid;
+    return typeof uid === 'string' && uid ? uid : null;
+  };
+
+  async function reconcile(uid: string): Promise<AuthReconciliation> {
+    if (!deps.reconcileAuth) return 'exists';
+    let result: AuthReconciliation;
+    try {
+      result = await deps.reconcileAuth(uid);
+    } catch {
+      result = 'unknown';
+    }
+    log({ stage: 'reconcile', reason: result });
+    return result;
+  }
+
+  async function finishDeleted(
+    uid: string,
+    alreadyDeleted: boolean,
+  ): Promise<DeleteAccountOutcome> {
+    barrier?.confirmDeletion();
+    try {
+      await deps.cleanupAfterDeletion(uid);
+    } catch (err) {
+      // The account is gone; local cleanup is best effort.
+      log({ stage: 'cleanup', code: readCode(err) || undefined });
+    } finally {
+      barrier?.finishCleanup();
+    }
+    return { status: 'deleted', alreadyDeleted };
+  }
+
+  async function settleAmbiguous(
+    uid: string,
+    kind: DeleteAccountFailureKind,
+    pending: boolean,
+  ): Promise<DeleteAccountOutcome> {
+    const auth = await reconcile(uid);
+    if (auth === 'gone') return finishDeleted(uid, true);
+    if (auth === 'exists' && !pending) {
+      barrier?.abandonRequest();
+      return failed(kind);
+    }
+    barrier?.markUnresolved();
+    return { status: 'unresolved' };
+  }
+
+  /** One idempotent `deleteMyAccount({})` call and its settlement. */
+  async function callBackend(
+    uid: string,
+    recentSession: boolean,
+    pending: boolean,
+  ): Promise<DeleteAccountOutcome> {
+    let data: unknown;
+    try {
+      data = await deps.invokeCallable(DELETE_MY_ACCOUNT_CALLABLE, {});
+    } catch (err) {
+      let kind = mapDeleteMyAccountFailure(err);
+      const rejectedBeforeData = PRE_DATA_REJECTIONS.has(kind);
+      if (recentSession && kind === 'stale_session') {
+        kind = 'linkedin_guidance';
+      }
+      log({
+        stage: 'callable',
+        kind,
+        code: readCode(err) || undefined,
+        reason: readReason(err) || undefined,
+      });
+      if (!rejectedBeforeData) return settleAmbiguous(uid, kind, pending);
+      if (!pending) barrier?.abandonRequest();
+      return failed(kind);
+    }
+
+    const status = readConfirmedDeletion(data);
+    if (!status) {
+      log({ stage: 'response', kind: 'unknown' });
+      return settleAmbiguous(uid, 'unknown', pending);
+    }
+    return finishDeleted(uid, status === 'ALREADY_DELETED');
+  }
+
+  /**
+   * Pending state: reconcile with Auth; with `retry`, call the idempotent
+   * callable again when the account still exists. Never reauthenticates.
+   */
+  async function resolvePending(options: {
+    retry: boolean;
+  }): Promise<DeleteAccountOutcome> {
+    if (inProgress) return { status: 'in_progress' };
+    inProgress = true;
+    try {
+      const uid = currentUid();
+      if (!uid) return failed('unauthenticated');
+      const auth = await reconcile(uid);
+      if (auth === 'gone') return finishDeleted(uid, true);
+      if (auth === 'unknown' || !options.retry) {
+        barrier?.markUnresolved();
+        return { status: 'unresolved' };
+      }
+      return await callBackend(uid, false, true);
+    } finally {
+      inProgress = false;
+    }
+  }
+
+  /** Explicit way out of the pending state: contractual logout, then Login. */
+  async function leavePending(): Promise<void> {
+    if (inProgress) return;
+    inProgress = true;
+    try {
+      const uid = currentUid();
+      barrier?.confirmDeletion();
+      try {
+        if (uid) await deps.cleanupAfterDeletion(uid);
+      } catch (err) {
+        log({ stage: 'cleanup', code: readCode(err) || undefined });
+      } finally {
+        barrier?.finishCleanup();
+      }
+    } finally {
+      inProgress = false;
+    }
+  }
+
+  async function deleteAccount(
     request: DeleteAccountRequest,
   ): Promise<DeleteAccountOutcome> {
     if (inProgress) return { status: 'in_progress' };
@@ -346,47 +498,14 @@ export function createDeleteAccountFlow(deps: DeleteAccountFlowDeps) {
 
       if (deps.getCurrentUser()?.uid !== uid) return failed('uid_changed');
 
-      const barrier = deps.exitBarrier;
-      barrier?.beginRequest();
-      let data: unknown;
-      try {
-        data = await deps.invokeCallable(DELETE_MY_ACCOUNT_CALLABLE, {});
-      } catch (err) {
-        barrier?.abandonRequest();
-        let kind = mapDeleteMyAccountFailure(err);
-        if (request.method === 'recent_session' && kind === 'stale_session') {
-          kind = 'linkedin_guidance';
-        }
-        log({
-          stage: 'callable',
-          kind,
-          code: readCode(err) || undefined,
-          reason: readReason(err) || undefined,
-        });
-        return failed(kind);
-      }
-
-      const status = readConfirmedDeletion(data);
-      if (!status) {
-        barrier?.abandonRequest();
-        log({ stage: 'response', kind: 'unknown' });
-        return failed('unknown');
-      }
-
-      barrier?.confirmDeletion();
-      try {
-        await deps.cleanupAfterDeletion(uid);
-      } catch (err) {
-        // The account is gone; local cleanup is best effort.
-        log({ stage: 'cleanup', code: readCode(err) || undefined });
-      } finally {
-        barrier?.finishCleanup();
-      }
-      return { status: 'deleted', alreadyDeleted: status === 'ALREADY_DELETED' };
+      await barrier?.beginRequest();
+      return await callBackend(uid, request.method === 'recent_session', false);
     } finally {
       inProgress = false;
     }
-  };
+  }
+
+  return Object.assign(deleteAccount, { resolvePending, leavePending });
 }
 
 export type AccountDeletionCleanupDeps = ContractualLogoutDeps & {

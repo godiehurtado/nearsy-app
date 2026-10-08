@@ -190,6 +190,13 @@ export default {
       'We couldn’t confirm the deletion because of a connection problem. Check your connection and try again.',
     errorUnknown:
       'We couldn’t confirm that your account was deleted. Please try again.',
+    pendingTitle: 'Confirming account deletion',
+    pendingBody:
+      'We couldn’t confirm whether your account was deleted. Check your connection and try again, or sign out.',
+    pendingSignInAgain:
+      'Your account still exists. For security, sign out, sign back in and request the deletion again.',
+    pendingRetry: 'Try again',
+    pendingSignOut: 'Sign out',
   },
   blockedPeople: {
     title: 'Blocked People',

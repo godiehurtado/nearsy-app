@@ -434,6 +434,13 @@ export const es: TranslationResources = {
         'No pudimos confirmar la eliminación por un problema de conexión. Revisa tu conexión e inténtalo de nuevo.',
       errorUnknown:
         'No pudimos confirmar que tu cuenta se haya eliminado. Inténtalo de nuevo.',
+      pendingTitle: 'Confirmando la eliminación de la cuenta',
+      pendingBody:
+        'No pudimos confirmar si tu cuenta se eliminó. Revisa tu conexión e inténtalo de nuevo, o cierra sesión.',
+      pendingSignInAgain:
+        'Tu cuenta sigue activa. Por seguridad, cierra sesión, vuelve a ingresar y solicita de nuevo la eliminación.',
+      pendingRetry: 'Reintentar',
+      pendingSignOut: 'Cerrar sesión',
     },
     blockedPeople: {
       title: 'Personas bloqueadas',
