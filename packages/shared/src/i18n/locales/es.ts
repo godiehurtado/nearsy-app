@@ -73,7 +73,7 @@ const es: TranslationResources = {
       providerWarning: {
         title: 'Usar otro método de inicio de sesión',
         message:
-          'Si ya tienes una cuenta de Nearsy creada con correo, Facebook u otro método, inicia sesión primero con ese método y conéctalo desde Más → Métodos de inicio de sesión.\n\nSi continúas directamente, tu método anterior podría dejar de estar disponible.',
+          'Si ya tienes una cuenta de Nearsy creada con correo, Facebook u otro método, inicia sesión primero con ese método y conéctalo desde Métodos de inicio de sesión en Ajustes.\n\nSi continúas directamente, tu método anterior podría dejar de estar disponible.',
         back: 'Volver',
         continueGoogle: 'Continuar con Google',
         continueApple: 'Continuar con Apple',

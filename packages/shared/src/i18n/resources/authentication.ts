@@ -38,7 +38,7 @@ export default {
     providerWarning: {
       title: 'Use another sign-in method',
       message:
-        'If you already have a Nearsy account created with email, Facebook, or another method, sign in with that method first and connect the new one from More → Sign-in methods.\n\nIf you continue directly, your previous sign-in method may no longer be available.',
+        'If you already have a Nearsy account created with email, Facebook, or another method, sign in with that method first and connect the new one from Sign-in methods in Settings.\n\nIf you continue directly, your previous sign-in method may no longer be available.',
       back: 'Go back',
       continueGoogle: 'Continue with Google',
       continueApple: 'Continue with Apple',
