@@ -364,14 +364,14 @@ describe('i18n EN/ES', () => {
     assert.deepEqual(enAuth.login.googleWarning, {
       title: 'Use another sign-in method',
       message:
-        'If you already have a Nearsy account created with email, Facebook, or another method, sign in with that method first and connect the new one from More → Sign-in methods.\n\nIf you continue directly, your previous sign-in method may no longer be available.',
+        'If you already have a Nearsy account created with email, Facebook, or another method, sign in with that method first and connect the new one from Sign-in methods in Settings.\n\nIf you continue directly, your previous sign-in method may no longer be available.',
       back: 'Go back',
       continue: 'Continue with Google',
     });
     assert.deepEqual(esAuth.login.googleWarning, {
       title: 'Usar otro método de inicio de sesión',
       message:
-        'Si ya tienes una cuenta de Nearsy creada con correo, Facebook u otro método, inicia sesión primero con ese método y conéctalo desde Más → Métodos de inicio de sesión.\n\nSi continúas directamente, tu método anterior podría dejar de estar disponible.',
+        'Si ya tienes una cuenta de Nearsy creada con correo, Facebook u otro método, inicia sesión primero con ese método y conéctalo desde Métodos de inicio de sesión en Ajustes.\n\nSi continúas directamente, tu método anterior podría dejar de estar disponible.',
       back: 'Volver',
       continue: 'Continuar con Google',
     });
