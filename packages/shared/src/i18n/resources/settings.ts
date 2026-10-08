@@ -164,6 +164,28 @@ export default {
       'That account does not match the one signed in to Nearsy. Your account was not deleted.',
     reauthUnavailable:
       'Account deletion for this sign-in method is temporarily unavailable in the app. Please contact Nearsy support for help.',
+    methodsTitle: 'Confirm it’s you',
+    methodsBody:
+      'For security, confirm your identity with one of your sign-in methods. Your account and data are deleted right after.',
+    reauthContinueLinkedIn: 'Continue with LinkedIn and delete',
+    linkedInGuidance:
+      'To delete an account that signs in with LinkedIn, sign out, sign back in with LinkedIn and delete your account within 5 minutes.',
+    errorStaleSession:
+      'For security, you need to have signed in recently. Confirm your identity again and retry. Your account was not deleted.',
+    errorAppCheck:
+      'We couldn’t verify this copy of Nearsy. Update the app or try again later. Your account was not deleted.',
+    errorUnauthenticated:
+      'Your session has ended. Sign in again and retry. Your account was not deleted.',
+    errorRetryable:
+      'We couldn’t finish deleting your account right now. Please try again in a few minutes.',
+    errorPartial:
+      'Some of your data couldn’t be deleted, so your account was kept. Please try again later or contact Nearsy support.',
+    errorUserNotFound:
+      'This account no longer exists or is unavailable. Sign in again to continue.',
+    errorNetwork:
+      'We couldn’t confirm the deletion because of a connection problem. Check your connection and try again.',
+    errorUnknown:
+      'We couldn’t confirm that your account was deleted. Please try again.',
   },
   blockedPeople: {
     title: 'Blocked People',

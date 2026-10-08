@@ -408,6 +408,28 @@ export const es: TranslationResources = {
         'Esa cuenta no coincide con la sesión de Nearsy. Tu cuenta no fue eliminada.',
       reauthUnavailable:
         'La eliminación de cuenta para este método de acceso no está disponible temporalmente en la app. Contacta a soporte de Nearsy para obtener ayuda.',
+      methodsTitle: 'Confirma que eres tú',
+      methodsBody:
+        'Por seguridad, confirma tu identidad con uno de tus métodos de inicio de sesión. Tu cuenta y tus datos se eliminan justo después.',
+      reauthContinueLinkedIn: 'Continuar con LinkedIn y eliminar',
+      linkedInGuidance:
+        'Para eliminar una cuenta que inicia sesión con LinkedIn, cierra sesión, vuelve a entrar con LinkedIn y elimina tu cuenta dentro de los 5 minutos siguientes.',
+      errorStaleSession:
+        'Por seguridad, necesitas haber iniciado sesión recientemente. Confirma tu identidad de nuevo e inténtalo otra vez. Tu cuenta no fue eliminada.',
+      errorAppCheck:
+        'No pudimos verificar esta copia de Nearsy. Actualiza la app o inténtalo más tarde. Tu cuenta no fue eliminada.',
+      errorUnauthenticated:
+        'Tu sesión terminó. Inicia sesión de nuevo e inténtalo otra vez. Tu cuenta no fue eliminada.',
+      errorRetryable:
+        'No pudimos terminar de eliminar tu cuenta en este momento. Inténtalo de nuevo en unos minutos.',
+      errorPartial:
+        'No se pudieron eliminar algunos de tus datos, así que tu cuenta se conservó. Inténtalo más tarde o contacta a soporte de Nearsy.',
+      errorUserNotFound:
+        'Esta cuenta ya no existe o no está disponible. Inicia sesión de nuevo para continuar.',
+      errorNetwork:
+        'No pudimos confirmar la eliminación por un problema de conexión. Revisa tu conexión e inténtalo de nuevo.',
+      errorUnknown:
+        'No pudimos confirmar que tu cuenta se haya eliminado. Inténtalo de nuevo.',
     },
     blockedPeople: {
       title: 'Personas bloqueadas',
