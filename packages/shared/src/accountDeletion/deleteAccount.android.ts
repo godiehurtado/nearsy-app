@@ -31,6 +31,7 @@ import {
 import { stopBackgroundLocation } from '../location/startGatedBackgroundLocation';
 import { resetLocationJourneySession } from '../location/locationJourneySession';
 import { forgetLastConfirmedVisibility } from '../visibility/lastConfirmedVisibility';
+import { accountDeletionExit } from './accountDeletionExit';
 import {
   DeleteAccountReauthError,
   createDeleteAccountFlow,
@@ -146,6 +147,7 @@ export const deleteMyAccountWithReauth = createDeleteAccountFlow({
   },
   invokeCallable,
   cleanupAfterDeletion,
+  exitBarrier: accountDeletionExit,
   logDev: (entry) => {
     if (__DEV__) console.log('[deleteAccount]', entry);
   },

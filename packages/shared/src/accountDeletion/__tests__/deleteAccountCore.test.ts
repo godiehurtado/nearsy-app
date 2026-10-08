@@ -710,3 +710,85 @@ describe('Diagnostics carry no secrets or PII', () => {
     assert.equal(outcome.status === 'failed' && outcome.kind, 'network');
   });
 });
+
+describe('Exit barrier ordering', () => {
+  function withBarrier(
+    initialUser: DeleteAccountUserSnapshot,
+    overrides: Partial<DeleteAccountFlowDeps> = {},
+  ) {
+    const h = harness(initialUser, overrides);
+    const record = (name: string) => () => {
+      h.calls.push(`barrier:${name}`);
+    };
+    h.deps.exitBarrier = {
+      beginRequest: record('begin'),
+      abandonRequest: record('abandon'),
+      confirmDeletion: record('confirm'),
+      finishCleanup: record('finish'),
+    };
+    return h;
+  }
+
+  it('begin before the callable, confirm before any cleanup, finish after it', async () => {
+    const h = withBarrier(user(PASSWORD_UID, 'password'));
+    const outcome = await createDeleteAccountFlow(h.deps)({ method: 'password', password: SECRET_PASSWORD });
+    assert.equal(outcome.status, 'deleted');
+    assert.deepEqual(h.calls, [
+      'reauth:password',
+      'barrier:begin',
+      `callable:${DELETE_MY_ACCOUNT_CALLABLE}`,
+      'barrier:confirm',
+      'cleanup:same-uid',
+      'barrier:finish',
+    ]);
+  });
+
+  it('cleanup failure still finishes the barrier', async () => {
+    const h = withBarrier(user(PASSWORD_UID, 'google.com'), {
+      cleanupAfterDeletion: async () => {
+        throw Object.assign(new Error('x'), { code: 'auth/internal-error' });
+      },
+    });
+    const outcome = await createDeleteAccountFlow(h.deps)({ method: 'google' });
+    assert.equal(outcome.status, 'deleted');
+    assert.deepEqual(h.calls.slice(-2), ['barrier:confirm', 'barrier:finish']);
+  });
+
+  it('callable errors and unconfirmed responses abandon; nothing else', async () => {
+    for (const invokeCallable of [rejectWith('functions/unavailable'), async () => ({ ok: true })]) {
+      const h = withBarrier(user(PASSWORD_UID, 'facebook.com'), { invokeCallable });
+      const outcome = await createDeleteAccountFlow(h.deps)({ method: 'facebook' });
+      assert.equal(outcome.status, 'failed');
+      assert.deepEqual(
+        h.calls.filter((c) => c.startsWith('barrier:')),
+        ['barrier:begin', 'barrier:abandon'],
+      );
+      assert.ok(!h.calls.some((c) => c.startsWith('cleanup')));
+    }
+  });
+
+  it('reauth failure, cancellation and UID change never touch the barrier', async () => {
+    const cases: Array<[Partial<DeleteAccountFlowDeps>, DeleteAccountMethod]> = [
+      [{ reauthenticate: { google: rejectWith('CANCELLED') } }, 'google'],
+      [{ reauthenticate: { google: rejectWith('auth/invalid-credential') } }, 'google'],
+    ];
+    for (const [overrides, method] of cases) {
+      const h = withBarrier(user(PASSWORD_UID, 'google.com'), overrides);
+      await createDeleteAccountFlow(h.deps)({ method });
+      assert.ok(!h.calls.some((c) => c.startsWith('barrier:')));
+    }
+
+    const wrong = withBarrier(user(PASSWORD_UID, 'password'), {
+      reauthenticate: { password: rejectWith('auth/wrong-password') },
+    });
+    await createDeleteAccountFlow(wrong.deps)({ method: 'password', password: 'nope' });
+    assert.ok(!wrong.calls.some((c) => c.startsWith('barrier:')));
+
+    const swapped = withBarrier(user(PASSWORD_UID, 'google.com'));
+    swapped.deps.reauthenticate.google = async () => {
+      swapped.setUser(user('Other0000000000000000000000a', 'google.com'));
+    };
+    await createDeleteAccountFlow(swapped.deps)({ method: 'google' });
+    assert.ok(!swapped.calls.some((c) => c.startsWith('barrier:')));
+  });
+});

@@ -27,6 +27,7 @@ import {
   type ContractualLogoutDeps,
 } from '../location/contractualLogout.ts';
 import { LINKEDIN_FIREBASE_UID_PATTERN } from '../authentication/signInMethods.ts';
+import type { AccountDeletionExitBarrier } from './accountDeletionExit.ts';
 
 export const DELETE_MY_ACCOUNT_CALLABLE = 'deleteMyAccount';
 
@@ -287,6 +288,8 @@ export type DeleteAccountFlowDeps = {
   >;
   invokeCallable: (name: string, payload: Record<string, never>) => Promise<unknown>;
   cleanupAfterDeletion: (uid: string) => Promise<void>;
+  /** Keeps the root navigator off the profile gate from the call to Login. */
+  exitBarrier?: AccountDeletionExitBarrier;
   /** Codes and reasons only — never tokens, emails, UIDs or passwords. */
   logDev?: (entry: DeleteAccountDevLog) => void;
 };
@@ -343,10 +346,13 @@ export function createDeleteAccountFlow(deps: DeleteAccountFlowDeps) {
 
       if (deps.getCurrentUser()?.uid !== uid) return failed('uid_changed');
 
+      const barrier = deps.exitBarrier;
+      barrier?.beginRequest();
       let data: unknown;
       try {
         data = await deps.invokeCallable(DELETE_MY_ACCOUNT_CALLABLE, {});
       } catch (err) {
+        barrier?.abandonRequest();
         let kind = mapDeleteMyAccountFailure(err);
         if (request.method === 'recent_session' && kind === 'stale_session') {
           kind = 'linkedin_guidance';
@@ -362,15 +368,19 @@ export function createDeleteAccountFlow(deps: DeleteAccountFlowDeps) {
 
       const status = readConfirmedDeletion(data);
       if (!status) {
+        barrier?.abandonRequest();
         log({ stage: 'response', kind: 'unknown' });
         return failed('unknown');
       }
 
+      barrier?.confirmDeletion();
       try {
         await deps.cleanupAfterDeletion(uid);
       } catch (err) {
         // The account is gone; local cleanup is best effort.
         log({ stage: 'cleanup', code: readCode(err) || undefined });
+      } finally {
+        barrier?.finishCleanup();
       }
       return { status: 'deleted', alreadyDeleted: status === 'ALREADY_DELETED' };
     } finally {

@@ -1,5 +1,5 @@
 // src/navigation/AppNavigator.tsx
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   ActivityIndicator,
@@ -39,11 +39,16 @@ import { dbGetUser, dbOnUserSnapshot } from '../services/db';
 import { loadHasSeenWelcome } from '../onboarding/welcomeStorage';
 import {
   createAuthenticatedProfileGate,
-  isAuthenticatedProfileLoading,
   PROFILE_GATE_I18N_KEYS,
   shouldRenderOnboardingStack,
   type AuthenticatedProfileFlow,
 } from './profileGate';
+import {
+  createDeletionAwareProfileGate,
+  isProfileGateSuspended,
+  resolveRootView,
+} from './accountDeletionRootGate';
+import { accountDeletionExit } from '../accountDeletion/accountDeletionExit';
 import type { AuthenticatedOnboardingStackRoute } from '../phoneOtp/onboardingResolver';
 import { loadLastConfirmedVisibility } from '../visibility/lastConfirmedVisibility';
 
@@ -128,12 +133,26 @@ export default function AppNavigator() {
     kind: 'loading',
   });
 
-  const gateRef = useRef(
-    createAuthenticatedProfileGate({
-      listen: dbOnUserSnapshot,
-      get: dbGetUser,
+  // Plain state rather than useSyncExternalStore: a phase change must commit
+  // in order with the setUid updates issued by the Auth listener.
+  const [deletionPhase, setDeletionPhase] = useState(accountDeletionExit.getPhase);
+  useEffect(() => {
+    const sync = () => setDeletionPhase(accountDeletionExit.getPhase());
+    sync();
+    return accountDeletionExit.subscribe(sync);
+  }, []);
+  const profileGateSuspended = isProfileGateSuspended(deletionPhase);
+
+  const [gate] = useState(() =>
+    createDeletionAwareProfileGate({
+      gate: createAuthenticatedProfileGate({
+        listen: dbOnUserSnapshot,
+        get: dbGetUser,
+      }),
+      exit: accountDeletionExit,
     }),
   );
+  useEffect(() => gate.connect(), [gate]);
 
   useEffect(() => {
     let alive = true;
@@ -157,6 +176,7 @@ export default function AppNavigator() {
           setUid(null);
           setUserEmail(null);
           setProfileFlow({ kind: 'loading' });
+          accountDeletionExit.noteAuthState(null);
           return;
         }
 
@@ -174,15 +194,18 @@ export default function AppNavigator() {
           setUid(null);
           setUserEmail(null);
           setProfileFlow({ kind: 'loading' });
+          accountDeletionExit.noteAuthState(null);
           return;
         }
 
         setUid(refreshedUser.uid);
         setUserEmail(refreshedUser.email ?? null);
+        accountDeletionExit.noteAuthState(refreshedUser.uid);
       } catch {
         setUid(null);
         setUserEmail(null);
         setProfileFlow({ kind: 'loading' });
+        accountDeletionExit.noteAuthState(null);
       } finally {
         setAuthLoading(false);
       }
@@ -192,9 +215,9 @@ export default function AppNavigator() {
   }, []);
 
   // 2) Profile gate (shared by Google / password / LinkedIn — no provider branch)
+  // A confirmed account deletion suspends it until Auth has no user.
   useEffect(() => {
-    const gate = gateRef.current;
-    if (!uid) {
+    if (!uid || profileGateSuspended) {
       gate.stop();
       setProfileFlow({ kind: 'loading' });
       return;
@@ -206,23 +229,31 @@ export default function AppNavigator() {
     return () => {
       gate.stop();
     };
-  }, [uid]);
+  }, [uid, profileGateSuspended, gate]);
 
   const retryProfileGate = () => {
-    if (!uid) return;
-    gateRef.current.retry(uid, setProfileFlow);
+    if (!uid || profileGateSuspended) return;
+    gate.retry(uid, setProfileFlow);
   };
 
   // Guests must not wait on profile-gate loading (no uid → no profile to load).
-  const profileLoading = isAuthenticatedProfileLoading(uid, profileFlow.kind);
-  const needsOnboarding =
-    profileFlow.kind === 'OnboardingBirthDate' ||
-    profileFlow.kind === 'PhoneVerification' ||
-    profileFlow.kind === 'ProfileCompletion';
+  // A deleted session renders as a guest even if Auth has not emitted null yet.
+  const rootView = resolveRootView({
+    deletionPhase,
+    uid,
+    startupLoading: authLoading || hydrating || welcomeHydrating,
+    profileFlowKind: profileFlow.kind,
+  });
+  const needsOnboarding = rootView === 'onboarding';
   const onboardingInitialRoute: AuthenticatedOnboardingStackRoute =
-    needsOnboarding ? profileFlow.kind : 'ProfileCompletion';
+    profileFlow.kind === 'OnboardingBirthDate' ||
+    profileFlow.kind === 'PhoneVerification'
+      ? profileFlow.kind
+      : 'ProfileCompletion';
   const profileReadError =
-    profileFlow.kind === 'profile_read_error' ? profileFlow : null;
+    rootView === 'profile_error' && profileFlow.kind === 'profile_read_error'
+      ? profileFlow
+      : null;
 
   // Guest key must NOT flip when hasChosenTheme becomes true on Continue —
   // otherwise the stack remounts and races with navigation.replace('Welcome').
@@ -232,22 +263,19 @@ export default function AppNavigator() {
   // advances (DOB → OTP → CRJ), for every provider. See
   // shouldRenderOnboardingStack: initialRouteName only applies to a fresh state.
   const flowKey = useMemo(() => {
-    if (authLoading || profileLoading || hydrating || welcomeHydrating)
-      return 'loading';
-    if (!uid) return 'guest';
-    if (profileReadError) return `auth-error-${uid}`;
-    if (needsOnboarding) return `auth-complete-${uid}-${profileFlow.kind}`;
-    return `auth-main-${uid}`;
-  }, [
-    authLoading,
-    profileLoading,
-    hydrating,
-    welcomeHydrating,
-    uid,
-    needsOnboarding,
-    profileFlow.kind,
-    profileReadError,
-  ]);
+    switch (rootView) {
+      case 'loader':
+        return 'loading';
+      case 'guest':
+        return 'guest';
+      case 'profile_error':
+        return `auth-error-${uid}`;
+      case 'onboarding':
+        return `auth-complete-${uid}-${profileFlow.kind}`;
+      default:
+        return `auth-main-${uid}`;
+    }
+  }, [rootView, uid, profileFlow.kind]);
 
   const [mountedOnboardingKey, setMountedOnboardingKey] = useState<
     string | null
@@ -256,7 +284,9 @@ export default function AppNavigator() {
     setMountedOnboardingKey(needsOnboarding ? flowKey : null);
   }, [needsOnboarding, flowKey]);
 
-  if (authLoading || profileLoading || hydrating || welcomeHydrating) {
+  // Includes the account-deletion exit: the loader commit releases the old
+  // navigator so the guest stack below mounts fresh on its initial route.
+  if (rootView === 'loader') {
     return <FullScreenLoader />;
   }
 
@@ -266,7 +296,7 @@ export default function AppNavigator() {
    *          -> Welcome (first launch only) -> Login | Register | Google
    *   Later cold starts (Welcome already seen) -> Login
    */
-  if (!uid) {
+  if (rootView === 'guest') {
     return (
       <Stack.Navigator
         id="RootGuest"

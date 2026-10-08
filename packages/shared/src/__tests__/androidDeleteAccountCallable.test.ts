@@ -215,12 +215,50 @@ describe('Delete Account screen', () => {
     assert.match(screen, /\} finally \{\s*releaseAttempt\(\);\s*if \(mountedRef\.current\) \{\s*setBusyMethod\(null\);/);
   });
 
-  it('success returns to Login; failures only show a mapped message', () => {
-    assert.match(screen, /if \(outcome\.status === 'deleted'\) \{[\s\S]*?returnToLogin\(\);/);
-    assert.match(screen, /routes: \[\{ name: 'Login' \}\]/);
+  it('success leaves the exit to the root navigator; failures only show a mapped message', () => {
+    const code = codeOnly(screen);
+    assert.match(code, /if \(outcome\.status === 'deleted'\) \{\s*Alert\.alert\(\s*t\('settings\.deleteAccount\.title'\),\s*t\('settings\.deleteAccount\.done'\),\s*\);\s*return;\s*\}/);
+    assert.doesNotMatch(code, /returnToLogin|\.reset\(|navigate\(|getParent|name: 'Login'/);
     assert.match(screen, /Alert\.alert\(t\('settings\.deleteAccount\.title'\), t\(outcome\.messageKey as any\)\);/);
     assert.doesNotMatch(screen, /\b(e|err|error)\??\.message\b/);
   });
+});
+
+describe('Post-deletion exit barrier wiring', () => {
+  const android = codeOnly(readShared('accountDeletion/deleteAccount.android.ts'));
+  const navigator = codeOnly(readShared('navigation/AppNavigator.tsx'));
+
+  it('the Android flow drives the shared barrier', () => {
+    assert.match(android, /import \{ accountDeletionExit \} from '\.\/accountDeletionExit';/);
+    assert.match(android, /exitBarrier: accountDeletionExit,/);
+  });
+
+  it('AppNavigator renders from the barrier and reports every Auth emission', () => {
+    assert.match(navigator, /createDeletionAwareProfileGate\(\{/);
+    assert.match(navigator, /exit: accountDeletionExit,/);
+    assert.match(navigator, /useEffect\(\(\) => gate\.connect\(\), \[gate\]\);/);
+    assert.match(navigator, /\}, \[uid, profileGateSuspended, gate\]\);/);
+    assert.match(navigator, /const rootView = resolveRootView\(\{/);
+    assert.match(navigator, /if \(rootView === 'loader'\) \{/);
+    assert.match(navigator, /if \(rootView === 'guest'\) \{/);
+    assert.doesNotMatch(navigator, /useSyncExternalStore|gateRef/);
+    assert.equal(navigator.match(/accountDeletionExit\.noteAuthState\(null\);/g)?.length, 3);
+    assert.match(
+      navigator,
+      /setUid\(refreshedUser\.uid\);\s*setUserEmail\(refreshedUser\.email \?\? null\);\s*accountDeletionExit\.noteAuthState\(refreshedUser\.uid\);/,
+    );
+  });
+
+  it('the barrier never writes, recreates or deletes profiles', () => {
+    for (const file of ['accountDeletion/accountDeletionExit.ts', 'navigation/accountDeletionRootGate.ts']) {
+      const code = codeOnly(readShared(file));
+      assert.doesNotMatch(code, /\bset\(|setDoc|update\(|(?<!listeners)\.delete\(|deleteDoc|createUserProfile|firestore|AsyncStorage|console\./, file);
+    }
+  });
+});
+
+describe('Delete Account screen copy and LinkedIn', () => {
+  const screen = readShared('screens/DeleteAccountScreen.tsx');
 
   it('every visible string is translated', () => {
     for (const literal of [

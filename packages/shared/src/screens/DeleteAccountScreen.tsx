@@ -79,19 +79,6 @@ export default function DeleteAccountScreen() {
     };
   }, []);
 
-  const returnToLogin = () => {
-    try {
-      const parent = nav.getParent?.();
-      if (parent?.reset) {
-        parent.reset({ index: 0, routes: [{ name: 'Login' }] });
-      } else {
-        nav.reset({ index: 0, routes: [{ name: 'Login' }] });
-      }
-    } catch {
-      // Signed out: AppNavigator already switched to the guest stack.
-    }
-  };
-
   const runAttempt = async (method: DeleteAccountAttemptMethod) => {
     const outcome = await deleteMyAccountWithReauth({
       method,
@@ -99,11 +86,12 @@ export default function DeleteAccountScreen() {
     });
     if (outcome.status === 'in_progress') return;
     if (outcome.status === 'deleted') {
+      // The root navigator owns the exit: it mounts the guest stack (Login)
+      // once the deletion barrier is released.
       Alert.alert(
         t('settings.deleteAccount.title'),
         t('settings.deleteAccount.done'),
       );
-      returnToLogin();
       return;
     }
     if (outcome.kind === 'linkedin_guidance' && mountedRef.current) {

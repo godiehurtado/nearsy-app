@@ -265,6 +265,8 @@ export function isAuthenticatedProfileLoading(
 export function createAuthenticatedProfileGate(deps: {
   listen: ProfileGateListen;
   get: ProfileGateGet;
+  /** Override absent-doc confirm delay (tests). */
+  absentConfirmMs?: number;
 }) {
   const gate = createProfileGateController(deps);
 
