@@ -10,11 +10,15 @@ import {
   __resetAccountDeletionSessionForTests,
   isAccountDeletionSessionActive,
 } from '../accountDeletionSession';
-import { resolveAccountDeletionErrorMessageKey } from '../accountDeletionErrorPresentation';
+import {
+  resolveAccountDeletionErrorMessageKey,
+  resolveDeletionFailureMessageKey,
+} from '../accountDeletionErrorPresentation';
 import {
   AccountDeletionReauthError,
   __resetAccountDeletionReauthInProgressForTests,
   reauthenticateForAccountDeletion,
+  resolveDeletionReauthMethod,
   type ReauthenticateForDeletionDependencies,
 } from '../deletionReauth';
 import { DeleteMyAccountError } from '../deleteMyAccount/contract';
@@ -152,53 +156,142 @@ describe('deleteAccountWithBackend — backend is the only deletion authority', 
     });
   }
 
-  it('LinkedIn: recent custom-token session deletes without another browser flow', async () => {
-    const { runtime, recorder } = createRuntime({ getCurrentUid: () => 'li_abc' });
-    const result = await deleteAccountWithBackend({}, runtime);
-    assert.equal(result.status, 'deleted');
-    assert.deepEqual(recorder.events, ['callable:li_abc']);
-  });
+  describe('LinkedIn — recent session or sign-in-again guidance, never inline OAuth', () => {
+    const LI_UID = 'li_abc';
+    const noProviderDeps = () =>
+      socialDeps({
+        getCurrentUser: () => ({ uid: LI_UID }) as any,
+        reauthenticateWithCredential: async () => {
+          throw new Error('no credential reauth for LinkedIn');
+        },
+        obtainGoogleProviderTokens: async () => {
+          throw new Error('no Google');
+        },
+        obtainAppleProviderTokens: async () => {
+          throw new Error('no Apple');
+        },
+        obtainFacebookProviderTokens: async () => {
+          throw new Error('no Facebook');
+        },
+        reauthWithPassword: async () => {
+          throw new Error('no password');
+        },
+      });
 
-  it('LinkedIn: fresh session for the same deterministic UID, then the callable', async () => {
-    const recorder: Recorder = { events: [], callableCalls: 0 };
-    const { runtime } = createRuntime(
-      {
-        getCurrentUid: () => 'li_abc',
+    it('recent session calls deleteMyAccount directly; no reauthentication, same UID', async () => {
+      const uids: string[] = [];
+      const { runtime, recorder } = createRuntime({
+        getCurrentUid: () => {
+          uids.push(LI_UID);
+          return LI_UID;
+        },
+        reauthenticate: async () => {
+          throw new Error('LinkedIn is never reauthenticated inline');
+        },
+      });
+      const result = await deleteAccountWithBackend({}, runtime);
+      assert.deepEqual(result, { status: 'deleted', uid: LI_UID, backendStatus: 'DELETED' });
+      assert.deepEqual(recorder.events, [`callable:${LI_UID}`]);
+      assert.ok(uids.every((uid) => uid === LI_UID));
+    });
+
+    it('stale session asks for guidance; no callable, no reauthentication, nothing deleted', async () => {
+      const { runtime, recorder } = createRuntime({
+        getCurrentUid: () => LI_UID,
+        getAuthTimeMs: async () => NOW - 3_600_000,
+        reauthenticate: async () => {
+          throw new Error('LinkedIn is never reauthenticated inline');
+        },
+      });
+      const result = await deleteAccountWithBackend({}, runtime);
+      assert.deepEqual(result, { status: 'reauth_required' });
+      assert.equal(recorder.callableCalls, 0);
+      assert.deepEqual(recorder.events, []);
+      assert.equal(isAccountDeletionSessionActive(), false);
+      const primary = resolveDeletionReauthMethod([], { uid: LI_UID });
+      assert.deepEqual(primary, { kind: 'unavailable', reason: 'linkedin_sign_in_again' });
+    });
+
+    it('confirming a LinkedIn-only account shows the guidance and calls no provider', async () => {
+      const { runtime, recorder } = createRuntime({
+        getCurrentUid: () => LI_UID,
+        reauthenticate: (input) => reauthenticateForAccountDeletion(input, noProviderDeps()),
+      });
+      const result = await deleteAccountWithBackend(
+        { reauth: { method: resolveDeletionReauthMethod([], { uid: LI_UID }) } },
+        runtime,
+      );
+      assert.equal(result.status, 'failed');
+      assert.equal(
+        result.status === 'failed' && result.messageKey,
+        'settings.deleteAccount.linkedInSignInAgain',
+      );
+      assert.equal(recorder.callableCalls, 0);
+      assert.equal(isAccountDeletionSessionActive(), false);
+    });
+
+    it('backend RECENT_LOGIN_REQUIRED shows the LinkedIn guidance; retry after a new sign-in succeeds', async () => {
+      let attempt = 0;
+      const { runtime, recorder } = createRuntime({
+        getCurrentUid: () => LI_UID,
+        deleteMyAccount: async ({ expectedUid }) => {
+          attempt += 1;
+          recorder.events.push(`callable:${expectedUid}`);
+          if (attempt === 1) throw new DeleteMyAccountError('RECENT_LOGIN_REQUIRED', false);
+          return { ok: true, status: 'DELETED' };
+        },
+      });
+      const first = await deleteAccountWithBackend({}, runtime);
+      assert.equal(first.status, 'failed');
+      if (first.status !== 'failed') return;
+      assert.equal(first.reauthRequired, true);
+      assert.equal(first.serverMayHaveDeleted, false);
+      assert.equal(isAccountDeletionSessionActive(), false, 'loading/session released');
+      assert.equal(
+        resolveDeletionFailureMessageKey(first, resolveDeletionReauthMethod([], { uid: LI_UID })),
+        'settings.deleteAccount.linkedInSignInAgain',
+      );
+
+      const second = await deleteAccountWithBackend({}, runtime);
+      assert.equal(second.status, 'deleted');
+      assert.deepEqual(recorder.events, [`callable:${LI_UID}`, `callable:${LI_UID}`]);
+    });
+
+    it('LinkedIn + Google: Google reauthenticates the same UID, then the callable', async () => {
+      const providerData = [{ providerId: 'google.com', uid: 'g-sub' }];
+      const primary = resolveDeletionReauthMethod(providerData, { uid: LI_UID });
+      assert.equal(primary.kind, 'google');
+      const events: string[] = [];
+      const { runtime, recorder } = createRuntime({
+        getCurrentUid: () => LI_UID,
         reauthenticate: (input) =>
           reauthenticateForAccountDeletion(
             input,
             socialDeps({
-              getCurrentUser: () => ({ uid: 'li_abc' }) as any,
-              refreshLinkedInSession: async (expectedUid) => {
-                recorder.events.push(`linkedin:${expectedUid}`);
+              getCurrentUser: () => ({ uid: LI_UID }) as any,
+              reauthenticateWithCredential: async (user, credential: any) => {
+                assert.equal(user.uid, LI_UID);
+                events.push(`credential:${credential.providerId}`);
               },
             }),
           ),
-      },
-      recorder,
-    );
-    const result = await deleteAccountWithBackend({ reauth: { method: { kind: 'linkedin' } } }, runtime);
-    assert.equal(result.status, 'deleted');
-    assert.deepEqual(recorder.events, ['linkedin:li_abc', 'callable:li_abc']);
-  });
-
-  it('LinkedIn without a safe fresh session explains how to sign in again; nothing is called', async () => {
-    const { runtime, recorder } = createRuntime({
-      getCurrentUid: () => 'li_abc',
-      reauthenticate: (input) =>
-        reauthenticateForAccountDeletion(
-          input,
-          socialDeps({ getCurrentUser: () => ({ uid: 'li_abc' }) as any }),
-        ),
+      });
+      const result = await deleteAccountWithBackend({ reauth: { method: primary } }, runtime);
+      assert.equal(result.status, 'deleted');
+      assert.deepEqual(events, ['credential:google.com']);
+      assert.equal(recorder.callableCalls, 1);
     });
-    const result = await deleteAccountWithBackend({ reauth: { method: { kind: 'linkedin' } } }, runtime);
-    assert.equal(result.status, 'failed');
-    assert.equal(
-      result.status === 'failed' && result.messageKey,
-      'settings.deleteAccount.linkedInSignInAgain',
-    );
-    assert.equal(recorder.callableCalls, 0);
-    assert.equal(isAccountDeletionSessionActive(), false);
+
+    it('LinkedIn + Google with a backend RECENT_LOGIN_REQUIRED keeps the generic reauth copy', () => {
+      const primary = resolveDeletionReauthMethod([{ providerId: 'google.com' }], { uid: LI_UID });
+      assert.equal(
+        resolveDeletionFailureMessageKey(
+          { messageKey: 'settings.deleteAccount.sessionNotRecent', reauthRequired: true },
+          primary,
+        ),
+        'settings.deleteAccount.sessionNotRecent',
+      );
+    });
   });
 
   it('a UID change after reauthentication aborts before the callable', async () => {

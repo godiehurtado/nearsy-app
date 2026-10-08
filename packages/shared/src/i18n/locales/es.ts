@@ -1484,7 +1484,7 @@ const es: TranslationResources = {
       networkUncertain:
         'No pudimos confirmar si tu cuenta fue eliminada. Revisa tu conexión e inténtalo de nuevo.',
       linkedInSignInAgain:
-        'Por seguridad, cierra sesión, vuelve a entrar con LinkedIn y elimina tu cuenta dentro de los 5 minutos siguientes.',
+        'Por seguridad, cierra sesión, vuelve a ingresar con LinkedIn y solicita la eliminación de tu cuenta dentro de los próximos 5 minutos.',
       reauthBody:
         'Por seguridad, confirma tu contraseña para continuar.',
       reauthBodyGoogle:
@@ -1493,19 +1493,15 @@ const es: TranslationResources = {
         'Por seguridad, continúa con Apple para confirmar tu identidad antes de eliminar esta cuenta.',
       reauthBodyFacebook:
         'Por seguridad, continúa con Facebook para confirmar tu identidad antes de eliminar esta cuenta.',
-      reauthBodyLinkedIn:
-        'Por seguridad, continúa con LinkedIn para confirmar tu identidad antes de eliminar esta cuenta.',
       passwordPlaceholder: 'Contraseña',
       reauthConfirm: 'Confirmar contraseña y eliminar',
       reauthContinueGoogle: 'Continuar con Google y eliminar',
       reauthContinueApple: 'Continuar con Apple y eliminar',
       reauthContinueFacebook: 'Continuar con Facebook y eliminar',
-      reauthContinueLinkedIn: 'Continuar con LinkedIn y eliminar',
       reauthSwitchPassword: 'Usar tu contraseña',
       reauthSwitchGoogle: 'Usar Google',
       reauthSwitchApple: 'Usar Apple',
       reauthSwitchFacebook: 'Usar Facebook',
-      reauthSwitchLinkedIn: 'Usar LinkedIn',
       reauthError: 'No se pudo confirmar la contraseña.',
       reauthFailed:
         'No se pudo confirmar tu identidad. Tu cuenta no fue eliminada.',

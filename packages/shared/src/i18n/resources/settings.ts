@@ -127,7 +127,7 @@ export default {
     networkUncertain:
       'We couldn’t confirm whether your account was deleted. Check your connection and try again.',
     linkedInSignInAgain:
-      'For security, sign out, sign back in with LinkedIn, and delete your account within 5 minutes.',
+      'For security, sign out, sign back in with LinkedIn, and request account deletion within the next 5 minutes.',
     reauthBody: 'For security, please confirm your password to continue.',
     reauthBodyGoogle:
       'For security, continue with Google to confirm it’s you before deleting this account.',
@@ -135,19 +135,15 @@ export default {
       'For security, continue with Apple to confirm it’s you before deleting this account.',
     reauthBodyFacebook:
       'For security, continue with Facebook to confirm it’s you before deleting this account.',
-    reauthBodyLinkedIn:
-      'For security, continue with LinkedIn to confirm it’s you before deleting this account.',
     passwordPlaceholder: 'Password',
     reauthConfirm: 'Confirm password and delete',
     reauthContinueGoogle: 'Continue with Google and delete',
     reauthContinueApple: 'Continue with Apple and delete',
     reauthContinueFacebook: 'Continue with Facebook and delete',
-    reauthContinueLinkedIn: 'Continue with LinkedIn and delete',
     reauthSwitchPassword: 'Use your password instead',
     reauthSwitchGoogle: 'Use Google instead',
     reauthSwitchApple: 'Use Apple instead',
     reauthSwitchFacebook: 'Use Facebook instead',
-    reauthSwitchLinkedIn: 'Use LinkedIn instead',
     reauthError: 'Could not confirm password.',
     reauthFailed: 'Could not confirm your identity. Your account was not deleted.',
     reauthCancelled: 'Sign-in was cancelled. Your account was not deleted.',

@@ -430,54 +430,32 @@ describe('reauthenticateForAccountDeletion', () => {
     assert.equal(tokenCalls, 0);
   });
 
-  it('linkedin path refreshes the same-UID session and never uses a credential', async () => {
-    const seen: string[] = [];
-    let credentialCalls = 0;
-    await reauthenticateForAccountDeletion(
-      { method: { kind: 'linkedin' }, expectedUid: 'li_abc' },
-      createMockDeps({
-        getCurrentUser: () => ({ uid: 'li_abc' }) as any,
-        refreshLinkedInSession: async (uid) => {
-          seen.push(uid);
-        },
-        reauthenticateWithCredential: async () => {
-          credentialCalls += 1;
-        },
-      }),
-    );
-    assert.deepEqual(seen, ['li_abc']);
-    assert.equal(credentialCalls, 0);
-  });
-
-  it('linkedin without a fresh-session runtime asks to sign in again', async () => {
+  it('LinkedIn-only account gets the sign-in-again guidance and touches no provider', async () => {
+    let providerCalls = 0;
+    const count = async (): Promise<never> => {
+      providerCalls += 1;
+      throw new Error('no provider for LinkedIn-only deletion');
+    };
+    const method = resolveDeletionReauthMethod([], { uid: 'li_abc' });
     await assert.rejects(
       () =>
         reauthenticateForAccountDeletion(
-          { method: { kind: 'linkedin' } },
-          createMockDeps({ getCurrentUser: () => ({ uid: 'li_abc' }) as any }),
+          { method, expectedUid: 'li_abc' },
+          createMockDeps({
+            getCurrentUser: () => ({ uid: 'li_abc' }) as any,
+            obtainGoogleProviderTokens: count,
+            obtainAppleProviderTokens: count,
+            obtainFacebookProviderTokens: count,
+            reauthenticateWithCredential: count,
+            reauthWithPassword: count,
+          }),
         ),
       (err: unknown) =>
         err instanceof AccountDeletionReauthError &&
-        err.code === 'LINKEDIN_SESSION_REQUIRED' &&
+        err.code === 'UNAVAILABLE' &&
         err.messageKey === 'settings.deleteAccount.linkedInSignInAgain',
     );
-  });
-
-  it('linkedin session ending on another UID aborts deletion', async () => {
-    let uid = 'li_abc';
-    await assert.rejects(
-      () =>
-        reauthenticateForAccountDeletion(
-          { method: { kind: 'linkedin' } },
-          createMockDeps({
-            getCurrentUser: () => ({ uid }) as any,
-            refreshLinkedInSession: async () => {
-              uid = 'li_other';
-            },
-          }),
-        ),
-      (err: unknown) => err instanceof AccountDeletionReauthError && err.code === 'IDENTITY_MISMATCH',
-    );
+    assert.equal(providerCalls, 0);
   });
 
   it('social cancellation does not complete reauth', async () => {

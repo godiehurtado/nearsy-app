@@ -2,10 +2,9 @@
  * Reauthenticate the CURRENT Firebase user before account deletion.
  *
  * Uses provider adapters for Google/Apple/Facebook token acquisition, then
- * `reauthenticateWithCredential` — never `signInWithCredential`, which would
- * replace the session. LinkedIn has no AuthCredential: its fresh session comes
- * from `linkedInDeletionReauth`, which only accepts a custom token for the
- * same deterministic UID.
+ * `reauthenticateWithCredential` — never a sign-in call, which would replace
+ * the session. LinkedIn has no AuthCredential and is never reauthenticated
+ * here (see linkedInDeletionPolicy).
  */
 import {
   FacebookAuthProvider,
@@ -22,6 +21,7 @@ import {
 import { selectFacebookCredentialTokens } from '../../authentication/social/domain/facebookCredentialPolicy';
 import { AccountDeletionReauthError } from './accountDeletionReauthError';
 import type { DeletionReauthMethod } from './deletionReauthMethod';
+import { LINKEDIN_DELETION_SIGN_IN_AGAIN_KEY } from './linkedInDeletionPolicy';
 
 export {
   AccountDeletionReauthError,
@@ -70,8 +70,6 @@ export type ReauthenticateForDeletionDependencies = {
   /** Best-effort Facebook SDK logout when a Facebook reauth attempt fails. */
   clearFacebookProviderSession?: () => Promise<void>;
   reauthWithPassword: (password: string) => Promise<void>;
-  /** Fresh LinkedIn session for the same deterministic UID; absent → sign in again. */
-  refreshLinkedInSession?: (expectedUid: string) => Promise<void>;
 };
 
 let inProgress = false;
@@ -335,13 +333,6 @@ export function createDefaultReauthenticateForDeletionDependencies(): Reauthenti
       await clearFacebookProviderSession();
     },
     reauthWithPassword,
-    refreshLinkedInSession: async (expectedUid) => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { refreshLinkedInSessionForDeletionDefault } = require('./linkedInDeletionReauthRuntime') as {
-        refreshLinkedInSessionForDeletionDefault: (uid: string) => Promise<void>;
-      };
-      await refreshLinkedInSessionForDeletionDefault(expectedUid);
-    },
   };
 }
 
@@ -384,7 +375,9 @@ export async function reauthenticateForAccountDeletion(
   if (method.kind === 'unavailable') {
     throw new AccountDeletionReauthError(
       'UNAVAILABLE',
-      'settings.deleteAccount.reauthUnavailable',
+      method.reason === 'linkedin_sign_in_again'
+        ? LINKEDIN_DELETION_SIGN_IN_AGAIN_KEY
+        : 'settings.deleteAccount.reauthUnavailable',
     );
   }
 
@@ -488,22 +481,6 @@ export async function reauthenticateForAccountDeletion(
             // Best-effort cleanup only.
           }
         }
-      }
-    } else if (method.kind === 'linkedin') {
-      if (!deps.refreshLinkedInSession) {
-        throw new AccountDeletionReauthError(
-          'LINKEDIN_SESSION_REQUIRED',
-          'settings.deleteAccount.linkedInSignInAgain',
-        );
-      }
-      try {
-        await deps.refreshLinkedInSession(expectedUid);
-      } catch (err) {
-        if (err instanceof AccountDeletionReauthError) throw err;
-        throw new AccountDeletionReauthError(
-          'LINKEDIN_SESSION_REQUIRED',
-          'settings.deleteAccount.linkedInSignInAgain',
-        );
       }
     }
 

@@ -1,8 +1,10 @@
 /**
  * Delete account — Nearsy 2.0 presentation.
  * The `deleteMyAccount` callable deletes the account; this screen only proves
- * a recent sign-in (password / Google / Apple / Facebook / LinkedIn) and
- * clears local state after the backend confirms.
+ * a recent sign-in (current session, or password / Google / Apple / Facebook
+ * reauthentication) and clears local state after the backend confirms.
+ * LinkedIn is never started here: a stale LinkedIn session gets guidance to
+ * sign in again.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -34,13 +36,13 @@ import {
   endAccountDeletionSession,
   finalizePostAccountDeletionSession,
 } from '../services/accountDeletionSession';
+import { resolveDeletionFailureMessageKey } from '../services/accountDeletionErrorPresentation';
 import {
   resolveDeletionReauthMethod,
   resolveDeletionReauthMethods,
   type AvailableDeletionReauthMethod,
   type DeletionReauthMethod,
 } from '../services/deletionReauth';
-import { isLinkedInDeletionReauthAvailable } from '../services/deletionReauth/linkedInDeletionReauthRuntime';
 import { firebaseAuth } from '../config/firebaseConfig';
 import { useTranslation } from '../i18n';
 import {
@@ -60,16 +62,9 @@ type ReauthOptions = {
 function resolveReauthOptionsFromCurrentUser(): ReauthOptions {
   const user = firebaseAuth.currentUser;
   const providerData = user?.providerData ?? [];
-  let linkedInReauthAvailable = false;
-  try {
-    linkedInReauthAvailable = isLinkedInDeletionReauthAvailable();
-  } catch {
-    linkedInReauthAvailable = false;
-  }
-  const context = { uid: user?.uid ?? null, linkedInReauthAvailable };
   return {
-    primary: resolveDeletionReauthMethod(providerData, context),
-    all: resolveDeletionReauthMethods(providerData, context),
+    primary: resolveDeletionReauthMethod(providerData, { uid: user?.uid ?? null }),
+    all: resolveDeletionReauthMethods(providerData),
   };
 }
 
@@ -77,7 +72,6 @@ const CONTINUE_LABEL_KEY: Record<Exclude<AvailableDeletionReauthMethod['kind'], 
   google: 'settings.deleteAccount.reauthContinueGoogle',
   apple: 'settings.deleteAccount.reauthContinueApple',
   facebook: 'settings.deleteAccount.reauthContinueFacebook',
-  linkedin: 'settings.deleteAccount.reauthContinueLinkedIn',
 };
 
 const SWITCH_LABEL_KEY: Record<AvailableDeletionReauthMethod['kind'], string> = {
@@ -85,7 +79,6 @@ const SWITCH_LABEL_KEY: Record<AvailableDeletionReauthMethod['kind'], string> = 
   google: 'settings.deleteAccount.reauthSwitchGoogle',
   apple: 'settings.deleteAccount.reauthSwitchApple',
   facebook: 'settings.deleteAccount.reauthSwitchFacebook',
-  linkedin: 'settings.deleteAccount.reauthSwitchLinkedIn',
 };
 
 export default function DeleteAccountScreen() {
@@ -142,9 +135,6 @@ export default function DeleteAccountScreen() {
     }
     if (reauthMethod.kind === 'facebook') {
       return 'settings.deleteAccount.reauthBodyFacebook';
-    }
-    if (reauthMethod.kind === 'linkedin') {
-      return 'settings.deleteAccount.reauthBodyLinkedIn';
     }
     if (reauthMethod.reason === 'linkedin_sign_in_again') {
       return 'settings.deleteAccount.linkedInSignInAgain';
@@ -221,7 +211,11 @@ export default function DeleteAccountScreen() {
         return;
       }
       if (result.reauthRequired) openReauth();
-      Alert.alert(t('common.error'), t(result.messageKey));
+      const messageKey = resolveDeletionFailureMessageKey(
+        result,
+        resolveReauthOptionsFromCurrentUser().primary,
+      );
+      Alert.alert(t('common.error'), t(messageKey));
     } finally {
       busyRef.current = false;
       if (mountedRef.current) setBusy(false);
@@ -286,7 +280,33 @@ export default function DeleteAccountScreen() {
 
   const renderReauthActions = () => {
     if (reauthMethod.kind === 'unavailable') {
-      return null;
+      // Retry only succeeds once the user signed in again themselves.
+      return (
+        <Pressable
+          onPress={() => {
+            void runDeletion({});
+          }}
+          disabled={busy}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: busy, busy }}
+          accessibilityLabel={t('settings.deleteAccount.permanently')}
+          style={({ pressed }) => [
+            styles.dangerBtn,
+            {
+              backgroundColor: palette.danger,
+              opacity: busy || pressed ? 0.85 : 1,
+            },
+          ]}
+        >
+          {busy ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.dangerBtnText}>
+              {t('settings.deleteAccount.permanently')}
+            </Text>
+          )}
+        </Pressable>
+      );
     }
 
     if (reauthMethod.kind === 'password') {

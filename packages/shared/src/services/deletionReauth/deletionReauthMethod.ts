@@ -2,8 +2,9 @@
  * Provider-aware reauthentication method for account deletion.
  * Derived from Firebase Auth `providerData` and the deterministic LinkedIn UID,
  * never from the email or the Nearsy profile/entry path.
+ * LinkedIn is never an inline reauthentication method (see linkedInDeletionPolicy).
  */
-import { isLinkedInDeterministicUid } from './linkedInDeletionReauth';
+import { isLinkedInDeterministicUid } from './linkedInDeletionPolicy';
 
 export const FIREBASE_PROVIDER_PASSWORD = 'password' as const;
 export const FIREBASE_PROVIDER_GOOGLE = 'google.com' as const;
@@ -31,7 +32,6 @@ export type DeletionReauthMethod =
       kind: 'facebook';
       linkedProviderUserId?: string;
     }
-  | { kind: 'linkedin' }
   | {
       kind: 'unavailable';
       reason: 'no_supported_provider' | 'custom_token_only' | 'linkedin_sign_in_again';
@@ -42,8 +42,6 @@ export type AvailableDeletionReauthMethod = Exclude<DeletionReauthMethod, { kind
 export type DeletionReauthContext = {
   /** Firebase Auth UID of the signed-in user. */
   uid?: string | null;
-  /** Whether the LinkedIn A3 flow can run in this runtime. */
-  linkedInReauthAvailable?: boolean;
 };
 
 /** Deterministic MVP priority when multiple providers are linked. */
@@ -82,13 +80,11 @@ function linkedProviderUserId(
 }
 
 /**
- * Every reauthentication method actually linked to this account, in
- * deterministic priority order. LinkedIn (custom token, no providerData entry)
- * is last and only when the UID is the deterministic LinkedIn UID.
+ * Every credential-based reauthentication method linked to this account, in
+ * deterministic priority order.
  */
 export function resolveDeletionReauthMethods(
   providerData: ReadonlyArray<FirebaseAuthProviderDataEntry> | null | undefined,
-  context: DeletionReauthContext = {},
 ): AvailableDeletionReauthMethod[] {
   const entries = providerData ?? [];
   const linkedIds = listLinkedProviderIds(entries);
@@ -106,25 +102,21 @@ export function resolveDeletionReauthMethods(
       methods.push({ kind: 'facebook', linkedProviderUserId: linkedProviderUserId(entries, providerId) });
     }
   }
-
-  if (isLinkedInDeterministicUid(context.uid) && context.linkedInReauthAvailable) {
-    methods.push({ kind: 'linkedin' });
-  }
   return methods;
 }
 
 /**
  * Resolve which reauthentication UX/path Delete Account should use first.
  *
- * Supported: password, google.com, apple.com, facebook.com, LinkedIn (same
- * deterministic UID). A LinkedIn account without a safe fresh session must
- * sign in again; other custom-token sessions stay unavailable.
+ * Supported: password, google.com, apple.com, facebook.com. A LinkedIn-only
+ * account (deterministic UID, no credential provider) is asked to sign in
+ * again; other custom-token sessions stay unavailable.
  */
 export function resolveDeletionReauthMethod(
   providerData: ReadonlyArray<FirebaseAuthProviderDataEntry> | null | undefined,
   context: DeletionReauthContext = {},
 ): DeletionReauthMethod {
-  const methods = resolveDeletionReauthMethods(providerData, context);
+  const methods = resolveDeletionReauthMethods(providerData);
   if (methods.length > 0) return methods[0];
 
   if (isLinkedInDeterministicUid(context.uid)) {

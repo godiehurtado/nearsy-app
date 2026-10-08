@@ -24,9 +24,7 @@ export {
 } from './reauthenticateForAccountDeletion';
 
 export {
+  LINKEDIN_DELETION_SIGN_IN_AGAIN_KEY,
   LINKEDIN_UID_PREFIX,
   isLinkedInDeterministicUid,
-  readCustomTokenUid,
-  refreshLinkedInSessionForDeletion,
-  type LinkedInDeletionReauthDeps,
-} from './linkedInDeletionReauth';
+} from './linkedInDeletionPolicy';

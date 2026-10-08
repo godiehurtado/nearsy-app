@@ -21,9 +21,28 @@ const DELETION_FLOW_FILES = [
   'services/deleteMyAccount/deleteMyAccountCallableHttp.ts',
   'services/deleteMyAccount/iosDeleteMyAccountFoundation.ios.ts',
   'services/deleteMyAccount/iosDeleteMyAccountFoundation.ts',
+  'services/deletionReauth/accountDeletionReauthError.ts',
+  'services/deletionReauth/deletionReauthMethod.ts',
+  'services/deletionReauth/index.ts',
+  'services/deletionReauth/linkedInDeletionPolicy.ts',
+  'services/deletionReauth/reauthenticateForAccountDeletion.ts',
+];
+
+const REMOVED_LINKEDIN_REAUTH_FILES = [
   'services/deletionReauth/linkedInDeletionReauth.ts',
   'services/deletionReauth/linkedInDeletionReauthRuntime.ts',
 ];
+
+/** Only App Check and environment resolution may be shared with the LinkedIn A3 folder. */
+const ALLOWED_LINKEDIN_A3_IMPORT = /linkedinA3\/(appCheck|environment)\//;
+
+function importSpecifiers(src: string): string[] {
+  const specs: string[] = [];
+  const re = /(?:from\s+|require\(\s*|import\(\s*)['"]([^'"]+)['"]/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(src))) specs.push(match[1]);
+  return specs;
+}
 
 describe('Delete Account never deletes from the client', () => {
   for (const rel of DELETION_FLOW_FILES) {
@@ -47,6 +66,43 @@ describe('Delete Account never deletes from the client', () => {
   });
 });
 
+describe('Delete Account never starts LinkedIn or creates an identity', () => {
+  for (const rel of DELETION_FLOW_FILES) {
+    it(`${rel}: no custom-token sign-in, LinkedIn OAuth, A3 callback or identity creation`, () => {
+      const src = read(rel);
+      assert.doesNotMatch(src, /signInWithCustomToken|customToken/i);
+      assert.doesNotMatch(
+        src,
+        /authenticateWithLinkedIn|runLinkedInA3BrowserAuthFlow|createLinkedInA3|linkedInA3CallableClient/,
+      );
+      assert.doesNotMatch(src, /linkedinAuthStart|linkedinAuthExchange|linkedin\.com\/oauth/i);
+      assert.doesNotMatch(src, /expo-web-browser|openAuthSessionAsync|WebBrowser\./);
+      assert.doesNotMatch(src, /durableResume|appRootResume|durableTransactionStore/);
+      assert.doesNotMatch(src, /resolveOrCreateUser|createUser\(|createUserWith/);
+      assert.doesNotMatch(src, /signInWithCredential\(|linkWithCredential\(/);
+      for (const spec of importSpecifiers(src)) {
+        if (/linkedinA3/.test(spec)) {
+          assert.match(spec, ALLOWED_LINKEDIN_A3_IMPORT, `${rel} imports ${spec}`);
+        }
+      }
+    });
+  }
+
+  it('the inline LinkedIn reauthentication modules no longer exist', () => {
+    for (const rel of REMOVED_LINKEDIN_REAUTH_FILES) {
+      assert.equal(fs.existsSync(path.join(sharedSrc, rel)), false, rel);
+    }
+  });
+
+  it('LinkedIn is never offered as an inline reauthentication button', () => {
+    const screen = read('screens/DeleteAccountScreen.tsx');
+    assert.doesNotMatch(screen, /linkedin:\s*'settings\.deleteAccount/);
+    assert.doesNotMatch(screen, /reauth(Body|Continue|Switch)LinkedIn/);
+    const method = read('services/deletionReauth/deletionReauthMethod.ts');
+    assert.doesNotMatch(method, /kind:\s*'linkedin'/);
+  });
+});
+
 describe('Delete Account never logs tokens or PII', () => {
   for (const rel of DELETION_FLOW_FILES) {
     it(`${rel}: no console output`, () => {
@@ -57,7 +113,8 @@ describe('Delete Account never logs tokens or PII', () => {
   it('alerts show translated keys only, never Firebase/backend messages', () => {
     const screen = read('screens/DeleteAccountScreen.tsx');
     assert.doesNotMatch(screen, /\.message\b/);
-    assert.match(screen, /Alert\.alert\(t\('common\.error'\), t\(result\.messageKey\)\);/);
+    assert.match(screen, /resolveDeletionFailureMessageKey\(\s*result,/);
+    assert.match(screen, /Alert\.alert\(t\('common\.error'\), t\(messageKey\)\);/);
   });
 });
 
@@ -87,22 +144,29 @@ describe('Delete Account copy (EN / ES)', () => {
     }
   });
 
-  it('LinkedIn and method-switch copy exists in both languages', () => {
+  it('LinkedIn guidance and method-switch copy exists in both languages', () => {
     for (const key of [
       'linkedInSignInAgain',
-      'reauthBodyLinkedIn',
-      'reauthContinueLinkedIn',
       'reauthSwitchPassword',
       'reauthSwitchGoogle',
       'reauthSwitchApple',
       'reauthSwitchFacebook',
-      'reauthSwitchLinkedIn',
     ]) {
       assert.ok(en[key]?.trim(), `EN ${key}`);
       assert.ok(esCopy[key]?.trim(), `ES ${key}`);
     }
-    assert.match(en.linkedInSignInAgain, /sign out, sign back in with LinkedIn, and delete your account within 5 minutes/);
-    assert.match(esCopy.linkedInSignInAgain, /cierra sesión, vuelve a entrar con LinkedIn y elimina tu cuenta dentro de los 5 minutos/);
+    for (const key of ['reauthBodyLinkedIn', 'reauthContinueLinkedIn', 'reauthSwitchLinkedIn']) {
+      assert.equal(en[key], undefined, `EN ${key} removed`);
+      assert.equal(esCopy[key], undefined, `ES ${key} removed`);
+    }
+    assert.equal(
+      en.linkedInSignInAgain,
+      'For security, sign out, sign back in with LinkedIn, and request account deletion within the next 5 minutes.',
+    );
+    assert.equal(
+      esCopy.linkedInSignInAgain,
+      'Por seguridad, cierra sesión, vuelve a ingresar con LinkedIn y solicita la eliminación de tu cuenta dentro de los próximos 5 minutos.',
+    );
   });
 
   it('uncertain outcomes never claim the account was deleted', () => {

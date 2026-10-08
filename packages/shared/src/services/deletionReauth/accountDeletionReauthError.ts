@@ -6,8 +6,7 @@ export type AccountDeletionReauthErrorCode =
   | 'WRONG_PASSWORD'
   | 'NETWORK'
   | 'IN_PROGRESS'
-  | 'NOT_AUTHENTICATED'
-  | 'LINKEDIN_SESSION_REQUIRED';
+  | 'NOT_AUTHENTICATED';
 
 export class AccountDeletionReauthError extends Error {
   readonly code: AccountDeletionReauthErrorCode;
