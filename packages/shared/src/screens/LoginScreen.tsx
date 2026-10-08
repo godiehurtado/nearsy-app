@@ -1,5 +1,5 @@
 // src/screens/LoginScreen.tsx — RNFirebase-only, themed Login (CRJ)
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
@@ -35,6 +35,10 @@ import {
   AuthSocialProvider,
 } from '../components/AuthSocialButtonRow';
 import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
+import {
+  GOOGLE_LOGIN_WARNING_KEYS,
+  createGoogleLoginWarningGate,
+} from '../authentication/google/googleLoginWarning';
 import { useLinkedInSignInFlow } from '../hooks/useLinkedInSignInFlow';
 import { useFacebookSignInFlow } from '../hooks/useFacebookSignInFlow';
 import { isNearsyLinkedInAuthAllowed } from '../config/nearsyFirebaseEnv';
@@ -47,6 +51,7 @@ export default function LoginScreen({ navigation }: any) {
   const { signInWithGoogle, googleSubmitting } = useGoogleSignInFlow();
   const { signInWithLinkedIn, linkedInSubmitting } = useLinkedInSignInFlow();
   const { signInWithFacebook, facebookSubmitting } = useFacebookSignInFlow();
+  const requestGoogleLogin = useRef(createGoogleLoginWarningGate()).current;
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -256,10 +261,34 @@ export default function LoginScreen({ navigation }: any) {
     }
   };
 
+  const confirmGoogleLogin = () =>
+    new Promise<boolean>((resolve) => {
+      Alert.alert(
+        t(GOOGLE_LOGIN_WARNING_KEYS.title),
+        t(GOOGLE_LOGIN_WARNING_KEYS.message),
+        [
+          {
+            text: t(GOOGLE_LOGIN_WARNING_KEYS.back),
+            style: 'cancel',
+            onPress: () => resolve(false),
+          },
+          {
+            text: t(GOOGLE_LOGIN_WARNING_KEYS.continue),
+            onPress: () => resolve(true),
+          },
+        ],
+        { cancelable: true, onDismiss: () => resolve(false) },
+      );
+    });
+
   const handleSocialPress = (provider: AuthSocialProvider) => {
     if (busy) return;
 
     if (provider === 'google') {
+      if (Platform.OS === 'android') {
+        void requestGoogleLogin(confirmGoogleLogin, signInWithGoogle);
+        return;
+      }
       void signInWithGoogle();
       return;
     }

@@ -349,6 +349,12 @@ describe('No App Secret, Client Token or App ID hardcodes', () => {
     'packages/shared/src/services/facebookSession.ts',
     'packages/shared/src/hooks/useFacebookSignInFlow.android.ts',
     'packages/shared/src/hooks/useFacebookSignInFlow.ts',
+    'packages/shared/src/authentication/facebook/facebookAccountLinking.ts',
+    'packages/shared/src/authentication/accountLinking/accountLinkingCore.ts',
+    'packages/shared/src/services/firebaseAccountLink.android.ts',
+    'packages/shared/src/services/facebookAccountLinking.android.ts',
+    'packages/shared/src/services/facebookAccountLinking.ts',
+    'packages/shared/src/screens/SignInMethodsScreen.tsx',
   ];
 
   it('no App Secret identifiers or env vars anywhere in the Facebook surface', () => {

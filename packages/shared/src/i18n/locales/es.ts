@@ -427,6 +427,55 @@ export const es: TranslationResources = {
       unblockError:
         'No se pudo desbloquear a esta persona. Inténtalo de nuevo.',
     },
+    signInMethods: {
+      title: 'Métodos de inicio de sesión',
+      openHint: 'Ver cómo inicias sesión en Nearsy',
+      back: 'Atrás',
+      description: 'Estos son los métodos vinculados a tu cuenta de Nearsy.',
+      methods: {
+        email: 'Correo y contraseña',
+        google: 'Google',
+        facebook: 'Facebook',
+        linkedin: 'LinkedIn',
+      },
+      connected: 'Conectado',
+      notConnected: 'No conectado',
+      limitationNote: 'Algunos métodos, como LinkedIn, podrían no aparecer en esta lista.',
+      connectGoogle: 'Conectar Google',
+      connectGoogleHint:
+        'Agrega Google como otra forma de iniciar sesión en esta misma cuenta de Nearsy.',
+      connectFacebook: 'Conectar Facebook',
+      connectFacebookHint:
+        'Agrega Facebook como otra forma de iniciar sesión en esta misma cuenta de Nearsy.',
+      confirmGoogleTitle: '¿Conectar Google?',
+      confirmGoogleBody:
+        'Elegirás una cuenta de Google para agregarla como otra forma de acceder a esta misma cuenta de Nearsy. Tu perfil y tus datos no cambian.',
+      confirmFacebookTitle: '¿Conectar Facebook?',
+      confirmFacebookBody:
+        'Iniciarás sesión en Facebook para agregarlo como otra forma de acceder a esta misma cuenta de Nearsy. Tu perfil y tus datos no cambian.',
+      confirmContinue: 'Continuar',
+      confirmCancel: 'Cancelar',
+      googleLinkedTitle: 'Google conectado',
+      googleLinkedBody: 'Ahora puedes iniciar sesión en Nearsy con Google.',
+      facebookLinkedTitle: 'Facebook conectado',
+      facebookLinkedBody: 'Ahora puedes iniciar sesión en esta cuenta de Nearsy con Facebook.',
+      errors: {
+        googleTitle: 'No se pudo conectar Google',
+        facebookTitle: 'No se pudo conectar Facebook',
+        googleInUse: 'Esta cuenta de Google ya está asociada a otra cuenta de Nearsy.',
+        credentialInUse:
+          'Esta cuenta de Facebook ya está conectada a otra cuenta de Nearsy. No se hicieron cambios.',
+        emailInUse:
+          'No pudimos conectar esta cuenta de Facebook. Tu cuenta de Nearsy no tuvo cambios.',
+        requiresRecentLogin:
+          'Por seguridad, cierra sesión, vuelve a entrar con tu método actual e inténtalo de nuevo.',
+        sessionChanged:
+          'Tu sesión cambió. Vuelve a iniciar sesión e inténtalo de nuevo.',
+        network: 'Error de red. Revisa tu conexión e inténtalo de nuevo.',
+        generic:
+          'Algo salió mal al conectar este método de inicio de sesión. Inténtalo de nuevo.',
+      },
+    },
     editor: {
       save: 'Guardar',
       cancel: 'Cancelar',

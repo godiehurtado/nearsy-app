@@ -41,6 +41,13 @@ export const authenticationTranslations = {
           'Please verify your email using the link we sent you before logging in on this device. If you don’t see the email, please check your Spam or Junk folder.',
         loginErrorTitle: 'Login Error',
       },
+      googleWarning: {
+        title: 'Use another sign-in method',
+        message:
+          'If you already have a Nearsy account created with email, Facebook, or another method, sign in with that method first and connect the new one from Sign-in methods in Settings.\n\nIf you continue directly, your previous sign-in method may no longer be available.',
+        back: 'Go back',
+        continue: 'Continue with Google',
+      },
     },
     social: {
       comingSoonTitle: 'Coming soon',
@@ -67,7 +74,7 @@ export const authenticationTranslations = {
           generic: 'We couldn’t sign you in with Facebook. Please try again.',
           accountExistsTitle: 'Account already exists',
           accountExists:
-            'A Nearsy account already exists with this email. Sign in using the method you originally used.',
+            'A Nearsy account already exists with this email. Sign in using one of your current methods and connect Facebook from Sign-in methods.',
         },
       },
     },
@@ -365,6 +372,13 @@ export const authenticationTranslations = {
           'Verifica tu correo con el enlace que te enviamos antes de iniciar sesión en este dispositivo. Si no lo ves, revisa la carpeta de spam o correo no deseado.',
         loginErrorTitle: 'Error al iniciar sesión',
       },
+      googleWarning: {
+        title: 'Usar otro método de inicio de sesión',
+        message:
+          'Si ya tienes una cuenta de Nearsy creada con correo, Facebook u otro método, inicia sesión primero con ese método y conéctalo desde Métodos de inicio de sesión en Ajustes.\n\nSi continúas directamente, tu método anterior podría dejar de estar disponible.',
+        back: 'Volver',
+        continue: 'Continuar con Google',
+      },
     },
     social: {
       comingSoonTitle: 'Próximamente',
@@ -394,7 +408,7 @@ export const authenticationTranslations = {
             'No pudimos iniciar sesión con Facebook. Inténtalo nuevamente.',
           accountExistsTitle: 'Cuenta existente',
           accountExists:
-            'Ya existe una cuenta de Nearsy asociada a este correo. Inicia sesión utilizando el método que usaste originalmente.',
+            'Ya existe una cuenta de Nearsy con este correo. Inicia sesión con uno de tus métodos actuales y conecta Facebook desde Métodos de inicio de sesión.',
         },
       },
     },
