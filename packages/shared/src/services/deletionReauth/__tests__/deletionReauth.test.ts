@@ -349,7 +349,7 @@ describe('reauthenticateForAccountDeletion', () => {
     assert.equal(credentialCalls, 0);
   });
 
-  it('failed facebook reauth clears the Facebook session; success keeps it for finalize', async () => {
+  it('facebook reauth always clears the temporary Limited Login session', async () => {
     let clears = 0;
     const clearFacebookProviderSession = async () => {
       clears += 1;
@@ -388,7 +388,7 @@ describe('reauthenticateForAccountDeletion', () => {
       { method: { kind: 'facebook', linkedProviderUserId: 'fb-app-scoped-1' } },
       createMockDeps({ clearFacebookProviderSession }),
     );
-    assert.equal(clears, 2, 'successful reauth does not clear before deletion');
+    assert.equal(clears, 3, 'successful reauth also clears; Firebase session is unaffected');
   });
 
   it('Delete Account only deletes after a successful reauth', async () => {
@@ -408,6 +408,74 @@ describe('reauthenticateForAccountDeletion', () => {
     assert.ok(reauthIdx > 0 && deleteIdx > reauthIdx);
     assert.match(screen, /settings\.deleteAccount\.reauthContinueFacebook/);
     assert.match(screen, /settings\.deleteAccount\.reauthBodyFacebook/);
+  });
+
+  it('expectedUid different from the signed-in user aborts before any provider UI', async () => {
+    let tokenCalls = 0;
+    await assert.rejects(
+      () =>
+        reauthenticateForAccountDeletion(
+          { method: { kind: 'google', linkedProviderUserId: 'google-sub-1' }, expectedUid: 'uid-confirmed' },
+          createMockDeps({
+            obtainGoogleProviderTokens: async () => {
+              tokenCalls += 1;
+              return { idToken: 'tok', providerUserId: 'google-sub-1' };
+            },
+          }),
+        ),
+      (err: unknown) => err instanceof AccountDeletionReauthError && err.code === 'IDENTITY_MISMATCH',
+    );
+    assert.equal(tokenCalls, 0);
+  });
+
+  it('linkedin path refreshes the same-UID session and never uses a credential', async () => {
+    const seen: string[] = [];
+    let credentialCalls = 0;
+    await reauthenticateForAccountDeletion(
+      { method: { kind: 'linkedin' }, expectedUid: 'li_abc' },
+      createMockDeps({
+        getCurrentUser: () => ({ uid: 'li_abc' }) as any,
+        refreshLinkedInSession: async (uid) => {
+          seen.push(uid);
+        },
+        reauthenticateWithCredential: async () => {
+          credentialCalls += 1;
+        },
+      }),
+    );
+    assert.deepEqual(seen, ['li_abc']);
+    assert.equal(credentialCalls, 0);
+  });
+
+  it('linkedin without a fresh-session runtime asks to sign in again', async () => {
+    await assert.rejects(
+      () =>
+        reauthenticateForAccountDeletion(
+          { method: { kind: 'linkedin' } },
+          createMockDeps({ getCurrentUser: () => ({ uid: 'li_abc' }) as any }),
+        ),
+      (err: unknown) =>
+        err instanceof AccountDeletionReauthError &&
+        err.code === 'LINKEDIN_SESSION_REQUIRED' &&
+        err.messageKey === 'settings.deleteAccount.linkedInSignInAgain',
+    );
+  });
+
+  it('linkedin session ending on another UID aborts deletion', async () => {
+    let uid = 'li_abc';
+    await assert.rejects(
+      () =>
+        reauthenticateForAccountDeletion(
+          { method: { kind: 'linkedin' } },
+          createMockDeps({
+            getCurrentUser: () => ({ uid }) as any,
+            refreshLinkedInSession: async () => {
+              uid = 'li_other';
+            },
+          }),
+        ),
+      (err: unknown) => err instanceof AccountDeletionReauthError && err.code === 'IDENTITY_MISMATCH',
+    );
   });
 
   it('social cancellation does not complete reauth', async () => {

@@ -6,6 +6,9 @@ export {
   FIREBASE_PROVIDER_PASSWORD,
   listLinkedProviderIds,
   resolveDeletionReauthMethod,
+  resolveDeletionReauthMethods,
+  type AvailableDeletionReauthMethod,
+  type DeletionReauthContext,
   type DeletionReauthMethod,
   type FirebaseAuthProviderDataEntry,
 } from './deletionReauthMethod';
@@ -19,3 +22,11 @@ export {
   type ReauthenticateForDeletionDependencies,
   type ReauthenticateForDeletionInput,
 } from './reauthenticateForAccountDeletion';
+
+export {
+  LINKEDIN_UID_PREFIX,
+  isLinkedInDeterministicUid,
+  readCustomTokenUid,
+  refreshLinkedInSessionForDeletion,
+  type LinkedInDeletionReauthDeps,
+} from './linkedInDeletionReauth';
