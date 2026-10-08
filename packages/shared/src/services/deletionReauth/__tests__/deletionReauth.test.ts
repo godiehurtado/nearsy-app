@@ -391,21 +391,23 @@ describe('reauthenticateForAccountDeletion', () => {
     assert.equal(clears, 3, 'successful reauth also clears; Firebase session is unaffected');
   });
 
-  it('Delete Account only deletes after a successful reauth', async () => {
+  it('Delete Account only calls the backend after a successful reauth', async () => {
     const { readFileSync } = await import('node:fs');
     const { dirname, join } = await import('node:path');
     const { fileURLToPath } = await import('node:url');
-    const screen = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'screens', 'DeleteAccountScreen.tsx'),
-      'utf8',
-    );
+    const here = dirname(fileURLToPath(import.meta.url));
+    const service = readFileSync(join(here, '..', '..', 'accountDeletion.ts'), 'utf8');
+    const flow = service.slice(service.indexOf('export async function deleteAccountWithBackend'));
+    const reauthIdx = flow.indexOf('await runtime.reauthenticate(');
+    const deleteIdx = flow.indexOf('await runtime.deleteMyAccount(');
+    assert.ok(reauthIdx > 0 && deleteIdx > reauthIdx);
+
+    const screen = readFileSync(join(here, '..', '..', '..', 'screens', 'DeleteAccountScreen.tsx'), 'utf8');
     const handler = screen.slice(
       screen.indexOf('const handleReauthAndDelete'),
-      screen.indexOf('const renderReauthActions'),
+      screen.indexOf('const renderSwitchMethods'),
     );
-    const reauthIdx = handler.indexOf('await reauthenticateForAccountDeletion');
-    const deleteIdx = handler.indexOf('await deleteAccountAndData()');
-    assert.ok(reauthIdx > 0 && deleteIdx > reauthIdx);
+    assert.match(handler, /await runDeletion\(\{ reauth: \{ method: reauthMethod, password: pw \} \}\);/);
     assert.match(screen, /settings\.deleteAccount\.reauthContinueFacebook/);
     assert.match(screen, /settings\.deleteAccount\.reauthBodyFacebook/);
   });

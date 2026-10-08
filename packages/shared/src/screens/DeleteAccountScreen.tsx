@@ -1,8 +1,10 @@
 /**
- * Delete account — Nearsy 2.0 presentation; preserves deletion service contract.
- * Reauthentication is provider-aware (password / Google / Apple / Facebook).
+ * Delete account — Nearsy 2.0 presentation.
+ * The `deleteMyAccount` callable deletes the account; this screen only proves
+ * a recent sign-in (password / Google / Apple / Facebook / LinkedIn) and
+ * clears local state after the backend confirms.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -22,17 +24,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { navigationRef } from '../navigation/rootNavigationRef';
 import { clearLastKnownVisibility } from '../visibility/visibilityLastKnown';
-import { deleteAccountAndData } from '../services/accountDeletion';
-import { resolveAccountDeletionErrorMessageKey } from '../services/accountDeletionErrorPresentation';
+import { closeVisibilitySessionForLogout } from '../visibility/visibilitySessionGate';
+import { stopBackgroundLocationRuntime } from '../visibility/backgroundLocationRuntime';
 import {
+  deleteAccountWithBackend,
+  type AccountDeletionRequest,
+} from '../services/accountDeletion';
+import {
+  endAccountDeletionSession,
   finalizePostAccountDeletionSession,
 } from '../services/accountDeletionSession';
 import {
-  AccountDeletionReauthError,
   resolveDeletionReauthMethod,
-  reauthenticateForAccountDeletion,
+  resolveDeletionReauthMethods,
+  type AvailableDeletionReauthMethod,
   type DeletionReauthMethod,
 } from '../services/deletionReauth';
+import { isLinkedInDeletionReauthAvailable } from '../services/deletionReauth/linkedInDeletionReauthRuntime';
 import { firebaseAuth } from '../config/firebaseConfig';
 import { useTranslation } from '../i18n';
 import {
@@ -44,10 +52,41 @@ import {
   useAppTheme,
 } from '../theme';
 
-function resolveMethodFromCurrentUser(): DeletionReauthMethod {
+type ReauthOptions = {
+  primary: DeletionReauthMethod;
+  all: AvailableDeletionReauthMethod[];
+};
+
+function resolveReauthOptionsFromCurrentUser(): ReauthOptions {
   const user = firebaseAuth.currentUser;
-  return resolveDeletionReauthMethod(user?.providerData ?? []);
+  const providerData = user?.providerData ?? [];
+  let linkedInReauthAvailable = false;
+  try {
+    linkedInReauthAvailable = isLinkedInDeletionReauthAvailable();
+  } catch {
+    linkedInReauthAvailable = false;
+  }
+  const context = { uid: user?.uid ?? null, linkedInReauthAvailable };
+  return {
+    primary: resolveDeletionReauthMethod(providerData, context),
+    all: resolveDeletionReauthMethods(providerData, context),
+  };
 }
+
+const CONTINUE_LABEL_KEY: Record<Exclude<AvailableDeletionReauthMethod['kind'], 'password'>, string> = {
+  google: 'settings.deleteAccount.reauthContinueGoogle',
+  apple: 'settings.deleteAccount.reauthContinueApple',
+  facebook: 'settings.deleteAccount.reauthContinueFacebook',
+  linkedin: 'settings.deleteAccount.reauthContinueLinkedIn',
+};
+
+const SWITCH_LABEL_KEY: Record<AvailableDeletionReauthMethod['kind'], string> = {
+  password: 'settings.deleteAccount.reauthSwitchPassword',
+  google: 'settings.deleteAccount.reauthSwitchGoogle',
+  apple: 'settings.deleteAccount.reauthSwitchApple',
+  facebook: 'settings.deleteAccount.reauthSwitchFacebook',
+  linkedin: 'settings.deleteAccount.reauthSwitchLinkedIn',
+};
 
 export default function DeleteAccountScreen() {
   const nav = useNavigation<any>();
@@ -59,11 +98,25 @@ export default function DeleteAccountScreen() {
   const [showReauth, setShowReauth] = useState(false);
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
-  const [reauthMethod, setReauthMethod] = useState<DeletionReauthMethod>(() =>
-    resolveMethodFromCurrentUser(),
+  const busyRef = useRef(false);
+  const mountedRef = useRef(true);
+  const [reauthOptions, setReauthOptions] = useState<ReauthOptions>(() =>
+    resolveReauthOptionsFromCurrentUser(),
+  );
+  const [reauthMethod, setReauthMethod] = useState<DeletionReauthMethod>(
+    () => reauthOptions.primary,
   );
 
   const canDelete = typed.trim().toUpperCase() === 'DELETE';
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      // A pending or failed attempt must not suppress the profile gate later.
+      if (!busyRef.current) endAccountDeletionSession();
+    };
+  }, []);
 
   useEffect(() => {
     // Only bounce if the screen opens without an authenticated user.
@@ -72,7 +125,9 @@ export default function DeleteAccountScreen() {
     if (!firebaseAuth.currentUser) {
       return;
     }
-    setReauthMethod(resolveMethodFromCurrentUser());
+    const options = resolveReauthOptionsFromCurrentUser();
+    setReauthOptions(options);
+    setReauthMethod(options.primary);
   }, []);
 
   const reauthBodyKey = useMemo(() => {
@@ -88,48 +143,43 @@ export default function DeleteAccountScreen() {
     if (reauthMethod.kind === 'facebook') {
       return 'settings.deleteAccount.reauthBodyFacebook';
     }
+    if (reauthMethod.kind === 'linkedin') {
+      return 'settings.deleteAccount.reauthBodyLinkedIn';
+    }
+    if (reauthMethod.reason === 'linkedin_sign_in_again') {
+      return 'settings.deleteAccount.linkedInSignInAgain';
+    }
     return 'settings.deleteAccount.reauthUnavailable';
-  }, [reauthMethod.kind]);
+  }, [reauthMethod]);
 
-  const alertDeletionError = (err: unknown) => {
-    if (err instanceof AccountDeletionReauthError) {
-      Alert.alert(t('common.error'), t(err.messageKey));
-      return;
-    }
-    if (__DEV__) {
-      const code =
-        typeof err === 'object' &&
-        err !== null &&
-        'code' in err &&
-        typeof (err as { code: unknown }).code === 'string'
-          ? (err as { code: string }).code
-          : undefined;
-      console.warn('[deleteAccount]', {
-        code,
-        messageKey: resolveAccountDeletionErrorMessageKey(err),
-      });
-    }
-    Alert.alert(
-      t('common.error'),
-      t(resolveAccountDeletionErrorMessageKey(err)),
+  const openReauth = () => {
+    const options = resolveReauthOptionsFromCurrentUser();
+    setReauthOptions(options);
+    setReauthMethod((current) =>
+      current.kind !== 'unavailable' && options.all.some((m) => m.kind === current.kind)
+        ? current
+        : options.primary,
     );
+    setShowReauth(true);
   };
 
-  const runSuccessfulDeletionExit = async (deletedUid: string | undefined) => {
-    const {
-      clearPendingSocialProfilePrefill,
-      clearFacebookProviderSession,
-      createDefaultSocialProviderRegistry,
-    } = await import('../authentication/social');
-
-    clearPendingSocialProfilePrefill();
-    await clearLastKnownVisibility(AsyncStorage, deletedUid);
+  const runSuccessfulDeletionExit = async (deletedUid: string) => {
+    let social: typeof import('../authentication/social') | null = null;
+    try {
+      social = await import('../authentication/social');
+    } catch {
+      social = null;
+    }
+    const clearFacebookProviderSession = social?.clearFacebookProviderSession;
 
     await finalizePostAccountDeletionSession({
-      clearSocialPrefill: () => clearPendingSocialProfilePrefill(),
+      closeVisibilityAndLocation: () =>
+        closeVisibilitySessionForLogout({ stopRuntime: stopBackgroundLocationRuntime }),
+      clearLocalState: () => clearLastKnownVisibility(AsyncStorage, deletedUid),
+      clearSocialPrefill: () => social?.clearPendingSocialProfilePrefill(),
       clearGoogleProviderSession: async () => {
-        const registry = createDefaultSocialProviderRegistry();
-        await registry.get('google').clearProviderSession();
+        const registry = social?.createDefaultSocialProviderRegistry();
+        await registry?.get('google').clearProviderSession();
       },
       clearFacebookProviderSession,
       ensureSignedOut: async () => {
@@ -150,8 +200,36 @@ export default function DeleteAccountScreen() {
     Alert.alert(t('common.appName'), t('settings.deleteAccount.done'));
   };
 
+  const runDeletion = async (request: AccountDeletionRequest) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      const result = await deleteAccountWithBackend(request);
+      if (result.status === 'deleted') {
+        await runSuccessfulDeletionExit(result.uid);
+        return;
+      }
+      // Auth may have flipped to signed-out meanwhile; AppNavigator owns that.
+      if (!mountedRef.current) {
+        endAccountDeletionSession();
+        return;
+      }
+      if (result.status === 'busy' || result.status === 'cancelled') return;
+      if (result.status === 'reauth_required') {
+        openReauth();
+        return;
+      }
+      if (result.reauthRequired) openReauth();
+      Alert.alert(t('common.error'), t(result.messageKey));
+    } finally {
+      busyRef.current = false;
+      if (mountedRef.current) setBusy(false);
+    }
+  };
+
   const handleDelete = () => {
-    if (busy) return;
+    if (busyRef.current) return;
 
     Alert.alert(
       t('settings.deleteAccount.alertTitle'),
@@ -164,28 +242,8 @@ export default function DeleteAccountScreen() {
         {
           text: t('settings.deleteAccount.alertConfirm'),
           style: 'destructive',
-          onPress: async () => {
-            if (busy) return;
-            try {
-              setBusy(true);
-              const deletingUid = firebaseAuth.currentUser?.uid;
-              await deleteAccountAndData();
-              await runSuccessfulDeletionExit(deletingUid);
-            } catch (e: any) {
-              const code = e?.code || '';
-              if (String(code).includes('auth/requires-recent-login')) {
-                const method = resolveMethodFromCurrentUser();
-                setReauthMethod(method);
-                setShowReauth(true);
-                return;
-              }
-              Alert.alert(
-                t('common.error'),
-                t(resolveAccountDeletionErrorMessageKey(e)),
-              );
-            } finally {
-              setBusy(false);
-            }
+          onPress: () => {
+            void runDeletion({});
           },
         },
       ],
@@ -193,44 +251,42 @@ export default function DeleteAccountScreen() {
   };
 
   const handleReauthAndDelete = async () => {
-    if (busy) return;
+    if (busyRef.current) return;
     if (reauthMethod.kind === 'unavailable') {
-      Alert.alert(
-        t('common.error'),
-        t('settings.deleteAccount.reauthUnavailable'),
-      );
+      Alert.alert(t('common.error'), t(reauthBodyKey));
       return;
     }
     if (reauthMethod.kind === 'password' && !pw.trim()) {
       return;
     }
+    await runDeletion({ reauth: { method: reauthMethod, password: pw } });
+  };
 
-    try {
-      setBusy(true);
-      await reauthenticateForAccountDeletion({
-        method: reauthMethod,
-        password: pw,
-      });
-      const deletingUid = firebaseAuth.currentUser?.uid;
-      await deleteAccountAndData();
-      await runSuccessfulDeletionExit(deletingUid);
-    } catch (err: unknown) {
-      alertDeletionError(err);
-    } finally {
-      setBusy(false);
-    }
+  const renderSwitchMethods = () => {
+    const others = reauthOptions.all.filter((m) => m.kind !== reauthMethod.kind);
+    if (others.length === 0) return null;
+    return others.map((method) => (
+      <Pressable
+        key={method.kind}
+        onPress={() => {
+          setPw('');
+          setReauthMethod(method);
+        }}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={t(SWITCH_LABEL_KEY[method.kind])}
+        style={styles.switchLink}
+      >
+        <Text style={{ color: palette.primary, fontWeight: '700' }}>
+          {t(SWITCH_LABEL_KEY[method.kind])}
+        </Text>
+      </Pressable>
+    ));
   };
 
   const renderReauthActions = () => {
     if (reauthMethod.kind === 'unavailable') {
-      return (
-        <Text
-          style={[styles.body, { color: palette.textSecondary }]}
-          accessibilityRole="text"
-        >
-          {t('settings.deleteAccount.reauthUnavailable')}
-        </Text>
-      );
+      return null;
     }
 
     if (reauthMethod.kind === 'password') {
@@ -283,12 +339,7 @@ export default function DeleteAccountScreen() {
       );
     }
 
-    const labelKey =
-      reauthMethod.kind === 'google'
-        ? 'settings.deleteAccount.reauthContinueGoogle'
-        : reauthMethod.kind === 'facebook'
-          ? 'settings.deleteAccount.reauthContinueFacebook'
-          : 'settings.deleteAccount.reauthContinueApple';
+    const labelKey = CONTINUE_LABEL_KEY[reauthMethod.kind];
 
     return (
       <Pressable
@@ -384,6 +435,7 @@ export default function DeleteAccountScreen() {
                 {t(reauthBodyKey)}
               </Text>
               {renderReauthActions()}
+              {renderSwitchMethods()}
             </View>
           ) : (
             <Pressable
@@ -477,6 +529,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: fontWeight.extrabold,
     fontSize: fontSize.md,
+  },
+  switchLink: {
+    marginTop: spacing.sm,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   backLink: {
     marginTop: spacing.lg,

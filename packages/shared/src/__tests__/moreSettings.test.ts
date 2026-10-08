@@ -176,9 +176,9 @@ describe('Settings background / language / logout / delete preservation', () => 
     assert.doesNotMatch(themeSelection, /later in your profile/);
   });
 
-  it('delete screen finalizes guest Login after success and cleans up before Auth', () => {
+  it('delete screen deletes through the backend callable and finalizes guest Login after success', () => {
     const screen = readShared('screens/DeleteAccountScreen.tsx');
-    assert.match(screen, /deleteAccountAndData/);
+    assert.match(screen, /deleteAccountWithBackend/);
     assert.match(screen, /finalizePostAccountDeletionSession/);
     assert.match(screen, /navigationRef/);
     assert.doesNotMatch(screen, /navigateToLogin/);
@@ -189,15 +189,8 @@ describe('Settings background / language / logout / delete preservation', () => 
     assert.match(session, /routes: \[\{ name: 'Login' \}\]/);
 
     const service = readShared('services/accountDeletion.ts');
-    assert.match(service, /deleteContactHashes/);
-    assert.match(service, /deleteUserStorage/);
-    assert.match(service, /deleteUserDocument/);
-    assert.match(service, /auth-delete/);
-    const authIdx = service.indexOf("onStep?.('auth-delete')");
-    const hashesIdx = service.indexOf(
-      "onStep?.('cleanup-firestore-contactHashes')",
-    );
-    assert.ok(hashesIdx >= 0 && authIdx > hashesIdx);
+    assert.match(service, /runtime\.deleteMyAccount\(\{ expectedUid: uid \}\)/);
+    assert.doesNotMatch(service, /deleteContactHashes|deleteUserStorage|deleteUserDocument/);
   });
 });
 

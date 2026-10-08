@@ -1,41 +1,32 @@
 /**
  * Safe user-facing mapping for account deletion failures.
- * Never surfaces raw Firebase permission strings.
+ * Uses only `DeleteMyAccountError.kind` / reauth `messageKey`; Firebase and
+ * backend messages are never surfaced.
  */
+import { AccountDeletionReauthError } from './deletionReauth/accountDeletionReauthError';
+import {
+  isDeleteMyAccountError,
+  type DeleteMyAccountFailureKind,
+} from './deleteMyAccount/contract';
+
+const MESSAGE_KEY_BY_KIND: Record<DeleteMyAccountFailureKind, string> = {
+  RECENT_LOGIN_REQUIRED: 'settings.deleteAccount.sessionNotRecent',
+  APP_CHECK: 'settings.deleteAccount.appCheckFailed',
+  UNAUTHENTICATED: 'settings.deleteAccount.signedOut',
+  IDENTITY_CHANGED: 'settings.deleteAccount.reauthMismatch',
+  IN_PROGRESS: 'settings.deleteAccount.inProgress',
+  DELETION_RETRYABLE: 'settings.deleteAccount.retryable',
+  DELETION_FAILED: 'settings.deleteAccount.failed',
+  NETWORK_UNCERTAIN: 'settings.deleteAccount.networkUncertain',
+  UNKNOWN: 'settings.deleteAccount.error',
+};
+
+export function resolveDeleteMyAccountMessageKey(kind: DeleteMyAccountFailureKind): string {
+  return MESSAGE_KEY_BY_KIND[kind] ?? 'settings.deleteAccount.error';
+}
+
 export function resolveAccountDeletionErrorMessageKey(err: unknown): string {
-  const code =
-    typeof err === 'object' &&
-    err !== null &&
-    'code' in err &&
-    typeof (err as { code: unknown }).code === 'string'
-      ? (err as { code: string }).code
-      : '';
-
-  const message =
-    typeof err === 'object' &&
-    err !== null &&
-    'message' in err &&
-    typeof (err as { message: unknown }).message === 'string'
-      ? (err as { message: string }).message
-      : '';
-
-  const haystack = `${code} ${message}`.toLowerCase();
-
-  if (
-    haystack.includes('permission-denied') ||
-    haystack.includes('missing or insufficient permissions')
-  ) {
-    return 'settings.deleteAccount.permissionError';
-  }
-
-  if (haystack.includes('auth/requires-recent-login')) {
-    // Caller should intercept this for reauth UI; fallback only.
-    return 'settings.deleteAccount.error';
-  }
-
-  if (haystack.includes('auth/network-request-failed') || haystack.includes('network')) {
-    return 'settings.deleteAccount.networkError';
-  }
-
+  if (isDeleteMyAccountError(err)) return resolveDeleteMyAccountMessageKey(err.kind);
+  if (err instanceof AccountDeletionReauthError) return err.messageKey;
   return 'settings.deleteAccount.error';
 }

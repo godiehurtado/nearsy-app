@@ -1,7 +1,7 @@
 /**
  * Account-deletion session helpers.
- * Prevents AppNavigator from remounting into CompleteProfile while
- * `users/{uid}` is removed before Auth delete, and finalizes guest UI.
+ * Prevents AppNavigator from remounting into CompleteProfile while the
+ * backend removes `users/{uid}` before Auth, and finalizes guest UI.
  */
 
 let accountDeletionSessionActive = false;
@@ -24,19 +24,42 @@ export type PostAccountDeletionNavigationTarget = {
 };
 
 /**
- * After Auth identity is gone, clear local social residue and force the
- * root navigator onto the canonical guest Login route when possible.
- * AppNavigator also remounts the guest stack via onAuthStateChanged(null).
+ * Only after the backend confirmed the deletion: stop location publishing,
+ * clear local-only state and provider sessions, then force the root navigator
+ * onto the canonical guest Login route when possible. Never deletes remote
+ * data. AppNavigator also remounts the guest stack via onAuthStateChanged(null).
  */
 export async function finalizePostAccountDeletionSession(input: {
+  closeVisibilityAndLocation?: () => Promise<unknown>;
+  clearLocalState?: () => Promise<void>;
   clearSocialPrefill?: () => void | Promise<void>;
   clearGoogleProviderSession?: () => Promise<void>;
   clearFacebookProviderSession?: () => Promise<void>;
   ensureSignedOut?: () => Promise<void>;
   navigation?: PostAccountDeletionNavigationTarget | null;
 }): Promise<{ authCleared: boolean; navigationReset: boolean }> {
+  if (input.closeVisibilityAndLocation) {
+    try {
+      await input.closeVisibilityAndLocation();
+    } catch {
+      // Best-effort; never block guest transition.
+    }
+  }
+
+  if (input.clearLocalState) {
+    try {
+      await input.clearLocalState();
+    } catch {
+      // Best-effort; never block guest transition.
+    }
+  }
+
   if (input.clearSocialPrefill) {
-    await input.clearSocialPrefill();
+    try {
+      await input.clearSocialPrefill();
+    } catch {
+      // Best-effort; never block guest transition.
+    }
   }
 
   if (input.clearGoogleProviderSession) {

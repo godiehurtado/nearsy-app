@@ -114,9 +114,20 @@ export default {
     alertConfirm: 'Delete',
     done: 'Your account has been deleted.',
     error: 'Could not delete account.',
-    permissionError:
-      'Could not delete your account data. Please try again while signed in.',
     networkError: 'Network error. Check your connection and try again.',
+    sessionNotRecent:
+      'For security, confirm it’s you again to delete your account. Your account was not deleted.',
+    appCheckFailed:
+      'We couldn’t verify this app. Update Nearsy or try again later. Your account was not deleted.',
+    signedOut: 'Your session has ended. Sign in again to delete your account.',
+    inProgress: 'Your account deletion is already in progress. Please wait.',
+    retryable: 'We couldn’t finish deleting your account. Please try again.',
+    failed:
+      'We couldn’t delete your account. Please try again later or contact Nearsy support.',
+    networkUncertain:
+      'We couldn’t confirm whether your account was deleted. Check your connection and try again.',
+    linkedInSignInAgain:
+      'For security, sign out, sign back in with LinkedIn, and delete your account within 5 minutes.',
     reauthBody: 'For security, please confirm your password to continue.',
     reauthBodyGoogle:
       'For security, continue with Google to confirm it’s you before deleting this account.',
@@ -124,11 +135,19 @@ export default {
       'For security, continue with Apple to confirm it’s you before deleting this account.',
     reauthBodyFacebook:
       'For security, continue with Facebook to confirm it’s you before deleting this account.',
+    reauthBodyLinkedIn:
+      'For security, continue with LinkedIn to confirm it’s you before deleting this account.',
     passwordPlaceholder: 'Password',
     reauthConfirm: 'Confirm password and delete',
     reauthContinueGoogle: 'Continue with Google and delete',
     reauthContinueApple: 'Continue with Apple and delete',
     reauthContinueFacebook: 'Continue with Facebook and delete',
+    reauthContinueLinkedIn: 'Continue with LinkedIn and delete',
+    reauthSwitchPassword: 'Use your password instead',
+    reauthSwitchGoogle: 'Use Google instead',
+    reauthSwitchApple: 'Use Apple instead',
+    reauthSwitchFacebook: 'Use Facebook instead',
+    reauthSwitchLinkedIn: 'Use LinkedIn instead',
     reauthError: 'Could not confirm password.',
     reauthFailed: 'Could not confirm your identity. Your account was not deleted.',
     reauthCancelled: 'Sign-in was cancelled. Your account was not deleted.',

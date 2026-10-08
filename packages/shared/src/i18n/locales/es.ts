@@ -1467,10 +1467,24 @@ const es: TranslationResources = {
       alertConfirm: 'Eliminar',
       done: 'Tu cuenta ha sido eliminada.',
       error: 'No se pudo eliminar la cuenta.',
-      permissionError:
-        'No se pudieron eliminar los datos de tu cuenta. Inténtalo de nuevo mientras la sesión esté activa.',
       networkError:
         'Error de red. Revisa tu conexión e inténtalo de nuevo.',
+      sessionNotRecent:
+        'Por seguridad, confirma de nuevo tu identidad para eliminar tu cuenta. Tu cuenta no fue eliminada.',
+      appCheckFailed:
+        'No pudimos verificar esta app. Actualiza Nearsy o inténtalo más tarde. Tu cuenta no fue eliminada.',
+      signedOut:
+        'Tu sesión terminó. Inicia sesión de nuevo para eliminar tu cuenta.',
+      inProgress:
+        'La eliminación de tu cuenta ya está en curso. Espera un momento.',
+      retryable:
+        'No pudimos terminar de eliminar tu cuenta. Inténtalo de nuevo.',
+      failed:
+        'No pudimos eliminar tu cuenta. Inténtalo más tarde o contacta a soporte de Nearsy.',
+      networkUncertain:
+        'No pudimos confirmar si tu cuenta fue eliminada. Revisa tu conexión e inténtalo de nuevo.',
+      linkedInSignInAgain:
+        'Por seguridad, cierra sesión, vuelve a entrar con LinkedIn y elimina tu cuenta dentro de los 5 minutos siguientes.',
       reauthBody:
         'Por seguridad, confirma tu contraseña para continuar.',
       reauthBodyGoogle:
@@ -1479,11 +1493,19 @@ const es: TranslationResources = {
         'Por seguridad, continúa con Apple para confirmar tu identidad antes de eliminar esta cuenta.',
       reauthBodyFacebook:
         'Por seguridad, continúa con Facebook para confirmar tu identidad antes de eliminar esta cuenta.',
+      reauthBodyLinkedIn:
+        'Por seguridad, continúa con LinkedIn para confirmar tu identidad antes de eliminar esta cuenta.',
       passwordPlaceholder: 'Contraseña',
       reauthConfirm: 'Confirmar contraseña y eliminar',
       reauthContinueGoogle: 'Continuar con Google y eliminar',
       reauthContinueApple: 'Continuar con Apple y eliminar',
       reauthContinueFacebook: 'Continuar con Facebook y eliminar',
+      reauthContinueLinkedIn: 'Continuar con LinkedIn y eliminar',
+      reauthSwitchPassword: 'Usar tu contraseña',
+      reauthSwitchGoogle: 'Usar Google',
+      reauthSwitchApple: 'Usar Apple',
+      reauthSwitchFacebook: 'Usar Facebook',
+      reauthSwitchLinkedIn: 'Usar LinkedIn',
       reauthError: 'No se pudo confirmar la contraseña.',
       reauthFailed:
         'No se pudo confirmar tu identidad. Tu cuenta no fue eliminada.',
