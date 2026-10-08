@@ -11,13 +11,15 @@
  * - password → `password` in providerData (the person types the password)
  * - google   → `google.com` in providerData
  * - facebook → `facebook.com` in providerData
- * - linkedin → `li_` UID (custom-token accounts never appear in providerData)
- * Display priority is password, Google, Facebook, LinkedIn; the person picks
- * any listed method and every method must prove the same UID.
+ * Display priority is password, Google, Facebook; the person picks any listed
+ * method and the UID must be unchanged afterwards.
  *
- * `recent_sign_in` skips client reauthentication and is only offered to
- * LinkedIn accounts when a same-UID LinkedIn reauthentication cannot be
- * guaranteed; the backend still enforces the five-minute `auth_time` window.
+ * LinkedIn (`li_` UID; custom-token accounts never appear in providerData) has
+ * no AuthCredential usable with `reauthenticateWithCredential`, so it is never
+ * reauthenticated here. When LinkedIn is the only detectable method, the
+ * `recent_session` attempt calls the backend with the current session and the
+ * backend decides whether `auth_time` is recent enough; otherwise the person
+ * is told to sign out, sign back in with LinkedIn and retry within 5 minutes.
  */
 
 import {
@@ -28,9 +30,9 @@ import { LINKEDIN_FIREBASE_UID_PATTERN } from '../authentication/signInMethods.t
 
 export const DELETE_MY_ACCOUNT_CALLABLE = 'deleteMyAccount';
 
-export type DeleteAccountMethod = 'password' | 'google' | 'facebook' | 'linkedin';
+export type DeleteAccountMethod = 'password' | 'google' | 'facebook';
 
-export type DeleteAccountAttemptMethod = DeleteAccountMethod | 'recent_sign_in';
+export type DeleteAccountAttemptMethod = DeleteAccountMethod | 'recent_session';
 
 export type DeleteAccountUserSnapshot =
   | {
@@ -44,18 +46,15 @@ const METHOD_ORDER: ReadonlyArray<DeleteAccountMethod> = [
   'password',
   'google',
   'facebook',
-  'linkedin',
 ];
 
-const PROVIDER_ID_BY_METHOD: Record<
-  Exclude<DeleteAccountMethod, 'linkedin'>,
-  string
-> = {
+const PROVIDER_ID_BY_METHOD: Record<DeleteAccountMethod, string> = {
   password: 'password',
   google: 'google.com',
   facebook: 'facebook.com',
 };
 
+/** Linked providers that support `reauthenticateWithCredential`. */
 export function resolveDeleteAccountMethods(
   user: DeleteAccountUserSnapshot,
 ): DeleteAccountMethod[] {
@@ -64,36 +63,41 @@ export function resolveDeleteAccountMethods(
       (id): id is string => typeof id === 'string',
     ),
   );
-  const uid = typeof user?.uid === 'string' ? user.uid : '';
   return METHOD_ORDER.filter((method) =>
-    method === 'linkedin'
-      ? LINKEDIN_FIREBASE_UID_PATTERN.test(uid)
-      : providerIds.has(PROVIDER_ID_BY_METHOD[method]),
+    providerIds.has(PROVIDER_ID_BY_METHOD[method]),
   );
+}
+
+export function isLinkedInAccount(user: DeleteAccountUserSnapshot): boolean {
+  const uid = typeof user?.uid === 'string' ? user.uid : '';
+  return LINKEDIN_FIREBASE_UID_PATTERN.test(uid);
+}
+
+/** LinkedIn is linked and no reauthenticable provider is. */
+export function isLinkedInOnlyAccount(user: DeleteAccountUserSnapshot): boolean {
+  return isLinkedInAccount(user) && resolveDeleteAccountMethods(user).length === 0;
 }
 
 export type DeleteAccountProviderAvailability = {
   google: boolean;
   facebook: boolean;
-  linkedin: boolean;
 };
 
 export type DeleteAccountOptions = {
   methods: DeleteAccountMethod[];
-  /** LinkedIn is linked but cannot be reauthenticated in this build. */
-  recentSignInFallback: boolean;
+  /** LinkedIn-only account: delete with the current session (backend checks auth_time). */
+  recentSessionOnly: boolean;
 };
 
 export function resolveDeleteAccountOptions(
   user: DeleteAccountUserSnapshot,
   availability: DeleteAccountProviderAvailability,
 ): DeleteAccountOptions {
-  const linked = resolveDeleteAccountMethods(user);
   return {
-    methods: linked.filter(
+    methods: resolveDeleteAccountMethods(user).filter(
       (method) => method === 'password' || availability[method],
     ),
-    recentSignInFallback: linked.includes('linkedin') && !availability.linkedin,
+    recentSessionOnly: isLinkedInOnlyAccount(user),
   };
 }
 
@@ -101,7 +105,6 @@ export type DeleteAccountReauthErrorCode =
   | 'CANCELLED'
   | 'IN_PROGRESS'
   | 'USER_MISMATCH'
-  | 'LINKEDIN_UID_UNVERIFIED'
   | 'NETWORK'
   | 'FAILED';
 
@@ -200,8 +203,6 @@ export function mapDeleteAccountReauthFailure(
     case 'USER_MISMATCH':
     case 'auth/user-mismatch':
       return 'reauth_mismatch';
-    case 'LINKEDIN_UID_UNVERIFIED':
-      return 'linkedin_guidance';
     case 'NETWORK':
     case 'NETWORK_ERROR':
     case 'auth/network-request-failed':
@@ -262,116 +263,6 @@ export function readConfirmedDeletion(data: unknown): DeleteMyAccountStatus | nu
   return status === 'DELETED' || status === 'ALREADY_DELETED' ? status : null;
 }
 
-const BASE64URL_ALPHABET =
-  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-
-function decodeBase64UrlToUtf8(input: string): string | null {
-  if (!/^[A-Za-z0-9_-]*={0,2}$/.test(input)) return null;
-  const clean = input.replace(/=+$/, '');
-  let bits = 0;
-  let value = 0;
-  let encoded = '';
-  for (const char of clean) {
-    value = (value << 6) | BASE64URL_ALPHABET.indexOf(char);
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      encoded += `%${((value >> bits) & 0xff).toString(16).padStart(2, '0')}`;
-    }
-  }
-  try {
-    return decodeURIComponent(encoded);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Reads the `uid` claim of a Firebase custom token (Admin `createCustomToken`).
- * Used only as a same-account guard before `signInWithCustomToken`; the token
- * is never logged, stored or returned.
- */
-export function readCustomTokenUid(customToken: unknown): string | null {
-  if (typeof customToken !== 'string') return null;
-  const parts = customToken.split('.');
-  if (parts.length !== 3) return null;
-  const json = decodeBase64UrlToUtf8(parts[1]);
-  if (!json) return null;
-  try {
-    const payload = JSON.parse(json) as { uid?: unknown };
-    return typeof payload?.uid === 'string' && payload.uid.length > 0
-      ? payload.uid
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-export type LinkedInReauthBrowserResult = {
-  status: string;
-  customToken?: string;
-  error?: { code?: unknown };
-};
-
-export type LinkedInSameUidReauthDeps = {
-  getCurrentUid: () => string | null;
-  runBrowserFlow: () => Promise<LinkedInReauthBrowserResult>;
-  signInWithCustomToken: (customToken: string) => Promise<{ uid: string }>;
-};
-
-/**
- * LinkedIn has no reauthenticate API: a fresh custom-token sign-in renews
- * `auth_time`. The token is checked against the signed-in UID first, so a
- * different LinkedIn account never replaces the session.
- */
-export async function reauthenticateWithLinkedInSameUid(
-  deps: LinkedInSameUidReauthDeps,
-): Promise<void> {
-  const expectedUid = deps.getCurrentUid();
-  if (!expectedUid || !LINKEDIN_FIREBASE_UID_PATTERN.test(expectedUid)) {
-    throw new DeleteAccountReauthError('FAILED', 'Not a LinkedIn session.');
-  }
-
-  const flow = await deps.runBrowserFlow();
-  if (flow.status === 'cancelled' || flow.status === 'dismissed') {
-    throw new DeleteAccountReauthError('CANCELLED', 'LinkedIn was cancelled.');
-  }
-  if (flow.status !== 'authenticated' || typeof flow.customToken !== 'string') {
-    const code = flow.error?.code;
-    if (code === 'OPERATION_IN_PROGRESS') {
-      throw new DeleteAccountReauthError('IN_PROGRESS', 'LinkedIn is busy.');
-    }
-    if (code === 'NETWORK' || code === 'FIREBASE_NETWORK') {
-      throw new DeleteAccountReauthError('NETWORK', 'LinkedIn network error.');
-    }
-    throw new DeleteAccountReauthError('FAILED', 'LinkedIn failed.');
-  }
-
-  const tokenUid = readCustomTokenUid(flow.customToken);
-  if (!tokenUid) {
-    throw new DeleteAccountReauthError(
-      'LINKEDIN_UID_UNVERIFIED',
-      'LinkedIn account could not be verified.',
-    );
-  }
-  if (tokenUid !== expectedUid || deps.getCurrentUid() !== expectedUid) {
-    throw new DeleteAccountReauthError('USER_MISMATCH', 'Different account.');
-  }
-
-  let session: { uid: string };
-  try {
-    session = await deps.signInWithCustomToken(flow.customToken);
-  } catch (err) {
-    if (readCode(err) === 'auth/network-request-failed') {
-      throw new DeleteAccountReauthError('NETWORK', 'LinkedIn network error.');
-    }
-    throw new DeleteAccountReauthError('FAILED', 'LinkedIn sign-in failed.');
-  }
-  if (session?.uid !== expectedUid) {
-    throw new DeleteAccountReauthError('USER_MISMATCH', 'Different account.');
-  }
-}
-
 export type DeleteAccountRequest = {
   method: DeleteAccountAttemptMethod;
   password?: string;
@@ -405,9 +296,10 @@ function failed(kind: DeleteAccountFailureKind): DeleteAccountOutcome {
 }
 
 /**
- * One attempt at a time: reauthenticate → same UID → `deleteMyAccount({})` →
- * local cleanup only after the backend confirms. Any failure leaves the
- * session, local state and data untouched so the person can retry.
+ * One attempt at a time: reauthenticate (or, for LinkedIn-only accounts, the
+ * current session) → same UID → `deleteMyAccount({})` → local cleanup only
+ * after the backend confirms. Any failure leaves the session, local state and
+ * data untouched so the person can retry.
  */
 export function createDeleteAccountFlow(deps: DeleteAccountFlowDeps) {
   let inProgress = false;
@@ -429,12 +321,11 @@ export function createDeleteAccountFlow(deps: DeleteAccountFlowDeps) {
       const uid = typeof user?.uid === 'string' && user.uid ? user.uid : null;
       if (!uid) return failed('unauthenticated');
 
-      const linked = resolveDeleteAccountMethods(user);
-      if (request.method === 'recent_sign_in') {
-        if (!linked.includes('linkedin')) return failed('method_unavailable');
+      if (request.method === 'recent_session') {
+        if (!isLinkedInOnlyAccount(user)) return failed('method_unavailable');
       } else {
         const reauthenticate = deps.reauthenticate[request.method];
-        if (!linked.includes(request.method) || !reauthenticate) {
+        if (!resolveDeleteAccountMethods(user).includes(request.method) || !reauthenticate) {
           return failed('method_unavailable');
         }
         if (request.method === 'password' && !request.password) {
@@ -457,7 +348,7 @@ export function createDeleteAccountFlow(deps: DeleteAccountFlowDeps) {
         data = await deps.invokeCallable(DELETE_MY_ACCOUNT_CALLABLE, {});
       } catch (err) {
         let kind = mapDeleteMyAccountFailure(err);
-        if (request.method === 'recent_sign_in' && kind === 'stale_session') {
+        if (request.method === 'recent_session' && kind === 'stale_session') {
           kind = 'linkedin_guidance';
         }
         log({

@@ -411,9 +411,10 @@ export const es: TranslationResources = {
       methodsTitle: 'Confirma que eres tú',
       methodsBody:
         'Por seguridad, confirma tu identidad con uno de tus métodos de inicio de sesión. Tu cuenta y tus datos se eliminan justo después.',
-      reauthContinueLinkedIn: 'Continuar con LinkedIn y eliminar',
+      linkedInRecentBody:
+        'Tu cuenta inicia sesión con LinkedIn. Puedes eliminarla si iniciaste sesión en los últimos 5 minutos.',
       linkedInGuidance:
-        'Para eliminar una cuenta que inicia sesión con LinkedIn, cierra sesión, vuelve a entrar con LinkedIn y elimina tu cuenta dentro de los 5 minutos siguientes.',
+        'Por seguridad, cierra sesión, vuelve a ingresar con LinkedIn y solicita la eliminación de tu cuenta dentro de los próximos 5 minutos.',
       errorStaleSession:
         'Por seguridad, necesitas haber iniciado sesión recientemente. Confirma tu identidad de nuevo e inténtalo otra vez. Tu cuenta no fue eliminada.',
       errorAppCheck:

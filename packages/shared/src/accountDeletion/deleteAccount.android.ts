@@ -13,7 +13,6 @@ import {
   getAppCheckInitStatus,
 } from '../config/appCheckBootstrap';
 import { isNearsyFacebookAuthConfigured } from '../config/facebookAuthConfig';
-import { isNearsyLinkedInAuthAllowed } from '../config/nearsyFirebaseEnv';
 import { clearPendingSocialProfilePrefill } from '../authentication/social';
 import {
   logOutFacebookSession,
@@ -35,12 +34,10 @@ import { forgetLastConfirmedVisibility } from '../visibility/lastConfirmedVisibi
 import {
   DeleteAccountReauthError,
   createDeleteAccountFlow,
-  reauthenticateWithLinkedInSameUid,
   resolveDeleteAccountOptions,
   runAccountDeletionCleanup,
   type DeleteAccountOptions,
   type DeleteAccountUserSnapshot,
-  type LinkedInReauthBrowserResult,
 } from './deleteAccountCore';
 
 const REGION = 'us-central1' as const;
@@ -114,24 +111,6 @@ async function reauthenticateWithGoogle(): Promise<void> {
   }
 }
 
-function reauthenticateWithLinkedIn(): Promise<void> {
-  return reauthenticateWithLinkedInSameUid({
-    getCurrentUid: () => firebaseAuth.currentUser?.uid ?? null,
-    runBrowserFlow: () => {
-      // Lazy: LinkedIn native modules load only when this method is used.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const linkedIn = require('../authentication/linkedin/linkedinAuth') as {
-        runLinkedInAuthWithBrowser: () => Promise<LinkedInReauthBrowserResult>;
-      };
-      return linkedIn.runLinkedInAuthWithBrowser();
-    },
-    async signInWithCustomToken(customToken) {
-      const credential = await firebaseAuth.signInWithCustomToken(customToken);
-      return { uid: credential.user.uid };
-    },
-  });
-}
-
 async function cleanupAfterDeletion(uid: string): Promise<void> {
   resetLocationJourneySession();
   await runAccountDeletionCleanup(uid, {
@@ -155,7 +134,6 @@ export function getDeleteAccountOptions(): DeleteAccountOptions {
   return resolveDeleteAccountOptions(currentUserSnapshot(), {
     google: Boolean(getGoogleWebClientId()),
     facebook: isNearsyFacebookAuthConfigured(),
-    linkedin: isNearsyLinkedInAuthAllowed(),
   });
 }
 
@@ -165,7 +143,6 @@ export const deleteMyAccountWithReauth = createDeleteAccountFlow({
     password: ({ password }) => reauthWithPassword(password ?? ''),
     google: reauthenticateWithGoogle,
     facebook: () => reauthenticateWithFacebook(),
-    linkedin: reauthenticateWithLinkedIn,
   },
   invokeCallable,
   cleanupAfterDeletion,

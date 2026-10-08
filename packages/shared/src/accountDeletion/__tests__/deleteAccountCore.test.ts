@@ -11,10 +11,9 @@ import {
   DeleteAccountReauthError,
   createDeleteAccountFlow,
   deleteAccountMessageKey,
+  isLinkedInOnlyAccount,
   mapDeleteMyAccountFailure,
   readConfirmedDeletion,
-  readCustomTokenUid,
-  reauthenticateWithLinkedInSameUid,
   resolveDeleteAccountMethods,
   resolveDeleteAccountOptions,
   runAccountDeletionCleanup,
@@ -30,18 +29,6 @@ const SECRET_PASSWORD = 'hunter2-secret';
 
 function user(uid: string, ...providerIds: string[]): DeleteAccountUserSnapshot {
   return { uid, providerIds };
-}
-
-function base64Url(text: string): string {
-  return Buffer.from(text, 'utf8').toString('base64url');
-}
-
-function customToken(payload: Record<string, unknown>): string {
-  return [
-    base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' })),
-    base64Url(JSON.stringify(payload)),
-    'signature',
-  ].join('.');
 }
 
 type Harness = {
@@ -69,7 +56,6 @@ function harness(
       password: reauth('password'),
       google: reauth('google'),
       facebook: reauth('facebook'),
-      linkedin: reauth('linkedin'),
     },
     invokeCallable: async (name, payload) => {
       calls.push(`callable:${name}`);
@@ -105,17 +91,22 @@ function rejectWith(code: string, details?: Record<string, unknown>) {
 }
 
 describe('Reauthentication methods (linked providers only)', () => {
-  it('orders password, Google, Facebook, LinkedIn and ignores unlinked or unknown providers', () => {
+  it('orders password, Google, Facebook and ignores unlinked or unknown providers', () => {
     assert.deepEqual(
       resolveDeleteAccountMethods(
         user(LINKEDIN_UID, 'facebook.com', 'phone', 'google.com', 'password'),
       ),
-      ['password', 'google', 'facebook', 'linkedin'],
+      ['password', 'google', 'facebook'],
     );
     assert.deepEqual(resolveDeleteAccountMethods(user(PASSWORD_UID, 'google.com')), ['google']);
     assert.deepEqual(resolveDeleteAccountMethods(user(PASSWORD_UID, 'phone')), []);
     assert.deepEqual(resolveDeleteAccountMethods(user(PASSWORD_UID, '\x61pple.com')), []);
     assert.deepEqual(resolveDeleteAccountMethods(null), []);
+  });
+
+  it('LinkedIn is never a reauthentication method', () => {
+    assert.deepEqual(resolveDeleteAccountMethods(user(LINKEDIN_UID)), []);
+    assert.deepEqual(resolveDeleteAccountMethods(user(LINKEDIN_UID, 'oidc.linkedin')), []);
   });
 
   it('never infers a provider from email; LinkedIn only from the li_ UID', () => {
@@ -125,31 +116,45 @@ describe('Reauthentication methods (linked providers only)', () => {
       email: 'person@gmail.com',
     } as DeleteAccountUserSnapshot;
     assert.deepEqual(resolveDeleteAccountMethods(withEmail), []);
-    assert.deepEqual(resolveDeleteAccountMethods(user(LINKEDIN_UID)), ['linkedin']);
-    assert.deepEqual(resolveDeleteAccountMethods(user('li_x')), []);
+    assert.equal(isLinkedInOnlyAccount(withEmail), false);
+    assert.equal(isLinkedInOnlyAccount(user(LINKEDIN_UID)), true);
+    assert.equal(isLinkedInOnlyAccount(user('li_x')), false);
   });
 
-  it('filters by build availability and falls back to recent sign-in for LinkedIn', () => {
-    const all = user(LINKEDIN_UID, 'password', 'google.com', 'facebook.com');
+  it('LinkedIn-only accounts get the recent-session path; LinkedIn + another provider gets that provider', () => {
     assert.deepEqual(
-      resolveDeleteAccountOptions(all, { google: false, facebook: true, linkedin: true }),
-      { methods: ['password', 'facebook', 'linkedin'], recentSignInFallback: false },
+      resolveDeleteAccountOptions(user(LINKEDIN_UID), { google: true, facebook: true }),
+      { methods: [], recentSessionOnly: true },
+    );
+    for (const [providerId, method] of [
+      ['password', 'password'],
+      ['google.com', 'google'],
+      ['facebook.com', 'facebook'],
+    ] as const) {
+      assert.deepEqual(
+        resolveDeleteAccountOptions(user(LINKEDIN_UID, providerId), {
+          google: true,
+          facebook: true,
+        }),
+        { methods: [method], recentSessionOnly: false },
+      );
+    }
+  });
+
+  it('filters by build availability', () => {
+    assert.deepEqual(
+      resolveDeleteAccountOptions(user(PASSWORD_UID, 'password', 'google.com', 'facebook.com'), {
+        google: false,
+        facebook: true,
+      }),
+      { methods: ['password', 'facebook'], recentSessionOnly: false },
     );
     assert.deepEqual(
-      resolveDeleteAccountOptions(user(LINKEDIN_UID), {
-        google: true,
-        facebook: true,
-        linkedin: false,
+      resolveDeleteAccountOptions(user(LINKEDIN_UID, 'google.com'), {
+        google: false,
+        facebook: false,
       }),
-      { methods: [], recentSignInFallback: true },
-    );
-    assert.deepEqual(
-      resolveDeleteAccountOptions(user(PASSWORD_UID, 'google.com'), {
-        google: true,
-        facebook: true,
-        linkedin: false,
-      }),
-      { methods: ['google'], recentSignInFallback: false },
+      { methods: [], recentSessionOnly: false },
     );
   });
 });
@@ -159,9 +164,11 @@ describe('deleteMyAccount flow — success per provider', () => {
     ['password', ['password'], PASSWORD_UID],
     ['google', ['google.com'], PASSWORD_UID],
     ['facebook', ['facebook.com'], PASSWORD_UID],
-    ['linkedin', [], LINKEDIN_UID],
+    ['password', ['password'], LINKEDIN_UID],
+    ['google', ['google.com'], LINKEDIN_UID],
+    ['facebook', ['facebook.com'], LINKEDIN_UID],
   ] as const) {
-    it(`${method}: reauth → callable with {} exactly once → cleanup`, async () => {
+    it(`${method}${uid === LINKEDIN_UID ? ' (LinkedIn account)' : ''}: reauth → callable with {} exactly once → cleanup`, async () => {
       const h = harness(user(uid, ...providerIds));
       const run = createDeleteAccountFlow(h.deps);
       const outcome = await run({
@@ -229,7 +236,7 @@ describe('Multiple linked providers', () => {
   it('a method that is not linked is refused without reauth or callable', async () => {
     const h = harness(user(PASSWORD_UID, 'google.com'));
     const run = createDeleteAccountFlow(h.deps);
-    for (const method of ['password', 'facebook', 'linkedin'] as const) {
+    for (const method of ['password', 'facebook'] as const) {
       const outcome = await run({ method, password: SECRET_PASSWORD });
       assert.equal(outcome.status, 'failed');
       assert.equal(outcome.status === 'failed' && outcome.kind, 'method_unavailable');
@@ -284,7 +291,6 @@ describe('Cancellation, wrong credentials and reauth errors never delete', () =>
   const cases: Array<[DeleteAccountMethod, unknown, string]> = [
     ['google', new DeleteAccountReauthError('CANCELLED', 'x'), 'reauth_cancelled'],
     ['facebook', Object.assign(new Error('x'), { code: 'CANCELLED' }), 'reauth_cancelled'],
-    ['linkedin', new DeleteAccountReauthError('CANCELLED', 'x'), 'reauth_cancelled'],
     ['google', Object.assign(new Error('x'), { code: 'auth/user-mismatch' }), 'reauth_mismatch'],
     ['facebook', Object.assign(new Error('x'), { code: 'USER_MISMATCH' }), 'reauth_mismatch'],
     ['password', Object.assign(new Error('x'), { code: 'auth/wrong-password' }), 'wrong_password'],
@@ -293,14 +299,12 @@ describe('Cancellation, wrong credentials and reauth errors never delete', () =>
     ['google', Object.assign(new Error('x'), { code: 'auth/network-request-failed' }), 'reauth_network'],
     ['facebook', Object.assign(new Error('x'), { code: 'NOT_CONFIGURED' }), 'method_unavailable'],
     ['google', Object.assign(new Error('x'), { code: 'auth/user-token-expired' }), 'user_not_found'],
-    ['linkedin', new DeleteAccountReauthError('LINKEDIN_UID_UNVERIFIED', 'x'), 'linkedin_guidance'],
     ['google', new Error('unexpected'), 'reauth_failed'],
   ];
 
   for (const [method, error, kind] of cases) {
     it(`${method} ${String((error as { code?: string }).code ?? 'plain')} → ${kind}`, async () => {
-      const uid = method === 'linkedin' ? LINKEDIN_UID : PASSWORD_UID;
-      const h = harness(user(uid, 'password', 'google.com', 'facebook.com'));
+      const h = harness(user(PASSWORD_UID, 'password', 'google.com', 'facebook.com'));
       h.deps.reauthenticate[method] = async () => {
         throw error;
       };
@@ -447,164 +451,138 @@ describe('Backend errors map details.reason; failures never clean up or sign out
   });
 });
 
-describe('Recent sign-in fallback (LinkedIn only)', () => {
-  it('skips client reauth for li_ accounts; the backend enforces auth_time', async () => {
-    const h = harness(user(LINKEDIN_UID));
-    const outcome = await createDeleteAccountFlow(h.deps)({ method: 'recent_sign_in' });
-    assert.equal(outcome.status, 'deleted');
+describe('LinkedIn-only accounts: recent session, no inline reauthentication', () => {
+  function linkedInHarness(overrides: Partial<DeleteAccountFlowDeps> = {}) {
+    const h = harness(user(LINKEDIN_UID), overrides);
+    const uidReads: Array<string | null | undefined> = [];
+    const original = h.deps.getCurrentUser;
+    h.deps.getCurrentUser = () => {
+      const snapshot = original();
+      uidReads.push(snapshot?.uid);
+      return snapshot;
+    };
+    return { ...h, uidReads };
+  }
+
+  it('recent session: calls deleteMyAccount({}) directly, no reauth, then cleans up', async () => {
+    const h = linkedInHarness();
+    const outcome = await createDeleteAccountFlow(h.deps)({ method: 'recent_session' });
+    assert.deepEqual(outcome, { status: 'deleted', alreadyDeleted: false });
     assert.deepEqual(h.calls, [`callable:${DELETE_MY_ACCOUNT_CALLABLE}`, 'cleanup:same-uid']);
+    assert.deepEqual(h.payloads, [{}]);
   });
 
-  it('stale sign-in shows the LinkedIn guidance', async () => {
-    const h = harness(user(LINKEDIN_UID), {
-      invokeCallable: rejectWith('functions/failed-precondition', {
-        reason: 'RECENT_LOGIN_REQUIRED',
-      }),
+  it('stale session (RECENT_LOGIN_REQUIRED) shows the LinkedIn guidance and changes nothing', async () => {
+    let cleanups = 0;
+    const payloads: unknown[] = [];
+    const h = linkedInHarness({
+      invokeCallable: async (name, payload) => {
+        payloads.push(payload);
+        throw Object.assign(new Error('internal'), {
+          code: 'functions/failed-precondition',
+          details: { reason: 'RECENT_LOGIN_REQUIRED', maxAuthAgeSeconds: 300 },
+        });
+      },
+      cleanupAfterDeletion: async () => {
+        cleanups += 1;
+      },
     });
-    const outcome = await createDeleteAccountFlow(h.deps)({ method: 'recent_sign_in' });
+    const outcome = await createDeleteAccountFlow(h.deps)({ method: 'recent_session' });
     assert.deepEqual(outcome, {
       status: 'failed',
       kind: 'linkedin_guidance',
       messageKey: 'settings.deleteAccount.linkedInGuidance',
     });
+    assert.equal(cleanups, 0);
+    assert.deepEqual(payloads, [{}]);
+    assert.ok(h.uidReads.length > 0);
+    assert.ok(h.uidReads.every((uid) => uid === LINKEDIN_UID));
   });
 
-  it('is refused for accounts without LinkedIn', async () => {
-    const h = harness(user(PASSWORD_UID, 'password', 'google.com'));
-    const outcome = await createDeleteAccountFlow(h.deps)({ method: 'recent_sign_in' });
-    assert.equal(outcome.status === 'failed' && outcome.kind, 'method_unavailable');
-    assert.deepEqual(h.calls, []);
-  });
-});
-
-describe('LinkedIn same-UID reauthentication', () => {
-  function linkedInDeps(overrides: {
-    currentUid?: () => string | null;
-    flow?: { status: string; customToken?: string; error?: { code?: unknown } };
-    signIn?: (token: string) => Promise<{ uid: string }>;
-  } = {}) {
-    const events: string[] = [];
-    return {
-      events,
-      deps: {
-        getCurrentUid: overrides.currentUid ?? (() => LINKEDIN_UID),
-        runBrowserFlow: async () => {
-          events.push('browser');
-          return (
-            overrides.flow ?? {
-              status: 'authenticated',
-              customToken: customToken({ uid: LINKEDIN_UID, iss: 'sa', sub: 'sa' }),
-            }
-          );
-        },
-        signInWithCustomToken:
-          overrides.signIn ??
-          (async () => {
-            events.push('signIn');
-            return { uid: LINKEDIN_UID };
-          }),
-      },
-    };
-  }
-
-  it('same UID → signInWithCustomToken renews auth_time', async () => {
-    const { deps, events } = linkedInDeps();
-    await reauthenticateWithLinkedInSameUid(deps);
-    assert.deepEqual(events, ['browser', 'signIn']);
+  it('auth/requires-recent-login is treated the same way', async () => {
+    const h = linkedInHarness({ invokeCallable: rejectWith('auth/requires-recent-login') });
+    const outcome = await createDeleteAccountFlow(h.deps)({ method: 'recent_session' });
+    assert.equal(outcome.status === 'failed' && outcome.kind, 'linkedin_guidance');
   });
 
-  it('token for another LinkedIn account never signs in', async () => {
-    const { deps, events } = linkedInDeps({
-      flow: {
-        status: 'authenticated',
-        customToken: customToken({ uid: 'li_AnotherPersonEntirely' }),
+  it('after the guidance the person can retry once they signed in again', async () => {
+    let attempt = 0;
+    const h = linkedInHarness({
+      invokeCallable: async () => {
+        attempt += 1;
+        if (attempt === 1) {
+          throw Object.assign(new Error('x'), {
+            code: 'functions/failed-precondition',
+            details: { reason: 'RECENT_LOGIN_REQUIRED' },
+          });
+        }
+        return { ok: true, status: 'DELETED' };
       },
     });
-    await assert.rejects(
-      reauthenticateWithLinkedInSameUid(deps),
-      (err: unknown) => (err as DeleteAccountReauthError).code === 'USER_MISMATCH',
-    );
-    assert.deepEqual(events, ['browser']);
+    const run = createDeleteAccountFlow(h.deps);
+    assert.equal((await run({ method: 'recent_session' })).status, 'failed');
+    assert.equal((await run({ method: 'recent_session' })).status, 'deleted');
   });
 
-  it('undecodable token → guidance, never signs in', async () => {
-    for (const token of ['not-a-jwt', 'a.%%%.c', customToken({ sub: 'x' })]) {
-      const { deps, events } = linkedInDeps({
-        flow: { status: 'authenticated', customToken: token },
+  it('other backend errors keep their own messages', async () => {
+    const h = linkedInHarness({
+      invokeCallable: rejectWith('functions/failed-precondition', { reason: 'APP_CHECK_REQUIRED' }),
+    });
+    const outcome = await createDeleteAccountFlow(h.deps)({ method: 'recent_session' });
+    assert.equal(outcome.status === 'failed' && outcome.kind, 'app_check');
+  });
+
+  it('the flow has no sign-in or user-creation capability', () => {
+    const h = linkedInHarness();
+    assert.deepEqual(Object.keys(h.deps).sort(), [
+      'cleanupAfterDeletion',
+      'getCurrentUser',
+      'invokeCallable',
+      'logDev',
+      'reauthenticate',
+    ]);
+    assert.deepEqual(Object.keys(h.deps.reauthenticate).sort(), ['facebook', 'google', 'password']);
+  });
+
+  it('recent session is refused when a reauthenticable provider is linked or LinkedIn is absent', async () => {
+    for (const snapshot of [
+      user(LINKEDIN_UID, 'google.com'),
+      user(LINKEDIN_UID, 'password'),
+      user(LINKEDIN_UID, 'facebook.com'),
+      user(PASSWORD_UID, 'password', 'google.com'),
+      user(PASSWORD_UID),
+    ]) {
+      const h = harness(snapshot);
+      const outcome = await createDeleteAccountFlow(h.deps)({ method: 'recent_session' });
+      assert.equal(outcome.status === 'failed' && outcome.kind, 'method_unavailable');
+      assert.deepEqual(h.calls, []);
+    }
+  });
+
+  it('LinkedIn + Google/Facebook/password: a safe method deletes after reauth', async () => {
+    for (const [providerId, method] of [
+      ['google.com', 'google'],
+      ['facebook.com', 'facebook'],
+      ['password', 'password'],
+    ] as const) {
+      const h = harness(user(LINKEDIN_UID, providerId));
+      const outcome = await createDeleteAccountFlow(h.deps)({
+        method,
+        password: SECRET_PASSWORD,
       });
-      await assert.rejects(
-        reauthenticateWithLinkedInSameUid(deps),
-        (err: unknown) => (err as DeleteAccountReauthError).code === 'LINKEDIN_UID_UNVERIFIED',
-      );
-      assert.deepEqual(events, ['browser']);
+      assert.equal(outcome.status, 'deleted');
+      assert.equal(h.calls[0], `reauth:${method}`);
     }
   });
 
-  it('session changed while the browser was open → mismatch, no sign-in', async () => {
+  it('UID change during the recent-session attempt aborts before the callable', async () => {
     let reads = 0;
-    const { deps, events } = linkedInDeps({
-      currentUid: () => (reads++ === 0 ? LINKEDIN_UID : null),
-    });
-    await assert.rejects(
-      reauthenticateWithLinkedInSameUid(deps),
-      (err: unknown) => (err as DeleteAccountReauthError).code === 'USER_MISMATCH',
-    );
-    assert.deepEqual(events, ['browser']);
-  });
-
-  it('cancel / dismiss / provider error / busy / network map without signing in', async () => {
-    const expectations: Array<[Parameters<typeof linkedInDeps>[0]['flow'], string]> = [
-      [{ status: 'cancelled' }, 'CANCELLED'],
-      [{ status: 'dismissed' }, 'CANCELLED'],
-      [{ status: 'provider_error' }, 'FAILED'],
-      [{ status: 'failed', error: { code: 'OPERATION_IN_PROGRESS' } }, 'IN_PROGRESS'],
-      [{ status: 'failed', error: { code: 'NETWORK' } }, 'NETWORK'],
-      [{ status: 'failed', error: { code: 'APP_CHECK_NOT_READY' } }, 'FAILED'],
-    ];
-    for (const [flow, code] of expectations) {
-      const { deps, events } = linkedInDeps({ flow });
-      await assert.rejects(
-        reauthenticateWithLinkedInSameUid(deps),
-        (err: unknown) => (err as DeleteAccountReauthError).code === code,
-      );
-      assert.deepEqual(events, ['browser']);
-    }
-  });
-
-  it('non-LinkedIn session never opens the browser', async () => {
-    const { deps, events } = linkedInDeps({ currentUid: () => PASSWORD_UID });
-    await assert.rejects(
-      reauthenticateWithLinkedInSameUid(deps),
-      (err: unknown) => (err as DeleteAccountReauthError).code === 'FAILED',
-    );
-    assert.deepEqual(events, []);
-  });
-
-  it('sign-in failures and a different resulting UID are rejected', async () => {
-    const network = linkedInDeps({
-      signIn: async () => {
-        throw Object.assign(new Error('x'), { code: 'auth/network-request-failed' });
-      },
-    });
-    await assert.rejects(
-      reauthenticateWithLinkedInSameUid(network.deps),
-      (err: unknown) => (err as DeleteAccountReauthError).code === 'NETWORK',
-    );
-    const other = linkedInDeps({ signIn: async () => ({ uid: 'li_SomeoneElseEntirely' }) });
-    await assert.rejects(
-      reauthenticateWithLinkedInSameUid(other.deps),
-      (err: unknown) => (err as DeleteAccountReauthError).code === 'USER_MISMATCH',
-    );
-  });
-
-  it('readCustomTokenUid reads only the uid claim', () => {
-    assert.equal(readCustomTokenUid(customToken({ uid: LINKEDIN_UID })), LINKEDIN_UID);
-    assert.equal(readCustomTokenUid(customToken({ uid: 'li_ñandú_Ünicode' })), 'li_ñandú_Ünicode');
-    assert.equal(readCustomTokenUid(customToken({ uid: '' })), null);
-    assert.equal(readCustomTokenUid(customToken({ uid: 42 })), null);
-    assert.equal(readCustomTokenUid('a.b'), null);
-    assert.equal(readCustomTokenUid(undefined), null);
-    assert.equal(readCustomTokenUid(`x.${base64Url('not json')}.y`), null);
+    const h = harness(user(LINKEDIN_UID));
+    h.deps.getCurrentUser = () =>
+      reads++ === 0 ? user(LINKEDIN_UID) : user('li_SomeoneElseEntirely');
+    const outcome = await createDeleteAccountFlow(h.deps)({ method: 'recent_session' });
+    assert.equal(outcome.status === 'failed' && outcome.kind, 'uid_changed');
+    assert.equal(h.payloads.length, 0);
   });
 });
 
@@ -684,7 +662,7 @@ describe('Post-deletion cleanup', () => {
 
 describe('Diagnostics carry no secrets or PII', () => {
   it('dev logs only hold stage, kind, code and reason', async () => {
-    const token = customToken({ uid: LINKEDIN_UID });
+    const token = 'eyJhbGciOiJSUzI1NiJ9.secret-token.signature';
     const scenarios: Array<Partial<DeleteAccountFlowDeps>> = [
       { invokeCallable: rejectWith('functions/failed-precondition', { reason: 'APP_CHECK_REQUIRED' }) },
       { invokeCallable: rejectWith('functions/unavailable') },

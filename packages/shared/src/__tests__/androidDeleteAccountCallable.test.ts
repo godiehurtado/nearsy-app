@@ -107,13 +107,13 @@ describe('Callable adapter', () => {
     assert.doesNotMatch(android, /useFunctionsEmulator|connectFunctionsEmulator|https?:\/\//);
   });
 
-  it('reauth adapters: password, fresh Google credential, Facebook, LinkedIn same UID', () => {
+  it('reauth adapters: password, fresh Google credential, Facebook only', () => {
     assert.match(android, /password: \(\{ password \}\) => reauthWithPassword\(password \?\? ''\)/);
     assert.match(android, /await discardGoogleSignInSession\(\);\s*try \{/);
     assert.match(android, /user\.reauthenticateWithCredential\(\s*auth\.GoogleAuthProvider\.credential\(idToken\),?\s*\)/);
     assert.match(android, /facebook: \(\) => reauthenticateWithFacebook\(\)/);
-    assert.match(android, /reauthenticateWithLinkedInSameUid\(\{/);
-    assert.match(android, /firebaseAuth\.signInWithCustomToken\(customToken\)/);
+    const reauthBlock = android.slice(android.indexOf('reauthenticate: {'));
+    assert.doesNotMatch(reauthBlock.slice(0, reauthBlock.indexOf('},')), /linkedin/i);
   });
 
   it('cleanup reuses the contractual logout pieces after success only', () => {
@@ -157,6 +157,49 @@ describe('Callable adapter', () => {
   });
 });
 
+describe('LinkedIn is never reauthenticated inline', () => {
+  const FORBIDDEN: Array<[string, RegExp]> = [
+    ['custom-token sign-in', /signInWithCustomToken|customToken/i],
+    [
+      'LinkedIn login adapter',
+      /linkedinAuth|linkedinSession|linkedinAuthCoordinator|linkedinFirebaseAuth|useLinkedInSignInFlow|signInWithLinkedIn|authenticateWithLinkedIn|runLinkedIn/i,
+    ],
+    [
+      'LinkedIn OAuth start / callback',
+      /linkedInAuthStart|linkedInAuthExchange|handleLinkedInReturnUrl|linkedinDeepLinkParser|LINKEDIN_MOBILE_RETURN_URL|openAuthSession|expo-web-browser|WebBrowser|identityFunctions|oauth/i,
+    ],
+    [
+      'user creation',
+      /createUser|createUserWithEmailAndPassword|signInAnonymously|signInWithCredential/,
+    ],
+  ];
+
+  for (const [label, pattern] of FORBIDDEN) {
+    it(`flow files never contain ${label}`, () => {
+      for (const file of FLOW_FILES) {
+        assert.doesNotMatch(codeOnly(readShared(file)), pattern, `${file}: ${label}`);
+      }
+    });
+  }
+
+  it('LinkedIn-only accounts use the recent session; guidance never signs out', () => {
+    const core = codeOnly(readShared('accountDeletion/deleteAccountCore.ts'));
+    assert.match(core, /if \(request\.method === 'recent_session'\) \{\s*if \(!isLinkedInOnlyAccount\(user\)\) return failed\('method_unavailable'\);/);
+    assert.match(core, /request\.method === 'recent_session' && kind === 'stale_session'[\s\S]{0,40}kind = 'linkedin_guidance'/);
+    const screen = codeOnly(readShared('screens/DeleteAccountScreen.tsx'));
+    assert.doesNotMatch(screen, /signOut/);
+  });
+
+  it('normal LinkedIn login is untouched', () => {
+    const hook = readShared('hooks/useLinkedInSignInFlow.android.ts');
+    assert.match(hook, /const result = await signInWithLinkedInBrowser\(\);/);
+    const adapter = readShared('authentication/linkedin/linkedinAuth.android.ts');
+    assert.match(adapter, /const cred = await firebaseAuth\.signInWithCustomToken\(customToken\);/);
+    const session = readShared('authentication/linkedin/linkedinSession.ts');
+    assert.match(session, /const signedIn = await performSignInOnce\(deps\.firebaseAuth, customToken\);/);
+  });
+});
+
 describe('Delete Account screen', () => {
   const screen = readShared('screens/DeleteAccountScreen.tsx');
 
@@ -197,9 +240,13 @@ describe('Delete Account screen', () => {
     assert.match(screen, /t\('common\.actions\.back'\)/);
   });
 
-  it('LinkedIn guidance offers the recent sign-in path', () => {
-    assert.match(screen, /t\('settings\.deleteAccount\.linkedInGuidance'\)/);
-    assert.match(screen, /'recent_sign_in',/);
+  it('LinkedIn-only accounts get one recent-session action and the guidance after a stale session', () => {
+    assert.match(screen, /\{options\.recentSessionOnly && \(/);
+    assert.match(screen, /'recent_session',/);
+    assert.match(screen, /'settings\.deleteAccount\.linkedInGuidance'/);
+    assert.match(screen, /'settings\.deleteAccount\.linkedInRecentBody'/);
+    assert.match(screen, /if \(outcome\.kind === 'linkedin_guidance' && mountedRef\.current\) \{\s*setShowLinkedInGuidance\(true\);/);
+    assert.doesNotMatch(screen, /reauthContinueLinkedIn|linkedin: '/);
   });
 });
 
@@ -241,7 +288,7 @@ describe('Copy EN/ES', () => {
     'reauthConfirm',
     'reauthContinueGoogle',
     'reauthContinueFacebook',
-    'reauthContinueLinkedIn',
+    'linkedInRecentBody',
     'methodsTitle',
     'methodsBody',
     'reauthUnavailable',
@@ -261,9 +308,16 @@ describe('Copy EN/ES', () => {
     }
   });
 
-  it('LinkedIn guidance and stale session copy mention the five-minute window and recent sign-in', () => {
-    assert.match(settingsEn.deleteAccount.linkedInGuidance, /sign out.*LinkedIn.*within 5 minutes/);
-    assert.match(esDeleteAccount, /linkedInGuidance:\s*'[^']*cierra sesión[^']*LinkedIn[^']*5 minutos[^']*'/);
+  it('LinkedIn guidance uses the exact approved copy', () => {
+    assert.equal(
+      settingsEn.deleteAccount.linkedInGuidance,
+      'For security, sign out, sign back in with LinkedIn, and request account deletion within the next 5 minutes.',
+    );
+    assert.ok(
+      esDeleteAccount.includes(
+        "linkedInGuidance:\n        'Por seguridad, cierra sesión, vuelve a ingresar con LinkedIn y solicita la eliminación de tu cuenta dentro de los próximos 5 minutos.',",
+      ),
+    );
     assert.match(settingsEn.deleteAccount.errorStaleSession, /signed in recently/);
   });
 
@@ -276,7 +330,7 @@ describe('Copy EN/ES', () => {
   });
 
   it('new copy stays free of the out-of-scope provider', () => {
-    const leaves = ['methodsTitle', 'methodsBody', 'reauthContinueLinkedIn', 'linkedInGuidance'];
+    const leaves = ['methodsTitle', 'methodsBody', 'linkedInRecentBody', 'linkedInGuidance'];
     for (const leaf of leaves) {
       assert.doesNotMatch(
         (settingsEn.deleteAccount as Record<string, string>)[leaf],

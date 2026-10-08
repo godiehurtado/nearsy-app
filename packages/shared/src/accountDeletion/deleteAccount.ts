@@ -8,7 +8,7 @@ import { deleteAccountMessageKey } from './deleteAccountCore';
 type DeleteAccountApi = typeof DeleteAccountAndroid;
 
 export const getDeleteAccountOptions: DeleteAccountApi['getDeleteAccountOptions'] =
-  () => ({ methods: [], recentSignInFallback: false });
+  () => ({ methods: [], recentSessionOnly: false });
 
 export const deleteMyAccountWithReauth: DeleteAccountApi['deleteMyAccountWithReauth'] =
   async () => ({

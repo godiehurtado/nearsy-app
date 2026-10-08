@@ -34,7 +34,6 @@ type ProfileDoc = {
 const CONTINUE_LABEL_KEY: Record<Exclude<DeleteAccountMethod, 'password'>, string> = {
   google: 'settings.deleteAccount.reauthContinueGoogle',
   facebook: 'settings.deleteAccount.reauthContinueFacebook',
-  linkedin: 'settings.deleteAccount.reauthContinueLinkedIn',
 };
 
 const inputStyle = {
@@ -64,8 +63,6 @@ export default function DeleteAccountScreen() {
   const options = useMemo(() => getDeleteAccountOptions(), []);
   const canDelete = typed.trim().toUpperCase() === 'DELETE';
   const busy = busyMethod !== null;
-  const recentSignInVisible =
-    options.recentSignInFallback || showLinkedInGuidance;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -213,7 +210,7 @@ export default function DeleteAccountScreen() {
     );
   };
 
-  const hasAnyAction = options.methods.length > 0 || recentSignInVisible;
+  const hasAnyAction = options.methods.length > 0 || options.recentSessionOnly;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
@@ -256,7 +253,7 @@ export default function DeleteAccountScreen() {
               style={{ ...inputStyle, marginBottom: 20 }}
             />
 
-            {hasAnyAction ? (
+            {options.methods.length > 0 && (
               <>
                 <Text style={{ fontSize: 16, fontWeight: '800', marginBottom: 6 }}>
                   {t('settings.deleteAccount.methodsTitle')}
@@ -265,7 +262,8 @@ export default function DeleteAccountScreen() {
                   {t('settings.deleteAccount.methodsBody')}
                 </Text>
               </>
-            ) : (
+            )}
+            {!hasAnyAction && (
               <Text style={{ color: '#374151', marginBottom: 14 }}>
                 {t('settings.deleteAccount.reauthUnavailable')}
               </Text>
@@ -298,13 +296,17 @@ export default function DeleteAccountScreen() {
               ),
             )}
 
-            {recentSignInVisible && (
+            {options.recentSessionOnly && (
               <View style={{ marginTop: 4 }}>
                 <Text style={{ color: '#374151', marginBottom: 12 }}>
-                  {t('settings.deleteAccount.linkedInGuidance')}
+                  {t(
+                    showLinkedInGuidance
+                      ? 'settings.deleteAccount.linkedInGuidance'
+                      : 'settings.deleteAccount.linkedInRecentBody',
+                  )}
                 </Text>
                 {renderAction(
-                  'recent_sign_in',
+                  'recent_session',
                   t('settings.deleteAccount.permanently'),
                   canDelete,
                 )}

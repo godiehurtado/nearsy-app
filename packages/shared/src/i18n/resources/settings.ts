@@ -167,9 +167,10 @@ export default {
     methodsTitle: 'Confirm it’s you',
     methodsBody:
       'For security, confirm your identity with one of your sign-in methods. Your account and data are deleted right after.',
-    reauthContinueLinkedIn: 'Continue with LinkedIn and delete',
+    linkedInRecentBody:
+      'Your account signs in with LinkedIn. You can delete it if you signed in within the last 5 minutes.',
     linkedInGuidance:
-      'To delete an account that signs in with LinkedIn, sign out, sign back in with LinkedIn and delete your account within 5 minutes.',
+      'For security, sign out, sign back in with LinkedIn, and request account deletion within the next 5 minutes.',
     errorStaleSession:
       'For security, you need to have signed in recently. Confirm your identity again and retry. Your account was not deleted.',
     errorAppCheck:
