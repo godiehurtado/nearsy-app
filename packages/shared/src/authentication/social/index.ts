@@ -21,6 +21,11 @@ import { GOOGLE_IOS_NATIVE_CONFIG } from './infrastructure/google/googleIosNativ
 import { createGoogleProviderAdapter } from './infrastructure/google/googleProviderAdapter';
 import { createAppleProviderAdapter } from './infrastructure/apple/appleProviderAdapter';
 import { createFirebaseJsAuthenticationAdapter } from './infrastructure/firebase/firebaseJsAuthenticationAdapter';
+import { createFirebaseJsAccountLinkingAdapter } from './infrastructure/firebase/firebaseJsAccountLinkingAdapter';
+import {
+  createLinkProviderToCurrentUser,
+  type LinkProviderToCurrentUserDependencies,
+} from './application/linkProviderToCurrentUser';
 import {
   getUserProfile,
   isProfileComplete,
@@ -117,6 +122,30 @@ export {
   createFacebookProviderAdapter,
   FACEBOOK_LOGIN_PERMISSIONS,
 } from './infrastructure/facebook/facebookProviderAdapter';
+
+export type {
+  AccountLinkOutcome,
+  LinkProviderToCurrentUser,
+  LinkProviderToCurrentUserDependencies,
+  LinkProviderToCurrentUserRequest,
+} from './application/linkProviderToCurrentUser';
+export { createLinkProviderToCurrentUser } from './application/linkProviderToCurrentUser';
+export type { AccountLinkErrorCode, LinkableProvider } from './domain/accountLinkError';
+export {
+  AccountLinkError,
+  LINKABLE_PROVIDER_DISPLAY_NAMES,
+  LINKABLE_PROVIDER_IDS,
+  resolveAccountLinkAlert,
+  shouldSuppressAccountLinkAlert,
+} from './domain/accountLinkError';
+export type {
+  FirebaseAccountLinkingPort,
+  LinkCredentialInput,
+  LinkedAccountSnapshot,
+} from './infrastructure/firebase/firebaseAccountLinkingPort';
+export { createFirebaseJsAccountLinkingAdapter } from './infrastructure/firebase/firebaseJsAccountLinkingAdapter';
+export type { SignInMethodId, SignInMethodRow } from './application/signInMethodsPresentation';
+export { buildSignInMethodRows } from './application/signInMethodsPresentation';
 
 export type { SocialProfileData } from './domain/socialProfileData';
 export { normalizeSocialProfileData } from './application/normalizeSocialProfileData';
@@ -226,6 +255,21 @@ export function createDefaultAuthenticateWithFacebook(
     firebaseAuth: createDefaultFirebaseAuthenticationPort(),
     getUserProfile,
     isProfileComplete,
+    ...overrides,
+  });
+}
+
+/**
+ * Production "Connect Google / Apple / Facebook" orchestrator for
+ * Settings → Sign-in methods. Links to the current user only; never part of
+ * the Login / Welcome flow.
+ */
+export function createDefaultLinkProviderToCurrentUser(
+  overrides?: Partial<LinkProviderToCurrentUserDependencies>,
+) {
+  return createLinkProviderToCurrentUser({
+    registry: createDefaultSocialProviderRegistry(),
+    accountLinking: createFirebaseJsAccountLinkingAdapter(),
     ...overrides,
   });
 }

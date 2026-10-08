@@ -154,6 +154,65 @@ export default {
       'They may appear in Nearby again if they meet your discovery settings.',
     unblockError: 'Could not unblock this person. Please try again.',
   },
+  signInMethods: {
+    title: 'Sign-in methods',
+    openHint: 'View and connect the ways you sign in to Nearsy',
+    back: 'Back',
+    description: 'These are the methods linked to your Nearsy account.',
+    linkedLabel: 'Connected',
+    notLinkedLabel: 'Not connected',
+    connectGoogle: 'Connect Google',
+    connectApple: 'Connect Apple',
+    connectFacebook: 'Connect Facebook',
+    connecting: 'Connecting…',
+    limitationNote: 'Some methods, such as LinkedIn, may not appear in this list.',
+    providers: {
+      password: 'Email and password',
+      google: 'Google',
+      apple: 'Apple',
+      facebook: 'Facebook',
+    },
+    confirm: {
+      title: 'Connect {{provider}}?',
+      message:
+        'You will sign in with {{provider}} to link it to this Nearsy account. Afterwards you can use {{provider}} to sign in to this same account.',
+      cancel: 'Cancel',
+      continue: 'Continue',
+    },
+    success: {
+      google: {
+        title: 'Google connected',
+        message: 'You can now sign in to Nearsy with Google.',
+      },
+      apple: {
+        title: 'Apple connected',
+        message: 'You can now sign in to Nearsy with Apple.',
+      },
+      facebook: {
+        title: 'Facebook connected',
+        message: 'You can now sign in to Nearsy with Facebook.',
+      },
+    },
+    alreadyLinked: {
+      title: '{{provider}} already connected',
+      message: '{{provider}} is already connected to this Nearsy account.',
+    },
+    errors: {
+      title: "Couldn't connect {{provider}}",
+      recentLoginTitle: 'Sign in again',
+      notAuthenticated: 'Your session has ended. Sign in again and try once more.',
+      unavailable: '{{provider}} is not available right now. Please try again later.',
+      verificationFailed: "We couldn't verify your {{provider}} account. Please try again.",
+      credentialInUse:
+        'This {{provider}} account is already associated with another Nearsy account. Nothing was changed.',
+      recentLogin:
+        'For your security, sign out, sign back in to Nearsy with your current method and then try connecting {{provider}} again.',
+      network: 'Check your connection and try again.',
+      identityChanged:
+        'Your session changed during the process. Sign in again and review your sign-in methods.',
+      unknown: "We couldn't connect {{provider}}. Please try again.",
+    },
+  },
   editor: {
     save: 'Save',
     cancel: 'Cancel',

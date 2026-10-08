@@ -70,6 +70,14 @@ const es: TranslationResources = {
           'Verifica tu correo con el enlace que te enviamos antes de iniciar sesión en este dispositivo. Si no lo ves, revisa tu carpeta de spam.',
         loginErrorTitle: 'Error al iniciar sesión',
       },
+      providerWarning: {
+        title: 'Usar otro método de inicio de sesión',
+        message:
+          'Si ya tienes una cuenta de Nearsy creada con correo, Facebook u otro método, inicia sesión primero con ese método y conéctalo desde Métodos de inicio de sesión en Ajustes.\n\nSi continúas directamente, tu método anterior podría dejar de estar disponible.',
+        back: 'Volver',
+        continueGoogle: 'Continuar con Google',
+        continueApple: 'Continuar con Apple',
+      },
     },
     social: {
       comingSoonTitle: 'Próximamente',
@@ -96,7 +104,7 @@ const es: TranslationResources = {
         failed: 'No pudimos iniciar sesión con Facebook. Inténtalo nuevamente.',
         accountExistsTitle: 'Cuenta existente',
         accountExistsMessage:
-          'Ya existe una cuenta de Nearsy asociada a este correo. Inicia sesión utilizando el método que usaste originalmente.',
+          'Ya existe una cuenta de Nearsy con este correo. Inicia sesión con uno de tus métodos actuales y conecta Facebook desde Métodos de inicio de sesión.',
       },
     },
     forgotPassword: {
@@ -1503,6 +1511,69 @@ const es: TranslationResources = {
         'Pueden volver a aparecer en Cerca si cumplen tus ajustes de descubrimiento.',
       unblockError:
         'No se pudo desbloquear a esta persona. Inténtalo de nuevo.',
+    },
+    signInMethods: {
+      title: 'Métodos de inicio de sesión',
+      openHint: 'Ver y conectar las formas de entrar a Nearsy',
+      back: 'Atrás',
+      description: 'Estos son los métodos vinculados a tu cuenta de Nearsy.',
+      linkedLabel: 'Conectado',
+      notLinkedLabel: 'No conectado',
+      connectGoogle: 'Conectar Google',
+      connectApple: 'Conectar Apple',
+      connectFacebook: 'Conectar Facebook',
+      connecting: 'Conectando…',
+      limitationNote:
+        'Algunos métodos, como LinkedIn, pueden no aparecer en esta lista.',
+      providers: {
+        password: 'Correo y contraseña',
+        google: 'Google',
+        apple: 'Apple',
+        facebook: 'Facebook',
+      },
+      confirm: {
+        title: '¿Conectar {{provider}}?',
+        message:
+          'Iniciarás sesión con {{provider}} para vincularlo a esta cuenta de Nearsy. Después podrás usar {{provider}} para entrar a esta misma cuenta.',
+        cancel: 'Cancelar',
+        continue: 'Continuar',
+      },
+      success: {
+        google: {
+          title: 'Google conectado',
+          message: 'Ahora puedes iniciar sesión en Nearsy con Google.',
+        },
+        apple: {
+          title: 'Apple conectado',
+          message: 'Ahora puedes iniciar sesión en Nearsy con Apple.',
+        },
+        facebook: {
+          title: 'Facebook conectado',
+          message: 'Ahora puedes iniciar sesión en Nearsy con Facebook.',
+        },
+      },
+      alreadyLinked: {
+        title: '{{provider}} ya está conectado',
+        message: '{{provider}} ya está conectado a esta cuenta de Nearsy.',
+      },
+      errors: {
+        title: 'No se pudo conectar {{provider}}',
+        recentLoginTitle: 'Vuelve a iniciar sesión',
+        notAuthenticated:
+          'Tu sesión terminó. Vuelve a iniciar sesión e inténtalo de nuevo.',
+        unavailable:
+          '{{provider}} no está disponible en este momento. Inténtalo más tarde.',
+        verificationFailed:
+          'No pudimos verificar tu cuenta de {{provider}}. Inténtalo de nuevo.',
+        credentialInUse:
+          'Esta cuenta de {{provider}} ya está asociada a otra cuenta de Nearsy. No se realizó ningún cambio.',
+        recentLogin:
+          'Por tu seguridad, cierra sesión, vuelve a entrar en Nearsy con tu método actual e intenta conectar {{provider}} de nuevo.',
+        network: 'Revisa tu conexión e inténtalo de nuevo.',
+        identityChanged:
+          'Tu sesión cambió durante el proceso. Vuelve a iniciar sesión y revisa tus métodos de inicio de sesión.',
+        unknown: 'No pudimos conectar {{provider}}. Inténtalo de nuevo.',
+      },
     },
     editor: {
       save: 'Guardar',

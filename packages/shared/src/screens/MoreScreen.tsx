@@ -967,8 +967,17 @@ export default function MoreScreen() {
             value={dobDisplay}
             onPress={openBirthEditor}
             accessibilityHint={t('settings.editor.edit')}
-            isLast
+            isLast={Platform.OS !== 'ios'}
           />
+          {Platform.OS === 'ios' ? (
+            <SettingsRow
+              icon="key-outline"
+              title={t('settings.signInMethods.title')}
+              onPress={() => navigation.navigate('SignInMethods')}
+              accessibilityHint={t('settings.signInMethods.openHint')}
+              isLast
+            />
+          ) : null}
         </SettingsSection>
 
         <SettingsSection title={t('settings.sections.privacy')}>

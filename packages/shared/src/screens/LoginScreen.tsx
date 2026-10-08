@@ -35,6 +35,8 @@ import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
 import { useAppleSignInFlow } from '../hooks/useAppleSignInFlow';
 import { useFacebookSignInFlow } from '../hooks/useFacebookSignInFlow';
 import { useLinkedInSignInFlow } from '../hooks/useLinkedInSignInFlow';
+import { useDirectProviderLoginWarning } from '../hooks/useDirectProviderLoginWarning';
+import { shouldWarnBeforeDirectProviderLogin } from '../authentication/social/application/directProviderLoginWarning';
 import { applyPostAuthNavigation } from '../phoneOtp/applyPostAuthNavigation';
 import Constants from 'expo-constants';
 
@@ -46,6 +48,7 @@ export default function LoginScreen({ navigation }: any) {
   const { signInWithApple, appleSubmitting } = useAppleSignInFlow();
   const { signInWithFacebook, facebookSubmitting } = useFacebookSignInFlow();
   const { signInWithLinkedIn, linkedInSubmitting } = useLinkedInSignInFlow();
+  const { confirmDirectProviderLogin } = useDirectProviderLoginWarning();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -215,6 +218,19 @@ export default function LoginScreen({ navigation }: any) {
   };
 
   const handleSocialPress = (provider: AuthSocialProvider) => {
+    if (
+      (provider === 'google' || provider === 'apple') &&
+      shouldWarnBeforeDirectProviderLogin('login', provider, Platform.OS)
+    ) {
+      if (busy) return;
+      void (async () => {
+        if (!(await confirmDirectProviderLogin(provider))) return;
+        if (provider === 'google') void signInWithGoogle();
+        else void signInWithApple();
+      })();
+      return;
+    }
+
     if (provider === 'google') {
       void signInWithGoogle();
       return;
