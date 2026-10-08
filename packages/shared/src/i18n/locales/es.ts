@@ -431,7 +431,7 @@ export const es: TranslationResources = {
       title: 'Métodos de inicio de sesión',
       openHint: 'Ver cómo inicias sesión en Nearsy',
       back: 'Atrás',
-      description: 'Formas en que puedes iniciar sesión en esta cuenta de Nearsy.',
+      description: 'Estos son los métodos vinculados a tu cuenta de Nearsy.',
       methods: {
         email: 'Correo y contraseña',
         google: 'Google',
@@ -440,6 +440,7 @@ export const es: TranslationResources = {
       },
       connected: 'Conectado',
       notConnected: 'No conectado',
+      limitationNote: 'Algunos métodos, como LinkedIn, podrían no aparecer en esta lista.',
       connectGoogle: 'Conectar Google',
       connectGoogleHint:
         'Agrega Google como otra forma de iniciar sesión en esta misma cuenta de Nearsy.',

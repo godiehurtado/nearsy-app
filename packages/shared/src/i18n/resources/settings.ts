@@ -186,7 +186,7 @@ export default {
     title: 'Sign-in methods',
     openHint: 'View how you sign in to Nearsy',
     back: 'Back',
-    description: 'Ways you can sign in to this Nearsy account.',
+    description: 'These are the methods linked to your Nearsy account.',
     methods: {
       email: 'Email and password',
       google: 'Google',
@@ -195,6 +195,7 @@ export default {
     },
     connected: 'Connected',
     notConnected: 'Not connected',
+    limitationNote: 'Some methods, such as LinkedIn, may not appear in this list.',
     connectGoogle: 'Connect Google',
     connectGoogleHint:
       'Add Google as another way to sign in to this same Nearsy account.',

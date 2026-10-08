@@ -19,6 +19,7 @@ import settingsEn from '../i18n/resources/settings.ts';
 import { messageKeyForFacebookLinkError } from '../authentication/facebook/facebookAccountLinking.ts';
 import { messageKeyForGoogleLinkError } from '../authentication/google/googleAccountLinking.ts';
 import type { AccountLinkErrorCode } from '../authentication/accountLinking/accountLinkingCore.ts';
+import { resolveSignInMethods } from '../authentication/signInMethods.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sharedSrc = join(here, '..');
@@ -300,6 +301,58 @@ describe('Sign-in methods screen', () => {
     assert.doesNotMatch(codeOnly(screen), /disconnect|unlink|remove/i);
   });
 
+  it('iOS-parity layout: intro, methods section, inline connect rows, no buttons below the card', () => {
+    const bodyStart = screen.indexOf('<View style={[styles.root');
+    assert.ok(bodyStart > 0);
+    const body = screen.slice(bodyStart);
+    assert.match(body, /t\('settings\.signInMethods\.description'\)/);
+    assert.match(body, /<SettingsSection title=\{t\('settings\.signInMethods\.title'\)\}>/);
+    assert.match(
+      body,
+      /const inline = connectable\.find\(\(provider\) => provider === method\.id\);\s*if \(inline\) return renderConnectRow\(inline, isLast\);/,
+    );
+    const afterCard = body.slice(body.indexOf('</SettingsSection>'));
+    assert.doesNotMatch(afterCard, /Pressable|handleConnect|connectable/);
+    assert.doesNotMatch(screen, /styles\.actions|styles\.hint/);
+
+    const row = screen.slice(screen.indexOf('const renderConnectRow'), bodyStart);
+    assert.match(row, /styles\.row,/);
+    assert.match(row, /t\('settings\.signInMethods\.notConnected'\)/);
+    assert.match(row, /accessibilityHint=\{t\(copy\.connectHint\)\}/);
+    assert.match(row, /accessibilityState=\{\{ disabled: locked, busy \}\}/);
+    assert.match(row, /onPress=\{\(\) => void handleConnect\(provider\)\}/);
+  });
+
+  it('LinkedIn neutral note only when the LinkedIn UID contract is not met', () => {
+    assert.match(
+      screen,
+      /const showLimitationNote = !methods\.some\(\(method\) => method\.id === 'linkedin'\);/,
+    );
+    assert.match(
+      screen,
+      /\{showLimitationNote \? \(\s*<Text style=\{\[styles\.note, \{ color: palette\.textMuted \}\]\}>\s*\{t\('settings\.signInMethods\.limitationNote'\)\}/,
+    );
+  });
+
+  it('rows: email only when password; Google and Facebook always; LinkedIn by li_ UID; no phone', () => {
+    const ids = (user: Parameters<typeof resolveSignInMethods>[0]) =>
+      resolveSignInMethods(user).map((m) => `${m.id}:${m.connected}`);
+    assert.deepEqual(ids({ uid: 'A'.repeat(28), providerIds: ['password'] }), [
+      'email:true',
+      'google:false',
+      'facebook:false',
+    ]);
+    assert.deepEqual(
+      ids({ uid: 'A'.repeat(28), providerIds: ['password', 'facebook.com', 'phone'] }),
+      ['email:true', 'google:false', 'facebook:true'],
+    );
+    assert.deepEqual(ids({ uid: 'li_abcdefgh', providerIds: [] }), [
+      'google:false',
+      'facebook:false',
+      'linkedin:true',
+    ]);
+  });
+
   it('explicit per-provider confirmation; dismiss counts as cancel', () => {
     assert.match(screen, /t\(PROVIDER_COPY\[provider\]\.confirmTitle\)/);
     assert.match(screen, /confirmTitle: 'settings\.signInMethods\.confirmGoogleTitle'/);
@@ -411,6 +464,13 @@ describe('i18n EN/ES', () => {
     assert.match(esBlock, /notConnected: 'No conectado'/);
     assert.match(esBlock, /connectGoogle: 'Conectar Google'/);
     assert.match(esBlock, /connectFacebook: 'Conectar Facebook'/);
+    assert.equal(signIn.description, 'These are the methods linked to your Nearsy account.');
+    assert.equal(signIn.limitationNote, 'Some methods, such as LinkedIn, may not appear in this list.');
+    assert.match(esBlock, /description: 'Estos son los métodos vinculados a tu cuenta de Nearsy\.'/);
+    assert.match(
+      esBlock,
+      /limitationNote: 'Algunos métodos, como LinkedIn, podrían no aparecer en esta lista\.'/,
+    );
   });
 
   it('success copy: Google exact; Facebook preserved', () => {

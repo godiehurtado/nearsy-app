@@ -212,6 +212,73 @@ export default function SignInMethodsScreen() {
   const connectable = LINK_PROVIDERS.filter((provider) =>
     canConnect(provider, user),
   );
+  const showLimitationNote = !methods.some((method) => method.id === 'linkedin');
+  const locked = connecting !== null;
+
+  const renderConnectRow = (provider: LinkProvider, isLast: boolean) => {
+    const copy = PROVIDER_COPY[provider];
+    const busy = connecting === provider;
+    const title = t(`settings.signInMethods.methods.${provider}`);
+    const status = t('settings.signInMethods.notConnected');
+    const label = t(copy.connect);
+    return (
+      <View
+        key={provider}
+        style={[
+          styles.row,
+          !isLast && {
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderBottomColor: palette.border,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.iconChip,
+            { backgroundColor: palette.chipBg, borderColor: palette.border },
+          ]}
+        >
+          <Ionicons name={METHOD_ICONS[provider]} size={18} color={palette.chipText} />
+        </View>
+        <View
+          accessible
+          accessibilityRole="text"
+          accessibilityLabel={`${title}, ${status}`}
+          style={styles.textCol}
+        >
+          <Text style={[styles.rowTitle, { color: palette.textPrimary }]}>
+            {title}
+          </Text>
+          <Text style={[styles.rowValue, { color: palette.textSecondary }]}>
+            {status}
+          </Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityHint={t(copy.connectHint)}
+          accessibilityState={{ disabled: locked, busy }}
+          disabled={locked}
+          onPress={() => void handleConnect(provider)}
+          style={({ pressed }) => [
+            styles.connectBtn,
+            {
+              backgroundColor: palette.primary,
+              opacity: locked ? 0.55 : pressed ? 0.88 : 1,
+            },
+          ]}
+        >
+          {busy ? (
+            <ActivityIndicator size="small" color="#fff" accessibilityLabel={label} />
+          ) : (
+            <Text style={styles.connectText} numberOfLines={2}>
+              {label}
+            </Text>
+          )}
+        </Pressable>
+      </View>
+    );
+  };
 
   return (
     <View style={[styles.root, { backgroundColor: palette.background }]}>
@@ -255,56 +322,33 @@ export default function SignInMethodsScreen() {
             >
               {t('settings.signInMethods.description')}
             </Text>
-            <SettingsSection title={t('settings.sections.account')}>
-              {methods.map((method, index) => (
-                <SettingsRow
-                  key={method.id}
-                  icon={METHOD_ICONS[method.id]}
-                  title={t(`settings.signInMethods.methods.${method.id}`)}
-                  value={
-                    method.connected
-                      ? t('settings.signInMethods.connected')
-                      : t('settings.signInMethods.notConnected')
-                  }
-                  showChevron={false}
-                  isLast={index === methods.length - 1}
-                />
-              ))}
+            <SettingsSection title={t('settings.signInMethods.title')}>
+              {methods.map((method, index) => {
+                const isLast = index === methods.length - 1;
+                const inline = connectable.find((provider) => provider === method.id);
+                if (inline) return renderConnectRow(inline, isLast);
+                return (
+                  <SettingsRow
+                    key={method.id}
+                    icon={METHOD_ICONS[method.id]}
+                    title={t(`settings.signInMethods.methods.${method.id}`)}
+                    value={
+                      method.connected
+                        ? t('settings.signInMethods.connected')
+                        : t('settings.signInMethods.notConnected')
+                    }
+                    showChevron={false}
+                    isLast={isLast}
+                  />
+                );
+              })}
             </SettingsSection>
 
-            {connectable.map((provider) => {
-              const copy = PROVIDER_COPY[provider];
-              const busy = connecting === provider;
-              const locked = connecting !== null;
-              return (
-                <View key={provider} style={styles.actions}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={t(copy.connect)}
-                    accessibilityHint={t(copy.connectHint)}
-                    accessibilityState={{ disabled: locked, busy }}
-                    disabled={locked}
-                    onPress={() => void handleConnect(provider)}
-                    style={({ pressed }) => [
-                      styles.connectBtn,
-                      {
-                        backgroundColor: palette.primary,
-                        opacity: locked ? 0.55 : pressed ? 0.88 : 1,
-                      },
-                    ]}
-                  >
-                    {busy ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Text style={styles.connectText}>{t(copy.connect)}</Text>
-                    )}
-                  </Pressable>
-                  <Text style={[styles.hint, { color: palette.textMuted }]}>
-                    {t(copy.connectHint)}
-                  </Text>
-                </View>
-              );
-            })}
+            {showLimitationNote ? (
+              <Text style={[styles.note, { color: palette.textMuted }]}>
+                {t('settings.signInMethods.limitationNote')}
+              </Text>
+            ) : null}
           </>
         ) : (
           <Text style={[styles.description, { color: palette.textSecondary }]}>
@@ -337,26 +381,56 @@ const styles = StyleSheet.create({
     paddingHorizontal: screenPadding.horizontal,
     marginBottom: spacing.md,
     fontSize: fontSize.sm,
+    fontWeight: fontWeight.medium,
   },
-  actions: {
+  note: {
     paddingHorizontal: screenPadding.horizontal,
-    marginBottom: spacing.lg,
+    marginTop: -spacing.sm,
+    fontSize: fontSize.xs,
   },
-  connectBtn: {
-    minHeight: 48,
+  row: {
+    minHeight: 56,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconChip: {
+    width: 34,
+    height: 34,
     borderRadius: radius.md,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
+    marginRight: spacing.md,
   },
-  connectText: {
-    color: '#fff',
+  textCol: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  rowTitle: {
     fontSize: fontSize.base,
     fontWeight: fontWeight.semibold,
   },
-  hint: {
-    marginTop: spacing.sm,
-    fontSize: fontSize.xs,
+  rowValue: {
+    marginTop: 2,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.medium,
+  },
+  connectBtn: {
+    minHeight: 36,
+    minWidth: 112,
+    maxWidth: '45%',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  connectText: {
+    color: '#fff',
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
     textAlign: 'center',
   },
 });
