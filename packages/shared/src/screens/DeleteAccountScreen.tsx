@@ -28,6 +28,7 @@ import {
   deleteMyAccountWithReauth,
   getDeleteAccountOptions,
 } from '../accountDeletion/deleteAccount';
+import { isDeleteConfirmationText } from '../accountDeletion/deleteConfirmation';
 import type {
   DeleteAccountAttemptMethod,
   DeleteAccountMethod,
@@ -68,7 +69,7 @@ export default function DeleteAccountScreen() {
   const [selectedMethod, setSelectedMethod] = useState<DeleteAccountMethod | null>(
     () => options.methods[0] ?? null,
   );
-  const canDelete = typed.trim().toUpperCase() === 'DELETE';
+  const canDelete = isDeleteConfirmationText(typed);
   const busy = busyMethod !== null;
 
   useEffect(() => {

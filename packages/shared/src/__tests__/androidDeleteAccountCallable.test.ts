@@ -295,7 +295,8 @@ describe('Delete Account presentation (Nearsy 2.0 design)', () => {
   });
 
   it('the destructive action stays disabled until DELETE is typed exactly', () => {
-    assert.match(screen, /const canDelete = typed\.trim\(\)\.toUpperCase\(\) === 'DELETE';/);
+    assert.match(screen, /const canDelete = isDeleteConfirmationText\(typed\);/);
+    assert.doesNotMatch(screen, /toUpperCase|toLowerCase|localeCompare/);
     assert.match(screen, /const active = enabled && !busy;/);
     assert.match(screen, /disabled=\{!active\}/);
     assert.match(screen, /backgroundColor: enabled \? palette\.danger : palette\.borderStrong,/);
