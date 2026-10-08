@@ -341,7 +341,8 @@ describe('No App Secret, Client Token or App ID hardcodes', () => {
     'apps/nearsy-android/plugins/withFacebookPrivacyHardening.js',
     'apps/nearsy-android/plugins/withFacebookAndroidSdkVersion.js',
     'packages/shared/src/authentication/facebook/facebookAuthCore.ts',
-    'packages/shared/src/authentication/facebook/facebookDeleteAccount.ts',
+    'packages/shared/src/accountDeletion/deleteAccountCore.ts',
+    'packages/shared/src/accountDeletion/deleteAccount.android.ts',
     'packages/shared/src/config/facebookAuthConfig.ts',
     'packages/shared/src/services/facebookLogin.android.ts',
     'packages/shared/src/services/firebaseFacebookAuth.android.ts',
@@ -511,13 +512,13 @@ describe('Logout and Delete Account wiring', () => {
     assert.ok(more.indexOf('signOutProviderSessions') < more.indexOf('await firebaseAuth.signOut()'));
   });
 
-  it('Delete Account: Facebook-only accounts reauth before deleting; password flow preserved', () => {
+  it('Delete Account: Facebook accounts reauth with Facebook before deleteMyAccount', () => {
     const screen = readShared('screens/DeleteAccountScreen.tsx');
-    assert.match(screen, /resolveDeleteAccountReauthMethod\(firebaseAuth\.currentUser\) === 'facebook'/);
-    assert.match(screen, /reauthenticate: reauthenticateWithFacebook/);
-    assert.match(screen, /if \(usesFacebookReauth\) \{\s*await handleFacebookDelete\(\);\s*return;/);
-    assert.match(screen, /reauthWithPassword\(pw\)/);
-    assert.match(screen, /auth\/requires-recent-login/);
+    const adapter = readShared('accountDeletion/deleteAccount.android.ts');
+    assert.match(screen, /facebook: 'settings\.deleteAccount\.reauthContinueFacebook'/);
+    assert.match(adapter, /facebook: \(\) => reauthenticateWithFacebook\(\)/);
+    assert.match(adapter, /facebook: isNearsyFacebookAuthConfigured\(\)/);
+    assert.match(adapter, /logOutFacebookSession\(\);/);
   });
 });
 

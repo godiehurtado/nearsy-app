@@ -1,5 +1,5 @@
 // src/screens/DeleteAccountScreen.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,74 +12,79 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { deleteAccountAndData } from '../services/accountDeletion';
 import TopHeader from '../components/TopHeader';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { useTranslation } from '../i18n';
-import { resolveDeleteAccountReauthMethod } from '../authentication/facebook/facebookAuthCore';
-import { runFacebookDeleteAccount } from '../authentication/facebook/facebookDeleteAccount';
 import {
-  logOutFacebookSession,
-  reauthenticateWithFacebook,
-} from '../services/facebookSession';
+  deleteMyAccountWithReauth,
+  getDeleteAccountOptions,
+} from '../accountDeletion/deleteAccount';
+import type {
+  DeleteAccountAttemptMethod,
+  DeleteAccountMethod,
+} from '../accountDeletion/deleteAccountCore';
 
 type ProfileDoc = {
   profileImage?: string | null;
   topBarColor?: string;
   topBarImage?: string | null;
   topBarMode?: 'color' | 'image';
-
-  phone?: string;
-  birthYear?: number;
-  visibleToMinAge?: number | null;
-  visibleToMaxAge?: number | null;
-  blockedContacts?: string[];
-  bgVisible?: boolean;
-
-  phoneVerified?: boolean;
 };
 
+const CONTINUE_LABEL_KEY: Record<Exclude<DeleteAccountMethod, 'password'>, string> = {
+  google: 'settings.deleteAccount.reauthContinueGoogle',
+  facebook: 'settings.deleteAccount.reauthContinueFacebook',
+  linkedin: 'settings.deleteAccount.reauthContinueLinkedIn',
+};
+
+const inputStyle = {
+  borderWidth: 1,
+  borderColor: '#E5E7EB',
+  borderRadius: 12,
+  padding: 12,
+  marginBottom: 12,
+} as const;
+
 export default function DeleteAccountScreen() {
-  // top visuals
   const [topBarColor, setTopBarColor] = useState('#3B5A85');
   const [topBarMode, setTopBarMode] = useState<'color' | 'image'>('color');
   const [topBarImage, setTopBarImage] = useState<string | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
 
-  const [pw, setPw] = useState('');
-  const [showReauth, setShowReauth] = useState(false);
-
   const nav = useNavigation<any>();
   const { t } = useTranslation();
   const [typed, setTyped] = useState('');
-  const [busy, setBusy] = useState(false);
-  const usesFacebookReauth =
-    Platform.OS === 'android' &&
-    resolveDeleteAccountReauthMethod(firebaseAuth.currentUser) === 'facebook';
+  const [password, setPassword] = useState('');
+  const [busyMethod, setBusyMethod] =
+    useState<DeleteAccountAttemptMethod | null>(null);
+  const [showLinkedInGuidance, setShowLinkedInGuidance] = useState(false);
+  const attemptLockRef = useRef(false);
+  const mountedRef = useRef(true);
 
-  // ui
-  const [loading, setLoading] = useState(true);
-
+  const options = useMemo(() => getDeleteAccountOptions(), []);
   const canDelete = typed.trim().toUpperCase() === 'DELETE';
+  const busy = busyMethod !== null;
+  const recentSignInVisible =
+    options.recentSignInFallback || showLinkedInGuidance;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
       try {
         const uid = firebaseAuth.currentUser?.uid;
-        if (!uid) {
-          if (!cancelled) setLoading(false);
-          return;
-        }
-
+        if (!uid) return;
         const snap = await firestoreDb.collection('users').doc(uid).get();
-
         const exists =
           typeof snap.exists === 'function' ? snap.exists() : snap.exists;
         if (!cancelled && exists) {
           const data = snap.data() as ProfileDoc;
-
           setTopBarColor(data.topBarColor ?? '#3B5A85');
           setTopBarMode(
             data.topBarMode ?? (data.topBarImage ? 'image' : 'color'),
@@ -87,83 +92,128 @@ export default function DeleteAccountScreen() {
           setTopBarImage(data.topBarImage ?? null);
           setProfileImage(data.profileImage ?? null);
         }
-      } catch (e: any) {
-        Alert.alert('Error', e?.message || 'Could not load settings.');
-      } finally {
-        if (!cancelled) setLoading(false);
+      } catch {
+        // Header visuals are decorative; keep the defaults.
       }
     })();
-
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const handleFacebookDelete = async () => {
-    if (busy) return;
+  const returnToLogin = () => {
     try {
-      setBusy(true);
-      const outcome = await runFacebookDeleteAccount({
-        reauthenticate: reauthenticateWithFacebook,
-        deleteAccount: () => deleteAccountAndData(),
-        logOutProviderSession: logOutFacebookSession,
-      });
-      if (outcome.status === 'deleted') {
-        Alert.alert(
-          t('settings.deleteAccount.title'),
-          t('settings.deleteAccount.done'),
-        );
-        return;
-      }
-      if (outcome.status !== 'in_progress') {
-        Alert.alert(
-          t('settings.deleteAccount.title'),
-          t(outcome.messageKey as any),
-        );
+      const parent = nav.getParent?.();
+      if (parent?.reset) {
+        parent.reset({ index: 0, routes: [{ name: 'Login' }] });
+      } else {
+        nav.reset({ index: 0, routes: [{ name: 'Login' }] });
       }
     } catch {
-      Alert.alert(
-        t('settings.deleteAccount.title'),
-        t('settings.deleteAccount.error'),
-      );
-    } finally {
-      setBusy(false);
+      // Signed out: AppNavigator already switched to the guest stack.
     }
   };
 
-  const handleDelete = async () => {
+  const runAttempt = async (method: DeleteAccountAttemptMethod) => {
+    const outcome = await deleteMyAccountWithReauth({
+      method,
+      password: method === 'password' ? password : undefined,
+    });
+    if (outcome.status === 'in_progress') return;
+    if (outcome.status === 'deleted') {
+      Alert.alert(
+        t('settings.deleteAccount.title'),
+        t('settings.deleteAccount.done'),
+      );
+      returnToLogin();
+      return;
+    }
+    if (outcome.kind === 'linkedin_guidance' && mountedRef.current) {
+      setShowLinkedInGuidance(true);
+    }
+    Alert.alert(t('settings.deleteAccount.title'), t(outcome.messageKey as any));
+  };
+
+  const releaseAttempt = () => {
+    attemptLockRef.current = false;
+  };
+
+  const confirmAndDelete = (method: DeleteAccountAttemptMethod) => {
+    if (!canDelete || attemptLockRef.current) return;
+    if (method === 'password' && !password.trim()) return;
+    attemptLockRef.current = true;
     Alert.alert(
-      'Delete account',
-      'This will permanently delete your account and associated data. This action cannot be undone.',
+      t('settings.deleteAccount.alertTitle'),
+      t('settings.deleteAccount.alertBody'),
       [
-        { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('settings.deleteAccount.alertCancel'),
+          style: 'cancel',
+          onPress: releaseAttempt,
+        },
+        {
+          text: t('settings.deleteAccount.alertConfirm'),
           style: 'destructive',
           onPress: async () => {
-            if (usesFacebookReauth) {
-              await handleFacebookDelete();
-              return;
-            }
+            setBusyMethod(method);
             try {
-              setBusy(true);
-              await deleteAccountAndData();
-              Alert.alert('Done', 'Your account has been deleted.');
-            } catch (e: any) {
-              const code = e?.code || '';
-              if (code === 'auth/requires-recent-login') {
-                setShowReauth(true);
-                return;
-              }
-              Alert.alert('Error', e?.message || 'Could not delete account.');
+              await runAttempt(method);
+            } catch {
+              Alert.alert(
+                t('settings.deleteAccount.title'),
+                t('settings.deleteAccount.errorUnknown'),
+              );
             } finally {
-              setBusy(false);
+              releaseAttempt();
+              if (mountedRef.current) {
+                setBusyMethod(null);
+                setPassword('');
+              }
             }
           },
         },
       ],
+      { cancelable: true, onDismiss: releaseAttempt },
     );
   };
+
+  const renderAction = (
+    method: DeleteAccountAttemptMethod,
+    label: string,
+    enabled: boolean,
+  ) => {
+    const active = enabled && !busy;
+    return (
+      <TouchableOpacity
+        key={method}
+        onPress={() => confirmAndDelete(method)}
+        disabled={!active}
+        activeOpacity={0.9}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ disabled: !active, busy: busyMethod === method }}
+        style={{
+          backgroundColor: enabled ? '#B91C1C' : '#9CA3AF',
+          paddingVertical: 14,
+          paddingHorizontal: 12,
+          borderRadius: 12,
+          alignItems: 'center',
+          marginBottom: 12,
+          opacity: busy ? 0.8 : 1,
+        }}
+      >
+        {busyMethod === method ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={{ color: '#fff', fontWeight: '800', textAlign: 'center' }}>
+            {label}
+          </Text>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  const hasAnyAction = options.methods.length > 0 || recentSignInVisible;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
@@ -174,9 +224,8 @@ export default function DeleteAccountScreen() {
       >
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{
-            paddingBottom: 110,
-          }}
+          contentContainerStyle={{ paddingBottom: 110 }}
+          keyboardShouldPersistTaps="handled"
         >
           <TopHeader
             topBarMode={topBarMode}
@@ -186,129 +235,91 @@ export default function DeleteAccountScreen() {
             showAvatar
           />
           <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
-            <Text style={{ fontSize: 20, fontWeight: '800', marginBottom: 10 }}>
-              Delete account
+            <Text
+              accessibilityRole="header"
+              style={{ fontSize: 20, fontWeight: '800', marginBottom: 10 }}
+            >
+              {t('settings.deleteAccount.title')}
             </Text>
 
             <Text style={{ color: '#374151', marginBottom: 14 }}>
-              Type DELETE to confirm. Your profile data and photos will be
-              removed.
+              {t('settings.deleteAccount.body')}
             </Text>
 
             <TextInput
               value={typed}
               onChangeText={setTyped}
-              placeholder="Type DELETE"
+              placeholder={t('settings.deleteAccount.placeholder')}
+              accessibilityLabel={t('settings.deleteAccount.placeholder')}
               autoCapitalize="characters"
-              style={{
-                borderWidth: 1,
-                borderColor: '#E5E7EB',
-                borderRadius: 12,
-                padding: 12,
-                marginBottom: 14,
-              }}
+              editable={!busy}
+              style={{ ...inputStyle, marginBottom: 20 }}
             />
 
-            {showReauth && (
-              <View style={{ marginTop: 16, marginBottom: 32 }}>
-                <Text style={{ color: '#374151', marginBottom: 8 }}>
-                  For security, please confirm your password to continue.
+            {hasAnyAction ? (
+              <>
+                <Text style={{ fontSize: 16, fontWeight: '800', marginBottom: 6 }}>
+                  {t('settings.deleteAccount.methodsTitle')}
                 </Text>
-
-                <TextInput
-                  value={pw}
-                  onChangeText={setPw}
-                  placeholder="Password"
-                  secureTextEntry
-                  autoCapitalize="none"
-                  style={{
-                    borderWidth: 1,
-                    borderColor: '#E5E7EB',
-                    borderRadius: 12,
-                    padding: 12,
-                    marginBottom: 12,
-                  }}
-                />
-
-                <TouchableOpacity
-                  onPress={async () => {
-                    try {
-                      setBusy(true);
-                      const { reauthWithPassword } =
-                        await import('../services/reauth');
-                      await reauthWithPassword(pw);
-
-                      // Reintenta borrar
-                      await deleteAccountAndData();
-
-                      Alert.alert('Done', 'Your account has been deleted.');
-                      nav.reset({ index: 0, routes: [{ name: 'Login' }] });
-                    } catch (err: any) {
-                      Alert.alert(
-                        'Error',
-                        err?.message || 'Could not confirm password.',
-                      );
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                  disabled={!pw.trim() || busy}
-                  activeOpacity={0.9}
-                  style={{
-                    backgroundColor: pw.trim() ? '#B91C1C' : '#9CA3AF',
-                    paddingVertical: 14,
-                    borderRadius: 12,
-                    alignItems: 'center',
-                    opacity: busy ? 0.8 : 1,
-                  }}
-                >
-                  {busy ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={{ color: '#fff', fontWeight: '800' }}>
-                      Confirm password and delete
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {!showReauth && usesFacebookReauth && (
+                <Text style={{ color: '#374151', marginBottom: 14 }}>
+                  {t('settings.deleteAccount.methodsBody')}
+                </Text>
+              </>
+            ) : (
               <Text style={{ color: '#374151', marginBottom: 14 }}>
-                {t('settings.deleteAccount.reauthBodyFacebook')}
+                {t('settings.deleteAccount.reauthUnavailable')}
               </Text>
             )}
 
-            {!showReauth && (
-              <TouchableOpacity
-                disabled={!canDelete || busy}
-                onPress={handleDelete}
-                activeOpacity={0.9}
-                style={{
-                  backgroundColor: canDelete ? '#B91C1C' : '#9CA3AF',
-                  paddingVertical: 14,
-                  borderRadius: 12,
-                  alignItems: 'center',
-                  opacity: busy ? 0.8 : 1,
-                }}
-              >
-                {busy ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={{ color: '#fff', fontWeight: '800' }}>
-                    {usesFacebookReauth
-                      ? t('settings.deleteAccount.reauthContinueFacebook')
-                      : 'Delete permanently'}
-                  </Text>
+            {options.methods.map((method) =>
+              method === 'password' ? (
+                <View key={method}>
+                  <TextInput
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder={t('settings.deleteAccount.passwordPlaceholder')}
+                    accessibilityLabel={t(
+                      'settings.deleteAccount.passwordPlaceholder',
+                    )}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!busy}
+                    style={inputStyle}
+                  />
+                  {renderAction(
+                    method,
+                    t('settings.deleteAccount.reauthConfirm'),
+                    canDelete && Boolean(password.trim()),
+                  )}
+                </View>
+              ) : (
+                renderAction(method, t(CONTINUE_LABEL_KEY[method] as any), canDelete)
+              ),
+            )}
+
+            {recentSignInVisible && (
+              <View style={{ marginTop: 4 }}>
+                <Text style={{ color: '#374151', marginBottom: 12 }}>
+                  {t('settings.deleteAccount.linkedInGuidance')}
+                </Text>
+                {renderAction(
+                  'recent_sign_in',
+                  t('settings.deleteAccount.permanently'),
+                  canDelete,
                 )}
-              </TouchableOpacity>
+              </View>
             )}
 
             <TouchableOpacity
               onPress={() => nav.goBack()}
+              disabled={busy}
+              accessibilityRole="button"
               style={{ marginTop: 14, alignItems: 'center' }}
             >
-              <Text style={{ color: '#3B5A85', fontWeight: '700' }}>Back</Text>
+              <Text style={{ color: '#3B5A85', fontWeight: '700' }}>
+                {t('common.actions.back')}
+              </Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
