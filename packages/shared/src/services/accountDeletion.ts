@@ -46,6 +46,8 @@ export type AccountDeletionRuntime = {
 export type AccountDeletionRequest = {
   /** Omit to use the current session when it is recent enough. */
   reauth?: { method: DeletionReauthMethod; password?: string };
+  /** With `reauth`: skip it while the current session is still recent. */
+  reauthOnlyIfStale?: boolean;
 };
 
 export type AccountDeletionFailure =
@@ -81,6 +83,16 @@ export function isAuthTimeRecentForDeletion(
     ageSeconds >= -AUTH_TIME_FUTURE_SKEW_SECONDS &&
     ageSeconds <= DELETE_MY_ACCOUNT_CLIENT_FRESH_AUTH_SECONDS
   );
+}
+
+async function isCurrentSessionRecent(runtime: AccountDeletionRuntime): Promise<boolean> {
+  let authTimeMs: number | null = null;
+  try {
+    authTimeMs = await runtime.getAuthTimeMs();
+  } catch {
+    authTimeMs = null;
+  }
+  return isAuthTimeRecentForDeletion(authTimeMs, (runtime.nowMs ?? Date.now)());
 }
 
 function failedFromDeleteError(err: DeleteMyAccountError): AccountDeletionResult {
@@ -119,7 +131,10 @@ export async function deleteAccountWithBackend(
       return failedFromDeleteError(new DeleteMyAccountError('UNAUTHENTICATED', false));
     }
 
-    if (request.reauth) {
+    const checkRecent = !request.reauth || request.reauthOnlyIfStale === true;
+    const recent = checkRecent ? await isCurrentSessionRecent(runtime) : false;
+
+    if (request.reauth && !recent) {
       try {
         await runtime.reauthenticate({ ...request.reauth, expectedUid: uid });
       } catch (err) {
@@ -131,17 +146,8 @@ export async function deleteAccountWithBackend(
           new AccountDeletionReauthError('REAUTH_FAILED', 'settings.deleteAccount.reauthFailed'),
         );
       }
-    } else {
-      let authTimeMs: number | null = null;
-      try {
-        authTimeMs = await runtime.getAuthTimeMs();
-      } catch {
-        authTimeMs = null;
-      }
-      const nowMs = (runtime.nowMs ?? Date.now)();
-      if (!isAuthTimeRecentForDeletion(authTimeMs, nowMs)) {
-        return { status: 'reauth_required' };
-      }
+    } else if (!request.reauth && !recent) {
+      return { status: 'reauth_required' };
     }
 
     if (runtime.getCurrentUid() !== uid) {

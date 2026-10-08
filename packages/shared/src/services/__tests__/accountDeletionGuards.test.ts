@@ -16,6 +16,7 @@ const DELETION_FLOW_FILES = [
   'services/accountDeletion.ts',
   'services/accountDeletionSession.ts',
   'services/accountDeletionErrorPresentation.ts',
+  'services/deleteAccountPresentation.ts',
   'services/deleteMyAccount/contract.ts',
   'services/deleteMyAccount/deleteMyAccountAdapter.ts',
   'services/deleteMyAccount/deleteMyAccountCallableHttp.ts',
@@ -98,17 +99,31 @@ describe('Delete Account never starts LinkedIn or creates an identity', () => {
     const screen = read('screens/DeleteAccountScreen.tsx');
     assert.doesNotMatch(screen, /linkedin:\s*'settings\.deleteAccount/);
     assert.doesNotMatch(screen, /reauth(Body|Continue|Switch)LinkedIn/);
+    const presentation = read('services/deleteAccountPresentation.ts');
+    assert.doesNotMatch(presentation, /linkedin:\s*'settings\.deleteAccount/);
+    assert.doesNotMatch(presentation, /methodLinkedIn|LinkedIn and delete/);
     const method = read('services/deletionReauth/deletionReauthMethod.ts');
     assert.doesNotMatch(method, /kind:\s*'linkedin'/);
   });
 });
 
+const DEV_TRACE_FILE = 'services/deleteAccountPresentation.ts';
+
 describe('Delete Account never logs tokens or PII', () => {
-  for (const rel of DELETION_FLOW_FILES) {
+  for (const rel of DELETION_FLOW_FILES.filter((f) => f !== DEV_TRACE_FILE)) {
     it(`${rel}: no console output`, () => {
       assert.doesNotMatch(read(rel), /console\.(log|warn|error|info|debug)/);
     });
   }
+
+  it(`${DEV_TRACE_FILE}: only a development trace of the boolean summary`, () => {
+    const src = read(DEV_TRACE_FILE);
+    assert.equal(src.match(/console\.(log|warn|error|info|debug)/g)?.length, 1);
+    const trace = src.slice(src.indexOf('export function traceDeletionReauthProviders'));
+    assert.match(trace, /if \(typeof __DEV__ === 'undefined' \|\| !__DEV__\) return;/);
+    assert.match(trace, /console\.log\('\[deleteAccountMethods\]', JSON\.stringify\(summary\)\);/);
+    assert.doesNotMatch(src, /\.email\b|displayName|getIdToken/);
+  });
 
   it('alerts show translated keys only, never Firebase/backend messages', () => {
     const screen = read('screens/DeleteAccountScreen.tsx');
@@ -144,13 +159,15 @@ describe('Delete Account copy (EN / ES)', () => {
     }
   });
 
-  it('LinkedIn guidance and method-switch copy exists in both languages', () => {
+  it('LinkedIn guidance and method selector copy exists in both languages', () => {
     for (const key of [
       'linkedInSignInAgain',
-      'reauthSwitchPassword',
-      'reauthSwitchGoogle',
-      'reauthSwitchApple',
-      'reauthSwitchFacebook',
+      'linkedInRecentBody',
+      'methodsTitle',
+      'methodPassword',
+      'methodGoogle',
+      'methodApple',
+      'methodFacebook',
     ]) {
       assert.ok(en[key]?.trim(), `EN ${key}`);
       assert.ok(esCopy[key]?.trim(), `ES ${key}`);

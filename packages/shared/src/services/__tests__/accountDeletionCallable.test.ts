@@ -156,6 +156,70 @@ describe('deleteAccountWithBackend — backend is the only deletion authority', 
     });
   }
 
+  describe('selected method with reauthOnlyIfStale', () => {
+    const google = { kind: 'google' as const, linkedProviderUserId: 'g-sub' };
+
+    it('recent session: calls deleteMyAccount directly without opening the provider', async () => {
+      const { runtime, recorder } = createRuntime({
+        reauthenticate: async () => {
+          throw new Error('no provider while the session is recent');
+        },
+      });
+      const result = await deleteAccountWithBackend(
+        { reauth: { method: google }, reauthOnlyIfStale: true },
+        runtime,
+      );
+      assert.equal(result.status, 'deleted');
+      assert.deepEqual(recorder.events, [`callable:${UID}`]);
+    });
+
+    it('stale session: reauthenticates only with the selected method, then the callable', async () => {
+      const seen: string[] = [];
+      const { runtime, recorder } = createRuntime({
+        getAuthTimeMs: async () => NOW - 3_600_000,
+        reauthenticate: async (input) => {
+          seen.push(input.method.kind);
+          recorder.events.push('reauth');
+        },
+      });
+      const result = await deleteAccountWithBackend(
+        { reauth: { method: google }, reauthOnlyIfStale: true },
+        runtime,
+      );
+      assert.equal(result.status, 'deleted');
+      assert.deepEqual(seen, ['google']);
+      assert.deepEqual(recorder.events, ['reauth', `callable:${UID}`]);
+    });
+
+    it('stale session + cancelled provider: nothing deleted, retry allowed', async () => {
+      const { runtime, recorder } = createRuntime({
+        getAuthTimeMs: async () => NOW - 3_600_000,
+        reauthenticate: async () => {
+          throw new AccountDeletionReauthError('CANCELLED', 'settings.deleteAccount.reauthCancelled');
+        },
+      });
+      const request = { reauth: { method: google }, reauthOnlyIfStale: true };
+      assert.deepEqual(await deleteAccountWithBackend(request, runtime), { status: 'cancelled' });
+      assert.equal(recorder.callableCalls, 0);
+      assert.equal(isAccountDeletionSessionActive(), false);
+    });
+
+    it('after a backend RECENT_LOGIN_REQUIRED the screen forces reauth even if the clock looks recent', async () => {
+      const seen: string[] = [];
+      const { runtime } = createRuntime({
+        reauthenticate: async (input) => {
+          seen.push(input.method.kind);
+        },
+      });
+      const result = await deleteAccountWithBackend(
+        { reauth: { method: google }, reauthOnlyIfStale: false },
+        runtime,
+      );
+      assert.equal(result.status, 'deleted');
+      assert.deepEqual(seen, ['google']);
+    });
+  });
+
   describe('LinkedIn — recent session or sign-in-again guidance, never inline OAuth', () => {
     const LI_UID = 'li_abc';
     const noProviderDeps = () =>

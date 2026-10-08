@@ -1,12 +1,12 @@
 /**
  * Delete account — Nearsy 2.0 presentation.
  * The `deleteMyAccount` callable deletes the account; this screen only proves
- * a recent sign-in (current session, or password / Google / Apple / Facebook
- * reauthentication) and clears local state after the backend confirms.
- * LinkedIn is never started here: a stale LinkedIn session gets guidance to
- * sign in again.
+ * a recent sign-in (current session, or the password / Google / Apple /
+ * Facebook method the person selects) and clears local state after the
+ * backend confirms. LinkedIn is never started here: a stale LinkedIn session
+ * gets guidance to sign in again.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -38,11 +38,20 @@ import {
 } from '../services/accountDeletionSession';
 import { resolveDeletionFailureMessageKey } from '../services/accountDeletionErrorPresentation';
 import {
-  resolveDeletionReauthMethod,
-  resolveDeletionReauthMethods,
-  type AvailableDeletionReauthMethod,
-  type DeletionReauthMethod,
-} from '../services/deletionReauth';
+  DELETE_METHOD_ACTION_KEY,
+  DELETE_METHOD_LABEL_KEY,
+  buildDeleteAccountOptions,
+  buildDeletionRequest,
+  canSubmitDeletion,
+  isDeleteConfirmationText,
+  pickSelectedMethod,
+  resolveSessionGuidanceKey,
+  summarizeDeletionReauthProviders,
+  traceDeletionReauthProviders,
+  type DeleteAccountMethodKind,
+  type DeleteAccountOptions,
+} from '../services/deleteAccountPresentation';
+import type { AvailableDeletionReauthMethod } from '../services/deletionReauth';
 import { firebaseAuth } from '../config/firebaseConfig';
 import { useTranslation } from '../i18n';
 import {
@@ -54,31 +63,23 @@ import {
   useAppTheme,
 } from '../theme';
 
-type ReauthOptions = {
-  primary: DeletionReauthMethod;
-  all: AvailableDeletionReauthMethod[];
-};
-
-function resolveReauthOptionsFromCurrentUser(): ReauthOptions {
+function readDeleteAccountOptions(): DeleteAccountOptions {
   const user = firebaseAuth.currentUser;
-  const providerData = user?.providerData ?? [];
-  return {
-    primary: resolveDeletionReauthMethod(providerData, { uid: user?.uid ?? null }),
-    all: resolveDeletionReauthMethods(providerData),
-  };
+  return buildDeleteAccountOptions(user?.providerData ?? [], user?.uid ?? null);
 }
 
-const CONTINUE_LABEL_KEY: Record<Exclude<AvailableDeletionReauthMethod['kind'], 'password'>, string> = {
-  google: 'settings.deleteAccount.reauthContinueGoogle',
-  apple: 'settings.deleteAccount.reauthContinueApple',
-  facebook: 'settings.deleteAccount.reauthContinueFacebook',
-};
+function traceCurrentUserMethods(): void {
+  const user = firebaseAuth.currentUser;
+  traceDeletionReauthProviders(
+    summarizeDeletionReauthProviders(user?.providerData ?? [], user?.uid ?? null),
+  );
+}
 
-const SWITCH_LABEL_KEY: Record<AvailableDeletionReauthMethod['kind'], string> = {
-  password: 'settings.deleteAccount.reauthSwitchPassword',
-  google: 'settings.deleteAccount.reauthSwitchGoogle',
-  apple: 'settings.deleteAccount.reauthSwitchApple',
-  facebook: 'settings.deleteAccount.reauthSwitchFacebook',
+const METHOD_ICON: Record<DeleteAccountMethodKind, React.ComponentProps<typeof Ionicons>['name']> = {
+  password: 'key-outline',
+  google: 'logo-google',
+  apple: 'logo-apple',
+  facebook: 'logo-facebook',
 };
 
 export default function DeleteAccountScreen() {
@@ -88,19 +89,20 @@ export default function DeleteAccountScreen() {
   const { t } = useTranslation();
 
   const [pw, setPw] = useState('');
-  const [showReauth, setShowReauth] = useState(false);
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const mountedRef = useRef(true);
-  const [reauthOptions, setReauthOptions] = useState<ReauthOptions>(() =>
-    resolveReauthOptionsFromCurrentUser(),
+  /** Set once the backend reports a stale session: skip the local recency shortcut. */
+  const forceReauthRef = useRef(false);
+  const [options, setOptions] = useState<DeleteAccountOptions>(readDeleteAccountOptions);
+  const [selectedMethod, setSelectedMethod] = useState<AvailableDeletionReauthMethod | null>(
+    () => pickSelectedMethod(options, null),
   );
-  const [reauthMethod, setReauthMethod] = useState<DeletionReauthMethod>(
-    () => reauthOptions.primary,
-  );
+  const [sessionGuidanceKey, setSessionGuidanceKey] = useState<string | null>(null);
 
-  const canDelete = typed.trim().toUpperCase() === 'DELETE';
+  const canDelete = isDeleteConfirmationText(typed);
+  const canSubmit = canSubmitDeletion({ typed, method: selectedMethod, password: pw });
 
   useEffect(() => {
     mountedRef.current = true;
@@ -111,47 +113,31 @@ export default function DeleteAccountScreen() {
     };
   }, []);
 
+  const applyOptions = (next: DeleteAccountOptions) => {
+    setOptions(next);
+    setSelectedMethod((current) => pickSelectedMethod(next, current?.kind ?? null));
+  };
+
   useEffect(() => {
     // Only bounce if the screen opens without an authenticated user.
     // After a successful delete, AppNavigator remounts the guest stack;
     // do not goBack() into a stale authenticated More stack.
-    if (!firebaseAuth.currentUser) {
+    const user = firebaseAuth.currentUser;
+    if (!user) {
       return;
     }
-    const options = resolveReauthOptionsFromCurrentUser();
-    setReauthOptions(options);
-    setReauthMethod(options.primary);
+    applyOptions(readDeleteAccountOptions());
+    traceCurrentUserMethods();
+    // Best effort: refresh providerData linked from another device.
+    user
+      .reload()
+      .then(() => {
+        if (!mountedRef.current || firebaseAuth.currentUser?.uid !== user.uid) return;
+        applyOptions(readDeleteAccountOptions());
+        traceCurrentUserMethods();
+      })
+      .catch(() => undefined);
   }, []);
-
-  const reauthBodyKey = useMemo(() => {
-    if (reauthMethod.kind === 'password') {
-      return 'settings.deleteAccount.reauthBody';
-    }
-    if (reauthMethod.kind === 'google') {
-      return 'settings.deleteAccount.reauthBodyGoogle';
-    }
-    if (reauthMethod.kind === 'apple') {
-      return 'settings.deleteAccount.reauthBodyApple';
-    }
-    if (reauthMethod.kind === 'facebook') {
-      return 'settings.deleteAccount.reauthBodyFacebook';
-    }
-    if (reauthMethod.reason === 'linkedin_sign_in_again') {
-      return 'settings.deleteAccount.linkedInSignInAgain';
-    }
-    return 'settings.deleteAccount.reauthUnavailable';
-  }, [reauthMethod]);
-
-  const openReauth = () => {
-    const options = resolveReauthOptionsFromCurrentUser();
-    setReauthOptions(options);
-    setReauthMethod((current) =>
-      current.kind !== 'unavailable' && options.all.some((m) => m.kind === current.kind)
-        ? current
-        : options.primary,
-    );
-    setShowReauth(true);
-  };
 
   const runSuccessfulDeletionExit = async (deletedUid: string) => {
     let social: typeof import('../authentication/social') | null = null;
@@ -206,24 +192,34 @@ export default function DeleteAccountScreen() {
         return;
       }
       if (result.status === 'busy' || result.status === 'cancelled') return;
+      const current = readDeleteAccountOptions();
       if (result.status === 'reauth_required') {
-        openReauth();
+        const guidanceKey = resolveSessionGuidanceKey(current);
+        setSessionGuidanceKey(guidanceKey);
+        Alert.alert(t('common.error'), t(guidanceKey));
         return;
       }
-      if (result.reauthRequired) openReauth();
+      if (result.reauthRequired) {
+        forceReauthRef.current = true;
+        if (current.recentSessionOnly) setSessionGuidanceKey(resolveSessionGuidanceKey(current));
+      }
       const messageKey = resolveDeletionFailureMessageKey(
         result,
-        resolveReauthOptionsFromCurrentUser().primary,
+        current.primary,
       );
       Alert.alert(t('common.error'), t(messageKey));
     } finally {
       busyRef.current = false;
-      if (mountedRef.current) setBusy(false);
+      if (mountedRef.current) {
+        setBusy(false);
+        setPw('');
+      }
     }
   };
 
   const handleDelete = () => {
-    if (busyRef.current) return;
+    if (busyRef.current || !canSubmit) return;
+    const request = buildDeletionRequest(selectedMethod, pw, forceReauthRef.current);
 
     Alert.alert(
       t('settings.deleteAccount.alertTitle'),
@@ -237,141 +233,86 @@ export default function DeleteAccountScreen() {
           text: t('settings.deleteAccount.alertConfirm'),
           style: 'destructive',
           onPress: () => {
-            void runDeletion({});
+            void runDeletion(request);
           },
         },
       ],
     );
   };
 
-  const handleReauthAndDelete = async () => {
-    if (busyRef.current) return;
-    if (reauthMethod.kind === 'unavailable') {
-      Alert.alert(t('common.error'), t(reauthBodyKey));
-      return;
-    }
-    if (reauthMethod.kind === 'password' && !pw.trim()) {
-      return;
-    }
-    await runDeletion({ reauth: { method: reauthMethod, password: pw } });
+  /** Changing the selection never opens a provider or starts a deletion. */
+  const selectMethod = (method: AvailableDeletionReauthMethod) => {
+    if (busy || method.kind === selectedMethod?.kind) return;
+    setPw('');
+    setSelectedMethod(method);
   };
 
-  const renderSwitchMethods = () => {
-    const others = reauthOptions.all.filter((m) => m.kind !== reauthMethod.kind);
-    if (others.length === 0) return null;
-    return others.map((method) => (
-      <Pressable
-        key={method.kind}
-        onPress={() => {
-          setPw('');
-          setReauthMethod(method);
-        }}
-        disabled={busy}
-        accessibilityRole="button"
-        accessibilityLabel={t(SWITCH_LABEL_KEY[method.kind])}
-        style={styles.switchLink}
-      >
-        <Text style={{ color: palette.primary, fontWeight: '700' }}>
-          {t(SWITCH_LABEL_KEY[method.kind])}
-        </Text>
-      </Pressable>
-    ));
+  const inputColors = {
+    color: palette.textPrimary,
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
   };
 
-  const renderReauthActions = () => {
-    if (reauthMethod.kind === 'unavailable') {
-      // Retry only succeeds once the user signed in again themselves.
-      return (
-        <Pressable
-          onPress={() => {
-            void runDeletion({});
-          }}
-          disabled={busy}
-          accessibilityRole="button"
-          accessibilityState={{ disabled: busy, busy }}
-          accessibilityLabel={t('settings.deleteAccount.permanently')}
-          style={({ pressed }) => [
-            styles.dangerBtn,
-            {
-              backgroundColor: palette.danger,
-              opacity: busy || pressed ? 0.85 : 1,
-            },
-          ]}
-        >
-          {busy ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.dangerBtnText}>
-              {t('settings.deleteAccount.permanently')}
-            </Text>
-          )}
-        </Pressable>
-      );
-    }
-
-    if (reauthMethod.kind === 'password') {
-      return (
-        <>
-          <TextInput
-            value={pw}
-            onChangeText={setPw}
-            placeholder={t('settings.deleteAccount.passwordPlaceholder')}
-            placeholderTextColor={palette.placeholder}
-            secureTextEntry
-            autoCapitalize="none"
-            accessibilityLabel={t(
-              'settings.deleteAccount.passwordPlaceholder',
-            )}
-            style={[
-              styles.input,
-              {
-                color: palette.textPrimary,
-                backgroundColor: palette.panel,
-                borderColor: palette.border,
-              },
-            ]}
-          />
+  const renderMethodSelector = () => (
+    <View
+      accessibilityRole="radiogroup"
+      accessibilityLabel={t('settings.deleteAccount.methodsTitle')}
+      style={[
+        styles.methodList,
+        { backgroundColor: palette.panel, borderColor: palette.border },
+      ]}
+    >
+      {options.methods.map((method, index) => {
+        const selected = method.kind === selectedMethod?.kind;
+        return (
           <Pressable
-            onPress={handleReauthAndDelete}
-            disabled={!pw.trim() || busy}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: !pw.trim() || busy, busy }}
-            accessibilityLabel={t('settings.deleteAccount.reauthConfirm')}
+            key={method.kind}
+            onPress={() => selectMethod(method)}
+            disabled={busy}
+            accessibilityRole="radio"
+            accessibilityLabel={t(DELETE_METHOD_LABEL_KEY[method.kind])}
+            accessibilityState={{ checked: selected, disabled: busy }}
             style={({ pressed }) => [
-              styles.dangerBtn,
-              {
-                backgroundColor: pw.trim()
-                  ? palette.danger
-                  : palette.borderStrong,
-                opacity: busy || pressed ? 0.85 : 1,
+              styles.methodRow,
+              index > 0 && {
+                borderTopWidth: StyleSheet.hairlineWidth,
+                borderTopColor: palette.border,
               },
+              pressed && { opacity: 0.7 },
             ]}
           >
-            {busy ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.dangerBtnText}>
-                {t('settings.deleteAccount.reauthConfirm')}
-              </Text>
-            )}
+            <Ionicons
+              name={METHOD_ICON[method.kind]}
+              size={20}
+              color={palette.textPrimary}
+            />
+            <Text style={[styles.methodLabel, { color: palette.textPrimary }]}>
+              {t(DELETE_METHOD_LABEL_KEY[method.kind])}
+            </Text>
+            <Ionicons
+              name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+              size={22}
+              color={selected ? palette.primary : palette.textMuted}
+            />
           </Pressable>
-        </>
-      );
-    }
+        );
+      })}
+    </View>
+  );
 
-    const labelKey = CONTINUE_LABEL_KEY[reauthMethod.kind];
-
+  const renderDangerAction = (label: string, enabled: boolean) => {
+    const active = enabled && !busy;
     return (
       <Pressable
-        onPress={handleReauthAndDelete}
-        disabled={busy}
+        onPress={handleDelete}
+        disabled={!active}
         accessibilityRole="button"
-        accessibilityState={{ disabled: busy, busy }}
-        accessibilityLabel={t(labelKey)}
+        accessibilityLabel={label}
+        accessibilityState={{ disabled: !active, busy }}
         style={({ pressed }) => [
           styles.dangerBtn,
           {
-            backgroundColor: palette.danger,
+            backgroundColor: enabled ? palette.danger : palette.borderStrong,
             opacity: busy || pressed ? 0.85 : 1,
           },
         ]}
@@ -379,9 +320,37 @@ export default function DeleteAccountScreen() {
         {busy ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.dangerBtnText}>{t(labelKey)}</Text>
+          <Text style={styles.dangerBtnText}>{label}</Text>
         )}
       </Pressable>
+    );
+  };
+
+  const renderSessionOnlySection = () => {
+    const noticeKey =
+      sessionGuidanceKey ??
+      (options.primary.kind === 'unavailable' && options.primary.reason === 'linkedin_sign_in_again'
+        ? 'settings.deleteAccount.linkedInRecentBody'
+        : null);
+    return (
+      <View style={styles.section}>
+        {noticeKey ? (
+          <View
+            accessibilityLiveRegion="polite"
+            style={[
+              styles.notice,
+              sessionGuidanceKey
+                ? { backgroundColor: palette.dangerBg, borderColor: palette.danger }
+                : { backgroundColor: palette.panel, borderColor: palette.border },
+            ]}
+          >
+            <Text style={[styles.noticeText, { color: palette.textPrimary }]}>
+              {t(noticeKey)}
+            </Text>
+          </View>
+        ) : null}
+        {renderDangerAction(t('settings.deleteAccount.permanently'), canDelete)}
+      </View>
     );
   };
 
@@ -403,6 +372,7 @@ export default function DeleteAccountScreen() {
             accessibilityRole="button"
             accessibilityLabel={t('common.back')}
             onPress={() => nav.goBack()}
+            disabled={busy}
             style={[
               styles.backBtn,
               {
@@ -438,54 +408,47 @@ export default function DeleteAccountScreen() {
             placeholder={t('settings.deleteAccount.placeholder')}
             placeholderTextColor={palette.placeholder}
             autoCapitalize="characters"
+            autoCorrect={false}
+            editable={!busy}
             accessibilityLabel={t('settings.deleteAccount.placeholder')}
-            style={[
-              styles.input,
-              {
-                color: palette.textPrimary,
-                backgroundColor: palette.panel,
-                borderColor: palette.border,
-              },
-            ]}
+            style={[styles.input, inputColors]}
           />
 
-          {showReauth ? (
-            <View style={styles.reauthBlock}>
-              <Text style={[styles.body, { color: palette.textSecondary }]}>
-                {t(reauthBodyKey)}
+          {selectedMethod ? (
+            <View style={styles.section}>
+              <Text
+                accessibilityRole="header"
+                style={[styles.sectionTitle, { color: palette.textPrimary }]}
+              >
+                {t('settings.deleteAccount.methodsTitle')}
               </Text>
-              {renderReauthActions()}
-              {renderSwitchMethods()}
+              <Text style={[styles.body, { color: palette.textSecondary }]}>
+                {t('settings.deleteAccount.methodsBody')}
+              </Text>
+              {renderMethodSelector()}
+              {selectedMethod.kind === 'password' ? (
+                <TextInput
+                  value={pw}
+                  onChangeText={setPw}
+                  placeholder={t('settings.deleteAccount.passwordPlaceholder')}
+                  placeholderTextColor={palette.placeholder}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!busy}
+                  accessibilityLabel={t('settings.deleteAccount.passwordPlaceholder')}
+                  style={[styles.input, inputColors]}
+                />
+              ) : null}
+              {renderDangerAction(t(DELETE_METHOD_ACTION_KEY[selectedMethod.kind]), canSubmit)}
             </View>
           ) : (
-            <Pressable
-              disabled={!canDelete || busy}
-              onPress={handleDelete}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: !canDelete || busy, busy }}
-              accessibilityLabel={t('settings.deleteAccount.permanently')}
-              style={({ pressed }) => [
-                styles.dangerBtn,
-                {
-                  backgroundColor: canDelete
-                    ? palette.danger
-                    : palette.borderStrong,
-                  opacity: busy || pressed ? 0.85 : 1,
-                },
-              ]}
-            >
-              {busy ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.dangerBtnText}>
-                  {t('settings.deleteAccount.permanently')}
-                </Text>
-              )}
-            </Pressable>
+            renderSessionOnlySection()
           )}
 
           <Pressable
             onPress={() => nav.goBack()}
+            disabled={busy}
             accessibilityRole="button"
             accessibilityLabel={t('common.back')}
             style={styles.backLink}
@@ -535,26 +498,57 @@ const styles = StyleSheet.create({
     fontSize: fontSize.base,
     minHeight: 48,
   },
-  reauthBlock: {
+  section: {
     marginTop: spacing.sm,
-    marginBottom: spacing.lg,
+  },
+  sectionTitle: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.extrabold,
+    marginBottom: spacing.xs,
+  },
+  methodList: {
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+    overflow: 'hidden',
+  },
+  methodRow: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  methodLabel: {
+    flex: 1,
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.semibold,
+  },
+  notice: {
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  noticeText: {
+    fontSize: fontSize.base,
+    lineHeight: fontSize.base * 1.45,
   },
   dangerBtn: {
     minHeight: 50,
     borderRadius: radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
   dangerBtnText: {
     color: '#fff',
     fontWeight: fontWeight.extrabold,
     fontSize: fontSize.md,
-  },
-  switchLink: {
-    marginTop: spacing.sm,
-    alignItems: 'center',
-    minHeight: 44,
-    justifyContent: 'center',
+    textAlign: 'center',
   },
   backLink: {
     marginTop: spacing.lg,

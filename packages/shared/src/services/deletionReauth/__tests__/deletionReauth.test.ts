@@ -404,12 +404,13 @@ describe('reauthenticateForAccountDeletion', () => {
 
     const screen = readFileSync(join(here, '..', '..', '..', 'screens', 'DeleteAccountScreen.tsx'), 'utf8');
     const handler = screen.slice(
-      screen.indexOf('const handleReauthAndDelete'),
-      screen.indexOf('const renderSwitchMethods'),
+      screen.indexOf('const handleDelete'),
+      screen.indexOf('const selectMethod'),
     );
-    assert.match(handler, /await runDeletion\(\{ reauth: \{ method: reauthMethod, password: pw \} \}\);/);
-    assert.match(screen, /settings\.deleteAccount\.reauthContinueFacebook/);
-    assert.match(screen, /settings\.deleteAccount\.reauthBodyFacebook/);
+    assert.match(handler, /const request = buildDeletionRequest\(selectedMethod, pw, forceReauthRef\.current\);/);
+    assert.match(handler, /style: 'destructive',\s*onPress: \(\) => \{\s*void runDeletion\(request\);/);
+    const presentation = readFileSync(join(here, '..', '..', 'deleteAccountPresentation.ts'), 'utf8');
+    assert.match(presentation, /facebook: 'settings\.deleteAccount\.reauthContinueFacebook'/);
   });
 
   it('expectedUid different from the signed-in user aborts before any provider UI', async () => {
