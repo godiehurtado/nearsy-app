@@ -25,9 +25,12 @@ import {
 
 type Props = {
   label: string;
+  /** Form-style caps label; the accessible name stays in natural case. */
+  uppercaseLabel?: boolean;
   placeholder: string;
   searchPlaceholder: string;
   emptyLabel: string;
+  clearLabel: string;
   value: string | null;
   locale: string;
   editable?: boolean;
@@ -38,9 +41,11 @@ const BLUR_HIDE_MS = 180;
 
 export function CountrySelectField({
   label,
+  uppercaseLabel = false,
   placeholder,
   searchPlaceholder,
   emptyLabel,
+  clearLabel,
   value,
   locale,
   editable = true,
@@ -94,7 +99,14 @@ export function CountrySelectField({
 
   return (
     <View style={styles.wrap}>
-      <Text style={[styles.label, { color: palette.textSecondary }]}>
+      <Text
+        accessibilityLabel={label}
+        style={
+          uppercaseLabel
+            ? [styles.labelCaps, { color: palette.textMuted }]
+            : [styles.label, { color: palette.textSecondary }]
+        }
+      >
         {label}
       </Text>
       {selected ? (
@@ -107,10 +119,17 @@ export function CountrySelectField({
             },
           ]}
         >
-          <Text style={styles.flag}>{selected.flag}</Text>
+          <Text
+            style={styles.flag}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          >
+            {selected.flag}
+          </Text>
           <Text
             style={[styles.selectedLabel, { color: palette.textPrimary }]}
             numberOfLines={1}
+            accessibilityLabel={`${label}: ${selected.label}`}
           >
             {selected.label}
           </Text>
@@ -119,7 +138,7 @@ export function CountrySelectField({
               onPress={() => onChange(null)}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel={emptyLabel}
+              accessibilityLabel={clearLabel}
             >
               <Ionicons name="close-circle" size={20} color={palette.textMuted} />
             </Pressable>
@@ -133,6 +152,8 @@ export function CountrySelectField({
             onChangeText={setQuery}
             placeholder={searchPlaceholder || placeholder}
             placeholderTextColor={palette.textMuted}
+            accessibilityLabel={label}
+            accessibilityHint={searchPlaceholder || placeholder}
             editable={editable}
             onFocus={() => {
               clearBlurHideTimer();
@@ -182,6 +203,7 @@ export function CountrySelectField({
                       onPress={() => handleSelect(entry)}
                       style={styles.resultRow}
                       accessibilityRole="button"
+                      accessibilityLabel={entry.label}
                     >
                       <Text style={styles.flag}>{entry.flag}</Text>
                       <Text
@@ -213,6 +235,13 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontWeight: fontWeight.semibold,
     marginBottom: spacing.xs,
+  },
+  labelCaps: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    marginBottom: 7,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   input: {
     borderWidth: 1,

@@ -250,13 +250,9 @@ export const es: TranslationResources = {
       missing: 'No hay correo disponible',
     },
     phone: {
-      title: 'Número de teléfono',
-      placeholder: 'Número de teléfono (opcional)',
-      hint: 'Opcional. Se usa para contacto dentro de Nearsy y no es público.',
-      invalid:
-        'Introduce un número móvil válido con el código de tu país.',
-      selectCountry: 'Selecciona el código de país',
-      saved: 'Número de teléfono actualizado',
+      title: 'Número móvil',
+      hint: 'Obligatorio para proteger tu cuenta. Tu número nunca se muestra en tu perfil.',
+      notVerified: 'No verificado',
     },
     birthDate: {
       title: 'Fecha de nacimiento',
@@ -390,14 +386,11 @@ export const es: TranslationResources = {
         'Por seguridad, confirma tu contraseña para continuar.',
       reauthBodyGoogle:
         'Por seguridad, continúa con Google para confirmar tu identidad antes de eliminar esta cuenta.',
-      reauthBodyApple:
-        'Por seguridad, continúa con Apple para confirmar tu identidad antes de eliminar esta cuenta.',
       reauthBodyFacebook:
         'Por seguridad, continúa con Facebook para confirmar tu identidad antes de eliminar esta cuenta.',
       passwordPlaceholder: 'Contraseña',
       reauthConfirm: 'Confirmar contraseña y eliminar',
       reauthContinueGoogle: 'Continuar con Google y eliminar',
-      reauthContinueApple: 'Continuar con Apple y eliminar',
       reauthContinueFacebook: 'Continuar con Facebook y eliminar',
       reauthError: 'No se pudo confirmar la contraseña.',
       reauthFailed:

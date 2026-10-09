@@ -63,6 +63,17 @@ export function DiscoveryContextCard({
     return null;
   }
 
+  const fromLabel = birth
+    ? t('discoveryProfile.context.fromCountry', {
+        country: countryDisplayName(birth, resolvedLocale),
+      })
+    : '';
+  const livesInLabel = residence
+    ? t('discoveryProfile.context.livesInCountry', {
+        country: countryDisplayName(residence, resolvedLocale),
+      })
+    : '';
+
   return (
     <View
       style={[
@@ -76,11 +87,11 @@ export function DiscoveryContextCard({
       accessibilityRole="summary"
     >
       {birth ? (
-        <Text style={[styles.rowText, { color: palette.textPrimary }]}>
-          {countryFlagEmoji(birth)}{' '}
-          {t('discoveryProfile.context.fromCountry', {
-            country: countryDisplayName(birth, resolvedLocale),
-          })}
+        <Text
+          style={[styles.rowText, { color: palette.textPrimary }]}
+          accessibilityLabel={fromLabel}
+        >
+          {countryFlagEmoji(birth)} {fromLabel}
         </Text>
       ) : null}
       {residence ? (
@@ -92,11 +103,9 @@ export function DiscoveryContextCard({
               marginTop: birth ? spacing.sm : 0,
             },
           ]}
+          accessibilityLabel={livesInLabel}
         >
-          {countryFlagEmoji(residence)}{' '}
-          {t('discoveryProfile.context.livesInCountry', {
-            country: countryDisplayName(residence, resolvedLocale),
-          })}
+          {countryFlagEmoji(residence)} {livesInLabel}
         </Text>
       ) : null}
       {languageLabels.length > 0 ? (

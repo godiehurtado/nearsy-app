@@ -8,6 +8,10 @@ type Props = {
   icon: React.ComponentProps<typeof Ionicons>['name'];
   title: string;
   value?: string;
+  /** Value uses as many lines as it needs instead of the default 2-line cap. */
+  wrapValue?: boolean;
+  /** Supporting text under the value; wraps freely for large fonts. */
+  description?: string;
   onPress?: () => void;
   showChevron?: boolean;
   accessibilityHint?: string;
@@ -18,6 +22,8 @@ export function SettingsRow({
   icon,
   title,
   value,
+  wrapValue = false,
+  description,
   onPress,
   showChevron = !!onPress,
   accessibilityHint,
@@ -25,6 +31,7 @@ export function SettingsRow({
 }: Props) {
   const { palette } = useAppTheme();
   const interactive = typeof onPress === 'function';
+  const a11yLabel = [title, value, description].filter(Boolean).join(', ');
 
   const content = (
     <>
@@ -43,9 +50,14 @@ export function SettingsRow({
         {value ? (
           <Text
             style={[styles.value, { color: palette.textSecondary }]}
-            numberOfLines={2}
+            numberOfLines={wrapValue ? undefined : 2}
           >
             {value}
+          </Text>
+        ) : null}
+        {description ? (
+          <Text style={[styles.description, { color: palette.textMuted }]}>
+            {description}
           </Text>
         ) : null}
       </View>
@@ -63,7 +75,7 @@ export function SettingsRow({
     return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={value ? `${title}, ${value}` : title}
+        accessibilityLabel={a11yLabel}
         accessibilityHint={accessibilityHint}
         onPress={onPress}
         style={({ pressed }) => [
@@ -84,7 +96,7 @@ export function SettingsRow({
     <View
       accessible
       accessibilityRole="text"
-      accessibilityLabel={value ? `${title}, ${value}` : title}
+      accessibilityLabel={a11yLabel}
       style={[
         styles.row,
         !isLast && {
@@ -127,5 +139,10 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontSize: fontSize.sm,
     fontWeight: fontWeight.medium,
+  },
+  description: {
+    marginTop: spacing.xs,
+    fontSize: fontSize.sm,
+    lineHeight: fontSize.sm * 1.45,
   },
 });

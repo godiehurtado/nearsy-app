@@ -202,12 +202,21 @@ describe('parseDiscoveryCompatibility — Alignment M4A', () => {
     }
   });
 
-  it('invalid formulaVersion degrades to unavailable', () => {
+  it('formulaVersion 2 keeps the backend score', () => {
+    const parsed = parseDiscoveryCompatibility({
+      available: true,
+      score: 50,
+      formulaVersion: '2',
+    });
+    assert.deepEqual(parsed, { available: true, score: 50, formulaVersion: '2' });
+  });
+
+  it('unknown formulaVersion degrades to unavailable', () => {
     assert.equal(
       parseDiscoveryCompatibility({
         available: true,
         score: 50,
-        formulaVersion: '2',
+        formulaVersion: '3',
       })?.available,
       false,
     );

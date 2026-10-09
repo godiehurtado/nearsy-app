@@ -1066,6 +1066,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 }}
                 labels={{
                   sectionTitle: t('profile.sections.details'),
+                  backgroundTitle: t('profile.sections.background'),
                   realName: t('profile.fields.realName'),
                   lastName: t('profile.fields.lastName'),
                   occupation: t('profile.fields.occupation'),
@@ -1089,6 +1090,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                   ),
                   languagesSearch: t('profile.placeholders.languagesSearch'),
                   countrySearchEmpty: t('profile.context.countrySearchEmpty'),
+                  countryClear: t('profile.context.countryClearA11y'),
                   languagesEmpty: t('profile.context.languagesEmpty'),
                   languagesLimit: t('profile.context.languagesLimit'),
                 }}

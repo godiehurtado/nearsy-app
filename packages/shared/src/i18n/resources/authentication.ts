@@ -134,7 +134,7 @@ export const authenticationTranslations = {
         emailMismatchMessage: 'Email and confirmation email must match.',
         invalidPhoneTitle: 'Invalid phone number',
         invalidPhoneMessage:
-          'If you provide a phone number, please select your country code and enter a valid mobile number.',
+          'A mobile number is required. Select your country code and enter a valid mobile number.',
         weakPasswordTitle: 'Weak password',
         weakPasswordMessage:
           'Password must be at least 8 characters long and include letters and numbers.',
@@ -472,7 +472,7 @@ export const authenticationTranslations = {
           'El correo y la confirmación deben coincidir.',
         invalidPhoneTitle: 'Número de teléfono no válido',
         invalidPhoneMessage:
-          'Si proporcionas un teléfono, selecciona el código de país e introduce un número de móvil válido.',
+          'El número móvil es obligatorio. Selecciona el código de país e introduce un número de móvil válido.',
         weakPasswordTitle: 'Contraseña débil',
         weakPasswordMessage:
           'La contraseña debe tener al menos 8 caracteres e incluir letras y números.',

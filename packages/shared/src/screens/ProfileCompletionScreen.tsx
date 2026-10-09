@@ -1996,6 +1996,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                   emptyLabel={t(
                     'onboarding.profileCompletion.identity.countrySearchEmpty',
                   )}
+                  clearLabel={t(
+                    'onboarding.profileCompletion.identity.countryClearA11y',
+                  )}
                   value={birthCountryCode}
                   locale={i18n.language}
                   onChange={setBirthCountryCode}
@@ -2012,6 +2015,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                   )}
                   emptyLabel={t(
                     'onboarding.profileCompletion.identity.countrySearchEmpty',
+                  )}
+                  clearLabel={t(
+                    'onboarding.profileCompletion.identity.countryClearA11y',
                   )}
                   value={residenceCountryCode}
                   locale={i18n.language}

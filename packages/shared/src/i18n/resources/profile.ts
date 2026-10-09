@@ -8,6 +8,7 @@ const en = {
   changePhotoA11y: 'Change profile photo',
   sections: {
     details: 'Profile details',
+    background: 'Background',
     content: 'Profile content',
   },
   mode: {
@@ -41,7 +42,7 @@ const en = {
     biography: 'Biography',
     company: 'Company',
     profileImage: 'Profile photo',
-    birthCountry: 'Country of birth',
+    birthCountry: 'Country of origin',
     residenceCountry: 'Country of residence',
     languages: 'Languages',
   },
@@ -51,12 +52,13 @@ const en = {
     occupation: 'Occupation',
     biography: 'A short bio',
     company: 'Company',
-    birthCountrySearch: 'Search country of birth',
+    birthCountrySearch: 'Search country of origin',
     residenceCountrySearch: 'Search country of residence',
     languagesSearch: 'Search languages',
   },
   context: {
     countrySearchEmpty: 'No countries match your search',
+    countryClearA11y: 'Clear selected country',
     languagesEmpty: 'No languages match your search',
     languagesLimit: 'You can select up to 10 languages',
     syncSoftError:
@@ -226,6 +228,7 @@ const es = {
     changePhotoA11y: 'Cambiar foto de perfil',
     sections: {
       details: 'Detalles del perfil',
+      background: 'Información personal',
       content: 'Contenido del perfil',
     },
     mode: {
@@ -260,7 +263,7 @@ const es = {
       biography: 'Biografía',
       company: 'Empresa',
       profileImage: 'Foto de perfil',
-      birthCountry: 'País de nacimiento',
+      birthCountry: 'País de origen',
       residenceCountry: 'País de residencia',
       languages: 'Idiomas',
     },
@@ -270,12 +273,13 @@ const es = {
       occupation: 'Ocupación',
       biography: 'Una breve biografía',
       company: 'Empresa',
-      birthCountrySearch: 'Busca país de nacimiento',
+      birthCountrySearch: 'Busca país de origen',
       residenceCountrySearch: 'Busca país de residencia',
       languagesSearch: 'Busca idiomas',
     },
     context: {
       countrySearchEmpty: 'Ningún país coincide con tu búsqueda',
+      countryClearA11y: 'Quitar el país seleccionado',
       languagesEmpty: 'Ningún idioma coincide con tu búsqueda',
       languagesLimit: 'Puedes seleccionar hasta 10 idiomas',
       syncSoftError:

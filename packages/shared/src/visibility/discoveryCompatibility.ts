@@ -4,10 +4,29 @@
  */
 
 export const DISCOVERY_COMPATIBILITY_FORMULA_VERSION = '1' as const;
+/** Backend-computed formulas the client can display; anything else is rejected. */
+export const DISCOVERY_COMPATIBILITY_FORMULA_VERSIONS = ['1', '2'] as const;
+/**
+ * Visual tier classification. Backend formula v2 keeps sending '1' while the
+ * tiers (weak/partial/strong/full) are unchanged; only a new classification bumps it.
+ */
 export const ALIGNMENT_VERSION = '1' as const;
 
 export type DiscoveryCompatibilityFormulaVersion =
-  typeof DISCOVERY_COMPATIBILITY_FORMULA_VERSION;
+  (typeof DISCOVERY_COMPATIBILITY_FORMULA_VERSIONS)[number];
+
+const SUPPORTED_FORMULA_VERSIONS = new Set<string>(
+  DISCOVERY_COMPATIBILITY_FORMULA_VERSIONS,
+);
+
+function parseFormulaVersion(
+  value: unknown,
+): DiscoveryCompatibilityFormulaVersion | undefined {
+  if (typeof value !== 'string' || !SUPPORTED_FORMULA_VERSIONS.has(value)) {
+    return undefined;
+  }
+  return value as DiscoveryCompatibilityFormulaVersion;
+}
 
 export type AlignmentVersion = typeof ALIGNMENT_VERSION;
 
@@ -175,6 +194,7 @@ function parseAlignmentMetadata(
 
 function parseAvailableCompatibility(
   value: Record<string, unknown>,
+  formulaVersion: DiscoveryCompatibilityFormulaVersion,
 ): DiscoveryCompatibility {
   const score = value.score;
   if (
@@ -192,13 +212,14 @@ function parseAvailableCompatibility(
   return {
     available: true,
     score,
-    formulaVersion: DISCOVERY_COMPATIBILITY_FORMULA_VERSION,
+    formulaVersion,
     ...meta,
   };
 }
 
 function parseUnavailableCompatibility(
   value: Record<string, unknown>,
+  formulaVersion: DiscoveryCompatibilityFormulaVersion,
 ): DiscoveryCompatibilityUnavailable {
   const reason = parseUnavailableReason(value.reason);
   const alignmentVersion =
@@ -208,14 +229,14 @@ function parseUnavailableCompatibility(
   if (reason) {
     return {
       available: false,
-      formulaVersion: DISCOVERY_COMPATIBILITY_FORMULA_VERSION,
+      formulaVersion,
       ...(alignmentVersion ? { alignmentVersion } : {}),
       reason,
     };
   }
   return {
     available: false,
-    formulaVersion: DISCOVERY_COMPATIBILITY_FORMULA_VERSION,
+    formulaVersion,
     ...(alignmentVersion ? { alignmentVersion } : {}),
   };
 }
@@ -223,7 +244,8 @@ function parseUnavailableCompatibility(
 /**
  * Parse optional wire `compatibility`.
  * - absent → undefined (rollout-safe)
- * - invalid score/formula → unavailable (never fails parent DTO)
+ * - formulaVersion '1' or '2' → score shown as sent; the client never computes it
+ * - missing/unknown formula or invalid score → unavailable (never fails parent DTO)
  * - invalid tier/version on available → score preserved, tier omitted
  */
 export function parseDiscoveryCompatibility(
@@ -238,14 +260,15 @@ export function parseDiscoveryCompatibility(
   if (hasForbiddenCompatibilityKeys(value)) {
     return UNAVAILABLE_SAFE;
   }
-  if (value.formulaVersion !== DISCOVERY_COMPATIBILITY_FORMULA_VERSION) {
+  const formulaVersion = parseFormulaVersion(value.formulaVersion);
+  if (!formulaVersion) {
     return UNAVAILABLE_SAFE;
   }
   if (value.available === true) {
-    return parseAvailableCompatibility(value);
+    return parseAvailableCompatibility(value, formulaVersion);
   }
   if (value.available === false) {
-    return parseUnavailableCompatibility(value);
+    return parseUnavailableCompatibility(value, formulaVersion);
   }
   return UNAVAILABLE_SAFE;
 }
