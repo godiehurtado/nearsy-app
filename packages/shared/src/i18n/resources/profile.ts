@@ -8,6 +8,7 @@ const en = {
   changePhotoA11y: 'Change profile photo',
   sections: {
     details: 'Profile details',
+    background: 'Background',
     content: 'Profile content',
   },
   mode: {
@@ -227,6 +228,7 @@ const es = {
     changePhotoA11y: 'Cambiar foto de perfil',
     sections: {
       details: 'Detalles del perfil',
+      background: 'Trasfondo',
       content: 'Contenido del perfil',
     },
     mode: {

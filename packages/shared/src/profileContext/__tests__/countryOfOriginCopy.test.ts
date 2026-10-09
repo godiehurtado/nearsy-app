@@ -124,8 +124,12 @@ describe('Country selector accessibility', () => {
       (crj.match(/identity\.countryClearA11y/g) ?? []).length,
       2,
     );
-    const details = read('components/profile/OwnProfileDetails.tsx');
-    assert.equal((details.match(/clearLabel=\{placeholders\.countryClear\}/g) ?? []).length, 2);
+    const background = read('components/profile/OwnProfileBackgroundCard.tsx');
+    assert.equal((background.match(/clearLabel=\{placeholders\.countryClear\}/g) ?? []).length, 2);
+    assert.match(
+      read('components/profile/OwnProfileDetails.tsx'),
+      /countryClear: placeholders\.countryClear/,
+    );
     assert.match(
       read('screens/CompleteProfileScreen.tsx'),
       /countryClear: t\('profile\.context\.countryClearA11y'\)/,
@@ -143,8 +147,9 @@ describe('Data contract is unchanged', () => {
   it('CRJ and the profile editor still bind birthCountryCode', () => {
     assert.match(read('screens/ProfileCompletionScreen.tsx'), /value=\{birthCountryCode\}/);
     assert.match(
-      read('components/profile/OwnProfileDetails.tsx'),
-      /value=\{context\.birthCountryCode\}/,
+      read('components/profile/OwnProfileBackgroundCard.tsx'),
+      /value=\{values\.birthCountryCode\}/,
     );
+    assert.match(read('components/profile/OwnProfileDetails.tsx'), /values=\{context\}/);
   });
 });

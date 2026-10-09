@@ -25,6 +25,8 @@ import {
 
 type Props = {
   label: string;
+  /** Form-style caps label; the accessible name stays in natural case. */
+  uppercaseLabel?: boolean;
   placeholder: string;
   searchPlaceholder: string;
   emptyLabel: string;
@@ -39,6 +41,7 @@ const BLUR_HIDE_MS = 180;
 
 export function CountrySelectField({
   label,
+  uppercaseLabel = false,
   placeholder,
   searchPlaceholder,
   emptyLabel,
@@ -96,7 +99,14 @@ export function CountrySelectField({
 
   return (
     <View style={styles.wrap}>
-      <Text style={[styles.label, { color: palette.textSecondary }]}>
+      <Text
+        accessibilityLabel={label}
+        style={
+          uppercaseLabel
+            ? [styles.labelCaps, { color: palette.textMuted }]
+            : [styles.label, { color: palette.textSecondary }]
+        }
+      >
         {label}
       </Text>
       {selected ? (
@@ -225,6 +235,13 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontWeight: fontWeight.semibold,
     marginBottom: spacing.xs,
+  },
+  labelCaps: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    marginBottom: 7,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   input: {
     borderWidth: 1,

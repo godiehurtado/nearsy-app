@@ -1066,6 +1066,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 }}
                 labels={{
                   sectionTitle: t('profile.sections.details'),
+                  backgroundTitle: t('profile.sections.background'),
                   realName: t('profile.fields.realName'),
                   lastName: t('profile.fields.lastName'),
                   occupation: t('profile.fields.occupation'),

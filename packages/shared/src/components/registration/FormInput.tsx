@@ -24,7 +24,12 @@ export function FormInput({ label, errorText, style, ...inputProps }: Props) {
   return (
     <View style={styles.wrap}>
       {label ? (
-        <Text style={[styles.label, { color: palette.textMuted }]}>{label}</Text>
+        <Text
+          accessibilityLabel={label}
+          style={[styles.label, { color: palette.textMuted }]}
+        >
+          {label}
+        </Text>
       ) : null}
       <TextInput
         placeholderTextColor={palette.placeholder}

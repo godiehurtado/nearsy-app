@@ -1,8 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { FormInput } from '../registration/FormInput';
-import { CountrySelectField } from '../profileContext/CountrySelectField';
-import { LanguageMultiSelectField } from '../profileContext/LanguageMultiSelectField';
+import OwnProfileBackgroundCard from './OwnProfileBackgroundCard';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { radius } from '../../theme/radius';
 import { spacing, screenPadding } from '../../theme/spacing';
@@ -26,6 +25,7 @@ export type OwnProfileContextValues = {
 
 type FieldLabels = {
   sectionTitle: string;
+  backgroundTitle: string;
   realName: string;
   lastName: string;
   occupation: string;
@@ -100,122 +100,119 @@ export default function OwnProfileDetails({
   const editable = editorWritable;
 
   return (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: palette.surface,
-          borderColor: palette.border,
-        },
-        cardShadow,
-      ]}
-    >
-      <Text style={[styles.sectionTitle, { color: palette.textPrimary }]}>
-        {labels.sectionTitle}
-      </Text>
+    <>
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: palette.surface,
+            borderColor: palette.border,
+          },
+          cardShadow,
+        ]}
+      >
+        <Text
+          accessibilityRole="header"
+          style={[styles.sectionTitle, { color: palette.textPrimary }]}
+        >
+          {labels.sectionTitle}
+        </Text>
 
-      <View style={styles.stack}>
-        <FormInput
-          label={labels.realName}
-          placeholder={placeholders.realName}
-          value={values.realName}
-          onChangeText={onChangeRealName}
-          editable={editable}
-          maxLength={realNameMaxLength}
-          autoCapitalize="words"
-          autoCorrect={false}
-          returnKeyType="next"
-          textContentType="givenName"
-        />
-        <FormInput
-          label={labels.lastName}
-          placeholder={placeholders.lastName}
-          value={values.lastName}
-          onChangeText={onChangeLastName}
-          editable={editable}
-          maxLength={lastNameMaxLength}
-          autoCapitalize="words"
-          autoCorrect={false}
-          returnKeyType="next"
-          textContentType="familyName"
-        />
-        <CountrySelectField
-          label={labels.birthCountry}
-          placeholder={placeholders.birthCountrySearch}
-          searchPlaceholder={placeholders.birthCountrySearch}
-          emptyLabel={placeholders.countrySearchEmpty}
-          clearLabel={placeholders.countryClear}
-          value={context.birthCountryCode}
-          locale={locale}
-          editable={editable}
-          onChange={onChangeBirthCountry}
-        />
-        <CountrySelectField
-          label={labels.residenceCountry}
-          placeholder={placeholders.residenceCountrySearch}
-          searchPlaceholder={placeholders.residenceCountrySearch}
-          emptyLabel={placeholders.countrySearchEmpty}
-          clearLabel={placeholders.countryClear}
-          value={context.residenceCountryCode}
-          locale={locale}
-          editable={editable}
-          onChange={onChangeResidenceCountry}
-        />
-        <FormInput
-          label={labels.occupation}
-          placeholder={placeholders.occupation}
-          value={values.occupation}
-          onChangeText={onChangeOccupation}
-          editable={editable}
-          maxLength={occupationMaxLength}
-          autoCapitalize="words"
-          autoCorrect={false}
-          returnKeyType="next"
-        />
-        {mode === 'professional' ? (
+        <View style={styles.stack}>
           <FormInput
-            label={labels.company}
-            placeholder={placeholders.company}
-            value={values.company}
-            onChangeText={onChangeCompany}
+            label={labels.realName}
+            placeholder={placeholders.realName}
+            value={values.realName}
+            onChangeText={onChangeRealName}
             editable={editable}
-            maxLength={companyMaxLength}
+            maxLength={realNameMaxLength}
+            autoCapitalize="words"
+            autoCorrect={false}
+            returnKeyType="next"
+            textContentType="givenName"
+          />
+          <FormInput
+            label={labels.lastName}
+            placeholder={placeholders.lastName}
+            value={values.lastName}
+            onChangeText={onChangeLastName}
+            editable={editable}
+            maxLength={lastNameMaxLength}
+            autoCapitalize="words"
+            autoCorrect={false}
+            returnKeyType="next"
+            textContentType="familyName"
+          />
+          <FormInput
+            label={labels.occupation}
+            placeholder={placeholders.occupation}
+            value={values.occupation}
+            onChangeText={onChangeOccupation}
+            editable={editable}
+            maxLength={occupationMaxLength}
             autoCapitalize="words"
             autoCorrect={false}
             returnKeyType="next"
           />
-        ) : null}
-        <View>
-          <FormInput
-            label={labels.biography}
-            placeholder={placeholders.biography}
-            value={values.bio}
-            onChangeText={onChangeBio}
-            editable={editable}
-            maxLength={bioMaxLength}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-            style={styles.bioInput}
-            autoCapitalize="sentences"
-            returnKeyType="done"
-          />
-          <Text style={[styles.counter, { color: palette.textMuted }]}>
-            {values.bio.length}/{bioMaxLength}
-          </Text>
+          {mode === 'professional' ? (
+            <FormInput
+              label={labels.company}
+              placeholder={placeholders.company}
+              value={values.company}
+              onChangeText={onChangeCompany}
+              editable={editable}
+              maxLength={companyMaxLength}
+              autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="next"
+            />
+          ) : null}
+          <View>
+            <FormInput
+              label={labels.biography}
+              placeholder={placeholders.biography}
+              value={values.bio}
+              onChangeText={onChangeBio}
+              editable={editable}
+              maxLength={bioMaxLength}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+              style={styles.bioInput}
+              autoCapitalize="sentences"
+              returnKeyType="done"
+            />
+            <Text style={[styles.counter, { color: palette.textMuted }]}>
+              {values.bio.length}/{bioMaxLength}
+            </Text>
+          </View>
         </View>
-        <LanguageMultiSelectField
-          label={labels.languages}
-          searchPlaceholder={placeholders.languagesSearch}
-          emptyLabel={placeholders.languagesEmpty}
-          limitMessage={placeholders.languagesLimit}
-          selectedCodes={context.languageCodes}
-          locale={locale}
-          editable={editable}
-          onChange={onChangeLanguages}
-        />
       </View>
-    </View>
+
+      <OwnProfileBackgroundCard
+        values={context}
+        labels={{
+          sectionTitle: labels.backgroundTitle,
+          birthCountry: labels.birthCountry,
+          residenceCountry: labels.residenceCountry,
+          languages: labels.languages,
+        }}
+        placeholders={{
+          birthCountrySearch: placeholders.birthCountrySearch,
+          residenceCountrySearch: placeholders.residenceCountrySearch,
+          languagesSearch: placeholders.languagesSearch,
+          countrySearchEmpty: placeholders.countrySearchEmpty,
+          countryClear: placeholders.countryClear,
+          languagesEmpty: placeholders.languagesEmpty,
+          languagesLimit: placeholders.languagesLimit,
+        }}
+        locale={locale}
+        editable={editable}
+        onChangeBirthCountry={onChangeBirthCountry}
+        onChangeResidenceCountry={onChangeResidenceCountry}
+        onChangeLanguages={onChangeLanguages}
+      />
+    </>
   );
 }
 
