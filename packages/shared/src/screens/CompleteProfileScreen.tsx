@@ -1089,6 +1089,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                   ),
                   languagesSearch: t('profile.placeholders.languagesSearch'),
                   countrySearchEmpty: t('profile.context.countrySearchEmpty'),
+                  countryClear: t('profile.context.countryClearA11y'),
                   languagesEmpty: t('profile.context.languagesEmpty'),
                   languagesLimit: t('profile.context.languagesLimit'),
                 }}

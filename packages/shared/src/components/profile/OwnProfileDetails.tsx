@@ -46,6 +46,7 @@ type FieldPlaceholders = {
   residenceCountrySearch: string;
   languagesSearch: string;
   countrySearchEmpty: string;
+  countryClear: string;
   languagesEmpty: string;
   languagesLimit: string;
 };
@@ -143,6 +144,7 @@ export default function OwnProfileDetails({
           placeholder={placeholders.birthCountrySearch}
           searchPlaceholder={placeholders.birthCountrySearch}
           emptyLabel={placeholders.countrySearchEmpty}
+          clearLabel={placeholders.countryClear}
           value={context.birthCountryCode}
           locale={locale}
           editable={editable}
@@ -153,6 +155,7 @@ export default function OwnProfileDetails({
           placeholder={placeholders.residenceCountrySearch}
           searchPlaceholder={placeholders.residenceCountrySearch}
           emptyLabel={placeholders.countrySearchEmpty}
+          clearLabel={placeholders.countryClear}
           value={context.residenceCountryCode}
           locale={locale}
           editable={editable}

@@ -28,6 +28,7 @@ type Props = {
   placeholder: string;
   searchPlaceholder: string;
   emptyLabel: string;
+  clearLabel: string;
   value: string | null;
   locale: string;
   editable?: boolean;
@@ -41,6 +42,7 @@ export function CountrySelectField({
   placeholder,
   searchPlaceholder,
   emptyLabel,
+  clearLabel,
   value,
   locale,
   editable = true,
@@ -107,10 +109,17 @@ export function CountrySelectField({
             },
           ]}
         >
-          <Text style={styles.flag}>{selected.flag}</Text>
+          <Text
+            style={styles.flag}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          >
+            {selected.flag}
+          </Text>
           <Text
             style={[styles.selectedLabel, { color: palette.textPrimary }]}
             numberOfLines={1}
+            accessibilityLabel={`${label}: ${selected.label}`}
           >
             {selected.label}
           </Text>
@@ -119,7 +128,7 @@ export function CountrySelectField({
               onPress={() => onChange(null)}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel={emptyLabel}
+              accessibilityLabel={clearLabel}
             >
               <Ionicons name="close-circle" size={20} color={palette.textMuted} />
             </Pressable>
@@ -133,6 +142,8 @@ export function CountrySelectField({
             onChangeText={setQuery}
             placeholder={searchPlaceholder || placeholder}
             placeholderTextColor={palette.textMuted}
+            accessibilityLabel={label}
+            accessibilityHint={searchPlaceholder || placeholder}
             editable={editable}
             onFocus={() => {
               clearBlurHideTimer();
@@ -182,6 +193,7 @@ export function CountrySelectField({
                       onPress={() => handleSelect(entry)}
                       style={styles.resultRow}
                       accessibilityRole="button"
+                      accessibilityLabel={entry.label}
                     >
                       <Text style={styles.flag}>{entry.flag}</Text>
                       <Text
