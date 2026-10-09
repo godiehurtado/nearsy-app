@@ -15,6 +15,7 @@ const DELETION_FLOW_FILES = [
   'screens/DeleteAccountScreen.tsx',
   'services/accountDeletion.ts',
   'services/accountDeletionSession.ts',
+  'services/accountDeletionReconciliation.ts',
   'services/accountDeletionErrorPresentation.ts',
   'services/deleteAccountPresentation.ts',
   'services/deleteMyAccount/contract.ts',
@@ -194,6 +195,30 @@ describe('Delete Account copy (EN / ES)', () => {
         assert.match(copy[key], /not deleted|no fue eliminada/);
       }
     }
+  });
+
+  it('unresolved-deletion copy only claims what Auth proved', () => {
+    for (const key of [
+      'pendingTitle',
+      'pendingChecking',
+      'pendingExists',
+      'pendingUnverified',
+      'pendingRetry',
+      'pendingSignOut',
+      'reconciledDeleted',
+      'reconciledSignedOut',
+    ]) {
+      assert.ok(en[key]?.trim(), `EN ${key}`);
+      assert.ok(esCopy[key]?.trim(), `ES ${key}`);
+      assert.notEqual(en[key], esCopy[key], `ES ${key} is translated`);
+    }
+    for (const copy of [en, esCopy]) {
+      for (const key of ['pendingChecking', 'pendingExists', 'pendingUnverified', 'reconciledSignedOut']) {
+        assert.doesNotMatch(copy[key], /has been deleted|ha sido eliminada/, key);
+      }
+    }
+    assert.match(en.reconciledSignedOut, /couldn’t confirm whether/);
+    assert.match(esCopy.reconciledSignedOut, /No pudimos confirmar si/);
   });
 
   it('EN and ES deleteAccount key sets match', () => {

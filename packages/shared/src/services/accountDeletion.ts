@@ -13,6 +13,10 @@ import {
   markAccountDeletionClosing,
 } from './accountDeletionSession';
 import {
+  clearPendingAccountDeletion,
+  markAccountDeletionUncertain,
+} from './accountDeletionReconciliation';
+import {
   AccountDeletionReauthError,
   type AccountDeletionReauthErrorCode,
 } from './deletionReauth/accountDeletionReauthError';
@@ -33,6 +37,8 @@ const AUTH_TIME_FUTURE_SKEW_SECONDS = 60;
 
 export type AccountDeletionRuntime = {
   getCurrentUid: () => string | null;
+  /** Auth `metadata.creationTime` of the current user, when known. */
+  getCurrentCreatedAt?: () => string | null;
   /** `auth_time` of the current Firebase ID token in ms, or null when unknown. */
   getAuthTimeMs: () => Promise<number | null>;
   nowMs?: () => number;
@@ -162,12 +168,23 @@ export async function deleteAccountWithBackend(
       response = await runtime.deleteMyAccount({ expectedUid: uid });
     } catch (err) {
       const failure = isDeleteMyAccountError(err) ? err : mapDeleteMyAccountFailure(err);
-      if (!failure.serverMayHaveDeleted) endAccountDeletionSession();
+      if (failure.serverMayHaveDeleted) {
+        // users/{uid} may already be gone: keep the Profile Gate suspended
+        // (also across relaunches) until Auth is reconciled.
+        markAccountDeletionUncertain({
+          uid,
+          createdAt: runtime.getCurrentCreatedAt?.() ?? null,
+        });
+      } else {
+        endAccountDeletionSession();
+      }
       return failedFromDeleteError(failure);
     }
     // Session flag stays active until finalizePostAccountDeletionSession; the
-    // closure barrier stays until Auth reports the signed-out state.
+    // closure barrier stays until Auth reports the signed-out state. The
+    // barrier is engaged before an unresolved marker is released.
     markAccountDeletionClosing(uid);
+    clearPendingAccountDeletion();
     return { status: 'deleted', uid, backendStatus: response.status };
   } finally {
     inFlight = false;
@@ -181,6 +198,7 @@ export function createDefaultAccountDeletionRuntime(): AccountDeletionRuntime {
     firebaseAuth: {
       currentUser: {
         uid: string;
+        metadata?: { creationTime?: string };
         getIdTokenResult: () => Promise<{ authTime: string }>;
       } | null;
     };
@@ -188,6 +206,7 @@ export function createDefaultAccountDeletionRuntime(): AccountDeletionRuntime {
 
   return {
     getCurrentUid: () => firebaseAuth.currentUser?.uid ?? null,
+    getCurrentCreatedAt: () => firebaseAuth.currentUser?.metadata?.creationTime ?? null,
     getAuthTimeMs: async () => {
       const user = firebaseAuth.currentUser;
       if (!user) return null;

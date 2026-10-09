@@ -42,7 +42,7 @@ describe('accountDeletionSession + post-delete navigation', () => {
     assert.equal(isAccountDeletionSessionActive(), true);
 
     const finalized = await finalizePostAccountDeletionSession({
-      deletedUid: 'uid-del',
+      closedUid: 'uid-del',
       closeVisibilityAndLocation: async () => {
         order.push('visibility+location');
       },
@@ -85,7 +85,7 @@ describe('accountDeletionSession + post-delete navigation', () => {
   it('a failing local cleanup step never blocks sign-out or the guest transition', async () => {
     const order: string[] = [];
     await finalizePostAccountDeletionSession({
-      deletedUid: 'uid-del',
+      closedUid: 'uid-del',
       closeVisibilityAndLocation: async () => {
         throw new Error('runtime stop failed');
       },
@@ -135,9 +135,20 @@ describe('accountDeletionSession + post-delete navigation', () => {
     assert.equal(runDeletion.match(/runSuccessfulDeletionExit/g)?.length, 1);
     assert.doesNotMatch(runDeletion, /signOut|clearLastKnownVisibility|stopBackgroundLocationRuntime/);
 
-    const exit = src.slice(src.indexOf('const runSuccessfulDeletionExit'), src.indexOf('const runDeletion'));
+    const exit = src.slice(
+      src.indexOf('const runLocalSessionExit'),
+      src.indexOf('const runSuccessfulDeletionExit'),
+    );
     assert.match(exit, /closeVisibilitySessionForLogout\(\{ stopRuntime: stopBackgroundLocationRuntime \}\)/);
-    assert.match(exit, /clearLastKnownVisibility\(AsyncStorage, deletedUid\)/);
+    assert.match(exit, /const deletedUid = outcome\.deleted \? closedUid : null;/);
+    assert.match(
+      exit,
+      /clearLocalState: deletedUid\s*\? \(\) => clearLastKnownVisibility\(AsyncStorage, deletedUid\)\s*: undefined,/,
+    );
+    assert.match(
+      src,
+      /const runSuccessfulDeletionExit = \(deletedUid: string\) =>\s*runLocalSessionExit\(deletedUid, \{ deleted: true, messageKey: 'settings\.deleteAccount\.done' \}\);/,
+    );
     assert.match(exit, /clearFacebookProviderSession,/);
     assert.match(exit, /registry\?\.get\('google'\)\.clearProviderSession\(\)/);
   });

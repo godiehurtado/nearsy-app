@@ -1483,6 +1483,17 @@ const es: TranslationResources = {
         'No pudimos eliminar tu cuenta. Inténtalo más tarde o contacta a soporte de Nearsy.',
       networkUncertain:
         'No pudimos confirmar si tu cuenta fue eliminada. Revisa tu conexión e inténtalo de nuevo.',
+      pendingTitle: 'Eliminación sin confirmar',
+      pendingChecking: 'Comprobando si tu cuenta fue eliminada…',
+      pendingExists:
+        'Tu cuenta todavía existe y no pudimos confirmar si la eliminación terminó. Puedes volver a solicitar la eliminación abajo.',
+      pendingUnverified:
+        'No pudimos comprobar tu cuenta en este momento. Conéctate a internet y vuelve a intentarlo, o cierra sesión.',
+      pendingRetry: 'Reintentar',
+      pendingSignOut: 'Cerrar sesión',
+      reconciledDeleted: 'Tu cuenta ya no existe. Se cerró tu sesión.',
+      reconciledSignedOut:
+        'Se cerró tu sesión. No pudimos confirmar si tu cuenta fue eliminada. Vuelve a iniciar sesión para comprobarlo.',
       linkedInSignInAgain:
         'Por seguridad, cierra sesión, vuelve a ingresar con LinkedIn y solicita la eliminación de tu cuenta dentro de los próximos 5 minutos.',
       linkedInRecentBody:

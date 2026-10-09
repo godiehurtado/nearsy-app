@@ -6,7 +6,7 @@
  * backend confirms. LinkedIn is never started here: a stale LinkedIn session
  * gets guidance to sign in again.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   View,
   Text,
@@ -36,6 +36,12 @@ import {
   endAccountDeletionSession,
   finalizePostAccountDeletionSession,
 } from '../services/accountDeletionSession';
+import {
+  getPendingAccountDeletionState,
+  reconcilePendingAccountDeletion,
+  subscribePendingAccountDeletion,
+  type PendingAccountDeletionPhase,
+} from '../services/accountDeletionReconciliation';
 import { resolveDeletionFailureMessageKey } from '../services/accountDeletionErrorPresentation';
 import {
   DELETE_METHOD_ACTION_KEY,
@@ -75,6 +81,17 @@ function traceCurrentUserMethods(): void {
   );
 }
 
+function readAuthIdentity() {
+  const user = firebaseAuth.currentUser;
+  return user ? { uid: user.uid, createdAt: user.metadata?.creationTime ?? null } : null;
+}
+
+const PENDING_MESSAGE_KEY: Record<PendingAccountDeletionPhase, string> = {
+  reconciling: 'settings.deleteAccount.pendingChecking',
+  exists: 'settings.deleteAccount.pendingExists',
+  unverified: 'settings.deleteAccount.pendingUnverified',
+};
+
 const METHOD_ICON: Record<DeleteAccountMethodKind, React.ComponentProps<typeof Ionicons>['name']> = {
   password: 'key-outline',
   google: 'logo-google',
@@ -100,6 +117,14 @@ export default function DeleteAccountScreen() {
     () => pickSelectedMethod(options, null),
   );
   const [sessionGuidanceKey, setSessionGuidanceKey] = useState<string | null>(null);
+  const pendingState = useSyncExternalStore(
+    subscribePendingAccountDeletion,
+    getPendingAccountDeletionState,
+  );
+  const pending =
+    pendingState.pending && pendingState.pending.uid === firebaseAuth.currentUser?.uid
+      ? pendingState.pending
+      : null;
 
   const canDelete = isDeleteConfirmationText(typed);
   const canSubmit = canSubmitDeletion({ typed, method: selectedMethod, password: pw });
@@ -139,7 +164,14 @@ export default function DeleteAccountScreen() {
       .catch(() => undefined);
   }, []);
 
-  const runSuccessfulDeletionExit = async (deletedUid: string) => {
+  /**
+   * Local exit to Login. `deleted`: the deletion is proven, so per-UID local
+   * state is cleared. Otherwise it is a plain sign-out that claims nothing.
+   */
+  const runLocalSessionExit = async (
+    closedUid: string,
+    outcome: { deleted: boolean; messageKey: string },
+  ) => {
     let social: typeof import('../authentication/social') | null = null;
     try {
       social = await import('../authentication/social');
@@ -147,12 +179,15 @@ export default function DeleteAccountScreen() {
       social = null;
     }
     const clearFacebookProviderSession = social?.clearFacebookProviderSession;
+    const deletedUid = outcome.deleted ? closedUid : null;
 
     await finalizePostAccountDeletionSession({
-      deletedUid,
+      closedUid,
       closeVisibilityAndLocation: () =>
         closeVisibilitySessionForLogout({ stopRuntime: stopBackgroundLocationRuntime }),
-      clearLocalState: () => clearLastKnownVisibility(AsyncStorage, deletedUid),
+      clearLocalState: deletedUid
+        ? () => clearLastKnownVisibility(AsyncStorage, deletedUid)
+        : undefined,
       clearSocialPrefill: () => social?.clearPendingSocialProfilePrefill(),
       clearGoogleProviderSession: async () => {
         const registry = social?.createDefaultSocialProviderRegistry();
@@ -172,8 +207,65 @@ export default function DeleteAccountScreen() {
       },
     });
 
-    Alert.alert(t('common.appName'), t('settings.deleteAccount.done'));
+    Alert.alert(t('common.appName'), t(outcome.messageKey));
   };
+
+  const runSuccessfulDeletionExit = (deletedUid: string) =>
+    runLocalSessionExit(deletedUid, { deleted: true, messageKey: 'settings.deleteAccount.done' });
+
+  /** Unresolved deletion: check Firebase Auth only; never reads the profile. */
+  const runReconciliation = async () => {
+    if (busyRef.current || !pending) return;
+    const pendingUid = pending.uid;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      await closeVisibilitySessionForLogout({ stopRuntime: stopBackgroundLocationRuntime }).catch(
+        () => undefined,
+      );
+      const outcome = await reconcilePendingAccountDeletion({
+        getCurrentIdentity: readAuthIdentity,
+        reloadCurrentUser: async () => {
+          await firebaseAuth.currentUser?.reload();
+        },
+      });
+      if (outcome === 'deleted') {
+        await runLocalSessionExit(pendingUid, {
+          deleted: true,
+          messageKey: 'settings.deleteAccount.reconciledDeleted',
+        });
+      } else if (outcome === 'signed_out') {
+        await runLocalSessionExit(pendingUid, {
+          deleted: false,
+          messageKey: 'settings.deleteAccount.reconciledSignedOut',
+        });
+      }
+    } finally {
+      busyRef.current = false;
+      if (mountedRef.current) setBusy(false);
+    }
+  };
+
+  /** Safe exit from an unresolved deletion: sign out to Login, claim nothing. */
+  const runUnresolvedSignOut = async () => {
+    if (busyRef.current || !pending) return;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      await runLocalSessionExit(pending.uid, {
+        deleted: false,
+        messageKey: 'settings.deleteAccount.reconciledSignedOut',
+      });
+    } finally {
+      busyRef.current = false;
+      if (mountedRef.current) setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (pending?.phase === 'reconciling' && !busy) void runReconciliation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending?.phase, pending?.uid, busy]);
 
   const runDeletion = async (request: AccountDeletionRequest) => {
     if (busyRef.current) return;
@@ -191,6 +283,8 @@ export default function DeleteAccountScreen() {
         return;
       }
       if (result.status === 'busy' || result.status === 'cancelled') return;
+      // Unresolved outcome: the reconciliation banner reports it.
+      if (result.status === 'failed' && result.serverMayHaveDeleted) return;
       const current = readDeleteAccountOptions();
       if (result.status === 'reauth_required') {
         const guidanceKey = resolveSessionGuidanceKey(current);
@@ -325,6 +419,65 @@ export default function DeleteAccountScreen() {
     );
   };
 
+  const renderPendingNotice = () => {
+    if (!pending) return null;
+    const checking = pending.phase === 'reconciling';
+    return (
+      <View
+        accessibilityLiveRegion="polite"
+        style={[styles.notice, { backgroundColor: palette.dangerBg, borderColor: palette.danger }]}
+      >
+        <Text
+          accessibilityRole="header"
+          style={[styles.sectionTitle, { color: palette.textPrimary }]}
+        >
+          {t('settings.deleteAccount.pendingTitle')}
+        </Text>
+        <Text style={[styles.noticeText, { color: palette.textPrimary }]}>
+          {t(PENDING_MESSAGE_KEY[pending.phase])}
+        </Text>
+        {checking ? (
+          <ActivityIndicator style={styles.pendingSpinner} color={palette.textPrimary} />
+        ) : (
+          <View style={styles.pendingActions}>
+            <Pressable
+              onPress={() => void runReconciliation()}
+              disabled={busy}
+              accessibilityRole="button"
+              accessibilityLabel={t('settings.deleteAccount.pendingRetry')}
+              accessibilityState={{ disabled: busy }}
+              style={({ pressed }) => [
+                styles.pendingBtn,
+                { backgroundColor: palette.panel, borderColor: palette.border },
+                (pressed || busy) && { opacity: 0.7 },
+              ]}
+            >
+              <Text style={[styles.pendingBtnText, { color: palette.textPrimary }]}>
+                {t('settings.deleteAccount.pendingRetry')}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void runUnresolvedSignOut()}
+              disabled={busy}
+              accessibilityRole="button"
+              accessibilityLabel={t('settings.deleteAccount.pendingSignOut')}
+              accessibilityState={{ disabled: busy }}
+              style={({ pressed }) => [
+                styles.pendingBtn,
+                { backgroundColor: palette.panel, borderColor: palette.border },
+                (pressed || busy) && { opacity: 0.7 },
+              ]}
+            >
+              <Text style={[styles.pendingBtnText, { color: palette.textPrimary }]}>
+                {t('settings.deleteAccount.pendingSignOut')}
+              </Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
+    );
+  };
+
   const renderSessionOnlySection = () => {
     const noticeKey =
       sessionGuidanceKey ??
@@ -367,26 +520,28 @@ export default function DeleteAccountScreen() {
           }}
           keyboardShouldPersistTaps="handled"
         >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t('common.back')}
-            onPress={() => nav.goBack()}
-            disabled={busy}
-            style={[
-              styles.backBtn,
-              {
-                backgroundColor: palette.panel,
-                borderColor: palette.border,
-              },
-            ]}
-            hitSlop={8}
-          >
-            <Ionicons
-              name="chevron-back"
-              size={22}
-              color={palette.textPrimary}
-            />
-          </Pressable>
+          {pending ? null : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('common.back')}
+              onPress={() => nav.goBack()}
+              disabled={busy}
+              style={[
+                styles.backBtn,
+                {
+                  backgroundColor: palette.panel,
+                  borderColor: palette.border,
+                },
+              ]}
+              hitSlop={8}
+            >
+              <Ionicons
+                name="chevron-back"
+                size={22}
+                color={palette.textPrimary}
+              />
+            </Pressable>
+          )}
 
           <Text
             accessibilityRole="header"
@@ -400,6 +555,8 @@ export default function DeleteAccountScreen() {
           <Text style={[styles.confirmHint, { color: palette.danger }]}>
             {t('settings.deleteAccount.confirm')}
           </Text>
+
+          {renderPendingNotice()}
 
           <TextInput
             value={typed}
@@ -445,17 +602,19 @@ export default function DeleteAccountScreen() {
             renderSessionOnlySection()
           )}
 
-          <Pressable
-            onPress={() => nav.goBack()}
-            disabled={busy}
-            accessibilityRole="button"
-            accessibilityLabel={t('common.back')}
-            style={styles.backLink}
-          >
-            <Text style={{ color: palette.primary, fontWeight: '700' }}>
-              {t('common.back')}
-            </Text>
-          </Pressable>
+          {pending ? null : (
+            <Pressable
+              onPress={() => nav.goBack()}
+              disabled={busy}
+              accessibilityRole="button"
+              accessibilityLabel={t('common.back')}
+              style={styles.backLink}
+            >
+              <Text style={{ color: palette.primary, fontWeight: '700' }}>
+                {t('common.back')}
+              </Text>
+            </Pressable>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -534,6 +693,28 @@ const styles = StyleSheet.create({
   noticeText: {
     fontSize: fontSize.base,
     lineHeight: fontSize.base * 1.45,
+  },
+  pendingSpinner: {
+    marginTop: spacing.md,
+  },
+  pendingActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  pendingBtn: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+    flexGrow: 1,
+  },
+  pendingBtnText: {
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.bold,
   },
   dangerBtn: {
     minHeight: 50,

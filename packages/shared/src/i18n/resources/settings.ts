@@ -126,6 +126,17 @@ export default {
       'We couldn’t delete your account. Please try again later or contact Nearsy support.',
     networkUncertain:
       'We couldn’t confirm whether your account was deleted. Check your connection and try again.',
+    pendingTitle: 'Deletion not confirmed',
+    pendingChecking: 'Checking whether your account was deleted…',
+    pendingExists:
+      'Your account still exists, and we couldn’t confirm whether the deletion finished. You can request the deletion again below.',
+    pendingUnverified:
+      'We couldn’t check your account right now. Connect to the internet and try again, or sign out.',
+    pendingRetry: 'Try again',
+    pendingSignOut: 'Sign out',
+    reconciledDeleted: 'Your account no longer exists. You’ve been signed out.',
+    reconciledSignedOut:
+      'You’ve been signed out. We couldn’t confirm whether your account was deleted. Sign in again to check.',
     linkedInSignInAgain:
       'For security, sign out, sign back in with LinkedIn, and request account deletion within the next 5 minutes.',
     linkedInRecentBody:

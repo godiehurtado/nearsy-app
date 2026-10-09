@@ -22,6 +22,7 @@ import SocialMediaScreen from '../screens/SocialMediaScreen';
 import GalleryScreen from '../screens/GalleryScreen';
 import ProfileGalleryScreen from '../screens/ProfileGalleryScreen';
 import AffiliationsScreen from '../screens/AffiliationsScreen';
+import DeleteAccountScreen from '../screens/DeleteAccountScreen';
 import RootTabs from './RootTabs';
 import { RootStackParamList } from './types';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -38,7 +39,15 @@ import {
   isAccountDeletionSessionActive,
   subscribeAccountDeletionClosure,
 } from '../services/accountDeletionSession';
+import {
+  acknowledgeAuthIdentityForPendingDeletion,
+  getPendingAccountDeletionState,
+  hydratePendingAccountDeletion,
+  isAccountDeletionPendingFor,
+  subscribePendingAccountDeletion,
+} from '../services/accountDeletionReconciliation';
 import { resolveProfileSubscriptionUid, resolveRootFlowKind } from './rootFlowDecision';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
@@ -66,6 +75,11 @@ function guestScreenOptions(backgroundColor: string) {
     headerShown: false,
     contentStyle: { backgroundColor },
   } as const;
+}
+
+/** Deleted or unresolved-deletion accounts never reach the Profile Gate. */
+function isProfileGateSuspendedFor(uid: string): boolean {
+  return isAccountClosedByDeletion(uid) || isAccountDeletionPendingFor(uid);
 }
 
 function guestInitialRoute(
@@ -96,7 +110,13 @@ export default function AppNavigator() {
     subscribeAccountDeletionClosure,
     getAccountDeletionClosure,
   );
-  const profileUid = resolveProfileSubscriptionUid(uid, accountClosure);
+  const pendingDeletion = useSyncExternalStore(
+    subscribePendingAccountDeletion,
+    getPendingAccountDeletionState,
+  );
+  const profileUid = pendingDeletion.hydrated
+    ? resolveProfileSubscriptionUid(uid, accountClosure, pendingDeletion.pending)
+    : null;
 
   useEffect(() => {
     let alive = true;
@@ -117,6 +137,11 @@ export default function AppNavigator() {
     const unsubscribe = firebaseAuth.onAuthStateChanged(async (user) => {
       acknowledgeAuthUserForAccountDeletion(user?.uid ?? null);
       try {
+        // A relaunch during an unresolved deletion must know it before routing.
+        await hydratePendingAccountDeletion(AsyncStorage);
+        acknowledgeAuthIdentityForPendingDeletion(
+          user ? { uid: user.uid, createdAt: user.metadata?.creationTime ?? null } : null,
+        );
         if (!user) {
           closeVisibilitySessionGate();
           clearActiveProfileModeConfirmation();
@@ -149,6 +174,14 @@ export default function AppNavigator() {
         // A deleted account must not reopen Visibility while it signs out.
         if (isAccountClosedByDeletion(refreshedUser.uid)) return;
 
+        if (isAccountDeletionPendingFor(refreshedUser.uid)) {
+          // Unresolved deletion: no Visibility session, Delete Account only.
+          closeVisibilitySessionGate();
+          setUid(refreshedUser.uid);
+          setUserEmail(refreshedUser.email ?? null);
+          return;
+        }
+
         openVisibilitySessionGate(refreshedUser.uid);
         setUid(refreshedUser.uid);
         setUserEmail(refreshedUser.email ?? null);
@@ -179,8 +212,8 @@ export default function AppNavigator() {
     const unsubscribe = onSnapshot(
       userRef,
       async (snap) => {
-        // Snapshots already queued when the closure barrier engaged.
-        if (isAccountClosedByDeletion(profileUid)) return;
+        // Snapshots already queued when a deletion barrier engaged.
+        if (isProfileGateSuspendedFor(profileUid)) return;
         if (!snap.exists() && isAccountDeletionSessionActive()) {
           // users/{uid} is removed before Auth delete. Do not remount into
           // CompleteProfile and tear down DeleteAccount mid-flow.
@@ -194,7 +227,7 @@ export default function AppNavigator() {
         setProfileLoading(false);
       },
       async () => {
-        if (isAccountClosedByDeletion(profileUid)) return;
+        if (isProfileGateSuspendedFor(profileUid)) return;
         if (isAccountDeletionSessionActive()) {
           setNeedsCompleteProfile(false);
           setProfileLoading(false);
@@ -202,7 +235,7 @@ export default function AppNavigator() {
         }
         try {
           const snap = await getDoc(userRef);
-          if (isAccountClosedByDeletion(profileUid)) return;
+          if (isProfileGateSuspendedFor(profileUid)) return;
           const data = snap.exists() ? (snap.data() as any) : null;
           setNeedsCompleteProfile(!isProfileDocumentComplete(data));
           setOnboardingInitialRoute(resolveAuthenticatedStackInitialRoute(data));
@@ -218,10 +251,16 @@ export default function AppNavigator() {
   }, [profileUid]);
 
   const rootFlow = resolveRootFlowKind({
-    loading: authLoading || profileLoading || hydrating || welcomeHydrating,
+    loading:
+      authLoading ||
+      profileLoading ||
+      hydrating ||
+      welcomeHydrating ||
+      !pendingDeletion.hydrated,
     uid,
     needsCompleteProfile,
     closure: accountClosure,
+    pending: pendingDeletion.pending,
   });
 
   // Guest key must NOT flip when hasChosenTheme becomes true on Continue —
@@ -287,6 +326,22 @@ export default function AppNavigator() {
         <Stack.Screen name="ProfileGallery" component={ProfileGalleryScreen} />
         <Stack.Screen name="Affiliations" component={AffiliationsScreen} />
         <Stack.Screen name="SocialMedia" component={SocialMediaScreen} />
+      </Stack.Navigator>
+    );
+  }
+
+  // Unresolved deletion: Delete Account only (retry or sign out), no way back
+  // to Home and no Profile Gate.
+  if (rootFlow === 'deletion-pending') {
+    return (
+      <Stack.Navigator
+        id="RootDeletionPending"
+        key={flowKey}
+        initialRouteName="DeleteAccount"
+        screenOptions={{ headerShown: false, gestureEnabled: false }}
+      >
+        <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
+        <Stack.Screen name="Login" component={LoginScreen} />
       </Stack.Navigator>
     );
   }

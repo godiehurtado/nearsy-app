@@ -28,6 +28,18 @@ LinkedIn signs in through the A3 custom-token flow. It provides no Firebase `Aut
 5. **Ambiguous outcomes never claim completion.** Network timeouts and unknown failures are reported as "we couldn't confirm"; the profile gate stays suppressed because `users/{uid}` may already be gone. No automatic retry.
 6. **Errors are mapped by `details.reason`** to translated EN / ES messages. Raw Firebase or backend messages are never shown, and tokens or PII are never logged.
 7. **Account-closure barrier after a confirmed success.** The backend deletes `users/{uid}` before Auth, and Firebase can keep exposing the deleted user for a while: `signOut` sets `currentUser = null` before persisting and only notifies listeners afterwards, so a failing persistence step means `onAuthStateChanged(null)` is never delivered; Firestore also re-emits active listeners when the credential changes. Without a barrier, a missing profile for a still-signed-in uid looked like a new registration and routed to OnboardingBirthDate. As soon as `deleteMyAccount` returns `DELETED` / `ALREADY_DELETED`, the deleted uid is marked closed (`closing` → `closed` after local cleanup → `signed_out` when Auth emits null). While a uid is closed, AppNavigator does not subscribe to its profile, ignores queued profile callbacks, does not reopen Visibility, shows a neutral loader during cleanup, and then renders the guest stack on Login. The barrier is released only by the next sign-in. Failed or cancelled reauthentication and ambiguous callable outcomes never engage it, and normal registration keeps DOB → OTP → CRJ.
+8. **Unresolved deletion is reconciled through Firebase Auth only.**
+   - **When it starts:** an outcome where the backend may already have deleted data (network timeout, unknown error, `DELETION_RETRYABLE`, `DELETION_FAILED`) marks the uid as pending deletion. The marker stores the uid and the Auth creation time and is persisted in AsyncStorage, so it survives a relaunch.
+   - **Why it is needed:** Firebase JS keeps `currentUser` after `auth/user-not-found`. It only signs out on `user-disabled` and `user-token-expired`, and an offline cold start keeps the persisted user. A missing profile therefore cannot be treated as a new registration.
+   - **What AppNavigator does while the marker matches the signed-in identity:**
+     - suspends the Profile Gate, unsubscribes from the profile and keeps Visibility closed;
+     - renders a root stack with Delete Account only, with no Back and no gestures.
+   - **How the screen reconciles:** it reloads the Firebase Auth user. It never reads or recreates the profile.
+     - `auth/user-not-found` proves the identity is gone. The closure barrier engages, local state is cleared, and the app ends on Login.
+     - Auth null, or another user, means the app signs out to Login without claiming a deletion.
+     - The same user still existing keeps Delete Account with an "unconfirmed" notice, and the idempotent callable can be repeated.
+     - No connection shows a neutral notice with "Try again" and "Sign out".
+   - **When it resolves:** a retry that returns `DELETED` or `ALREADY_DELETED` engages the closure barrier before the marker is cleared. Signing out keeps the marker, so signing back into the same account resumes Delete Account instead of DOB. A recreated account with the same uid but a different creation time is not affected.
 
 ## Guards
 

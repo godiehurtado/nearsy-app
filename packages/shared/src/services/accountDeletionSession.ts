@@ -70,7 +70,11 @@ export function subscribeAccountDeletionClosure(listener: () => void): () => voi
   };
 }
 
-/** Only after `deleteMyAccount` confirmed DELETED / ALREADY_DELETED. */
+/**
+ * After `deleteMyAccount` confirmed DELETED / ALREADY_DELETED, after Auth
+ * reported `user-not-found`, or when the person signs out of an unresolved
+ * deletion.
+ */
 export function markAccountDeletionClosing(uid: string): void {
   if (!uid) return;
   if (accountDeletionClosure?.uid === uid && accountDeletionClosure.phase !== 'signed_out') return;
@@ -107,7 +111,7 @@ export type PostAccountDeletionNavigationTarget = {
  * sign-out throws or Auth emits null late.
  */
 export async function finalizePostAccountDeletionSession(input: {
-  deletedUid: string;
+  closedUid: string;
   closeVisibilityAndLocation?: () => Promise<unknown>;
   clearLocalState?: () => Promise<void>;
   clearSocialPrefill?: () => void | Promise<void>;
@@ -116,7 +120,7 @@ export async function finalizePostAccountDeletionSession(input: {
   ensureSignedOut?: () => Promise<void>;
   navigation?: PostAccountDeletionNavigationTarget | null;
 }): Promise<{ authCleared: boolean; navigationReset: boolean }> {
-  markAccountDeletionClosing(input.deletedUid);
+  markAccountDeletionClosing(input.closedUid);
 
   if (input.closeVisibilityAndLocation) {
     try {
@@ -179,8 +183,8 @@ export async function finalizePostAccountDeletionSession(input: {
 
   endAccountDeletionSession();
   const closure = accountDeletionClosure;
-  if (closure?.uid === input.deletedUid && closure.phase === 'closing') {
-    setAccountDeletionClosure({ uid: input.deletedUid, phase: 'closed' });
+  if (closure?.uid === input.closedUid && closure.phase === 'closing') {
+    setAccountDeletionClosure({ uid: input.closedUid, phase: 'closed' });
   }
   return { authCleared: true, navigationReset };
 }

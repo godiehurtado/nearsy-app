@@ -16,17 +16,21 @@ import {
   isAccountClosedByDeletion,
   isAccountDeletionSessionActive,
   markAccountDeletionClosing,
-  subscribeAccountDeletionClosure,
 } from '../accountDeletionSession';
+import { __resetPendingAccountDeletionForTests } from '../accountDeletionReconciliation';
 import { AccountDeletionReauthError } from '../deletionReauth';
 import { DeleteMyAccountError, type DeleteMyAccountStatus } from '../deleteMyAccount/contract';
 import {
   resolveProfileSubscriptionUid,
   resolveRootFlowKind,
-  type RootFlowKind,
 } from '../../navigation/rootFlowDecision';
 import { resolveAuthenticatedStackInitialRoute } from '../../phoneOtp/onboardingResolver';
-import { isProfileDocumentComplete } from '../../utils/profileDocumentComplete';
+import {
+  COMPLETE_PROFILE,
+  ONBOARDING_ROUTES,
+  RootNavigatorModel,
+  signedInModel as signedInModelFor,
+} from './helpers/rootNavigatorModel';
 
 const sharedSrc = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(sharedSrc, rel), 'utf8');
@@ -34,109 +38,9 @@ const read = (rel: string) => fs.readFileSync(path.join(sharedSrc, rel), 'utf8')
 const UID = 'uid-closing';
 const NOW = Date.parse('2026-10-08T12:00:00Z');
 const COMPLETE_PROFILE = { profileSetupCompleted: true };
-const ONBOARDING_ROUTES = new Set([
-  'OnboardingBirthDate',
-  'PhoneVerification',
-  'ProfileCompletion',
-  'CompleteProfile',
-]);
-
-type ProfileData = Record<string, unknown> | null;
-
-/**
- * Mirrors AppNavigator's auth listener, profile listener and render decision
- * using the same pure helpers. `closureBarrier: false` replays b646c7d.
- */
-class RootNavigatorModel {
-  uid: string | null = null;
-  needsCompleteProfile = false;
-  onboardingRoute: string = 'ProfileCompletion';
-  readonly flows: RootFlowKind[] = [];
-  readonly routes: string[] = [];
-  private readonly unsubscribe: () => void;
-
-  constructor(private readonly closureBarrier = true) {
-    this.unsubscribe = subscribeAccountDeletionClosure(() => this.render());
-  }
-
-  private closure() {
-    return this.closureBarrier ? getAccountDeletionClosure() : null;
-  }
-
-  private closed(uid: string | null) {
-    return this.closureBarrier && isAccountClosedByDeletion(uid);
-  }
-
-  authEmit(uid: string | null) {
-    if (this.closureBarrier) acknowledgeAuthUserForAccountDeletion(uid);
-    if (!uid) {
-      this.uid = null;
-      this.needsCompleteProfile = false;
-    } else if (!this.closed(uid)) {
-      this.uid = uid;
-    }
-    this.render();
-  }
-
-  /** Live onSnapshot emission (nothing if the listener is unsubscribed). */
-  profileEvent(data: ProfileData) {
-    const profileUid = resolveProfileSubscriptionUid(this.uid, this.closure());
-    if (!profileUid) return;
-    this.handleProfile(profileUid, data);
-  }
-
-  /** Callback already queued for `uid` before React unsubscribed it. */
-  queuedProfileCallback(uid: string, data: ProfileData) {
-    this.handleProfile(uid, data);
-  }
-
-  private handleProfile(profileUid: string, data: ProfileData) {
-    if (this.closed(profileUid)) return;
-    if (!data && isAccountDeletionSessionActive()) {
-      this.needsCompleteProfile = false;
-      this.render();
-      return;
-    }
-    this.needsCompleteProfile = !isProfileDocumentComplete(data);
-    this.onboardingRoute = resolveAuthenticatedStackInitialRoute(data);
-    this.render();
-  }
-
-  render() {
-    const closure = this.closure();
-    const flow = resolveRootFlowKind({
-      loading: false,
-      uid: this.uid,
-      needsCompleteProfile: this.needsCompleteProfile,
-      closure,
-    });
-    this.flows.push(flow);
-    this.routes.push(
-      flow === 'loading'
-        ? 'Loader'
-        : flow === 'guest'
-          ? 'Login'
-          : flow === 'auth-complete'
-            ? this.onboardingRoute
-            : 'MainTabs',
-    );
-  }
-
-  get current() {
-    return this.routes[this.routes.length - 1];
-  }
-
-  routesSince(index: number) {
-    return this.routes.slice(index);
-  }
-
-  dispose() {
-    this.unsubscribe();
-  }
-}
-
-function signedInModel(closureBarrier = true): RootNavigatorModel {
-  const model = new RootNavigatorModel(closureBarrier);
+function signedInModel(deletionBarriers = true): RootNavigatorModel {
+  if (deletionBarriers) return signedInModelFor(UID);
+  const model = new RootNavigatorModel(false);
   model.authEmit(UID);
   model.profileEvent(COMPLETE_PROFILE);
   assert.equal(model.current, 'MainTabs');
@@ -172,7 +76,7 @@ type SignOutMode = 'emits-null' | 'throws' | 'delayed';
 async function finalizeAfterSuccess(model: RootNavigatorModel, mode: SignOutMode) {
   const resets: { name: string }[][] = [];
   const result = await finalizePostAccountDeletionSession({
-    deletedUid: UID,
+    closedUid: UID,
     ensureSignedOut: async () => {
       // Firestore re-emits active listeners on the credential change.
       model.profileEvent(null);
@@ -200,6 +104,7 @@ function assertNeverOnboardingAfter(model: RootNavigatorModel, from: number) {
 describe('account closure barrier — successful deletion always ends on Login', () => {
   beforeEach(() => {
     __resetAccountDeletionSessionForTests();
+    __resetPendingAccountDeletionForTests();
   });
 
   const methods: { label: string; request: AccountDeletionRequest; kind: string }[] = [
@@ -341,6 +246,7 @@ describe('account closure barrier — successful deletion always ends on Login',
 describe('account closure barrier — no false positives', () => {
   beforeEach(() => {
     __resetAccountDeletionSessionForTests();
+    __resetPendingAccountDeletionForTests();
   });
 
   for (const code of ['CANCELLED', 'WRONG_PASSWORD', 'REAUTH_FAILED'] as const) {
@@ -422,12 +328,13 @@ describe('account closure barrier — no false positives', () => {
 describe('account closure state machine', () => {
   beforeEach(() => {
     __resetAccountDeletionSessionForTests();
+    __resetPendingAccountDeletionForTests();
   });
 
   it('closing → closed (finalize) → signed_out (Auth null) → cleared (next sign-in)', async () => {
     markAccountDeletionClosing(UID);
     assert.deepEqual(getAccountDeletionClosure(), { uid: UID, phase: 'closing' });
-    await finalizePostAccountDeletionSession({ deletedUid: UID });
+    await finalizePostAccountDeletionSession({ closedUid: UID });
     assert.deepEqual(getAccountDeletionClosure(), { uid: UID, phase: 'closed' });
     acknowledgeAuthUserForAccountDeletion(UID);
     assert.equal(getAccountDeletionClosure()?.phase, 'closed', 'same uid keeps the barrier');
@@ -459,7 +366,7 @@ describe('account closure state machine', () => {
   it('Auth null during finalize is not overwritten back to closed', async () => {
     markAccountDeletionClosing(UID);
     await finalizePostAccountDeletionSession({
-      deletedUid: UID,
+      closedUid: UID,
       ensureSignedOut: async () => acknowledgeAuthUserForAccountDeletion(null),
     });
     assert.equal(getAccountDeletionClosure()?.phase, 'signed_out');
@@ -485,13 +392,23 @@ describe('AppNavigator wiring of the closure barrier', () => {
       src,
       /onAuthStateChanged\(async \(user\) => \{\s*acknowledgeAuthUserForAccountDeletion\(user\?\.uid \?\? null\);/,
     );
-    assert.match(src, /if \(isAccountClosedByDeletion\(refreshedUser\.uid\)\) return;\s*\n\s*openVisibilitySessionGate/);
+    assert.match(
+      src,
+      /if \(isAccountClosedByDeletion\(refreshedUser\.uid\)\) return;\s*\n\s*if \(isAccountDeletionPendingFor\(refreshedUser\.uid\)\) \{[\s\S]*?closeVisibilitySessionGate\(\);[\s\S]*?return;\s*\}\s*\n\s*openVisibilitySessionGate/,
+    );
   });
 
-  it('profile listener is keyed on the closure-aware uid and guards queued callbacks', () => {
-    assert.match(src, /resolveProfileSubscriptionUid\(uid, accountClosure\)/);
+  it('profile listener is keyed on the barrier-aware uid and guards queued callbacks', () => {
+    assert.match(
+      src,
+      /resolveProfileSubscriptionUid\(uid, accountClosure, pendingDeletion\.pending\)/,
+    );
     assert.match(src, /\}, \[profileUid\]\);/);
-    assert.equal(src.match(/if \(isAccountClosedByDeletion\(profileUid\)\) return;/g)?.length, 3);
+    assert.equal(src.match(/if \(isProfileGateSuspendedFor\(profileUid\)\) return;/g)?.length, 3);
+    assert.match(
+      src,
+      /function isProfileGateSuspendedFor\(uid: string\): boolean \{\s*return isAccountClosedByDeletion\(uid\) \|\| isAccountDeletionPendingFor\(uid\);/,
+    );
   });
 
   it('root render goes through resolveRootFlowKind with the reactive closure', () => {
@@ -516,13 +433,13 @@ describe('AppNavigator wiring of the closure barrier', () => {
     const service = read('services/accountDeletion.ts');
     assert.match(
       service,
-      /markAccountDeletionClosing\(uid\);\s*return \{ status: 'deleted', uid, backendStatus: response\.status \};/,
+      /markAccountDeletionClosing\(uid\);\s*clearPendingAccountDeletion\(\);\s*return \{ status: 'deleted', uid, backendStatus: response\.status \};/,
     );
     assert.equal(service.match(/markAccountDeletionClosing\(/g)?.length, 1);
   });
 
-  it('DeleteAccountScreen passes the deleted uid to finalize', () => {
+  it('DeleteAccountScreen passes the closed uid to finalize', () => {
     const screen = read('screens/DeleteAccountScreen.tsx');
-    assert.match(screen, /finalizePostAccountDeletionSession\(\{\s*deletedUid,/);
+    assert.match(screen, /finalizePostAccountDeletionSession\(\{\s*closedUid,/);
   });
 });
