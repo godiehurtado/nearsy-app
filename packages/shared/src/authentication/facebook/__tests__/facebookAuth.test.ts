@@ -15,11 +15,10 @@ import {
   createReauthenticateWithFacebook,
   extractFacebookIdentity,
   hasFacebookProvider,
-  resolveDeleteAccountReauthMethod,
   type AuthenticateWithFacebookDeps,
   type FacebookFirebaseSession,
 } from '../facebookAuthCore.ts';
-import { runFacebookDeleteAccount } from '../facebookDeleteAccount.ts';
+import { createDeleteAccountFlow } from '../../../accountDeletion/deleteAccountCore.ts';
 import { runContractualAndroidLogout } from '../../../location/contractualLogout.ts';
 
 const CANCELLED_KEY = 'authentication.social.facebook.errors.cancelled';
@@ -415,91 +414,54 @@ describe('Facebook reauthentication (Delete Account)', () => {
     await assert.rejects(reauth, isFbError('USER_MISMATCH'));
   });
 
-  it('delete runs only after successful reauth, then drops the native session', async () => {
-    const calls: string[] = [];
-    const outcome = await runFacebookDeleteAccount({
-      reauthenticate: async () => {
-        calls.push('reauth');
-      },
-      deleteAccount: async () => {
-        calls.push('delete');
-      },
-      logOutProviderSession: () => {
-        calls.push('fbLogout');
-      },
-    });
-    assert.deepEqual(outcome, { status: 'deleted' });
-    assert.deepEqual(calls, ['reauth', 'delete', 'fbLogout']);
+  it('Facebook reauth errors never reach the deleteMyAccount callable', async () => {
+    const cases: Array<[FacebookAuthenticationError | Error, string]> = [
+      [new FacebookAuthenticationError('CANCELLED', 'x'), 'reauth_cancelled'],
+      [new FacebookAuthenticationError('USER_MISMATCH', 'x'), 'reauth_mismatch'],
+      [new FacebookAuthenticationError('NETWORK_ERROR', 'x'), 'reauth_network'],
+      [new FacebookAuthenticationError('NOT_CONFIGURED', 'x'), 'method_unavailable'],
+      [new FacebookAuthenticationError('ACCOUNT_EXISTS', 'x'), 'reauth_failed'],
+      [new Error('unexpected'), 'reauth_failed'],
+    ];
+    for (const [error, kind] of cases) {
+      let callables = 0;
+      const run = createDeleteAccountFlow({
+        getCurrentUser: () => ({ uid: 'firebase-uid-1', providerIds: ['facebook.com'] }),
+        reauthenticate: {
+          facebook: async () => {
+            throw error;
+          },
+        },
+        invokeCallable: async () => {
+          callables += 1;
+          return { ok: true, status: 'DELETED' };
+        },
+        cleanupAfterDeletion: async () => {},
+      });
+      const outcome = await run({ method: 'facebook' });
+      assert.equal(outcome.status === 'failed' && outcome.kind, kind);
+      assert.equal(callables, 0);
+    }
   });
 
-  it('reauth cancel never deletes', async () => {
-    let deleted = 0;
-    const outcome = await runFacebookDeleteAccount({
-      reauthenticate: async () => {
-        throw new FacebookAuthenticationError('CANCELLED', 'cancelled');
+  it('Facebook reauth in progress is dropped silently', async () => {
+    const run = createDeleteAccountFlow({
+      getCurrentUser: () => ({ uid: 'firebase-uid-1', providerIds: ['facebook.com'] }),
+      reauthenticate: {
+        facebook: async () => {
+          throw new FacebookAuthenticationError('OPERATION_IN_PROGRESS', 'x');
+        },
       },
-      deleteAccount: async () => {
-        deleted += 1;
-      },
+      invokeCallable: async () => ({ ok: true, status: 'DELETED' }),
+      cleanupAfterDeletion: async () => {},
     });
-    assert.equal(deleted, 0);
-    assert.deepEqual(outcome, {
-      status: 'reauth_cancelled',
-      messageKey: 'settings.deleteAccount.reauthCancelled',
-    });
+    assert.deepEqual(await run({ method: 'facebook' }), { status: 'in_progress' });
   });
 
-  it('reauth mismatch / failure / in-progress never delete', async () => {
-    let deleted = 0;
-    const del = async () => {
-      deleted += 1;
-    };
-    const mismatch = await runFacebookDeleteAccount({
-      reauthenticate: async () => {
-        throw new FacebookAuthenticationError('USER_MISMATCH', 'x');
-      },
-      deleteAccount: del,
-    });
-    const failed = await runFacebookDeleteAccount({
-      reauthenticate: async () => {
-        throw new Error('unexpected');
-      },
-      deleteAccount: del,
-    });
-    const busy = await runFacebookDeleteAccount({
-      reauthenticate: async () => {
-        throw new FacebookAuthenticationError('OPERATION_IN_PROGRESS', 'x');
-      },
-      deleteAccount: del,
-    });
-    const exists = await runFacebookDeleteAccount({
-      reauthenticate: async () => {
-        throw new FacebookAuthenticationError('ACCOUNT_EXISTS', 'x');
-      },
-      deleteAccount: del,
-    });
-    assert.equal(deleted, 0);
-    assert.equal(mismatch.status, 'reauth_mismatch');
-    assert.equal(failed.status, 'reauth_failed');
-    assert.equal(busy.status, 'in_progress');
-    assert.deepEqual(exists, {
-      status: 'reauth_failed',
-      messageKey: 'settings.deleteAccount.reauthFailed',
-    });
-  });
-
-  it('reauth method: password wins; facebook-only uses Facebook; others unchanged', () => {
+  it('hasFacebookProvider reads providerData only', () => {
     const user = (...ids: string[]) => ({
       providerData: ids.map((providerId) => ({ providerId })),
     });
-    assert.equal(resolveDeleteAccountReauthMethod(user('facebook.com')), 'facebook');
-    assert.equal(
-      resolveDeleteAccountReauthMethod(user('password', 'facebook.com')),
-      'password',
-    );
-    assert.equal(resolveDeleteAccountReauthMethod(user('google.com')), 'other');
-    assert.equal(resolveDeleteAccountReauthMethod(user('phone')), 'other');
-    assert.equal(resolveDeleteAccountReauthMethod(null), 'other');
     assert.equal(hasFacebookProvider(user('google.com', 'facebook.com')), true);
     assert.equal(hasFacebookProvider(user('google.com')), false);
     assert.equal(hasFacebookProvider(undefined), false);

@@ -164,6 +164,39 @@ export default {
       'That account does not match the one signed in to Nearsy. Your account was not deleted.',
     reauthUnavailable:
       'Account deletion for this sign-in method is temporarily unavailable in the app. Please contact Nearsy support for help.',
+    methodsTitle: 'Confirm it’s you',
+    methodsBody:
+      'For security, confirm your identity with one of your sign-in methods. Your account and data are deleted right after.',
+    methodPassword: 'Password',
+    methodGoogle: 'Google',
+    methodFacebook: 'Facebook',
+    linkedInRecentBody:
+      'Your account signs in with LinkedIn. You can delete it if you signed in within the last 5 minutes.',
+    linkedInGuidance:
+      'For security, sign out, sign back in with LinkedIn, and request account deletion within the next 5 minutes.',
+    errorStaleSession:
+      'For security, you need to have signed in recently. Confirm your identity again and retry. Your account was not deleted.',
+    errorAppCheck:
+      'We couldn’t verify this copy of Nearsy. Update the app or try again later. Your account was not deleted.',
+    errorUnauthenticated:
+      'Your session has ended. Sign in again and retry. Your account was not deleted.',
+    errorRetryable:
+      'We couldn’t finish deleting your account right now. Please try again in a few minutes.',
+    errorPartial:
+      'Some of your data couldn’t be deleted, so your account was kept. Please try again later or contact Nearsy support.',
+    errorUserNotFound:
+      'This account no longer exists or is unavailable. Sign in again to continue.',
+    errorNetwork:
+      'We couldn’t confirm the deletion because of a connection problem. Check your connection and try again.',
+    errorUnknown:
+      'We couldn’t confirm that your account was deleted. Please try again.',
+    pendingTitle: 'Confirming account deletion',
+    pendingBody:
+      'We couldn’t confirm whether your account was deleted. Check your connection and try again, or sign out.',
+    pendingSignInAgain:
+      'Your account still exists. For security, sign out, sign back in and request the deletion again.',
+    pendingRetry: 'Try again',
+    pendingSignOut: 'Sign out',
   },
   blockedPeople: {
     title: 'Blocked People',

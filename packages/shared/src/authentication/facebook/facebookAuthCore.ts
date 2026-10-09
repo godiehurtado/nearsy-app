@@ -410,17 +410,3 @@ export function hasFacebookProvider(
     (entry) => entry?.providerId === FACEBOOK_FIREBASE_PROVIDER_ID,
   );
 }
-
-/**
- * Delete Account reauth strategy. Password wins when present (existing
- * flow); Facebook-only accounts use Facebook reauth; others keep the
- * existing behavior.
- */
-export function resolveDeleteAccountReauthMethod(
-  user: { providerData?: ReadonlyArray<{ providerId?: string | null }> } | null | undefined,
-): 'password' | 'facebook' | 'other' {
-  const ids = (user?.providerData ?? []).map((entry) => entry?.providerId);
-  if (ids.includes('password')) return 'password';
-  if (ids.includes(FACEBOOK_FIREBASE_PROVIDER_ID)) return 'facebook';
-  return 'other';
-}

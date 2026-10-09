@@ -1,318 +1,470 @@
 // src/screens/DeleteAccountScreen.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
+  Pressable,
   Alert,
   ActivityIndicator,
   ScrollView,
   Platform,
   KeyboardAvoidingView,
+  StyleSheet,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { deleteAccountAndData } from '../services/accountDeletion';
-import TopHeader from '../components/TopHeader';
-import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '../i18n';
-import { resolveDeleteAccountReauthMethod } from '../authentication/facebook/facebookAuthCore';
-import { runFacebookDeleteAccount } from '../authentication/facebook/facebookDeleteAccount';
 import {
-  logOutFacebookSession,
-  reauthenticateWithFacebook,
-} from '../services/facebookSession';
+  fontSize,
+  fontWeight,
+  radius,
+  screenPadding,
+  spacing,
+  useAppTheme,
+} from '../theme';
+import {
+  deleteMyAccountWithReauth,
+  getDeleteAccountOptions,
+} from '../accountDeletion/deleteAccount';
+import { isDeleteConfirmationText } from '../accountDeletion/deleteConfirmation';
+import type {
+  DeleteAccountAttemptMethod,
+  DeleteAccountMethod,
+} from '../accountDeletion/deleteAccountCore';
 
-type ProfileDoc = {
-  profileImage?: string | null;
-  topBarColor?: string;
-  topBarImage?: string | null;
-  topBarMode?: 'color' | 'image';
+const ACTION_LABEL_KEY: Record<DeleteAccountMethod, string> = {
+  password: 'settings.deleteAccount.reauthConfirm',
+  google: 'settings.deleteAccount.reauthContinueGoogle',
+  facebook: 'settings.deleteAccount.reauthContinueFacebook',
+};
 
-  phone?: string;
-  birthYear?: number;
-  visibleToMinAge?: number | null;
-  visibleToMaxAge?: number | null;
-  blockedContacts?: string[];
-  bgVisible?: boolean;
+const METHOD_LABEL_KEY: Record<DeleteAccountMethod, string> = {
+  password: 'settings.deleteAccount.methodPassword',
+  google: 'settings.deleteAccount.methodGoogle',
+  facebook: 'settings.deleteAccount.methodFacebook',
+};
 
-  phoneVerified?: boolean;
+const METHOD_ICON: Record<DeleteAccountMethod, keyof typeof Ionicons.glyphMap> = {
+  password: 'key-outline',
+  google: 'logo-google',
+  facebook: 'logo-facebook',
 };
 
 export default function DeleteAccountScreen() {
-  // top visuals
-  const [topBarColor, setTopBarColor] = useState('#3B5A85');
-  const [topBarMode, setTopBarMode] = useState<'color' | 'image'>('color');
-  const [topBarImage, setTopBarImage] = useState<string | null>(null);
-  const [profileImage, setProfileImage] = useState<string | null>(null);
-
-  const [pw, setPw] = useState('');
-  const [showReauth, setShowReauth] = useState(false);
-
   const nav = useNavigation<any>();
+  const insets = useSafeAreaInsets();
+  const { palette } = useAppTheme();
   const { t } = useTranslation();
   const [typed, setTyped] = useState('');
-  const [busy, setBusy] = useState(false);
-  const usesFacebookReauth =
-    Platform.OS === 'android' &&
-    resolveDeleteAccountReauthMethod(firebaseAuth.currentUser) === 'facebook';
+  const [password, setPassword] = useState('');
+  const [busyMethod, setBusyMethod] =
+    useState<DeleteAccountAttemptMethod | null>(null);
+  const [showLinkedInGuidance, setShowLinkedInGuidance] = useState(false);
+  const attemptLockRef = useRef(false);
+  const mountedRef = useRef(true);
 
-  // ui
-  const [loading, setLoading] = useState(true);
-
-  const canDelete = typed.trim().toUpperCase() === 'DELETE';
+  const options = useMemo(() => getDeleteAccountOptions(), []);
+  const [selectedMethod, setSelectedMethod] = useState<DeleteAccountMethod | null>(
+    () => options.methods[0] ?? null,
+  );
+  const canDelete = isDeleteConfirmationText(typed);
+  const busy = busyMethod !== null;
 
   useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const uid = firebaseAuth.currentUser?.uid;
-        if (!uid) {
-          if (!cancelled) setLoading(false);
-          return;
-        }
-
-        const snap = await firestoreDb.collection('users').doc(uid).get();
-
-        const exists =
-          typeof snap.exists === 'function' ? snap.exists() : snap.exists;
-        if (!cancelled && exists) {
-          const data = snap.data() as ProfileDoc;
-
-          setTopBarColor(data.topBarColor ?? '#3B5A85');
-          setTopBarMode(
-            data.topBarMode ?? (data.topBarImage ? 'image' : 'color'),
-          );
-          setTopBarImage(data.topBarImage ?? null);
-          setProfileImage(data.profileImage ?? null);
-        }
-      } catch (e: any) {
-        Alert.alert('Error', e?.message || 'Could not load settings.');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
+    mountedRef.current = true;
     return () => {
-      cancelled = true;
+      mountedRef.current = false;
     };
   }, []);
 
-  const handleFacebookDelete = async () => {
-    if (busy) return;
-    try {
-      setBusy(true);
-      const outcome = await runFacebookDeleteAccount({
-        reauthenticate: reauthenticateWithFacebook,
-        deleteAccount: () => deleteAccountAndData(),
-        logOutProviderSession: logOutFacebookSession,
-      });
-      if (outcome.status === 'deleted') {
-        Alert.alert(
-          t('settings.deleteAccount.title'),
-          t('settings.deleteAccount.done'),
-        );
-        return;
-      }
-      if (outcome.status !== 'in_progress') {
-        Alert.alert(
-          t('settings.deleteAccount.title'),
-          t(outcome.messageKey as any),
-        );
-      }
-    } catch {
+  const runAttempt = async (method: DeleteAccountAttemptMethod) => {
+    const outcome = await deleteMyAccountWithReauth({
+      method,
+      password: method === 'password' ? password : undefined,
+    });
+    // Unresolved: the root replaces this screen with the pending state.
+    if (outcome.status === 'in_progress' || outcome.status === 'unresolved') return;
+    if (outcome.status === 'deleted') {
+      // The root navigator owns the exit: it mounts the guest stack (Login)
+      // once the deletion barrier is released.
       Alert.alert(
         t('settings.deleteAccount.title'),
-        t('settings.deleteAccount.error'),
+        t('settings.deleteAccount.done'),
       );
-    } finally {
-      setBusy(false);
+      return;
     }
+    if (outcome.kind === 'linkedin_guidance' && mountedRef.current) {
+      setShowLinkedInGuidance(true);
+    }
+    Alert.alert(t('settings.deleteAccount.title'), t(outcome.messageKey as any));
   };
 
-  const handleDelete = async () => {
+  const releaseAttempt = () => {
+    attemptLockRef.current = false;
+  };
+
+  const confirmAndDelete = (method: DeleteAccountAttemptMethod) => {
+    if (!canDelete || attemptLockRef.current) return;
+    if (method === 'password' && !password.trim()) return;
+    attemptLockRef.current = true;
     Alert.alert(
-      'Delete account',
-      'This will permanently delete your account and associated data. This action cannot be undone.',
+      t('settings.deleteAccount.alertTitle'),
+      t('settings.deleteAccount.alertBody'),
       [
-        { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('settings.deleteAccount.alertCancel'),
+          style: 'cancel',
+          onPress: releaseAttempt,
+        },
+        {
+          text: t('settings.deleteAccount.alertConfirm'),
           style: 'destructive',
           onPress: async () => {
-            if (usesFacebookReauth) {
-              await handleFacebookDelete();
-              return;
-            }
+            setBusyMethod(method);
             try {
-              setBusy(true);
-              await deleteAccountAndData();
-              Alert.alert('Done', 'Your account has been deleted.');
-            } catch (e: any) {
-              const code = e?.code || '';
-              if (code === 'auth/requires-recent-login') {
-                setShowReauth(true);
-                return;
-              }
-              Alert.alert('Error', e?.message || 'Could not delete account.');
+              await runAttempt(method);
+            } catch {
+              Alert.alert(
+                t('settings.deleteAccount.title'),
+                t('settings.deleteAccount.errorUnknown'),
+              );
             } finally {
-              setBusy(false);
+              releaseAttempt();
+              if (mountedRef.current) {
+                setBusyMethod(null);
+                setPassword('');
+              }
             }
           },
         },
       ],
+      { cancelable: true, onDismiss: releaseAttempt },
     );
   };
 
+  const selectMethod = (method: DeleteAccountMethod) => {
+    if (busy || method === selectedMethod) return;
+    setPassword('');
+    setSelectedMethod(method);
+  };
+
+  const inputColors = {
+    color: palette.textPrimary,
+    backgroundColor: palette.panel,
+    borderColor: palette.border,
+  };
+
+  const renderDangerAction = (
+    method: DeleteAccountAttemptMethod,
+    label: string,
+    enabled: boolean,
+  ) => {
+    const active = enabled && !busy;
+    return (
+      <Pressable
+        key={method}
+        onPress={() => confirmAndDelete(method)}
+        disabled={!active}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ disabled: !active, busy: busyMethod === method }}
+        style={({ pressed }) => [
+          styles.dangerBtn,
+          {
+            backgroundColor: enabled ? palette.danger : palette.borderStrong,
+            opacity: busy || pressed ? 0.85 : 1,
+          },
+        ]}
+      >
+        {busyMethod === method ? (
+          <ActivityIndicator color={palette.onDanger} />
+        ) : (
+          <Text style={[styles.dangerBtnText, { color: palette.onDanger }]}>
+            {label}
+          </Text>
+        )}
+      </Pressable>
+    );
+  };
+
+  const renderMethodSelector = () => (
+    <View
+      accessibilityRole="radiogroup"
+      style={[
+        styles.methodList,
+        { backgroundColor: palette.panel, borderColor: palette.border },
+      ]}
+    >
+      {options.methods.map((method, index) => {
+        const selected = method === selectedMethod;
+        return (
+          <Pressable
+            key={method}
+            onPress={() => selectMethod(method)}
+            disabled={busy}
+            accessibilityRole="radio"
+            accessibilityLabel={t(METHOD_LABEL_KEY[method] as any)}
+            accessibilityState={{ checked: selected, disabled: busy }}
+            style={({ pressed }) => [
+              styles.methodRow,
+              index > 0 && {
+                borderTopWidth: StyleSheet.hairlineWidth,
+                borderTopColor: palette.border,
+              },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Ionicons
+              name={METHOD_ICON[method]}
+              size={20}
+              color={palette.textPrimary}
+            />
+            <Text style={[styles.methodLabel, { color: palette.textPrimary }]}>
+              {t(METHOD_LABEL_KEY[method] as any)}
+            </Text>
+            <Ionicons
+              name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+              size={22}
+              color={selected ? palette.primary : palette.textMuted}
+            />
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+
+  const hasAnyAction = options.methods.length > 0 || options.recentSessionOnly;
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+    <View style={[styles.root, { backgroundColor: palette.background }]}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
       >
         <ScrollView
-          style={{ flex: 1 }}
           contentContainerStyle={{
-            paddingBottom: 110,
+            paddingTop: insets.top + spacing.md,
+            paddingBottom: spacing.xxxl + insets.bottom,
+            paddingHorizontal: screenPadding.horizontal,
           }}
+          keyboardShouldPersistTaps="handled"
         >
-          <TopHeader
-            topBarMode={topBarMode}
-            topBarColor={topBarColor}
-            topBarImage={topBarImage}
-            profileImage={profileImage}
-            showAvatar
+          <Pressable
+            onPress={() => nav.goBack()}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.actions.back')}
+            hitSlop={8}
+            style={[
+              styles.backBtn,
+              { backgroundColor: palette.panel, borderColor: palette.border },
+            ]}
+          >
+            <Ionicons name="chevron-back" size={22} color={palette.textPrimary} />
+          </Pressable>
+
+          <Text
+            accessibilityRole="header"
+            style={[styles.title, { color: palette.textPrimary }]}
+          >
+            {t('settings.deleteAccount.title')}
+          </Text>
+          <Text style={[styles.body, { color: palette.textSecondary }]}>
+            {t('settings.deleteAccount.body')}
+          </Text>
+          <Text style={[styles.confirmHint, { color: palette.danger }]}>
+            {t('settings.deleteAccount.confirm')}
+          </Text>
+
+          <TextInput
+            value={typed}
+            onChangeText={setTyped}
+            placeholder={t('settings.deleteAccount.placeholder')}
+            placeholderTextColor={palette.placeholder}
+            accessibilityLabel={t('settings.deleteAccount.placeholder')}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            editable={!busy}
+            style={[styles.input, inputColors]}
           />
-          <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
-            <Text style={{ fontSize: 20, fontWeight: '800', marginBottom: 10 }}>
-              Delete account
-            </Text>
 
-            <Text style={{ color: '#374151', marginBottom: 14 }}>
-              Type DELETE to confirm. Your profile data and photos will be
-              removed.
-            </Text>
-
-            <TextInput
-              value={typed}
-              onChangeText={setTyped}
-              placeholder="Type DELETE"
-              autoCapitalize="characters"
-              style={{
-                borderWidth: 1,
-                borderColor: '#E5E7EB',
-                borderRadius: 12,
-                padding: 12,
-                marginBottom: 14,
-              }}
-            />
-
-            {showReauth && (
-              <View style={{ marginTop: 16, marginBottom: 32 }}>
-                <Text style={{ color: '#374151', marginBottom: 8 }}>
-                  For security, please confirm your password to continue.
-                </Text>
-
+          {options.methods.length > 0 && selectedMethod && (
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: palette.textPrimary }]}>
+                {t('settings.deleteAccount.methodsTitle')}
+              </Text>
+              <Text style={[styles.body, { color: palette.textSecondary }]}>
+                {t('settings.deleteAccount.methodsBody')}
+              </Text>
+              {options.methods.length > 1 && renderMethodSelector()}
+              {selectedMethod === 'password' && (
                 <TextInput
-                  value={pw}
-                  onChangeText={setPw}
-                  placeholder="Password"
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder={t('settings.deleteAccount.passwordPlaceholder')}
+                  placeholderTextColor={palette.placeholder}
+                  accessibilityLabel={t('settings.deleteAccount.passwordPlaceholder')}
                   secureTextEntry
                   autoCapitalize="none"
-                  style={{
-                    borderWidth: 1,
-                    borderColor: '#E5E7EB',
-                    borderRadius: 12,
-                    padding: 12,
-                    marginBottom: 12,
-                  }}
+                  autoCorrect={false}
+                  editable={!busy}
+                  style={[styles.input, inputColors]}
                 />
+              )}
+              {renderDangerAction(
+                selectedMethod,
+                t(ACTION_LABEL_KEY[selectedMethod] as any),
+                selectedMethod === 'password'
+                  ? canDelete && Boolean(password.trim())
+                  : canDelete,
+              )}
+            </View>
+          )}
 
-                <TouchableOpacity
-                  onPress={async () => {
-                    try {
-                      setBusy(true);
-                      const { reauthWithPassword } =
-                        await import('../services/reauth');
-                      await reauthWithPassword(pw);
-
-                      // Reintenta borrar
-                      await deleteAccountAndData();
-
-                      Alert.alert('Done', 'Your account has been deleted.');
-                      nav.reset({ index: 0, routes: [{ name: 'Login' }] });
-                    } catch (err: any) {
-                      Alert.alert(
-                        'Error',
-                        err?.message || 'Could not confirm password.',
-                      );
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                  disabled={!pw.trim() || busy}
-                  activeOpacity={0.9}
-                  style={{
-                    backgroundColor: pw.trim() ? '#B91C1C' : '#9CA3AF',
-                    paddingVertical: 14,
-                    borderRadius: 12,
-                    alignItems: 'center',
-                    opacity: busy ? 0.8 : 1,
-                  }}
-                >
-                  {busy ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={{ color: '#fff', fontWeight: '800' }}>
-                      Confirm password and delete
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {!showReauth && usesFacebookReauth && (
-              <Text style={{ color: '#374151', marginBottom: 14 }}>
-                {t('settings.deleteAccount.reauthBodyFacebook')}
-              </Text>
-            )}
-
-            {!showReauth && (
-              <TouchableOpacity
-                disabled={!canDelete || busy}
-                onPress={handleDelete}
-                activeOpacity={0.9}
-                style={{
-                  backgroundColor: canDelete ? '#B91C1C' : '#9CA3AF',
-                  paddingVertical: 14,
-                  borderRadius: 12,
-                  alignItems: 'center',
-                  opacity: busy ? 0.8 : 1,
-                }}
+          {options.recentSessionOnly && (
+            <View style={styles.section}>
+              <View
+                accessibilityLiveRegion="polite"
+                style={[
+                  styles.notice,
+                  showLinkedInGuidance
+                    ? { backgroundColor: palette.dangerBg, borderColor: palette.danger }
+                    : { backgroundColor: palette.panel, borderColor: palette.border },
+                ]}
               >
-                {busy ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={{ color: '#fff', fontWeight: '800' }}>
-                    {usesFacebookReauth
-                      ? t('settings.deleteAccount.reauthContinueFacebook')
-                      : 'Delete permanently'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            )}
+                <Text style={[styles.noticeText, { color: palette.textPrimary }]}>
+                  {t(
+                    showLinkedInGuidance
+                      ? 'settings.deleteAccount.linkedInGuidance'
+                      : 'settings.deleteAccount.linkedInRecentBody',
+                  )}
+                </Text>
+              </View>
+              {renderDangerAction(
+                'recent_session',
+                t('settings.deleteAccount.permanently'),
+                canDelete,
+              )}
+            </View>
+          )}
 
-            <TouchableOpacity
-              onPress={() => nav.goBack()}
-              style={{ marginTop: 14, alignItems: 'center' }}
-            >
-              <Text style={{ color: '#3B5A85', fontWeight: '700' }}>Back</Text>
-            </TouchableOpacity>
-          </View>
+          {!hasAnyAction && (
+            <Text style={[styles.body, { color: palette.textSecondary }]}>
+              {t('settings.deleteAccount.reauthUnavailable')}
+            </Text>
+          )}
+
+          <Pressable
+            onPress={() => nav.goBack()}
+            disabled={busy}
+            accessibilityRole="button"
+            style={styles.backLink}
+          >
+            <Text style={[styles.backLinkText, { color: palette.primary }]}>
+              {t('common.actions.back')}
+            </Text>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  flex: { flex: 1 },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  title: {
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.extrabold,
+    marginBottom: spacing.sm,
+  },
+  body: {
+    fontSize: fontSize.base,
+    lineHeight: fontSize.base * 1.45,
+    marginBottom: spacing.sm,
+  },
+  confirmHint: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+    marginBottom: spacing.md,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    fontSize: fontSize.base,
+    minHeight: 48,
+  },
+  section: {
+    marginTop: spacing.sm,
+  },
+  sectionTitle: {
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.extrabold,
+    marginBottom: spacing.xs,
+  },
+  methodList: {
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+    overflow: 'hidden',
+  },
+  methodRow: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  methodLabel: {
+    flex: 1,
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.semibold,
+  },
+  notice: {
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  noticeText: {
+    fontSize: fontSize.base,
+    lineHeight: fontSize.base * 1.45,
+  },
+  dangerBtn: {
+    minHeight: 50,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  dangerBtnText: {
+    fontWeight: fontWeight.extrabold,
+    fontSize: fontSize.md,
+    textAlign: 'center',
+  },
+  backLink: {
+    marginTop: spacing.lg,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  backLinkText: {
+    fontWeight: fontWeight.bold,
+  },
+});

@@ -408,6 +408,39 @@ export const es: TranslationResources = {
         'Esa cuenta no coincide con la sesión de Nearsy. Tu cuenta no fue eliminada.',
       reauthUnavailable:
         'La eliminación de cuenta para este método de acceso no está disponible temporalmente en la app. Contacta a soporte de Nearsy para obtener ayuda.',
+      methodsTitle: 'Confirma que eres tú',
+      methodsBody:
+        'Por seguridad, confirma tu identidad con uno de tus métodos de inicio de sesión. Tu cuenta y tus datos se eliminan justo después.',
+      methodPassword: 'Contraseña',
+      methodGoogle: 'Google',
+      methodFacebook: 'Facebook',
+      linkedInRecentBody:
+        'Tu cuenta inicia sesión con LinkedIn. Puedes eliminarla si iniciaste sesión en los últimos 5 minutos.',
+      linkedInGuidance:
+        'Por seguridad, cierra sesión, vuelve a ingresar con LinkedIn y solicita la eliminación de tu cuenta dentro de los próximos 5 minutos.',
+      errorStaleSession:
+        'Por seguridad, necesitas haber iniciado sesión recientemente. Confirma tu identidad de nuevo e inténtalo otra vez. Tu cuenta no fue eliminada.',
+      errorAppCheck:
+        'No pudimos verificar esta copia de Nearsy. Actualiza la app o inténtalo más tarde. Tu cuenta no fue eliminada.',
+      errorUnauthenticated:
+        'Tu sesión terminó. Inicia sesión de nuevo e inténtalo otra vez. Tu cuenta no fue eliminada.',
+      errorRetryable:
+        'No pudimos terminar de eliminar tu cuenta en este momento. Inténtalo de nuevo en unos minutos.',
+      errorPartial:
+        'No se pudieron eliminar algunos de tus datos, así que tu cuenta se conservó. Inténtalo más tarde o contacta a soporte de Nearsy.',
+      errorUserNotFound:
+        'Esta cuenta ya no existe o no está disponible. Inicia sesión de nuevo para continuar.',
+      errorNetwork:
+        'No pudimos confirmar la eliminación por un problema de conexión. Revisa tu conexión e inténtalo de nuevo.',
+      errorUnknown:
+        'No pudimos confirmar que tu cuenta se haya eliminado. Inténtalo de nuevo.',
+      pendingTitle: 'Confirmando la eliminación de la cuenta',
+      pendingBody:
+        'No pudimos confirmar si tu cuenta se eliminó. Revisa tu conexión e inténtalo de nuevo, o cierra sesión.',
+      pendingSignInAgain:
+        'Tu cuenta sigue activa. Por seguridad, cierra sesión, vuelve a ingresar y solicita de nuevo la eliminación.',
+      pendingRetry: 'Reintentar',
+      pendingSignOut: 'Cerrar sesión',
     },
     blockedPeople: {
       title: 'Personas bloqueadas',

@@ -386,12 +386,17 @@ describe('Sign-in methods screen', () => {
   });
 });
 
-describe('Delete Account untouched', () => {
-  it('Delete Account does not use the linking modules and keeps its reauth rules', () => {
-    const screen = readShared('screens/DeleteAccountScreen.tsx');
-    assert.doesNotMatch(screen, /AccountLinking|firebaseAccountLink|accountLinkingCore|signInMethods|googleLoginWarning/);
-    assert.match(screen, /resolveDeleteAccountReauthMethod\(firebaseAuth\.currentUser\) === 'facebook'/);
-    assert.match(screen, /reauthWithPassword\(pw\)/);
+describe('Delete Account stays out of linking', () => {
+  it('Delete Account does not use the linking modules', () => {
+    for (const file of [
+      'screens/DeleteAccountScreen.tsx',
+      'accountDeletion/deleteAccount.android.ts',
+      'accountDeletion/deleteAccountCore.ts',
+    ]) {
+      const src = readShared(file);
+      assert.doesNotMatch(src, /AccountLinking|firebaseAccountLink|accountLinkingCore|googleLoginWarning/, file);
+    }
+    assert.match(readShared('screens/DeleteAccountScreen.tsx'), /deleteMyAccountWithReauth/);
   });
 });
 
