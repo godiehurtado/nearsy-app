@@ -993,7 +993,7 @@ const es: TranslationResources = {
     sections: {
       details: 'Detalles del perfil',
       content: 'Contenido del perfil',
-      context: 'Trasfondo',
+      context: 'Información personal',
     },
     context: {
       birthCountry: 'País de origen',
