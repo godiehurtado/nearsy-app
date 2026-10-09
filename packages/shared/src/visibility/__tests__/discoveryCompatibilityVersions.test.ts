@@ -10,7 +10,9 @@ import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import enAlignment from '../../i18n/resources/alignment.ts';
 import {
+  ALIGNMENT_VERSION,
   DISCOVERY_COMPATIBILITY_FORMULA_VERSIONS,
   compatibilityForNearbyList,
   parseDiscoveryCompatibility,
@@ -64,6 +66,37 @@ describe('supported formula versions', () => {
       assert.deepEqual(toAlignment(parsed), { available: false, state: 'processing' });
     });
   }
+
+  it('v2 keeps alignmentVersion "1": current percentage and category stay visible', () => {
+    const alignment = toAlignment(
+      parseDiscoveryCompatibility({
+        available: true,
+        score: 66,
+        formulaVersion: '2',
+        alignmentVersion: '1',
+        alignmentTier: 'strong',
+      }),
+    );
+    assert.deepEqual(alignment, { available: true, score: 66, tier: 'strong' });
+    assert.equal(enAlignment.tiers.strong, 'Closely aligned');
+    const card = read('components/profileExploration/DiscoveryCompatibilityCard.tsx');
+    assert.match(card, /<AlignmentScoreRing score=\{alignment\.score\} variant="detail" \/>/);
+    assert.match(card, /alignmentTierLabel\(t, alignment\.tier\)/);
+    const presentation = read('visibility/alignmentPresentation.ts');
+    assert.match(presentation, /formatAlignmentPercent\(score: number\): string/);
+  });
+
+  it('alignmentVersion stays "1" for both formulas', () => {
+    assert.equal(ALIGNMENT_VERSION, '1');
+    const v2Other = parseDiscoveryCompatibility({
+      available: true,
+      score: 66,
+      formulaVersion: '2',
+      alignmentVersion: '2',
+      alignmentTier: 'strong',
+    });
+    assert.deepEqual(toAlignment(v2Other), { available: true, score: 66, tier: undefined });
+  });
 
   it('v1 and v2 render the same score through the current UI model', () => {
     for (const score of [0, 1, 50, 99, 100]) {

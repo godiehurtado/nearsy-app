@@ -6,6 +6,10 @@
 export const DISCOVERY_COMPATIBILITY_FORMULA_VERSION = '1' as const;
 /** Backend-computed formulas the client can display; anything else is rejected. */
 export const DISCOVERY_COMPATIBILITY_FORMULA_VERSIONS = ['1', '2'] as const;
+/**
+ * Visual tier classification. Backend formula v2 keeps sending '1' while the
+ * tiers (weak/partial/strong/full) are unchanged; only a new classification bumps it.
+ */
 export const ALIGNMENT_VERSION = '1' as const;
 
 export type DiscoveryCompatibilityFormulaVersion =

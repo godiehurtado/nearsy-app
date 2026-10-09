@@ -16,11 +16,6 @@ import {
 export const SETTINGS_MIN_AGE = MIN_VISIBILITY_AGE;
 export const SETTINGS_MAX_AGE = MAX_VISIBILITY_AGE;
 
-export type PhoneVerificationClearPatch = {
-  phoneVerified: false;
-  phoneVerifiedAt: null;
-};
-
 export type BirthDatePersistencePatch = {
   birthDate: string;
   birthYear: number;
@@ -42,33 +37,23 @@ export function isValidE164Phone(fullPhone: string): boolean {
   return /^\+[1-9]\d{7,14}$/.test(fullPhone);
 }
 
+export type SettingsPhoneStatus =
+  | { kind: 'verified'; phone: string }
+  | { kind: 'unverified'; phone: string | null };
+
 /**
- * When the canonical phone value actually changes, clear verification.
- * Same number → empty patch (do not invalidate).
- * The phone is mandatory: an empty value is rejected, never saved as null.
+ * Settings shows the phone read-only. Changing it requires OTP on the new
+ * number first, so Settings never writes `phone` or `phoneVerified`.
  */
-export function buildPhoneSavePatch(input: {
-  previousPhone: string | null | undefined;
-  nextPhone: string | null;
-}): {
-  phone: string;
-  verification: PhoneVerificationClearPatch | null;
-} {
-  const phone = input.nextPhone ? normalizeCanonicalPhone(input.nextPhone) : '';
-  const prev = normalizeCanonicalPhone(input.previousPhone);
-  if (!phone) {
-    throw new Error('PHONE_REQUIRED');
+export function resolveSettingsPhoneStatus(input: {
+  phone: string | null | undefined;
+  phoneVerified: boolean | null | undefined;
+}): SettingsPhoneStatus {
+  const phone = normalizeCanonicalPhone(input.phone);
+  if (phone && input.phoneVerified === true) {
+    return { kind: 'verified', phone };
   }
-  if (!isValidE164Phone(phone)) {
-    throw new Error('INVALID_PHONE');
-  }
-  if (phone === prev) {
-    return { phone, verification: null };
-  }
-  return {
-    phone,
-    verification: { phoneVerified: false, phoneVerifiedAt: null },
-  };
+  return { kind: 'unverified', phone: phone || null };
 }
 
 export function validateSettingsBirthDate(

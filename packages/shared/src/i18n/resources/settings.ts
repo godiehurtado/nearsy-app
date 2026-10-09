@@ -11,13 +11,9 @@ export default {
     missing: 'No email available',
   },
   phone: {
-    title: 'Phone number',
-    placeholder: 'Mobile number',
+    title: 'Mobile number',
     hint: 'Required to protect your account. Your number is never shown on your profile.',
-    required: 'Your phone number is required and can’t be removed.',
-    invalid: 'Enter a valid mobile number with your country code.',
-    selectCountry: 'Select country code',
-    saved: 'Phone number updated',
+    notVerified: 'Not verified',
   },
   birthDate: {
     title: 'Date of birth',
@@ -149,14 +145,11 @@ export default {
     reauthBody: 'For security, please confirm your password to continue.',
     reauthBodyGoogle:
       'For security, continue with Google to confirm it’s you before deleting this account.',
-    reauthBodyApple:
-      'For security, continue with Apple to confirm it’s you before deleting this account.',
     reauthBodyFacebook:
       'For security, continue with Facebook to confirm it’s you before deleting this account.',
     passwordPlaceholder: 'Password',
     reauthConfirm: 'Confirm password and delete',
     reauthContinueGoogle: 'Continue with Google and delete',
-    reauthContinueApple: 'Continue with Apple and delete',
     reauthContinueFacebook: 'Continue with Facebook and delete',
     reauthError: 'Could not confirm password.',
     reauthFailed: 'Could not confirm your identity. Your account was not deleted.',
