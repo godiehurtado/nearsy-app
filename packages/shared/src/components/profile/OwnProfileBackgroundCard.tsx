@@ -73,7 +73,7 @@ export default function OwnProfileBackgroundCard({
         {labels.sectionTitle}
       </Text>
 
-      <View style={styles.stack}>
+      <View>
         <CountrySelectField
           label={labels.birthCountry}
           uppercaseLabel
@@ -126,8 +126,5 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: fontSize.md,
     fontWeight: fontWeight.bold,
-  },
-  stack: {
-    gap: spacing.md,
   },
 });

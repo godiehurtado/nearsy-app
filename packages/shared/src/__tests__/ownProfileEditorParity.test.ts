@@ -190,6 +190,14 @@ describe('Theme, large fonts and order', () => {
     }
   });
 
+  it('Background fields keep the same spacing as Profile details', () => {
+    assert.match(styleBlock(details, 'stack'), /gap: spacing\.md/);
+    for (const src of [countryField, languageField]) {
+      assert.match(styleBlock(src, 'wrap'), /marginBottom: spacing\.md/);
+    }
+    assert.doesNotMatch(background, /styles\.stack/);
+  });
+
   it('labels and titles are never clipped with large fonts', () => {
     for (const src of [details, background, formInput]) {
       assert.doesNotMatch(src, /allowFontScaling=\{false\}|maxFontSizeMultiplier|adjustsFontSizeToFit/);
