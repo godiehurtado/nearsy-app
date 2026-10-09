@@ -15,6 +15,12 @@ export const SUPPORTED_DISCOVERY_COMPATIBILITY_FORMULA_VERSIONS = [
   '2',
 ] as const;
 
+/**
+ * Tier (weak/partial/strong/full) definition version — independent of the
+ * score formula. A formulaVersion '2' backend must keep sending
+ * alignmentVersion '1' while the tier definition is unchanged. An unknown
+ * alignmentVersion hides the tier but keeps a valid score.
+ */
 export const ALIGNMENT_VERSION = '1' as const;
 
 export type DiscoveryCompatibilityFormulaVersion =

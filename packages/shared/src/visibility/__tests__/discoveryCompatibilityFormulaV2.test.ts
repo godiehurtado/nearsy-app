@@ -120,6 +120,44 @@ describe('formulaVersion "2" (future) — shown as sent', () => {
     assert.deepEqual(v2, { available: true, score: 91, tier: 'full' });
   });
 
+  it('formula 2 + alignmentVersion 1 shows percentage and category', () => {
+    const parsed = parseDiscoveryCompatibility({
+      available: true,
+      score: 72,
+      alignmentTier: 'strong',
+      alignmentVersion: '1',
+      formulaVersion: '2',
+    });
+    assert.deepEqual(parsed, {
+      available: true,
+      score: 72,
+      formulaVersion: '2',
+      alignmentVersion: '1',
+      alignmentTier: 'strong',
+    });
+    assert.deepEqual(toAlignment(parsed), { available: true, score: 72, tier: 'strong' });
+    assert.equal(compatibilityForNearbyList({
+      available: true,
+      score: 72,
+      alignmentTier: 'strong',
+      alignmentVersion: '1',
+      formulaVersion: '2',
+    })?.alignmentTier, 'strong');
+  });
+
+  it('formula 2 + unknown alignmentVersion keeps the score, hides the category', () => {
+    for (const alignmentVersion of ['2', 'x', 2, undefined]) {
+      const parsed = parseDiscoveryCompatibility({
+        available: true,
+        score: 72,
+        alignmentTier: 'strong',
+        alignmentVersion,
+        formulaVersion: '2',
+      });
+      assert.deepEqual(toAlignment(parsed), { available: true, score: 72, tier: undefined });
+    }
+  });
+
   it('Nearby list ring shows v2 like v1', () => {
     assert.equal(
       compatibilityForNearbyList({ available: true, score: 40, formulaVersion: '2' })?.score,

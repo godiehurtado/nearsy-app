@@ -1361,13 +1361,10 @@ const es: TranslationResources = {
       missing: 'No hay correo disponible',
     },
     phone: {
-      title: 'Número de teléfono',
-      placeholder: 'Número móvil',
+      title: 'Número móvil',
       hint: 'Tu teléfono ayuda a proteger tu cuenta. Tu número nunca se muestra en tu perfil.',
-      invalid:
-        'Introduce un número móvil válido con el código de tu país.',
-      selectCountry: 'Selecciona el código de país',
-      saved: 'Número de teléfono actualizado',
+      verified: 'Verificado',
+      notVerified: 'No verificado',
     },
     birthDate: {
       title: 'Fecha de nacimiento',

@@ -11,12 +11,10 @@ export default {
     missing: 'No email available',
   },
   phone: {
-    title: 'Phone number',
-    placeholder: 'Mobile number',
+    title: 'Mobile number',
     hint: 'Your phone helps protect your account. Your number is never shown on your profile.',
-    invalid: 'Enter a valid mobile number with your country code.',
-    selectCountry: 'Select country code',
-    saved: 'Phone number updated',
+    verified: 'Verified',
+    notVerified: 'Not verified',
   },
   birthDate: {
     title: 'Date of birth',

@@ -6,7 +6,6 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
-  FlatList,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -87,21 +86,14 @@ import {
 } from '../utils/birthDate';
 import {
   buildBirthDatePersistencePatch,
-  buildPhoneSavePatch,
   formatVisibilityAgeSummary,
   SETTINGS_MAX_AGE,
   SETTINGS_MIN_AGE,
   validateSettingsBirthDate,
   validateVisibilityAgeRange,
 } from '../settings/settingsContracts';
-import {
-  AMERICA_COUNTRIES,
-  birthDigitsFromParts,
-  buildFullPhoneNumber,
-  sanitizePhoneNumber,
-  splitStoredPhone,
-  type CountryPhoneOption,
-} from '../settings/settingsPhoneCountries';
+import { birthDigitsFromParts } from '../settings/settingsPhoneCountries';
+import { resolveSettingsPhoneDisplay } from '../settings/settingsPhoneDisplay';
 import {
   fontSize,
   fontWeight,
@@ -115,6 +107,7 @@ import { AppearanceToggle } from '../components/AppearanceToggle';
 
 type ProfileDoc = {
   phone?: string | null;
+  phoneVerified?: boolean;
   birthDate?: string | null;
   birthYear?: number | null;
   visibleToMinAge?: number | null;
@@ -123,7 +116,7 @@ type ProfileDoc = {
   visibility?: boolean;
 };
 
-type EditorKind = 'phone' | 'birthDate' | 'visibilityAge' | null;
+type EditorKind = 'birthDate' | 'visibilityAge' | null;
 
 const LANGUAGE_OPTIONS: Array<{
   code: SupportedLanguage;
@@ -220,6 +213,7 @@ export default function MoreScreen() {
   const [saving, setSaving] = useState(false);
   const [userEmail, setUserEmail] = useState('');
   const [storedPhone, setStoredPhone] = useState<string | null>(null);
+  const [phoneVerified, setPhoneVerified] = useState(false);
   const [birthDateIso, setBirthDateIso] = useState<string | null>(null);
   const [visibleToMinAge, setVisibleToMinAge] = useState<number | null>(null);
   const [visibleToMaxAge, setVisibleToMaxAge] = useState<number | null>(null);
@@ -248,12 +242,6 @@ export default function MoreScreen() {
   const [languageChanging, setLanguageChanging] = useState(false);
   const [appearanceModalOpen, setAppearanceModalOpen] = useState(false);
   const [appearanceChanging, setAppearanceChanging] = useState(false);
-  const [countryModalOpen, setCountryModalOpen] = useState(false);
-
-  const [selectedCountry, setSelectedCountry] = useState<CountryPhoneOption>(
-    AMERICA_COUNTRIES.find((c) => c.code === 'US') || AMERICA_COUNTRIES[0],
-  );
-  const [phoneLocal, setPhoneLocal] = useState('');
   const [birthDigits, setBirthDigits] = useState('');
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarDraft, setCalendarDraft] = useState<Date | null>(null);
@@ -306,10 +294,8 @@ export default function MoreScreen() {
       return;
     }
     const data = snap.data() as ProfileDoc;
-    setStoredPhone(data.phone ?? null);
-    const split = splitStoredPhone(data.phone ?? null);
-    setSelectedCountry(split.country);
-    setPhoneLocal(split.localPhone);
+    setStoredPhone(typeof data.phone === 'string' ? data.phone : null);
+    setPhoneVerified(data.phoneVerified === true);
     setBirthDateIso(
       typeof data.birthDate === 'string' && data.birthDate
         ? data.birthDate
@@ -360,13 +346,6 @@ export default function MoreScreen() {
 
   const closeEditor = () => setEditor(null);
 
-  const openPhoneEditor = () => {
-    const split = splitStoredPhone(storedPhone);
-    setSelectedCountry(split.country);
-    setPhoneLocal(split.localPhone);
-    setEditor('phone');
-  };
-
   const openBirthEditor = () => {
     if (birthDateIso) {
       const parts = birthPartsFromIso(birthDateIso);
@@ -385,42 +364,6 @@ export default function MoreScreen() {
       typeof visibleToMaxAge === 'number' ? String(visibleToMaxAge) : '',
     );
     setEditor('visibilityAge');
-  };
-
-  const savePhone = async () => {
-    try {
-      setSaving(true);
-      const uid = firebaseAuth.currentUser?.uid;
-      if (!uid) throw new Error(t('settings.backgroundVisibility.authRequired'));
-      const local = sanitizePhoneNumber(phoneLocal);
-      const full = local
-        ? buildFullPhoneNumber(selectedCountry.dialCode, local)
-        : null;
-      const patch = buildPhoneSavePatch({
-        previousPhone: storedPhone,
-        nextPhone: full,
-      });
-      const updateData: Record<string, unknown> = {
-        phone: patch.phone,
-        updatedAt: Date.now(),
-      };
-      if (patch.verification) {
-        updateData.phoneVerified = patch.verification.phoneVerified;
-        updateData.phoneVerifiedAt = patch.verification.phoneVerifiedAt;
-      }
-      await setDoc(doc(firestoreDb, 'users', uid), updateData, { merge: true });
-      setStoredPhone(patch.phone);
-      Alert.alert(t('common.appName'), t('settings.phone.saved'));
-      closeEditor();
-    } catch (e: any) {
-      if (e?.message === 'INVALID_PHONE') {
-        Alert.alert(t('common.error'), t('settings.phone.invalid'));
-      } else {
-        Alert.alert(t('common.error'), e?.message || t('settings.saveError'));
-      }
-    } finally {
-      setSaving(false);
-    }
   };
 
   const saveBirthDate = async () => {
@@ -919,7 +862,14 @@ export default function MoreScreen() {
     );
   }
 
-  const phoneDisplay = storedPhone || t('settings.birthDate.notSet');
+  const phoneDisplay = resolveSettingsPhoneDisplay({
+    phone: storedPhone,
+    phoneVerified,
+    labels: {
+      verified: t('settings.phone.verified'),
+      notVerified: t('settings.phone.notVerified'),
+    },
+  });
   const dobDisplay = formatBirthDisplay(
     birthDateIso,
     deviceLocaleTag,
@@ -957,9 +907,9 @@ export default function MoreScreen() {
           <SettingsRow
             icon="call-outline"
             title={t('settings.phone.title')}
-            value={phoneDisplay}
-            onPress={openPhoneEditor}
-            accessibilityHint={t('settings.editor.edit')}
+            value={phoneDisplay.value}
+            note={t('settings.phone.hint')}
+            showChevron={false}
           />
           <SettingsRow
             icon="calendar-outline"
@@ -1067,105 +1017,6 @@ export default function MoreScreen() {
           </Pressable>
         </View>
       </ScrollView>
-
-      <Modal
-        visible={editor === 'phone'}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={closeEditor}
-      >
-        <KeyboardAvoidingView
-          style={[styles.editorRoot, { backgroundColor: palette.background }]}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View
-            style={[
-              styles.editorHeader,
-              { paddingTop: spacing.lg, borderBottomColor: palette.border },
-            ]}
-          >
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('settings.editor.cancel')}
-              onPress={closeEditor}
-              hitSlop={8}
-            >
-              <Text style={{ color: palette.textSecondary, fontWeight: '600' }}>
-                {t('settings.editor.cancel')}
-              </Text>
-            </Pressable>
-            <Text
-              style={[styles.editorTitle, { color: palette.textPrimary }]}
-              numberOfLines={1}
-            >
-              {t('settings.phone.title')}
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('settings.editor.save')}
-              onPress={savePhone}
-              disabled={saving}
-              hitSlop={8}
-            >
-              {saving ? (
-                <ActivityIndicator color={palette.primary} />
-              ) : (
-                <Text style={{ color: palette.primary, fontWeight: '700' }}>
-                  {t('settings.editor.save')}
-                </Text>
-              )}
-            </Pressable>
-          </View>
-          <ScrollView
-            contentContainerStyle={styles.editorBody}
-            keyboardShouldPersistTaps="handled"
-          >
-            <View style={styles.phoneRow}>
-              <Pressable
-                onPress={() => setCountryModalOpen(true)}
-                style={[
-                  styles.countryBtn,
-                  {
-                    backgroundColor: palette.panel,
-                    borderColor: palette.border,
-                  },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={t('settings.phone.selectCountry')}
-              >
-                <Text style={{ fontSize: 18 }}>{selectedCountry.flag}</Text>
-                <Text style={[styles.dialCode, { color: palette.textPrimary }]}>
-                  {selectedCountry.dialCode}
-                </Text>
-                <Ionicons
-                  name="chevron-down"
-                  size={16}
-                  color={palette.textMuted}
-                />
-              </Pressable>
-              <TextInput
-                style={[
-                  styles.phoneInput,
-                  {
-                    color: palette.textPrimary,
-                    backgroundColor: palette.panel,
-                    borderColor: palette.border,
-                  },
-                ]}
-                placeholder={t('settings.phone.placeholder')}
-                placeholderTextColor={palette.placeholder}
-                value={phoneLocal}
-                onChangeText={(v) => setPhoneLocal(v.replace(/[^\d]/g, ''))}
-                keyboardType="phone-pad"
-                accessibilityLabel={t('settings.phone.title')}
-              />
-            </View>
-            <Text style={[styles.hint, { color: palette.textMuted }]}>
-              {t('settings.phone.hint')}
-            </Text>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </Modal>
 
       <Modal
         visible={editor === 'birthDate'}
@@ -1477,70 +1328,6 @@ export default function MoreScreen() {
       </Modal>
 
       <Modal
-        visible={countryModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setCountryModalOpen(false)}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setCountryModalOpen(false)}
-        >
-          <Pressable
-            style={[styles.modalCard, { backgroundColor: palette.surface }]}
-          >
-            <Text style={[styles.modalTitle, { color: palette.textPrimary }]}>
-              {t('settings.phone.selectCountry')}
-            </Text>
-            <FlatList
-              data={AMERICA_COUNTRIES}
-              keyExtractor={(item) => item.code}
-              style={{ maxHeight: 360 }}
-              renderItem={({ item }) => {
-                const selected = item.code === selectedCountry.code;
-                return (
-                  <Pressable
-                    style={[
-                      styles.countryOption,
-                      selected && { backgroundColor: palette.chipBg },
-                    ]}
-                    onPress={() => {
-                      setSelectedCountry(item);
-                      setCountryModalOpen(false);
-                    }}
-                  >
-                    <Text style={{ fontSize: 20, marginRight: 10 }}>
-                      {item.flag}
-                    </Text>
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={{
-                          color: palette.textPrimary,
-                          fontWeight: '600',
-                        }}
-                      >
-                        {item.name}
-                      </Text>
-                      <Text style={{ color: palette.textMuted }}>
-                        {item.dialCode}
-                      </Text>
-                    </View>
-                    {selected ? (
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={22}
-                        color={palette.primary}
-                      />
-                    ) : null}
-                  </Pressable>
-                );
-              }}
-            />
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal
         visible={languageModalOpen}
         transparent
         animationType="fade"
@@ -1720,26 +1507,6 @@ const styles = StyleSheet.create({
   editorBody: {
     padding: screenPadding.horizontal,
     paddingTop: spacing.lg,
-  },
-  phoneRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center' },
-  countryBtn: {
-    minHeight: 48,
-    minWidth: 110,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  dialCode: { fontSize: fontSize.base, fontWeight: fontWeight.semibold },
-  phoneInput: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    fontSize: fontSize.base,
   },
   birthRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center' },
   birthInput: {

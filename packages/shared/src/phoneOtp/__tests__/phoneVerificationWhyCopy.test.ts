@@ -78,9 +78,9 @@ describe('Phone capture — why we verify', () => {
 describe('Settings phone copy is consistent with mandatory OTP', () => {
   it('no optional wording on Settings or legacy register phone copy', () => {
     for (const text of [
-      enSettings.phone.placeholder,
+      enSettings.phone.title,
       enSettings.phone.hint,
-      es.settings.phone.placeholder,
+      es.settings.phone.title,
       es.settings.phone.hint,
       enAuthentication.register.fields.phone,
       es.authentication.register.fields.phone,

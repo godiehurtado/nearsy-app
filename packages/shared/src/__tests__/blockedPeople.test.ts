@@ -138,7 +138,8 @@ describe('Unit 2A Settings preservation with Blocked People', () => {
   it('keeps Unit 2A Settings behaviors and still hides contacts', () => {
     const more = readShared('screens/MoreScreen.tsx');
     assert.match(more, /buildBirthDatePersistencePatch/);
-    assert.match(more, /buildPhoneSavePatch/);
+    assert.match(more, /resolveSettingsPhoneDisplay/);
+    assert.doesNotMatch(more, /buildPhoneSavePatch/);
     assert.match(more, /validateVisibilityAgeRange/);
     assert.match(more, /changeAppLanguage/);
     assert.match(more, /settings\.logout\.title/);
