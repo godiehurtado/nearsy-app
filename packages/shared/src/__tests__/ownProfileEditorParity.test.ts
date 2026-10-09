@@ -38,7 +38,7 @@ function styleBlock(src: string, name: string): string {
 describe('Background is its own card', () => {
   it('EN/ES section title', () => {
     assert.equal(profileTranslations.en.sections.background, 'Background');
-    assert.equal(profileTranslations.es.sections.background, 'Trasfondo');
+    assert.equal(profileTranslations.es.sections.background, 'Información personal');
   });
 
   it('the card renders its title as a header with the shared card tokens', () => {
