@@ -131,7 +131,7 @@ const es: TranslationResources = {
         realName: 'Nombre real *',
         email: 'Correo electrónico',
         confirmEmail: 'Confirmar correo',
-        phone: 'Número de teléfono (opcional)',
+        phone: 'Número de teléfono',
         password: 'Contraseña',
         confirmPassword: 'Confirmar contraseña',
         birthDate: 'Fecha de nacimiento *',
@@ -1362,8 +1362,8 @@ const es: TranslationResources = {
     },
     phone: {
       title: 'Número de teléfono',
-      placeholder: 'Número de teléfono (opcional)',
-      hint: 'Opcional. Se usa para contacto dentro de Nearsy y no es público.',
+      placeholder: 'Número móvil',
+      hint: 'Tu teléfono ayuda a proteger tu cuenta. Tu número nunca se muestra en tu perfil.',
       invalid:
         'Introduce un número móvil válido con el código de tu país.',
       selectCountry: 'Selecciona el código de país',
@@ -1619,6 +1619,7 @@ const es: TranslationResources = {
     phoneStep: {
       title: 'Tu número móvil',
       subtitle: 'Ingresa el número donde puedes recibir SMS.',
+      why: 'Verificamos tu teléfono para proteger tu cuenta, evitar cuentas duplicadas y mantener más seguras las interacciones en Discovery y Nearby. Tu número nunca se muestra en tu perfil.',
       countryA11y: 'Seleccionar código de país',
       phoneLabel: 'Número de teléfono',
       phonePlaceholder: 'Número móvil',

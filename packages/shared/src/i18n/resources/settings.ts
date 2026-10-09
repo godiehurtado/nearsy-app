@@ -12,8 +12,8 @@ export default {
   },
   phone: {
     title: 'Phone number',
-    placeholder: 'Phone number (optional)',
-    hint: 'Optional. Used for contact purposes inside Nearsy and is not public.',
+    placeholder: 'Mobile number',
+    hint: 'Your phone helps protect your account. Your number is never shown on your profile.',
     invalid: 'Enter a valid mobile number with your country code.',
     selectCountry: 'Select country code',
     saved: 'Phone number updated',
