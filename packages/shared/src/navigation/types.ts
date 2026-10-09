@@ -19,6 +19,7 @@ export type RootStackParamList = {
       }
     | undefined;
   MainTabs: undefined;
+  DeleteAccount: undefined;
   PhoneVerification: {
     uid: string;
     phone?: string;

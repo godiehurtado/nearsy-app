@@ -114,16 +114,40 @@ export default {
     alertConfirm: 'Delete',
     done: 'Your account has been deleted.',
     error: 'Could not delete account.',
-    permissionError:
-      'Could not delete your account data. Please try again while signed in.',
     networkError: 'Network error. Check your connection and try again.',
-    reauthBody: 'For security, please confirm your password to continue.',
-    reauthBodyGoogle:
-      'For security, continue with Google to confirm it’s you before deleting this account.',
-    reauthBodyApple:
-      'For security, continue with Apple to confirm it’s you before deleting this account.',
-    reauthBodyFacebook:
-      'For security, continue with Facebook to confirm it’s you before deleting this account.',
+    sessionNotRecent:
+      'For security, confirm it’s you again to delete your account. Your account was not deleted.',
+    appCheckFailed:
+      'We couldn’t verify this app. Update Nearsy or try again later. Your account was not deleted.',
+    signedOut: 'Your session has ended. Sign in again to delete your account.',
+    inProgress: 'Your account deletion is already in progress. Please wait.',
+    retryable: 'We couldn’t finish deleting your account. Please try again.',
+    failed:
+      'We couldn’t delete your account. Please try again later or contact Nearsy support.',
+    networkUncertain:
+      'We couldn’t confirm whether your account was deleted. Check your connection and try again.',
+    pendingTitle: 'Deletion not confirmed',
+    pendingChecking: 'Checking whether your account was deleted…',
+    pendingExists:
+      'Your account still exists, and we couldn’t confirm whether the deletion finished. You can request the deletion again below.',
+    pendingUnverified:
+      'We couldn’t check your account right now. Connect to the internet and try again, or sign out.',
+    pendingRetry: 'Try again',
+    pendingSignOut: 'Sign out',
+    reconciledDeleted: 'Your account no longer exists. You’ve been signed out.',
+    reconciledSignedOut:
+      'You’ve been signed out. We couldn’t confirm whether your account was deleted. Sign in again to check.',
+    linkedInSignInAgain:
+      'For security, sign out, sign back in with LinkedIn, and request account deletion within the next 5 minutes.',
+    linkedInRecentBody:
+      'Your account signs in with LinkedIn. You can delete it if you signed in within the last 5 minutes.',
+    methodsTitle: 'Confirm it’s you',
+    methodsBody:
+      'For security, choose one of your sign-in methods to confirm it’s you. Your account and data are deleted right after.',
+    methodPassword: 'Password',
+    methodGoogle: 'Google',
+    methodApple: 'Apple',
+    methodFacebook: 'Facebook',
     passwordPlaceholder: 'Password',
     reauthConfirm: 'Confirm password and delete',
     reauthContinueGoogle: 'Continue with Google and delete',

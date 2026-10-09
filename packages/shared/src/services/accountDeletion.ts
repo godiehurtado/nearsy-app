@@ -1,190 +1,235 @@
 /**
  * Account deletion orchestration.
+ *
+ * The `deleteMyAccount` callable is the only authority that deletes Firebase
+ * Auth and account data (Firestore, Storage, Visibility, matching). This client
+ * only proves a recent sign-in for the same UID and invokes it once.
  * Firebase SDK is loaded only inside the default runtime so Node tests stay RN-free.
  */
 
 import {
   beginAccountDeletionSession,
   endAccountDeletionSession,
+  markAccountDeletionClosing,
 } from './accountDeletionSession';
+import {
+  clearPendingAccountDeletion,
+  markAccountDeletionUncertain,
+} from './accountDeletionReconciliation';
+import {
+  AccountDeletionReauthError,
+  type AccountDeletionReauthErrorCode,
+} from './deletionReauth/accountDeletionReauthError';
+import type { DeletionReauthMethod } from './deletionReauth/deletionReauthMethod';
+import {
+  DELETE_MY_ACCOUNT_CLIENT_FRESH_AUTH_SECONDS,
+  DeleteMyAccountError,
+  isDeleteMyAccountError,
+  mapDeleteMyAccountFailure,
+  type DeleteMyAccountFailureKind,
+  type DeleteMyAccountStatus,
+  type DeleteMyAccountSuccess,
+} from './deleteMyAccount/contract';
+import { resolveDeleteMyAccountMessageKey } from './accountDeletionErrorPresentation';
 
-/** Ordered steps for account deletion (testable). */
-export type AccountDeletionStep =
-  | 'cleanup-firestore-contactHashes'
-  | 'cleanup-storage-users'
-  | 'cleanup-firestore-user-doc'
-  | 'auth-delete';
+/** Tolerated device clock lead over the token's `auth_time`. */
+const AUTH_TIME_FUTURE_SKEW_SECONDS = 60;
 
 export type AccountDeletionRuntime = {
-  getCurrentUser: () => {
-    uid: string;
-    email?: string | null;
-    delete: () => Promise<void>;
-  } | null;
-  reauthenticateWithPasswordCredential?: (
-    email: string,
-    password: string,
-  ) => Promise<void>;
-  deleteContactHashes: (uid: string) => Promise<void>;
-  deleteUserStorage: (uid: string) => Promise<void>;
-  deleteUserDocument: (uid: string) => Promise<void>;
+  getCurrentUid: () => string | null;
+  /** Auth `metadata.creationTime` of the current user, when known. */
+  getCurrentCreatedAt?: () => string | null;
+  /** `auth_time` of the current Firebase ID token in ms, or null when unknown. */
+  getAuthTimeMs: () => Promise<number | null>;
+  nowMs?: () => number;
+  reauthenticate: (input: {
+    method: DeletionReauthMethod;
+    password?: string;
+    expectedUid: string;
+  }) => Promise<void>;
+  deleteMyAccount: (input: { expectedUid: string }) => Promise<DeleteMyAccountSuccess>;
 };
 
-function isRequiresRecentLogin(err: any) {
-  const code = err?.code || err?.message || '';
-  return String(code).includes('auth/requires-recent-login');
+export type AccountDeletionRequest = {
+  /** Omit to use the current session when it is recent enough. */
+  reauth?: { method: DeletionReauthMethod; password?: string };
+  /** With `reauth`: skip it while the current session is still recent. */
+  reauthOnlyIfStale?: boolean;
+};
+
+export type AccountDeletionFailure =
+  | DeleteMyAccountFailureKind
+  | AccountDeletionReauthErrorCode;
+
+export type AccountDeletionResult =
+  | { status: 'deleted'; uid: string; backendStatus: DeleteMyAccountStatus }
+  | { status: 'reauth_required' }
+  | { status: 'cancelled' }
+  | { status: 'busy' }
+  | {
+      status: 'failed';
+      failure: AccountDeletionFailure;
+      messageKey: string;
+      reauthRequired: boolean;
+      serverMayHaveDeleted: boolean;
+    };
+
+let inFlight = false;
+
+export function isAccountDeletionInFlight(): boolean {
+  return inFlight;
 }
 
-async function deleteFirestoreSubcollection(
-  firestoreDb: any,
-  firestore: {
-    collection: typeof import('firebase/firestore').collection;
-    getDocs: typeof import('firebase/firestore').getDocs;
-    writeBatch: typeof import('firebase/firestore').writeBatch;
-  },
-  uid: string,
-  sub: string,
-) {
-  const colRef = firestore.collection(firestoreDb, 'users', uid, sub);
-  const snap = await firestore.getDocs(colRef);
-  if (snap.empty) return;
-
-  let batch = firestore.writeBatch(firestoreDb);
-  let ops = 0;
-
-  for (const d of snap.docs) {
-    batch.delete(d.ref);
-    ops++;
-    if (ops >= 450) {
-      await batch.commit();
-      batch = firestore.writeBatch(firestoreDb);
-      ops = 0;
-    }
-  }
-  if (ops > 0) await batch.commit();
+export function isAuthTimeRecentForDeletion(
+  authTimeMs: number | null,
+  nowMs: number,
+): boolean {
+  if (authTimeMs === null || !Number.isFinite(authTimeMs) || authTimeMs <= 0) return false;
+  const ageSeconds = Math.floor((nowMs - authTimeMs) / 1000);
+  return (
+    ageSeconds >= -AUTH_TIME_FUTURE_SKEW_SECONDS &&
+    ageSeconds <= DELETE_MY_ACCOUNT_CLIENT_FRESH_AUTH_SECONDS
+  );
 }
 
-async function deleteStorageFolderRecursive(
-  storageApi: {
-    getStorage: typeof import('firebase/storage').getStorage;
-    listAll: typeof import('firebase/storage').listAll;
-    ref: typeof import('firebase/storage').ref;
-    deleteObject: typeof import('firebase/storage').deleteObject;
-  },
-  path: string,
-) {
-  const storage = storageApi.getStorage();
-  const root = storageApi.ref(storage, path);
-  const res = await storageApi.listAll(root);
-
-  await Promise.all(res.items.map((item) => storageApi.deleteObject(item)));
-  for (const prefix of res.prefixes) {
-    await deleteStorageFolderRecursive(storageApi, prefix.fullPath);
+async function isCurrentSessionRecent(runtime: AccountDeletionRuntime): Promise<boolean> {
+  let authTimeMs: number | null = null;
+  try {
+    authTimeMs = await runtime.getAuthTimeMs();
+  } catch {
+    authTimeMs = null;
   }
+  return isAuthTimeRecentForDeletion(authTimeMs, (runtime.nowMs ?? Date.now)());
+}
+
+function failedFromDeleteError(err: DeleteMyAccountError): AccountDeletionResult {
+  return {
+    status: 'failed',
+    failure: err.kind,
+    messageKey: resolveDeleteMyAccountMessageKey(err.kind),
+    reauthRequired: err.kind === 'RECENT_LOGIN_REQUIRED',
+    serverMayHaveDeleted: err.serverMayHaveDeleted,
+  };
+}
+
+function failedFromReauthError(err: AccountDeletionReauthError): AccountDeletionResult {
+  return {
+    status: 'failed',
+    failure: err.code,
+    messageKey: err.messageKey,
+    reauthRequired: false,
+    serverMayHaveDeleted: false,
+  };
 }
 
 /**
- * Default runtime — Firestore/Storage cleanup while authenticated, Auth last.
- *
- * Why this order:
- * - `user.delete()` clears Auth → subsequent owner Rules checks see request.auth == null
- * - Owner Firestore/Storage deletes require an authenticated session
- * - `auth/requires-recent-login` only applies to Auth delete; cleanup remains retry-safe
+ * Delete the signed-in account through the backend.
+ * Never deletes Firebase Auth itself and never writes Firestore or Storage.
  */
+export async function deleteAccountWithBackend(
+  request: AccountDeletionRequest = {},
+  runtime: AccountDeletionRuntime = createDefaultAccountDeletionRuntime(),
+): Promise<AccountDeletionResult> {
+  if (inFlight) return { status: 'busy' };
+  inFlight = true;
+  try {
+    const uid = runtime.getCurrentUid();
+    if (!uid) {
+      return failedFromDeleteError(new DeleteMyAccountError('UNAUTHENTICATED', false));
+    }
+
+    const checkRecent = !request.reauth || request.reauthOnlyIfStale === true;
+    const recent = checkRecent ? await isCurrentSessionRecent(runtime) : false;
+
+    if (request.reauth && !recent) {
+      try {
+        await runtime.reauthenticate({ ...request.reauth, expectedUid: uid });
+      } catch (err) {
+        if (err instanceof AccountDeletionReauthError) {
+          if (err.code === 'CANCELLED') return { status: 'cancelled' };
+          return failedFromReauthError(err);
+        }
+        return failedFromReauthError(
+          new AccountDeletionReauthError('REAUTH_FAILED', 'settings.deleteAccount.reauthFailed'),
+        );
+      }
+    } else if (!request.reauth && !recent) {
+      return { status: 'reauth_required' };
+    }
+
+    if (runtime.getCurrentUid() !== uid) {
+      return failedFromDeleteError(new DeleteMyAccountError('IDENTITY_CHANGED', false));
+    }
+
+    // Keeps AppNavigator off CompleteProfile while the backend removes users/{uid}.
+    beginAccountDeletionSession();
+    let response: DeleteMyAccountSuccess;
+    try {
+      response = await runtime.deleteMyAccount({ expectedUid: uid });
+    } catch (err) {
+      const failure = isDeleteMyAccountError(err) ? err : mapDeleteMyAccountFailure(err);
+      if (failure.serverMayHaveDeleted) {
+        // users/{uid} may already be gone: keep the Profile Gate suspended
+        // (also across relaunches) until Auth is reconciled.
+        markAccountDeletionUncertain({
+          uid,
+          createdAt: runtime.getCurrentCreatedAt?.() ?? null,
+        });
+      } else {
+        endAccountDeletionSession();
+      }
+      return failedFromDeleteError(failure);
+    }
+    // Session flag stays active until finalizePostAccountDeletionSession; the
+    // closure barrier stays until Auth reports the signed-out state. The
+    // barrier is engaged before an unresolved marker is released.
+    markAccountDeletionClosing(uid);
+    clearPendingAccountDeletion();
+    return { status: 'deleted', uid, backendStatus: response.status };
+  } finally {
+    inFlight = false;
+  }
+}
+
 export function createDefaultAccountDeletionRuntime(): AccountDeletionRuntime {
   // Lazy requires keep Node unit tests free of RN Firebase config.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { firebaseAuth, firestoreDb } = require('../config/firebaseConfig') as {
+  const { firebaseAuth } = require('../config/firebaseConfig') as {
     firebaseAuth: {
       currentUser: {
         uid: string;
-        email?: string | null;
-        delete: () => Promise<void>;
+        metadata?: { creationTime?: string };
+        getIdTokenResult: () => Promise<{ authTime: string }>;
       } | null;
     };
-    firestoreDb: unknown;
   };
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const firestore = require('firebase/firestore') as typeof import('firebase/firestore');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const storageApi = require('firebase/storage') as typeof import('firebase/storage');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const authApi = require('firebase/auth') as typeof import('firebase/auth');
 
   return {
-    getCurrentUser: () => {
+    getCurrentUid: () => firebaseAuth.currentUser?.uid ?? null,
+    getCurrentCreatedAt: () => firebaseAuth.currentUser?.metadata?.creationTime ?? null,
+    getAuthTimeMs: async () => {
       const user = firebaseAuth.currentUser;
       if (!user) return null;
-      return {
-        uid: user.uid,
-        email: user.email,
-        delete: () => user.delete(),
-      };
+      const result = await user.getIdTokenResult();
+      const parsed = Date.parse(result.authTime);
+      return Number.isFinite(parsed) ? parsed : null;
     },
-    reauthenticateWithPasswordCredential: async (email, password) => {
-      const user = firebaseAuth.currentUser;
-      if (!user) throw new Error('Not authenticated.');
-      const cred = authApi.EmailAuthProvider.credential(email, password);
-      await authApi.reauthenticateWithCredential(user as any, cred);
+    reauthenticate: async (input) => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { reauthenticateForAccountDeletion } = require('./deletionReauth') as typeof import('./deletionReauth');
+      await reauthenticateForAccountDeletion(input);
     },
-    deleteContactHashes: (uid) =>
-      deleteFirestoreSubcollection(firestoreDb, firestore, uid, 'contactHashes'),
-    deleteUserStorage: (uid) =>
-      deleteStorageFolderRecursive(storageApi, `users/${uid}`),
-    deleteUserDocument: (uid) =>
-      firestore.deleteDoc(firestore.doc(firestoreDb as any, 'users', uid)),
+    deleteMyAccount: async (input) => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { getDeleteMyAccountPort } = require('./deleteMyAccount/iosDeleteMyAccountFoundation') as typeof import('./deleteMyAccount/iosDeleteMyAccountFoundation');
+      let port: Awaited<ReturnType<typeof getDeleteMyAccountPort>>;
+      try {
+        port = await getDeleteMyAccountPort();
+      } catch (err) {
+        // Composition failed before any request was sent.
+        throw isDeleteMyAccountError(err) ? err : new DeleteMyAccountError('UNKNOWN', false);
+      }
+      return port.deleteMyAccount(input);
+    },
   };
-}
-
-/**
- * Delete account data then Auth identity.
- * Records step order when `onStep` is provided (tests).
- */
-export async function deleteAccountAndData(
-  options?: {
-    passwordForReauth?: string;
-  },
-  runtime: AccountDeletionRuntime = createDefaultAccountDeletionRuntime(),
-  onStep?: (step: AccountDeletionStep) => void,
-) {
-  const user = runtime.getCurrentUser();
-  if (!user) throw new Error('Not authenticated.');
-
-  const uid = user.uid;
-
-  if (options?.passwordForReauth && user.email) {
-    if (!runtime.reauthenticateWithPasswordCredential) {
-      throw new Error('Password reauthentication is unavailable.');
-    }
-    await runtime.reauthenticateWithPasswordCredential(
-      user.email,
-      options.passwordForReauth,
-    );
-  }
-
-  beginAccountDeletionSession();
-  try {
-    // 1–3) Owner-scoped cleanup WHILE Auth session is still valid.
-    onStep?.('cleanup-firestore-contactHashes');
-    await runtime.deleteContactHashes(uid);
-
-    onStep?.('cleanup-storage-users');
-    await runtime.deleteUserStorage(uid);
-
-    onStep?.('cleanup-firestore-user-doc');
-    await runtime.deleteUserDocument(uid);
-
-    // 4) Auth identity LAST — after this, client cannot use owner Rules.
-    onStep?.('auth-delete');
-    await user.delete();
-    // Session flag stays active until finalizePostAccountDeletionSession.
-  } catch (err: any) {
-    if (isRequiresRecentLogin(err)) {
-      // Keep session active through reauth UI so AppNavigator does not remount
-      // into CompleteProfile after users/{uid} was already removed.
-      throw err;
-    }
-    endAccountDeletionSession();
-    throw err;
-  }
 }

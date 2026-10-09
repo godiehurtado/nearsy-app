@@ -2,8 +2,9 @@
  * Reauthenticate the CURRENT Firebase user before account deletion.
  *
  * Uses provider adapters for Google/Apple/Facebook token acquisition, then
- * `reauthenticateWithCredential` — never `signInWithCredential` /
- * `signInWithCustomToken` (those replace or fake the session).
+ * `reauthenticateWithCredential` — never a sign-in call, which would replace
+ * the session. LinkedIn has no AuthCredential and is never reauthenticated
+ * here (see linkedInDeletionPolicy).
  */
 import {
   FacebookAuthProvider,
@@ -18,29 +19,14 @@ import {
   SocialAuthError,
 } from '../../authentication/social/domain/socialAuthenticationError';
 import { selectFacebookCredentialTokens } from '../../authentication/social/domain/facebookCredentialPolicy';
+import { AccountDeletionReauthError } from './accountDeletionReauthError';
 import type { DeletionReauthMethod } from './deletionReauthMethod';
+import { LINKEDIN_DELETION_SIGN_IN_AGAIN_KEY } from './linkedInDeletionPolicy';
 
-export type AccountDeletionReauthErrorCode =
-  | 'CANCELLED'
-  | 'IDENTITY_MISMATCH'
-  | 'UNAVAILABLE'
-  | 'REAUTH_FAILED'
-  | 'WRONG_PASSWORD'
-  | 'NETWORK'
-  | 'IN_PROGRESS'
-  | 'NOT_AUTHENTICATED';
-
-export class AccountDeletionReauthError extends Error {
-  readonly code: AccountDeletionReauthErrorCode;
-  readonly messageKey: string;
-
-  constructor(code: AccountDeletionReauthErrorCode, messageKey: string, message?: string) {
-    super(message ?? messageKey);
-    this.name = 'AccountDeletionReauthError';
-    this.code = code;
-    this.messageKey = messageKey;
-  }
-}
+export {
+  AccountDeletionReauthError,
+  type AccountDeletionReauthErrorCode,
+} from './accountDeletionReauthError';
 
 type GoogleProviderTokens = {
   idToken: string;
@@ -114,7 +100,7 @@ function mapFirebaseReauthError(err: unknown): AccountDeletionReauthError {
   if (code === 'auth/network-request-failed') {
     return new AccountDeletionReauthError(
       'NETWORK',
-      'settings.deleteAccount.error',
+      'settings.deleteAccount.networkError',
     );
   }
 
@@ -137,13 +123,13 @@ function mapSocialProviderError(err: unknown): AccountDeletionReauthError {
     if (err.social.code === 'IN_PROGRESS') {
       return new AccountDeletionReauthError(
         'IN_PROGRESS',
-        'settings.deleteAccount.reauthFailed',
+        'settings.deleteAccount.inProgress',
       );
     }
     if (err.social.code === 'NETWORK_ERROR') {
       return new AccountDeletionReauthError(
         'NETWORK',
-        'settings.deleteAccount.error',
+        'settings.deleteAccount.networkError',
       );
     }
     return new AccountDeletionReauthError(
@@ -366,6 +352,8 @@ function assertProviderIdentityMatch(
 export type ReauthenticateForDeletionInput = {
   method: DeletionReauthMethod;
   password?: string;
+  /** UID the deletion was confirmed for; any other session aborts. */
+  expectedUid?: string;
 };
 
 /**
@@ -378,7 +366,7 @@ export async function reauthenticateForAccountDeletion(
   if (inProgress) {
     throw new AccountDeletionReauthError(
       'IN_PROGRESS',
-      'settings.deleteAccount.reauthFailed',
+      'settings.deleteAccount.inProgress',
     );
   }
 
@@ -387,7 +375,9 @@ export async function reauthenticateForAccountDeletion(
   if (method.kind === 'unavailable') {
     throw new AccountDeletionReauthError(
       'UNAVAILABLE',
-      'settings.deleteAccount.reauthUnavailable',
+      method.reason === 'linkedin_sign_in_again'
+        ? LINKEDIN_DELETION_SIGN_IN_AGAIN_KEY
+        : 'settings.deleteAccount.reauthUnavailable',
     );
   }
 
@@ -401,6 +391,12 @@ export async function reauthenticateForAccountDeletion(
       );
     }
 
+    if (input.expectedUid !== undefined && user.uid !== input.expectedUid) {
+      throw new AccountDeletionReauthError(
+        'IDENTITY_MISMATCH',
+        'settings.deleteAccount.reauthMismatch',
+      );
+    }
     const expectedUid = user.uid;
 
     if (method.kind === 'password') {
@@ -476,7 +472,8 @@ export async function reauthenticateForAccountDeletion(
         } catch (err) {
           throw mapFirebaseReauthError(err);
         }
-      } catch (err) {
+      } finally {
+        // The Limited Login session only served this reauth; never keep it.
         if (deps.clearFacebookProviderSession) {
           try {
             await deps.clearFacebookProviderSession();
@@ -484,7 +481,6 @@ export async function reauthenticateForAccountDeletion(
             // Best-effort cleanup only.
           }
         }
-        throw err;
       }
     }
 

@@ -349,7 +349,7 @@ describe('reauthenticateForAccountDeletion', () => {
     assert.equal(credentialCalls, 0);
   });
 
-  it('failed facebook reauth clears the Facebook session; success keeps it for finalize', async () => {
+  it('facebook reauth always clears the temporary Limited Login session', async () => {
     let clears = 0;
     const clearFacebookProviderSession = async () => {
       clears += 1;
@@ -388,26 +388,75 @@ describe('reauthenticateForAccountDeletion', () => {
       { method: { kind: 'facebook', linkedProviderUserId: 'fb-app-scoped-1' } },
       createMockDeps({ clearFacebookProviderSession }),
     );
-    assert.equal(clears, 2, 'successful reauth does not clear before deletion');
+    assert.equal(clears, 3, 'successful reauth also clears; Firebase session is unaffected');
   });
 
-  it('Delete Account only deletes after a successful reauth', async () => {
+  it('Delete Account only calls the backend after a successful reauth', async () => {
     const { readFileSync } = await import('node:fs');
     const { dirname, join } = await import('node:path');
     const { fileURLToPath } = await import('node:url');
-    const screen = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'screens', 'DeleteAccountScreen.tsx'),
-      'utf8',
-    );
-    const handler = screen.slice(
-      screen.indexOf('const handleReauthAndDelete'),
-      screen.indexOf('const renderReauthActions'),
-    );
-    const reauthIdx = handler.indexOf('await reauthenticateForAccountDeletion');
-    const deleteIdx = handler.indexOf('await deleteAccountAndData()');
+    const here = dirname(fileURLToPath(import.meta.url));
+    const service = readFileSync(join(here, '..', '..', 'accountDeletion.ts'), 'utf8');
+    const flow = service.slice(service.indexOf('export async function deleteAccountWithBackend'));
+    const reauthIdx = flow.indexOf('await runtime.reauthenticate(');
+    const deleteIdx = flow.indexOf('await runtime.deleteMyAccount(');
     assert.ok(reauthIdx > 0 && deleteIdx > reauthIdx);
-    assert.match(screen, /settings\.deleteAccount\.reauthContinueFacebook/);
-    assert.match(screen, /settings\.deleteAccount\.reauthBodyFacebook/);
+
+    const screen = readFileSync(join(here, '..', '..', '..', 'screens', 'DeleteAccountScreen.tsx'), 'utf8');
+    const handler = screen.slice(
+      screen.indexOf('const handleDelete'),
+      screen.indexOf('const selectMethod'),
+    );
+    assert.match(handler, /const request = buildDeletionRequest\(selectedMethod, pw, forceReauthRef\.current\);/);
+    assert.match(handler, /style: 'destructive',\s*onPress: \(\) => \{\s*void runDeletion\(request\);/);
+    const presentation = readFileSync(join(here, '..', '..', 'deleteAccountPresentation.ts'), 'utf8');
+    assert.match(presentation, /facebook: 'settings\.deleteAccount\.reauthContinueFacebook'/);
+  });
+
+  it('expectedUid different from the signed-in user aborts before any provider UI', async () => {
+    let tokenCalls = 0;
+    await assert.rejects(
+      () =>
+        reauthenticateForAccountDeletion(
+          { method: { kind: 'google', linkedProviderUserId: 'google-sub-1' }, expectedUid: 'uid-confirmed' },
+          createMockDeps({
+            obtainGoogleProviderTokens: async () => {
+              tokenCalls += 1;
+              return { idToken: 'tok', providerUserId: 'google-sub-1' };
+            },
+          }),
+        ),
+      (err: unknown) => err instanceof AccountDeletionReauthError && err.code === 'IDENTITY_MISMATCH',
+    );
+    assert.equal(tokenCalls, 0);
+  });
+
+  it('LinkedIn-only account gets the sign-in-again guidance and touches no provider', async () => {
+    let providerCalls = 0;
+    const count = async (): Promise<never> => {
+      providerCalls += 1;
+      throw new Error('no provider for LinkedIn-only deletion');
+    };
+    const method = resolveDeletionReauthMethod([], { uid: 'li_abc' });
+    await assert.rejects(
+      () =>
+        reauthenticateForAccountDeletion(
+          { method, expectedUid: 'li_abc' },
+          createMockDeps({
+            getCurrentUser: () => ({ uid: 'li_abc' }) as any,
+            obtainGoogleProviderTokens: count,
+            obtainAppleProviderTokens: count,
+            obtainFacebookProviderTokens: count,
+            reauthenticateWithCredential: count,
+            reauthWithPassword: count,
+          }),
+        ),
+      (err: unknown) =>
+        err instanceof AccountDeletionReauthError &&
+        err.code === 'UNAVAILABLE' &&
+        err.messageKey === 'settings.deleteAccount.linkedInSignInAgain',
+    );
+    assert.equal(providerCalls, 0);
   });
 
   it('social cancellation does not complete reauth', async () => {

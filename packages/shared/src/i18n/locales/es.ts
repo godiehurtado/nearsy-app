@@ -1467,18 +1467,44 @@ const es: TranslationResources = {
       alertConfirm: 'Eliminar',
       done: 'Tu cuenta ha sido eliminada.',
       error: 'No se pudo eliminar la cuenta.',
-      permissionError:
-        'No se pudieron eliminar los datos de tu cuenta. Inténtalo de nuevo mientras la sesión esté activa.',
       networkError:
         'Error de red. Revisa tu conexión e inténtalo de nuevo.',
-      reauthBody:
-        'Por seguridad, confirma tu contraseña para continuar.',
-      reauthBodyGoogle:
-        'Por seguridad, continúa con Google para confirmar tu identidad antes de eliminar esta cuenta.',
-      reauthBodyApple:
-        'Por seguridad, continúa con Apple para confirmar tu identidad antes de eliminar esta cuenta.',
-      reauthBodyFacebook:
-        'Por seguridad, continúa con Facebook para confirmar tu identidad antes de eliminar esta cuenta.',
+      sessionNotRecent:
+        'Por seguridad, confirma de nuevo tu identidad para eliminar tu cuenta. Tu cuenta no fue eliminada.',
+      appCheckFailed:
+        'No pudimos verificar esta app. Actualiza Nearsy o inténtalo más tarde. Tu cuenta no fue eliminada.',
+      signedOut:
+        'Tu sesión terminó. Inicia sesión de nuevo para eliminar tu cuenta.',
+      inProgress:
+        'La eliminación de tu cuenta ya está en curso. Espera un momento.',
+      retryable:
+        'No pudimos terminar de eliminar tu cuenta. Inténtalo de nuevo.',
+      failed:
+        'No pudimos eliminar tu cuenta. Inténtalo más tarde o contacta a soporte de Nearsy.',
+      networkUncertain:
+        'No pudimos confirmar si tu cuenta fue eliminada. Revisa tu conexión e inténtalo de nuevo.',
+      pendingTitle: 'Eliminación sin confirmar',
+      pendingChecking: 'Comprobando si tu cuenta fue eliminada…',
+      pendingExists:
+        'Tu cuenta todavía existe y no pudimos confirmar si la eliminación terminó. Puedes volver a solicitar la eliminación abajo.',
+      pendingUnverified:
+        'No pudimos comprobar tu cuenta en este momento. Conéctate a internet y vuelve a intentarlo, o cierra sesión.',
+      pendingRetry: 'Reintentar',
+      pendingSignOut: 'Cerrar sesión',
+      reconciledDeleted: 'Tu cuenta ya no existe. Se cerró tu sesión.',
+      reconciledSignedOut:
+        'Se cerró tu sesión. No pudimos confirmar si tu cuenta fue eliminada. Vuelve a iniciar sesión para comprobarlo.',
+      linkedInSignInAgain:
+        'Por seguridad, cierra sesión, vuelve a ingresar con LinkedIn y solicita la eliminación de tu cuenta dentro de los próximos 5 minutos.',
+      linkedInRecentBody:
+        'Tu cuenta inicia sesión con LinkedIn. Puedes eliminarla si iniciaste sesión en los últimos 5 minutos.',
+      methodsTitle: 'Confirma que eres tú',
+      methodsBody:
+        'Por seguridad, elige uno de tus métodos de inicio de sesión para confirmar que eres tú. Tu cuenta y tus datos se eliminan justo después.',
+      methodPassword: 'Contraseña',
+      methodGoogle: 'Google',
+      methodApple: 'Apple',
+      methodFacebook: 'Facebook',
       passwordPlaceholder: 'Contraseña',
       reauthConfirm: 'Confirmar contraseña y eliminar',
       reauthContinueGoogle: 'Continuar con Google y eliminar',

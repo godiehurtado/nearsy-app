@@ -175,9 +175,13 @@ describe('Logout never writes Visibility', () => {
     const deletion = readShared('screens/DeleteAccountScreen.tsx');
     assert.match(
       deletion,
-      /const deletingUid = firebaseAuth\.currentUser\?\.uid;\s*await deleteAccountAndData\(\);\s*await runSuccessfulDeletionExit\(deletingUid\);/,
+      /const result = await deleteAccountWithBackend\(request\);\s*if \(result\.status === 'deleted'\) \{\s*await runSuccessfulDeletionExit\(result\.uid\);/,
     );
     assert.match(deletion, /clearLastKnownVisibility\(AsyncStorage, deletedUid\)/);
+    assert.match(
+      deletion,
+      /closeVisibilitySessionForLogout\(\{ stopRuntime: stopBackgroundLocationRuntime \}\)/,
+    );
   });
 });
 
