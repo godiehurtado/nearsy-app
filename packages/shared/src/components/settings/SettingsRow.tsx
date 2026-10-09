@@ -8,6 +8,8 @@ type Props = {
   icon: React.ComponentProps<typeof Ionicons>['name'];
   title: string;
   value?: string;
+  /** Supporting text under the value; wraps without a line cap. */
+  note?: string;
   onPress?: () => void;
   showChevron?: boolean;
   accessibilityHint?: string;
@@ -18,6 +20,7 @@ export function SettingsRow({
   icon,
   title,
   value,
+  note,
   onPress,
   showChevron = !!onPress,
   accessibilityHint,
@@ -25,6 +28,7 @@ export function SettingsRow({
 }: Props) {
   const { palette } = useAppTheme();
   const interactive = typeof onPress === 'function';
+  const accessibilityLabel = [title, value, note].filter(Boolean).join(', ');
 
   const content = (
     <>
@@ -48,6 +52,11 @@ export function SettingsRow({
             {value}
           </Text>
         ) : null}
+        {note ? (
+          <Text style={[styles.note, { color: palette.textMuted }]}>
+            {note}
+          </Text>
+        ) : null}
       </View>
       {showChevron ? (
         <Ionicons
@@ -63,7 +72,7 @@ export function SettingsRow({
     return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={value ? `${title}, ${value}` : title}
+        accessibilityLabel={accessibilityLabel}
         accessibilityHint={accessibilityHint}
         onPress={onPress}
         style={({ pressed }) => [
@@ -84,7 +93,7 @@ export function SettingsRow({
     <View
       accessible
       accessibilityRole="text"
-      accessibilityLabel={value ? `${title}, ${value}` : title}
+      accessibilityLabel={accessibilityLabel}
       style={[
         styles.row,
         !isLast && {
@@ -127,5 +136,10 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontSize: fontSize.sm,
     fontWeight: fontWeight.medium,
+  },
+  note: {
+    marginTop: spacing.xs,
+    fontSize: fontSize.xs,
+    lineHeight: fontSize.xs * 1.5,
   },
 });

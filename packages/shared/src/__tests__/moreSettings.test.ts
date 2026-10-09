@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 
 import {
   buildBirthDatePersistencePatch,
-  buildPhoneSavePatch,
   SETTINGS_MAX_AGE,
   SETTINGS_MIN_AGE,
   validateSettingsBirthDate,
@@ -88,22 +87,12 @@ describe('Settings DOB contract', () => {
   });
 });
 
-describe('Settings phone verification invalidation', () => {
-  it('invalidates verification only when canonical phone changes', () => {
-    const same = buildPhoneSavePatch({
-      previousPhone: '+15551234567',
-      nextPhone: '+15551234567',
-    });
-    assert.equal(same.verification, null);
-
-    const changed = buildPhoneSavePatch({
-      previousPhone: '+15551234567',
-      nextPhone: '+15559876543',
-    });
-    assert.deepEqual(changed.verification, {
-      phoneVerified: false,
-      phoneVerifiedAt: null,
-    });
+describe('Settings phone is read-only', () => {
+  it('More no longer builds phone save patches', () => {
+    const screen = readShared('screens/MoreScreen.tsx');
+    assert.doesNotMatch(screen, /buildPhoneSavePatch|savePhone/);
+    const contracts = readShared('settings/settingsContracts.ts');
+    assert.doesNotMatch(contracts, /buildPhoneSavePatch|phoneVerified/);
   });
 
   it('does not add OTP behavior to More', () => {

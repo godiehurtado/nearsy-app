@@ -131,7 +131,7 @@ const es: TranslationResources = {
         realName: 'Nombre real *',
         email: 'Correo electrónico',
         confirmEmail: 'Confirmar correo',
-        phone: 'Número de teléfono (opcional)',
+        phone: 'Número de teléfono',
         password: 'Contraseña',
         confirmPassword: 'Confirmar contraseña',
         birthDate: 'Fecha de nacimiento *',
@@ -418,16 +418,16 @@ const es: TranslationResources = {
         nameRequired: 'Ingresa tu nombre para continuar',
         lastNameRequired: 'Ingresa tu apellido para continuar',
         required: 'Ingresa tu nombre y apellido para continuar',
-        birthCountryLabel: '¿En qué país naciste?',
-        birthCountryPlaceholder: 'País de nacimiento',
-        birthCountryRequired: 'Selecciona tu país de nacimiento para continuar',
+        birthCountryLabel: '¿De dónde eres?',
+        birthCountryPlaceholder: 'País de origen',
+        birthCountryRequired: 'Selecciona tu país de origen para continuar',
         residenceCountryLabel: '¿Dónde vives?',
         residenceCountryPlaceholder: 'País de residencia',
         residenceCountryRequired:
           'Selecciona tu país de residencia para continuar',
         searchCountry: 'Buscar países…',
         countriesRequired:
-          'Selecciona tu país de nacimiento y de residencia para continuar',
+          'Selecciona tu país de origen y de residencia para continuar',
       },
       info: {
         title: 'Agrega una foto de perfil',
@@ -993,11 +993,11 @@ const es: TranslationResources = {
     sections: {
       details: 'Detalles del perfil',
       content: 'Contenido del perfil',
-      context: 'Trasfondo',
+      context: 'Información personal',
     },
     context: {
-      birthCountry: 'País de nacimiento',
-      birthCountryPlaceholder: 'Selecciona el país de nacimiento',
+      birthCountry: 'País de origen',
+      birthCountryPlaceholder: 'Selecciona el país de origen',
       residenceCountry: 'País de residencia',
       residenceCountryPlaceholder: 'Selecciona el país de residencia',
       languages: 'Idiomas',
@@ -1361,13 +1361,10 @@ const es: TranslationResources = {
       missing: 'No hay correo disponible',
     },
     phone: {
-      title: 'Número de teléfono',
-      placeholder: 'Número de teléfono (opcional)',
-      hint: 'Opcional. Se usa para contacto dentro de Nearsy y no es público.',
-      invalid:
-        'Introduce un número móvil válido con el código de tu país.',
-      selectCountry: 'Selecciona el código de país',
-      saved: 'Número de teléfono actualizado',
+      title: 'Número móvil',
+      hint: 'Tu teléfono ayuda a proteger tu cuenta. Tu número nunca se muestra en tu perfil.',
+      verified: 'Verificado',
+      notVerified: 'No verificado',
     },
     birthDate: {
       title: 'Fecha de nacimiento',
@@ -1619,6 +1616,7 @@ const es: TranslationResources = {
     phoneStep: {
       title: 'Tu número móvil',
       subtitle: 'Ingresa el número donde puedes recibir SMS.',
+      why: 'Verificamos tu teléfono para proteger tu cuenta, evitar cuentas duplicadas y mantener más seguras las interacciones en Discovery y Nearby. Tu número nunca se muestra en tu perfil.',
       countryA11y: 'Seleccionar código de país',
       phoneLabel: 'Número de teléfono',
       phonePlaceholder: 'Número móvil',

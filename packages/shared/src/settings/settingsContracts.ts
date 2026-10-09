@@ -16,11 +16,6 @@ import {
 export const SETTINGS_MIN_AGE = MIN_VISIBILITY_AGE;
 export const SETTINGS_MAX_AGE = MAX_VISIBILITY_AGE;
 
-export type PhoneVerificationClearPatch = {
-  phoneVerified: false;
-  phoneVerifiedAt: null;
-};
-
 export type BirthDatePersistencePatch = {
   birthDate: string;
   birthYear: number;
@@ -40,32 +35,6 @@ export function normalizeCanonicalPhone(
 export function isValidE164Phone(fullPhone: string): boolean {
   if (!fullPhone) return false;
   return /^\+[1-9]\d{7,14}$/.test(fullPhone);
-}
-
-/**
- * When the canonical phone value actually changes, clear verification.
- * Same number → empty patch (do not invalidate).
- */
-export function buildPhoneSavePatch(input: {
-  previousPhone: string | null | undefined;
-  nextPhone: string | null;
-}): {
-  phone: string | null;
-  verification: PhoneVerificationClearPatch | null;
-} {
-  const next = input.nextPhone ? normalizeCanonicalPhone(input.nextPhone) : '';
-  const prev = normalizeCanonicalPhone(input.previousPhone);
-  const phone = next || null;
-  if (phone && !isValidE164Phone(phone)) {
-    throw new Error('INVALID_PHONE');
-  }
-  if (phone === (prev || null) || (!phone && !prev)) {
-    return { phone, verification: null };
-  }
-  return {
-    phone,
-    verification: { phoneVerified: false, phoneVerifiedAt: null },
-  };
 }
 
 export function validateSettingsBirthDate(

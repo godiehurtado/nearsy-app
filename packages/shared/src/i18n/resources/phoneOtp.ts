@@ -4,6 +4,7 @@ const phoneOtp = {
   phoneStep: {
     title: 'Your mobile number',
     subtitle: 'Enter the number where you can receive SMS.',
+    why: 'We verify your phone to protect your account, prevent duplicate accounts, and keep interactions in Discovery and Nearby safer. Your number is never shown on your profile.',
     countryA11y: 'Select country code',
     phoneLabel: 'Phone number',
     phonePlaceholder: 'Mobile number',

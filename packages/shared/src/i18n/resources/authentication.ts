@@ -94,7 +94,7 @@ export default {
       realName: 'Real name *',
       email: 'Email',
       confirmEmail: 'Confirm Email',
-      phone: 'Phone number (optional)',
+      phone: 'Phone number',
       password: 'Password',
       confirmPassword: 'Confirm Password',
       birthDate: 'Date of birth *',

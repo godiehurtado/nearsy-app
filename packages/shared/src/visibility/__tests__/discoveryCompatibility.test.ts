@@ -204,7 +204,7 @@ describe('parseDiscoveryCompatibility — Alignment M4A', () => {
       parseDiscoveryCompatibility({
         available: true,
         score: 50,
-        formulaVersion: '2',
+        formulaVersion: '3',
       })?.available,
       false,
     );
