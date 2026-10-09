@@ -251,8 +251,9 @@ export const es: TranslationResources = {
     },
     phone: {
       title: 'Número de teléfono',
-      placeholder: 'Número de teléfono (opcional)',
-      hint: 'Opcional. Se usa para contacto dentro de Nearsy y no es público.',
+      placeholder: 'Número móvil',
+      hint: 'Obligatorio para proteger tu cuenta. Tu número nunca se muestra en tu perfil.',
+      required: 'Tu número de teléfono es obligatorio y no se puede eliminar.',
       invalid:
         'Introduce un número móvil válido con el código de tu país.',
       selectCountry: 'Selecciona el código de país',

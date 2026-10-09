@@ -304,6 +304,24 @@ export default function PhoneVerificationScreen() {
                 <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
                   {t('phoneOtp.phoneStep.subtitle')}
                 </Text>
+                <View
+                  style={[
+                    styles.whyPanel,
+                    { backgroundColor: palette.panel, borderColor: palette.border },
+                  ]}
+                  accessible
+                  accessibilityLabel={t('phoneOtp.phoneStep.whyRequired')}
+                >
+                  <Ionicons
+                    name="shield-checkmark-outline"
+                    size={20}
+                    color={palette.primary}
+                    style={styles.whyIcon}
+                  />
+                  <Text style={[styles.whyText, { color: palette.textSecondary }]}>
+                    {t('phoneOtp.phoneStep.whyRequired')}
+                  </Text>
+                </View>
                 <View style={styles.phoneRow}>
                   <Pressable
                     accessibilityRole="button"
@@ -557,6 +575,21 @@ const styles = StyleSheet.create({
     lineHeight: fontSize.base * 1.5,
     marginTop: spacing.sm,
     marginBottom: spacing.lg,
+  },
+  whyPanel: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  whyIcon: { marginTop: 2 },
+  whyText: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    lineHeight: fontSize.sm * 1.5,
   },
   phoneRow: {
     flexDirection: 'row',

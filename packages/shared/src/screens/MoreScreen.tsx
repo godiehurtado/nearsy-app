@@ -414,7 +414,9 @@ export default function MoreScreen() {
       Alert.alert(t('common.appName'), t('settings.phone.saved'));
       closeEditor();
     } catch (e: any) {
-      if (e?.message === 'INVALID_PHONE') {
+      if (e?.message === 'PHONE_REQUIRED') {
+        Alert.alert(t('common.error'), t('settings.phone.required'));
+      } else if (e?.message === 'INVALID_PHONE') {
         Alert.alert(t('common.error'), t('settings.phone.invalid'));
       } else {
         Alert.alert(t('common.error'), e?.message || t('settings.saveError'));

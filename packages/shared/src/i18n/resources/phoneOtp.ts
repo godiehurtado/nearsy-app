@@ -5,6 +5,8 @@ export const phoneOtpTranslations = {
   phoneStep: {
     title: 'Your mobile number',
     subtitle: 'Enter the number where you can receive SMS.',
+    whyRequired:
+      'We verify your phone to protect your account, prevent duplicate accounts, and keep interactions in Discovery and Nearby safer. Your number is never shown on your profile.',
     countryA11y: 'Select country code',
     phoneLabel: 'Phone number',
     phonePlaceholder: 'Mobile number',
@@ -100,6 +102,8 @@ export const phoneOtpTranslations = {
     phoneStep: {
       title: 'Tu número móvil',
       subtitle: 'Ingresa el número donde puedes recibir SMS.',
+      whyRequired:
+        'Verificamos tu teléfono para proteger tu cuenta, evitar cuentas duplicadas y mantener más seguras las interacciones en Discovery y Nearby. Tu número nunca se muestra en tu perfil.',
       countryA11y: 'Seleccionar código de país',
       phoneLabel: 'Número de teléfono',
       phonePlaceholder: 'Número móvil',

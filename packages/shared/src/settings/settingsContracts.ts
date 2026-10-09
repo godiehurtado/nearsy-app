@@ -45,21 +45,24 @@ export function isValidE164Phone(fullPhone: string): boolean {
 /**
  * When the canonical phone value actually changes, clear verification.
  * Same number → empty patch (do not invalidate).
+ * The phone is mandatory: an empty value is rejected, never saved as null.
  */
 export function buildPhoneSavePatch(input: {
   previousPhone: string | null | undefined;
   nextPhone: string | null;
 }): {
-  phone: string | null;
+  phone: string;
   verification: PhoneVerificationClearPatch | null;
 } {
-  const next = input.nextPhone ? normalizeCanonicalPhone(input.nextPhone) : '';
+  const phone = input.nextPhone ? normalizeCanonicalPhone(input.nextPhone) : '';
   const prev = normalizeCanonicalPhone(input.previousPhone);
-  const phone = next || null;
-  if (phone && !isValidE164Phone(phone)) {
+  if (!phone) {
+    throw new Error('PHONE_REQUIRED');
+  }
+  if (!isValidE164Phone(phone)) {
     throw new Error('INVALID_PHONE');
   }
-  if (phone === (prev || null) || (!phone && !prev)) {
+  if (phone === prev) {
     return { phone, verification: null };
   }
   return {
