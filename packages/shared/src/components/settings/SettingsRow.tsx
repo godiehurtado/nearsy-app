@@ -8,6 +8,8 @@ type Props = {
   icon: React.ComponentProps<typeof Ionicons>['name'];
   title: string;
   value?: string;
+  /** Value uses as many lines as it needs instead of the default 2-line cap. */
+  wrapValue?: boolean;
   /** Supporting text under the value; wraps freely for large fonts. */
   description?: string;
   onPress?: () => void;
@@ -20,6 +22,7 @@ export function SettingsRow({
   icon,
   title,
   value,
+  wrapValue = false,
   description,
   onPress,
   showChevron = !!onPress,
@@ -47,7 +50,7 @@ export function SettingsRow({
         {value ? (
           <Text
             style={[styles.value, { color: palette.textSecondary }]}
-            numberOfLines={2}
+            numberOfLines={wrapValue ? undefined : 2}
           >
             {value}
           </Text>

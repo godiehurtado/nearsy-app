@@ -56,6 +56,16 @@ export function resolveSettingsPhoneStatus(input: {
   return { kind: 'unverified', phone: phone || null };
 }
 
+export function formatSettingsPhoneValue(
+  status: SettingsPhoneStatus,
+  notVerifiedLabel: string,
+): string {
+  if (status.kind === 'verified') return status.phone;
+  return status.phone
+    ? `${status.phone} · ${notVerifiedLabel}`
+    : notVerifiedLabel;
+}
+
 export function validateSettingsBirthDate(
   parts: BirthDateParts,
   asOf: Date = new Date(),

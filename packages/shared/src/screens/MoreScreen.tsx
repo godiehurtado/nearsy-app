@@ -87,6 +87,7 @@ import {
 } from '../utils/birthDate';
 import {
   buildBirthDatePersistencePatch,
+  formatSettingsPhoneValue,
   formatVisibilityAgeSummary,
   resolveSettingsPhoneStatus,
   SETTINGS_MAX_AGE,
@@ -883,12 +884,10 @@ export default function MoreScreen() {
     phone: storedPhone,
     phoneVerified,
   });
-  const phoneDisplay =
-    phoneStatus.kind === 'verified'
-      ? phoneStatus.phone
-      : phoneStatus.phone
-        ? `${phoneStatus.phone} · ${t('settings.phone.notVerified')}`
-        : t('settings.phone.notVerified');
+  const phoneDisplay = formatSettingsPhoneValue(
+    phoneStatus,
+    t('settings.phone.notVerified'),
+  );
   const dobDisplay = formatBirthDisplay(
     birthDateIso,
     deviceLocaleTag,
@@ -927,6 +926,7 @@ export default function MoreScreen() {
             icon="call-outline"
             title={t('settings.phone.title')}
             value={phoneDisplay}
+            wrapValue
             description={t('settings.phone.hint')}
             showChevron={false}
           />

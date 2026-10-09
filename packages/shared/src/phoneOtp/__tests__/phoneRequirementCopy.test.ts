@@ -13,7 +13,10 @@ import { fileURLToPath } from 'node:url';
 import { authenticationTranslations } from '../../i18n/resources/authentication.ts';
 import { phoneOtpTranslations } from '../../i18n/resources/phoneOtp.ts';
 import settingsEn from '../../i18n/resources/settings.ts';
-import { resolveSettingsPhoneStatus } from '../../settings/settingsContracts.ts';
+import {
+  formatSettingsPhoneValue,
+  resolveSettingsPhoneStatus,
+} from '../../settings/settingsContracts.ts';
 import { resolveOnboardingRoute } from '../onboardingResolver.ts';
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -138,8 +141,14 @@ describe('Settings shows the phone read-only', () => {
         resolveSettingsPhoneStatus({ phone, phoneVerified: true }),
         { kind: 'unverified', phone: null },
       );
+      assert.equal(
+        formatSettingsPhoneValue(
+          resolveSettingsPhoneStatus({ phone, phoneVerified: true }),
+          'No verificado',
+        ),
+        'No verificado',
+      );
     }
-    assert.match(more, /: t\('settings\.phone\.notVerified'\);/);
   });
 
   it('an unverified legacy phone is labelled "Not verified"', () => {
@@ -149,7 +158,13 @@ describe('Settings shows the phone read-only', () => {
         { kind: 'unverified', phone: '+15555550100' },
       );
     }
-    assert.match(more, /`\$\{phoneStatus\.phone\} · \$\{t\('settings\.phone\.notVerified'\)\}`/);
+  });
+
+  it('the row value comes from the shared formatter', () => {
+    assert.match(
+      more,
+      /formatSettingsPhoneValue\(\s*phoneStatus,\s*t\('settings\.phone\.notVerified'\),\s*\)/,
+    );
   });
 
   it('the row is not pressable and carries the explanation', () => {
@@ -170,6 +185,87 @@ describe('Settings shows the phone read-only', () => {
     );
     assert.doesNotMatch(description, /numberOfLines/);
     assert.match(more, /<ScrollView[\s\S]*?icon="call-outline"/);
+  });
+});
+
+describe('Phone row never truncates the number or its status', () => {
+  const more = read('screens/MoreScreen.tsx');
+  const row = more.slice(
+    more.indexOf('icon="call-outline"'),
+    more.indexOf('icon="calendar-outline"'),
+  );
+  const settingsRow = read('components/settings/SettingsRow.tsx');
+  const valueText = settingsRow.slice(
+    settingsRow.indexOf('{value ? ('),
+    settingsRow.indexOf(') : null}', settingsRow.indexOf('{value ? (')),
+  );
+  const styleBlock = (name: string) => {
+    const start = settingsRow.indexOf(`  ${name}: {`);
+    return settingsRow.slice(start, settingsRow.indexOf('  },', start));
+  };
+  const es = read('i18n/locales/es.ts');
+  const notVerifiedEs = /notVerified: '([^']+)'/.exec(
+    es.slice(es.indexOf('    phone: {'), es.indexOf('    birthDate: {')),
+  )?.[1];
+  const LONG = '+155555501001234';
+
+  it('normal font: only the phone row lifts the 2-line value cap', () => {
+    assert.match(settingsRow, /wrapValue = false,/);
+    assert.match(valueText, /numberOfLines=\{wrapValue \? undefined : 2\}/);
+    assert.match(row, /\n\s+wrapValue\r?\n/);
+    assert.equal((more.match(/\bwrapValue\b/g) ?? []).length, 1);
+  });
+
+  it('extreme font: text scales with the system and the row grows', () => {
+    assert.doesNotMatch(
+      settingsRow,
+      /allowFontScaling=\{false\}|maxFontSizeMultiplier|adjustsFontSizeToFit|ellipsizeMode/,
+    );
+    assert.match(styleBlock('row'), /minHeight: 56/);
+    for (const name of ['row', 'textCol', 'value', 'description']) {
+      assert.doesNotMatch(styleBlock(name), /(?<![a-zA-Z])height:|maxHeight|overflow/);
+    }
+    assert.match(styleBlock('textCol'), /flex: 1/);
+  });
+
+  it('long number is shown in full', () => {
+    const verified = resolveSettingsPhoneStatus({ phone: LONG, phoneVerified: true });
+    assert.equal(formatSettingsPhoneValue(verified, 'Not verified'), LONG);
+  });
+
+  it('number + "Not verified" keeps both parts intact in EN/ES', () => {
+    assert.equal(notVerifiedEs, 'No verificado');
+    const status = resolveSettingsPhoneStatus({ phone: LONG, phoneVerified: false });
+    assert.equal(
+      formatSettingsPhoneValue(status, settingsEn.phone.notVerified),
+      `${LONG} · Not verified`,
+    );
+    assert.equal(
+      formatSettingsPhoneValue(status, notVerifiedEs ?? ''),
+      `${LONG} · No verificado`,
+    );
+  });
+
+  it('no truncation: value has no line cap, no ellipsis', () => {
+    for (const label of [settingsEn.phone.notVerified, notVerifiedEs ?? '']) {
+      for (const phoneVerified of [true, false]) {
+        const text = formatSettingsPhoneValue(
+          resolveSettingsPhoneStatus({ phone: LONG, phoneVerified }),
+          label,
+        );
+        assert.ok(text.startsWith(LONG));
+        assert.doesNotMatch(text, /…|\.\.\./);
+      }
+    }
+  });
+
+  it('accessibility: TalkBack gets title, full value and full explanation', () => {
+    assert.match(settingsRow, /\[title, value, description\]\.filter\(Boolean\)\.join\(', '\)/);
+    assert.match(settingsRow, /accessible\s+accessibilityRole="text"\s+accessibilityLabel=\{a11yLabel\}/);
+    assert.match(row, /title=\{t\('settings\.phone\.title'\)\}/);
+    assert.match(row, /value=\{phoneDisplay\}/);
+    assert.match(row, /description=\{t\('settings\.phone\.hint'\)\}/);
+    assert.doesNotMatch(row, /onPress|accessibilityHint|showChevron=\{true\}|keyboardType|TextInput/);
   });
 });
 
