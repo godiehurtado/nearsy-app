@@ -12,8 +12,8 @@ export default {
     context: 'Background',
   },
   context: {
-    birthCountry: 'Country of birth',
-    birthCountryPlaceholder: 'Select country of birth',
+    birthCountry: 'Country of origin',
+    birthCountryPlaceholder: 'Select country of origin',
     residenceCountry: 'Country of residence',
     residenceCountryPlaceholder: 'Select country of residence',
     languages: 'Languages',

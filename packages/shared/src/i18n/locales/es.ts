@@ -418,16 +418,16 @@ const es: TranslationResources = {
         nameRequired: 'Ingresa tu nombre para continuar',
         lastNameRequired: 'Ingresa tu apellido para continuar',
         required: 'Ingresa tu nombre y apellido para continuar',
-        birthCountryLabel: '¿En qué país naciste?',
-        birthCountryPlaceholder: 'País de nacimiento',
-        birthCountryRequired: 'Selecciona tu país de nacimiento para continuar',
+        birthCountryLabel: '¿De dónde eres?',
+        birthCountryPlaceholder: 'País de origen',
+        birthCountryRequired: 'Selecciona tu país de origen para continuar',
         residenceCountryLabel: '¿Dónde vives?',
         residenceCountryPlaceholder: 'País de residencia',
         residenceCountryRequired:
           'Selecciona tu país de residencia para continuar',
         searchCountry: 'Buscar países…',
         countriesRequired:
-          'Selecciona tu país de nacimiento y de residencia para continuar',
+          'Selecciona tu país de origen y de residencia para continuar',
       },
       info: {
         title: 'Agrega una foto de perfil',
@@ -996,8 +996,8 @@ const es: TranslationResources = {
       context: 'Trasfondo',
     },
     context: {
-      birthCountry: 'País de nacimiento',
-      birthCountryPlaceholder: 'Selecciona el país de nacimiento',
+      birthCountry: 'País de origen',
+      birthCountryPlaceholder: 'Selecciona el país de origen',
       residenceCountry: 'País de residencia',
       residenceCountryPlaceholder: 'Selecciona el país de residencia',
       languages: 'Idiomas',
