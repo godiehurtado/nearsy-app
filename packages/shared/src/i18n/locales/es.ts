@@ -121,7 +121,7 @@ export const es: TranslationResources = {
     noInterests: 'Aún no hay intereses',
     context: {
       fromCountry: 'De {{country}}',
-      livesInCountry: 'Vive en {{country}}',
+      livesInCity: 'Vive en {{place}}',
       languages: 'Idiomas',
     },
     zodiac: {
@@ -243,7 +243,15 @@ export const es: TranslationResources = {
       account: 'Cuenta',
       privacy: 'Privacidad y descubrimiento',
       preferences: 'Preferencias',
+      about: 'Acerca de',
       actions: 'Acciones de la cuenta',
+    },
+    about: {
+      cityDataTitle: 'Datos de ciudades',
+      geonamesAttribution:
+        'Datos de ciudades © GeoNames (https://www.geonames.org), con licencia CC BY 4.0. Modificados: filtrados y reindexados por Nearsy.',
+      openGeoNamesHint: 'Abre el sitio web de GeoNames en tu navegador',
+      openLinkError: 'No pudimos abrir el enlace. Inténtalo de nuevo.',
     },
     email: {
       title: 'Correo electrónico',

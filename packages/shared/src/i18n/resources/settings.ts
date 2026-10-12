@@ -4,7 +4,15 @@ export default {
     account: 'Account',
     privacy: 'Privacy & discovery',
     preferences: 'Preferences',
+    about: 'About',
     actions: 'Account actions',
+  },
+  about: {
+    cityDataTitle: 'City data',
+    geonamesAttribution:
+      'City data © GeoNames (https://www.geonames.org), licensed under CC BY 4.0. Modified: filtered and re-indexed by Nearsy.',
+    openGeoNamesHint: 'Opens the GeoNames website in your browser',
+    openLinkError: "We couldn't open the link. Please try again.",
   },
   email: {
     title: 'Email',

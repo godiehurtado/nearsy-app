@@ -1,6 +1,7 @@
 /**
- * Public profile context card — birth/residence countries + languages.
+ * Public profile context card — country of origin, current city, languages.
  * Omits missing rows; omits entire card when all context empty.
+ * The city shows name, optional region and country; never coordinates.
  */
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -11,6 +12,11 @@ import {
   countryFlagEmoji,
   normalizeCountryCode,
 } from '../../profileContext/countryCatalog';
+import {
+  formatCurrentCityPlace,
+  parseCurrentCity,
+  type CurrentCity,
+} from '../../profileContext/currentCity';
 import {
   languageDisplayName,
   normalizeLanguageCodes,
@@ -27,14 +33,14 @@ import { cardShadow } from '../../theme/shadows';
 
 type Props = {
   birthCountryCode: string | null;
-  residenceCountryCode: string | null;
+  currentCity: CurrentCity | null | undefined;
   languageCodes: readonly string[];
   locale: string;
 };
 
 export function DiscoveryContextCard({
   birthCountryCode,
-  residenceCountryCode,
+  currentCity,
   languageCodes,
   locale,
 }: Props) {
@@ -43,12 +49,12 @@ export function DiscoveryContextCard({
   const resolvedLocale = locale || i18n.language || 'en';
 
   const birth = normalizeCountryCode(birthCountryCode);
-  const residence = normalizeCountryCode(residenceCountryCode);
+  const city = parseCurrentCity(currentCity);
   const languages = normalizeLanguageCodes(languageCodes);
 
   const show = hasAnyDiscoveryContext({
     birthCountryCode: birth,
-    residenceCountryCode: residence,
+    currentCity: city,
     languageCodes: languages,
   });
 
@@ -68,9 +74,12 @@ export function DiscoveryContextCard({
         country: countryDisplayName(birth, resolvedLocale),
       })
     : '';
-  const livesInLabel = residence
-    ? t('discoveryProfile.context.livesInCountry', {
-        country: countryDisplayName(residence, resolvedLocale),
+  const livesInLabel = city
+    ? t('discoveryProfile.context.livesInCity', {
+        place: formatCurrentCityPlace(
+          city,
+          countryDisplayName(city.countryCode, resolvedLocale),
+        ),
       })
     : '';
 
@@ -94,7 +103,7 @@ export function DiscoveryContextCard({
           {countryFlagEmoji(birth)} {fromLabel}
         </Text>
       ) : null}
-      {residence ? (
+      {city ? (
         <Text
           style={[
             styles.rowText,
@@ -105,7 +114,7 @@ export function DiscoveryContextCard({
           ]}
           accessibilityLabel={livesInLabel}
         >
-          {countryFlagEmoji(residence)} {livesInLabel}
+          {countryFlagEmoji(city.countryCode)} {livesInLabel}
         </Text>
       ) : null}
       {languageLabels.length > 0 ? (
@@ -115,7 +124,7 @@ export function DiscoveryContextCard({
               styles.sectionLabel,
               {
                 color: palette.textMuted,
-                marginTop: birth || residence ? spacing.lg : 0,
+                marginTop: birth || city ? spacing.lg : 0,
               },
             ]}
           >

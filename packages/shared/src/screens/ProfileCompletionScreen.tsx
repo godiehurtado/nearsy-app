@@ -104,13 +104,18 @@ import {
   type ProfileMode,
 } from '../profile/profileModeFields';
 import {
+  buildCurrentCityWritePatch,
   buildProfileContextSavePatch,
   isCrjIdentityContextValid,
   isCrjLanguagesValid,
+  parseCurrentCity,
   readProfileContextFromUserDoc,
   syncDiscoveryProfileContextAfterSave,
+  type CurrentCity,
 } from '../profileContext';
 import { CountrySelectField } from '../components/profileContext/CountrySelectField';
+import { CurrentCityField } from '../components/profileContext/CurrentCityField';
+import { firestoreDeleteField } from '../services/firestoreFieldDelete';
 import { LanguageMultiSelectField } from '../components/profileContext/LanguageMultiSelectField';
 import {
   buildCrjDetailsPresentation,
@@ -387,9 +392,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [company, setCompany] = useState('');
   const [bio, setBio] = useState('');
   const [birthCountryCode, setBirthCountryCode] = useState<string | null>(null);
-  const [residenceCountryCode, setResidenceCountryCode] = useState<
-    string | null
-  >(null);
+  const [currentCity, setCurrentCity] = useState<CurrentCity | null>(null);
+  const persistedCurrentCityRef = useRef<CurrentCity | null>(null);
   const [languageCodes, setLanguageCodes] = useState<string[]>([]);
   const [selectedInterests, setSelectedInterests] = useState<
     OnboardingSelectedInterest[]
@@ -657,7 +661,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         existing as Record<string, unknown> | null,
       );
       setBirthCountryCode(context.birthCountryCode);
-      setResidenceCountryCode(context.residenceCountryCode);
+      setCurrentCity(context.currentCity);
+      persistedCurrentCityRef.current = context.currentCity;
       setLanguageCodes(context.languageCodes);
 
       let nextPhoto: string | null = null;
@@ -765,10 +770,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         return (
           firstName.trim().length > 0 &&
           lastName.trim().length > 0 &&
-          isCrjIdentityContextValid({
-            birthCountryCode,
-            residenceCountryCode,
-          })
+          isCrjIdentityContextValid({ birthCountryCode })
         );
       case 'photo':
         return !!photoUri?.trim();
@@ -809,11 +811,6 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         if (!birthCountryCode) {
           return t(
             'onboarding.profileCompletion.identity.birthCountryRequired',
-          );
-        }
-        if (!residenceCountryCode) {
-          return t(
-            'onboarding.profileCompletion.identity.residenceCountryRequired',
           );
         }
         return t('onboarding.profileCompletion.identity.required');
@@ -861,21 +858,29 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     });
     const contextPatch = buildProfileContextSavePatch({
       birthCountryCode,
-      residenceCountryCode,
       languageCodes,
     });
+    const nextCity = parseCurrentCity(currentCity);
+    const cityPatch = buildCurrentCityWritePatch(
+      nextCity,
+      persistedCurrentCityRef.current,
+      firestoreDeleteField(),
+    );
     await updateUserProfilePartial(uid, {
       ...patch,
       ...contextPatch,
+      ...cityPatch,
       profileSetupCompleted: false,
     });
-    void syncDiscoveryProfileContextAfterSave(
-      await getVisibilityDiscoveryClient(),
-    );
+    persistedCurrentCityRef.current = nextCity;
+    void getVisibilityDiscoveryClient()
+      .then((client) => syncDiscoveryProfileContextAfterSave(client))
+      .catch(() => undefined);
     setShellData((prev) => ({
       ...(prev ?? {}),
       ...patch,
       ...contextPatch,
+      currentCity: nextCity,
       mode,
       profileSetupCompleted: false,
     }));
@@ -935,7 +940,6 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     });
     const contextPatch = buildProfileContextSavePatch({
       birthCountryCode,
-      residenceCountryCode,
       languageCodes,
     });
     await updateUserProfilePartial(uid, {
@@ -2003,25 +2007,16 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                   locale={i18n.language}
                   onChange={setBirthCountryCode}
                 />
-                <CountrySelectField
+                <CurrentCityField
                   label={t(
-                    'onboarding.profileCompletion.identity.residenceCountryLabel',
+                    'onboarding.profileCompletion.identity.currentCityLabel',
                   )}
                   placeholder={t(
-                    'onboarding.profileCompletion.identity.residenceCountryPlaceholder',
+                    'onboarding.profileCompletion.identity.currentCityPlaceholder',
                   )}
-                  searchPlaceholder={t(
-                    'onboarding.profileCompletion.identity.residenceCountryPlaceholder',
-                  )}
-                  emptyLabel={t(
-                    'onboarding.profileCompletion.identity.countrySearchEmpty',
-                  )}
-                  clearLabel={t(
-                    'onboarding.profileCompletion.identity.countryClearA11y',
-                  )}
-                  value={residenceCountryCode}
+                  value={currentCity}
                   locale={i18n.language}
-                  onChange={setResidenceCountryCode}
+                  onChange={setCurrentCity}
                 />
               </View>
             </>

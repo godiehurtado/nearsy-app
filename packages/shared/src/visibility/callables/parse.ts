@@ -11,6 +11,7 @@ import {
   MAX_GALLERY_ITEMS,
 } from '../constants';
 import { normalizeCountryCode } from '../../profileContext/countryCatalog';
+import { parseCurrentCity } from '../../profileContext/currentCity';
 import { normalizeLanguageCodes } from '../../profileContext/languageCatalog';
 import { parseZodiacSign } from '../../profileContext/zodiacPresentation';
 import { parseDiscoveryAffiliations } from '../discoveryAffiliations';
@@ -205,10 +206,22 @@ export function parseDiscoveryProfileSummary(
   return parseSummaryFields(value);
 }
 
+/**
+ * `currentCity` is validated on its own by the strict city parser: coordinates,
+ * extra keys or bad types void only the city, never the surrounding profile.
+ */
+function withoutCurrentCity(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!Object.prototype.hasOwnProperty.call(value, 'currentCity')) return value;
+  const { currentCity: _city, ...rest } = value;
+  return rest;
+}
+
 function parseDetailContextFields(value: Record<string, unknown>): Pick<
   DiscoveryProfileDetail,
   | 'birthCountryCode'
-  | 'residenceCountryCode'
+  | 'currentCity'
   | 'languageCodes'
   | 'zodiacSign'
 > {
@@ -229,14 +242,8 @@ function parseDetailContextFields(value: Record<string, unknown>): Pick<
     // Unknown code → treat as absent (rollout-safe), never fail parent DTO.
   }
 
-  const residenceCountryCode = Object.prototype.hasOwnProperty.call(
-    value,
-    'residenceCountryCode',
-  )
-    ? value.residenceCountryCode === null
-      ? null
-      : normalizeCountryCode(value.residenceCountryCode)
-    : null;
+  // Legacy residenceCountryCode is ignored and never mapped to a city.
+  const currentCity = parseCurrentCity(value.currentCity);
 
   const languageCodes = Object.prototype.hasOwnProperty.call(
     value,
@@ -251,7 +258,7 @@ function parseDetailContextFields(value: Record<string, unknown>): Pick<
 
   return {
     birthCountryCode,
-    residenceCountryCode,
+    currentCity,
     languageCodes,
     zodiacSign,
   };
@@ -263,7 +270,7 @@ export function parseDiscoveryProfileDetail(
   if (!isPlainObject(value)) {
     throw createContractResponseError('profile must be an object', value);
   }
-  assertNoForbiddenKeys(value, 'profile');
+  assertNoForbiddenKeys(withoutCurrentCity(value), 'profile');
   assertRejectedProfileKeys(value, [
     'activeProfile',
     'photoUrl',
@@ -454,7 +461,12 @@ export function parseGetDiscoveryProfileResponse(
       data,
     );
   }
-  assertNoForbiddenKeys(data, 'getDiscoveryProfile');
+  assertNoForbiddenKeys(
+    isPlainObject(data.profile)
+      ? { ...data, profile: withoutCurrentCity(data.profile) }
+      : data,
+    'getDiscoveryProfile',
+  );
   const compatibility = Object.prototype.hasOwnProperty.call(data, 'compatibility')
     ? parseDiscoveryCompatibility(data.compatibility)
     : undefined;
@@ -524,11 +536,14 @@ export function parseSyncDiscoveryProfileContextResponse(
       data,
     );
   }
-  assertNoForbiddenKeys(data, 'syncDiscoveryProfileContext');
+  assertNoForbiddenKeys(withoutCurrentCity(data), 'syncDiscoveryProfileContext');
   return {
     contractVersion: requireContractVersion(data.contractVersion),
     synced: requireBoolean(data.synced, 'synced'),
     serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
+    ...(Object.prototype.hasOwnProperty.call(data, 'currentCity')
+      ? { currentCity: parseCurrentCity(data.currentCity) }
+      : {}),
   };
 }
 

@@ -21,6 +21,7 @@ const background = read('components/profile/OwnProfileBackgroundCard.tsx');
 const formInput = read('components/registration/FormInput.tsx');
 const countryField = read('components/profileContext/CountrySelectField.tsx');
 const languageField = read('components/profileContext/LanguageMultiSelectField.tsx');
+const cityField = read('components/profileContext/CurrentCityField.tsx');
 const quick = read('components/ProfileQuickActions.tsx');
 const crj = read('screens/ProfileCompletionScreen.tsx');
 
@@ -50,24 +51,26 @@ describe('Background is its own card', () => {
     assert.match(details, /sectionTitle: labels\.backgroundTitle/);
   });
 
-  it('holds country of origin, country of residence and languages', () => {
+  it('holds country of origin, current city and languages, in that order', () => {
     const origin = background.indexOf('label={labels.birthCountry}');
-    const residence = background.indexOf('label={labels.residenceCountry}');
+    const city = background.indexOf('label={labels.currentCity}');
     const languages = background.indexOf('label={labels.languages}');
-    assert.ok(origin > 0 && origin < residence && residence < languages);
+    assert.ok(origin > 0 && origin < city && city < languages);
     assert.match(background, /value=\{values\.birthCountryCode\}/);
-    assert.match(background, /value=\{values\.residenceCountryCode\}/);
+    assert.match(background, /value=\{values\.currentCity\}/);
     assert.match(background, /selectedCodes=\{values\.languageCodes\}/);
-    assert.equal((background.match(/<CountrySelectField/g) ?? []).length, 2);
+    assert.equal((background.match(/<CountrySelectField/g) ?? []).length, 1);
+    assert.equal((background.match(/<CurrentCityField/g) ?? []).length, 1);
     assert.equal((background.match(/<LanguageMultiSelectField/g) ?? []).length, 1);
+    assert.doesNotMatch(background, /residence/i);
   });
 
   it('those fields are no longer inside Profile details', () => {
     assert.doesNotMatch(
       detailsCard,
-      /CountrySelectField|LanguageMultiSelectField|labels\.(birthCountry|residenceCountry|languages)/,
+      /CountrySelectField|CurrentCityField|LanguageMultiSelectField|labels\.(birthCountry|currentCity|languages)/,
     );
-    assert.doesNotMatch(details, /import \{ (CountrySelectField|LanguageMultiSelectField) \}/);
+    assert.doesNotMatch(details, /import \{ (CountrySelectField|CurrentCityField|LanguageMultiSelectField) \}/);
   });
 });
 
@@ -138,7 +141,7 @@ describe('Field labels are caps; section titles are not', () => {
   });
 
   it('TalkBack reads the natural-case label, not the caps rendering', () => {
-    for (const src of [formInput, countryField, languageField]) {
+    for (const src of [formInput, countryField, languageField, cityField]) {
       assert.match(src, /<Text\s+accessibilityLabel=\{label\}/);
     }
   });
@@ -147,9 +150,9 @@ describe('Field labels are caps; section titles are not', () => {
 describe('Data contracts and writes are unchanged', () => {
   it('the screen wires the same state setters and save patch', () => {
     assert.match(screen, /onChangeBirthCountry=\{setBirthCountryCode\}/);
-    assert.match(screen, /onChangeResidenceCountry=\{setResidenceCountryCode\}/);
+    assert.match(screen, /onChangeCurrentCity=\{setCurrentCity\}/);
     assert.match(screen, /onChangeLanguages=\{setLanguageCodes\}/);
-    assert.match(screen, /birthCountryCode,\s+residenceCountryCode,\s+languageCodes,/);
+    assert.match(screen, /birthCountryCode,\s+currentCity,\s+languageCodes,/);
     assert.match(screen, /buildOwnProfileSavePatch/);
   });
 
@@ -159,7 +162,7 @@ describe('Data contracts and writes are unchanged', () => {
       /firebase|firestore|updateDoc|setDoc|updateUserProfile|httpsCallable/i,
     );
     assert.match(details, /onChangeBirthCountry=\{onChangeBirthCountry\}/);
-    assert.match(details, /onChangeResidenceCountry=\{onChangeResidenceCountry\}/);
+    assert.match(details, /onChangeCurrentCity=\{onChangeCurrentCity\}/);
     assert.match(details, /onChangeLanguages=\{onChangeLanguages\}/);
   });
 

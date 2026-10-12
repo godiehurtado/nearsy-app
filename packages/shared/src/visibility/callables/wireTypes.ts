@@ -11,6 +11,7 @@ import type { DiscoveryPublicAffiliation } from '../discoveryAffiliations';
 import type { DiscoveryCompatibility } from '../discoveryCompatibility';
 import type { DiscoveryPublicSocialLink } from '../discoverySocialLinks';
 import type { ZodiacSign } from '../../profileContext/zodiacPresentation';
+import type { CurrentCity } from '../../profileContext/currentCity';
 
 export type VisibilityContractVersion = typeof CONTRACT_VERSION;
 
@@ -79,6 +80,8 @@ export type SyncDiscoveryProfileContextResponse = {
   contractVersion: VisibilityContractVersion;
   synced: boolean;
   serverTime: number;
+  /** Projected city echoed by Functions; absent on older backends. */
+  currentCity?: CurrentCity | null;
 };
 
 /**
@@ -102,7 +105,8 @@ export type DiscoveryProfileDetail = DiscoveryProfileSummary & {
   company: string;
   bio: string;
   birthCountryCode: string | null;
-  residenceCountryCode: string | null;
+  /** Public city reference only (provider + id + labels); never coordinates. */
+  currentCity: CurrentCity | null;
   languageCodes: string[];
   zodiacSign: ZodiacSign | null;
 };
