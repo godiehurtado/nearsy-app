@@ -54,6 +54,11 @@ import {
   mergeCompleteProfilePrefill,
 } from '../authentication/social';
 import type { CurrentCity } from '../profile/currentCity';
+import {
+  createSingleFlight,
+  persistOwnProfileThenSyncDiscovery,
+  syncDiscoveryContextSafely,
+} from '../profile/ownProfileSaveFlow';
 import { resolveModePresentation, type ProfileMode } from '../profile/profileModeFields';
 import {
   buildOwnProfileContextSavePatch,
@@ -187,6 +192,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const [lifecycleAuth, setLifecycleAuth] =
     useState<OwnProfileLifecycleAuth>('unresolved');
   const bypassDirtyNavigationRef = useRef(false);
+  const saveFlightRef = useRef(createSingleFlight());
 
   const applyDraftToForm = useCallback((draft: OwnProfileDraft) => {
     setRealName(draft.realName);
@@ -735,6 +741,32 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     return true;
   };
 
+  const syncDiscoveryContextNow = async () =>
+    syncDiscoveryProfileContextFlow(await getVisibilityDiscoveryClient());
+
+  // Private save already succeeded: report honestly and offer a sync-only
+  // retry (no user-doc writes). Discovery also re-projects on the next save,
+  // activateVisibility or setActiveProfileMode.
+  const showDiscoverySyncError = (uid: string) => {
+    Alert.alert(t('common.error'), t('profile.context.syncError'), [
+      { text: t('common.buttons.ok'), style: 'cancel' },
+      {
+        text: t('common.retry'),
+        onPress: () => {
+          void saveFlightRef.current.run(async () => {
+            const status = await syncDiscoveryContextSafely(
+              syncDiscoveryContextNow,
+              savedSnapshotRef.current?.currentCity ?? null,
+            );
+            if (status === 'failed' && mountedRef.current && getUid() === uid) {
+              showDiscoverySyncError(uid);
+            }
+          });
+        },
+      },
+    ]);
+  };
+
   const persistOwnProfile = async () => {
     try {
       if (!isOwnProfileSaveAuthorized(lifecycleAuth)) {
@@ -787,11 +819,23 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         savedSnapshotRef.current,
       );
 
-      await updateUserProfilePartial(uid, modePatch);
-      await updateUserProfilePartial(uid, contextPatch);
-
-      applyDraftToForm(persistedDraft);
-      commitSnapshot(persistedDraft);
+      const syncStatus = await persistOwnProfileThenSyncDiscovery({
+        patches: [modePatch, contextPatch],
+        write: (patch) => updateUserProfilePartial(uid, patch),
+        onPersisted: () => {
+          applyDraftToForm(persistedDraft);
+          commitSnapshot(persistedDraft);
+        },
+        expectedCity: persistedDraft.currentCity,
+        sync: syncDiscoveryContextNow,
+      });
+      if (
+        syncStatus === 'failed' &&
+        mountedRef.current &&
+        getUid() === uid
+      ) {
+        showDiscoverySyncError(uid);
+      }
 
       let nextProfileDoc: Record<string, unknown> = {
         ...(profileDoc ?? {}),
@@ -813,24 +857,6 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
           },
         },
       };
-
-      // Soft-sync Discovery context after a successful user-doc write.
-      // synced:false → keep save; true callable error → soft warning, keep save.
-      try {
-        const client = await getVisibilityDiscoveryClient();
-        const syncOutcome = await syncDiscoveryProfileContextFlow(client);
-        if (
-          mountedRef.current &&
-          getUid() === uid &&
-          syncOutcome.ok === false
-        ) {
-          Alert.alert(t('common.error'), t('profile.context.syncError'));
-        }
-      } catch {
-        if (mountedRef.current && getUid() === uid) {
-          Alert.alert(t('common.error'), t('profile.context.syncError'));
-        }
-      }
 
       // BUG-PROFILE-02: after a successful Professional face save, re-run the
       // canonical setActiveProfileMode callable so Discovery projection recovers
@@ -885,7 +911,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   };
 
   const handleSave = async () => {
-    await persistOwnProfile();
+    await saveFlightRef.current.run(persistOwnProfile);
   };
 
   const handleCancel = () => {
