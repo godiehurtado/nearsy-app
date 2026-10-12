@@ -33,6 +33,7 @@ import {
 } from '../../profile/citySearchController';
 import { searchCitiesRemote } from '../../profile/citySearchRuntime';
 import {
+  CITY_SEARCH_MAX_QUERY,
   currentCityKey,
   formatCurrentCityPlace,
   resolvePreferredCityCountryCode,
@@ -141,10 +142,19 @@ export function CitySearchField({
       ? state.results
       : [];
 
+  const onRetry = useCallback(() => {
+    controllerRef.current?.retry();
+  }, []);
+
   let statusMessage: string | null = null;
   if (state.status === 'idle') statusMessage = t('profile.context.cityMinChars');
   if (state.status === 'empty') statusMessage = t('profile.context.noCityResults');
-  if (state.status === 'error') statusMessage = t('profile.context.citySearchError');
+  if (state.status === 'error') {
+    statusMessage =
+      state.reason === 'rate-limited'
+        ? t('profile.context.citySearchRateLimited')
+        : t('profile.context.citySearchError');
+  }
 
   return (
     <View style={styles.wrap}>
@@ -259,6 +269,7 @@ export function CitySearchField({
               placeholder={t('profile.context.searchCity')}
               placeholderTextColor={palette.placeholder}
               autoFocus
+              maxLength={CITY_SEARCH_MAX_QUERY}
               autoCorrect={false}
               autoCapitalize="words"
               clearButtonMode="while-editing"
@@ -294,6 +305,25 @@ export function CitySearchField({
             >
               {statusMessage}
             </Text>
+          ) : null}
+
+          {state.status === 'error' ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('common.retry')}
+              onPress={onRetry}
+              style={({ pressed }) => [
+                styles.retryBtn,
+                {
+                  borderColor: palette.primary,
+                  opacity: pressed ? 0.8 : 1,
+                },
+              ]}
+            >
+              <Text style={[styles.retryText, { color: palette.primary }]}>
+                {t('common.retry')}
+              </Text>
+            </Pressable>
           ) : null}
 
           {state.status === 'suggestions' ? (
@@ -464,6 +494,21 @@ const styles = StyleSheet.create({
   statusMessage: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
+  },
+  retryBtn: {
+    alignSelf: 'flex-start',
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    minHeight: 44,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  retryText: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
   },
   sectionLabel: {
     fontSize: fontSize.xs,

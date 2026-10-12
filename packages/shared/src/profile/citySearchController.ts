@@ -5,6 +5,7 @@
  * - Typing searches globally: the preferred country is not sent.
  * - Debounced, minimum length, previous request aborted, and any response that
  *   is not the latest is ignored, so an old search never replaces a new one.
+ * - Errors are temporary: `retry()` re-runs the current query immediately.
  * - Nothing here persists or logs the query.
  */
 
@@ -18,13 +19,15 @@ import {
   type CurrentCity,
 } from './currentCity';
 
+export type CitySearchErrorReason = 'rate-limited' | 'unavailable';
+
 export type CitySearchState =
   | { status: 'idle'; query: string }
   | { status: 'loading'; query: string }
   | { status: 'suggestions'; query: string; results: CurrentCity[] }
   | { status: 'results'; query: string; results: CurrentCity[] }
   | { status: 'empty'; query: string }
-  | { status: 'error'; query: string };
+  | { status: 'error'; query: string; reason: CitySearchErrorReason };
 
 export type CitySearchFn = (
   request: CitySearchRequest,
@@ -43,8 +46,15 @@ export type CitySearchControllerDeps = {
 export type CitySearchController = {
   open: (preferredCountryCode?: string | null) => void;
   setQuery: (query: string) => void;
+  retry: () => void;
   dispose: () => void;
 };
+
+function errorReason(err: unknown): CitySearchErrorReason {
+  return err instanceof CitySearchClientError && err.code === 'RATE_LIMITED'
+    ? 'rate-limited'
+    : 'unavailable';
+}
 
 export function createCitySearchController(
   deps: CitySearchControllerDeps,
@@ -60,7 +70,9 @@ export function createCitySearchController(
   let seq = 0;
   let timer: unknown = null;
   let inFlight: AbortController | null = null;
+  let preferred: string | null = null;
   let suggestions: CurrentCity[] = [];
+  let currentQuery = '';
   let disposed = false;
 
   const emit = (state: CitySearchState) => {
@@ -79,7 +91,7 @@ export function createCitySearchController(
   const run = (
     request: CitySearchRequest,
     onResults: (results: CurrentCity[]) => void,
-    onError: () => void,
+    onError: (err: unknown) => void,
   ) => {
     const mySeq = seq;
     const controller = new AbortController();
@@ -96,8 +108,42 @@ export function createCitySearchController(
         if (err instanceof CitySearchClientError && err.code === 'CANCELLED') {
           return;
         }
-        onError();
+        onError(err);
       },
+    );
+  };
+
+  const loadSuggestions = () => {
+    if (!preferred) {
+      emit({ status: 'idle', query: '' });
+      return;
+    }
+    emit({ status: 'loading', query: '' });
+    run(
+      { query: '', limit, preferredCountryCode: preferred },
+      (results) => {
+        suggestions = results;
+        emit(
+          results.length > 0
+            ? { status: 'suggestions', query: '', results }
+            : { status: 'idle', query: '' },
+        );
+      },
+      // Suggestions are optional: fall back to the typing hint silently.
+      () => emit({ status: 'idle', query: '' }),
+    );
+  };
+
+  const searchNow = (query: string) => {
+    run(
+      { query, limit },
+      (results) =>
+        emit(
+          results.length > 0
+            ? { status: 'results', query, results }
+            : { status: 'empty', query },
+        ),
+      (err) => emit({ status: 'error', query, reason: errorReason(err) }),
     );
   };
 
@@ -105,31 +151,17 @@ export function createCitySearchController(
     open(preferredCountryCode) {
       cancelPending();
       seq += 1;
+      preferred = preferredCountryCode || null;
       suggestions = [];
-      if (!preferredCountryCode) {
-        emit({ status: 'idle', query: '' });
-        return;
-      }
-      emit({ status: 'loading', query: '' });
-      run(
-        { query: '', limit, preferredCountryCode },
-        (results) => {
-          suggestions = results;
-          emit(
-            results.length > 0
-              ? { status: 'suggestions', query: '', results }
-              : { status: 'idle', query: '' },
-          );
-        },
-        // Suggestions are optional: fall back to the typing hint silently.
-        () => emit({ status: 'idle', query: '' }),
-      );
+      currentQuery = '';
+      loadSuggestions();
     },
 
     setQuery(rawQuery) {
       cancelPending();
       seq += 1;
       const query = normalizeCitySearchQuery(rawQuery);
+      currentQuery = query;
       if (!shouldSearchCities(query)) {
         emit(
           query.length === 0 && suggestions.length > 0
@@ -141,17 +173,19 @@ export function createCitySearchController(
       emit({ status: 'loading', query });
       timer = schedule(() => {
         timer = null;
-        run(
-          { query, limit },
-          (results) =>
-            emit(
-              results.length > 0
-                ? { status: 'results', query, results }
-                : { status: 'empty', query },
-            ),
-          () => emit({ status: 'error', query }),
-        );
+        searchNow(query);
       }, debounceMs);
+    },
+
+    retry() {
+      cancelPending();
+      seq += 1;
+      if (shouldSearchCities(currentQuery)) {
+        emit({ status: 'loading', query: currentQuery });
+        searchNow(currentQuery);
+      } else if (currentQuery.length === 0) {
+        loadSuggestions();
+      }
     },
 
     dispose() {

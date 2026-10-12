@@ -40,6 +40,7 @@ export type CitySearchRequest = {
 
 export type CitySearchErrorCode =
   | 'UNAVAILABLE'
+  | 'RATE_LIMITED'
   | 'UNAUTHENTICATED'
   | 'INVALID_RESPONSE'
   | 'CANCELLED';
@@ -65,24 +66,61 @@ function cleanText(value: unknown): string | null {
   return text;
 }
 
-/** Strict parse; anything outside the contract returns null. */
+const CURRENT_CITY_KEYS: ReadonlySet<string> = new Set([
+  'id',
+  'provider',
+  'name',
+  'countryCode',
+  'region',
+]);
+
+/**
+ * Strict parse mirroring Functions `normalizeCurrentCity`: any key outside the
+ * contract (coordinates, population, provider extras) or a malformed field
+ * returns null.
+ */
 export function parseCurrentCity(value: unknown): CurrentCity | null {
   if (!isPlainObject(value)) return null;
+  for (const key of Object.keys(value)) {
+    if (!CURRENT_CITY_KEYS.has(key)) return null;
+  }
   if (value.provider !== CURRENT_CITY_PROVIDER) return null;
-  const id = typeof value.id === 'string' ? value.id.trim() : '';
-  if (!GEONAMES_ID.test(id)) return null;
+  if (typeof value.id !== 'string' || !GEONAMES_ID.test(value.id)) return null;
   const name = cleanText(value.name);
   const countryCode = normalizeCountryCode(value.countryCode);
   if (!name || !countryCode) return null;
-  const region = cleanText(value.region);
   const city: CurrentCity = {
-    id,
+    id: value.id,
     provider: CURRENT_CITY_PROVIDER,
     name,
     countryCode,
   };
-  if (region) city.region = region;
+  if (value.region !== undefined) {
+    const region = cleanText(value.region);
+    if (!region) return null;
+    city.region = region;
+  }
   return city;
+}
+
+const COORDINATE_KEYS = [
+  'latitude',
+  'longitude',
+  'lat',
+  'lng',
+  'lon',
+  'geohash',
+  'coordinates',
+  'location',
+];
+
+function hasCoordinateKeys(value: unknown): boolean {
+  return (
+    isPlainObject(value) &&
+    COORDINATE_KEYS.some((key) =>
+      Object.prototype.hasOwnProperty.call(value, key),
+    )
+  );
 }
 
 export function currentCityKey(city: CurrentCity): string {
@@ -123,14 +161,19 @@ export function clampCitySearchLimit(limit?: number): number {
 }
 
 /**
- * `{ results: CurrentCity[] }` from searchCities. A malformed envelope throws;
- * malformed rows are skipped, duplicates (same provider + id) collapse.
+ * `{ results: CurrentCity[] }` from searchCities. A malformed envelope or any
+ * row carrying coordinates throws; other malformed rows are skipped and
+ * duplicates (same provider + id) collapse.
  */
 export function parseCitySearchResponse(
   data: unknown,
   limit: number = CITY_SEARCH_DEFAULT_LIMIT,
 ): CurrentCity[] {
-  if (!isPlainObject(data) || !Array.isArray(data.results)) {
+  if (
+    !isPlainObject(data) ||
+    !Array.isArray(data.results) ||
+    data.results.some(hasCoordinateKeys)
+  ) {
     throw new CitySearchClientError(
       'INVALID_RESPONSE',
       'Invalid city search response.',

@@ -91,16 +91,20 @@ export async function searchCitiesRemote(
       'City search requires sign-in.',
     );
   }
-  const context = await getContext();
-  const idToken = await user.getIdToken();
-  return context.withAppCheckToken((appCheckToken) =>
-    invokeCitySearchCallable({
-      projectId: context.projectId,
-      region: context.region,
-      idToken,
-      appCheckToken,
-      request,
-      signal,
-    }),
-  );
+  try {
+    const context = await getContext();
+    const idToken = await user.getIdToken();
+    return await context.withAppCheckToken((appCheckToken) =>
+      invokeCitySearchCallable({
+        projectId: context.projectId,
+        region: context.region,
+        idToken,
+        appCheckToken,
+        request,
+        signal,
+      }),
+    );
+  } catch (err) {
+    throw err instanceof CitySearchClientError ? err : unavailable();
+  }
 }

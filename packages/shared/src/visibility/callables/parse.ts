@@ -497,6 +497,9 @@ export function parseSyncDiscoveryProfileContextResponse(
     contractVersion: requireContractVersion(data.contractVersion),
     synced: requireBoolean(data.synced, 'synced'),
     serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
+    ...(Object.prototype.hasOwnProperty.call(data, 'currentCity')
+      ? { currentCity: parseCurrentCity(data.currentCity) }
+      : {}),
   };
 }
 

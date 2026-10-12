@@ -23,6 +23,8 @@ export default {
     noCityResults: 'No cities found',
     citySearchError:
       "We couldn't load cities right now. You can add your city later.",
+    citySearchRateLimited:
+      'Too many searches right now. Wait a moment and try again.',
     clearCityA11y: 'Clear city',
     optional: 'Optional',
     languages: 'Languages',

@@ -65,6 +65,8 @@ export type SyncDiscoveryProfileContextResponse = {
   contractVersion: VisibilityContractVersion;
   synced: boolean;
   serverTime: number;
+  /** Projected city echoed by Functions; absent on older backends. */
+  currentCity?: CurrentCity | null;
 };
 
 /** Owner Settings — no target UIDs; backend derives from caller's blockedUsers. */

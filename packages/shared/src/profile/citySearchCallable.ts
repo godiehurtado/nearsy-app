@@ -37,6 +37,12 @@ export function mapCitySearchError(err: unknown): CitySearchClientError {
       'City search requires sign-in.',
     );
   }
+  if (code === 'resource-exhausted') {
+    return new CitySearchClientError(
+      'RATE_LIMITED',
+      'Too many city searches. Try again shortly.',
+    );
+  }
   return new CitySearchClientError('UNAVAILABLE', 'City search is unavailable.');
 }
 
