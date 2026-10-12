@@ -1,13 +1,8 @@
 // packages/shared/src/hooks/useNearbyAlerts.ts
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { firebaseAuth } from '../config/firebaseConfig';
-import * as Crypto from 'expo-crypto';
 
-import {
-  dbOnUserSnapshot,
-  dbQueryVisibleUsers,
-  dbGetContactHashes,
-} from '../services/db';
+import { dbOnUserSnapshot, dbQueryVisibleUsers } from '../services/db';
 import {
   FEET_PER_METER,
   NEARBY_RADIUS_FT,
@@ -17,7 +12,7 @@ const LOCATION_FRESH_MS = 5 * 60 * 1000;
 const AUTO_REFRESH_MS = 30 * 1000;
 
 // ===== tipos =====
-export type AlertKind = 'interest_nearby' | 'contact_nearby';
+export type AlertKind = 'interest_nearby';
 
 export type AlertItem = {
   id: string;
@@ -28,7 +23,6 @@ export type AlertItem = {
   distanceFt?: number;
   sharedInterests?: string[];
   at: number;
-  fromContacts?: boolean;
 };
 
 type LocationDoc = { lat: number; lng: number; updatedAt?: number };
@@ -82,10 +76,6 @@ function haversineKm(
 function normalizeId(value?: string | null): string {
   if (!value) return '';
   return value.replace(/\s+/g, '').toLowerCase();
-}
-
-async function hashId(value: string): Promise<string> {
-  return Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value);
 }
 
 function isBlockedBetween(
@@ -151,11 +141,7 @@ export function useNearbyAlerts() {
     }
 
     try {
-      // 1) hashes de contactos
-      const hashes = await dbGetContactHashes(uid);
-      const contactHashSet = new Set<string>(hashes);
-
-      // 2) usuarios visibles
+      // usuarios visibles
       const users = await dbQueryVisibleUsers(200);
 
       const myPoint = { lat: me.location.lat, lng: me.location.lng };
@@ -232,30 +218,10 @@ export function useNearbyAlerts() {
           if (myInterests.has(tag)) shared.push(tag);
         });
 
-        // contacto por hash
-        let fromContacts = false;
-        if (contactHashSet.size > 0) {
-          const emailNorm = normalizeId(u.email ?? null);
-          const phoneNorm = normalizeId(u.phone ?? null);
+        // Alerts require shared interests (no contact matching in 2.0.8).
+        if (shared.length === 0) continue;
 
-          // (pequeña optimización: no hashear si no hay valor)
-          if (emailNorm) {
-            const emailHash = await hashId(emailNorm);
-            if (contactHashSet.has(emailHash)) fromContacts = true;
-          }
-          if (!fromContacts && phoneNorm) {
-            const phoneHash = await hashId(phoneNorm);
-            if (contactHashSet.has(phoneHash)) fromContacts = true;
-          }
-        }
-
-        // ✅ regla correcta del tipo de alerta:
-        // - si hay intereses compartidos => interest_nearby
-        // - si NO hay intereses compartidos, solo creamos alerta si fromContacts === true
-        if (shared.length === 0 && !fromContacts) continue;
-
-        const kind: AlertKind =
-          shared.length > 0 ? 'interest_nearby' : 'contact_nearby';
+        const kind: AlertKind = 'interest_nearby';
 
         results.push({
           id: `${otherUid}-${loc.updatedAt || now}`,
@@ -266,7 +232,6 @@ export function useNearbyAlerts() {
           distanceFt: Math.round(feet),
           sharedInterests: shared.slice(0, 3),
           at: loc.updatedAt || now,
-          fromContacts,
         });
       }
 

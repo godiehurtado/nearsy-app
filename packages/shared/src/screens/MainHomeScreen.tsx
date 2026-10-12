@@ -32,7 +32,6 @@ import {
   shouldHoldCachedVisibilitySnapshot,
   shouldRecordSnapshotVisibility,
 } from '../visibility/lastConfirmedVisibility';
-import { setContactsSyncEnabled } from '../services/contactsSync';
 import { useTranslation } from '../i18n';
 import {
   fontSize,
@@ -165,8 +164,6 @@ type ProfileDoc = {
 };
 
 type Props = NativeStackScreenProps<any>;
-
-const CONTACTS_ASKED_KEY = 'NEARSY_CONTACTS_ASKED';
 
 function localeUnit(): DistanceDisplayUnit {
   const tag = Localization.getLocales()?.[0]?.languageTag ?? 'en';
@@ -750,15 +747,6 @@ export default function MainHomeScreen({ navigation }: Props) {
     runtimeConfirmationFailed,
     startGatedBackgroundIfAllowed,
   ]);
-
-  useEffect(() => {
-    (async () => {
-      const asked = await AsyncStorage.getItem(CONTACTS_ASKED_KEY);
-      if (asked === '1') return;
-      await AsyncStorage.setItem(CONTACTS_ASKED_KEY, '1');
-      await setContactsSyncEnabled(false);
-    })();
-  }, []);
 
   // Focus recovery depends only on loading — profile.visibility/bgVisible churn
   // must not cancel reinstall education (iOS-approved pattern).
