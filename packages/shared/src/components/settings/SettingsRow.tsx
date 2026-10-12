@@ -13,6 +13,8 @@ type Props = {
   onPress?: () => void;
   showChevron?: boolean;
   accessibilityHint?: string;
+  /** Interactive rows only; external web destinations use 'link'. */
+  accessibilityRole?: 'button' | 'link';
   isLast?: boolean;
 };
 
@@ -24,6 +26,7 @@ export function SettingsRow({
   onPress,
   showChevron = !!onPress,
   accessibilityHint,
+  accessibilityRole = 'button',
   isLast = false,
 }: Props) {
   const { palette } = useAppTheme();
@@ -71,7 +74,7 @@ export function SettingsRow({
   if (interactive) {
     return (
       <Pressable
-        accessibilityRole="button"
+        accessibilityRole={accessibilityRole}
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={accessibilityHint}
         onPress={onPress}

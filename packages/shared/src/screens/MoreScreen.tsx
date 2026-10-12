@@ -94,6 +94,7 @@ import {
 } from '../settings/settingsContracts';
 import { birthDigitsFromParts } from '../settings/settingsPhoneCountries';
 import { resolveSettingsPhoneDisplay } from '../settings/settingsPhoneDisplay';
+import { openGeoNamesAttribution } from '../settings/geonamesAttribution';
 import {
   fontSize,
   fontWeight,
@@ -797,6 +798,13 @@ export default function MoreScreen() {
     }
   };
 
+  const handleOpenGeoNames = async () => {
+    const result = await openGeoNamesAttribution(Linking);
+    if (result === 'failed') {
+      Alert.alert(t('common.error'), t('settings.about.openLinkError'));
+    }
+  };
+
   const handleLogout = async () => {
     try {
       const { clearPendingSocialProfilePrefill, clearFacebookProviderSession } =
@@ -979,6 +987,18 @@ export default function MoreScreen() {
             title={t('settings.appearance.title')}
             value={currentAppearanceLabel}
             onPress={() => setAppearanceModalOpen(true)}
+            isLast
+          />
+        </SettingsSection>
+
+        <SettingsSection title={t('settings.sections.about')}>
+          <SettingsRow
+            icon="globe-outline"
+            title={t('settings.about.cityDataTitle')}
+            note={t('settings.about.geonamesAttribution')}
+            onPress={handleOpenGeoNames}
+            accessibilityRole="link"
+            accessibilityHint={t('settings.about.openGeoNamesHint')}
             isLast
           />
         </SettingsSection>

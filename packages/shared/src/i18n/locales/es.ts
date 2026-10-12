@@ -1003,6 +1003,8 @@ const es: TranslationResources = {
       noCityResults: 'No se encontraron ciudades',
       citySearchError:
         'No pudimos cargar ciudades en este momento. Puedes agregar tu ciudad más tarde.',
+      citySearchRateLimited:
+        'Demasiadas búsquedas por ahora. Espera un momento e inténtalo de nuevo.',
       clearCityA11y: 'Borrar ciudad',
       optional: 'Opcional',
       languages: 'Idiomas',
@@ -1359,7 +1361,15 @@ const es: TranslationResources = {
       account: 'Cuenta',
       privacy: 'Privacidad y descubrimiento',
       preferences: 'Preferencias',
+      about: 'Acerca de',
       actions: 'Acciones de la cuenta',
+    },
+    about: {
+      cityDataTitle: 'Datos de ciudades',
+      geonamesAttribution:
+        'Datos de ciudades © GeoNames (https://www.geonames.org), con licencia CC BY 4.0. Modificados: filtrados y reindexados por Nearsy.',
+      openGeoNamesHint: 'Abre geonames.org en tu navegador',
+      openLinkError: 'No pudimos abrir el enlace. Inténtalo más tarde.',
     },
     email: {
       title: 'Correo electrónico',
