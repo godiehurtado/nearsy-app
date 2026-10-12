@@ -6,6 +6,7 @@
  */
 
 import { CONTRACT_VERSION } from '../constants';
+import type { CurrentCity } from '../../profile/currentCity';
 import type { ZodiacSign } from '../../profile/zodiacSign';
 import type { ProfileMode } from '../types';
 import type { DiscoveryPublicAffiliation } from '../discoveryAffiliations';
@@ -102,7 +103,8 @@ export type DiscoveryProfileDetail = DiscoveryProfileSummary & {
   company: string;
   bio: string;
   birthCountryCode: string | null;
-  residenceCountryCode: string | null;
+  /** Public city reference only (provider + id + labels); never coordinates. */
+  currentCity: CurrentCity | null;
   languageCodes: string[];
   zodiacSign: ZodiacSign | null;
 };

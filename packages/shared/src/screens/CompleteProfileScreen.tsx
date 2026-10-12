@@ -53,6 +53,7 @@ import {
   clearPendingSocialProfilePrefill,
   mergeCompleteProfilePrefill,
 } from '../authentication/social';
+import type { CurrentCity } from '../profile/currentCity';
 import { resolveModePresentation, type ProfileMode } from '../profile/profileModeFields';
 import {
   buildOwnProfileContextSavePatch,
@@ -133,9 +134,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const [company, setCompany] = useState('');
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [birthCountryCode, setBirthCountryCode] = useState<string | null>(null);
-  const [residenceCountryCode, setResidenceCountryCode] = useState<
-    string | null
-  >(null);
+  const [currentCity, setCurrentCity] = useState<CurrentCity | null>(null);
   const [languageCodes, setLanguageCodes] = useState<string[]>([]);
 
   const [personalAff, setPersonalAff] = useState<InterestAffiliations>({});
@@ -197,7 +196,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     setCompany(draft.company);
     setProfileImage(draft.profileImage);
     setBirthCountryCode(draft.birthCountryCode);
-    setResidenceCountryCode(draft.residenceCountryCode);
+    setCurrentCity(draft.currentCity);
     setLanguageCodes(draft.languageCodes);
   }, []);
 
@@ -230,7 +229,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       bio,
       company,
       birthCountryCode,
-      residenceCountryCode,
+      currentCity,
       languageCodes,
     }),
     [
@@ -241,7 +240,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       bio,
       company,
       birthCountryCode,
-      residenceCountryCode,
+      currentCity,
       languageCodes,
     ],
   );
@@ -783,7 +782,10 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         mode,
         draft: persistedDraft,
       });
-      const contextPatch = buildOwnProfileContextSavePatch(persistedDraft);
+      const contextPatch = buildOwnProfileContextSavePatch(
+        persistedDraft,
+        savedSnapshotRef.current,
+      );
 
       await updateUserProfilePartial(uid, modePatch);
       await updateUserProfilePartial(uid, contextPatch);
@@ -795,6 +797,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         ...(profileDoc ?? {}),
         ...modePatch,
         ...contextPatch,
+        currentCity: persistedDraft.currentCity,
         profiles: {
           ...((profileDoc?.profiles as any) ?? {}),
           [mode]: {
@@ -1105,27 +1108,25 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
               <OwnProfileContextCard
                 values={{
                   birthCountryCode,
-                  residenceCountryCode,
+                  currentCity,
                   languageCodes,
                 }}
                 labels={{
                   sectionTitle: t('profile.sections.context'),
                   birthCountry: t('profile.context.birthCountry'),
-                  residenceCountry: t('profile.context.residenceCountry'),
+                  currentCity: t('profile.context.currentCity'),
                   languages: t('profile.context.languages'),
                 }}
                 placeholders={{
                   birthCountry: t('profile.context.birthCountryPlaceholder'),
-                  residenceCountry: t(
-                    'profile.context.residenceCountryPlaceholder',
-                  ),
+                  currentCity: t('profile.context.currentCityPlaceholder'),
                   languages: t('profile.context.languagesPlaceholder'),
                   searchCountry: t('profile.context.searchCountry'),
                   searchLanguage: t('profile.context.searchLanguage'),
                 }}
                 editorWritable={editorWritable}
                 onChangeBirthCountry={setBirthCountryCode}
-                onChangeResidenceCountry={setResidenceCountryCode}
+                onChangeCurrentCity={setCurrentCity}
                 onChangeLanguages={setLanguageCodes}
               />
 

@@ -11,6 +11,7 @@ import {
   MAX_GALLERY_ITEMS,
 } from '../constants';
 import { normalizeCountryCode } from '../../profile/countryCatalog';
+import { parseCurrentCity } from '../../profile/currentCity';
 import { normalizeLanguageCodes } from '../../profile/languageCatalog';
 import { parseZodiacSign } from '../../profile/zodiacSign';
 import { parseDiscoveryAffiliations } from '../discoveryAffiliations';
@@ -238,12 +239,8 @@ export function parseDiscoveryProfileDetail(
   )
     ? normalizeCountryCode(value.birthCountryCode)
     : null;
-  const residenceCountryCode = Object.prototype.hasOwnProperty.call(
-    value,
-    'residenceCountryCode',
-  )
-    ? normalizeCountryCode(value.residenceCountryCode)
-    : null;
+  // Legacy residenceCountryCode is ignored and never mapped to a city.
+  const currentCity = parseCurrentCity(value.currentCity);
   const languageCodes = Object.prototype.hasOwnProperty.call(
     value,
     'languageCodes',
@@ -259,7 +256,7 @@ export function parseDiscoveryProfileDetail(
     company: value.company,
     bio: value.bio,
     birthCountryCode,
-    residenceCountryCode,
+    currentCity,
     languageCodes,
     zodiacSign,
   };

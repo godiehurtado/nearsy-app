@@ -1,5 +1,11 @@
 import { isProfileDocumentComplete } from '../utils/profileDocumentComplete';
 import { normalizeCountryCode } from './countryCatalog';
+import {
+  isSameCurrentCity,
+  parseCurrentCity,
+  type CurrentCity,
+} from './currentCity';
+import { buildCurrentCityWritePatch } from './currentCityWrite';
 import { normalizeLanguageCodes } from './languageCatalog';
 import {
   buildProfileContextWritePatch,
@@ -111,7 +117,7 @@ export function createOwnProfileDraftFromPresentation(
     bio: presentation.bio ?? '',
     company: presentation.company ?? '',
     birthCountryCode: null,
-    residenceCountryCode: null,
+    currentCity: null,
     languageCodes: [],
   });
 }
@@ -133,7 +139,7 @@ export function createOwnProfileDraftFromDoc(
     bio: presentation.bio ?? '',
     company: presentation.company ?? '',
     birthCountryCode: ctx.birthCountryCode,
-    residenceCountryCode: ctx.residenceCountryCode,
+    currentCity: ctx.currentCity,
     languageCodes: ctx.languageCodes,
   });
 }
@@ -147,7 +153,7 @@ export type OwnProfileDraft = {
   bio: string;
   company: string;
   birthCountryCode: string | null;
-  residenceCountryCode: string | null;
+  currentCity: CurrentCity | null;
   languageCodes: string[];
 };
 
@@ -176,7 +182,7 @@ export function normalizeOwnProfileDraft(
     bio: draft.bio.trim(),
     company: draft.company.trim(),
     birthCountryCode: normalizeCountryCode(draft.birthCountryCode),
-    residenceCountryCode: normalizeCountryCode(draft.residenceCountryCode),
+    currentCity: parseCurrentCity(draft.currentCity),
     languageCodes: normalizeLanguageCodes(draft.languageCodes),
   };
 }
@@ -203,7 +209,7 @@ export function isOwnProfileDraftDirty(
     return true;
   }
   if (current.birthCountryCode !== snapshot.birthCountryCode) return true;
-  if (current.residenceCountryCode !== snapshot.residenceCountryCode) {
+  if (!isSameCurrentCity(current.currentCity, snapshot.currentCity)) {
     return true;
   }
   if (!languageCodesEqual(current.languageCodes, snapshot.languageCodes)) {
@@ -273,16 +279,25 @@ export function buildOwnProfileSavePatch(input: {
   });
 }
 
-/** Top-level context only — never includes zodiacSign. */
+/**
+ * Top-level context only — never includes zodiacSign or residenceCountryCode.
+ * currentCity is written only when it differs from the persisted snapshot.
+ */
 export function buildOwnProfileContextSavePatch(
   draft: OwnProfileDraft,
+  persisted: OwnProfileDraft | null,
 ): Record<string, unknown> {
   const current = normalizeOwnProfileDraft(draft);
-  return buildProfileContextWritePatch({
-    birthCountryCode: current.birthCountryCode,
-    residenceCountryCode: current.residenceCountryCode,
-    languageCodes: current.languageCodes,
-  });
+  return {
+    ...buildProfileContextWritePatch({
+      birthCountryCode: current.birthCountryCode,
+      languageCodes: current.languageCodes,
+    }),
+    ...buildCurrentCityWritePatch(
+      current.currentCity,
+      persisted?.currentCity ?? null,
+    ),
+  };
 }
 
 const FORBIDDEN_OWN_PROFILE_SAVE_KEYS = [

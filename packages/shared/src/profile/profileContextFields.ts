@@ -1,9 +1,14 @@
 /**
  * User-doc top-level profile context fields (NOT under profiles[mode]).
  * Zodiac is derived/server-owned — never written from this module.
+ *
+ * Legacy `residenceCountryCode` is no longer read or written: it is ignored
+ * (not deleted) so ordinary saves cause no unexpected writes, and it is never
+ * turned into a current city.
  */
 
 import { normalizeCountryCode } from './countryCatalog';
+import { parseCurrentCity, type CurrentCity } from './currentCity';
 import {
   MAX_PROFILE_LANGUAGES,
   MIN_PROFILE_LANGUAGES_CRJ,
@@ -12,7 +17,7 @@ import {
 
 export type UserProfileContext = {
   birthCountryCode: string | null;
-  residenceCountryCode: string | null;
+  currentCity: CurrentCity | null;
   languageCodes: string[];
 };
 
@@ -26,32 +31,27 @@ export function parseUserProfileContext(
   if (!isPlainObject(doc)) {
     return {
       birthCountryCode: null,
-      residenceCountryCode: null,
+      currentCity: null,
       languageCodes: [],
     };
   }
 
   return {
     birthCountryCode: normalizeCountryCode(doc.birthCountryCode),
-    residenceCountryCode: normalizeCountryCode(doc.residenceCountryCode),
+    currentCity: parseCurrentCity(doc.currentCity),
     languageCodes: normalizeLanguageCodes(doc.languageCodes),
   };
 }
 
+/** Country of origin + languages. Current city uses buildCurrentCityWritePatch. */
 export function buildProfileContextWritePatch(input: {
   birthCountryCode?: string | null;
-  residenceCountryCode?: string | null;
   languageCodes?: string[];
 }): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
 
   if (Object.prototype.hasOwnProperty.call(input, 'birthCountryCode')) {
     patch.birthCountryCode = normalizeCountryCode(input.birthCountryCode);
-  }
-  if (Object.prototype.hasOwnProperty.call(input, 'residenceCountryCode')) {
-    patch.residenceCountryCode = normalizeCountryCode(
-      input.residenceCountryCode,
-    );
   }
   if (Object.prototype.hasOwnProperty.call(input, 'languageCodes')) {
     patch.languageCodes = normalizeLanguageCodes(input.languageCodes);
@@ -61,14 +61,11 @@ export function buildProfileContextWritePatch(input: {
   return patch;
 }
 
-export function isCrjProfileContextCountriesValid(
+/** CRJ requires the country of origin; current city is optional. */
+export function isCrjProfileContextOriginValid(
   birth: string | null | undefined,
-  residence: string | null | undefined,
 ): boolean {
-  return (
-    normalizeCountryCode(birth) !== null &&
-    normalizeCountryCode(residence) !== null
-  );
+  return normalizeCountryCode(birth) !== null;
 }
 
 export function isCrjProfileContextLanguagesValid(
@@ -85,9 +82,7 @@ export function areProfileContextFieldsComplete(
   ctx: UserProfileContext,
 ): boolean {
   return (
-    isCrjProfileContextCountriesValid(
-      ctx.birthCountryCode,
-      ctx.residenceCountryCode,
-    ) && isCrjProfileContextLanguagesValid(ctx.languageCodes)
+    isCrjProfileContextOriginValid(ctx.birthCountryCode) &&
+    isCrjProfileContextLanguagesValid(ctx.languageCodes)
   );
 }

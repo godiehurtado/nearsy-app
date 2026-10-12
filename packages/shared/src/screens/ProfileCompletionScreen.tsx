@@ -29,6 +29,7 @@ import { RegistrationLayout } from '../components/registration/RegistrationLayou
 import { RegistrationProgress } from '../components/registration/RegistrationProgress';
 import { RegistrationFadeSlideIn } from '../components/registration/RegistrationFadeSlideIn';
 import { FormInput } from '../components/registration/FormInput';
+import { CitySearchField } from '../components/profile/CitySearchField';
 import { CountrySearchField } from '../components/profile/CountrySearchField';
 import { LanguageMultiSelectField } from '../components/profile/LanguageMultiSelectField';
 import { OnboardingInterestCategoryPanel } from '../components/registration/OnboardingInterestCategoryPanel';
@@ -106,10 +107,12 @@ import {
   buildCrjDetailsPresentation,
   isCrjProfileDetailsValid,
 } from '../profile/crjProfileDetails';
+import type { CurrentCity } from '../profile/currentCity';
+import { buildCurrentCityWritePatch } from '../profile/currentCityWrite';
 import {
   buildProfileContextWritePatch,
-  isCrjProfileContextCountriesValid,
   isCrjProfileContextLanguagesValid,
+  isCrjProfileContextOriginValid,
   parseUserProfileContext,
 } from '../profile/profileContextFields';
 import { syncDiscoveryProfileContextFlow } from '../visibility/syncDiscoveryProfileContext';
@@ -379,9 +382,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [birthCountryCode, setBirthCountryCode] = useState<string | null>(null);
-  const [residenceCountryCode, setResidenceCountryCode] = useState<
-    string | null
-  >(null);
+  const [currentCity, setCurrentCity] = useState<CurrentCity | null>(null);
+  const persistedCurrentCityRef = useRef<CurrentCity | null>(null);
   const [languageCodes, setLanguageCodes] = useState<string[]>([]);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [occupation, setOccupation] = useState('');
@@ -487,7 +489,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     setFirstName((prev) => presentation.realName || prev);
     setLastName((prev) => presentation.lastName || prev);
     setBirthCountryCode(ctx.birthCountryCode);
-    setResidenceCountryCode(ctx.residenceCountryCode);
+    setCurrentCity(ctx.currentCity);
+    persistedCurrentCityRef.current = ctx.currentCity;
     setLanguageCodes(ctx.languageCodes);
     setOccupation(presentation.occupation ?? '');
     setCompany(presentation.company ?? '');
@@ -591,7 +594,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
 
       const ctx = parseUserProfileContext(existing);
       setBirthCountryCode(ctx.birthCountryCode);
-      setResidenceCountryCode(ctx.residenceCountryCode);
+      setCurrentCity(ctx.currentCity);
+      persistedCurrentCityRef.current = ctx.currentCity;
       setLanguageCodes(ctx.languageCodes);
 
       let nextPhoto: string | null = null;
@@ -699,10 +703,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         return (
           firstName.trim().length > 0 &&
           lastName.trim().length > 0 &&
-          isCrjProfileContextCountriesValid(
-            birthCountryCode,
-            residenceCountryCode,
-          )
+          isCrjProfileContextOriginValid(birthCountryCode)
         );
       case 'photo':
         return !!photoUri?.trim();
@@ -744,11 +745,6 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         if (!birthCountryCode) {
           return t(
             'onboarding.profileCompletion.identity.birthCountryRequired',
-          );
-        }
-        if (!residenceCountryCode) {
-          return t(
-            'onboarding.profileCompletion.identity.residenceCountryRequired',
           );
         }
         return t('onboarding.profileCompletion.identity.required');
@@ -804,19 +800,23 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       projectActiveToTopLevel: true,
       includeModeInPatch: false,
     });
-    const contextPatch = buildProfileContextWritePatch({
-      birthCountryCode,
-      residenceCountryCode,
-    });
+    const contextPatch = buildProfileContextWritePatch({ birthCountryCode });
+    const cityPatch = buildCurrentCityWritePatch(
+      currentCity,
+      persistedCurrentCityRef.current,
+    );
     await updateUserProfilePartial(uid, {
       ...patch,
       ...contextPatch,
+      ...cityPatch,
       profileSetupCompleted: false,
     });
+    persistedCurrentCityRef.current = currentCity;
     setShellData((prev) => ({
       ...(prev ?? {}),
       ...patch,
       ...contextPatch,
+      currentCity: currentCity ?? null,
       mode,
       profileSetupCompleted: false,
     }));
@@ -2002,17 +2002,14 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                     'onboarding.profileCompletion.identity.searchCountry',
                   )}
                 />
-                <CountrySearchField
-                  value={residenceCountryCode}
-                  onChange={setResidenceCountryCode}
+                <CitySearchField
+                  value={currentCity}
+                  onChange={setCurrentCity}
                   label={t(
-                    'onboarding.profileCompletion.identity.residenceCountryLabel',
+                    'onboarding.profileCompletion.identity.currentCityLabel',
                   )}
                   placeholder={t(
-                    'onboarding.profileCompletion.identity.residenceCountryPlaceholder',
-                  )}
-                  searchPlaceholder={t(
-                    'onboarding.profileCompletion.identity.searchCountry',
+                    'onboarding.profileCompletion.identity.currentCityPlaceholder',
                   )}
                 />
               </View>

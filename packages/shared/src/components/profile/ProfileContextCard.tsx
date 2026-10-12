@@ -1,6 +1,7 @@
 /**
  * Read-only profile context card for Discovery Profile.
- * Countries + languages; omits missing rows and returns null when empty.
+ * Country of origin + current city + languages; omits missing rows and
+ * returns null when empty.
  */
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -11,6 +12,11 @@ import {
   countryCodeToFlagEmoji,
   getCountryDisplayName,
 } from '../../profile/countryCatalog';
+import {
+  formatCurrentCityPlace,
+  parseCurrentCity,
+  type CurrentCity,
+} from '../../profile/currentCity';
 import { getLanguageDisplayName } from '../../profile/languageCatalog';
 import {
   fontSize,
@@ -23,7 +29,7 @@ import { cardShadow } from '../../theme/shadows';
 
 export type ProfileContextCardProps = {
   birthCountryCode?: string | null;
-  residenceCountryCode?: string | null;
+  currentCity?: CurrentCity | null;
   languageCodes?: readonly string[] | null;
   /** BCP-47 / app language; defaults to i18n.language. */
   locale?: string;
@@ -31,7 +37,7 @@ export type ProfileContextCardProps = {
 
 export function ProfileContextCard({
   birthCountryCode,
-  residenceCountryCode,
+  currentCity,
   languageCodes,
   locale: localeProp,
 }: ProfileContextCardProps) {
@@ -43,10 +49,7 @@ export function ProfileContextCard({
     typeof birthCountryCode === 'string' && birthCountryCode.trim()
       ? birthCountryCode.trim().toUpperCase()
       : null;
-  const residenceCode =
-    typeof residenceCountryCode === 'string' && residenceCountryCode.trim()
-      ? residenceCountryCode.trim().toUpperCase()
-      : null;
+  const city = parseCurrentCity(currentCity);
 
   const languages = useMemo(() => {
     if (!Array.isArray(languageCodes)) return [];
@@ -64,14 +67,17 @@ export function ProfileContextCard({
         name: getCountryDisplayName(birthCode, locale),
       }
     : null;
-  const residenceRow = residenceCode
+  const cityRow = city
     ? {
-        flag: countryCodeToFlagEmoji(residenceCode),
-        name: getCountryDisplayName(residenceCode, locale),
+        flag: countryCodeToFlagEmoji(city.countryCode),
+        place: formatCurrentCityPlace(
+          city,
+          getCountryDisplayName(city.countryCode, locale),
+        ),
       }
     : null;
 
-  if (!birthRow && !residenceRow && languages.length === 0) {
+  if (!birthRow && !cityRow && languages.length === 0) {
     return null;
   }
 
@@ -99,7 +105,7 @@ export function ProfileContextCard({
         </Text>
       ) : null}
 
-      {residenceRow ? (
+      {cityRow ? (
         <Text
           style={[
             styles.row,
@@ -111,8 +117,8 @@ export function ProfileContextCard({
           numberOfLines={2}
         >
           {t('discoveryProfile.livesIn', {
-            flag: residenceRow.flag,
-            country: residenceRow.name,
+            flag: cityRow.flag,
+            place: cityRow.place,
           })}
         </Text>
       ) : null}
@@ -120,7 +126,7 @@ export function ProfileContextCard({
       {languages.length > 0 ? (
         <View
           style={{
-            marginTop: birthRow || residenceRow ? spacing.md : 0,
+            marginTop: birthRow || cityRow ? spacing.md : 0,
           }}
         >
           <Text style={[styles.sectionLabel, { color: palette.textMuted }]}>
