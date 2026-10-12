@@ -189,6 +189,8 @@ export type InvokeFirebaseCallableHttpInput = {
   appCheckToken: string;
   data: Record<string, unknown>;
   timeoutMs?: number;
+  /** Caller cancellation (superseded search); surfaces as functions/cancelled. */
+  signal?: AbortSignal;
 };
 
 export type InvokeFirebaseCallableHttpDeps = {
@@ -218,6 +220,14 @@ export async function invokeFirebaseCallableHttp(
     });
   }
 
+  const external = input.signal;
+  if (external?.aborted) {
+    throw new FirebaseCallableHttpError({
+      code: 'functions/cancelled',
+      message: 'Callable request was cancelled.',
+    });
+  }
+
   const timeoutMs = input.timeoutMs ?? DEFAULT_CALLABLE_HTTP_TIMEOUT_MS;
   const fetchImpl = deps.fetchImpl ?? fetch;
   const controller =
@@ -227,6 +237,8 @@ export async function invokeFirebaseCallableHttp(
     setTimeout(() => {
       controller.abort();
     }, timeoutMs);
+  const onExternalAbort = () => controller?.abort();
+  external?.addEventListener('abort', onExternalAbort);
 
   let response: Response;
   try {
@@ -241,6 +253,12 @@ export async function invokeFirebaseCallableHttp(
       signal: controller?.signal,
     });
   } catch (err) {
+    if (external?.aborted) {
+      throw new FirebaseCallableHttpError({
+        code: 'functions/cancelled',
+        message: 'Callable request was cancelled.',
+      });
+    }
     if (
       err &&
       typeof err === 'object' &&
@@ -257,6 +275,7 @@ export async function invokeFirebaseCallableHttp(
     });
   } finally {
     if (timer) clearTimeout(timer);
+    external?.removeEventListener('abort', onExternalAbort);
   }
 
   let parsed: unknown = null;
