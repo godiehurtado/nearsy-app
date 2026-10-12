@@ -44,23 +44,51 @@ const sources = androidReachableSources().map((file) => ({
 const appJson = JSON.parse(readFileSync(join(ANDROID_APP, 'app.json'), 'utf8'));
 const androidPkg = JSON.parse(readFileSync(join(ANDROID_APP, 'package.json'), 'utf8'));
 
-function lockImporter(name: string): string {
-  const lock = readRepo('pnpm-lock.yaml');
-  const start = lock.indexOf(`\n  ${name}:\n`);
-  assert.ok(start >= 0, `importer ${name}`);
-  const next = lock.slice(start + 1).search(/\n {2}\S[^\n]*:\n/);
-  return next < 0 ? lock.slice(start) : lock.slice(start, start + 1 + next);
+/**
+ * Dependency names per importer, read structurally from the `importers:` section
+ * (2-space importer keys, 4-space dependency groups, 6-space package keys).
+ * Line endings may be LF or CRLF depending on the checkout (core.autocrlf).
+ */
+function lockImporters(): Map<string, Set<string>> {
+  const importers = new Map<string, Set<string>>();
+  let inImporters = false;
+  let current: Set<string> | undefined;
+  for (const line of readRepo('pnpm-lock.yaml').split(/\r?\n/)) {
+    if (/^\S/.test(line)) {
+      inImporters = line === 'importers:';
+      current = undefined;
+      continue;
+    }
+    if (!inImporters) continue;
+    const importer = /^ {2}([^\s'][^:]*|'[^']+'):$/.exec(line);
+    if (importer) {
+      current = new Set();
+      importers.set(importer[1].replace(/^'|'$/g, ''), current);
+      continue;
+    }
+    const pkg = /^ {6}('[^']+'|[^\s:]+):$/.exec(line);
+    if (pkg && current) current.add(pkg[1].replace(/^'|'$/g, ''));
+  }
+  return importers;
+}
+
+function lockImporter(name: string): Set<string> {
+  const deps = lockImporters().get(name);
+  assert.ok(deps && deps.size > 0, `importer ${name}`);
+  return deps;
 }
 
 describe('Dependency and lockfile', () => {
   it('Android no longer depends on expo-contacts', () => {
     assert.equal(androidPkg.dependencies?.['expo-contacts'], undefined);
     assert.equal(androidPkg.devDependencies?.['expo-contacts'], undefined);
-    assert.doesNotMatch(lockImporter('apps/nearsy-android'), /expo-contacts/);
+    const android = lockImporter('apps/nearsy-android');
+    assert.equal(android.has('expo-contacts'), false);
+    assert.ok(android.has('expo-crypto'));
   });
 
   it('iOS history keeps its own entry untouched', () => {
-    assert.match(lockImporter('apps/nearsy-ios'), /expo-contacts:/);
+    assert.ok(lockImporter('apps/nearsy-ios').has('expo-contacts'));
   });
 
   it('expo-crypto stays (LinkedIn still hashes with it)', () => {
