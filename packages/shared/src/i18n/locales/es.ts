@@ -1605,10 +1605,6 @@ const es: TranslationResources = {
     },
     loadError: 'No se pudieron cargar los ajustes.',
     saveError: 'No se pudo guardar.',
-    contacts: {
-      title: 'Contactos',
-      enable: 'Usar contactos para alertas familiares',
-    },
   },
   phoneOtp: {
     title: 'Verifica tu teléfono',

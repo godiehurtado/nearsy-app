@@ -32,9 +32,6 @@ describe('iOS post-MVP batch 1 — notification permission timing', () => {
   });
 
   it('no other shared services request notification permission', () => {
-    const contacts = readSharedSource('services/contactsSync.ts');
-    // Contacts may request Contacts permission — not notifications
-    assert.doesNotMatch(contacts, /Notifications\.requestPermissionsAsync/);
     const alerts = readSharedSource('screens/AlertsScreen.tsx');
     assert.match(alerts, /registerPushToken/);
     assert.doesNotMatch(alerts, /requestPermissionsAsync/);
