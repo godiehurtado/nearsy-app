@@ -21,8 +21,6 @@ export default {
   },
   distance: '{{count}} ft',
   kinds: {
-    /** Nearby without shared interests — not an established contact relationship. */
-    contactNearby: 'Nearby person',
     interestNearby: 'Shared interest nearby',
   },
 } as const;
