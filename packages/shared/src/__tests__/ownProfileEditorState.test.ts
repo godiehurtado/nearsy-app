@@ -27,7 +27,7 @@ const completeDraft: OwnProfileDraft = {
   bio: 'Hello nearby',
   company: 'Nearsy',
   birthCountryCode: null,
-  residenceCountryCode: null,
+  currentCity: null,
   languageCodes: [],
 };
 
@@ -316,7 +316,7 @@ describe('Own Profile dirty state', () => {
       bio: 'Hello nearby ',
       company: ' Nearsy ',
       birthCountryCode: null,
-      residenceCountryCode: null,
+      currentCity: null,
       languageCodes: [],
     };
     assert.equal(isOwnProfileDraftDirty(padded, snapshot, 'personal'), false);
@@ -356,12 +356,12 @@ describe('Own Profile dirty state', () => {
       'bio',
       'birthCountryCode',
       'company',
+      'currentCity',
       'languageCodes',
       'lastName',
       'occupation',
       'profileImage',
       'realName',
-      'residenceCountryCode',
     ]);
   });
 

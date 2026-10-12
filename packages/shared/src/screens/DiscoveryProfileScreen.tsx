@@ -332,10 +332,10 @@ export default function DiscoveryProfileScreen() {
           {/* 3. Social Media — omitted when DTO has no public links */}
           <DiscoverySocialMediaRow links={publicSocialLinks} />
 
-          {/* 4. Profile context — birth / residence / languages */}
+          {/* 4. Profile context — origin / current city / languages */}
           <ProfileContextCard
             birthCountryCode={profile.birthCountryCode}
-            residenceCountryCode={profile.residenceCountryCode}
+            currentCity={profile.currentCity}
             languageCodes={profile.languageCodes}
           />
 

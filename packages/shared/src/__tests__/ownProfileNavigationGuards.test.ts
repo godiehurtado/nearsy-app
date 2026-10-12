@@ -28,7 +28,8 @@ describe('Own Profile navigation and source guards', () => {
     assert.doesNotMatch(src, /replace\(\s*['"]MainTabs['"]\s*\)/);
     assert.doesNotMatch(src, /profileSetupCompleted:\s*true/);
     assert.match(src, /buildOwnProfileSavePatch/);
-    assert.match(src, /updateUserProfilePartial\(uid, modePatch\)/);
+    assert.match(src, /patches: \[modePatch, contextPatch\]/);
+    assert.match(src, /write: \(patch\) => updateUserProfilePartial\(uid, patch\)/);
   });
 
   it('incomplete users are gated to ProfileCompletion, not Own Profile', () => {

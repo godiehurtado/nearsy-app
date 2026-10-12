@@ -14,8 +14,19 @@ export default {
   context: {
     birthCountry: 'Country of origin',
     birthCountryPlaceholder: 'Select country of origin',
-    residenceCountry: 'Country of residence',
-    residenceCountryPlaceholder: 'Select country of residence',
+    currentCity: 'Current city',
+    currentCityPlaceholder: 'Add your current city',
+    searchCity: 'Search for a city',
+    cityMinChars: 'Type at least 2 letters',
+    citySearching: 'Searching…',
+    suggestedCities: 'Suggested cities',
+    noCityResults: 'No cities found',
+    citySearchError:
+      "We couldn't load cities right now. You can add your city later.",
+    citySearchRateLimited:
+      'Too many searches right now. Wait a moment and try again.',
+    clearCityA11y: 'Clear city',
+    optional: 'Optional',
     languages: 'Languages',
     languagesPlaceholder: 'Add languages you speak',
     searchCountry: 'Search countries…',

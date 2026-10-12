@@ -166,9 +166,9 @@ describe('BUG-PROFILE-02 screen wiring', () => {
     const src = readShared('screens/CompleteProfileScreen.tsx');
     assert.match(src, /shouldResyncProfessionalActiveModeAfterSave/);
     assert.match(src, /setActiveProfileModeFlow/);
-    assert.match(src, /await updateUserProfilePartial\(uid, modePatch\);/);
+    assert.match(src, /write: \(patch\) => updateUserProfilePartial\(uid, patch\)/);
 
-    const saveIdx = src.indexOf('await updateUserProfilePartial(uid, modePatch);');
+    const saveIdx = src.indexOf('await persistOwnProfileThenSyncDiscovery(');
     const resyncIdx = src.indexOf(
       'shouldResyncProfessionalActiveModeAfterSave',
       saveIdx,
@@ -208,7 +208,7 @@ describe('BUG-PROFILE-02 screen wiring', () => {
     // Re-sync is after awaited updateUserProfilePartial — failure throws before gate.
     assert.match(
       own,
-      /await updateUserProfilePartial\(uid, modePatch\);[\s\S]*shouldResyncProfessionalActiveModeAfterSave/,
+      /await persistOwnProfileThenSyncDiscovery\(\{[\s\S]*?write: \(patch\) => updateUserProfilePartial\(uid, patch\)[\s\S]*shouldResyncProfessionalActiveModeAfterSave/,
     );
     assert.match(
       crj,

@@ -38,7 +38,7 @@ const DEFAULT_DETAIL: DiscoveryProfileDetail = {
   company: '',
   bio: '',
   birthCountryCode: null,
-  residenceCountryCode: null,
+  currentCity: null,
   languageCodes: [],
   zodiacSign: null,
 };

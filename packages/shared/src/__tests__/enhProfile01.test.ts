@@ -24,8 +24,8 @@ import {
 import {
   areProfileContextFieldsComplete,
   buildProfileContextWritePatch,
-  isCrjProfileContextCountriesValid,
   isCrjProfileContextLanguagesValid,
+  isCrjProfileContextOriginValid,
   parseUserProfileContext,
 } from '../profile/profileContextFields';
 import { parseZodiacSign, zodiacSymbol } from '../profile/zodiacSign';
@@ -57,7 +57,13 @@ function detailPayload(extra: Record<string, unknown> = {}) {
       company: '',
       bio: 'Hello',
       birthCountryCode: 'CO',
-      residenceCountryCode: 'US',
+      currentCity: {
+        id: '3687925',
+        provider: 'geonames',
+        name: 'Cali',
+        countryCode: 'CO',
+        region: 'Valle del Cauca',
+      },
       languageCodes: ['es', 'en'],
       zodiacSign: 'virgo',
     },
@@ -172,7 +178,7 @@ describe('ENH-PROFILE-01 profile context fields', () => {
   it('parses missing context safely', () => {
     assert.deepEqual(parseUserProfileContext({}), {
       birthCountryCode: null,
-      residenceCountryCode: null,
+      currentCity: null,
       languageCodes: [],
     });
   });
@@ -180,21 +186,23 @@ describe('ENH-PROFILE-01 profile context fields', () => {
   it('write patch never includes zodiacSign and keeps canonical codes', () => {
     const patch = buildProfileContextWritePatch({
       birthCountryCode: 'CO',
-      residenceCountryCode: 'US',
       languageCodes: ['es', 'en'],
     });
     assert.equal(patch.birthCountryCode, 'CO');
-    assert.equal(patch.residenceCountryCode, 'US');
     assert.deepEqual(patch.languageCodes, ['es', 'en']);
     assert.equal(Object.prototype.hasOwnProperty.call(patch, 'zodiacSign'), false);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(patch, 'residenceCountryCode'),
+      false,
+    );
     // Display labels must not leak into persistence.
     assert.notEqual(patch.birthCountryCode, 'Colombia');
     assert.notEqual((patch.languageCodes as string[])[0], 'Spanish');
   });
 
-  it('CRJ requires countries and >=1 language, max 10', () => {
-    assert.equal(isCrjProfileContextCountriesValid('CO', 'US'), true);
-    assert.equal(isCrjProfileContextCountriesValid(null, 'US'), false);
+  it('CRJ requires country of origin and >=1 language, max 10', () => {
+    assert.equal(isCrjProfileContextOriginValid('CO'), true);
+    assert.equal(isCrjProfileContextOriginValid(null), false);
     assert.equal(isCrjProfileContextLanguagesValid(['es']), true);
     assert.equal(isCrjProfileContextLanguagesValid([]), false);
     assert.equal(
@@ -216,7 +224,7 @@ describe('ENH-PROFILE-01 profile context fields', () => {
     assert.equal(
       areProfileContextFieldsComplete({
         birthCountryCode: 'CO',
-        residenceCountryCode: 'US',
+        currentCity: null,
         languageCodes: ['es'],
       }),
       true,
@@ -229,7 +237,13 @@ describe('ENH-PROFILE-01 Discovery wire parsing', () => {
     const parsed = parseGetDiscoveryProfileResponse(detailPayload());
     assert.equal(parsed.distanceMeters, 42);
     assert.equal(parsed.profile.birthCountryCode, 'CO');
-    assert.equal(parsed.profile.residenceCountryCode, 'US');
+    assert.deepEqual(parsed.profile.currentCity, {
+      id: '3687925',
+      provider: 'geonames',
+      name: 'Cali',
+      countryCode: 'CO',
+      region: 'Valle del Cauca',
+    });
     assert.deepEqual(parsed.profile.languageCodes, ['es', 'en']);
     assert.equal(parsed.profile.zodiacSign, 'virgo');
   });
@@ -249,7 +263,7 @@ describe('ENH-PROFILE-01 Discovery wire parsing', () => {
       }),
     );
     assert.equal(parsed.profile.birthCountryCode, null);
-    assert.equal(parsed.profile.residenceCountryCode, null);
+    assert.equal(parsed.profile.currentCity, null);
     assert.deepEqual(parsed.profile.languageCodes, []);
     assert.equal(parsed.profile.zodiacSign, null);
   });
@@ -397,11 +411,12 @@ describe('ENH-PROFILE-01 Discovery UI contract (static)', () => {
     assert.doesNotMatch(screenSrc, /intersectOnboardingInterestIds/);
   });
 
-  it('CRJ never requests zodiac and requires countries/languages', () => {
+  it('CRJ never requests zodiac and requires origin/languages', () => {
     assert.doesNotMatch(crjSrc, /zodiacSign/);
-    assert.match(crjSrc, /isCrjProfileContextCountriesValid/);
+    assert.match(crjSrc, /isCrjProfileContextOriginValid/);
     assert.match(crjSrc, /isCrjProfileContextLanguagesValid/);
     assert.match(crjSrc, /CountrySearchField/);
+    assert.match(crjSrc, /CitySearchField/);
     assert.match(crjSrc, /LanguageMultiSelectField/);
   });
 

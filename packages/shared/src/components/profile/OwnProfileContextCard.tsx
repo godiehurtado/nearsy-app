@@ -1,8 +1,10 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
+import { CitySearchField } from './CitySearchField';
 import { CountrySearchField } from './CountrySearchField';
 import { LanguageMultiSelectField } from './LanguageMultiSelectField';
+import type { CurrentCity } from '../../profile/currentCity';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { radius } from '../../theme/radius';
 import { spacing, screenPadding } from '../../theme/spacing';
@@ -11,20 +13,20 @@ import { cardShadow } from '../../theme/shadows';
 
 export type OwnProfileContextValues = {
   birthCountryCode: string | null;
-  residenceCountryCode: string | null;
+  currentCity: CurrentCity | null;
   languageCodes: string[];
 };
 
 type ContextLabels = {
   sectionTitle: string;
   birthCountry: string;
-  residenceCountry: string;
+  currentCity: string;
   languages: string;
 };
 
 type ContextPlaceholders = {
   birthCountry: string;
-  residenceCountry: string;
+  currentCity: string;
   languages: string;
   searchCountry: string;
   searchLanguage: string;
@@ -36,7 +38,7 @@ type Props = {
   placeholders: ContextPlaceholders;
   editorWritable: boolean;
   onChangeBirthCountry: (code: string | null) => void;
-  onChangeResidenceCountry: (code: string | null) => void;
+  onChangeCurrentCity: (city: CurrentCity | null) => void;
   onChangeLanguages: (codes: string[]) => void;
 };
 
@@ -46,7 +48,7 @@ export default function OwnProfileContextCard({
   placeholders,
   editorWritable,
   onChangeBirthCountry,
-  onChangeResidenceCountry,
+  onChangeCurrentCity,
   onChangeLanguages,
 }: Props) {
   const { palette } = useAppTheme();
@@ -76,12 +78,11 @@ export default function OwnProfileContextCard({
           searchPlaceholder={placeholders.searchCountry}
           disabled={!editable}
         />
-        <CountrySearchField
-          value={values.residenceCountryCode}
-          onChange={onChangeResidenceCountry}
-          label={labels.residenceCountry}
-          placeholder={placeholders.residenceCountry}
-          searchPlaceholder={placeholders.searchCountry}
+        <CitySearchField
+          value={values.currentCity}
+          onChange={onChangeCurrentCity}
+          label={labels.currentCity}
+          placeholder={placeholders.currentCity}
           disabled={!editable}
         />
         <LanguageMultiSelectField

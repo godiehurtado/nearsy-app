@@ -53,6 +53,12 @@ import {
   clearPendingSocialProfilePrefill,
   mergeCompleteProfilePrefill,
 } from '../authentication/social';
+import type { CurrentCity } from '../profile/currentCity';
+import {
+  createSingleFlight,
+  persistOwnProfileThenSyncDiscovery,
+  syncDiscoveryContextSafely,
+} from '../profile/ownProfileSaveFlow';
 import { resolveModePresentation, type ProfileMode } from '../profile/profileModeFields';
 import {
   buildOwnProfileContextSavePatch,
@@ -133,9 +139,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const [company, setCompany] = useState('');
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [birthCountryCode, setBirthCountryCode] = useState<string | null>(null);
-  const [residenceCountryCode, setResidenceCountryCode] = useState<
-    string | null
-  >(null);
+  const [currentCity, setCurrentCity] = useState<CurrentCity | null>(null);
   const [languageCodes, setLanguageCodes] = useState<string[]>([]);
 
   const [personalAff, setPersonalAff] = useState<InterestAffiliations>({});
@@ -188,6 +192,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const [lifecycleAuth, setLifecycleAuth] =
     useState<OwnProfileLifecycleAuth>('unresolved');
   const bypassDirtyNavigationRef = useRef(false);
+  const saveFlightRef = useRef(createSingleFlight());
 
   const applyDraftToForm = useCallback((draft: OwnProfileDraft) => {
     setRealName(draft.realName);
@@ -197,7 +202,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     setCompany(draft.company);
     setProfileImage(draft.profileImage);
     setBirthCountryCode(draft.birthCountryCode);
-    setResidenceCountryCode(draft.residenceCountryCode);
+    setCurrentCity(draft.currentCity);
     setLanguageCodes(draft.languageCodes);
   }, []);
 
@@ -230,7 +235,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       bio,
       company,
       birthCountryCode,
-      residenceCountryCode,
+      currentCity,
       languageCodes,
     }),
     [
@@ -241,7 +246,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       bio,
       company,
       birthCountryCode,
-      residenceCountryCode,
+      currentCity,
       languageCodes,
     ],
   );
@@ -736,6 +741,32 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     return true;
   };
 
+  const syncDiscoveryContextNow = async () =>
+    syncDiscoveryProfileContextFlow(await getVisibilityDiscoveryClient());
+
+  // Private save already succeeded: report honestly and offer a sync-only
+  // retry (no user-doc writes). Discovery also re-projects on the next save,
+  // activateVisibility or setActiveProfileMode.
+  const showDiscoverySyncError = (uid: string) => {
+    Alert.alert(t('common.error'), t('profile.context.syncError'), [
+      { text: t('common.buttons.ok'), style: 'cancel' },
+      {
+        text: t('common.retry'),
+        onPress: () => {
+          void saveFlightRef.current.run(async () => {
+            const status = await syncDiscoveryContextSafely(
+              syncDiscoveryContextNow,
+              savedSnapshotRef.current?.currentCity ?? null,
+            );
+            if (status === 'failed' && mountedRef.current && getUid() === uid) {
+              showDiscoverySyncError(uid);
+            }
+          });
+        },
+      },
+    ]);
+  };
+
   const persistOwnProfile = async () => {
     try {
       if (!isOwnProfileSaveAuthorized(lifecycleAuth)) {
@@ -783,18 +814,34 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         mode,
         draft: persistedDraft,
       });
-      const contextPatch = buildOwnProfileContextSavePatch(persistedDraft);
+      const contextPatch = buildOwnProfileContextSavePatch(
+        persistedDraft,
+        savedSnapshotRef.current,
+      );
 
-      await updateUserProfilePartial(uid, modePatch);
-      await updateUserProfilePartial(uid, contextPatch);
-
-      applyDraftToForm(persistedDraft);
-      commitSnapshot(persistedDraft);
+      const syncStatus = await persistOwnProfileThenSyncDiscovery({
+        patches: [modePatch, contextPatch],
+        write: (patch) => updateUserProfilePartial(uid, patch),
+        onPersisted: () => {
+          applyDraftToForm(persistedDraft);
+          commitSnapshot(persistedDraft);
+        },
+        expectedCity: persistedDraft.currentCity,
+        sync: syncDiscoveryContextNow,
+      });
+      if (
+        syncStatus === 'failed' &&
+        mountedRef.current &&
+        getUid() === uid
+      ) {
+        showDiscoverySyncError(uid);
+      }
 
       let nextProfileDoc: Record<string, unknown> = {
         ...(profileDoc ?? {}),
         ...modePatch,
         ...contextPatch,
+        currentCity: persistedDraft.currentCity,
         profiles: {
           ...((profileDoc?.profiles as any) ?? {}),
           [mode]: {
@@ -810,24 +857,6 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
           },
         },
       };
-
-      // Soft-sync Discovery context after a successful user-doc write.
-      // synced:false → keep save; true callable error → soft warning, keep save.
-      try {
-        const client = await getVisibilityDiscoveryClient();
-        const syncOutcome = await syncDiscoveryProfileContextFlow(client);
-        if (
-          mountedRef.current &&
-          getUid() === uid &&
-          syncOutcome.ok === false
-        ) {
-          Alert.alert(t('common.error'), t('profile.context.syncError'));
-        }
-      } catch {
-        if (mountedRef.current && getUid() === uid) {
-          Alert.alert(t('common.error'), t('profile.context.syncError'));
-        }
-      }
 
       // BUG-PROFILE-02: after a successful Professional face save, re-run the
       // canonical setActiveProfileMode callable so Discovery projection recovers
@@ -882,7 +911,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   };
 
   const handleSave = async () => {
-    await persistOwnProfile();
+    await saveFlightRef.current.run(persistOwnProfile);
   };
 
   const handleCancel = () => {
@@ -1105,27 +1134,25 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
               <OwnProfileContextCard
                 values={{
                   birthCountryCode,
-                  residenceCountryCode,
+                  currentCity,
                   languageCodes,
                 }}
                 labels={{
                   sectionTitle: t('profile.sections.context'),
                   birthCountry: t('profile.context.birthCountry'),
-                  residenceCountry: t('profile.context.residenceCountry'),
+                  currentCity: t('profile.context.currentCity'),
                   languages: t('profile.context.languages'),
                 }}
                 placeholders={{
                   birthCountry: t('profile.context.birthCountryPlaceholder'),
-                  residenceCountry: t(
-                    'profile.context.residenceCountryPlaceholder',
-                  ),
+                  currentCity: t('profile.context.currentCityPlaceholder'),
                   languages: t('profile.context.languagesPlaceholder'),
                   searchCountry: t('profile.context.searchCountry'),
                   searchLanguage: t('profile.context.searchLanguage'),
                 }}
                 editorWritable={editorWritable}
                 onChangeBirthCountry={setBirthCountryCode}
-                onChangeResidenceCountry={setResidenceCountryCode}
+                onChangeCurrentCity={setCurrentCity}
                 onChangeLanguages={setLanguageCodes}
               />
 

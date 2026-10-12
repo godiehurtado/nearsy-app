@@ -14,7 +14,7 @@ export default {
   sharedInterests: 'Shared interests',
   affiliations: 'Affiliations',
   from: 'From {{flag}} {{country}}',
-  livesIn: 'Lives in {{flag}} {{country}}',
+  livesIn: 'Lives in {{flag}} {{place}}',
   languages: 'Languages',
   zodiac: 'Zodiac',
   compatibility: 'Compatibility',

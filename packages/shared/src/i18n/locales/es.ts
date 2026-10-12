@@ -421,13 +421,9 @@ const es: TranslationResources = {
         birthCountryLabel: '¿De dónde eres?',
         birthCountryPlaceholder: 'País de origen',
         birthCountryRequired: 'Selecciona tu país de origen para continuar',
-        residenceCountryLabel: '¿Dónde vives?',
-        residenceCountryPlaceholder: 'País de residencia',
-        residenceCountryRequired:
-          'Selecciona tu país de residencia para continuar',
+        currentCityLabel: 'Ciudad actual',
+        currentCityPlaceholder: 'Busca tu ciudad',
         searchCountry: 'Buscar países…',
-        countriesRequired:
-          'Selecciona tu país de origen y de residencia para continuar',
       },
       info: {
         title: 'Agrega una foto de perfil',
@@ -998,8 +994,19 @@ const es: TranslationResources = {
     context: {
       birthCountry: 'País de origen',
       birthCountryPlaceholder: 'Selecciona el país de origen',
-      residenceCountry: 'País de residencia',
-      residenceCountryPlaceholder: 'Selecciona el país de residencia',
+      currentCity: 'Ciudad actual',
+      currentCityPlaceholder: 'Agrega tu ciudad actual',
+      searchCity: 'Busca una ciudad',
+      cityMinChars: 'Escribe al menos 2 letras',
+      citySearching: 'Buscando…',
+      suggestedCities: 'Ciudades sugeridas',
+      noCityResults: 'No se encontraron ciudades',
+      citySearchError:
+        'No pudimos cargar ciudades en este momento. Puedes agregar tu ciudad más tarde.',
+      citySearchRateLimited:
+        'Demasiadas búsquedas por ahora. Espera un momento e inténtalo de nuevo.',
+      clearCityA11y: 'Borrar ciudad',
+      optional: 'Opcional',
       languages: 'Idiomas',
       languagesPlaceholder: 'Agrega los idiomas que hablas',
       searchCountry: 'Buscar países…',
@@ -1236,7 +1243,7 @@ const es: TranslationResources = {
     sharedInterests: 'Intereses compartidos',
     affiliations: 'Afiliaciones',
     from: 'De {{flag}} {{country}}',
-    livesIn: 'Vive en {{flag}} {{country}}',
+    livesIn: 'Vive en {{flag}} {{place}}',
     languages: 'Idiomas',
     zodiac: 'Zodiaco',
     compatibility: 'Compatibilidad',
@@ -1354,7 +1361,15 @@ const es: TranslationResources = {
       account: 'Cuenta',
       privacy: 'Privacidad y descubrimiento',
       preferences: 'Preferencias',
+      about: 'Acerca de',
       actions: 'Acciones de la cuenta',
+    },
+    about: {
+      cityDataTitle: 'Datos de ciudades',
+      geonamesAttribution:
+        'Datos de ciudades © GeoNames (https://www.geonames.org), con licencia CC BY 4.0. Modificados: filtrados y reindexados por Nearsy.',
+      openGeoNamesHint: 'Abre geonames.org en tu navegador',
+      openLinkError: 'No pudimos abrir el enlace. Inténtalo más tarde.',
     },
     email: {
       title: 'Correo electrónico',

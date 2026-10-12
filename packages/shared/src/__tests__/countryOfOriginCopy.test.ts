@@ -36,15 +36,13 @@ describe('CRJ identity — country of origin (EN)', () => {
     assert.equal(enIdentity.birthCountryPlaceholder, 'Country of origin');
   });
 
-  it('validation speaks about country of origin', () => {
+  it('validation speaks about country of origin only', () => {
     assert.equal(
       enIdentity.birthCountryRequired,
       'Select your country of origin to continue',
     );
-    assert.equal(
-      enIdentity.countriesRequired,
-      'Select your country of origin and residence to continue',
-    );
+    assert.equal('countriesRequired' in enIdentity, false);
+    assert.equal('residenceCountryRequired' in enIdentity, false);
   });
 });
 
@@ -54,15 +52,13 @@ describe('CRJ identity — país de origen (ES)', () => {
     assert.equal(esIdentity.birthCountryPlaceholder, 'País de origen');
   });
 
-  it('las validaciones hablan de país de origen', () => {
+  it('las validaciones hablan solo de país de origen', () => {
     assert.equal(
       esIdentity.birthCountryRequired,
       'Selecciona tu país de origen para continuar',
     );
-    assert.equal(
-      esIdentity.countriesRequired,
-      'Selecciona tu país de origen y de residencia para continuar',
-    );
+    assert.equal('countriesRequired' in esIdentity, false);
+    assert.equal('residenceCountryRequired' in esIdentity, false);
   });
 });
 

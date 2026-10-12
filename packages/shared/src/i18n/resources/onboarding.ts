@@ -45,11 +45,9 @@ export default {
       birthCountryLabel: 'Where are you from?',
       birthCountryPlaceholder: 'Country of origin',
       birthCountryRequired: 'Select your country of origin to continue',
-      residenceCountryLabel: 'Where do you live?',
-      residenceCountryPlaceholder: 'Country of residence',
-      residenceCountryRequired: 'Select your country of residence to continue',
+      currentCityLabel: 'Current city',
+      currentCityPlaceholder: 'Search for your city',
       searchCountry: 'Search countries…',
-      countriesRequired: 'Select your country of origin and residence to continue',
     },
     info: {
       title: 'Add a profile photo',
