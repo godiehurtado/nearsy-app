@@ -24,7 +24,7 @@ export default {
   noInterests: 'No interests yet',
   context: {
     fromCountry: 'From {{country}}',
-    livesInCountry: 'Lives in {{country}}',
+    livesInCity: 'Lives in {{place}}',
     languages: 'Languages',
   },
   zodiac: {

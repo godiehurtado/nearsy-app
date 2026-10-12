@@ -1,7 +1,9 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { CountrySelectField } from '../profileContext/CountrySelectField';
+import { CurrentCityField } from '../profileContext/CurrentCityField';
 import { LanguageMultiSelectField } from '../profileContext/LanguageMultiSelectField';
+import type { CurrentCity } from '../../profileContext/currentCity';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { radius } from '../../theme/radius';
 import { spacing, screenPadding } from '../../theme/spacing';
@@ -10,20 +12,20 @@ import { cardShadow } from '../../theme/shadows';
 
 export type OwnProfileBackgroundValues = {
   birthCountryCode: string | null;
-  residenceCountryCode: string | null;
+  currentCity: CurrentCity | null;
   languageCodes: string[];
 };
 
 export type OwnProfileBackgroundLabels = {
   sectionTitle: string;
   birthCountry: string;
-  residenceCountry: string;
+  currentCity: string;
   languages: string;
 };
 
 export type OwnProfileBackgroundPlaceholders = {
   birthCountrySearch: string;
-  residenceCountrySearch: string;
+  currentCitySearch: string;
   languagesSearch: string;
   countrySearchEmpty: string;
   countryClear: string;
@@ -38,11 +40,11 @@ type Props = {
   locale: string;
   editable: boolean;
   onChangeBirthCountry: (value: string | null) => void;
-  onChangeResidenceCountry: (value: string | null) => void;
+  onChangeCurrentCity: (value: CurrentCity | null) => void;
   onChangeLanguages: (codes: string[]) => void;
 };
 
-/** Origin, where the user lives today, and languages. */
+/** Origin, the city where the user lives today (optional), and languages. */
 export default function OwnProfileBackgroundCard({
   values,
   labels,
@@ -50,7 +52,7 @@ export default function OwnProfileBackgroundCard({
   locale,
   editable,
   onChangeBirthCountry,
-  onChangeResidenceCountry,
+  onChangeCurrentCity,
   onChangeLanguages,
 }: Props) {
   const { palette } = useAppTheme();
@@ -86,17 +88,14 @@ export default function OwnProfileBackgroundCard({
           editable={editable}
           onChange={onChangeBirthCountry}
         />
-        <CountrySelectField
-          label={labels.residenceCountry}
+        <CurrentCityField
+          label={labels.currentCity}
           uppercaseLabel
-          placeholder={placeholders.residenceCountrySearch}
-          searchPlaceholder={placeholders.residenceCountrySearch}
-          emptyLabel={placeholders.countrySearchEmpty}
-          clearLabel={placeholders.countryClear}
-          value={values.residenceCountryCode}
+          placeholder={placeholders.currentCitySearch}
+          value={values.currentCity}
           locale={locale}
           editable={editable}
-          onChange={onChangeResidenceCountry}
+          onChange={onChangeCurrentCity}
         />
         <LanguageMultiSelectField
           label={labels.languages}

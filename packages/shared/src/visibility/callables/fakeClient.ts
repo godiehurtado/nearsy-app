@@ -37,7 +37,7 @@ const DEFAULT_DETAIL = {
   company: '',
   bio: '',
   birthCountryCode: null as string | null,
-  residenceCountryCode: null as string | null,
+  currentCity: null,
   languageCodes: [] as string[],
   zodiacSign: null as null,
 };

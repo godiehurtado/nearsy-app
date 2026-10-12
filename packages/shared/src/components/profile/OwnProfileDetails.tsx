@@ -8,6 +8,7 @@ import { spacing, screenPadding } from '../../theme/spacing';
 import { fontSize, fontWeight } from '../../theme/typography';
 import { cardShadow } from '../../theme/shadows';
 import type { ProfileModeValue } from '../ModeSwitch';
+import type { CurrentCity } from '../../profileContext/currentCity';
 
 export type OwnProfileDetailsValues = {
   realName: string;
@@ -19,7 +20,7 @@ export type OwnProfileDetailsValues = {
 
 export type OwnProfileContextValues = {
   birthCountryCode: string | null;
-  residenceCountryCode: string | null;
+  currentCity: CurrentCity | null;
   languageCodes: string[];
 };
 
@@ -32,7 +33,7 @@ type FieldLabels = {
   biography: string;
   company: string;
   birthCountry: string;
-  residenceCountry: string;
+  currentCity: string;
   languages: string;
 };
 
@@ -43,7 +44,7 @@ type FieldPlaceholders = {
   biography: string;
   company: string;
   birthCountrySearch: string;
-  residenceCountrySearch: string;
+  currentCitySearch: string;
   languagesSearch: string;
   countrySearchEmpty: string;
   countryClear: string;
@@ -66,7 +67,7 @@ type Props = {
   onChangeBio: (value: string) => void;
   onChangeCompany: (value: string) => void;
   onChangeBirthCountry: (value: string | null) => void;
-  onChangeResidenceCountry: (value: string | null) => void;
+  onChangeCurrentCity: (value: CurrentCity | null) => void;
   onChangeLanguages: (codes: string[]) => void;
   realNameMaxLength: number;
   lastNameMaxLength: number;
@@ -89,7 +90,7 @@ export default function OwnProfileDetails({
   onChangeBio,
   onChangeCompany,
   onChangeBirthCountry,
-  onChangeResidenceCountry,
+  onChangeCurrentCity,
   onChangeLanguages,
   realNameMaxLength,
   lastNameMaxLength,
@@ -194,12 +195,12 @@ export default function OwnProfileDetails({
         labels={{
           sectionTitle: labels.backgroundTitle,
           birthCountry: labels.birthCountry,
-          residenceCountry: labels.residenceCountry,
+          currentCity: labels.currentCity,
           languages: labels.languages,
         }}
         placeholders={{
           birthCountrySearch: placeholders.birthCountrySearch,
-          residenceCountrySearch: placeholders.residenceCountrySearch,
+          currentCitySearch: placeholders.currentCitySearch,
           languagesSearch: placeholders.languagesSearch,
           countrySearchEmpty: placeholders.countrySearchEmpty,
           countryClear: placeholders.countryClear,
@@ -209,7 +210,7 @@ export default function OwnProfileDetails({
         locale={locale}
         editable={editable}
         onChangeBirthCountry={onChangeBirthCountry}
-        onChangeResidenceCountry={onChangeResidenceCountry}
+        onChangeCurrentCity={onChangeCurrentCity}
         onChangeLanguages={onChangeLanguages}
       />
     </>

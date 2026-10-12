@@ -2,9 +2,18 @@
  * Profile Context canonical fields (ENH-PROFILE-01).
  * Top-level users/{uid} fields — not mode presentation.
  * Client never writes zodiacSign.
+ *
+ * Legacy `residenceCountryCode` is neither read nor written: it is ignored
+ * (not deleted) and never turned into a current city. `currentCity` is
+ * optional and written only through `buildCurrentCityWritePatch`.
  */
 
 import { normalizeCountryCode } from './countryCatalog';
+import {
+  isSameCurrentCity,
+  parseCurrentCity,
+  type CurrentCity,
+} from './currentCity';
 import {
   MAX_PROFILE_LANGUAGE_CODES,
   MIN_CRJ_LANGUAGE_CODES,
@@ -13,13 +22,13 @@ import {
 
 export type ProfileContextFields = {
   birthCountryCode: string | null;
-  residenceCountryCode: string | null;
+  currentCity: CurrentCity | null;
   languageCodes: string[];
 };
 
 export const EMPTY_PROFILE_CONTEXT: ProfileContextFields = {
   birthCountryCode: null,
-  residenceCountryCode: null,
+  currentCity: null,
   languageCodes: [],
 };
 
@@ -30,7 +39,7 @@ export function readProfileContextFromUserDoc(
   if (!data) return { ...EMPTY_PROFILE_CONTEXT };
   return {
     birthCountryCode: normalizeCountryCode(data.birthCountryCode),
-    residenceCountryCode: normalizeCountryCode(data.residenceCountryCode),
+    currentCity: parseCurrentCity(data.currentCity),
     languageCodes: normalizeLanguageCodes(data.languageCodes),
   };
 }
@@ -41,7 +50,7 @@ export function normalizeProfileContext(
 ): ProfileContextFields {
   return {
     birthCountryCode: normalizeCountryCode(input.birthCountryCode),
-    residenceCountryCode: normalizeCountryCode(input.residenceCountryCode),
+    currentCity: parseCurrentCity(input.currentCity),
     languageCodes: normalizeLanguageCodes(input.languageCodes),
   };
 }
@@ -54,20 +63,16 @@ export function isProfileContextDirty(
   const a = normalizeProfileContext(draft);
   const b = normalizeProfileContext(snapshot);
   if (a.birthCountryCode !== b.birthCountryCode) return true;
-  if (a.residenceCountryCode !== b.residenceCountryCode) return true;
+  if (!isSameCurrentCity(a.currentCity, b.currentCity)) return true;
   if (a.languageCodes.length !== b.languageCodes.length) return true;
   return a.languageCodes.some((code, i) => code !== b.languageCodes[i]);
 }
 
-/** NEW CRJ identity gate — both countries required. */
+/** NEW CRJ identity gate — country of origin required; current city optional. */
 export function isCrjIdentityContextValid(input: {
   birthCountryCode: string | null | undefined;
-  residenceCountryCode: string | null | undefined;
 }): boolean {
-  return (
-    normalizeCountryCode(input.birthCountryCode) != null &&
-    normalizeCountryCode(input.residenceCountryCode) != null
-  );
+  return normalizeCountryCode(input.birthCountryCode) != null;
 }
 
 /** NEW CRJ details gate — at least one language, at most 10. */
@@ -82,17 +87,16 @@ export function isCrjLanguagesValid(
 }
 
 /**
- * Firestore patch for context fields only.
- * Never includes zodiacSign.
+ * Firestore patch for country of origin + languages only.
+ * Never includes zodiacSign, currentCity or the legacy residence field.
  */
-export function buildProfileContextSavePatch(
-  input: ProfileContextFields,
-): Record<string, unknown> {
-  const normalized = normalizeProfileContext(input);
+export function buildProfileContextSavePatch(input: {
+  birthCountryCode: string | null;
+  languageCodes: string[];
+}): Record<string, unknown> {
   return {
-    birthCountryCode: normalized.birthCountryCode,
-    residenceCountryCode: normalized.residenceCountryCode,
-    languageCodes: normalized.languageCodes,
+    birthCountryCode: normalizeCountryCode(input.birthCountryCode),
+    languageCodes: normalizeLanguageCodes(input.languageCodes),
   };
 }
 
@@ -105,10 +109,10 @@ export function profileContextSaveOmitsZodiac(
 /** Discovery Detail context presence helpers. */
 export function hasAnyDiscoveryContext(input: {
   birthCountryCode?: string | null;
-  residenceCountryCode?: string | null;
+  currentCity?: CurrentCity | null;
   languageCodes?: readonly string[] | null;
 }): boolean {
   if (normalizeCountryCode(input.birthCountryCode)) return true;
-  if (normalizeCountryCode(input.residenceCountryCode)) return true;
+  if (parseCurrentCity(input.currentCity)) return true;
   return normalizeLanguageCodes(input.languageCodes ?? []).length > 0;
 }

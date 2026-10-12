@@ -43,7 +43,7 @@ const en = {
     company: 'Company',
     profileImage: 'Profile photo',
     birthCountry: 'Country of origin',
-    residenceCountry: 'Country of residence',
+    currentCity: 'Current city',
     languages: 'Languages',
   },
   placeholders: {
@@ -53,7 +53,7 @@ const en = {
     biography: 'A short bio',
     company: 'Company',
     birthCountrySearch: 'Search country of origin',
-    residenceCountrySearch: 'Search country of residence',
+    currentCitySearch: 'Search for a city',
     languagesSearch: 'Search languages',
   },
   context: {
@@ -63,6 +63,24 @@ const en = {
     languagesLimit: 'You can select up to 10 languages',
     syncSoftError:
       'Your profile was saved, but public context may take a moment to update.',
+    syncRetryBody:
+      'Your profile was saved, but your public profile may still show your previous details.',
+    syncRetry: 'Retry',
+    syncDismiss: 'OK',
+  },
+  city: {
+    optional: 'Optional',
+    searchCity: 'Search for a city',
+    typeToSearch: 'Type at least 2 letters to search',
+    searching: 'Searching…',
+    suggested: 'Suggestions',
+    noResults: 'No cities found',
+    unavailable: "We couldn't load cities right now. Check your connection and try again.",
+    rateLimited: 'Too many searches right now. Wait a moment and try again.',
+    retry: 'Retry',
+    close: 'Close',
+    clearA11y: 'Remove current city',
+    selectedA11y: 'Selected',
   },
   validation: {
     realName: 'First name is required.',
@@ -264,7 +282,7 @@ const es = {
       company: 'Empresa',
       profileImage: 'Foto de perfil',
       birthCountry: 'País de origen',
-      residenceCountry: 'País de residencia',
+      currentCity: 'Ciudad actual',
       languages: 'Idiomas',
     },
     placeholders: {
@@ -274,7 +292,7 @@ const es = {
       biography: 'Una breve biografía',
       company: 'Empresa',
       birthCountrySearch: 'Busca país de origen',
-      residenceCountrySearch: 'Busca país de residencia',
+      currentCitySearch: 'Busca una ciudad',
       languagesSearch: 'Busca idiomas',
     },
     context: {
@@ -284,6 +302,26 @@ const es = {
       languagesLimit: 'Puedes seleccionar hasta 10 idiomas',
       syncSoftError:
         'Tu perfil se guardó, pero el contexto público puede tardar un momento en actualizarse.',
+      syncRetryBody:
+        'Tu perfil se guardó, pero tu perfil público podría seguir mostrando tus datos anteriores.',
+      syncRetry: 'Reintentar',
+      syncDismiss: 'Aceptar',
+    },
+    city: {
+      optional: 'Opcional',
+      searchCity: 'Busca una ciudad',
+      typeToSearch: 'Escribe al menos 2 letras para buscar',
+      searching: 'Buscando…',
+      suggested: 'Sugerencias',
+      noResults: 'No se encontraron ciudades',
+      unavailable:
+        'No pudimos cargar ciudades en este momento. Revisa tu conexión e inténtalo de nuevo.',
+      rateLimited:
+        'Demasiadas búsquedas por ahora. Espera un momento e inténtalo de nuevo.',
+      retry: 'Reintentar',
+      close: 'Cerrar',
+      clearA11y: 'Quitar la ciudad actual',
+      selectedA11y: 'Seleccionada',
     },
     validation: {
       realName: 'El nombre es obligatorio.',

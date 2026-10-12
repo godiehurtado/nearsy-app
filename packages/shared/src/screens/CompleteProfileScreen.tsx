@@ -26,13 +26,19 @@ import OwnProfileHero from '../components/profile/OwnProfileHero';
 import OwnProfileDetails from '../components/profile/OwnProfileDetails';
 import OwnProfileSaveBar from '../components/profile/OwnProfileSaveBar';
 import {
+  buildCurrentCityWritePatch,
   buildProfileContextSavePatch,
   isProfileContextDirty,
+  isSaveSessionCurrent,
   normalizeProfileContext,
+  persistThenSyncDiscovery,
   readProfileContextFromUserDoc,
-  syncDiscoveryProfileContextAfterSave,
+  type CurrentCity,
   type ProfileContextFields,
 } from '../profileContext';
+import { useDiscoveryContextSyncRetry } from '../profileContext/useDiscoveryContextSyncRetry';
+import { firestoreDeleteField } from '../services/firestoreFieldDelete';
+import { containsObjectionableContent } from '../profile/profileTextModeration';
 import {
   InterestAffiliations,
   SocialLinks,
@@ -86,37 +92,6 @@ const OCCUPATION_MAX = 60;
 const COMPANY_MAX = 60;
 const BIO_MAX = 200;
 
-const BLOCKED_WORDS = [
-  'fuck',
-  'fucking',
-  'shit',
-  'bitch',
-  'asshole',
-  'nigger',
-  'nigga',
-  'faggot',
-  'slut',
-  'whore',
-  'puta',
-  'mierda',
-  'idiota',
-  'imbecil',
-  'malparido',
-  'gonorrea',
-];
-
-function normalizeModerationText(value: string) {
-  return (value || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-}
-
-function containsObjectionableContent(value: string) {
-  const normalized = normalizeModerationText(value);
-  return BLOCKED_WORDS.some((word) => normalized.includes(word));
-}
-
 export default function CompleteProfileScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
   const { t, i18n } = useTranslation();
@@ -125,6 +100,12 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const scrollRef = useRef<ScrollView | null>(null);
   const modeSwitchSessionRef = useRef(createActiveProfileModeSwitchSession());
   const mountedRef = useRef(true);
+  const {
+    flightRef: saveFlightRef,
+    aliveRef,
+    syncNow: syncDiscoveryContextNow,
+    offerRetry: offerDiscoverySyncRetry,
+  } = useDiscoveryContextSyncRetry();
 
   const getUid = () =>
     route?.params?.uid ?? firebaseAuth.currentUser?.uid ?? null;
@@ -137,9 +118,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const [company, setCompany] = useState('');
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [birthCountryCode, setBirthCountryCode] = useState<string | null>(null);
-  const [residenceCountryCode, setResidenceCountryCode] = useState<
-    string | null
-  >(null);
+  const [currentCity, setCurrentCity] = useState<CurrentCity | null>(null);
   const [languageCodes, setLanguageCodes] = useState<string[]>([]);
   const [contextSnapshot, setContextSnapshot] =
     useState<ProfileContextFields | null>(null);
@@ -239,10 +218,10 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const contextDraft = useMemo<ProfileContextFields>(
     () => ({
       birthCountryCode,
-      residenceCountryCode,
+      currentCity,
       languageCodes,
     }),
-    [birthCountryCode, residenceCountryCode, languageCodes],
+    [birthCountryCode, currentCity, languageCodes],
   );
 
   const isDirty =
@@ -263,7 +242,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     }
     if (contextSnapshot) {
       setBirthCountryCode(contextSnapshot.birthCountryCode);
-      setResidenceCountryCode(contextSnapshot.residenceCountryCode);
+      setCurrentCity(contextSnapshot.currentCity);
       setLanguageCodes([...contextSnapshot.languageCodes]);
     }
   }, [applyDraftToForm, contextSnapshot]);
@@ -396,7 +375,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         existing as Record<string, unknown>,
       );
       setBirthCountryCode(loadedContext.birthCountryCode);
-      setResidenceCountryCode(loadedContext.residenceCountryCode);
+      setCurrentCity(loadedContext.currentCity);
       setLanguageCodes(loadedContext.languageCodes);
       setContextSnapshot(normalizeProfileContext(loadedContext));
 
@@ -792,26 +771,45 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         editorDraft,
         uploadedImageUrl,
       );
-      const modePatch = buildOwnProfileSavePatch({
-        mode,
-        draft: persistedDraft,
-      });
+      const modePatch = buildOwnProfileSavePatch({ mode, draft: persistedDraft });
       const contextPatch = buildProfileContextSavePatch(contextDraft);
-      const combinedPatch = { ...modePatch, ...contextPatch };
-
-      await updateUserProfilePartial(uid, combinedPatch);
-
-      applyDraftToForm(persistedDraft);
-      commitSnapshot(persistedDraft);
       const nextContext = normalizeProfileContext(contextDraft);
-      setBirthCountryCode(nextContext.birthCountryCode);
-      setResidenceCountryCode(nextContext.residenceCountryCode);
-      setLanguageCodes(nextContext.languageCodes);
-      setContextSnapshot(nextContext);
+      const cityPatch = buildCurrentCityWritePatch(
+        nextContext.currentCity,
+        contextSnapshot?.currentCity ?? null,
+        firestoreDeleteField(),
+      );
+      const isCurrent = () =>
+        isSaveSessionCurrent({
+          startedUid: uid,
+          currentUid: firebaseAuth.currentUser?.uid,
+          mounted: aliveRef.current,
+        });
 
+      const writePatch = { ...modePatch, ...contextPatch, ...cityPatch };
+      const syncStatus = await persistThenSyncDiscovery({
+        write: () => updateUserProfilePartial(uid, writePatch),
+        isCurrent,
+        onPersisted: () => {
+          applyDraftToForm(persistedDraft);
+          commitSnapshot(persistedDraft);
+          setBirthCountryCode(nextContext.birthCountryCode);
+          setCurrentCity(nextContext.currentCity);
+          setLanguageCodes(nextContext.languageCodes);
+          setContextSnapshot(nextContext);
+        },
+        expectedCity: nextContext.currentCity,
+        sync: syncDiscoveryContextNow,
+      });
+      if (syncStatus === 'stale') return;
+      if (syncStatus === 'failed') offerDiscoverySyncRetry(nextContext.currentCity);
+
+      const { currentCity: _previousCity, ...docWithoutCity } = profileDoc ?? {};
       let nextDoc: Record<string, unknown> = {
-        ...(profileDoc ?? {}),
-        ...combinedPatch,
+        ...docWithoutCity,
+        ...modePatch,
+        ...contextPatch,
+        ...(nextContext.currentCity ? { currentCity: nextContext.currentCity } : {}),
         profiles: {
           ...((profileDoc?.profiles as any) ?? {}),
           [mode]: {
@@ -821,35 +819,29 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
             profileImage: persistedDraft.profileImage,
             occupation: persistedDraft.occupation,
             bio: persistedDraft.bio,
-            ...(mode === 'professional'
-              ? { company: persistedDraft.company }
-              : {}),
+            ...(mode === 'professional' ? { company: persistedDraft.company } : {}),
           },
         },
       };
 
-      const client = await getVisibilityDiscoveryClient();
-      const contextSync = await syncDiscoveryProfileContextAfterSave(client);
-      if (contextSync.kind === 'failed') {
-        Alert.alert(t('common.error'), t('profile.context.syncSoftError'));
-      }
-
       // BUG-PROFILE-02: restore Discovery projection after complete Professional save.
-      const resync = await resyncProfessionalDiscoveryProjectionAfterSave({
-        activeMode: mode,
-        professionalFaceComplete:
-          validateOwnProfileDraft(persistedDraft, mode).ok === true,
-        uid,
-        client,
-      });
-      if (resync.kind === 'failed') {
+      const client = await getVisibilityDiscoveryClient().catch(() => null);
+      const professionalFaceComplete =
+        validateOwnProfileDraft(persistedDraft, mode).ok === true;
+      const resync = client
+        ? await resyncProfessionalDiscoveryProjectionAfterSave({
+            activeMode: mode,
+            professionalFaceComplete,
+            uid,
+            client,
+          })
+        : null;
+      if (!isCurrent()) return;
+      if (resync?.kind === 'failed') {
         const presentation = presentActiveProfileModeError(t, resync.error);
         Alert.alert(presentation.title, presentation.userMessage);
-      } else if (resync.kind === 'synced') {
-        nextDoc = applyActiveProfileModeResponseToUserDoc(
-          nextDoc,
-          resync.response,
-        );
+      } else if (resync?.kind === 'synced') {
+        nextDoc = applyActiveProfileModeResponseToUserDoc(nextDoc, resync.response);
       }
 
       setProfileDoc(nextDoc);
@@ -857,17 +849,15 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       clearPendingSocialProfilePrefill();
       Keyboard.dismiss();
     } catch (e: any) {
-      Alert.alert(
-        t('common.error'),
-        e?.message || t('profile.errors.saveFailed'),
-      );
+      if (!aliveRef.current) return;
+      Alert.alert(t('common.error'), e?.message || t('profile.errors.saveFailed'));
     } finally {
-      setIsLoading(false);
+      if (aliveRef.current) setIsLoading(false);
     }
   };
 
   const handleSave = async () => {
-    await persistOwnProfile();
+    await saveFlightRef.current.run(persistOwnProfile);
   };
 
   const handleCancel = () => {
@@ -1061,7 +1051,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 }}
                 context={{
                   birthCountryCode,
-                  residenceCountryCode,
+                  currentCity,
                   languageCodes,
                 }}
                 labels={{
@@ -1073,7 +1063,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                   biography: t('profile.fields.biography'),
                   company: t('profile.fields.company'),
                   birthCountry: t('profile.fields.birthCountry'),
-                  residenceCountry: t('profile.fields.residenceCountry'),
+                  currentCity: t('profile.fields.currentCity'),
                   languages: t('profile.fields.languages'),
                 }}
                 placeholders={{
@@ -1085,9 +1075,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                   birthCountrySearch: t(
                     'profile.placeholders.birthCountrySearch',
                   ),
-                  residenceCountrySearch: t(
-                    'profile.placeholders.residenceCountrySearch',
-                  ),
+                  currentCitySearch: t('profile.placeholders.currentCitySearch'),
                   languagesSearch: t('profile.placeholders.languagesSearch'),
                   countrySearchEmpty: t('profile.context.countrySearchEmpty'),
                   countryClear: t('profile.context.countryClearA11y'),
@@ -1107,7 +1095,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 onChangeBio={setBio}
                 onChangeCompany={setCompany}
                 onChangeBirthCountry={setBirthCountryCode}
-                onChangeResidenceCountry={setResidenceCountryCode}
+                onChangeCurrentCity={setCurrentCity}
                 onChangeLanguages={setLanguageCodes}
               />
 
