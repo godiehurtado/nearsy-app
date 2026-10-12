@@ -102,16 +102,26 @@ function isDeleteSentinel(value: unknown): boolean {
 }
 
 describe('currentCity contract parsing', () => {
-  it('accepts the contract and keeps only its fields', () => {
-    const parsed = parseCurrentCity({
-      ...SPRINGFIELD_IL,
-      countryCode: 'us',
-      lat: 39.8,
-      lng: -89.6,
-      population: 114394,
-      admin1Code: 'IL',
-    });
-    assert.deepEqual(parsed, SPRINGFIELD_IL);
+  it('accepts exactly the contract fields', () => {
+    assert.deepEqual(parseCurrentCity({ ...SPRINGFIELD_IL }), SPRINGFIELD_IL);
+  });
+
+  it('rejects any key outside the contract, like Functions normalizeCurrentCity', () => {
+    for (const extra of [
+      { lat: 39.8 },
+      { lng: -89.6 },
+      { latitude: 39.8, longitude: -89.6 },
+      { population: 114394 },
+      { admin1Code: 'IL' },
+    ]) {
+      assert.equal(parseCurrentCity({ ...SPRINGFIELD_IL, ...extra }), null);
+    }
+  });
+
+  it('rejects a present but invalid region and an untrimmed id', () => {
+    assert.equal(parseCurrentCity({ ...SPRINGFIELD_IL, region: '' }), null);
+    assert.equal(parseCurrentCity({ ...SPRINGFIELD_IL, region: null }), null);
+    assert.equal(parseCurrentCity({ ...SPRINGFIELD_IL, id: ' 4250542' }), null);
   });
 
   it('region is optional', () => {
@@ -161,11 +171,12 @@ describe('searchCities response validation', () => {
     }
   });
 
-  it('skips malformed rows, collapses duplicates, strips coordinates, caps results', () => {
+  it('skips malformed rows, collapses duplicates and caps results', () => {
     const rows = [
-      { ...SPRINGFIELD_IL, lat: 1, lng: 2 },
+      SPRINGFIELD_IL,
       { ...SPRINGFIELD_IL },
       { name: 'No id', countryCode: 'US', provider: 'geonames' },
+      { ...SPRINGFIELD_MO, population: 1 },
       SPRINGFIELD_MO,
       'free text',
       CORDOBA_AR,
@@ -173,9 +184,25 @@ describe('searchCities response validation', () => {
     ];
     const parsed = parseCitySearchResponse({ results: rows }, 3);
     assert.deepEqual(parsed, [SPRINGFIELD_IL, SPRINGFIELD_MO, CORDOBA_AR]);
-    for (const city of parsed) {
-      assert.equal('lat' in city, false);
-      assert.equal('lng' in city, false);
+  });
+
+  it('any row with coordinates rejects the whole response', () => {
+    for (const coords of [
+      { lat: 1 },
+      { lng: 2 },
+      { latitude: 1 },
+      { longitude: 2 },
+      { geohash: 'dp0' },
+      { coordinates: [1, 2] },
+    ]) {
+      assert.throws(
+        () =>
+          parseCitySearchResponse({
+            results: [SPRINGFIELD_IL, { ...SPRINGFIELD_MO, ...coords }],
+          }),
+        (err: unknown) =>
+          err instanceof CitySearchClientError && err.code === 'INVALID_RESPONSE',
+      );
     }
   });
 
@@ -340,7 +367,45 @@ describe('city search controller', () => {
     h.flushTimers();
     h.calls[0].reject(new CitySearchClientError('UNAVAILABLE', 'x'));
     await h.tick();
-    assert.deepEqual(h.last(), { status: 'error', query: 'spr' });
+    assert.deepEqual(h.last(), { status: 'error', query: 'spr', reason: 'unavailable' });
+  });
+
+  it('resource-exhausted is a temporary error and retry re-runs the same query', async () => {
+    const h = harness();
+    h.controller.open(null);
+    h.controller.setQuery('spr');
+    h.flushTimers();
+    h.calls[0].reject(new CitySearchClientError('RATE_LIMITED', 'x'));
+    await h.tick();
+    assert.deepEqual(h.last(), { status: 'error', query: 'spr', reason: 'rate-limited' });
+    h.controller.retry();
+    assert.equal(h.calls.length, 2);
+    assert.deepEqual(h.calls[1].request, { query: 'spr', limit: CITY_SEARCH_DEFAULT_LIMIT });
+    h.calls[1].resolve([SPRINGFIELD_IL]);
+    await h.tick();
+    assert.deepEqual(h.last(), { status: 'results', query: 'spr', results: [SPRINGFIELD_IL] });
+  });
+
+  it('retry on the opening suggestions asks the preferred country again', async () => {
+    const h = harness();
+    h.controller.open('AR');
+    h.calls[0].reject(new CitySearchClientError('RATE_LIMITED', 'x'));
+    await h.tick();
+    h.controller.retry();
+    assert.deepEqual(h.calls[1].request, {
+      query: '',
+      limit: CITY_SEARCH_DEFAULT_LIMIT,
+      preferredCountryCode: 'AR',
+    });
+  });
+
+  it('one-character queries never reach the network, even on retry', () => {
+    const h = harness();
+    h.controller.open(null);
+    h.controller.setQuery('s');
+    h.flushTimers();
+    h.controller.retry();
+    assert.equal(h.calls.length, 0);
   });
 
   it('a failed suggestion request falls back silently to idle', async () => {
@@ -420,6 +485,85 @@ describe('searchCities callable transport', () => {
     assert.doesNotMatch(seenUrl, /geonames/i);
     assert.deepEqual(seenBody, { data: { query: 'spring', limit: 8 } });
     assert.deepEqual(out, [SPRINGFIELD_IL]);
+  });
+
+  it('resource-exhausted (429) maps to the temporary RATE_LIMITED error', async () => {
+    const fetchImpl = (async () =>
+      jsonResponse(429, {
+        error: {
+          status: 'RESOURCE_EXHAUSTED',
+          message: 'Too many city searches. Try again shortly.',
+        },
+      })) as unknown as typeof fetch;
+    await assert.rejects(
+      invokeCitySearchCallable(callableInput({ query: 'spring', limit: 8 }), { fetchImpl }),
+      (err: unknown) => err instanceof CitySearchClientError && err.code === 'RATE_LIMITED',
+    );
+  });
+
+  it('sends Firebase ID token and App Check headers, and requires both', async () => {
+    let headers: Record<string, string> = {};
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      headers = init.headers as Record<string, string>;
+      return jsonResponse(200, { result: { results: [] } });
+    }) as unknown as typeof fetch;
+    await invokeCitySearchCallable(callableInput({ query: 'spring', limit: 8 }), { fetchImpl });
+    assert.equal(headers.Authorization, 'Bearer id-token');
+    assert.equal(headers['X-Firebase-AppCheck'], 'app-check');
+
+    let fetched = false;
+    const never = (async () => {
+      fetched = true;
+      return jsonResponse(200, {});
+    }) as unknown as typeof fetch;
+    await assert.rejects(
+      invokeCitySearchCallable(
+        { ...callableInput({ query: 'spring', limit: 8 }), idToken: '' },
+        { fetchImpl: never },
+      ),
+      (err: unknown) => err instanceof CitySearchClientError && err.code === 'UNAUTHENTICATED',
+    );
+    await assert.rejects(
+      invokeCitySearchCallable(
+        { ...callableInput({ query: 'spring', limit: 8 }), appCheckToken: '' },
+        { fetchImpl: never },
+      ),
+      (err: unknown) => err instanceof CitySearchClientError && err.code === 'UNAVAILABLE',
+    );
+    assert.equal(fetched, false);
+  });
+
+  it('controller payloads satisfy the Functions parseSearchCitiesRequest rules', async () => {
+    const sent: Record<string, unknown>[] = [];
+    const controller = createCitySearchController({
+      search: async (request) => {
+        sent.push(JSON.parse(JSON.stringify(request)));
+        return [];
+      },
+      onChange: () => {},
+      schedule: (fn) => {
+        fn();
+        return null;
+      },
+      cancelSchedule: () => {},
+    });
+    controller.open('CO');
+    controller.setQuery('  nueva   york ');
+    controller.setQuery('córdoba');
+    controller.setQuery('x'.repeat(80));
+    assert.deepEqual(sent[0], { query: '', limit: 8, preferredCountryCode: 'CO' });
+    assert.deepEqual(sent[1], { query: 'nueva york', limit: 8 });
+    assert.deepEqual(sent[2], { query: 'córdoba', limit: 8 });
+    for (const body of sent) {
+      for (const key of Object.keys(body)) {
+        assert.ok(['query', 'limit', 'preferredCountryCode'].includes(key), key);
+      }
+      const query = body.query as string;
+      assert.ok(query === '' || (query.length >= 2 && query.length <= 80));
+      assert.ok(Number.isInteger(body.limit) && (body.limit as number) <= 8);
+      if (query === '') assert.match(String(body.preferredCountryCode), /^[A-Z]{2}$/);
+      else assert.equal('preferredCountryCode' in body, false);
+    }
   });
 
   it('a Function that is not deployed yet (404) maps to UNAVAILABLE', async () => {
@@ -537,8 +681,15 @@ describe('currentCity writes', () => {
   });
 
   it('a new or changed selection writes only contract fields', () => {
-    const patch = buildCurrentCityWritePatch({ ...SPRINGFIELD_MO, lat: 1 } as never, SPRINGFIELD_IL);
+    const patch = buildCurrentCityWritePatch({ ...SPRINGFIELD_MO }, SPRINGFIELD_IL);
     assert.deepEqual(patch, { currentCity: SPRINGFIELD_MO });
+  });
+
+  it('a malformed selection writes nothing and never deletes', () => {
+    assert.deepEqual(
+      buildCurrentCityWritePatch({ ...SPRINGFIELD_MO, lat: 1 } as never, SPRINGFIELD_IL),
+      {},
+    );
   });
 
   it('removing the city deletes the field (real absence)', () => {
@@ -746,6 +897,21 @@ describe('UI wiring and privacy guards', () => {
     assert.doesNotMatch(field, /onChange\(query\)|onChange\(next\)/);
     assert.match(field, /resolvePreferredCityCountryCode\(Localization\.getLocales\(\)\)/);
     assert.match(field, /controller\.dispose\(\)/);
+  });
+
+  it('temporary errors offer a retry and the input is capped at 80 characters', () => {
+    assert.match(field, /controllerRef\.current\?\.retry\(\)/);
+    assert.match(field, /state\.reason === 'rate-limited'/);
+    assert.match(field, /t\('profile\.context\.citySearchRateLimited'\)/);
+    assert.match(field, /maxLength=\{CITY_SEARCH_MAX_QUERY\}/);
+    assert.equal(
+      enProfile.context.citySearchRateLimited,
+      'Too many searches right now. Wait a moment and try again.',
+    );
+    assert.equal(
+      es.profile.context.citySearchRateLimited,
+      'Demasiadas búsquedas por ahora. Espera un momento e inténtalo de nuevo.',
+    );
   });
 
   it('editor and Discovery render the city instead of residence', () => {
