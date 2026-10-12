@@ -28,7 +28,6 @@
         "NSLocationAlwaysUsageDescription": "Nearsy uses your location in the background only when you enable visibility so nearby users can discover you.",
         "NSPhotoLibraryUsageDescription": "Nearsy needs access to your photo library so you can upload profile and gallery photos that will be visible on your profile.",
         "NSCameraUsageDescription": "Nearsy uses the camera so you can take profile or gallery photos directly within the app.",
-        "NSContactsUsageDescription": "Nearsy uses your contacts to help you discover people you may know who are already using the app. Contact data is securely processed and only used to suggest connections.",
         "NSPhotoLibraryAddUsageDescription": "Nearsy needs permission to save photos generated or edited in the app to your photo library.",
         "UIBackgroundModes": [
           "location"

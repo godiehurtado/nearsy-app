@@ -250,9 +250,4 @@ export default {
   },
   loadError: 'Could not load settings.',
   saveError: 'Could not save.',
-  // Kept for resource compatibility; UI must not surface these in Unit 2A.
-  contacts: {
-    title: 'Contacts',
-    enable: 'Use contacts for familiar alerts',
-  },
 } as const;
