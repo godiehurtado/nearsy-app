@@ -820,10 +820,10 @@ describe('static integration guards (I1)', () => {
       src.indexOf('const persistOwnProfile'),
       src.indexOf('const handleSave'),
     );
-    assert.match(persist, /updateUserProfilePartial\(uid, modePatch\)/);
+    assert.match(persist, /updateUserProfilePartial\(uid, writePatch\)/);
     assert.match(persist, /resyncProfessionalDiscoveryProjectionAfterSave/);
     assert.ok(
-      persist.indexOf('updateUserProfilePartial(uid, modePatch)') <
+      persist.indexOf('updateUserProfilePartial(uid, writePatch)') <
         persist.indexOf('resyncProfessionalDiscoveryProjectionAfterSave'),
     );
     assert.match(persist, /validateOwnProfileDraft\(persistedDraft, mode\)/);

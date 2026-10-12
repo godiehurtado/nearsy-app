@@ -64,7 +64,7 @@ const SAMPLE_DETAIL = {
   company: 'Nearsy',
   bio: 'Hello',
   birthCountryCode: null as string | null,
-  residenceCountryCode: null as string | null,
+  currentCity: null,
   languageCodes: [] as string[],
   zodiacSign: null as null,
 };

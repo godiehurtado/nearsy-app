@@ -44,9 +44,11 @@ describe('CRJ — country of origin copy', () => {
     );
   });
 
-  it('residence copy is unchanged', () => {
-    assert.equal(identityEn.residenceCountryLabel, 'Where do you live?');
-    assert.equal(identityEs.residenceCountryLabel, '¿Dónde vives?');
+  it('residence copy is replaced by the optional current city', () => {
+    assert.equal('residenceCountryLabel' in identityEn, false);
+    assert.equal('residenceCountryRequired' in identityEs, false);
+    assert.equal(identityEn.currentCityLabel, 'Current city');
+    assert.equal(identityEs.currentCityLabel, 'Ciudad actual');
   });
 });
 
@@ -61,9 +63,10 @@ describe('Profile editor — country of origin copy', () => {
     assert.equal(profileEs.placeholders.birthCountrySearch, 'Busca país de origen');
   });
 
-  it('residence labels are unchanged', () => {
-    assert.equal(profileEn.fields.residenceCountry, 'Country of residence');
-    assert.equal(profileEs.fields.residenceCountry, 'País de residencia');
+  it('residence labels are replaced by Current city / Ciudad actual', () => {
+    assert.equal('residenceCountry' in profileEn.fields, false);
+    assert.equal(profileEn.fields.currentCity, 'Current city');
+    assert.equal(profileEs.fields.currentCity, 'Ciudad actual');
   });
 });
 
@@ -73,7 +76,7 @@ describe('Discovery — origin row', () => {
     assert.match(read('i18n/locales/es.ts'), /fromCountry: 'De \{\{country\}\}'/);
   });
 
-  it('origin and residence rows are announced without the flag emoji', () => {
+  it('origin and current city rows are announced without the flag emoji', () => {
     const card = read('components/profileExploration/DiscoveryContextCard.tsx');
     assert.match(card, /accessibilityLabel=\{fromLabel\}/);
     assert.match(card, /accessibilityLabel=\{livesInLabel\}/);
@@ -119,13 +122,13 @@ describe('Country selector accessibility', () => {
     assert.equal(profileEs.context.countryClearA11y, 'Quitar el país seleccionado');
 
     const crj = read('screens/ProfileCompletionScreen.tsx');
-    assert.equal((crj.match(/<CountrySelectField/g) ?? []).length, 2);
+    assert.equal((crj.match(/<CountrySelectField/g) ?? []).length, 1);
     assert.equal(
       (crj.match(/identity\.countryClearA11y/g) ?? []).length,
-      2,
+      1,
     );
     const background = read('components/profile/OwnProfileBackgroundCard.tsx');
-    assert.equal((background.match(/clearLabel=\{placeholders\.countryClear\}/g) ?? []).length, 2);
+    assert.equal((background.match(/clearLabel=\{placeholders\.countryClear\}/g) ?? []).length, 1);
     assert.match(
       read('components/profile/OwnProfileDetails.tsx'),
       /countryClear: placeholders\.countryClear/,

@@ -100,12 +100,10 @@ describe('profile context EN/ES label parity (Hermes-safe maps)', () => {
     assert.equal(normalizeLanguageCode('ES'), 'es');
     const patch = buildProfileContextSavePatch({
       birthCountryCode: 'co',
-      residenceCountryCode: 'us',
       languageCodes: ['ES', 'EN'],
     });
     assert.deepEqual(patch, {
       birthCountryCode: 'CO',
-      residenceCountryCode: 'US',
       languageCodes: ['es', 'en'],
     });
   });
@@ -163,21 +161,9 @@ describe('profile context languages', () => {
 });
 
 describe('profile context CRJ validation', () => {
-  it('requires birth + residence countries', () => {
-    assert.equal(
-      isCrjIdentityContextValid({
-        birthCountryCode: 'CO',
-        residenceCountryCode: 'US',
-      }),
-      true,
-    );
-    assert.equal(
-      isCrjIdentityContextValid({
-        birthCountryCode: null,
-        residenceCountryCode: 'US',
-      }),
-      false,
-    );
+  it('requires country of origin only; current city is optional', () => {
+    assert.equal(isCrjIdentityContextValid({ birthCountryCode: 'CO' }), true);
+    assert.equal(isCrjIdentityContextValid({ birthCountryCode: null }), false);
   });
 
   it('requires >=1 and <=10 languages; never asks zodiac', () => {
@@ -189,7 +175,6 @@ describe('profile context CRJ validation', () => {
     );
     const patch = buildProfileContextSavePatch({
       birthCountryCode: 'CO',
-      residenceCountryCode: 'US',
       languageCodes: ['en'],
     });
     assert.equal(profileContextSaveOmitsZodiac(patch), true);
@@ -198,6 +183,13 @@ describe('profile context CRJ validation', () => {
 });
 
 describe('profile context discovery parse', () => {
+  const CALI = {
+    id: '3687925',
+    provider: 'geonames',
+    name: 'Cali',
+    countryCode: 'CO',
+    region: 'Valle del Cauca',
+  };
   const baseDetail = {
     mode: 'personal',
     displayName: 'Alex R.',
@@ -213,11 +205,13 @@ describe('profile context discovery parse', () => {
       ...baseDetail,
       birthCountryCode: 'CO',
       residenceCountryCode: 'US',
+      currentCity: CALI,
       languageCodes: ['es', 'en', 'pt'],
       zodiacSign: 'virgo',
     });
     assert.equal(detail.birthCountryCode, 'CO');
-    assert.equal(detail.residenceCountryCode, 'US');
+    assert.equal('residenceCountryCode' in detail, false);
+    assert.deepEqual(detail.currentCity, CALI);
     assert.deepEqual(detail.languageCodes, ['es', 'en', 'pt']);
     assert.equal(detail.zodiacSign, 'virgo');
     assert.equal(zodiacSymbol('virgo'), '♍');
@@ -226,7 +220,7 @@ describe('profile context discovery parse', () => {
   it('missing context safe defaults', () => {
     const detail = parseDiscoveryProfileDetail(baseDetail);
     assert.equal(detail.birthCountryCode, null);
-    assert.equal(detail.residenceCountryCode, null);
+    assert.equal(detail.currentCity, null);
     assert.deepEqual(detail.languageCodes, []);
     assert.equal(detail.zodiacSign, null);
   });
@@ -269,12 +263,10 @@ describe('profile context edit save + sync', () => {
   it('save writes three fields and calls sync; synced:false does not rollback', async () => {
     const patch = buildProfileContextSavePatch({
       birthCountryCode: 'co',
-      residenceCountryCode: 'us',
       languageCodes: ['en', 'es'],
     });
     assert.deepEqual(patch, {
       birthCountryCode: 'CO',
-      residenceCountryCode: 'US',
       languageCodes: ['en', 'es'],
     });
     assert.ok(profileContextSaveOmitsZodiac(patch));
@@ -296,7 +288,7 @@ describe('profile context edit save + sync', () => {
   it('reads user doc context safely', () => {
     assert.deepEqual(readProfileContextFromUserDoc(undefined), {
       birthCountryCode: null,
-      residenceCountryCode: null,
+      currentCity: null,
       languageCodes: [],
     });
     assert.equal(hasAnyDiscoveryContext({ languageCodes: [] }), false);
