@@ -3,7 +3,7 @@
     "name": "Nearsy",
     "slug": "nearsy-android",
     "scheme": "nearsy",
-    "version": "2.0.7",
+    "version": "2.0.8",
     "orientation": "portrait",
     "icon": "../../packages/shared/src/assets/icon.png",
     "userInterfaceStyle": "light",
@@ -15,7 +15,7 @@
     },
     "android": {
       "package": "com.nearsy.app",
-      "versionCode": 37,
+      "versionCode": 38,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "../../packages/shared/src/assets/icon.png",
