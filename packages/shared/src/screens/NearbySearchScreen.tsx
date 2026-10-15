@@ -19,7 +19,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import * as Localization from 'expo-localization';
 import { firebaseAuth } from '../config/firebaseConfig';
 import { dbOnUserSnapshot } from '../services/db';
 import type { HomeStackParamList } from '../navigation/HomeStack';
@@ -37,8 +36,6 @@ import { NearbyInterestIconRow } from '../components/visibility/NearbyInterestIc
 import { AlignmentScoreRing } from '../components/alignment/AlignmentScoreRing';
 import {
   isVisibilityDiscoveryClientError,
-  metersToFeet,
-  resolveDistanceDisplayUnit,
   toAlignment,
   type DiscoverNearbyResult,
 } from '../visibility';
@@ -86,9 +83,6 @@ export default function NearbySearchScreen() {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const { palette, theme } = useAppTheme();
-  const unit = resolveDistanceDisplayUnit(
-    Localization.getLocales()?.[0]?.languageTag,
-  );
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -474,15 +468,6 @@ export default function NearbySearchScreen() {
     }
   }, [loadData]);
 
-  const formatDistance = (meters: number) => {
-    if (unit === 'ft') {
-      return t('nearby.distanceAwayFt', {
-        value: Math.round(metersToFeet(meters)),
-      });
-    }
-    return t('nearby.distanceAwayM', { value: Math.round(meters) });
-  };
-
   const filtered = useMemo(() => {
     return items.filter((item) => {
       const chips = resolveInterestChips(
@@ -511,8 +496,7 @@ export default function NearbySearchScreen() {
     const p = item.profile;
     const chips = resolveInterestChips(p.interestIds, translateItem);
     const shared = countSharedInterestIds(viewerInterestIds, p.interestIds);
-    const metaParts = [p.occupation?.trim() || null, formatDistance(item.distanceMeters)]
-      .filter(Boolean);
+    const occupation = p.occupation?.trim() || '';
     const alignment = toAlignment(item.compatibility);
     const showAlignmentRing = alignment?.available === true;
     const cardA11y =
@@ -575,12 +559,14 @@ export default function NearbySearchScreen() {
                 </Text>
               ) : null}
             </View>
-            <Text
-              style={[styles.cardMeta, { color: palette.textSecondary }]}
-              numberOfLines={1}
-            >
-              {metaParts.join(' · ')}
-            </Text>
+            {occupation ? (
+              <Text
+                style={[styles.cardMeta, { color: palette.textSecondary }]}
+                numberOfLines={1}
+              >
+                {occupation}
+              </Text>
+            ) : null}
           </View>
           {showAlignmentRing && alignment ? (
             <View style={styles.alignmentColumn} pointerEvents="none">

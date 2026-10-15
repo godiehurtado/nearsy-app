@@ -217,9 +217,16 @@ export function getOnboardingAffiliationCategory(
   return cat;
 }
 
+/**
+ * Stable custom id for a free-text affiliation.
+ * When `occupiedIds` is provided, appends `_2`, `_3`, … to avoid colliding
+ * with an already-selected id (e.g. accented names that collapse to the same
+ * ASCII slug). Does not redesign the `custom_<category>_<slug>` scheme.
+ */
 export function buildCustomAffiliationId(
   categoryId: OnboardingAffiliationCategoryId,
   name: string,
+  occupiedIds: ReadonlySet<string> | readonly string[] = [],
 ): string {
   const slug = name
     .trim()
@@ -227,7 +234,20 @@ export function buildCustomAffiliationId(
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 40);
-  return `custom_${categoryId}_${slug || 'org'}`;
+  const base = `custom_${categoryId}_${slug || 'org'}`;
+  const occupied =
+    occupiedIds instanceof Set ? occupiedIds : new Set(occupiedIds);
+  if (!occupied.has(base)) return base;
+  let n = 2;
+  while (occupied.has(`${base}_${n}`)) n += 1;
+  return `${base}_${n}`;
+}
+
+/** Identity & Lifestyle uses free text + optional own image (no Logo.dev). */
+export function isFreeTextAffiliationCategory(
+  categoryId: OnboardingAffiliationCategoryId,
+): boolean {
+  return categoryId === 'identity_lifestyle';
 }
 
 export function normalizeAffiliationName(name: string): string {
