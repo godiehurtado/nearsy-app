@@ -1,5 +1,5 @@
 /**
- * Alerts — discoverNearby only; opens DiscoveryProfile (no peer user docs).
+ * Alerts — discoverNearby via shared NearbyAlertsProvider; opens DiscoveryProfile.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,7 +19,8 @@ import { Ionicons } from '@expo/vector-icons';
 
 import type { RootTabsParamList } from '../navigation/RootTabs';
 import { registerPushToken } from '../services/pushTokens';
-import { useNearbyAlerts, type AlertItem } from '../hooks/useNearbyAlerts';
+import { useNearbyAlerts } from '../hooks/NearbyAlertsContext';
+import type { AlertItem } from '../hooks/nearbyAlertsMapping';
 import { useTranslation } from '../i18n';
 import {
   fontSize,
@@ -31,7 +32,6 @@ import {
 } from '../theme';
 import {
   buildAlertRowMessage,
-  formatAlertDistance,
   formatAlertRelativeTime,
   NOTIFICATION_AVATAR_SIZE,
 } from './alertsPresentation';
@@ -39,7 +39,7 @@ import {
 export default function AlertsScreen() {
   const navigation =
     useNavigation<BottomTabNavigationProp<RootTabsParamList>>();
-  const { loading, alerts, me, refresh } = useNearbyAlerts();
+  const { loading, alerts, me, errorKind, refresh } = useNearbyAlerts();
   const [refreshing, setRefreshing] = useState(false);
   const insets = useSafeAreaInsets();
   const { palette } = useAppTheme();
@@ -67,6 +67,7 @@ export default function AlertsScreen() {
   }, [refresh]);
 
   const inactive = !me?.visibility;
+  const hasError = !inactive && errorKind != null;
 
   const rowMessage = useCallback(
     (item: AlertItem) => buildAlertRowMessage(item, t, translateItem),
@@ -106,7 +107,6 @@ export default function AlertsScreen() {
 
   const renderItem = ({ item }: { item: AlertItem }) => {
     const message = rowMessage(item);
-    const distanceLabel = formatAlertDistance(item.distanceFt, t);
     const timeLabel = formatAlertRelativeTime(item.at, Date.now(), t);
 
     return (
@@ -156,11 +156,6 @@ export default function AlertsScreen() {
           >
             {message}
           </Text>
-          {distanceLabel ? (
-            <Text style={[styles.distance, { color: palette.textMuted }]}>
-              {distanceLabel}
-            </Text>
-          ) : null}
         </View>
 
         <Text style={[styles.time, { color: palette.textMuted }]}>
@@ -194,6 +189,32 @@ export default function AlertsScreen() {
         {t('notifications.inactive.body')}
       </Text>
     </View>
+  ) : hasError ? (
+    <View style={styles.emptyWrap}>
+      <View
+        style={[
+          styles.emptyIcon,
+          {
+            backgroundColor: palette.panel,
+            borderColor: palette.border,
+          },
+        ]}
+      >
+        <Ionicons
+          name="warning-outline"
+          size={22}
+          color={palette.textMuted}
+        />
+      </View>
+      <Text style={[styles.emptyTitle, { color: palette.textPrimary }]}>
+        {t('notifications.error.title')}
+      </Text>
+      <Text style={[styles.emptyBody, { color: palette.textSecondary }]}>
+        {errorKind === 'permission-denied'
+          ? t('notifications.error.permissionDenied')
+          : t('notifications.error.body')}
+      </Text>
+    </View>
   ) : (
     <View style={styles.emptyWrap}>
       <View
@@ -223,7 +244,7 @@ export default function AlertsScreen() {
   return (
     <View style={[styles.root, { backgroundColor: palette.background }]}>
       <FlatList
-        data={alerts}
+        data={hasError || inactive ? [] : alerts}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         refreshControl={
@@ -358,11 +379,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.base,
     fontWeight: fontWeight.semibold,
     lineHeight: fontSize.base * 1.35,
-  },
-  distance: {
-    marginTop: spacing.xxs,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
   },
   time: {
     fontSize: fontSize.xs,

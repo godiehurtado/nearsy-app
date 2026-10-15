@@ -3,8 +3,10 @@
  * No provider / website / topic / source bags.
  */
 
+import { isEphemeralProviderLogoUrl } from '../affiliations/affiliationLogoDev.ts';
 import {
   getOnboardingAffiliationCategory,
+  isFreeTextAffiliationCategory,
   listOnboardingAffiliationCategoryIds,
   type OnboardingAffiliationCategoryId,
 } from '../affiliations/onboardingAffiliationCatalog.ts';
@@ -33,8 +35,15 @@ function nonEmptyTrimmed(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-/** Invalid / non-https logo → null so the logo mark uses its initials/emoji fallback. */
-function sanitizeLogoUrl(value: unknown): string | null {
+/**
+ * Invalid / non-https logo → null so the logo mark uses its initials/emoji fallback.
+ * Free-text categories (Identity & Lifestyle) never present Logo.dev URLs — own image
+ * or fallback only, even if the wire still carries a reconstructed img.logo.dev link.
+ */
+function sanitizeLogoUrl(
+  value: unknown,
+  type: string | null,
+): string | null {
   const trimmed = nonEmptyTrimmed(value);
   if (!trimmed || !/^https:\/\//i.test(trimmed)) return null;
   try {
@@ -43,6 +52,14 @@ function sanitizeLogoUrl(value: unknown): string | null {
       return null;
     }
   } catch {
+    return null;
+  }
+  if (
+    type &&
+    KNOWN_CATEGORY_IDS.has(type) &&
+    isFreeTextAffiliationCategory(type as OnboardingAffiliationCategoryId) &&
+    isEphemeralProviderLogoUrl(trimmed)
+  ) {
     return null;
   }
   return trimmed;
@@ -59,12 +76,13 @@ function parseAffiliationItem(value: unknown): DiscoveryPublicAffiliation | null
   const id = nonEmptyTrimmed(row.id);
   const name = nonEmptyTrimmed(row.name);
   if (!id || !name) return null;
+  const type = nonEmptyTrimmed(row.type);
 
   return {
     id,
     name,
-    type: nonEmptyTrimmed(row.type),
-    logoUrl: sanitizeLogoUrl(row.logoUrl),
+    type,
+    logoUrl: sanitizeLogoUrl(row.logoUrl, type),
   };
 }
 

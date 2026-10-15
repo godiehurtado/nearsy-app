@@ -38,7 +38,8 @@ describe('J05/J06 Own Profile affiliations + logo contract', () => {
     assert.match(src, /OwnProfileEditorShell/);
     assert.match(src, /buildPostCrjAffiliationPersistencePatch/);
     assert.match(src, /readAffiliationsForPostCrjEditor/);
-    assert.doesNotMatch(src, /uploadAffiliationImage/);
+    // 209: Own Profile must upload local affiliation images before persist.
+    assert.match(src, /uploadAffiliationImage/);
     assert.doesNotMatch(src, /CATEGORY_CONFIG/);
     assert.doesNotMatch(src, /TopHeader/);
   });

@@ -38,6 +38,7 @@ import {
   type AffiliationSearchUiSnapshot,
 } from '../affiliations/affiliationSearchInteraction';
 import { describeAffiliationLogoRuntime } from '../affiliations/affiliationLogoDevConfig';
+import { uploadAffiliationImage } from '../services/storageService';
 import { useAppTheme } from '../theme/ThemeContext';
 import { fontSize, fontWeight } from '../theme/typography';
 import { spacing } from '../theme/spacing';
@@ -47,6 +48,11 @@ import { useTranslation } from '../i18n';
 type ProfileMode = 'personal' | 'professional';
 
 const CATEGORY_ORDER = listOnboardingAffiliationCategoryIds();
+
+function isLocalUri(value?: string | null): boolean {
+  if (!value) return false;
+  return /^(file|content|ph|assets-library):/i.test(value);
+}
 
 export default function AffiliationsScreen() {
   const navigation = useNavigation<any>();
@@ -158,12 +164,26 @@ export default function AffiliationsScreen() {
     if (!uid || saving) return;
     setSaving(true);
     try {
-      const patch = buildPostCrjAffiliationPersistencePatch(mode, draft);
+      const resolved = await Promise.all(
+        draft.map(async (item) => {
+          if (item.logoUrl && isLocalUri(item.logoUrl)) {
+            const logoUrl = await uploadAffiliationImage(
+              uid,
+              item.logoUrl,
+              item.categoryId,
+            );
+            return { ...item, logoUrl };
+          }
+          return item;
+        }),
+      );
+      setDraft(resolved);
+      const patch = buildPostCrjAffiliationPersistencePatch(mode, resolved);
       await firestoreDb
         .collection('users')
         .doc(uid)
         .set({ ...patch, updatedAt: Date.now() }, { merge: true });
-      setSnapshot(draft);
+      setSnapshot(resolved);
       navigation.goBack();
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Could not save affiliations.');

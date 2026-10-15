@@ -1,7 +1,7 @@
 /**
  * Alerts row copy helpers — presentation only; no data fetching.
  */
-import type { AlertItem } from '../hooks/useNearbyAlerts';
+import type { AlertItem } from '../hooks/nearbyAlertsMapping';
 import { resolveInterestChips } from '../visibility/interestDisplay';
 
 export const NOTIFICATION_AVATAR_SIZE = 38;
@@ -46,14 +46,4 @@ export function buildAlertRowMessage(
   }
 
   return t('notifications.messages.nearbyOnly', { name: alert.name });
-}
-
-export function formatAlertDistance(
-  distanceFt: number | undefined,
-  t: Translate,
-): string | null {
-  if (typeof distanceFt !== 'number' || !Number.isFinite(distanceFt)) {
-    return null;
-  }
-  return t('notifications.distance', { count: Math.round(distanceFt) });
 }

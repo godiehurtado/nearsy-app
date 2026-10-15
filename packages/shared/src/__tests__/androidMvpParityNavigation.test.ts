@@ -42,8 +42,10 @@ describe('Android MVP parity navigation', () => {
 
   it('Alerts opens DiscoveryProfile via discoverNearby', () => {
     const alerts = read('screens/AlertsScreen.tsx');
-    assert.match(alerts, /discoverNearby/);
+    const hook = read('hooks/useNearbyAlerts.ts');
+    assert.match(hook, /client\.discoverNearby/);
     assert.match(alerts, /DiscoveryProfile/);
+    assert.match(alerts, /NearbyAlertsContext|useNearbyAlerts/);
   });
 
   it('MoreStack includes BlockedPeople with getBlockedPeople screen', () => {

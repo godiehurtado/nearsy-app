@@ -10,6 +10,12 @@ export default {
     title: 'Visibility is off',
     body: 'Turn your account Active to discover nearby people.',
   },
+  error: {
+    title: 'Could not load alerts',
+    body: 'Pull to refresh to try again.',
+    permissionDenied:
+      'Alerts could not be loaded right now. Pull to refresh to try again.',
+  },
   messages: {
     interestNearby: '{{name}} is near you and you share interests{{interests}}.',
     interestsSuffix: ' ({{interests}})',

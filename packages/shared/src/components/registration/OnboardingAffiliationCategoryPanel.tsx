@@ -24,8 +24,10 @@ import {
 } from '../../affiliations/affiliationSearchInteraction.ts';
 import {
   buildCustomAffiliationId,
+  buildUniqueCustomAffiliationId,
   getOnboardingAffiliationCategory,
   isDuplicateAffiliation,
+  isFreeTextAffiliationCategory,
   validateCustomAffiliationName,
   type OnboardingAffiliationCategoryId,
   type OnboardingSelectedAffiliation,
@@ -36,6 +38,7 @@ import { getAffiliationEntitySearchProvider } from '../../affiliations/affiliati
 import {
   buildLogoDevImageUrl,
   domainFromAffiliationFields,
+  isEphemeralProviderLogoUrl,
   isLogoDevPublishableKey,
 } from '../../affiliations/affiliationLogoDev.ts';
 import {
@@ -99,6 +102,7 @@ export function OnboardingAffiliationCategoryPanel({
   const { t } = useTranslation();
   const reduceMotion = useReducedMotion();
   const category = getOnboardingAffiliationCategory(categoryId);
+  const freeText = isFreeTextAffiliationCategory(categoryId);
 
   const [topicId, setTopicId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -122,20 +126,22 @@ export function OnboardingAffiliationCategoryPanel({
   const topicOpen = !!activeTopic;
   const trimmedQuery = query.trim();
   const customNameValid = validateCustomAffiliationName(trimmedQuery).ok === true;
-  const searchHintVisible = trimmedQuery.length < 2;
+  const searchHintVisible = !freeText && trimmedQuery.length < 2;
   const searchUi = useMemo(
     () =>
       resolveAffiliationSearchUi({
         searchFocused,
-        pickedName,
+        pickedName: freeText ? null : pickedName,
         customName: trimmedQuery,
         customNameValid,
-        hasProviderResults: results.length > 0,
-        searchPending,
-        suggestionsUnavailable,
+        hasProviderResults: freeText ? false : results.length > 0,
+        searchPending: freeText ? false : searchPending,
+        // freeText: treat as "no suggestions" so valid names can be added without Logo.dev.
+        suggestionsUnavailable: freeText ? true : suggestionsUnavailable,
         hasDraftImage: !!draftImage,
       }),
     [
+      freeText,
       searchFocused,
       pickedName,
       trimmedQuery,
@@ -153,7 +159,13 @@ export function OnboardingAffiliationCategoryPanel({
     website?: string | null;
     providerId?: string | null;
   }): string | undefined {
-    if (input.logoUrl?.trim()) return input.logoUrl.trim();
+    const own = input.logoUrl?.trim();
+    if (freeText) {
+      // Identity & Lifestyle: never rebuild Logo.dev; own image or fallback only.
+      if (own && !isEphemeralProviderLogoUrl(own)) return own;
+      return undefined;
+    }
+    if (own) return own;
     return buildLogoDevImageUrl(
       domainFromAffiliationFields(input),
       publishableKey,
@@ -161,6 +173,13 @@ export function OnboardingAffiliationCategoryPanel({
   }
 
   useEffect(() => {
+    if (freeText) {
+      searchGenerationRef.current += 1;
+      setResults([]);
+      setSuggestionsUnavailable(false);
+      setSearchPending(false);
+      return;
+    }
     if (trimmedQuery.length < 2) {
       searchGenerationRef.current += 1;
       setResults([]);
@@ -190,7 +209,7 @@ export function OnboardingAffiliationCategoryPanel({
         });
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [trimmedQuery, categoryId]);
+  }, [trimmedQuery, categoryId, freeText]);
 
   const totalAdded = selected.length;
   const countLabel =
@@ -279,6 +298,46 @@ export function OnboardingAffiliationCategoryPanel({
     const nameCandidate = (pickedName || trimmedQuery).slice(0, QUERY_MAX);
     const validated = validateCustomAffiliationName(nameCandidate);
     if (validated.ok === false) return;
+
+    if (freeText) {
+      const candidate = { name: validated.name, source: 'custom' as const };
+      if (
+        isDuplicateAffiliation(selected, candidate, { categoryId })
+      ) {
+        setDuplicateError(
+          t('onboarding.profileCompletion.affiliations.duplicate' as any),
+        );
+        return;
+      }
+      const next: OnboardingSelectedAffiliation = {
+        id: buildUniqueCustomAffiliationId(
+          categoryId,
+          validated.name,
+          selected.map((s) => s.id),
+        ),
+        name: validated.name,
+        categoryId,
+        source: 'custom',
+        ...(() => {
+          const logoUrl = resolveInMemorySelectedLogoUrl(draftImage, undefined);
+          return logoUrl ? { logoUrl } : {};
+        })(),
+        ...(activeTopic ? { topic: activeTopic.label } : {}),
+      };
+      onChangeSelected([...selected, next]);
+      setQuery('');
+      setPickedName(null);
+      setDraftImage(null);
+      setResults([]);
+      setTopicId(null);
+      setDuplicateError(null);
+      setSearchFocused(false);
+      setSearchPending(false);
+      setSuggestionsUnavailable(false);
+      searchInputRef.current?.blur();
+      Keyboard.dismiss();
+      return;
+    }
 
     const matched = results.find(
       (row) => row.name.toLowerCase() === validated.name.toLowerCase(),
@@ -490,10 +549,14 @@ export function OnboardingAffiliationCategoryPanel({
             <TextInput
               ref={searchInputRef}
               accessibilityLabel={t(
-                'onboarding.profileCompletion.affiliations.searchA11y' as any,
+                freeText
+                  ? ('onboarding.profileCompletion.affiliations.freeTextA11y' as any)
+                  : ('onboarding.profileCompletion.affiliations.searchA11y' as any),
               )}
               placeholder={t(
-                'onboarding.profileCompletion.affiliations.searchPlaceholder' as any,
+                freeText
+                  ? ('onboarding.profileCompletion.affiliations.freeTextPlaceholder' as any)
+                  : ('onboarding.profileCompletion.affiliations.searchPlaceholder' as any),
               )}
               placeholderTextColor={palette.placeholder}
               value={query}
@@ -525,13 +588,17 @@ export function OnboardingAffiliationCategoryPanel({
             />
           </View>
 
-          {searchHintVisible ? (
+          {freeText ? (
+            <Text style={[styles.searchHint, { color: palette.textSecondary }]}>
+              {t('onboarding.profileCompletion.affiliations.freeTextHint' as any)}
+            </Text>
+          ) : searchHintVisible ? (
             <Text style={[styles.searchHint, { color: palette.textSecondary }]}>
               {t('onboarding.profileCompletion.affiliations.searchHint' as any)}
             </Text>
           ) : null}
 
-          {suggestionsUnavailable ? (
+          {!freeText && suggestionsUnavailable ? (
             <Text
               style={[
                 styles.searchUnavailable,
@@ -544,7 +611,7 @@ export function OnboardingAffiliationCategoryPanel({
             </Text>
           ) : null}
 
-          {results.length > 0 ? (
+          {!freeText && results.length > 0 ? (
             <ScrollView
               style={compactSearch ? styles.resultsScroll : styles.resultsIdle}
               contentContainerStyle={styles.results}
@@ -620,7 +687,9 @@ export function OnboardingAffiliationCategoryPanel({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t(
-                'onboarding.profileCompletion.affiliations.uploadA11y' as any,
+                freeText
+                  ? ('onboarding.profileCompletion.affiliations.uploadOwnImageA11y' as any)
+                  : ('onboarding.profileCompletion.affiliations.uploadA11y' as any),
               )}
               onPress={() => {
                 void pickOwnLogo();
@@ -631,7 +700,11 @@ export function OnboardingAffiliationCategoryPanel({
               ]}
             >
               <Text style={{ color: palette.textSecondary, fontWeight: fontWeight.bold, fontSize: 12.5 }}>
-                {t('onboarding.profileCompletion.affiliations.upload' as any)}
+                {t(
+                  freeText
+                    ? ('onboarding.profileCompletion.affiliations.uploadOwnImage' as any)
+                    : ('onboarding.profileCompletion.affiliations.upload' as any),
+                )}
               </Text>
             </Pressable>
           </View>
