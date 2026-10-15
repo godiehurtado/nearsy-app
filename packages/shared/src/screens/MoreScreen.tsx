@@ -809,7 +809,11 @@ export default function MoreScreen() {
     try {
       const { clearPendingSocialProfilePrefill, clearFacebookProviderSession } =
         await import('../authentication/social');
+      const { clearSocialProfilePhotoImportCache } = await import(
+        '../profile/socialProfilePhotoImport'
+      );
       clearPendingSocialProfilePrefill();
+      clearSocialProfilePhotoImportCache();
       // Contractual logout order:
       // 1) close the presence gate, stop/unregister the background runtime and
       //    wait for already-sent publications (each step bounded)

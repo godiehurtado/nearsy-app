@@ -4,6 +4,7 @@
  * Modes:
  *   (default) tunnel — `expo start --dev-client --tunnel` + QR for tunnel URL
  *   --lan            — `expo start --dev-client --lan` (same EAS env, no ngrok)
+ *   --clear | --reset-cache — forward Expo Metro cache clear (`expo start --clear`)
  *
  * Optional (not committed): NEARSY_DEV_CLIENT_LAN_HOST=<IPv4> overrides NIC detection for LAN QR.
  *
@@ -34,6 +35,10 @@ function parseNetworkMode(argv) {
   if (argv.includes('--lan')) return 'lan';
   if (argv.includes('--tunnel')) return 'tunnel';
   return 'tunnel';
+}
+
+function wantsMetroCacheClear(argv) {
+  return argv.includes('--clear') || argv.includes('--reset-cache');
 }
 
 function loadEasDevelopmentEnv() {
@@ -319,35 +324,43 @@ async function main() {
   stripEmulatorVars(childEnv);
   printSafeRuntimeSummary(childEnv, networkMode);
 
+  const argv = process.argv.slice(2);
+  const clearCache = wantsMetroCacheClear(argv);
   const port = await findFreePort(8081);
   const networkFlag = networkMode === 'lan' ? '--lan' : '--tunnel';
   console.log(
     `[start-dev-client] Starting Metro (dev-client + ${networkMode}) on port ${port} with EAS development env.`,
   );
+  if (clearCache) {
+    console.log(
+      '[start-dev-client] Clearing Metro cache (--clear / Expo reset-cache).',
+    );
+  }
   if (networkMode === 'lan') {
     console.log(
       '[start-dev-client] Require iPhone and PC on the same Wi‑Fi. If the device cannot connect, allow inbound TCP on the Metro port in Windows Firewall.',
     );
   }
 
-  const child = spawn(
-    'pnpm',
-    [
-      'exec',
-      'expo',
-      'start',
-      '--dev-client',
-      networkFlag,
-      '--port',
-      String(port),
-    ],
-    {
-      cwd: APP_ROOT,
-      env: childEnv,
-      stdio: ['inherit', 'pipe', 'pipe'],
-      shell: true,
-    },
-  );
+  const expoArgs = [
+    'exec',
+    'expo',
+    'start',
+    '--dev-client',
+    networkFlag,
+    '--port',
+    String(port),
+  ];
+  if (clearCache) {
+    expoArgs.push('--clear');
+  }
+
+  const child = spawn('pnpm', expoArgs, {
+    cwd: APP_ROOT,
+    env: childEnv,
+    stdio: ['inherit', 'pipe', 'pipe'],
+    shell: true,
+  });
 
   let announced = false;
 

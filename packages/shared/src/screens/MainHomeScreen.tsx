@@ -34,6 +34,7 @@ import {
   useAppTheme,
 } from '../theme';
 import { cardShadow } from '../theme/shadows';
+import ProfileAvatarImage from '../components/profile/ProfileAvatarImage';
 import * as Location from 'expo-location';
 import {
   activateVisibilityFlow,
@@ -1458,11 +1459,13 @@ export default function MainHomeScreen({ navigation }: Props) {
             cardShadow,
           ]}
         >
-          {profileImage ? (
-            <Image source={{ uri: profileImage }} style={styles.avatar} />
-          ) : (
-            <Ionicons name="person" size={42} color="#FFFFFF" />
-          )}
+          <ProfileAvatarImage
+            uri={profileImage}
+            style={styles.avatar}
+            placeholderStyle={{ backgroundColor: 'transparent' }}
+            iconSize={42}
+            iconColor="#FFFFFF"
+          />
         </View>
 
         <Text style={[styles.displayName, { color: palette.textPrimary }]}>
