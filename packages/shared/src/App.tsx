@@ -190,8 +190,9 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
         const actorUid = data?.actorUid;
 
         if (actorUid && navigationRef.isReady()) {
+          // DiscoveryProfile uses getDiscoveryProfile (no peer users/{uid} read).
           (navigationRef as any).navigate('Home', {
-            screen: 'ProfileDetail',
+            screen: 'DiscoveryProfile',
             params: { uid: actorUid },
           });
         }

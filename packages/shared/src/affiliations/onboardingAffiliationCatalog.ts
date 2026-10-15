@@ -16,6 +16,13 @@ export type OnboardingAffiliationTopic = {
   emoji: string;
 };
 
+/**
+ * How the category collects entries in the CRJ / Own Profile panel.
+ * - search: Logo.dev entity suggestions + optional own image
+ * - freeText: typed name + optional own image; no entity search / Logo.dev
+ */
+export type OnboardingAffiliationEntrySource = 'search' | 'freeText';
+
 export type OnboardingAffiliationCategory = {
   id: OnboardingAffiliationCategoryId;
   nameKey: string;
@@ -26,6 +33,8 @@ export type OnboardingAffiliationCategory = {
   icon: string;
   iconColor: string;
   topics: OnboardingAffiliationTopic[];
+  /** Defaults to `search` when omitted (legacy categories). */
+  entrySource?: OnboardingAffiliationEntrySource;
 };
 
 export type OnboardingAffiliationSource = 'provider' | 'custom';
@@ -180,6 +189,7 @@ export const ONBOARDING_AFFILIATION_CATEGORIES: OnboardingAffiliationCategory[] 
       emoji: '🪪',
       icon: 'sparkles-outline',
       iconColor: '#CA8A04',
+      entrySource: 'freeText',
       topics: [
         topic('Cultural background', '🌍'),
         topic('Hometown', '🏠'),
@@ -230,6 +240,29 @@ export function buildCustomAffiliationId(
   return `custom_${categoryId}_${slug || 'org'}`;
 }
 
+/**
+ * Custom id that stays under the `custom_<categoryId>_…` scheme while avoiding
+ * slug collisions between distinct free-text entries (e.g. "C++" vs "C#").
+ */
+export function buildUniqueCustomAffiliationId(
+  categoryId: OnboardingAffiliationCategoryId,
+  name: string,
+  existingIds: ReadonlySet<string> | readonly string[],
+): string {
+  const taken = existingIds instanceof Set ? existingIds : new Set(existingIds);
+  const base = buildCustomAffiliationId(categoryId, name);
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base}_${n}`)) n += 1;
+  return `${base}_${n}`;
+}
+
+export function isFreeTextAffiliationCategory(
+  categoryId: OnboardingAffiliationCategoryId,
+): boolean {
+  return getOnboardingAffiliationCategory(categoryId).entrySource === 'freeText';
+}
+
 export function normalizeAffiliationName(name: string): string {
   return name.trim().replace(/\s+/g, ' ');
 }
@@ -247,10 +280,13 @@ export function affiliationIdentityKey(item: Pick<
 export function isDuplicateAffiliation(
   list: OnboardingSelectedAffiliation[],
   candidate: Pick<OnboardingSelectedAffiliation, 'name' | 'providerId' | 'source'>,
+  options?: { categoryId?: OnboardingAffiliationCategoryId },
 ): boolean {
   const key = affiliationIdentityKey(candidate);
   const normalizedName = normalizeAffiliationName(candidate.name).toLowerCase();
+  const scope = options?.categoryId;
   return list.some((entry) => {
+    if (scope && entry.categoryId !== scope) return false;
     if (affiliationIdentityKey(entry) === key) return true;
     return normalizeAffiliationName(entry.name).toLowerCase() === normalizedName;
   });

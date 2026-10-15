@@ -1,6 +1,5 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import HomeStack from './HomeStack';
-import { View, Text } from 'react-native';
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import ProfileStack from './ProfileStack';
@@ -11,16 +10,10 @@ import type { HomeStackParamList } from './HomeStack';
 import type { ProfileStackParamList } from './ProfileStack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// 👇 importa el hook
-import { useNearbyAlerts } from '../hooks/useNearbyAlerts';
-
-function Placeholder({ label }: { label: string }) {
-  return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-      <Text>{label}</Text>
-    </View>
-  );
-}
+import {
+  NearbyAlertsProvider,
+  useNearbyAlerts,
+} from '../hooks/NearbyAlertsContext';
 
 export type RootTabsParamList = {
   Home: NavigatorScreenParams<HomeStackParamList>;
@@ -31,10 +24,8 @@ export type RootTabsParamList = {
 
 const Tab = createBottomTabNavigator<RootTabsParamList>();
 
-export default function RootTabs() {
+function RootTabsContent() {
   const insets = useSafeAreaInsets();
-
-  // 👇 usamos el hook aquí para saber cuántas alerts hay
   const { alerts } = useNearbyAlerts();
   const alertsCount = alerts.length;
   const alertsBadge =
@@ -116,7 +107,6 @@ export default function RootTabs() {
         })}
       />
 
-      {/* 👇 aquí aplicamos el badge solo a Alerts */}
       <Tab.Screen
         name="Alerts"
         component={AlertsScreen}
@@ -127,5 +117,13 @@ export default function RootTabs() {
 
       <Tab.Screen name="More" component={MoreStack} />
     </Tab.Navigator>
+  );
+}
+
+export default function RootTabs() {
+  return (
+    <NearbyAlertsProvider>
+      <RootTabsContent />
+    </NearbyAlertsProvider>
   );
 }

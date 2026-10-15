@@ -221,6 +221,12 @@ export const es: TranslationResources = {
       title: 'Visibilidad desactivada',
       body: 'Activa tu cuenta para descubrir personas cercanas.',
     },
+    error: {
+      title: 'No se pudieron cargar las alertas',
+      body: 'Desliza para actualizar e inténtalo de nuevo.',
+      permissionDenied:
+        'No se pudieron cargar las alertas ahora. Desliza para actualizar e inténtalo de nuevo.',
+    },
     messages: {
       interestNearby:
         '{{name}} está cerca y compartís intereses{{interests}}.',

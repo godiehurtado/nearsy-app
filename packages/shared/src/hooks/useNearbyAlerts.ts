@@ -1,264 +1,178 @@
-// packages/shared/src/hooks/useNearbyAlerts.ts
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { firebaseAuth } from '../config/firebaseConfig';
+/**
+ * Nearby alerts from discoverNearby (no peer users queries, no peer coords).
+ * Shared interests are evaluated against the viewer's active profile mode only.
+ */
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { dbOnUserSnapshot, dbQueryVisibleUsers } from '../services/db';
+import { firebaseAuth } from '../config/firebaseConfig';
+import { dbOnUserSnapshot } from '../services/db';
 import {
-  FEET_PER_METER,
-  NEARBY_RADIUS_FT,
-  NEARBY_RADIUS_KM,
-} from '../config/proximityThresholds';
-const LOCATION_FRESH_MS = 5 * 60 * 1000;
+  buildDiscoverNearbyRequest,
+  isVisibilityDiscoveryClientError,
+} from '../visibility';
+import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
+import {
+  collectActiveModeInterestIds,
+  mapDiscoverResultsToInterestAlerts,
+  type AlertItem,
+  type AlertKind,
+  type NearbyAlertsViewerDoc,
+} from './nearbyAlertsMapping';
+
+export type { AlertItem, AlertKind };
+export {
+  collectActiveModeInterestIds,
+  mapDiscoverResultsToInterestAlerts,
+} from './nearbyAlertsMapping';
+
 const AUTO_REFRESH_MS = 30 * 1000;
 
-// ===== tipos =====
-export type AlertKind = 'interest_nearby';
+export type NearbyAlertsErrorKind = 'callable' | 'permission-denied' | 'unknown';
 
-export type AlertItem = {
-  id: string;
+type UserDoc = NearbyAlertsViewerDoc & {
   uid?: string;
-  name: string;
-  avatar?: string | null;
-  kind: AlertKind;
-  distanceFt?: number;
-  sharedInterests?: string[];
-  at: number;
-};
-
-type LocationDoc = { lat: number; lng: number; updatedAt?: number };
-
-type UserDoc = {
-  uid?: string;
-  realName?: string;
-  profileImage?: string | null;
   topBarColor?: string;
   visibility?: boolean;
-  location?: LocationDoc | null;
-  personalInterests?: string[];
-  professionalInterests?: string[];
-  mode?: 'personal' | 'professional';
-
-  birthYear?: number;
-  visibleToMinAge?: number | null;
-  visibleToMaxAge?: number | null;
-  blockedContacts?: string[];
-  email?: string;
-  phone?: string;
 };
 
-function shortName(full?: string) {
-  const s = (full || '').trim();
-  if (!s) return 'Unnamed';
-  const parts = s.split(/\s+/);
-  if (parts.length === 1) return s;
-  return `${parts[0]} ${parts[1][0]}.`;
+function classifyAlertsError(err: unknown): NearbyAlertsErrorKind {
+  if (isVisibilityDiscoveryClientError(err)) {
+    const code = String(err.code ?? '').toLowerCase();
+    if (code.includes('permission-denied') || code.includes('permission_denied')) {
+      return 'permission-denied';
+    }
+    return 'callable';
+  }
+  const code = String((err as { code?: string })?.code ?? '').toLowerCase();
+  if (code.includes('permission-denied') || code.includes('permission_denied')) {
+    return 'permission-denied';
+  }
+  return 'unknown';
 }
 
-function haversineKm(
-  a: { lat: number; lng: number },
-  b: { lat: number; lng: number },
-) {
-  const R = 6371;
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const lat1 = (a.lat * Math.PI) / 180;
-  const lat2 = (b.lat * Math.PI) / 180;
+export type NearbyAlertsState = {
+  loading: boolean;
+  alerts: AlertItem[];
+  topColor: string;
+  me: UserDoc | null;
+  errorKind: NearbyAlertsErrorKind | null;
+  refresh: () => Promise<void>;
+};
 
-  const sinDLat = Math.sin(dLat / 2);
-  const sinDLng = Math.sin(dLng / 2);
-
-  const c =
-    sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng;
-  const d = 2 * Math.atan2(Math.sqrt(c), Math.sqrt(1 - c));
-  return R * d;
-}
-
-function normalizeId(value?: string | null): string {
-  if (!value) return '';
-  return value.replace(/\s+/g, '').toLowerCase();
-}
-
-function isBlockedBetween(
-  myEmail?: string | null,
-  myPhone?: string | null,
-  myBlockedContacts?: string[] | null,
-  otherEmail?: string | null,
-  otherPhone?: string | null,
-  otherBlockedContacts?: string[] | null,
-) {
-  const meIds = [normalizeId(myEmail), normalizeId(myPhone)].filter(Boolean);
-  const otherIds = [normalizeId(otherEmail), normalizeId(otherPhone)].filter(
-    Boolean,
-  );
-
-  const myBlocked = (myBlockedContacts ?? []).map(normalizeId);
-  const otherBlocked = (otherBlockedContacts ?? []).map(normalizeId);
-
-  const iBlockedOther = otherIds.some((id) => myBlocked.includes(id));
-  const otherBlockedMe = meIds.some((id) => otherBlocked.includes(id));
-
-  return iBlockedOther || otherBlockedMe;
-}
-
-export function useNearbyAlerts() {
+export function useNearbyAlertsState(): NearbyAlertsState {
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [me, setMe] = useState<UserDoc | null>(null);
   const [topColor, setTopColor] = useState('#3B5A85');
+  const [errorKind, setErrorKind] = useState<NearbyAlertsErrorKind | null>(
+    null,
+  );
+  const [authUid, setAuthUid] = useState<string | null>(
+    () => firebaseAuth.currentUser?.uid ?? null,
+  );
+  /** Bumped on auth/mode/visibility/unmount so in-flight discoverNearby never applies. */
+  const requestGenerationRef = useRef(0);
 
-  const currentYear = useMemo(() => new Date().getFullYear(), []);
-
-  // ✅ mi perfil via db layer
   useEffect(() => {
-    const uid = firebaseAuth.currentUser?.uid;
-    if (!uid) {
-      setLoading(false);
-      setMe(null);
-      return;
-    }
-
-    const unsub = dbOnUserSnapshot(uid, (doc: UserDoc | null) => {
-      const data = (doc ?? null) as UserDoc | null;
-
-      if (data?.topBarColor) setTopColor(data.topBarColor);
-      setMe(data ? { ...data, uid } : null);
-      setLoading(false);
+    const unsub = firebaseAuth.onAuthStateChanged((user) => {
+      setAuthUid(user?.uid ?? null);
     });
-
-    return () => unsub?.();
+    return () => unsub();
   }, []);
 
-  const buildAlerts = useCallback(async () => {
-    const uid = firebaseAuth.currentUser?.uid;
-    if (!uid || !me) {
-      setAlerts([]);
-      return;
-    }
-
-    if (!me.visibility || !me.location?.lat || !me.location?.lng) {
-      setAlerts([]);
-      return;
-    }
-
-    try {
-      // usuarios visibles
-      const users = await dbQueryVisibleUsers(200);
-
-      const myPoint = { lat: me.location.lat, lng: me.location.lng };
-      const now = Date.now();
-
-      const myAge =
-        typeof me.birthYear === 'number' ? currentYear - me.birthYear : null;
-
-      const myInterests = new Set(
-        [
-          ...(me.personalInterests ?? []),
-          ...(me.professionalInterests ?? []),
-        ].map((x) => (x || '').toLowerCase()),
-      );
-
-      const authUser = firebaseAuth.currentUser;
-      const myEmail = authUser?.email ?? null;
-      const myPhone = me.phone ?? null;
-      const myBlockedContacts = me.blockedContacts ?? [];
-
-      const results: AlertItem[] = [];
-
-      for (const u of users as Array<UserDoc & { id?: string; uid?: string }>) {
-        const otherUid = (u as any).id || u.uid;
-        if (!otherUid || otherUid === uid) continue;
-
-        // bloqueos
-        if (
-          isBlockedBetween(
-            myEmail,
-            myPhone,
-            myBlockedContacts,
-            u.email ?? null,
-            u.phone ?? null,
-            u.blockedContacts ?? [],
-          )
-        )
-          continue;
-
-        // edades (doble sentido)
-        const theirAge =
-          typeof u.birthYear === 'number' ? currentYear - u.birthYear : null;
-
-        if (myAge !== null) {
-          if (u.visibleToMinAge && myAge < u.visibleToMinAge) continue;
-          if (u.visibleToMaxAge && myAge > u.visibleToMaxAge) continue;
-        }
-        if (theirAge !== null) {
-          if (me.visibleToMinAge && theirAge < me.visibleToMinAge) continue;
-          if (me.visibleToMaxAge && theirAge > me.visibleToMaxAge) continue;
-        }
-
-        // ubicación fresca
-        const loc = u.location;
-        if (!loc?.lat || !loc?.lng) continue;
-        if (loc.updatedAt && now - loc.updatedAt > LOCATION_FRESH_MS) continue;
-
-        // distancia
-        const km = haversineKm(myPoint, { lat: loc.lat, lng: loc.lng });
-        if (km > NEARBY_RADIUS_KM) continue;
-
-        const feet = km * 1000 * FEET_PER_METER;
-
-        // intereses compartidos
-        const otherInterests = new Set(
-          [
-            ...(u.personalInterests ?? []),
-            ...(u.professionalInterests ?? []),
-          ].map((x) => (x || '').toLowerCase()),
-        );
-
-        const shared: string[] = [];
-        otherInterests.forEach((tag) => {
-          if (myInterests.has(tag)) shared.push(tag);
-        });
-
-        // Alerts require shared interests (no contact matching in 2.0.8).
-        if (shared.length === 0) continue;
-
-        const kind: AlertKind = 'interest_nearby';
-
-        results.push({
-          id: `${otherUid}-${loc.updatedAt || now}`,
-          uid: otherUid,
-          name: shortName(u.realName),
-          avatar: u.profileImage ?? undefined,
-          kind,
-          distanceFt: Math.round(feet),
-          sharedInterests: shared.slice(0, 3),
-          at: loc.updatedAt || now,
-        });
-      }
-
-      results.sort((a, b) => (a.distanceFt ?? 0) - (b.distanceFt ?? 0));
-      setAlerts(results);
-    } catch (err) {
-      if (__DEV__)
-        console.warn('[useNearbyAlerts] failed to build alerts', err);
-      setAlerts([]);
-    }
-  }, [me, currentYear]);
-
   useEffect(() => {
-    if (!me) {
+    requestGenerationRef.current += 1;
+    if (!authUid) {
+      setLoading(false);
+      setMe(null);
       setAlerts([]);
+      setErrorKind(null);
       return;
     }
 
     setLoading(true);
-    buildAlerts().finally(() => setLoading(false));
+    const unsub = dbOnUserSnapshot(authUid, (doc: UserDoc | null) => {
+      const data = (doc ?? null) as UserDoc | null;
+      if (data?.topBarColor) setTopColor(data.topBarColor);
+      setMe(data ? { ...data, uid: authUid } : null);
+      setLoading(false);
+    });
+
+    return () => {
+      requestGenerationRef.current += 1;
+      unsub?.();
+    };
+  }, [authUid]);
+
+  const buildAlerts = useCallback(async () => {
+    const generation = ++requestGenerationRef.current;
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid || uid !== authUid || !me?.visibility) {
+      if (generation === requestGenerationRef.current) {
+        setAlerts([]);
+        setErrorKind(null);
+      }
+      return;
+    }
+
+    // Capture viewer snapshot for this generation (mode + interests at request time).
+    const viewer = me;
+
+    try {
+      const client = await getVisibilityDiscoveryClient();
+      const response = await client.discoverNearby(
+        buildDiscoverNearbyRequest({ limit: 50 }),
+      );
+      if (generation !== requestGenerationRef.current) return;
+      if (firebaseAuth.currentUser?.uid !== uid) return;
+
+      setAlerts(
+        mapDiscoverResultsToInterestAlerts(
+          response.results,
+          collectActiveModeInterestIds(viewer),
+          response.serverTime || Date.now(),
+          uid,
+        ),
+      );
+      setErrorKind(null);
+    } catch (err) {
+      if (generation !== requestGenerationRef.current) return;
+      if (__DEV__) {
+        console.warn('[useNearbyAlerts] discoverNearby failed', err);
+      }
+      setAlerts([]);
+      setErrorKind(classifyAlertsError(err));
+    }
+  }, [me, authUid]);
+
+  useEffect(() => {
+    if (!me || !authUid) {
+      setAlerts([]);
+      setErrorKind(null);
+      return;
+    }
+
+    // Mode / visibility / interest bags live on `me`; any change invalidates prior work.
+    setLoading(true);
+    buildAlerts().finally(() => {
+      // Only clear loading if this effect's generation is still current.
+      setLoading(false);
+    });
 
     const id = setInterval(() => {
       buildAlerts();
     }, AUTO_REFRESH_MS);
 
-    return () => clearInterval(id);
-  }, [me, buildAlerts]);
+    return () => {
+      requestGenerationRef.current += 1;
+      clearInterval(id);
+    };
+  }, [me, authUid, buildAlerts]);
 
-  return { loading, alerts, topColor, me, refresh: buildAlerts };
+  return { loading, alerts, topColor, me, errorKind, refresh: buildAlerts };
+}
+
+/** @deprecated Prefer NearbyAlertsProvider + useNearbyAlerts from context. */
+export function useNearbyAlerts(): NearbyAlertsState {
+  return useNearbyAlertsState();
 }

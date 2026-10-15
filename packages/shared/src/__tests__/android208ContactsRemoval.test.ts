@@ -166,34 +166,33 @@ describe('No UI promising contacts in 2.0.8', () => {
 describe('Alerts and badge keep working', () => {
   const hook = read('hooks/useNearbyAlerts.ts');
 
-  it('interest alerts: visible users, blocks, ages, freshness, distance, shared interests', () => {
-    assert.match(hook, /dbQueryVisibleUsers\(200\)/);
-    assert.match(hook, /isBlockedBetween\(/);
-    assert.match(hook, /visibleToMinAge/);
-    assert.match(hook, /LOCATION_FRESH_MS/);
-    assert.match(hook, /NEARBY_RADIUS_KM/);
-    assert.match(hook, /if \(shared\.length === 0\) continue;/);
-    assert.match(hook, /const kind: AlertKind = 'interest_nearby';/);
-    assert.match(hook, /return \{ loading, alerts, topColor, me, refresh: buildAlerts \};/);
+  it('interest alerts: discoverNearby + active-mode shared interests (no peer users query)', () => {
+    assert.match(hook, /discoverNearby/);
+    assert.match(hook, /buildDiscoverNearbyRequest/);
+    assert.doesNotMatch(hook, /dbQueryVisibleUsers/);
+    assert.match(hook, /collectActiveModeInterestIds/);
+    assert.match(hook, /mapDiscoverResultsToInterestAlerts/);
+    const mapping = read('hooks/nearbyAlertsMapping.ts');
+    assert.match(mapping, /interest_nearby/);
   });
 
-  it('tab badge still counts alerts', () => {
+  it('tab badge still counts alerts from shared provider', () => {
     const tabs = read('navigation/RootTabs.tsx');
+    assert.match(tabs, /NearbyAlertsProvider/);
     assert.match(tabs, /const \{ alerts \} = useNearbyAlerts\(\);/);
     assert.match(tabs, /alertsCount > 9 \? '9\+' : alertsCount/);
   });
 
-  it('Alerts screen and row copy are unchanged', () => {
+  it('Alerts screen and row copy keep interest messaging', () => {
     assert.match(read('screens/AlertsScreen.tsx'), /useNearbyAlerts\(\)/);
     const presentation = read('screens/alertsPresentation.ts');
     assert.match(presentation, /notifications\.messages\.interestNearby/);
     assert.match(presentation, /notifications\.messages\.nearbyOnly/);
   });
 
-  it('Android db layer keeps the reads Alerts need', () => {
+  it('Android db layer keeps own-profile snapshot for Alerts viewer state', () => {
     const db = read('services/db.android.ts');
     assert.match(db, /export function dbOnUserSnapshot|export async function dbOnUserSnapshot|dbOnUserSnapshot/);
-    assert.match(db, /export async function dbQueryVisibleUsers/);
   });
 });
 

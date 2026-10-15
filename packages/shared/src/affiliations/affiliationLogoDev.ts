@@ -24,12 +24,14 @@ export function isLogoDevPublishableKey(value?: string | null): boolean {
   return key.startsWith('pk_') && key.length > 6 && !key.startsWith('sk_');
 }
 
+/**
+ * True only for Logo.dev image URLs (ephemeral publishable-key tokens).
+ * Must NOT treat Firebase Storage download URLs (which also carry `token=`)
+ * as ephemeral — those are durable own-image uploads.
+ */
 export function isEphemeralProviderLogoUrl(url?: string | null): boolean {
   if (!url) return false;
-  return (
-    /img\.logo\.dev/i.test(url) ||
-    /[?&]token=/i.test(url)
-  );
+  return /img\.logo\.dev/i.test(url);
 }
 
 export function buildLogoDevImageUrl(
