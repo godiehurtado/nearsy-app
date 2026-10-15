@@ -26,6 +26,7 @@ import {
   buildCustomAffiliationId,
   getOnboardingAffiliationCategory,
   isDuplicateAffiliation,
+  isFreeTextAffiliationCategory,
   validateCustomAffiliationName,
   type OnboardingAffiliationCategoryId,
   type OnboardingSelectedAffiliation,
@@ -99,6 +100,7 @@ export function OnboardingAffiliationCategoryPanel({
   const { t } = useTranslation();
   const reduceMotion = useReducedMotion();
   const category = getOnboardingAffiliationCategory(categoryId);
+  const freeTextCategory = isFreeTextAffiliationCategory(categoryId);
 
   const [topicId, setTopicId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -127,15 +129,16 @@ export function OnboardingAffiliationCategoryPanel({
     () =>
       resolveAffiliationSearchUi({
         searchFocused,
-        pickedName,
+        pickedName: freeTextCategory ? null : pickedName,
         customName: trimmedQuery,
         customNameValid,
-        hasProviderResults: results.length > 0,
-        searchPending,
-        suggestionsUnavailable,
+        hasProviderResults: freeTextCategory ? false : results.length > 0,
+        searchPending: freeTextCategory ? false : searchPending,
+        suggestionsUnavailable: freeTextCategory ? false : suggestionsUnavailable,
         hasDraftImage: !!draftImage,
       }),
     [
+      freeTextCategory,
       searchFocused,
       pickedName,
       trimmedQuery,
@@ -154,6 +157,8 @@ export function OnboardingAffiliationCategoryPanel({
     providerId?: string | null;
   }): string | undefined {
     if (input.logoUrl?.trim()) return input.logoUrl.trim();
+    // Identity & Lifestyle never reconstructs Logo.dev logos for existing rows.
+    if (freeTextCategory) return undefined;
     return buildLogoDevImageUrl(
       domainFromAffiliationFields(input),
       publishableKey,
@@ -161,6 +166,13 @@ export function OnboardingAffiliationCategoryPanel({
   }
 
   useEffect(() => {
+    if (freeTextCategory) {
+      searchGenerationRef.current += 1;
+      setResults([]);
+      setSuggestionsUnavailable(false);
+      setSearchPending(false);
+      return;
+    }
     if (trimmedQuery.length < 2) {
       searchGenerationRef.current += 1;
       setResults([]);
@@ -190,7 +202,7 @@ export function OnboardingAffiliationCategoryPanel({
         });
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [trimmedQuery, categoryId]);
+  }, [trimmedQuery, categoryId, freeTextCategory]);
 
   const totalAdded = selected.length;
   const countLabel =
@@ -300,10 +312,13 @@ export function OnboardingAffiliationCategoryPanel({
     const validated = validateCustomAffiliationName(nameCandidate);
     if (validated.ok === false) return;
 
-    const matched = results.find(
-      (row) => row.name.toLowerCase() === validated.name.toLowerCase(),
-    );
+    const matched = freeTextCategory
+      ? undefined
+      : results.find(
+          (row) => row.name.toLowerCase() === validated.name.toLowerCase(),
+        );
     const explicitlyPicked =
+      !freeTextCategory &&
       !!pickedName &&
       !!matched &&
       matched.isQueryMatch !== true &&
@@ -326,7 +341,11 @@ export function OnboardingAffiliationCategoryPanel({
 
     const next: OnboardingSelectedAffiliation = {
       id: isCustom
-        ? buildCustomAffiliationId(categoryId, validated.name)
+        ? buildCustomAffiliationId(
+            categoryId,
+            validated.name,
+            selected.map((row) => row.id),
+          )
         : matched!.providerId,
       name: validated.name,
       categoryId,
@@ -336,7 +355,7 @@ export function OnboardingAffiliationCategoryPanel({
       ...(() => {
         const logoUrl = resolveInMemorySelectedLogoUrl(
           draftImage,
-          isCustom ? undefined : matched?.logoUrl,
+          isCustom || freeTextCategory ? undefined : matched?.logoUrl,
         );
         return logoUrl ? { logoUrl } : {};
       })(),
@@ -504,16 +523,25 @@ export function OnboardingAffiliationCategoryPanel({
           ]}
         >
           <Text style={[styles.topicEyebrow, { color: palette.chipText }]}>
-            {activeTopic?.label}
+            {activeTopic
+              ? t(
+                  `onboarding.profileCompletion.affiliations.topics.${activeTopic.id}` as any,
+                  { defaultValue: activeTopic.label },
+                )
+              : null}
           </Text>
           <View collapsable={false}>
             <TextInput
               ref={searchInputRef}
               accessibilityLabel={t(
-                'onboarding.profileCompletion.affiliations.searchA11y' as any,
+                freeTextCategory
+                  ? ('onboarding.profileCompletion.affiliations.identityFreeTextA11y' as any)
+                  : ('onboarding.profileCompletion.affiliations.searchA11y' as any),
               )}
               placeholder={t(
-                'onboarding.profileCompletion.affiliations.searchPlaceholder' as any,
+                freeTextCategory
+                  ? ('onboarding.profileCompletion.affiliations.identityFreeTextPlaceholder' as any)
+                  : ('onboarding.profileCompletion.affiliations.searchPlaceholder' as any),
               )}
               placeholderTextColor={palette.placeholder}
               value={query}
@@ -547,11 +575,15 @@ export function OnboardingAffiliationCategoryPanel({
 
           {searchHintVisible ? (
             <Text style={[styles.searchHint, { color: palette.textSecondary }]}>
-              {t('onboarding.profileCompletion.affiliations.searchHint' as any)}
+              {t(
+                freeTextCategory
+                  ? ('onboarding.profileCompletion.affiliations.identityFreeTextHint' as any)
+                  : ('onboarding.profileCompletion.affiliations.searchHint' as any),
+              )}
             </Text>
           ) : null}
 
-          {suggestionsUnavailable ? (
+          {!freeTextCategory && suggestionsUnavailable ? (
             <Text
               style={[
                 styles.searchUnavailable,
@@ -564,7 +596,7 @@ export function OnboardingAffiliationCategoryPanel({
             </Text>
           ) : null}
 
-          {results.length > 0 ? (
+          {!freeTextCategory && results.length > 0 ? (
             <ScrollView
               style={compactSearch ? styles.resultsScroll : styles.resultsIdle}
               contentContainerStyle={styles.results}
@@ -640,7 +672,9 @@ export function OnboardingAffiliationCategoryPanel({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t(
-                'onboarding.profileCompletion.affiliations.uploadA11y' as any,
+                freeTextCategory
+                  ? ('onboarding.profileCompletion.affiliations.identityUploadA11y' as any)
+                  : ('onboarding.profileCompletion.affiliations.uploadA11y' as any),
               )}
               onPress={() => {
                 void pickOwnLogo();
@@ -651,7 +685,11 @@ export function OnboardingAffiliationCategoryPanel({
               ]}
             >
               <Text style={{ color: palette.textSecondary, fontWeight: fontWeight.bold, fontSize: 12.5 }}>
-                {t('onboarding.profileCompletion.affiliations.upload' as any)}
+                {t(
+                  freeTextCategory
+                    ? ('onboarding.profileCompletion.affiliations.identityUpload' as any)
+                    : ('onboarding.profileCompletion.affiliations.upload' as any),
+                )}
               </Text>
             </Pressable>
           </View>

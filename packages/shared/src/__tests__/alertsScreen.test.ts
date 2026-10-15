@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url';
 import type { AlertItem } from '../hooks/useNearbyAlerts';
 import {
   buildAlertRowMessage,
-  formatAlertDistance,
   formatAlertRelativeTime,
   NOTIFICATION_AVATAR_SIZE,
 } from '../screens/alertsPresentation';
@@ -33,9 +32,6 @@ const t = (key: string, options?: Record<string, unknown>) => {
   }
   if (key === 'notifications.time.hours') {
     return `${options?.count}h`;
-  }
-  if (key === 'notifications.distance') {
-    return `${options?.count} ft`;
   }
   return key;
 };
@@ -80,9 +76,12 @@ describe('Alerts presentation helpers', () => {
     assert.equal(NOTIFICATION_AVATAR_SIZE, 38);
   });
 
-  it('formats distance when present', () => {
-    assert.equal(formatAlertDistance(200, t), '200 ft');
-    assert.equal(formatAlertDistance(undefined, t), null);
+  it('does not render numeric distance on Alerts rows', () => {
+    const screen = readShared('screens/AlertsScreen.tsx');
+    assert.doesNotMatch(screen, /formatAlertDistance/);
+    assert.doesNotMatch(screen, /distanceLabel/);
+    assert.doesNotMatch(screen, /item\.distanceFt/);
+    assert.doesNotMatch(screen, /notifications\.distance/);
   });
 });
 

@@ -478,11 +478,17 @@ const es: TranslationResources = {
         searchA11y: 'Buscar por nombre',
         searchPlaceholder: 'Buscar por nombre…',
         searchHint: 'Escribe al menos 2 caracteres — buscaremos el logo oficial.',
+        identityFreeTextA11y: 'Escribe una palabra o frase corta',
+        identityFreeTextPlaceholder: 'Escribe una palabra o frase corta…',
+        identityFreeTextHint:
+          'Agrega una palabra que te describa. La imagen es opcional.',
         add: 'Agregar',
         addA11y: 'Agregar {{name}}',
         removeA11y: 'Eliminar {{name}}',
         upload: 'Subir un logo',
         uploadA11y: 'Subir un logo',
+        identityUpload: 'Agregar una imagen opcional',
+        identityUploadA11y: 'Agregar una imagen opcional',
         usingOwnImage: 'Usando tu propia imagen',
         duplicate: 'Ya agregaste esta organización',
         suggestionsUnavailable:
@@ -504,6 +510,14 @@ const es: TranslationResources = {
           faith: 'Tu fe o camino espiritual.',
           political_civic: 'Vida cívica y afiliación política.',
           identity_lifestyle: 'Lo que da forma a quién eres.',
+        },
+        topics: {
+          cultural_background: 'Origen cultural',
+          hometown: 'Ciudad natal',
+          parent: 'Padre o madre',
+          pet_parent: 'Dueño de mascota',
+          veteran: 'Veterano',
+          personality_type: 'Tipo de personalidad',
         },
       },
       socialMedia: {

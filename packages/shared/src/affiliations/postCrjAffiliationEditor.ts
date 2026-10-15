@@ -129,7 +129,11 @@ export function legacyAffiliationItemsToOnboardingSelected(
     const categoryId =
       LEGACY_CATEGORY_TO_CRJ[item.category] ?? 'community';
     const candidate: OnboardingSelectedAffiliation = {
-      id: buildCustomAffiliationId(categoryId, name),
+      id: buildCustomAffiliationId(
+        categoryId,
+        name,
+        out.map((row) => row.id),
+      ),
       name,
       categoryId,
       source: 'custom',

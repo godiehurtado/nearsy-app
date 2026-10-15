@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { firebaseAuth } from '../config/firebaseConfig';
 import { getUserProfile, updateUserProfilePartial } from '../services/firestoreService';
+import { uploadAffiliationImage } from '../services/storageService';
 import { useTranslation } from '../i18n';
 import { useAppTheme } from '../theme/ThemeContext';
 import { spacing, screenPadding } from '../theme/spacing';
@@ -48,6 +49,10 @@ type RouteParams = {
 };
 
 type LoadState = 'loading' | 'ready' | 'error' | 'blocked';
+
+function isLocalAffiliationUri(value?: string | null): boolean {
+  return !!value && /^(file|content|ph|assets-library):/i.test(value);
+}
 
 export default function AffiliationsScreen() {
   const route = useRoute<any>();
@@ -227,9 +232,23 @@ export default function AffiliationsScreen() {
 
     try {
       setSaving(true);
-      const patch = buildPostCrjAffiliationPersistencePatch(editorMode, selected);
+      const resolved = await Promise.all(
+        selected.map(async (item) => {
+          if (item.logoUrl && isLocalAffiliationUri(item.logoUrl)) {
+            const logoUrl = await uploadAffiliationImage(
+              editorUid,
+              item.logoUrl,
+              item.categoryId,
+            );
+            return { ...item, logoUrl };
+          }
+          return item;
+        }),
+      );
+      setSelected(resolved);
+      const patch = buildPostCrjAffiliationPersistencePatch(editorMode, resolved);
       await updateUserProfilePartial(editorUid, patch);
-      snapshotRef.current = selected;
+      snapshotRef.current = resolved;
       Keyboard.dismiss();
       navigation.goBack();
     } catch (e: any) {

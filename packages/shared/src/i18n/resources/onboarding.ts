@@ -102,11 +102,17 @@ export default {
       searchA11y: 'Search by name',
       searchPlaceholder: 'Search by name…',
       searchHint: "Type at least 2 characters — we'll look up the official logo.",
+      identityFreeTextA11y: 'Enter a word or short phrase',
+      identityFreeTextPlaceholder: 'Enter a word or short phrase…',
+      identityFreeTextHint:
+        'Add a word that describes you. An image is optional.',
       add: 'Add',
       addA11y: 'Add {{name}}',
       removeA11y: 'Remove {{name}}',
       upload: 'Upload a logo instead',
       uploadA11y: 'Upload a logo instead',
+      identityUpload: 'Add an optional image',
+      identityUploadA11y: 'Add an optional image',
       usingOwnImage: 'Using your own image',
       duplicate: 'You already added this organization',
       suggestionsUnavailable:
@@ -128,6 +134,14 @@ export default {
         faith: 'Your faith or spiritual path.',
         political_civic: 'Civic life and political affiliation.',
         identity_lifestyle: 'What shapes who you are.',
+      },
+      topics: {
+        cultural_background: 'Cultural background',
+        hometown: 'Hometown',
+        parent: 'Parent',
+        pet_parent: 'Pet parent',
+        veteran: 'Veteran',
+        personality_type: 'Personality type',
       },
     },
     socialMedia: {

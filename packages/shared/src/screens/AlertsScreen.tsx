@@ -31,7 +31,6 @@ import {
 } from '../theme';
 import {
   buildAlertRowMessage,
-  formatAlertDistance,
   formatAlertRelativeTime,
   NOTIFICATION_AVATAR_SIZE,
 } from './alertsPresentation';
@@ -106,7 +105,6 @@ export default function AlertsScreen() {
 
   const renderItem = ({ item }: { item: AlertItem }) => {
     const message = rowMessage(item);
-    const distanceLabel = formatAlertDistance(item.distanceFt, t);
     const timeLabel = formatAlertRelativeTime(item.at, Date.now(), t);
 
     return (
@@ -156,11 +154,6 @@ export default function AlertsScreen() {
           >
             {message}
           </Text>
-          {distanceLabel ? (
-            <Text style={[styles.distance, { color: palette.textMuted }]}>
-              {distanceLabel}
-            </Text>
-          ) : null}
         </View>
 
         <Text style={[styles.time, { color: palette.textMuted }]}>
@@ -358,11 +351,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.base,
     fontWeight: fontWeight.semibold,
     lineHeight: fontSize.base * 1.35,
-  },
-  distance: {
-    marginTop: spacing.xxs,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.medium,
   },
   time: {
     fontSize: fontSize.xs,
