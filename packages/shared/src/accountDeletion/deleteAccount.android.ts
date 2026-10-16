@@ -14,6 +14,7 @@ import {
 } from '../config/appCheckBootstrap';
 import { isNearsyFacebookAuthConfigured } from '../config/facebookAuthConfig';
 import { clearPendingSocialProfilePrefill } from '../authentication/social';
+import { clearSocialPhotoCopySessionCache } from '../profile/socialProfilePhotoCopy';
 import {
   logOutFacebookSession,
   reauthenticateWithFacebook,
@@ -135,7 +136,10 @@ async function reauthenticateWithGoogle(): Promise<void> {
 async function cleanupAfterDeletion(uid: string): Promise<void> {
   resetLocationJourneySession();
   await runAccountDeletionCleanup(uid, {
-    clearSocialPrefill: () => clearPendingSocialProfilePrefill(),
+    clearSocialPrefill: () => {
+      clearPendingSocialProfilePrefill();
+      clearSocialPhotoCopySessionCache();
+    },
     closePublicationGate: () => closePublicationSession(),
     stopBackground: () => stopBackgroundLocation(),
     drainInFlightPublications: () => drainInFlightPublications(),

@@ -59,13 +59,13 @@ import {
   presentActiveProfileModeError,
   resyncProfessionalDiscoveryProjectionAfterSave,
 } from '../visibility/activeProfileModeSync';
-import { uploadProfileImage } from '../services/storageService';
 import {
   consumePendingSocialProfilePrefill,
   clearPendingSocialProfilePrefill,
   mergeCompleteProfilePrefill,
 } from '../authentication/social';
 import { resolveModePresentation, type ProfileMode } from '../profile/profileModeFields';
+import { resolvePersistedProfileImageUrl } from '../profile/socialProfilePhotoCopy.ts';
 import {
   buildOwnProfileSavePatch,
   buildPersistedOwnProfileDraftAfterUpload,
@@ -756,12 +756,17 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       const uid = getUid();
       if (!uid) throw new Error('User not authenticated.');
 
-      let uploadedImageUrl: string | null = null;
-      if (isLocalProfileImageUri(profileImage)) {
-        uploadedImageUrl = await uploadProfileImage(uid, profileImage!);
-      } else {
-        uploadedImageUrl = profileImage ?? null;
+      const resolved = await resolvePersistedProfileImageUrl(uid, profileImage);
+      if (resolved.ok === false) {
+        if (
+          resolved.reason === 'social_import_failed' ||
+          resolved.reason === 'session_stale'
+        ) {
+          throw new Error(t('profile.errors.socialImportFailed'));
+        }
+        throw new Error(t('profile.validation.profileImage'));
       }
+      const uploadedImageUrl = resolved.url;
 
       if (!uploadedImageUrl || isLocalProfileImageUri(uploadedImageUrl)) {
         throw new Error(t('profile.validation.profileImage'));

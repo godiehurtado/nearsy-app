@@ -8,7 +8,6 @@ import {
   AppState,
   type AppStateStatus,
   FlatList,
-  Image,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -34,6 +33,7 @@ import {
 import { subtleShadow } from '../theme/shadows';
 import { NearbyInterestIconRow } from '../components/visibility/NearbyInterestIconRow';
 import { AlignmentScoreRing } from '../components/alignment/AlignmentScoreRing';
+import { ProfileAvatarImage } from '../components/ProfileAvatarImage';
 import {
   isVisibilityDiscoveryClientError,
   toAlignment,
@@ -441,19 +441,21 @@ export default function NearbySearchScreen() {
       >
         <View style={styles.cardTopRow}>
           <View style={styles.avatarWrap}>
-            {p.profileImage ? (
-              <Image source={{ uri: p.profileImage }} style={styles.avatar} />
-            ) : (
-              <View
-                style={[styles.avatar, { backgroundColor: palette.chipBg }]}
-              >
-                <Ionicons
-                  name="person"
-                  size={24}
-                  color={palette.textMuted}
-                />
-              </View>
-            )}
+            <ProfileAvatarImage
+              uri={p.profileImage}
+              style={styles.avatar}
+              fallback={
+                <View
+                  style={[styles.avatar, { backgroundColor: palette.chipBg }]}
+                >
+                  <Ionicons
+                    name="person"
+                    size={24}
+                    color={palette.textMuted}
+                  />
+                </View>
+              }
+            />
             <View
               style={[
                 styles.nearDot,

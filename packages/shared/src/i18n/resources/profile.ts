@@ -102,6 +102,8 @@ const en = {
   errors: {
     saveFailed: 'Could not save profile.',
     uploadFailed: 'Could not upload profile photo.',
+    socialImportFailed:
+      'We could not import your social profile photo. Choose a photo from your camera or library to continue.',
     pickImage: 'Could not pick image.',
     openCamera: 'Could not open camera.',
   },
@@ -343,6 +345,8 @@ const es = {
     errors: {
       saveFailed: 'No se pudo guardar el perfil.',
       uploadFailed: 'No se pudo subir la foto de perfil.',
+      socialImportFailed:
+        'No pudimos importar tu foto de perfil social. Elige una foto con la cámara o la galería para continuar.',
       pickImage: 'No se pudo elegir la imagen.',
       openCamera: 'No se pudo abrir la cámara.',
     },

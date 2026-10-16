@@ -39,12 +39,12 @@ export function mapSocialNameToRealName(
 }
 
 /**
- * Accept only http(s) remote image URLs for optional profile photo preview (TS-008 v1.1).
+ * Accept only http(s) remote image URLs for optional profile photo preview.
  *
- * Google avatars are used as remote HTTPS prefills only. They are not copied into
- * Firebase Storage. The URL is written to Firestore `profileImage` only when the
- * user saves CompleteProfile. Existing non-empty profile images always win.
- * A future enhancement may copy provider avatars into Nearsy-managed Storage.
+ * Provider avatars may be shown as HTTPS prefills. On profile save (CRJ /
+ * Own Profile), auth-provider photos are downloaded and copied into
+ * users/{uid}/ via uploadProfileImage when eligible. Existing non-empty
+ * profile images always win at merge time.
  */
 export function sanitizeSocialPhotoUrl(value: unknown): string | undefined {
   const url = trimOrEmpty(value);
