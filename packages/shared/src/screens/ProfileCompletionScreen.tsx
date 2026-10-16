@@ -15,7 +15,6 @@ import {
   Pressable,
   StyleSheet,
   ScrollView,
-  Image,
   Alert,
   Linking,
   Platform,
@@ -89,7 +88,9 @@ import {
   clearCrjVisibilitySession,
   markCrjVisibilityActivationSucceeded,
 } from '../visibility/crjVisibilityProvisional';
-import { uploadProfileImage, uploadAffiliationImage, uploadGalleryImage, deleteGalleryStorageObject } from '../services/storageService';
+import { uploadAffiliationImage, uploadGalleryImage, deleteGalleryStorageObject } from '../services/storageService';
+import { resolvePersistedProfileImageUrl } from '../profile/socialProfilePhotoCopy.ts';
+import { ProfileAvatarImage } from '../components/ProfileAvatarImage';
 import {
   commitPendingSocialNamePrefill,
   clearPendingSocialProfilePrefill,
@@ -889,10 +890,17 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   async function persistPhoto() {
     if (!uid || !mode || !photoUri) return;
 
-    let imageUrl = photoUri;
-    if (isLocalUri(photoUri)) {
-      imageUrl = await uploadProfileImage(uid, photoUri);
+    const resolved = await resolvePersistedProfileImageUrl(uid, photoUri);
+    if (resolved.ok === false) {
+      if (
+        resolved.reason === 'social_import_failed' ||
+        resolved.reason === 'session_stale'
+      ) {
+        throw new Error(t('profile.errors.socialImportFailed'));
+      }
+      throw new Error(t('onboarding.profileCompletion.info.photoRequired'));
     }
+    const imageUrl = resolved.url;
 
     const patch = buildActiveProfileSavePatch({
       mode,
@@ -2042,23 +2050,25 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               </Text>
 
               <View style={styles.avatarWrap}>
-                {photoUri ? (
-                  <Image source={{ uri: photoUri }} style={styles.avatar} />
-                ) : (
-                  <View
-                    style={[
-                      styles.avatar,
-                      styles.avatarPlaceholder,
-                      { backgroundColor: palette.chipBg },
-                    ]}
-                  >
-                    <Ionicons
-                      name="person-outline"
-                      size={48}
-                      color={palette.textMuted}
-                    />
-                  </View>
-                )}
+                <ProfileAvatarImage
+                  uri={photoUri}
+                  style={styles.avatar}
+                  fallback={
+                    <View
+                      style={[
+                        styles.avatar,
+                        styles.avatarPlaceholder,
+                        { backgroundColor: palette.chipBg },
+                      ]}
+                    >
+                      <Ionicons
+                        name="person-outline"
+                        size={48}
+                        color={palette.textMuted}
+                      />
+                    </View>
+                  }
+                />
               </View>
 
               <View style={styles.photoActions}>
@@ -2335,9 +2345,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               <View style={styles.markWrap}>
                 <AnimatedNearsyLogo size={54} />
               </View>
-              {photoUri ? (
-                <Image source={{ uri: photoUri }} style={styles.successAvatar} />
-              ) : null}
+              <ProfileAvatarImage
+                uri={photoUri}
+                style={styles.successAvatar}
+                fallback={null}
+              />
               <Text
                 style={[
                   styles.title,

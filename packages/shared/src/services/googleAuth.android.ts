@@ -117,6 +117,10 @@ export function ensureGoogleSignInConfigured(): string {
   }
 
   try {
+    // profileImageSize exists on ConfigureParams but is iOS-ONLY in
+    // @react-native-google-signin/google-signin — do not set it on Android.
+    // Android receives whatever size Google returns in user.photo; we keep
+    // that URL for preview and copy it into Storage on profile save.
     GoogleSignin.configure({
       webClientId,
       offlineAccess: false,

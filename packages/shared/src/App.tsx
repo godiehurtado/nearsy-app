@@ -34,6 +34,10 @@ import {
   bindPublicationSession,
   closePublicationSession,
 } from './location/publicationSession';
+import {
+  bindSocialPhotoCopySession,
+  clearSocialPhotoCopySessionCache,
+} from './profile/socialProfilePhotoCopy';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -82,6 +86,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
     const unsubscribe = firebaseAuth.onAuthStateChanged(
       async (user: any | null) => {
         if (!user) {
+          clearSocialPhotoCopySessionCache();
           closePublicationSession();
           if (Platform.OS !== 'web') {
             await stopBackgroundLocation().catch(() => {});
@@ -89,6 +94,8 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
           resetLocationJourneySession();
           return;
         }
+
+        bindSocialPhotoCopySession(user.uid);
 
         if (Platform.OS === 'web') return;
 

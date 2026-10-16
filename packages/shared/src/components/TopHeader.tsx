@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ProfileAvatarImage } from './ProfileAvatarImage';
 
 export type TopBarMode = 'color' | 'image';
 
@@ -126,15 +127,15 @@ export default function TopHeader({
 
       {/* Avatar circular colgando */}
       {showAvatar && (
-        <>
-          {profileImage ? (
-            <Image source={{ uri: profileImage }} style={styles.avatar} />
-          ) : (
+        <ProfileAvatarImage
+          uri={profileImage}
+          style={styles.avatar}
+          fallback={
             <View style={[styles.avatar, styles.avatarPlaceholder]}>
               <Ionicons name="person" size={140} color="#9CA3AF" />
             </View>
-          )}
-        </>
+          }
+        />
       )}
     </View>
   );
