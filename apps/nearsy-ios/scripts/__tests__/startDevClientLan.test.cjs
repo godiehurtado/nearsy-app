@@ -33,4 +33,11 @@ describe('start-dev-client LAN fallback', () => {
     assert.match(source, /Emulator host is set/);
     assert.match(source, /functionsMode/);
   });
+
+  it('forwards --clear / --reset-cache to expo start', () => {
+    assert.match(source, /wantsMetroCacheClear/);
+    assert.match(source, /argv\.includes\('--clear'\)/);
+    assert.match(source, /argv\.includes\('--reset-cache'\)/);
+    assert.match(source, /expoArgs\.push\('--clear'\)/);
+  });
 });

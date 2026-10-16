@@ -105,12 +105,50 @@ export const uploadProfileImage = async (
   } catch (error) {
     if (__DEV__) {
       console.warn('uploadProfileImage error:', error);
-      console.warn('uploadProfileImage uri:', uri);
+      // Never log remote/signed URLs or tokens outside __DEV__.
+      console.warn('uploadProfileImage uri kind:', uri.split(':')[0]);
       console.warn('uploadProfileImage storageWeb exists:', !!storageWeb);
     }
     throw error;
   }
 };
+
+/**
+ * Upload an in-memory profile image blob under users/{uid}/.
+ * Used by social-photo import after an allowlisted HTTPS fetch (no local temp file).
+ */
+export async function uploadProfileImageBlob(
+  uid: string,
+  blob: Blob,
+  options?: { contentType?: string; extension?: string },
+): Promise<string> {
+  if (!storageWeb) {
+    throw new Error('Firebase storage is not initialized.');
+  }
+  if (!uid?.trim()) {
+    throw new Error('User id is required.');
+  }
+
+  const ext = (options?.extension || 'jpg').toLowerCase();
+  const contentType =
+    options?.contentType || getContentTypeFromExtension(ext);
+  const path = `users/${uid}/${uid}_${Date.now()}.${ext}`;
+  const fileRef = ref(storageWeb, path);
+
+  try {
+    await uploadBytes(fileRef, blob, { contentType });
+    return await getDownloadURL(fileRef);
+  } finally {
+    const closable = blob as unknown as { close?: () => void };
+    if (typeof closable.close === 'function') {
+      try {
+        closable.close();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
 
 /** Sube una imagen a la galería según el modo */
 export async function uploadGalleryImage(

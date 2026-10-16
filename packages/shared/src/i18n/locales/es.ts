@@ -1094,6 +1094,8 @@ const es: TranslationResources = {
       uploadFailed: 'No se pudo subir la foto de perfil.',
       pickImage: 'No se pudo elegir la imagen.',
       openCamera: 'No se pudo abrir la cámara.',
+      socialPhotoImportFailed:
+        'No pudimos importar tu foto social. Elige una de tu galería o toma una.',
     },
     photo: {
       title: 'Foto de perfil',

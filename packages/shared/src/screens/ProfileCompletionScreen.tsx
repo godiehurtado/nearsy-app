@@ -15,7 +15,6 @@ import {
   Pressable,
   StyleSheet,
   ScrollView,
-  Image,
   Alert,
   Linking,
 } from 'react-native';
@@ -32,6 +31,7 @@ import { FormInput } from '../components/registration/FormInput';
 import { CitySearchField } from '../components/profile/CitySearchField';
 import { CountrySearchField } from '../components/profile/CountrySearchField';
 import { LanguageMultiSelectField } from '../components/profile/LanguageMultiSelectField';
+import ProfileAvatarImage from '../components/profile/ProfileAvatarImage';
 import { OnboardingInterestCategoryPanel } from '../components/registration/OnboardingInterestCategoryPanel';
 import { OnboardingAffiliationCategoryPanel } from '../components/registration/OnboardingAffiliationCategoryPanel';
 import { OnboardingSocialMediaStep } from '../components/registration/OnboardingSocialMediaStep';
@@ -88,7 +88,8 @@ import {
   type CrjLocationStepEvent,
   type CrjLocationStepState,
 } from '../visibility/crjLocationFlow';
-import { uploadProfileImage, uploadAffiliationImage, uploadGalleryImage, deleteGalleryStorageObject } from '../services/storageService';
+import { uploadAffiliationImage, uploadGalleryImage, deleteGalleryStorageObject } from '../services/storageService';
+import { resolveProfileImageForPersistence } from '../profile/socialProfilePhotoImport';
 import { registerPushToken } from '../services/pushTokens';
 import {
   commitPendingSocialNamePrefill,
@@ -238,7 +239,14 @@ function isLocalUri(value?: string | null) {
   return !!value && /^(file|content|ph|assets-library):/i.test(value);
 }
 
-/** Fallback photo from Firebase Auth / Google providerData (HTTPS only). */
+const AUTH_PROVIDER_PHOTO_IDS = new Set([
+  'google.com',
+  'facebook.com',
+  'oidc.linkedin',
+  'linkedin.com',
+]);
+
+/** Fallback photo from Firebase Auth / admitted social providerData (HTTPS only). */
 function resolveAuthProviderPhotoUrl(): string | null {
   const user = firebaseAuth.currentUser;
   if (!user) return null;
@@ -247,10 +255,9 @@ function resolveAuthProviderPhotoUrl(): string | null {
   if (fromUser) return fromUser;
 
   for (const provider of user.providerData ?? []) {
-    if (provider.providerId === 'google.com') {
-      const fromProvider = sanitizeSocialPhotoUrl(provider.photoURL);
-      if (fromProvider) return fromProvider;
-    }
+    if (!AUTH_PROVIDER_PHOTO_IDS.has(provider.providerId)) continue;
+    const fromProvider = sanitizeSocialPhotoUrl(provider.photoURL);
+    if (fromProvider) return fromProvider;
   }
   return null;
 }
@@ -825,10 +832,31 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   async function persistPhoto() {
     if (!uid || !mode || !photoUri) return;
 
-    let imageUrl = photoUri;
-    if (isLocalUri(photoUri)) {
-      imageUrl = await uploadProfileImage(uid, photoUri);
+    const requestedUri = photoUri;
+    let resolved = await resolveProfileImageForPersistence(uid, requestedUri);
+
+    // If the user picked a local photo while a social import was still pending,
+    // the local choice wins — never persist the late provider copy.
+    const latest = wizardPhotoRef.current?.trim() || null;
+    if (
+      latest &&
+      latest !== requestedUri &&
+      isLocalUri(latest)
+    ) {
+      resolved = await resolveProfileImageForPersistence(uid, latest);
     }
+
+    if (resolved.ok === false) {
+      // Keep the preview URI so the user can pick manually; never write a
+      // nonexistent Storage reference.
+      const failedUri = latest && isLocalUri(latest) ? latest : requestedUri;
+      throw new Error(
+        isLocalUri(failedUri)
+          ? t('profile.errors.uploadFailed')
+          : t('profile.errors.socialPhotoImportFailed'),
+      );
+    }
+    const imageUrl = resolved.url;
 
     const patch = buildActiveProfileSavePatch({
       mode,
@@ -2036,30 +2064,22 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               </Text>
 
               <View style={styles.avatarWrap}>
-                {photoUri ? (
-                  <Image source={{ uri: photoUri }} style={styles.avatar} />
-                ) : (
-                  <View
-                    style={[
-                      styles.avatar,
-                      styles.avatarPlaceholder,
-                      { backgroundColor: palette.chipBg },
-                    ]}
-                  >
-                    <Ionicons
-                      name="person-outline"
-                      size={48}
-                      color={palette.textMuted}
-                    />
-                  </View>
-                )}
+                <ProfileAvatarImage
+                  uri={photoUri}
+                  style={styles.avatar}
+                  placeholderStyle={{ backgroundColor: palette.chipBg }}
+                  iconSize={48}
+                  iconColor={palette.textMuted}
+                />
               </View>
 
               <View style={styles.photoActions}>
                 <View style={{ flex: 1 }}>
                   <SecondaryButton
                     label={t('onboarding.profileCompletion.info.takePhoto')}
+                    disabled={submitting}
                     onPress={() => {
+                      if (submitting) return;
                       void takePhoto();
                     }}
                   />
@@ -2067,7 +2087,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                 <View style={{ flex: 1 }}>
                   <SecondaryButton
                     label={t('onboarding.profileCompletion.info.uploadPhoto')}
+                    disabled={submitting}
                     onPress={() => {
+                      if (submitting) return;
                       void pickFromLibrary();
                     }}
                   />
@@ -2327,7 +2349,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                 <AnimatedNearsyLogo size={54} />
               </View>
               {photoUri ? (
-                <Image source={{ uri: photoUri }} style={styles.successAvatar} />
+                <ProfileAvatarImage
+                  uri={photoUri}
+                  style={styles.successAvatar}
+                  iconSize={36}
+                  iconColor={palette.textMuted}
+                />
               ) : null}
               <Text
                 style={[

@@ -121,6 +121,9 @@ export function createGoogleProviderAdapter(): SocialAuthenticationProviderAdapt
         iosClientId: config.iosClientId,
         scopes: [...config.scopes],
         offlineAccess: false,
+        // iOS-only library option. Requests a larger Google avatar when available;
+        // does not guarantee 1024 delivery. Storage copy uses the returned URL as-is.
+        profileImageSize: 1024,
       });
 
       configured = true;

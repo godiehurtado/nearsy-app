@@ -2,7 +2,6 @@ import React from 'react';
 import {
   View,
   Text,
-  Image,
   Pressable,
   StyleSheet,
 } from 'react-native';
@@ -13,6 +12,7 @@ import { spacing, screenPadding } from '../../theme/spacing';
 import { fontSize, fontWeight } from '../../theme/typography';
 import { cardShadow } from '../../theme/shadows';
 import ModeSwitch, { type ProfileModeValue } from '../ModeSwitch';
+import ProfileAvatarImage from './ProfileAvatarImage';
 
 type Props = {
   profileImage: string | null;
@@ -63,33 +63,20 @@ export default function OwnProfileHero({
     >
       <View style={styles.heroRow}>
         <View style={styles.avatarWrap}>
-          {profileImage ? (
-            <Image
-              source={{ uri: profileImage }}
-              style={[
-                styles.avatar,
-                { borderColor: palette.borderStrong },
-              ]}
-              accessibilityIgnoresInvertColors
-            />
-          ) : (
-            <View
-              style={[
-                styles.avatar,
-                styles.avatarPlaceholder,
-                {
-                  backgroundColor: palette.chipBg,
-                  borderColor: palette.borderStrong,
-                },
-              ]}
-            >
-              <Ionicons
-                name="person"
-                size={40}
-                color={palette.textMuted}
-              />
-            </View>
-          )}
+          <ProfileAvatarImage
+            uri={profileImage}
+            style={[
+              styles.avatar,
+              { borderColor: palette.borderStrong },
+            ]}
+            placeholderStyle={{
+              backgroundColor: palette.chipBg,
+              borderColor: palette.borderStrong,
+            }}
+            iconSize={40}
+            iconColor={palette.textMuted}
+            accessibilityIgnoresInvertColors
+          />
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={changePhotoA11y}
@@ -167,10 +154,6 @@ const styles = StyleSheet.create({
     height: AVATAR_SIZE,
     borderRadius: AVATAR_SIZE / 2,
     borderWidth: 2,
-  },
-  avatarPlaceholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   photoButton: {
     position: 'absolute',

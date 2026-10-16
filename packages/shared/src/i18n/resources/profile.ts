@@ -99,6 +99,8 @@ export default {
     uploadFailed: 'Could not upload profile photo.',
     pickImage: 'Could not pick image.',
     openCamera: 'Could not open camera.',
+    socialPhotoImportFailed:
+      'We could not import your social photo. Choose a photo from your library or take one.',
   },
   photo: {
     title: 'Profile photo',

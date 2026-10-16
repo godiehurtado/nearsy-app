@@ -47,7 +47,7 @@ import {
   setActiveProfileModeFlow,
   shouldResyncProfessionalActiveModeAfterSave,
 } from '../visibility/activeProfileModeSync';
-import { uploadProfileImage } from '../services/storageService';
+import { resolveProfileImageForPersistence } from '../profile/socialProfilePhotoImport';
 import {
   consumePendingSocialProfilePrefill,
   clearPendingSocialProfilePrefill,
@@ -193,6 +193,12 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     useState<OwnProfileLifecycleAuth>('unresolved');
   const bypassDirtyNavigationRef = useRef(false);
   const saveFlightRef = useRef(createSingleFlight());
+  const profileImageRef = useRef<string | null>(null);
+
+  const setProfileImageTracked = useCallback((uri: string | null) => {
+    profileImageRef.current = uri;
+    setProfileImage(uri);
+  }, []);
 
   const applyDraftToForm = useCallback((draft: OwnProfileDraft) => {
     setRealName(draft.realName);
@@ -200,6 +206,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     setOccupation(draft.occupation);
     setBio(draft.bio);
     setCompany(draft.company);
+    profileImageRef.current = draft.profileImage;
     setProfileImage(draft.profileImage);
     setBirthCountryCode(draft.birthCountryCode);
     setCurrentCity(draft.currentCity);
@@ -564,7 +571,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         quality: 0.8,
       });
       if (!result.canceled && result.assets.length > 0) {
-        setProfileImage(result.assets[0].uri);
+        setProfileImageTracked(result.assets[0].uri);
       }
     } catch {
       Alert.alert(t('common.error'), t('profile.errors.pickImage'));
@@ -588,7 +595,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         quality: 0.8,
       });
       if (!result.canceled && result.assets.length > 0) {
-        setProfileImage(result.assets[0].uri);
+        setProfileImageTracked(result.assets[0].uri);
       }
     } catch {
       Alert.alert(t('common.error'), t('profile.errors.openCamera'));
@@ -596,7 +603,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   };
 
   const openProfileImageOptions = () => {
-    if (!editorWritable) return;
+    if (!editorWritable || isLoading) return;
     Alert.alert(t('profile.photo.title'), t('profile.photo.body'), [
       { text: t('profile.photo.take'), onPress: takeProfilePhoto },
       { text: t('profile.photo.library'), onPress: pickImage },
@@ -795,19 +802,42 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       const uid = getUid();
       if (!uid) throw new Error('User not authenticated.');
 
-      let uploadedImageUrl: string | null = null;
-      if (isLocalProfileImageUri(profileImage)) {
-        uploadedImageUrl = await uploadProfileImage(uid, profileImage!);
-      } else {
-        uploadedImageUrl = profileImage ?? null;
+      const requestedUri = profileImage;
+      let resolved = await resolveProfileImageForPersistence(uid, requestedUri);
+
+      // Local pick wins over a late social import that started with the prior URI.
+      const latest = profileImageRef.current;
+      if (
+        latest &&
+        latest !== requestedUri &&
+        isLocalProfileImageUri(latest)
+      ) {
+        resolved = await resolveProfileImageForPersistence(uid, latest);
       }
 
-      if (!uploadedImageUrl || isLocalProfileImageUri(uploadedImageUrl)) {
+      if (resolved.ok === false) {
+        throw new Error(
+          resolved.reason === 'empty'
+            ? t('profile.validation.profileImage')
+            : isLocalProfileImageUri(latest ?? requestedUri)
+              ? t('profile.errors.uploadFailed')
+              : t('profile.errors.socialPhotoImportFailed'),
+        );
+      }
+      const uploadedImageUrl = resolved.url;
+
+      if (
+        !uploadedImageUrl ||
+        isLocalProfileImageUri(uploadedImageUrl)
+      ) {
         throw new Error(t('profile.validation.profileImage'));
       }
 
       const persistedDraft = buildPersistedOwnProfileDraftAfterUpload(
-        editorDraft,
+        {
+          ...editorDraft,
+          profileImage: latest ?? requestedUri,
+        },
         uploadedImageUrl,
       );
       const modePatch = buildOwnProfileSavePatch({
@@ -1088,7 +1118,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 changePhotoLabel={t('profile.changePhoto')}
                 changePhotoA11y={t('profile.changePhotoA11y')}
                 modeSwitchA11y={t('profile.mode.switchA11y')}
-                editorWritable={editorWritable}
+                editorWritable={editorWritable && !isLoading}
                 modeSwitchLoading={modeSwitchLoading}
                 onChangePhoto={openProfileImageOptions}
                 onToggleMode={handleToggleMode}

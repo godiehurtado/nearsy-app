@@ -147,6 +147,16 @@ export default function AppNavigator() {
           clearActiveProfileModeConfirmation();
           // Drop CRJ provisional so a later session never inherits Active.
           clearCrjVisibilityActivationHandoff('logout');
+          // Drop social-photo import cache + pending prefill so the next
+          // account never reuses a prior uid's in-flight/success responses.
+          const { clearSocialProfilePhotoImportCache } = await import(
+            '../profile/socialProfilePhotoImport'
+          );
+          clearSocialProfilePhotoImportCache();
+          const { clearPendingSocialProfilePrefill } = await import(
+            '../authentication/social'
+          );
+          clearPendingSocialProfilePrefill();
           setUid(null);
           setUserEmail(null);
           setNeedsCompleteProfile(false);
