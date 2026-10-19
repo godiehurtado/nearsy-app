@@ -230,5 +230,40 @@ export default {
       stay: 'Keep editing',
       discard: 'Discard',
     },
+    youtube: {
+      connect: 'Connect YouTube',
+      connectA11y: 'Connect a YouTube channel for this profile',
+      connecting: 'Connecting…',
+      disconnect: 'Disconnect',
+      disconnectA11y: 'Disconnect YouTube from this profile',
+      disconnecting: 'Disconnecting…',
+      connected: 'Connected',
+      notConnected: 'Not connected',
+      retry: 'Try again',
+      legacyStored:
+        'A previous YouTube link is stored on your profile but is not verified for public display.',
+      selectChannelTitle: 'Choose a channel',
+      selectChannelBody: 'Select the YouTube channel to connect.',
+      unlinkConfirmTitle: 'Disconnect YouTube?',
+      unlinkConfirmBody:
+        'This disconnects YouTube from this profile. You can connect again anytime.',
+      errors: {
+        notEnabled: 'YouTube connection is not available right now.',
+        noChannel: 'No YouTube channel was found for this Google account.',
+        channelClaimed:
+          'That YouTube channel is already connected on another Nearsy account.',
+        channelNotInCandidates: 'Choose a channel from the list and try again.',
+        notLinked: 'Connect YouTube before changing this setting.',
+        txExpired: 'Connection expired. Start again.',
+        txInvalid: 'Connection could not continue. Start again.',
+        proofInvalid: 'Connection proof failed. Start again.',
+        unauthenticated: 'Sign in again to connect YouTube.',
+        cancelled: 'YouTube connection was cancelled.',
+        sessionChanged:
+          'Your signed-in account changed during connection. Start again.',
+        network: 'Network error. Check your connection and try again.',
+        generic: 'We could not connect YouTube. Try again.',
+      },
+    },
   },
 } as const;

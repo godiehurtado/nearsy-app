@@ -103,11 +103,22 @@ export function isPostCrjSocialEditorDirty(
   return !arePostCrjSocialDraftsEqual(snapshot, draft);
 }
 
+export type SocialConnectionCountOptions = {
+  /**
+   * When true, count verified YouTube ownership as one connection and skip the
+   * legacy bag URL so Connect + legacy do not double-count.
+   */
+  youtubeConnected?: boolean;
+};
+
 export function countValidPostCrjSocialConnections(
   draft: PostCrjSocialEditorDraft,
+  options?: SocialConnectionCountOptions,
 ): number {
+  const youtubeConnected = options?.youtubeConnected === true;
   let count = 0;
   for (const platform of CRJ_SOCIAL_PLATFORMS) {
+    if (platform.id === 'youtube' && youtubeConnected) continue;
     if (!draft.connected[platform.id]) continue;
     const result = normalizeSocialInput(
       platform.id,
@@ -119,6 +130,7 @@ export function countValidPostCrjSocialConnections(
     const websiteResult = normalizeCustomNetworkUrl(draft.website);
     if (websiteResult.ok && websiteResult.url) count += 1;
   }
+  if (youtubeConnected) count += 1;
   return count;
 }
 
@@ -181,9 +193,14 @@ export function buildValuesForPostCrjSocialSave(
   return values;
 }
 
-export function countConfiguredSocialLinksInBag(links: SocialLinks): number {
+export function countConfiguredSocialLinksInBag(
+  links: SocialLinks,
+  options?: SocialConnectionCountOptions,
+): number {
+  const youtubeConnected = options?.youtubeConnected === true;
   let count = 0;
   for (const platform of CRJ_SOCIAL_PLATFORMS) {
+    if (platform.id === 'youtube' && youtubeConnected) continue;
     const stored = links[platform.storageKey];
     if (typeof stored === 'string' && stored.trim()) {
       count += 1;
@@ -192,18 +209,27 @@ export function countConfiguredSocialLinksInBag(links: SocialLinks): number {
   if (typeof links.website === 'string' && links.website.trim()) {
     count += 1;
   }
+  if (youtubeConnected) count += 1;
   return count;
 }
 
+export type OwnProfileSocialSummaryCountOptions = {
+  personalYoutubeConnected?: boolean;
+  professionalYoutubeConnected?: boolean;
+};
+
 export function extractOwnProfileSocialSummaryCounts(
   data: Record<string, unknown> | null | undefined,
+  options?: OwnProfileSocialSummaryCountOptions,
 ): { personal: number; professional: number } {
   return {
     personal: countConfiguredSocialLinksInBag(
       readExistingSocialLinks(data, 'personal'),
+      { youtubeConnected: options?.personalYoutubeConnected === true },
     ),
     professional: countConfiguredSocialLinksInBag(
       readExistingSocialLinks(data, 'professional'),
+      { youtubeConnected: options?.professionalYoutubeConnected === true },
     ),
   };
 }

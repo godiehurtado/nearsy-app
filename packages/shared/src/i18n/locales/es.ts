@@ -1226,6 +1226,43 @@ const es: TranslationResources = {
         stay: 'Seguir editando',
         discard: 'Descartar',
       },
+      youtube: {
+        connect: 'Conectar YouTube',
+        connectA11y: 'Conectar un canal de YouTube para este perfil',
+        connecting: 'Conectando…',
+        disconnect: 'Desconectar',
+        disconnectA11y: 'Desconectar YouTube de este perfil',
+        disconnecting: 'Desconectando…',
+        connected: 'Conectado',
+        notConnected: 'No conectado',
+        retry: 'Reintentar',
+        legacyStored:
+          'Hay un enlace de YouTube anterior en tu perfil, pero no está verificado para mostrarse en público.',
+        selectChannelTitle: 'Elige un canal',
+        selectChannelBody: 'Selecciona el canal de YouTube a conectar.',
+        unlinkConfirmTitle: '¿Desconectar YouTube?',
+        unlinkConfirmBody:
+          'Esto desconecta YouTube de este perfil. Puedes volver a conectarlo cuando quieras.',
+        errors: {
+          notEnabled: 'La conexión de YouTube no está disponible ahora.',
+          noChannel:
+            'No se encontró un canal de YouTube para esta cuenta de Google.',
+          channelClaimed:
+            'Ese canal de YouTube ya está conectado en otra cuenta de Nearsy.',
+          channelNotInCandidates:
+            'Elige un canal de la lista e inténtalo de nuevo.',
+          notLinked: 'Conecta YouTube antes de cambiar este ajuste.',
+          txExpired: 'La conexión expiró. Empieza de nuevo.',
+          txInvalid: 'No se pudo continuar la conexión. Empieza de nuevo.',
+          proofInvalid: 'Falló la prueba de conexión. Empieza de nuevo.',
+          unauthenticated: 'Vuelve a iniciar sesión para conectar YouTube.',
+          cancelled: 'Se canceló la conexión de YouTube.',
+          sessionChanged:
+            'La cuenta iniciada cambió durante la conexión. Empieza de nuevo.',
+          network: 'Error de red. Revisa tu conexión e inténtalo de nuevo.',
+          generic: 'No pudimos conectar YouTube. Inténtalo de nuevo.',
+        },
+      },
     },
   },
   alignment: {
