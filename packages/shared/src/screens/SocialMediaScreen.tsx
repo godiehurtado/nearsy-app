@@ -43,8 +43,25 @@ import {
   type PostCrjSocialCardId,
   type PostCrjSocialEditorDraft,
 } from '../social/postCrjSocialEditor';
+import { readExistingSocialLinks } from '../social/onboardingSocialPersistence';
 import type { ProfileMode } from '../profile/profileModeFields';
 import type { CrjSocialFieldErrors } from '../social/socialLinkNormalize';
+import {
+  getYoutubeOwnershipClient,
+  getYoutubeOwnershipController,
+  isYoutubeActionLocked,
+  isYoutubeChannelPickLocked,
+  logYoutubeOwnershipDev,
+  omitYoutubeFromDraftValues,
+  preserveLegacyYoutubeInSocialPatch,
+  mapYoutubeOwnershipThrowable,
+  youtubeConnectedForMode,
+  youtubeOwnershipErrorMessageKey,
+  YoutubeOwnershipClientError,
+  type YoutubeOwnershipBusyPhase,
+  type YoutubeOwnershipChannelCandidate,
+  type YoutubeOwnershipVerified,
+} from '../social/youtubeOwnership';
 
 type RouteParams = {
   uid?: string;
@@ -146,9 +163,34 @@ export default function SocialMediaScreen() {
   const inputRefs = useRef<
     Partial<Record<PostCrjSocialCardId, TextInput | null>>
   >({});
+  const [youtubeVerified, setYoutubeVerified] =
+    useState<YoutubeOwnershipVerified | null>(null);
+  const [youtubeLegacyUrl, setYoutubeLegacyUrl] = useState<string | null>(null);
+  const [youtubeBusyPhase, setYoutubeBusyPhase] =
+    useState<YoutubeOwnershipBusyPhase>('idle');
+  const [youtubeChannels, setYoutubeChannels] = useState<
+    YoutubeOwnershipChannelCandidate[] | null
+  >(null);
+  const [youtubeNeedsRetry, setYoutubeNeedsRetry] = useState(false);
+  const youtubeSelectRef = useRef<
+    ((channelId: string) => Promise<YoutubeOwnershipVerified>) | null
+  >(null);
+  /** Bumps on mode/uid change so late Get/Connect/Unlink results are ignored. */
+  const youtubeRequestGenRef = useRef(0);
+  const youtubeEditorModeRef = useRef<ProfileMode | null>(editorMode);
+  const existingLinksRef = useRef<ReturnType<typeof readExistingSocialLinks> | null>(
+    null,
+  );
+  const youtubeActionLocked = isYoutubeActionLocked(youtubeBusyPhase);
+  const youtubeChannelPickLocked = isYoutubeChannelPickLocked(youtubeBusyPhase);
+  const youtubeConnected =
+    !!editorMode && youtubeConnectedForMode(youtubeVerified, editorMode);
 
   const isDirty = isPostCrjSocialEditorDirty(snapshotRef.current, draft);
-  const validConnectionCount = countValidPostCrjSocialConnections(draft);
+  const validConnectionCount = countValidPostCrjSocialConnections(draft, {
+    youtubeConnected,
+  });
+  const saveDisabled = saving || !isDirty;
 
   const screenTitle =
     editorMode === 'professional'
@@ -160,8 +202,10 @@ export default function SocialMediaScreen() {
       ? t('profile.social.connectedCountOne')
       : t('profile.social.connectedCount', { count: validConnectionCount });
 
-  const saveButtonLabel =
-    validConnectionCount === 1
+  // YouTube ownership persists immediately; only dirty manual links need Save.
+  const saveButtonLabel = !isDirty
+    ? connectedCountLabel
+    : validConnectionCount === 1
       ? t('profile.social.saveConnectionsOne')
       : t('profile.social.saveConnections', { count: validConnectionCount });
 
@@ -192,33 +236,81 @@ export default function SocialMediaScreen() {
   }, [confirmDiscard, isDirty, navigation]);
 
   useEffect(() => {
+    youtubeEditorModeRef.current = editorMode;
+  }, [editorMode]);
+
+  useEffect(() => {
     if (!parsed.ok || !editorUid || !editorMode) {
       setLoadState('blocked');
       return;
     }
 
+    const requestGen = ++youtubeRequestGenRef.current;
+    const modeForRequest = editorMode;
     let cancelled = false;
+
+    // Mode change: drop prior mode UI and in-flight presentation.
+    setYoutubeVerified(null);
+    setYoutubeChannels(null);
+    setYoutubeNeedsRetry(false);
+    youtubeSelectRef.current = null;
+    setYoutubeBusyPhase('loading');
+
     (async () => {
       try {
         setLoadState('loading');
         const existing = await getUserProfile(editorUid);
-        if (cancelled) return;
+        if (cancelled || requestGen !== youtubeRequestGenRef.current) return;
 
         if (!existing || existing.profileSetupCompleted !== true) {
           setLoadState('blocked');
+          setYoutubeBusyPhase('idle');
           return;
         }
 
         const loaded = readPostCrjSocialEditorDraft(
           existing as Record<string, unknown>,
-          editorMode,
+          modeForRequest,
         );
+        // Pilot: YouTube ownership is not a manual URL card.
+        loaded.connected.youtube = false;
+        loaded.values.youtube = '';
+        const existingLinks = readExistingSocialLinks(
+          existing as Record<string, unknown>,
+          modeForRequest,
+        );
+        existingLinksRef.current = existingLinks;
+        const legacy =
+          typeof existingLinks.youtube === 'string'
+            ? existingLinks.youtube.trim()
+            : '';
         snapshotRef.current = loaded;
         setDraft(loaded);
-        setLoadState('ready');
+        setYoutubeLegacyUrl(legacy || null);
+
+        try {
+          const client = await getYoutubeOwnershipClient();
+          const get = await client.get(modeForRequest);
+          if (cancelled || requestGen !== youtubeRequestGenRef.current) return;
+          if (youtubeEditorModeRef.current !== modeForRequest) return;
+          if (get.result === 'verified') {
+            setYoutubeVerified(get);
+          } else {
+            setYoutubeVerified(null);
+          }
+        } catch {
+          if (cancelled || requestGen !== youtubeRequestGenRef.current) return;
+          setYoutubeVerified(null);
+        }
+
+        if (!cancelled && requestGen === youtubeRequestGenRef.current) {
+          setLoadState('ready');
+          setYoutubeBusyPhase('idle');
+        }
       } catch {
-        if (!cancelled) {
+        if (!cancelled && requestGen === youtubeRequestGenRef.current) {
           setLoadState('error');
+          setYoutubeBusyPhase('idle');
         }
       }
     })();
@@ -228,7 +320,211 @@ export default function SocialMediaScreen() {
     };
   }, [editorMode, editorUid, parsed.ok]);
 
+  const presentYoutubeError = useCallback(
+    (err: unknown, onRetry?: () => void) => {
+      const mapped =
+        err instanceof YoutubeOwnershipClientError
+          ? err
+          : mapYoutubeOwnershipThrowable(err);
+      logYoutubeOwnershipDev('present_error', {
+        stage: mapped.stage ?? 'unknown',
+        code: mapped.code,
+        wireCode: mapped.wireCode ?? '',
+        retryable: mapped.retryable,
+      });
+      const key = youtubeOwnershipErrorMessageKey(mapped.code);
+      setYoutubeNeedsRetry(true);
+      const buttons: Array<{
+        text: string;
+        style?: 'cancel' | 'destructive' | 'default';
+        onPress?: () => void;
+      }> = [{ text: t('common.cancel'), style: 'cancel' }];
+      if (onRetry) {
+        buttons.push({
+          text: t('profile.social.youtube.retry'),
+          onPress: onRetry,
+        });
+      }
+      Alert.alert(t('common.error'), t(key as any), buttons);
+    },
+    [t],
+  );
+
+  const isYoutubeResultCurrent = useCallback(
+    (requestGen: number, modeForRequest: ProfileMode) =>
+      requestGen === youtubeRequestGenRef.current &&
+      youtubeEditorModeRef.current === modeForRequest,
+    [],
+  );
+
+  const handleYoutubeConnectRef = useRef<() => void>(() => {});
+
+  const handleYoutubeConnect = useCallback(async () => {
+    if (youtubeActionLocked || !editorMode) return;
+    const requestGen = youtubeRequestGenRef.current;
+    const modeForRequest = editorMode;
+    let staySelecting = false;
+    try {
+      setYoutubeNeedsRetry(false);
+      setYoutubeBusyPhase('connecting');
+      setYoutubeChannels(null);
+      youtubeSelectRef.current = null;
+      const controller = await getYoutubeOwnershipController();
+      const outcome = await controller.connect(modeForRequest);
+      if (!isYoutubeResultCurrent(requestGen, modeForRequest)) return;
+      if (outcome.kind === 'cancelled') {
+        return;
+      }
+      if (outcome.kind === 'error') {
+        presentYoutubeError(outcome.error, () => {
+          handleYoutubeConnectRef.current();
+        });
+        return;
+      }
+      if (outcome.kind === 'select_channel') {
+        staySelecting = true;
+        setYoutubeChannels(outcome.channels);
+        youtubeSelectRef.current = outcome.select;
+        setYoutubeBusyPhase('selecting');
+        return;
+      }
+      // Backend confirmed ownership before updating UI.
+      setYoutubeVerified(outcome.verified);
+      setYoutubeChannels(null);
+      setYoutubeNeedsRetry(false);
+    } catch (err) {
+      if (!isYoutubeResultCurrent(requestGen, modeForRequest)) return;
+      presentYoutubeError(err, () => {
+        handleYoutubeConnectRef.current();
+      });
+    } finally {
+      if (
+        isYoutubeResultCurrent(requestGen, modeForRequest) &&
+        !staySelecting
+      ) {
+        setYoutubeBusyPhase('idle');
+      }
+    }
+  }, [
+    editorMode,
+    isYoutubeResultCurrent,
+    presentYoutubeError,
+    youtubeActionLocked,
+  ]);
+
+  handleYoutubeConnectRef.current = () => {
+    void handleYoutubeConnect();
+  };
+
+  const handleYoutubeSelectChannel = useCallback(
+    async (channelId: string) => {
+      if (
+        youtubeChannelPickLocked ||
+        !youtubeSelectRef.current ||
+        !editorMode
+      ) {
+        return;
+      }
+      const requestGen = youtubeRequestGenRef.current;
+      const modeForRequest = editorMode;
+      try {
+        setYoutubeNeedsRetry(false);
+        setYoutubeBusyPhase('connecting');
+        const verified = await youtubeSelectRef.current(channelId);
+        if (!isYoutubeResultCurrent(requestGen, modeForRequest)) return;
+        setYoutubeVerified(verified);
+        setYoutubeChannels(null);
+        youtubeSelectRef.current = null;
+        setYoutubeNeedsRetry(false);
+      } catch (err) {
+        if (!isYoutubeResultCurrent(requestGen, modeForRequest)) return;
+        presentYoutubeError(err, () => {
+          void handleYoutubeSelectChannel(channelId);
+        });
+        setYoutubeChannels(null);
+        youtubeSelectRef.current = null;
+      } finally {
+        if (isYoutubeResultCurrent(requestGen, modeForRequest)) {
+          setYoutubeBusyPhase('idle');
+        }
+      }
+    },
+    [
+      editorMode,
+      isYoutubeResultCurrent,
+      presentYoutubeError,
+      youtubeChannelPickLocked,
+    ],
+  );
+
+  const handleYoutubeDisconnect = useCallback(() => {
+    if (youtubeActionLocked || !editorMode) return;
+    Alert.alert(
+      t('profile.social.youtube.unlinkConfirmTitle'),
+      t('profile.social.youtube.unlinkConfirmBody'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('profile.social.youtube.disconnect'),
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              const requestGen = youtubeRequestGenRef.current;
+              const modeForRequest = editorMode;
+              try {
+                setYoutubeNeedsRetry(false);
+                setYoutubeBusyPhase('disconnecting');
+                const client = await getYoutubeOwnershipClient();
+                await client.unlink(modeForRequest);
+                if (!isYoutubeResultCurrent(requestGen, modeForRequest)) return;
+                setYoutubeVerified(null);
+                setYoutubeChannels(null);
+                youtubeSelectRef.current = null;
+                setYoutubeNeedsRetry(false);
+              } catch (err) {
+                if (!isYoutubeResultCurrent(requestGen, modeForRequest)) return;
+                // Reconcile with Get before retry UI — Unlink may have failed
+                // transport-side while server state changed, or vice versa.
+                try {
+                  const client = await getYoutubeOwnershipClient();
+                  const get = await client.get(modeForRequest);
+                  if (!isYoutubeResultCurrent(requestGen, modeForRequest)) {
+                    return;
+                  }
+                  if (get.result === 'verified') {
+                    setYoutubeVerified(get);
+                  } else {
+                    setYoutubeVerified(null);
+                    setYoutubeChannels(null);
+                    youtubeSelectRef.current = null;
+                  }
+                } catch {
+                  // Keep prior verified state if Get also fails.
+                }
+                if (!isYoutubeResultCurrent(requestGen, modeForRequest)) return;
+                presentYoutubeError(err, () => {
+                  handleYoutubeDisconnect();
+                });
+              } finally {
+                if (isYoutubeResultCurrent(requestGen, modeForRequest)) {
+                  setYoutubeBusyPhase('idle');
+                }
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [
+    editorMode,
+    isYoutubeResultCurrent,
+    presentYoutubeError,
+    t,
+    youtubeActionLocked,
+  ]);
+
   const connectPlatform = (id: PostCrjSocialCardId) => {
+    if (id === 'youtube') return;
     setDraft((prev) => ({
       ...prev,
       connected: { ...prev.connected, [id]: true },
@@ -245,6 +541,7 @@ export default function SocialMediaScreen() {
   };
 
   const disconnectPlatform = (id: PostCrjSocialCardId) => {
+    if (id === 'youtube') return;
     setDraft((prev) => {
       const nextConnected = { ...prev.connected, [id]: false };
       if (id === 'website') {
@@ -290,7 +587,7 @@ export default function SocialMediaScreen() {
   };
 
   const handleSave = async () => {
-    if (!editorUid || !editorMode || saving) return;
+    if (!editorUid || !editorMode || saving || !isDirty) return;
 
     const validation = validatePostCrjSocialDraftForSave(draft, {
       requiredWhenConnected: t('profile.social.requiredWhenConnected'),
@@ -303,14 +600,20 @@ export default function SocialMediaScreen() {
 
     try {
       setSaving(true);
-      const valuesForSave = buildValuesForPostCrjSocialSave(draft);
-      const patch = buildPostCrjSocialLinksPersistencePatch(
+      const valuesForSave = omitYoutubeFromDraftValues(
+        buildValuesForPostCrjSocialSave(draft),
+      );
+      const patch = preserveLegacyYoutubeInSocialPatch(
         editorMode,
-        valuesForSave,
-        draft.custom,
-        {
-          website: draft.connected.website ? draft.website : '',
-        },
+        buildPostCrjSocialLinksPersistencePatch(
+          editorMode,
+          valuesForSave,
+          draft.custom,
+          {
+            website: draft.connected.website ? draft.website : '',
+          },
+        ),
+        existingLinksRef.current,
       );
       await updateUserProfilePartial(editorUid, patch);
       snapshotRef.current = draft;
@@ -331,7 +634,7 @@ export default function SocialMediaScreen() {
 
   const cardConfigs = useMemo(
     () =>
-      POST_CRJ_SOCIAL_CARD_ORDER.map((id) => {
+      POST_CRJ_SOCIAL_CARD_ORDER.filter((id) => id !== 'youtube').map((id) => {
         if (id === 'website') {
           return {
             id,
@@ -353,6 +656,11 @@ export default function SocialMediaScreen() {
         };
       }),
     [t],
+  );
+
+  const youtubePlatform = getCrjSocialPlatform('youtube');
+  const youtubeLabel = t(
+    `onboarding.profileCompletion.socialMedia.platforms.${youtubePlatform.nameKey}` as any,
   );
 
   if (!parsed.ok || loadState === 'blocked') {
@@ -506,6 +814,189 @@ export default function SocialMediaScreen() {
           </Text>
 
           <View style={styles.cards}>
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: palette.panel,
+                  borderColor: youtubeConnected
+                    ? palette.primary
+                    : palette.border,
+                  borderWidth: youtubeConnected ? 1.5 : 1,
+                },
+              ]}
+            >
+              <View style={styles.cardTopRow}>
+                <PlatformGlyph
+                  platform={{ ...youtubePlatform, id: 'youtube' }}
+                />
+                <View style={styles.cardTextCol}>
+                  <Text
+                    style={[styles.platformName, { color: palette.textPrimary }]}
+                  >
+                    {youtubeLabel}
+                  </Text>
+                  {youtubeBusyPhase === 'connecting' ||
+                  youtubeBusyPhase === 'disconnecting' ? (
+                    <Text
+                      style={[styles.notConnected, { color: palette.textMuted }]}
+                    >
+                      {youtubeBusyPhase === 'disconnecting'
+                        ? t('profile.social.youtube.disconnecting')
+                        : t('profile.social.youtube.connecting')}
+                    </Text>
+                  ) : youtubeConnected ? (
+                    <View style={styles.connectedRow}>
+                      <View
+                        style={[
+                          styles.connectedDot,
+                          { backgroundColor: palette.success },
+                        ]}
+                        accessibilityElementsHidden
+                        importantForAccessibility="no"
+                      />
+                      <Text
+                        style={[
+                          styles.connectedLabel,
+                          { color: palette.success },
+                        ]}
+                      >
+                        {t('profile.social.youtube.connected')}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text
+                      style={[styles.notConnected, { color: palette.textMuted }]}
+                    >
+                      {t('profile.social.youtube.notConnected')}
+                    </Text>
+                  )}
+                </View>
+                {youtubeConnected ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t(
+                      'profile.social.youtube.disconnectA11y',
+                    )}
+                    disabled={youtubeActionLocked}
+                    onPress={handleYoutubeDisconnect}
+                    style={({ pressed }) => [
+                      styles.toggleBtn,
+                      {
+                        backgroundColor: 'transparent',
+                        borderColor: palette.danger,
+                        opacity: youtubeActionLocked ? 0.5 : 1,
+                      },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={[styles.toggleText, { color: palette.danger }]}>
+                      {youtubeBusyPhase === 'disconnecting'
+                        ? t('profile.social.youtube.disconnecting')
+                        : t('profile.social.youtube.disconnect')}
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t('profile.social.youtube.connectA11y')}
+                    disabled={youtubeActionLocked}
+                    onPress={() => {
+                      void handleYoutubeConnect();
+                    }}
+                    style={({ pressed }) => [
+                      styles.toggleBtn,
+                      {
+                        backgroundColor: palette.primary,
+                        borderColor: palette.primary,
+                        opacity: youtubeActionLocked ? 0.5 : 1,
+                      },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text
+                      style={[styles.toggleText, { color: palette.surface }]}
+                    >
+                      {youtubeBusyPhase === 'connecting'
+                        ? t('profile.social.youtube.connecting')
+                        : youtubeNeedsRetry
+                          ? t('profile.social.youtube.retry')
+                          : t('profile.social.youtube.connect')}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+
+              {youtubeConnected && youtubeVerified ? (
+                <Text
+                  style={[
+                    styles.helperText,
+                    { color: palette.textSecondary },
+                  ]}
+                  numberOfLines={2}
+                >
+                  {youtubeVerified.canonicalUrl}
+                </Text>
+              ) : null}
+
+              {!youtubeConnected && youtubeLegacyUrl ? (
+                <Text
+                  style={[styles.helperText, { color: palette.textMuted }]}
+                >
+                  {t('profile.social.youtube.legacyStored')}
+                </Text>
+              ) : null}
+
+              {youtubeChannels && youtubeChannels.length > 0 ? (
+                <View style={styles.channelPicker}>
+                  <Text
+                    style={[
+                      styles.platformName,
+                      { color: palette.textPrimary },
+                    ]}
+                  >
+                    {t('profile.social.youtube.selectChannelTitle')}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.helperText,
+                      { color: palette.textSecondary },
+                    ]}
+                  >
+                    {t('profile.social.youtube.selectChannelBody')}
+                  </Text>
+                  {youtubeChannels.map((channel) => (
+                    <Pressable
+                      key={channel.channelId}
+                      accessibilityRole="button"
+                      disabled={youtubeChannelPickLocked}
+                      onPress={() => {
+                        void handleYoutubeSelectChannel(channel.channelId);
+                      }}
+                      style={({ pressed }) => [
+                        styles.channelOption,
+                        {
+                          borderColor: palette.border,
+                          backgroundColor: palette.surface,
+                          opacity: youtubeChannelPickLocked ? 0.5 : 1,
+                        },
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.publishLabel,
+                          { color: palette.textPrimary },
+                        ]}
+                      >
+                        {channel.title?.trim() || channel.channelId}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+            </View>
+
             {cardConfigs.map((card) => {
               const connected = draft.connected[card.id];
               const error =
@@ -678,14 +1169,14 @@ export default function SocialMediaScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={saveButtonLabel}
-            accessibilityState={{ disabled: saving, busy: saving }}
-            disabled={saving}
+            accessibilityState={{ disabled: saveDisabled, busy: saving }}
+            disabled={saveDisabled}
             onPress={handleSave}
             style={({ pressed }) => [
               styles.saveBtn,
               { backgroundColor: palette.primary },
-              saving && styles.disabled,
-              pressed && !saving && styles.pressed,
+              saveDisabled && styles.disabled,
+              pressed && !saveDisabled && styles.pressed,
             ]}
           >
             {saving ? (
@@ -879,6 +1370,36 @@ const styles = StyleSheet.create({
   saveText: {
     fontSize: fontSize.md,
     fontWeight: fontWeight.bold,
+  },
+  helperText: {
+    marginTop: spacing.sm,
+    fontSize: fontSize.sm,
+    lineHeight: fontSize.sm * 1.35,
+  },
+  publishRow: {
+    marginTop: spacing.sm,
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  publishLabel: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+  },
+  channelPicker: {
+    marginTop: spacing.md,
+    gap: spacing.sm,
+  },
+  channelOption: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    justifyContent: 'center',
   },
   pressed: { opacity: 0.9 },
   disabled: { opacity: 0.55 },

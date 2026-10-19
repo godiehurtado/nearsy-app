@@ -167,6 +167,107 @@ describe('post-CRJ social editor helpers', () => {
     assert.equal(counts.personal, 2);
     assert.equal(counts.professional, 1);
   });
+
+  it('counts verified YouTube only once and ignores legacy bag duplicate', () => {
+    const empty = readPostCrjSocialEditorDraft(null, 'personal');
+    assert.equal(
+      countValidPostCrjSocialConnections(empty, { youtubeConnected: true }),
+      1,
+    );
+
+    const withInstagram = {
+      ...empty,
+      connected: { ...empty.connected, instagram: true },
+      values: { ...empty.values, instagram: '@diego' },
+    };
+    assert.equal(
+      countValidPostCrjSocialConnections(withInstagram, {
+        youtubeConnected: true,
+      }),
+      2,
+    );
+
+    const withLegacyYoutube = {
+      ...empty,
+      connected: { ...empty.connected, youtube: true },
+      values: {
+        ...empty.values,
+        youtube: 'https://www.youtube.com/@legacy',
+      },
+    };
+    assert.equal(
+      countValidPostCrjSocialConnections(withLegacyYoutube, {
+        youtubeConnected: true,
+      }),
+      1,
+    );
+    assert.equal(countValidPostCrjSocialConnections(withLegacyYoutube), 1);
+
+    assert.equal(
+      countValidPostCrjSocialConnections(withInstagram, {
+        youtubeConnected: false,
+      }),
+      1,
+    );
+  });
+
+  it('Own Profile summary counts YouTube ownership per mode without double-counting', () => {
+    const doc = {
+      socialLinksPersonal: {
+        youtube: 'https://www.youtube.com/@legacy-personal',
+        instagram: 'https://www.instagram.com/personal',
+      },
+      socialLinksProfessional: {
+        youtube: 'https://www.youtube.com/@legacy-pro',
+      },
+    };
+
+    const bothOff = extractOwnProfileSocialSummaryCounts(doc);
+    assert.equal(bothOff.personal, 2);
+    assert.equal(bothOff.professional, 1);
+
+    const personalOnly = extractOwnProfileSocialSummaryCounts(doc, {
+      personalYoutubeConnected: true,
+      professionalYoutubeConnected: false,
+    });
+    assert.equal(personalOnly.personal, 2);
+    assert.equal(personalOnly.professional, 1);
+
+    const youtubeOnlyPersonal = extractOwnProfileSocialSummaryCounts(
+      {
+        socialLinksPersonal: {
+          youtube: 'https://www.youtube.com/@legacy',
+        },
+        socialLinksProfessional: {},
+      },
+      {
+        personalYoutubeConnected: true,
+        professionalYoutubeConnected: false,
+      },
+    );
+    assert.equal(youtubeOnlyPersonal.personal, 1);
+    assert.equal(youtubeOnlyPersonal.professional, 0);
+
+    const modesIndependent = extractOwnProfileSocialSummaryCounts(
+      { socialLinksPersonal: {}, socialLinksProfessional: {} },
+      {
+        personalYoutubeConnected: true,
+        professionalYoutubeConnected: false,
+      },
+    );
+    assert.equal(modesIndependent.personal, 1);
+    assert.equal(modesIndependent.professional, 0);
+
+    const afterUnlink = extractOwnProfileSocialSummaryCounts(
+      { socialLinksPersonal: {}, socialLinksProfessional: {} },
+      {
+        personalYoutubeConnected: false,
+        professionalYoutubeConnected: false,
+      },
+    );
+    assert.equal(afterUnlink.personal, 0);
+    assert.equal(afterUnlink.professional, 0);
+  });
 });
 
 describe('post-CRJ Social Media editor screen contract', () => {
@@ -194,8 +295,18 @@ describe('post-CRJ Social Media editor screen contract', () => {
     assert.match(screen, /\{connected \? \(/);
     assert.match(screen, /profile\.social\.connect/);
     assert.match(screen, /profile\.social\.disconnect/);
-    assert.match(screen, /countValidPostCrjSocialConnections/);
+    assert.match(screen, /countValidPostCrjSocialConnections\(draft,\s*\{\s*youtubeConnected/);
     assert.match(screen, /saveConnections/);
+    assert.match(screen, /saveDisabled/);
+    assert.match(screen, /omitYoutubeFromDraftValues/);
+    assert.match(screen, /preserveLegacyYoutubeInSocialPatch/);
+  });
+
+  it('CompleteProfileScreen includes YouTube ownership in social summary counts', () => {
+    const screen = readShared('screens/CompleteProfileScreen.tsx');
+    assert.match(screen, /resolveYoutubeOwnershipConnectedByMode/);
+    assert.match(screen, /personalYoutubeConnected/);
+    assert.match(screen, /professionalYoutubeConnected/);
   });
 
   it('SocialMediaScreen dismisses keyboard after successful save', () => {

@@ -55,6 +55,12 @@ function loadEasDevelopmentEnv() {
         // Avoid evaluating Development app.config in the EAS CLI parent before
         // Google Dev vars are injected into the dump child.
         EXPO_PUBLIC_NEARSY_FIREBASE_ENV: '',
+        // Parent `eas`/`expo config` still evaluates app.config (production path
+        // when FIREBASE_ENV is empty) and requires a pk_ shape. This placeholder
+        // is only for that parent parse; the dump child receives real EAS keys.
+        EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY:
+          process.env.EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY ||
+          'pk_eas_parent_config_placeholder',
       },
     });
 

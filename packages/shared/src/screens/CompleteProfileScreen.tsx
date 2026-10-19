@@ -81,6 +81,7 @@ import { syncDiscoveryProfileContextFlow } from '../visibility/syncDiscoveryProf
 import { extractOwnProfileInterestSummaryCounts } from '../interests/postCrjInterestEditor';
 import { extractOwnProfileAffiliationSummaryCounts } from '../affiliations/postCrjAffiliationEditor';
 import { extractOwnProfileSocialSummaryCounts } from '../social/postCrjSocialEditor';
+import { resolveYoutubeOwnershipConnectedByMode } from '../social/youtubeOwnership';
 import { extractOwnProfileGallerySummaryCounts } from '../gallery/postCrjGalleryEditor';
 
 const NAME_MAX = 40;
@@ -444,7 +445,11 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       const affiliationCounts = extractOwnProfileAffiliationSummaryCounts(doc);
       setPersonalAffiliationsSummaryCount(affiliationCounts.personal);
       setProfessionalAffiliationsSummaryCount(affiliationCounts.professional);
-      const socialCounts = extractOwnProfileSocialSummaryCounts(doc);
+      const youtubeOwnership = await resolveYoutubeOwnershipConnectedByMode();
+      const socialCounts = extractOwnProfileSocialSummaryCounts(doc, {
+        personalYoutubeConnected: youtubeOwnership.personal,
+        professionalYoutubeConnected: youtubeOwnership.professional,
+      });
       setPersonalSocialSummaryCount(socialCounts.personal);
       setProfessionalSocialSummaryCount(socialCounts.professional);
       const galleryCounts = extractOwnProfileGallerySummaryCounts(doc);
@@ -473,7 +478,11 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       const doc = existing as Record<string, unknown>;
       const interestCounts = extractOwnProfileInterestSummaryCounts(doc);
       const affiliationCounts = extractOwnProfileAffiliationSummaryCounts(doc);
-      const socialCounts = extractOwnProfileSocialSummaryCounts(doc);
+      const youtubeOwnership = await resolveYoutubeOwnershipConnectedByMode();
+      const socialCounts = extractOwnProfileSocialSummaryCounts(doc, {
+        personalYoutubeConnected: youtubeOwnership.personal,
+        professionalYoutubeConnected: youtubeOwnership.professional,
+      });
       const galleryCounts = extractOwnProfileGallerySummaryCounts(doc);
       if (!mountedRef.current) return;
       setPersonalInterestsSummaryCount(interestCounts.personal);
