@@ -265,5 +265,36 @@ export default {
         generic: 'We could not connect YouTube. Try again.',
       },
     },
+    tiktok: {
+      connect: 'Connect TikTok',
+      connectA11y: 'Connect a TikTok account for this profile',
+      connecting: 'Connecting…',
+      disconnect: 'Disconnect',
+      disconnectA11y: 'Disconnect TikTok from this profile',
+      disconnecting: 'Disconnecting…',
+      connected: 'Connected',
+      notConnected: 'Not connected',
+      retry: 'Try again',
+      legacyStored:
+        'A previous TikTok link is stored on your profile but is not verified for public display.',
+      unlinkConfirmTitle: 'Disconnect TikTok?',
+      unlinkConfirmBody:
+        'This disconnects TikTok from this profile. You can connect again anytime.',
+      errors: {
+        notEnabled: 'TikTok connection is not available right now.',
+        noAccount: 'No TikTok account was found for this login.',
+        accountClaimed:
+          'That TikTok account is already connected on another Nearsy account.',
+        txExpired: 'Connection expired. Start again.',
+        txInvalid: 'Connection could not continue. Start again.',
+        proofInvalid: 'Connection proof failed. Start again.',
+        unauthenticated: 'Sign in again to connect TikTok.',
+        cancelled: 'TikTok connection was cancelled.',
+        sessionChanged:
+          'Your signed-in account changed during connection. Start again.',
+        network: 'Network error. Check your connection and try again.',
+        generic: 'We could not connect TikTok. Try again.',
+      },
+    },
   },
 } as const;

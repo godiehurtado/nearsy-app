@@ -82,6 +82,7 @@ import { extractOwnProfileInterestSummaryCounts } from '../interests/postCrjInte
 import { extractOwnProfileAffiliationSummaryCounts } from '../affiliations/postCrjAffiliationEditor';
 import { extractOwnProfileSocialSummaryCounts } from '../social/postCrjSocialEditor';
 import { resolveYoutubeOwnershipConnectedByMode } from '../social/youtubeOwnership';
+import { resolveTiktokOwnershipConnectedByMode } from '../social/tiktokOwnership';
 import { extractOwnProfileGallerySummaryCounts } from '../gallery/postCrjGalleryEditor';
 
 const NAME_MAX = 40;
@@ -445,10 +446,15 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       const affiliationCounts = extractOwnProfileAffiliationSummaryCounts(doc);
       setPersonalAffiliationsSummaryCount(affiliationCounts.personal);
       setProfessionalAffiliationsSummaryCount(affiliationCounts.professional);
-      const youtubeOwnership = await resolveYoutubeOwnershipConnectedByMode();
+      const [youtubeOwnership, tiktokOwnership] = await Promise.all([
+        resolveYoutubeOwnershipConnectedByMode(),
+        resolveTiktokOwnershipConnectedByMode(),
+      ]);
       const socialCounts = extractOwnProfileSocialSummaryCounts(doc, {
         personalYoutubeConnected: youtubeOwnership.personal,
         professionalYoutubeConnected: youtubeOwnership.professional,
+        personalTiktokConnected: tiktokOwnership.personal,
+        professionalTiktokConnected: tiktokOwnership.professional,
       });
       setPersonalSocialSummaryCount(socialCounts.personal);
       setProfessionalSocialSummaryCount(socialCounts.professional);
@@ -478,10 +484,15 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       const doc = existing as Record<string, unknown>;
       const interestCounts = extractOwnProfileInterestSummaryCounts(doc);
       const affiliationCounts = extractOwnProfileAffiliationSummaryCounts(doc);
-      const youtubeOwnership = await resolveYoutubeOwnershipConnectedByMode();
+      const [youtubeOwnership, tiktokOwnership] = await Promise.all([
+        resolveYoutubeOwnershipConnectedByMode(),
+        resolveTiktokOwnershipConnectedByMode(),
+      ]);
       const socialCounts = extractOwnProfileSocialSummaryCounts(doc, {
         personalYoutubeConnected: youtubeOwnership.personal,
         professionalYoutubeConnected: youtubeOwnership.professional,
+        personalTiktokConnected: tiktokOwnership.personal,
+        professionalTiktokConnected: tiktokOwnership.professional,
       });
       const galleryCounts = extractOwnProfileGallerySummaryCounts(doc);
       if (!mountedRef.current) return;
