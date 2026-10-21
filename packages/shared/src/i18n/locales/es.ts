@@ -1263,6 +1263,38 @@ const es: TranslationResources = {
           generic: 'No pudimos conectar YouTube. Inténtalo de nuevo.',
         },
       },
+      tiktok: {
+        connect: 'Conectar TikTok',
+        connectA11y: 'Conectar una cuenta de TikTok para este perfil',
+        connecting: 'Conectando…',
+        disconnect: 'Desconectar',
+        disconnectA11y: 'Desconectar TikTok de este perfil',
+        disconnecting: 'Desconectando…',
+        connected: 'Conectado',
+        notConnected: 'No conectado',
+        retry: 'Reintentar',
+        legacyStored:
+          'Hay un enlace de TikTok anterior en tu perfil, pero no está verificado para mostrarse en público.',
+        unlinkConfirmTitle: '¿Desconectar TikTok?',
+        unlinkConfirmBody:
+          'Esto desconecta TikTok de este perfil. Puedes volver a conectarlo cuando quieras.',
+        errors: {
+          notEnabled: 'La conexión de TikTok no está disponible ahora.',
+          noAccount:
+            'No se encontró una cuenta de TikTok para este inicio de sesión.',
+          accountClaimed:
+            'Esa cuenta de TikTok ya está conectada en otra cuenta de Nearsy.',
+          txExpired: 'La conexión expiró. Empieza de nuevo.',
+          txInvalid: 'No se pudo continuar la conexión. Empieza de nuevo.',
+          proofInvalid: 'Falló la prueba de conexión. Empieza de nuevo.',
+          unauthenticated: 'Vuelve a iniciar sesión para conectar TikTok.',
+          cancelled: 'Se canceló la conexión de TikTok.',
+          sessionChanged:
+            'La cuenta iniciada cambió durante la conexión. Empieza de nuevo.',
+          network: 'Error de red. Revisa tu conexión e inténtalo de nuevo.',
+          generic: 'No pudimos conectar TikTok. Inténtalo de nuevo.',
+        },
+      },
     },
   },
   alignment: {

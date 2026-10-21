@@ -62,6 +62,20 @@ import {
   type YoutubeOwnershipChannelCandidate,
   type YoutubeOwnershipVerified,
 } from '../social/youtubeOwnership';
+import {
+  getTiktokOwnershipClient,
+  getTiktokOwnershipController,
+  isTiktokActionLocked,
+  logTiktokOwnershipDev,
+  omitTiktokFromDraftValues,
+  preserveLegacyTiktokInSocialPatch,
+  mapTiktokOwnershipThrowable,
+  tiktokConnectedForMode,
+  tiktokOwnershipErrorMessageKey,
+  TiktokOwnershipClientError,
+  type TiktokOwnershipBusyPhase,
+  type TiktokOwnershipVerified,
+} from '../social/tiktokOwnership';
 
 type RouteParams = {
   uid?: string;
@@ -178,6 +192,16 @@ export default function SocialMediaScreen() {
   /** Bumps on mode/uid change so late Get/Connect/Unlink results are ignored. */
   const youtubeRequestGenRef = useRef(0);
   const youtubeEditorModeRef = useRef<ProfileMode | null>(editorMode);
+
+  const [tiktokVerified, setTiktokVerified] =
+    useState<TiktokOwnershipVerified | null>(null);
+  const [tiktokLegacyUrl, setTiktokLegacyUrl] = useState<string | null>(null);
+  const [tiktokBusyPhase, setTiktokBusyPhase] =
+    useState<TiktokOwnershipBusyPhase>('idle');
+  const [tiktokNeedsRetry, setTiktokNeedsRetry] = useState(false);
+  const tiktokRequestGenRef = useRef(0);
+  const tiktokEditorModeRef = useRef<ProfileMode | null>(editorMode);
+
   const existingLinksRef = useRef<ReturnType<typeof readExistingSocialLinks> | null>(
     null,
   );
@@ -185,10 +209,14 @@ export default function SocialMediaScreen() {
   const youtubeChannelPickLocked = isYoutubeChannelPickLocked(youtubeBusyPhase);
   const youtubeConnected =
     !!editorMode && youtubeConnectedForMode(youtubeVerified, editorMode);
+  const tiktokActionLocked = isTiktokActionLocked(tiktokBusyPhase);
+  const tiktokConnected =
+    !!editorMode && tiktokConnectedForMode(tiktokVerified, editorMode);
 
   const isDirty = isPostCrjSocialEditorDirty(snapshotRef.current, draft);
   const validConnectionCount = countValidPostCrjSocialConnections(draft, {
     youtubeConnected,
+    tiktokConnected,
   });
   const saveDisabled = saving || !isDirty;
 
@@ -202,7 +230,7 @@ export default function SocialMediaScreen() {
       ? t('profile.social.connectedCountOne')
       : t('profile.social.connectedCount', { count: validConnectionCount });
 
-  // YouTube ownership persists immediately; only dirty manual links need Save.
+  // Ownership persists immediately; only dirty manual links need Save.
   const saveButtonLabel = !isDirty
     ? connectedCountLabel
     : validConnectionCount === 1
@@ -237,6 +265,7 @@ export default function SocialMediaScreen() {
 
   useEffect(() => {
     youtubeEditorModeRef.current = editorMode;
+    tiktokEditorModeRef.current = editorMode;
   }, [editorMode]);
 
   useEffect(() => {
@@ -246,6 +275,7 @@ export default function SocialMediaScreen() {
     }
 
     const requestGen = ++youtubeRequestGenRef.current;
+    tiktokRequestGenRef.current = requestGen;
     const modeForRequest = editorMode;
     let cancelled = false;
 
@@ -255,6 +285,9 @@ export default function SocialMediaScreen() {
     setYoutubeNeedsRetry(false);
     youtubeSelectRef.current = null;
     setYoutubeBusyPhase('loading');
+    setTiktokVerified(null);
+    setTiktokNeedsRetry(false);
+    setTiktokBusyPhase('loading');
 
     (async () => {
       try {
@@ -265,6 +298,7 @@ export default function SocialMediaScreen() {
         if (!existing || existing.profileSetupCompleted !== true) {
           setLoadState('blocked');
           setYoutubeBusyPhase('idle');
+          setTiktokBusyPhase('idle');
           return;
         }
 
@@ -272,45 +306,74 @@ export default function SocialMediaScreen() {
           existing as Record<string, unknown>,
           modeForRequest,
         );
-        // Pilot: YouTube ownership is not a manual URL card.
+        // Pilot: ownership platforms are not manual URL cards.
         loaded.connected.youtube = false;
         loaded.values.youtube = '';
+        loaded.connected.tiktok = false;
+        loaded.values.tiktok = '';
         const existingLinks = readExistingSocialLinks(
           existing as Record<string, unknown>,
           modeForRequest,
         );
         existingLinksRef.current = existingLinks;
-        const legacy =
+        const youtubeLegacy =
           typeof existingLinks.youtube === 'string'
             ? existingLinks.youtube.trim()
             : '';
+        const tiktokLegacy =
+          typeof existingLinks.tiktok === 'string'
+            ? existingLinks.tiktok.trim()
+            : '';
         snapshotRef.current = loaded;
         setDraft(loaded);
-        setYoutubeLegacyUrl(legacy || null);
+        setYoutubeLegacyUrl(youtubeLegacy || null);
+        setTiktokLegacyUrl(tiktokLegacy || null);
 
-        try {
-          const client = await getYoutubeOwnershipClient();
-          const get = await client.get(modeForRequest);
-          if (cancelled || requestGen !== youtubeRequestGenRef.current) return;
-          if (youtubeEditorModeRef.current !== modeForRequest) return;
-          if (get.result === 'verified') {
-            setYoutubeVerified(get);
-          } else {
-            setYoutubeVerified(null);
-          }
-        } catch {
-          if (cancelled || requestGen !== youtubeRequestGenRef.current) return;
-          setYoutubeVerified(null);
-        }
+        await Promise.all([
+          (async () => {
+            try {
+              const client = await getYoutubeOwnershipClient();
+              const get = await client.get(modeForRequest);
+              if (cancelled || requestGen !== youtubeRequestGenRef.current) {
+                return;
+              }
+              if (youtubeEditorModeRef.current !== modeForRequest) return;
+              setYoutubeVerified(get.result === 'verified' ? get : null);
+            } catch {
+              if (cancelled || requestGen !== youtubeRequestGenRef.current) {
+                return;
+              }
+              setYoutubeVerified(null);
+            }
+          })(),
+          (async () => {
+            try {
+              const client = await getTiktokOwnershipClient();
+              const get = await client.get(modeForRequest);
+              if (cancelled || requestGen !== tiktokRequestGenRef.current) {
+                return;
+              }
+              if (tiktokEditorModeRef.current !== modeForRequest) return;
+              setTiktokVerified(get.result === 'verified' ? get : null);
+            } catch {
+              if (cancelled || requestGen !== tiktokRequestGenRef.current) {
+                return;
+              }
+              setTiktokVerified(null);
+            }
+          })(),
+        ]);
 
         if (!cancelled && requestGen === youtubeRequestGenRef.current) {
           setLoadState('ready');
           setYoutubeBusyPhase('idle');
+          setTiktokBusyPhase('idle');
         }
       } catch {
         if (!cancelled && requestGen === youtubeRequestGenRef.current) {
           setLoadState('error');
           setYoutubeBusyPhase('idle');
+          setTiktokBusyPhase('idle');
         }
       }
     })();
@@ -523,8 +586,146 @@ export default function SocialMediaScreen() {
     youtubeActionLocked,
   ]);
 
+  const presentTiktokError = useCallback(
+    (err: unknown, onRetry?: () => void) => {
+      const mapped =
+        err instanceof TiktokOwnershipClientError
+          ? err
+          : mapTiktokOwnershipThrowable(err);
+      logTiktokOwnershipDev('present_error', {
+        stage: mapped.stage ?? 'unknown',
+        code: mapped.code,
+        wireCode: mapped.wireCode ?? '',
+        retryable: mapped.retryable,
+      });
+      const key = tiktokOwnershipErrorMessageKey(mapped.code);
+      setTiktokNeedsRetry(true);
+      const buttons: Array<{
+        text: string;
+        style?: 'cancel' | 'destructive' | 'default';
+        onPress?: () => void;
+      }> = [{ text: t('common.cancel'), style: 'cancel' }];
+      if (onRetry) {
+        buttons.push({
+          text: t('profile.social.tiktok.retry'),
+          onPress: onRetry,
+        });
+      }
+      Alert.alert(t('common.error'), t(key as any), buttons);
+    },
+    [t],
+  );
+
+  const isTiktokResultCurrent = useCallback(
+    (requestGen: number, modeForRequest: ProfileMode) =>
+      requestGen === tiktokRequestGenRef.current &&
+      tiktokEditorModeRef.current === modeForRequest,
+    [],
+  );
+
+  const handleTiktokConnectRef = useRef<() => void>(() => {});
+
+  const handleTiktokConnect = useCallback(async () => {
+    if (tiktokActionLocked || !editorMode) return;
+    const requestGen = tiktokRequestGenRef.current;
+    const modeForRequest = editorMode;
+    try {
+      setTiktokNeedsRetry(false);
+      setTiktokBusyPhase('connecting');
+      const controller = await getTiktokOwnershipController();
+      const outcome = await controller.connect(modeForRequest);
+      if (!isTiktokResultCurrent(requestGen, modeForRequest)) return;
+
+      if (outcome.kind === 'cancelled') {
+        setTiktokBusyPhase('idle');
+        return;
+      }
+      if (outcome.kind === 'error') {
+        setTiktokBusyPhase('idle');
+        presentTiktokError(outcome.error, () => {
+          handleTiktokConnectRef.current();
+        });
+        return;
+      }
+      setTiktokVerified(outcome.verified);
+      setTiktokNeedsRetry(false);
+      setTiktokBusyPhase('idle');
+    } catch (err) {
+      if (!isTiktokResultCurrent(requestGen, modeForRequest)) return;
+      setTiktokBusyPhase('idle');
+      presentTiktokError(err, () => {
+        handleTiktokConnectRef.current();
+      });
+    }
+  }, [
+    editorMode,
+    isTiktokResultCurrent,
+    presentTiktokError,
+    tiktokActionLocked,
+  ]);
+
+  handleTiktokConnectRef.current = () => {
+    void handleTiktokConnect();
+  };
+
+  const handleTiktokDisconnect = useCallback(() => {
+    if (tiktokActionLocked || !editorMode) return;
+    Alert.alert(
+      t('profile.social.tiktok.unlinkConfirmTitle'),
+      t('profile.social.tiktok.unlinkConfirmBody'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('profile.social.tiktok.disconnect'),
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              const requestGen = tiktokRequestGenRef.current;
+              const modeForRequest = editorMode;
+              try {
+                setTiktokNeedsRetry(false);
+                setTiktokBusyPhase('disconnecting');
+                const client = await getTiktokOwnershipClient();
+                await client.unlink(modeForRequest);
+                if (!isTiktokResultCurrent(requestGen, modeForRequest)) return;
+                setTiktokVerified(null);
+                setTiktokNeedsRetry(false);
+              } catch (err) {
+                if (!isTiktokResultCurrent(requestGen, modeForRequest)) return;
+                try {
+                  const client = await getTiktokOwnershipClient();
+                  const get = await client.get(modeForRequest);
+                  if (!isTiktokResultCurrent(requestGen, modeForRequest)) {
+                    return;
+                  }
+                  setTiktokVerified(get.result === 'verified' ? get : null);
+                } catch {
+                  // Keep prior verified state if Get also fails.
+                }
+                if (!isTiktokResultCurrent(requestGen, modeForRequest)) return;
+                presentTiktokError(err, () => {
+                  handleTiktokDisconnect();
+                });
+              } finally {
+                if (isTiktokResultCurrent(requestGen, modeForRequest)) {
+                  setTiktokBusyPhase('idle');
+                }
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [
+    editorMode,
+    isTiktokResultCurrent,
+    presentTiktokError,
+    t,
+    tiktokActionLocked,
+  ]);
+
   const connectPlatform = (id: PostCrjSocialCardId) => {
-    if (id === 'youtube') return;
+    if (id === 'youtube' || id === 'tiktok') return;
     setDraft((prev) => ({
       ...prev,
       connected: { ...prev.connected, [id]: true },
@@ -541,7 +742,7 @@ export default function SocialMediaScreen() {
   };
 
   const disconnectPlatform = (id: PostCrjSocialCardId) => {
-    if (id === 'youtube') return;
+    if (id === 'youtube' || id === 'tiktok') return;
     setDraft((prev) => {
       const nextConnected = { ...prev.connected, [id]: false };
       if (id === 'website') {
@@ -600,18 +801,22 @@ export default function SocialMediaScreen() {
 
     try {
       setSaving(true);
-      const valuesForSave = omitYoutubeFromDraftValues(
-        buildValuesForPostCrjSocialSave(draft),
+      const valuesForSave = omitTiktokFromDraftValues(
+        omitYoutubeFromDraftValues(buildValuesForPostCrjSocialSave(draft)),
       );
-      const patch = preserveLegacyYoutubeInSocialPatch(
+      const patch = preserveLegacyTiktokInSocialPatch(
         editorMode,
-        buildPostCrjSocialLinksPersistencePatch(
+        preserveLegacyYoutubeInSocialPatch(
           editorMode,
-          valuesForSave,
-          draft.custom,
-          {
-            website: draft.connected.website ? draft.website : '',
-          },
+          buildPostCrjSocialLinksPersistencePatch(
+            editorMode,
+            valuesForSave,
+            draft.custom,
+            {
+              website: draft.connected.website ? draft.website : '',
+            },
+          ),
+          existingLinksRef.current,
         ),
         existingLinksRef.current,
       );
@@ -634,7 +839,9 @@ export default function SocialMediaScreen() {
 
   const cardConfigs = useMemo(
     () =>
-      POST_CRJ_SOCIAL_CARD_ORDER.filter((id) => id !== 'youtube').map((id) => {
+      POST_CRJ_SOCIAL_CARD_ORDER.filter(
+        (id) => id !== 'youtube' && id !== 'tiktok',
+      ).map((id) => {
         if (id === 'website') {
           return {
             id,
@@ -661,6 +868,10 @@ export default function SocialMediaScreen() {
   const youtubePlatform = getCrjSocialPlatform('youtube');
   const youtubeLabel = t(
     `onboarding.profileCompletion.socialMedia.platforms.${youtubePlatform.nameKey}` as any,
+  );
+  const tiktokPlatform = getCrjSocialPlatform('tiktok');
+  const tiktokLabel = t(
+    `onboarding.profileCompletion.socialMedia.platforms.${tiktokPlatform.nameKey}` as any,
   );
 
   if (!parsed.ok || loadState === 'blocked') {
@@ -994,6 +1205,143 @@ export default function SocialMediaScreen() {
                     </Pressable>
                   ))}
                 </View>
+              ) : null}
+            </View>
+
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: palette.panel,
+                  borderColor: tiktokConnected
+                    ? palette.primary
+                    : palette.border,
+                  borderWidth: tiktokConnected ? 1.5 : 1,
+                },
+              ]}
+            >
+              <View style={styles.cardTopRow}>
+                <PlatformGlyph
+                  platform={{ ...tiktokPlatform, id: 'tiktok' }}
+                />
+                <View style={styles.cardTextCol}>
+                  <Text
+                    style={[
+                      styles.platformName,
+                      { color: palette.textPrimary },
+                    ]}
+                  >
+                    {tiktokLabel}
+                  </Text>
+                  {tiktokBusyPhase === 'connecting' ||
+                  tiktokBusyPhase === 'disconnecting' ? (
+                    <Text
+                      style={[styles.connectedLabel, { color: palette.textMuted }]}
+                    >
+                      {tiktokBusyPhase === 'disconnecting'
+                        ? t('profile.social.tiktok.disconnecting')
+                        : t('profile.social.tiktok.connecting')}
+                    </Text>
+                  ) : tiktokConnected ? (
+                    <View style={styles.connectedRow}>
+                      <View
+                        style={[
+                          styles.connectedDot,
+                          { backgroundColor: palette.success },
+                        ]}
+                        accessibilityElementsHidden
+                        importantForAccessibility="no"
+                      />
+                      <Text
+                        style={[
+                          styles.connectedLabel,
+                          { color: palette.success },
+                        ]}
+                      >
+                        {t('profile.social.tiktok.connected')}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text
+                      style={[styles.notConnected, { color: palette.textMuted }]}
+                    >
+                      {t('profile.social.tiktok.notConnected')}
+                    </Text>
+                  )}
+                </View>
+                {tiktokConnected ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t(
+                      'profile.social.tiktok.disconnectA11y',
+                    )}
+                    disabled={tiktokActionLocked}
+                    onPress={handleTiktokDisconnect}
+                    style={({ pressed }) => [
+                      styles.toggleBtn,
+                      {
+                        backgroundColor: 'transparent',
+                        borderColor: palette.danger,
+                        opacity: tiktokActionLocked ? 0.5 : 1,
+                      },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={[styles.toggleText, { color: palette.danger }]}>
+                      {tiktokBusyPhase === 'disconnecting'
+                        ? t('profile.social.tiktok.disconnecting')
+                        : t('profile.social.tiktok.disconnect')}
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t('profile.social.tiktok.connectA11y')}
+                    disabled={tiktokActionLocked}
+                    onPress={() => {
+                      void handleTiktokConnect();
+                    }}
+                    style={({ pressed }) => [
+                      styles.toggleBtn,
+                      {
+                        backgroundColor: palette.primary,
+                        borderColor: palette.primary,
+                        opacity: tiktokActionLocked ? 0.5 : 1,
+                      },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text
+                      style={[styles.toggleText, { color: palette.surface }]}
+                    >
+                      {tiktokBusyPhase === 'connecting'
+                        ? t('profile.social.tiktok.connecting')
+                        : tiktokNeedsRetry
+                          ? t('profile.social.tiktok.retry')
+                          : t('profile.social.tiktok.connect')}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+
+              {tiktokConnected && tiktokVerified ? (
+                <Text
+                  style={[
+                    styles.helperText,
+                    { color: palette.textSecondary },
+                  ]}
+                  numberOfLines={2}
+                >
+                  {tiktokVerified.canonicalUrl}
+                </Text>
+              ) : null}
+
+              {!tiktokConnected && tiktokLegacyUrl ? (
+                <Text
+                  style={[styles.helperText, { color: palette.textMuted }]}
+                >
+                  {t('profile.social.tiktok.legacyStored')}
+                </Text>
               ) : null}
             </View>
 

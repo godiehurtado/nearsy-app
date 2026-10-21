@@ -211,6 +211,40 @@ describe('post-CRJ social editor helpers', () => {
     );
   });
 
+  it('counts verified TikTok with YouTube without legacy duplicates', () => {
+    const empty = readPostCrjSocialEditorDraft(null, 'personal');
+    assert.equal(
+      countValidPostCrjSocialConnections(empty, {
+        youtubeConnected: true,
+        tiktokConnected: true,
+      }),
+      2,
+    );
+
+    const withLegacyBoth = {
+      ...empty,
+      connected: { ...empty.connected, youtube: true, tiktok: true },
+      values: {
+        ...empty.values,
+        youtube: 'https://www.youtube.com/@legacy',
+        tiktok: 'https://www.tiktok.com/@legacy',
+      },
+    };
+    assert.equal(
+      countValidPostCrjSocialConnections(withLegacyBoth, {
+        youtubeConnected: true,
+        tiktokConnected: true,
+      }),
+      2,
+    );
+    assert.equal(
+      countValidPostCrjSocialConnections(withLegacyBoth, {
+        tiktokConnected: true,
+      }),
+      2,
+    );
+  });
+
   it('Own Profile summary counts YouTube ownership per mode without double-counting', () => {
     const doc = {
       socialLinksPersonal: {
@@ -307,6 +341,18 @@ describe('post-CRJ Social Media editor screen contract', () => {
     assert.match(screen, /resolveYoutubeOwnershipConnectedByMode/);
     assert.match(screen, /personalYoutubeConnected/);
     assert.match(screen, /professionalYoutubeConnected/);
+    assert.match(screen, /resolveTiktokOwnershipConnectedByMode/);
+    assert.match(screen, /personalTiktokConnected/);
+    assert.match(screen, /professionalTiktokConnected/);
+  });
+
+  it('SocialMediaScreen wires TikTok ownership without manual TikTok card', () => {
+    const screen = readShared('screens/SocialMediaScreen.tsx');
+    assert.match(screen, /getTiktokOwnershipController/);
+    assert.match(screen, /omitTiktokFromDraftValues/);
+    assert.match(screen, /preserveLegacyTiktokInSocialPatch/);
+    assert.match(screen, /tiktokConnected/);
+    assert.match(screen, /id !== 'youtube' && id !== 'tiktok'/);
   });
 
   it('SocialMediaScreen dismisses keyboard after successful save', () => {
