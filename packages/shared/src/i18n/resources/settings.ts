@@ -5,7 +5,17 @@ export default {
     privacy: 'Privacy & discovery',
     preferences: 'Preferences',
     about: 'About',
+    diagnostic: 'Diagnostic',
     actions: 'Account actions',
+  },
+  diagnostic: {
+    exportTitle: 'Export background log',
+    exportNote:
+      'Share events from this test build. No location coordinates or account data.',
+    exportHint: 'Opens the share sheet so you can send the log',
+    emptyTitle: 'No log yet',
+    emptyBody: 'Use Visibility in the background first, then export.',
+    shareError: 'Could not share the log.',
   },
   about: {
     cityDataTitle: 'City data',

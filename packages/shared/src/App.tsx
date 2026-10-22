@@ -34,6 +34,8 @@ import {
   bindPublicationSession,
   closePublicationSession,
 } from './location/publicationSession';
+import { attachBackgroundPresenceResume } from './background/attachPresenceDiagnostics';
+import { recordPresenceEvent } from './background/presenceDiagnostics';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -77,6 +79,8 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
     ensureAndroidChannel();
   }, []);
 
+  useEffect(() => attachBackgroundPresenceResume(), []);
+
   // RNFirebase: auth state listener — push token registration + BG location.
   useEffect(() => {
     const unsubscribe = firebaseAuth.onAuthStateChanged(
@@ -84,6 +88,12 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
         if (!user) {
           closePublicationSession();
           if (Platform.OS !== 'web') {
+            await recordPresenceEvent({
+              event: 'stop',
+              platform: 'android',
+              stop: 'logout',
+              started: false,
+            });
             await stopBackgroundLocation().catch(() => {});
           }
           resetLocationJourneySession();

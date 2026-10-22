@@ -32,6 +32,11 @@ import {
   isVisibilityDiscoveryClientError,
   type VisibilityErrorReason,
 } from '../visibility/callables';
+import {
+  classifyAndroidCallbackStop,
+  classifyCallableStop,
+  recordPresenceEvent,
+} from './presenceDiagnostics';
 
 export const BG_LOCATION_TASK = 'nearsy-bg-location';
 
@@ -73,20 +78,40 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
           message,
         )
       ) {
+        await recordPresenceEvent({
+          event: 'stop',
+          platform: 'android',
+          stop: 'task_error',
+          started: false,
+        });
         await stopTaskCleanly();
       }
       return;
     }
 
     const { locations } = (data as LocationTaskData) ?? {};
-    if (!locations?.length) return;
+    if (!locations?.length) {
+      await recordPresenceEvent({
+        event: 'skip',
+        platform: 'android',
+        skip: 'empty_batch',
+      });
+      return;
+    }
 
     // Taken before any await: a callback that outlives its session (logout,
     // uid change, pending re-confirmation) can never publish.
     const authUidAtStart = firebaseAuth.currentUser?.uid ?? null;
     const ticket = acquireBackgroundPublicationTicket(authUidAtStart);
     // Signed out falls through to the runtime gate below, which stops the task.
-    if (!ticket && authUidAtStart) return;
+    if (!ticket && authUidAtStart) {
+      await recordPresenceEvent({
+        event: 'skip',
+        platform: 'android',
+        skip: 'session_not_open',
+      });
+      return;
+    }
     const sessionGuard = {
       isCurrent: () =>
         isPublicationTicketCurrent(ticket, firebaseAuth.currentUser?.uid ?? null),
@@ -119,11 +144,38 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
     });
 
     if (decision === 'stop') {
+      await recordPresenceEvent({
+        event: 'stop',
+        platform: 'android',
+        stop: classifyAndroidCallbackStop({
+          authUid,
+          storedTaskUid: storedUid,
+          hasRuntimeAuth: Boolean(runtimeAuth && runtimeAuth.uid === authUid),
+          foregroundGranted,
+          backgroundGranted,
+          fineLocationGranted,
+        }),
+        started: false,
+      });
       await stopTaskCleanly();
       return;
     }
-    if (decision === 'skip' || !storedUid) return;
-    if (!sessionGuard.isCurrent()) return;
+    if (decision === 'skip' || !storedUid) {
+      await recordPresenceEvent({
+        event: 'skip',
+        platform: 'android',
+        skip: 'runtime_gate',
+      });
+      return;
+    }
+    if (!sessionGuard.isCurrent()) {
+      await recordPresenceEvent({
+        event: 'skip',
+        platform: 'android',
+        skip: 'session_stale',
+      });
+      return;
+    }
 
     // Headless: Auth + App Check must be ready before contractual publish.
     const appCheck = await ensureAppCheckInitialized();
@@ -143,6 +195,12 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
           hasUser: Boolean(firebaseAuth.currentUser),
         });
       }
+      await recordPresenceEvent({
+        event: 'stop',
+        platform: 'android',
+        stop: 'headless_not_ready',
+        started: false,
+      });
       await stopTaskCleanly();
       return;
     }
@@ -157,6 +215,12 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
         ? fix.timestamp
         : Date.now();
 
+    await recordPresenceEvent({
+      event: 'callback',
+      platform: 'android',
+      accuracyMeters,
+    });
+
     try {
       const client = await getVisibilityDiscoveryClient();
       const outcome = await publishLocationFlow(
@@ -170,7 +234,20 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
         sessionGuard,
       );
 
-      if (outcome.ok === true || outcome.kind === 'session-closed') {
+      if (outcome.ok === true) {
+        await recordPresenceEvent({
+          event: 'publish_ok',
+          platform: 'android',
+          accuracyMeters,
+        });
+        return;
+      }
+      if (outcome.kind === 'session-closed') {
+        await recordPresenceEvent({
+          event: 'skip',
+          platform: 'android',
+          skip: 'session_stale',
+        });
         return;
       }
 
@@ -191,12 +268,54 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
         });
       }
 
+      if (outcome.kind === 'invalid-accuracy') {
+        await recordPresenceEvent({
+          event: 'skip',
+          platform: 'android',
+          skip: 'invalid_accuracy',
+          accuracyMeters,
+        });
+        return;
+      }
+
+      await recordPresenceEvent({
+        event: 'publish_fail',
+        platform: 'android',
+        skip: disposition === 'skip' ? 'callable_retryable' : undefined,
+        stop:
+          disposition === 'stop'
+            ? classifyCallableStop({
+                kind: outcome.kind,
+                code: err?.code,
+                reason: reasonToString(err?.reason),
+              })
+            : undefined,
+        accuracyMeters,
+      });
+
       if (disposition === 'stop') {
+        await recordPresenceEvent({
+          event: 'stop',
+          platform: 'android',
+          stop: classifyCallableStop({
+            kind: outcome.kind,
+            code: err?.code,
+            reason: reasonToString(err?.reason),
+          }),
+          started: false,
+        });
         await stopTaskCleanly();
       }
       // Transient: skip tick; OS timeInterval unchanged.
     } catch (publishErr) {
-      if (!sessionGuard.isCurrent()) return;
+      if (!sessionGuard.isCurrent()) {
+        await recordPresenceEvent({
+          event: 'skip',
+          platform: 'android',
+          skip: 'session_stale',
+        });
+        return;
+      }
       if (__DEV__) console.warn('[BG Task] publish error:', publishErr);
       if (isVisibilityDiscoveryClientError(publishErr)) {
         const disposition = disposeBackgroundPublishFailure({
@@ -206,7 +325,25 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
           message: publishErr.message,
           retryable: publishErr.retryable,
         });
+        const stopClass = classifyCallableStop({
+          kind: 'callable',
+          code: publishErr.code,
+          reason: reasonToString(publishErr.reason),
+        });
+        await recordPresenceEvent({
+          event: 'publish_fail',
+          platform: 'android',
+          skip: disposition === 'skip' ? 'callable_retryable' : undefined,
+          stop: disposition === 'stop' ? stopClass : undefined,
+          accuracyMeters,
+        });
         if (disposition === 'stop') {
+          await recordPresenceEvent({
+            event: 'stop',
+            platform: 'android',
+            stop: stopClass,
+            started: false,
+          });
           await stopTaskCleanly();
         }
         return;
@@ -221,7 +358,20 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
       if (
         disposeBackgroundPublishFailure({ message, code }) === 'stop'
       ) {
+        await recordPresenceEvent({
+          event: 'stop',
+          platform: 'android',
+          stop: classifyCallableStop({ code }),
+          started: false,
+        });
         await stopTaskCleanly();
+      } else {
+        await recordPresenceEvent({
+          event: 'publish_fail',
+          platform: 'android',
+          skip: 'callable_retryable',
+          accuracyMeters,
+        });
       }
       // Transient network / unknown: skip tick.
     }

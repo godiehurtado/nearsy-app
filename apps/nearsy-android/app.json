@@ -15,7 +15,7 @@
     },
     "android": {
       "package": "com.nearsy.app",
-      "versionCode": 38,
+      "versionCode": 39,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "../../packages/shared/src/assets/icon.png",

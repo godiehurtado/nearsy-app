@@ -26,6 +26,64 @@ import {
   getPublicationSessionPhase,
   isPublicationRuntimeOpen,
 } from './publicationSession';
+import { BG_LOCATION_TASK } from '../background/locationTask.android';
+import {
+  classifyAndroidStartBlock,
+  recordPresenceEvent,
+} from '../background/presenceDiagnostics';
+
+export type GatedStartResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason:
+        | 'gate'
+        | 'foreground-denied'
+        | 'background-denied'
+        | 'needs-settings'
+        | 'error';
+      gateReason?: string;
+      canAskAgain?: boolean;
+      error?: unknown;
+    };
+
+async function readTaskStarted(): Promise<boolean | undefined> {
+  try {
+    return await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
+  } catch {
+    return undefined;
+  }
+}
+
+async function haltBackgroundLocation(): Promise<void> {
+  await stopBackgroundLocationService();
+  await clearBackgroundRuntimeAuth().catch(() => {});
+}
+
+async function noteStartResult(
+  result: GatedStartResult,
+  alreadyStarted?: boolean,
+): Promise<GatedStartResult> {
+  if (result.ok === true) {
+    if (alreadyStarted !== true) {
+      await recordPresenceEvent({
+        event: 'start_ok',
+        platform: 'android',
+        started: true,
+      });
+    }
+    return result;
+  }
+  const reason = result.reason;
+  const gateReason = result.gateReason;
+  await recordPresenceEvent({
+    event: 'start_blocked',
+    platform: 'android',
+    block: classifyAndroidStartBlock(reason, gateReason),
+    started: false,
+  });
+  return result;
+}
 
 export {
   BackgroundLocationPermissionError,
@@ -33,8 +91,16 @@ export {
 };
 
 export async function stopBackgroundLocation(): Promise<void> {
-  await stopBackgroundLocationService();
-  await clearBackgroundRuntimeAuth().catch(() => {});
+  const started = await readTaskStarted();
+  if (started !== false) {
+    await recordPresenceEvent({
+      event: 'stop',
+      platform: 'android',
+      stop: 'other',
+      started,
+    });
+  }
+  await haltBackgroundLocation();
 }
 
 export type LocationPermissionSnapshot = {
@@ -69,21 +135,6 @@ export async function getLocationPermissionSnapshot(): Promise<LocationPermissio
   };
 }
 
-export type GatedStartResult =
-  | { ok: true }
-  | {
-      ok: false;
-      reason:
-        | 'gate'
-        | 'foreground-denied'
-        | 'background-denied'
-        | 'needs-settings'
-        | 'error';
-      gateReason?: string;
-      canAskAgain?: boolean;
-      error?: unknown;
-    };
-
 export type GatedStartOpts = {
   uid: string;
   visibility: boolean;
@@ -102,7 +153,7 @@ export async function startGatedBackgroundLocation(
   opts: GatedStartOpts,
 ): Promise<GatedStartResult> {
   if (Platform.OS === 'web') {
-    return { ok: false, reason: 'gate', gateReason: 'unsupported' };
+    return noteStartResult({ ok: false, reason: 'gate', gateReason: 'unsupported' });
   }
 
   // FGS only after this session's confirmed activate/publish for this uid.
@@ -110,7 +161,7 @@ export async function startGatedBackgroundLocation(
     getPublicationSessionPhase() !== 'unbound' &&
     !isPublicationRuntimeOpen(opts.uid)
   ) {
-    return { ok: false, reason: 'gate', gateReason: 'session-unconfirmed' };
+    return noteStartResult({ ok: false, reason: 'gate', gateReason: 'session-unconfirmed' });
   }
 
   const snap = await getLocationPermissionSnapshot();
@@ -121,11 +172,11 @@ export async function startGatedBackgroundLocation(
       fg = await Location.requestForegroundPermissionsAsync();
     }
     if (fg.status !== 'granted') {
-      return {
+      return noteStartResult({
         ok: false,
         reason: 'foreground-denied',
         canAskAgain: !!fg.canAskAgain,
-      };
+      });
     }
   }
 
@@ -136,29 +187,29 @@ export async function startGatedBackgroundLocation(
     if (requiresSettingsForBackgroundPermission(apiLevel)) {
       // Android 11+: do not pretend a dialog can grant "all the time".
       // Caller should open Settings after disclosure.
-      return {
+      return noteStartResult({
         ok: false,
         reason: 'needs-settings',
         canAskAgain: false,
-      };
+      });
     }
     let bg = await Location.getBackgroundPermissionsAsync();
     if (bg.status !== 'granted' && (bg.status === 'undetermined' || bg.canAskAgain)) {
       bg = await Location.requestBackgroundPermissionsAsync();
     }
     if (bg.status !== 'granted') {
-      return {
+      return noteStartResult({
         ok: false,
         reason: 'background-denied',
         canAskAgain: false,
-      };
+      });
     }
     bgSnap = await getLocationPermissionSnapshot();
   }
 
   if (!bgSnap.fineLocationGranted) {
-    await stopBackgroundLocation().catch(() => {});
-    return { ok: false, reason: 'gate', gateReason: 'approximate' };
+    await haltBackgroundLocation().catch(() => {});
+    return noteStartResult({ ok: false, reason: 'gate', gateReason: 'approximate' });
   }
 
   const decision = decideBackgroundPublication({
@@ -173,8 +224,8 @@ export async function startGatedBackgroundLocation(
   });
 
   if (decision.action === 'stop' || decision.action === 'skip') {
-    await stopBackgroundLocation().catch(() => {});
-    return { ok: false, reason: 'gate', gateReason: decision.reason };
+    await haltBackgroundLocation().catch(() => {});
+    return noteStartResult({ ok: false, reason: 'gate', gateReason: decision.reason });
   }
 
   if (!shouldStartBackgroundLocationService({
@@ -185,11 +236,12 @@ export async function startGatedBackgroundLocation(
     fineLocationGranted: bgSnap.fineLocationGranted,
     backgroundGranted: bgSnap.backgroundGranted,
   })) {
-    await stopBackgroundLocation().catch(() => {});
-    return { ok: false, reason: 'gate', gateReason: 'blocked' };
+    await haltBackgroundLocation().catch(() => {});
+    return noteStartResult({ ok: false, reason: 'gate', gateReason: 'blocked' });
   }
 
   try {
+    const alreadyStarted = await readTaskStarted();
     await startBackgroundLocation({
       uid: opts.uid,
       notificationTitle: opts.notificationTitle,
@@ -200,8 +252,8 @@ export async function startGatedBackgroundLocation(
       !isPublicationRuntimeOpen(opts.uid)
     ) {
       // Session closed (logout / uid change) while the service was starting.
-      await stopBackgroundLocation().catch(() => {});
-      return { ok: false, reason: 'gate', gateReason: 'session-unconfirmed' };
+      await haltBackgroundLocation().catch(() => {});
+      return noteStartResult({ ok: false, reason: 'gate', gateReason: 'session-unconfirmed' });
     }
     await setBackgroundRuntimeAuth({
       uid: opts.uid,
@@ -209,11 +261,11 @@ export async function startGatedBackgroundLocation(
       visibility: true,
       bgVisible: true,
     });
-    return { ok: true };
+    return noteStartResult({ ok: true }, alreadyStarted === true);
   } catch (error) {
     await clearBackgroundRuntimeAuth().catch(() => {});
     if (isBackgroundLocationPermissionError(error)) {
-      return {
+      return noteStartResult({
         ok: false,
         reason:
           error.code === 'foreground-denied'
@@ -221,9 +273,9 @@ export async function startGatedBackgroundLocation(
             : 'background-denied',
         canAskAgain: error.canAskAgain,
         error,
-      };
+      });
     }
-    return { ok: false, reason: 'error', error };
+    return noteStartResult({ ok: false, reason: 'error', error });
   }
 }
 
@@ -239,12 +291,12 @@ export async function resumeGatedBackgroundLocationAfterSettings(opts: {
 }): Promise<GatedStartResult> {
   const snap = await getLocationPermissionSnapshot();
   if (!snap.foregroundGranted || !snap.backgroundGranted) {
-    await stopBackgroundLocation().catch(() => {});
-    return {
+    await haltBackgroundLocation().catch(() => {});
+    return noteStartResult({
       ok: false,
       reason: !snap.foregroundGranted ? 'foreground-denied' : 'background-denied',
       canAskAgain: false,
-    };
+    });
   }
   return startGatedBackgroundLocation({
     uid: opts.uid,
