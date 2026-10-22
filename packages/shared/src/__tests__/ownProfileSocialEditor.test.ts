@@ -245,6 +245,42 @@ describe('post-CRJ social editor helpers', () => {
     );
   });
 
+  it('counts verified Instagram with YouTube and TikTok without legacy duplicates', () => {
+    const empty = readPostCrjSocialEditorDraft(null, 'personal');
+    assert.equal(
+      countValidPostCrjSocialConnections(empty, {
+        youtubeConnected: true,
+        tiktokConnected: true,
+        instagramConnected: true,
+      }),
+      3,
+    );
+
+    const withLegacyAll = {
+      ...empty,
+      connected: {
+        ...empty.connected,
+        youtube: true,
+        tiktok: true,
+        instagram: true,
+      },
+      values: {
+        ...empty.values,
+        youtube: 'https://www.youtube.com/@legacy',
+        tiktok: 'https://www.tiktok.com/@legacy',
+        instagram: 'https://www.instagram.com/legacy',
+      },
+    };
+    assert.equal(
+      countValidPostCrjSocialConnections(withLegacyAll, {
+        youtubeConnected: true,
+        tiktokConnected: true,
+        instagramConnected: true,
+      }),
+      3,
+    );
+  });
+
   it('Own Profile summary counts YouTube ownership per mode without double-counting', () => {
     const doc = {
       socialLinksPersonal: {
@@ -344,6 +380,9 @@ describe('post-CRJ Social Media editor screen contract', () => {
     assert.match(screen, /resolveTiktokOwnershipConnectedByMode/);
     assert.match(screen, /personalTiktokConnected/);
     assert.match(screen, /professionalTiktokConnected/);
+    assert.match(screen, /resolveInstagramOwnershipConnectedByMode/);
+    assert.match(screen, /personalInstagramConnected/);
+    assert.match(screen, /professionalInstagramConnected/);
   });
 
   it('SocialMediaScreen wires TikTok ownership without manual TikTok card', () => {
@@ -352,7 +391,35 @@ describe('post-CRJ Social Media editor screen contract', () => {
     assert.match(screen, /omitTiktokFromDraftValues/);
     assert.match(screen, /preserveLegacyTiktokInSocialPatch/);
     assert.match(screen, /tiktokConnected/);
-    assert.match(screen, /id !== 'youtube' && id !== 'tiktok'/);
+    assert.match(screen, /id !== 'youtube' && id !== 'tiktok' && id !== 'instagram'/);
+  });
+
+  it('SocialMediaScreen wires Instagram reverse-DM without manual Instagram card', () => {
+    const screen = readShared('screens/SocialMediaScreen.tsx');
+    assert.match(screen, /getInstagramOwnershipClient/);
+    assert.match(screen, /omitInstagramFromDraftValues/);
+    assert.match(screen, /preserveLegacyInstagramInSocialPatch/);
+    assert.match(screen, /instagramConnected/);
+    assert.match(screen, /resolveInstagramOwnershipClientPlatform/);
+    assert.doesNotMatch(screen, /instagramOwnershipExchange/);
+    assert.doesNotMatch(screen, /instagramOwnershipConfirm/);
+    assert.match(screen, /shouldPollInstagramOwnership/);
+    assert.match(screen, /AppState\.addEventListener/);
+    assert.match(screen, /shareInstagramChallengeCode/);
+    assert.match(screen, /handleInstagramShare/);
+    assert.match(screen, /presentInstagramGetResponse/);
+    assert.match(screen, /instagramHint === 'expired'/);
+    assert.match(screen, /instagramHint === 'conflict'/);
+    assert.match(screen, /profile\.social\.instagram\.shareCode/);
+    assert.doesNotMatch(screen, /profile\.social\.instagram\.copy/);
+    assert.doesNotMatch(screen, /Clipboard/);
+    assert.match(screen, /mapInstagramOwnershipThrowable\(err, 'start'\)/);
+    assert.match(screen, /mapped\.retryable/);
+    assert.match(screen, /isInstagramResultCurrent/);
+    assert.doesNotMatch(screen, /shouldShowInstagramInboxAuthorizeDevAction/);
+    assert.doesNotMatch(screen, /startInboxAuthorize/);
+    assert.doesNotMatch(screen, /inboxAuthorizeDev/);
+    assert.doesNotMatch(screen, /INSTAGRAM_INBOX_AUTHORIZE_KEY/);
   });
 
   it('SocialMediaScreen dismisses keyboard after successful save', () => {

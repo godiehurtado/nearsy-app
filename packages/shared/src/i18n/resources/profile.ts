@@ -296,5 +296,42 @@ export default {
         generic: 'We could not connect TikTok. Try again.',
       },
     },
+    instagram: {
+      connect: 'Connect Instagram',
+      connectA11y: 'Connect an Instagram account for this profile',
+      connecting: 'Connecting…',
+      disconnect: 'Disconnect',
+      disconnectA11y: 'Disconnect Instagram from this profile',
+      disconnecting: 'Disconnecting…',
+      connected: 'Connected',
+      notConnected: 'Not connected',
+      retry: 'Try again',
+      shareCode: 'Share code',
+      shareCodeA11y: 'Share the Instagram verification code',
+      openInbox: 'Open Instagram',
+      openInboxA11y: 'Open Instagram to send the code by DM',
+      pendingTitle: 'Send this code',
+      pendingBody:
+        'Open Instagram and send this code by DM to @{{inbox}}. Do not share it anywhere else.',
+      waiting: 'Waiting for the message…',
+      legacyStored:
+        'A previous Instagram link is stored on your profile but is not verified for public display.',
+      unlinkConfirmTitle: 'Disconnect Instagram?',
+      unlinkConfirmBody:
+        'This disconnects Instagram from this profile. You can connect again anytime.',
+      errors: {
+        notEnabled: 'Instagram connection is not available right now.',
+        accountClaimed:
+          'That Instagram account is already connected on another Nearsy account.',
+        rateLimited: 'Too many attempts today. Try again tomorrow.',
+        noUsername: 'Instagram did not return a usable username. Try again.',
+        txExpired: 'This code expired. Start again.',
+        unauthenticated: 'Sign in again to connect Instagram.',
+        sessionChanged:
+          'Your signed-in account changed during connection. Start again.',
+        network: 'Network error. Check your connection and try again.',
+        generic: 'We could not connect Instagram. Try again.',
+      },
+    },
   },
 } as const;
