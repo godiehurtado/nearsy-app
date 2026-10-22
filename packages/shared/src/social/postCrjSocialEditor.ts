@@ -110,6 +110,7 @@ export type SocialConnectionCountOptions = {
    */
   youtubeConnected?: boolean;
   tiktokConnected?: boolean;
+  instagramConnected?: boolean;
 };
 
 export function countValidPostCrjSocialConnections(
@@ -118,10 +119,12 @@ export function countValidPostCrjSocialConnections(
 ): number {
   const youtubeConnected = options?.youtubeConnected === true;
   const tiktokConnected = options?.tiktokConnected === true;
+  const instagramConnected = options?.instagramConnected === true;
   let count = 0;
   for (const platform of CRJ_SOCIAL_PLATFORMS) {
     if (platform.id === 'youtube' && youtubeConnected) continue;
     if (platform.id === 'tiktok' && tiktokConnected) continue;
+    if (platform.id === 'instagram' && instagramConnected) continue;
     if (!draft.connected[platform.id]) continue;
     const result = normalizeSocialInput(
       platform.id,
@@ -135,6 +138,7 @@ export function countValidPostCrjSocialConnections(
   }
   if (youtubeConnected) count += 1;
   if (tiktokConnected) count += 1;
+  if (instagramConnected) count += 1;
   return count;
 }
 
@@ -203,10 +207,12 @@ export function countConfiguredSocialLinksInBag(
 ): number {
   const youtubeConnected = options?.youtubeConnected === true;
   const tiktokConnected = options?.tiktokConnected === true;
+  const instagramConnected = options?.instagramConnected === true;
   let count = 0;
   for (const platform of CRJ_SOCIAL_PLATFORMS) {
     if (platform.id === 'youtube' && youtubeConnected) continue;
     if (platform.id === 'tiktok' && tiktokConnected) continue;
+    if (platform.id === 'instagram' && instagramConnected) continue;
     const stored = links[platform.storageKey];
     if (typeof stored === 'string' && stored.trim()) {
       count += 1;
@@ -217,6 +223,7 @@ export function countConfiguredSocialLinksInBag(
   }
   if (youtubeConnected) count += 1;
   if (tiktokConnected) count += 1;
+  if (instagramConnected) count += 1;
   return count;
 }
 
@@ -225,6 +232,8 @@ export type OwnProfileSocialSummaryCountOptions = {
   professionalYoutubeConnected?: boolean;
   personalTiktokConnected?: boolean;
   professionalTiktokConnected?: boolean;
+  personalInstagramConnected?: boolean;
+  professionalInstagramConnected?: boolean;
 };
 
 export function extractOwnProfileSocialSummaryCounts(
@@ -237,6 +246,7 @@ export function extractOwnProfileSocialSummaryCounts(
       {
         youtubeConnected: options?.personalYoutubeConnected === true,
         tiktokConnected: options?.personalTiktokConnected === true,
+        instagramConnected: options?.personalInstagramConnected === true,
       },
     ),
     professional: countConfiguredSocialLinksInBag(
@@ -244,6 +254,7 @@ export function extractOwnProfileSocialSummaryCounts(
       {
         youtubeConnected: options?.professionalYoutubeConnected === true,
         tiktokConnected: options?.professionalTiktokConnected === true,
+        instagramConnected: options?.professionalInstagramConnected === true,
       },
     ),
   };

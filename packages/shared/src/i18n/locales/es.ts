@@ -1295,6 +1295,44 @@ const es: TranslationResources = {
           generic: 'No pudimos conectar TikTok. Inténtalo de nuevo.',
         },
       },
+      instagram: {
+        connect: 'Conectar Instagram',
+        connectA11y: 'Conectar una cuenta de Instagram para este perfil',
+        connecting: 'Conectando…',
+        disconnect: 'Desconectar',
+        disconnectA11y: 'Desconectar Instagram de este perfil',
+        disconnecting: 'Desconectando…',
+        connected: 'Conectado',
+        notConnected: 'No conectado',
+        retry: 'Reintentar',
+        shareCode: 'Compartir código',
+        shareCodeA11y: 'Compartir el código de verificación de Instagram',
+        openInbox: 'Abrir Instagram',
+        openInboxA11y: 'Abrir Instagram para enviar el código por DM',
+        pendingTitle: 'Envía este código',
+        pendingBody:
+          'Abre Instagram y envía este código por DM a @{{inbox}}. No lo compartas en ningún otro lugar.',
+        waiting: 'Esperando el mensaje…',
+        legacyStored:
+          'Hay un enlace de Instagram anterior en tu perfil, pero no está verificado para mostrarse en público.',
+        unlinkConfirmTitle: '¿Desconectar Instagram?',
+        unlinkConfirmBody:
+          'Esto desconecta Instagram de este perfil. Puedes volver a conectarlo cuando quieras.',
+        errors: {
+          notEnabled: 'La conexión de Instagram no está disponible ahora.',
+          accountClaimed:
+            'Esa cuenta de Instagram ya está conectada en otra cuenta de Nearsy.',
+          rateLimited: 'Demasiados intentos hoy. Inténtalo de nuevo mañana.',
+          noUsername:
+            'Instagram no devolvió un usuario válido. Inténtalo de nuevo.',
+          txExpired: 'Este código expiró. Empieza de nuevo.',
+          unauthenticated: 'Vuelve a iniciar sesión para conectar Instagram.',
+          sessionChanged:
+            'La cuenta iniciada cambió durante la conexión. Empieza de nuevo.',
+          network: 'Error de red. Revisa tu conexión e inténtalo de nuevo.',
+          generic: 'No pudimos conectar Instagram. Inténtalo de nuevo.',
+        },
+      },
     },
   },
   alignment: {

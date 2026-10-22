@@ -11,8 +11,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
+  AppState,
+  Linking,
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useRoute, useNavigation, useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -76,6 +78,26 @@ import {
   type TiktokOwnershipBusyPhase,
   type TiktokOwnershipVerified,
 } from '../social/tiktokOwnership';
+import {
+  getInstagramOwnershipClient,
+  instagramConnectedForMode,
+  instagramOwnershipErrorMessageKey,
+  isInstagramActionLocked,
+  logInstagramOwnershipDev,
+  mapInstagramOwnershipThrowable,
+  omitInstagramFromDraftValues,
+  preserveLegacyInstagramInSocialPatch,
+  resolveInstagramOwnershipClientPlatform,
+  presentInstagramGetResponse,
+  shareInstagramChallengeCode,
+  shouldPollInstagramOwnership,
+  INSTAGRAM_OWNERSHIP_POLL_INTERVAL_MS,
+  InstagramOwnershipClientError,
+  type InstagramGetHint,
+  type InstagramOwnershipBusyPhase,
+  type InstagramOwnershipPending,
+  type InstagramOwnershipVerified,
+} from '../social/instagramOwnership';
 
 type RouteParams = {
   uid?: string;
@@ -202,6 +224,24 @@ export default function SocialMediaScreen() {
   const tiktokRequestGenRef = useRef(0);
   const tiktokEditorModeRef = useRef<ProfileMode | null>(editorMode);
 
+  const [instagramVerified, setInstagramVerified] =
+    useState<InstagramOwnershipVerified | null>(null);
+  const [instagramChallenge, setInstagramChallenge] =
+    useState<InstagramOwnershipPending | null>(null);
+  const [instagramLegacyUrl, setInstagramLegacyUrl] = useState<string | null>(
+    null,
+  );
+  const [instagramBusyPhase, setInstagramBusyPhase] =
+    useState<InstagramOwnershipBusyPhase>('idle');
+  const [instagramNeedsRetry, setInstagramNeedsRetry] = useState(false);
+  const [instagramHint, setInstagramHint] = useState<InstagramGetHint | null>(
+    null,
+  );
+  const instagramRequestGenRef = useRef(0);
+  const instagramEditorModeRef = useRef<ProfileMode | null>(editorMode);
+  const instagramChallengeRef = useRef<InstagramOwnershipPending | null>(null);
+  const screenFocused = useIsFocused();
+
   const existingLinksRef = useRef<ReturnType<typeof readExistingSocialLinks> | null>(
     null,
   );
@@ -212,11 +252,16 @@ export default function SocialMediaScreen() {
   const tiktokActionLocked = isTiktokActionLocked(tiktokBusyPhase);
   const tiktokConnected =
     !!editorMode && tiktokConnectedForMode(tiktokVerified, editorMode);
+  const instagramActionLocked = isInstagramActionLocked(instagramBusyPhase);
+  const instagramConnected =
+    !!editorMode &&
+    instagramConnectedForMode(instagramVerified, editorMode);
 
   const isDirty = isPostCrjSocialEditorDirty(snapshotRef.current, draft);
   const validConnectionCount = countValidPostCrjSocialConnections(draft, {
     youtubeConnected,
     tiktokConnected,
+    instagramConnected,
   });
   const saveDisabled = saving || !isDirty;
 
@@ -266,7 +311,9 @@ export default function SocialMediaScreen() {
   useEffect(() => {
     youtubeEditorModeRef.current = editorMode;
     tiktokEditorModeRef.current = editorMode;
+    instagramEditorModeRef.current = editorMode;
   }, [editorMode]);
+  instagramChallengeRef.current = instagramChallenge;
 
   useEffect(() => {
     if (!parsed.ok || !editorUid || !editorMode) {
@@ -276,6 +323,7 @@ export default function SocialMediaScreen() {
 
     const requestGen = ++youtubeRequestGenRef.current;
     tiktokRequestGenRef.current = requestGen;
+    instagramRequestGenRef.current = requestGen;
     const modeForRequest = editorMode;
     let cancelled = false;
 
@@ -288,6 +336,11 @@ export default function SocialMediaScreen() {
     setTiktokVerified(null);
     setTiktokNeedsRetry(false);
     setTiktokBusyPhase('loading');
+    setInstagramVerified(null);
+    setInstagramChallenge(null);
+    setInstagramNeedsRetry(false);
+    setInstagramHint(null);
+    setInstagramBusyPhase('loading');
 
     (async () => {
       try {
@@ -299,6 +352,7 @@ export default function SocialMediaScreen() {
           setLoadState('blocked');
           setYoutubeBusyPhase('idle');
           setTiktokBusyPhase('idle');
+          setInstagramBusyPhase('idle');
           return;
         }
 
@@ -311,6 +365,8 @@ export default function SocialMediaScreen() {
         loaded.values.youtube = '';
         loaded.connected.tiktok = false;
         loaded.values.tiktok = '';
+        loaded.connected.instagram = false;
+        loaded.values.instagram = '';
         const existingLinks = readExistingSocialLinks(
           existing as Record<string, unknown>,
           modeForRequest,
@@ -324,10 +380,15 @@ export default function SocialMediaScreen() {
           typeof existingLinks.tiktok === 'string'
             ? existingLinks.tiktok.trim()
             : '';
+        const instagramLegacy =
+          typeof existingLinks.instagram === 'string'
+            ? existingLinks.instagram.trim()
+            : '';
         snapshotRef.current = loaded;
         setDraft(loaded);
         setYoutubeLegacyUrl(youtubeLegacy || null);
         setTiktokLegacyUrl(tiktokLegacy || null);
+        setInstagramLegacyUrl(instagramLegacy || null);
 
         await Promise.all([
           (async () => {
@@ -362,18 +423,45 @@ export default function SocialMediaScreen() {
               setTiktokVerified(null);
             }
           })(),
+          (async () => {
+            try {
+              const client = await getInstagramOwnershipClient();
+              const get = await client.get(modeForRequest);
+              if (cancelled || requestGen !== instagramRequestGenRef.current) {
+                return;
+              }
+              if (instagramEditorModeRef.current !== modeForRequest) return;
+              const presented = presentInstagramGetResponse(get);
+              setInstagramVerified(presented.verified);
+              setInstagramChallenge(presented.challenge);
+              instagramChallengeRef.current = presented.challenge;
+              setInstagramHint(presented.hint);
+              setInstagramNeedsRetry(presented.needsRetry);
+              setInstagramBusyPhase(presented.phase);
+            } catch {
+              if (cancelled || requestGen !== instagramRequestGenRef.current) {
+                return;
+              }
+              setInstagramVerified(null);
+              setInstagramChallenge(null);
+            }
+          })(),
         ]);
 
         if (!cancelled && requestGen === youtubeRequestGenRef.current) {
           setLoadState('ready');
           setYoutubeBusyPhase('idle');
           setTiktokBusyPhase('idle');
+          setInstagramBusyPhase((phase) =>
+            phase === 'pending' ? 'pending' : 'idle',
+          );
         }
       } catch {
         if (!cancelled && requestGen === youtubeRequestGenRef.current) {
           setLoadState('error');
           setYoutubeBusyPhase('idle');
           setTiktokBusyPhase('idle');
+          setInstagramBusyPhase('idle');
         }
       }
     })();
@@ -724,8 +812,328 @@ export default function SocialMediaScreen() {
     tiktokActionLocked,
   ]);
 
+  const presentInstagramError = useCallback(
+    (err: unknown, onRetry?: () => void) => {
+      const mapped =
+        err instanceof InstagramOwnershipClientError
+          ? err
+          : mapInstagramOwnershipThrowable(err);
+      logInstagramOwnershipDev('present_error', {
+        stage: mapped.stage ?? 'unknown',
+        mappedCode: mapped.code,
+        wireCode: mapped.wireCode ?? '',
+        retryable: mapped.retryable,
+      });
+      const key = instagramOwnershipErrorMessageKey(mapped.code);
+      setInstagramNeedsRetry(true);
+      const buttons: Array<{
+        text: string;
+        style?: 'cancel' | 'destructive' | 'default';
+        onPress?: () => void;
+      }> = [{ text: t('common.cancel'), style: 'cancel' }];
+      if (onRetry) {
+        buttons.push({
+          text: t('profile.social.instagram.retry'),
+          onPress: onRetry,
+        });
+      }
+      Alert.alert(t('common.error'), t(key as any), buttons);
+    },
+    [t],
+  );
+
+  const isInstagramResultCurrent = useCallback(
+    (requestGen: number, modeForRequest: ProfileMode) =>
+      requestGen === instagramRequestGenRef.current &&
+      instagramEditorModeRef.current === modeForRequest,
+    [],
+  );
+
+  const handleInstagramConnectRef = useRef<() => void>(() => {});
+
+  const handleInstagramConnect = useCallback(async () => {
+    if (instagramActionLocked || !editorMode) return;
+    const requestGen = instagramRequestGenRef.current;
+    const modeForRequest = editorMode;
+    try {
+      setInstagramNeedsRetry(false);
+      setInstagramHint(null);
+      setInstagramBusyPhase('connecting');
+      const client = await getInstagramOwnershipClient();
+      const pending = await client.start({
+        mode: modeForRequest,
+        platform: resolveInstagramOwnershipClientPlatform(),
+      });
+      if (!isInstagramResultCurrent(requestGen, modeForRequest)) return;
+      if (pending.mode !== modeForRequest) {
+        setInstagramBusyPhase('idle');
+        presentInstagramError(
+          new InstagramOwnershipClientError(
+            'INVALID_RESPONSE',
+            'Instagram ownership Start mode mismatch.',
+            { stage: 'start' },
+          ),
+          () => {
+            handleInstagramConnectRef.current();
+          },
+        );
+        return;
+      }
+      setInstagramVerified(null);
+      setInstagramChallenge(pending);
+      instagramChallengeRef.current = pending;
+      setInstagramHint(null);
+      setInstagramBusyPhase('pending');
+    } catch (err) {
+      if (!isInstagramResultCurrent(requestGen, modeForRequest)) return;
+      setInstagramBusyPhase('idle');
+      const mapped = mapInstagramOwnershipThrowable(err, 'start');
+      presentInstagramError(
+        mapped,
+        mapped.retryable
+          ? () => {
+              handleInstagramConnectRef.current();
+            }
+          : undefined,
+      );
+    }
+  }, [
+    editorMode,
+    instagramActionLocked,
+    isInstagramResultCurrent,
+    presentInstagramError,
+  ]);
+
+  handleInstagramConnectRef.current = () => {
+    void handleInstagramConnect();
+  };
+
+  const applyInstagramGet = useCallback(
+    async (
+      requestGen: number,
+      modeForRequest: ProfileMode,
+      options?: { alertTerminal?: boolean },
+    ) => {
+      const client = await getInstagramOwnershipClient();
+      const get = await client.get(modeForRequest);
+      if (!isInstagramResultCurrent(requestGen, modeForRequest)) return;
+      const wasPending = Boolean(instagramChallengeRef.current);
+      const presented = presentInstagramGetResponse(get);
+      setInstagramVerified(presented.verified);
+      setInstagramChallenge(presented.challenge);
+      instagramChallengeRef.current = presented.challenge;
+      setInstagramHint(presented.hint);
+      setInstagramNeedsRetry(presented.needsRetry);
+      setInstagramBusyPhase(presented.phase);
+      if (
+        options?.alertTerminal &&
+        wasPending &&
+        presented.alertCode &&
+        presented.phase === 'idle'
+      ) {
+        presentInstagramError(
+          new InstagramOwnershipClientError(
+            presented.alertCode,
+            presented.alertCode,
+            { stage: 'poll' },
+          ),
+          presented.needsRetry
+            ? () => {
+                handleInstagramConnectRef.current();
+              }
+            : undefined,
+        );
+      }
+    },
+    [isInstagramResultCurrent, presentInstagramError],
+  );
+
+  useEffect(() => {
+    if (!editorMode) return;
+    const pending = instagramBusyPhase === 'pending';
+    const expiresAtMs = instagramChallenge?.expiresAt ?? null;
+    if (!pending || !screenFocused) return;
+
+    const requestGen = instagramRequestGenRef.current;
+    const modeForRequest = editorMode;
+    let cancelled = false;
+
+    const fetchGet = async () => {
+      if (cancelled) return;
+      try {
+        await applyInstagramGet(requestGen, modeForRequest, {
+          alertTerminal: true,
+        });
+      } catch (err) {
+        if (cancelled || !isInstagramResultCurrent(requestGen, modeForRequest)) {
+          return;
+        }
+        const mapped = mapInstagramOwnershipThrowable(err, 'poll');
+        logInstagramOwnershipDev('poll_error', {
+          stage: 'poll',
+          mappedCode: mapped.code,
+          wireCode: mapped.wireCode ?? '',
+          retryable: mapped.retryable,
+        });
+      }
+    };
+
+    void fetchGet();
+
+    const live = shouldPollInstagramOwnership({
+      screenActive: true,
+      pending: true,
+      nowMs: Date.now(),
+      expiresAtMs,
+    });
+    const interval = live
+      ? setInterval(() => {
+          if (
+            !shouldPollInstagramOwnership({
+              screenActive: true,
+              pending: true,
+              nowMs: Date.now(),
+              expiresAtMs,
+            })
+          ) {
+            return;
+          }
+          void fetchGet();
+        }, INSTAGRAM_OWNERSHIP_POLL_INTERVAL_MS)
+      : undefined;
+
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void fetchGet();
+    });
+
+    const expireTimer =
+      expiresAtMs != null && expiresAtMs > Date.now()
+        ? setTimeout(() => {
+            void fetchGet();
+          }, expiresAtMs - Date.now())
+        : undefined;
+
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+      if (expireTimer) clearTimeout(expireTimer);
+      sub.remove();
+    };
+  }, [
+    applyInstagramGet,
+    editorMode,
+    instagramBusyPhase,
+    instagramChallenge?.expiresAt,
+    isInstagramResultCurrent,
+    screenFocused,
+  ]);
+
+  const handleInstagramShare = useCallback(() => {
+    const code = instagramChallenge?.code;
+    if (!code) return;
+    void shareInstagramChallengeCode(code).catch(() => {
+      presentInstagramError(
+        new InstagramOwnershipClientError(
+          'UNKNOWN',
+          'Could not share Instagram code.',
+          { stage: 'unknown' },
+        ),
+      );
+    });
+  }, [instagramChallenge, presentInstagramError]);
+
+  const handleInstagramOpen = useCallback(() => {
+    const url = instagramChallenge?.inboxProfileUrl;
+    if (!url) return;
+    void Linking.openURL(url).catch(() => {
+      presentInstagramError(
+        new InstagramOwnershipClientError(
+          'NETWORK',
+          'Could not open Instagram.',
+          { retryable: true, stage: 'unknown' },
+        ),
+      );
+    });
+  }, [instagramChallenge, presentInstagramError]);
+
+  const handleInstagramDisconnect = useCallback(() => {
+    if (instagramActionLocked || !editorMode) return;
+    Alert.alert(
+      t('profile.social.instagram.unlinkConfirmTitle'),
+      t('profile.social.instagram.unlinkConfirmBody'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('profile.social.instagram.disconnect'),
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              const requestGen = instagramRequestGenRef.current;
+              const modeForRequest = editorMode;
+              try {
+                setInstagramNeedsRetry(false);
+                setInstagramBusyPhase('disconnecting');
+                const client = await getInstagramOwnershipClient();
+                await client.unlink(modeForRequest);
+                if (!isInstagramResultCurrent(requestGen, modeForRequest)) {
+                  return;
+                }
+                setInstagramVerified(null);
+                setInstagramChallenge(null);
+                instagramChallengeRef.current = null;
+                setInstagramHint(null);
+                setInstagramNeedsRetry(false);
+              } catch (err) {
+                if (!isInstagramResultCurrent(requestGen, modeForRequest)) {
+                  return;
+                }
+                try {
+                  const client = await getInstagramOwnershipClient();
+                  const get = await client.get(modeForRequest);
+                  if (!isInstagramResultCurrent(requestGen, modeForRequest)) {
+                    return;
+                  }
+                  const presented = presentInstagramGetResponse(get);
+                  setInstagramVerified(presented.verified);
+                  setInstagramChallenge(presented.challenge);
+                  instagramChallengeRef.current = presented.challenge;
+                  setInstagramHint(presented.hint);
+                  setInstagramNeedsRetry(presented.needsRetry);
+                  if (presented.phase === 'pending') {
+                    setInstagramBusyPhase('pending');
+                    return;
+                  }
+                } catch {
+                  // Keep prior verified state if Get also fails.
+                }
+                if (!isInstagramResultCurrent(requestGen, modeForRequest)) {
+                  return;
+                }
+                presentInstagramError(err, () => {
+                  handleInstagramDisconnect();
+                });
+              } finally {
+                if (isInstagramResultCurrent(requestGen, modeForRequest)) {
+                  setInstagramBusyPhase((phase) =>
+                    phase === 'pending' ? 'pending' : 'idle',
+                  );
+                }
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [
+    editorMode,
+    instagramActionLocked,
+    isInstagramResultCurrent,
+    presentInstagramError,
+    t,
+  ]);
+
   const connectPlatform = (id: PostCrjSocialCardId) => {
-    if (id === 'youtube' || id === 'tiktok') return;
+    if (id === 'youtube' || id === 'tiktok' || id === 'instagram') return;
     setDraft((prev) => ({
       ...prev,
       connected: { ...prev.connected, [id]: true },
@@ -742,7 +1150,7 @@ export default function SocialMediaScreen() {
   };
 
   const disconnectPlatform = (id: PostCrjSocialCardId) => {
-    if (id === 'youtube' || id === 'tiktok') return;
+    if (id === 'youtube' || id === 'tiktok' || id === 'instagram') return;
     setDraft((prev) => {
       const nextConnected = { ...prev.connected, [id]: false };
       if (id === 'website') {
@@ -801,20 +1209,26 @@ export default function SocialMediaScreen() {
 
     try {
       setSaving(true);
-      const valuesForSave = omitTiktokFromDraftValues(
-        omitYoutubeFromDraftValues(buildValuesForPostCrjSocialSave(draft)),
+      const valuesForSave = omitInstagramFromDraftValues(
+        omitTiktokFromDraftValues(
+          omitYoutubeFromDraftValues(buildValuesForPostCrjSocialSave(draft)),
+        ),
       );
-      const patch = preserveLegacyTiktokInSocialPatch(
+      const patch = preserveLegacyInstagramInSocialPatch(
         editorMode,
-        preserveLegacyYoutubeInSocialPatch(
+        preserveLegacyTiktokInSocialPatch(
           editorMode,
-          buildPostCrjSocialLinksPersistencePatch(
+          preserveLegacyYoutubeInSocialPatch(
             editorMode,
-            valuesForSave,
-            draft.custom,
-            {
-              website: draft.connected.website ? draft.website : '',
-            },
+            buildPostCrjSocialLinksPersistencePatch(
+              editorMode,
+              valuesForSave,
+              draft.custom,
+              {
+                website: draft.connected.website ? draft.website : '',
+              },
+            ),
+            existingLinksRef.current,
           ),
           existingLinksRef.current,
         ),
@@ -840,7 +1254,7 @@ export default function SocialMediaScreen() {
   const cardConfigs = useMemo(
     () =>
       POST_CRJ_SOCIAL_CARD_ORDER.filter(
-        (id) => id !== 'youtube' && id !== 'tiktok',
+        (id) => id !== 'youtube' && id !== 'tiktok' && id !== 'instagram',
       ).map((id) => {
         if (id === 'website') {
           return {
@@ -872,6 +1286,10 @@ export default function SocialMediaScreen() {
   const tiktokPlatform = getCrjSocialPlatform('tiktok');
   const tiktokLabel = t(
     `onboarding.profileCompletion.socialMedia.platforms.${tiktokPlatform.nameKey}` as any,
+  );
+  const instagramPlatform = getCrjSocialPlatform('instagram');
+  const instagramLabel = t(
+    `onboarding.profileCompletion.socialMedia.platforms.${instagramPlatform.nameKey}` as any,
   );
 
   if (!parsed.ok || loadState === 'blocked') {
@@ -1345,6 +1763,259 @@ export default function SocialMediaScreen() {
               ) : null}
             </View>
 
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: palette.panel,
+                  borderColor: instagramConnected
+                    ? palette.primary
+                    : palette.border,
+                  borderWidth: instagramConnected ? 1.5 : 1,
+                },
+              ]}
+            >
+              <View style={styles.cardTopRow}>
+                <PlatformGlyph
+                  platform={{ ...instagramPlatform, id: 'instagram' }}
+                />
+                <View style={styles.cardTextCol}>
+                  <Text
+                    style={[
+                      styles.platformName,
+                      { color: palette.textPrimary },
+                    ]}
+                  >
+                    {instagramLabel}
+                  </Text>
+                  {instagramBusyPhase === 'connecting' ||
+                  instagramBusyPhase === 'disconnecting' ? (
+                    <Text
+                      style={[styles.connectedLabel, { color: palette.textMuted }]}
+                    >
+                      {instagramBusyPhase === 'disconnecting'
+                        ? t('profile.social.instagram.disconnecting')
+                        : t('profile.social.instagram.connecting')}
+                    </Text>
+                  ) : instagramBusyPhase === 'pending' ? (
+                    <Text
+                      style={[styles.connectedLabel, { color: palette.textMuted }]}
+                    >
+                      {t('profile.social.instagram.waiting')}
+                    </Text>
+                  ) : instagramConnected ? (
+                    <View style={styles.connectedRow}>
+                      <View
+                        style={[
+                          styles.connectedDot,
+                          { backgroundColor: palette.success },
+                        ]}
+                        accessibilityElementsHidden
+                        importantForAccessibility="no"
+                      />
+                      <Text
+                        style={[
+                          styles.connectedLabel,
+                          { color: palette.success },
+                        ]}
+                      >
+                        {t('profile.social.instagram.connected')}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text
+                      style={[styles.notConnected, { color: palette.textMuted }]}
+                    >
+                      {t('profile.social.instagram.notConnected')}
+                    </Text>
+                  )}
+                </View>
+                {instagramConnected ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t(
+                      'profile.social.instagram.disconnectA11y',
+                    )}
+                    disabled={instagramActionLocked}
+                    onPress={handleInstagramDisconnect}
+                    style={({ pressed }) => [
+                      styles.toggleBtn,
+                      {
+                        backgroundColor: 'transparent',
+                        borderColor: palette.danger,
+                        opacity: instagramActionLocked ? 0.5 : 1,
+                      },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={[styles.toggleText, { color: palette.danger }]}>
+                      {instagramBusyPhase === 'disconnecting'
+                        ? t('profile.social.instagram.disconnecting')
+                        : t('profile.social.instagram.disconnect')}
+                    </Text>
+                  </Pressable>
+                ) : instagramBusyPhase === 'pending' ? null : (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t(
+                      'profile.social.instagram.connectA11y',
+                    )}
+                    disabled={instagramActionLocked}
+                    onPress={() => {
+                      void handleInstagramConnect();
+                    }}
+                    style={({ pressed }) => [
+                      styles.toggleBtn,
+                      {
+                        backgroundColor: palette.primary,
+                        borderColor: palette.primary,
+                        opacity: instagramActionLocked ? 0.5 : 1,
+                      },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text
+                      style={[styles.toggleText, { color: palette.surface }]}
+                    >
+                      {instagramBusyPhase === 'connecting'
+                        ? t('profile.social.instagram.connecting')
+                        : instagramNeedsRetry
+                          ? t('profile.social.instagram.retry')
+                          : t('profile.social.instagram.connect')}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+
+              {instagramConnected && instagramVerified ? (
+                <Text
+                  style={[
+                    styles.helperText,
+                    { color: palette.textSecondary },
+                  ]}
+                  numberOfLines={2}
+                >
+                  {instagramVerified.canonicalUrl}
+                </Text>
+              ) : null}
+
+              {instagramBusyPhase === 'pending' && instagramChallenge ? (
+                <View style={styles.instagramPending}>
+                  <Text
+                    style={[
+                      styles.helperText,
+                      { color: palette.textSecondary },
+                    ]}
+                  >
+                    {t('profile.social.instagram.pendingTitle')}
+                  </Text>
+                  <Text
+                    selectable
+                    accessibilityLabel={t(
+                      'profile.social.instagram.shareCodeA11y',
+                    )}
+                    style={[
+                      styles.instagramCode,
+                      {
+                        color: palette.textPrimary,
+                        borderColor: palette.border,
+                        backgroundColor: palette.surface,
+                      },
+                    ]}
+                  >
+                    {instagramChallenge.code}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.helperText,
+                      { color: palette.textSecondary },
+                    ]}
+                  >
+                    {t('profile.social.instagram.pendingBody', {
+                      inbox: instagramChallenge.inboxUsername,
+                    })}
+                  </Text>
+                  <View style={styles.instagramActions}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t(
+                        'profile.social.instagram.shareCodeA11y',
+                      )}
+                      onPress={handleInstagramShare}
+                      style={({ pressed }) => [
+                        styles.toggleBtn,
+                        {
+                          backgroundColor: palette.surface,
+                          borderColor: palette.border,
+                        },
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.toggleText,
+                          { color: palette.textPrimary },
+                        ]}
+                      >
+                        {t('profile.social.instagram.shareCode')}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t(
+                        'profile.social.instagram.openInboxA11y',
+                      )}
+                      onPress={handleInstagramOpen}
+                      style={({ pressed }) => [
+                        styles.toggleBtn,
+                        {
+                          backgroundColor: palette.primary,
+                          borderColor: palette.primary,
+                        },
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text
+                        style={[styles.toggleText, { color: palette.surface }]}
+                      >
+                        {t('profile.social.instagram.openInbox')}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
+
+              {!instagramConnected &&
+              instagramBusyPhase !== 'pending' &&
+              instagramHint === 'expired' ? (
+                <Text
+                  style={[styles.helperText, { color: palette.textMuted }]}
+                >
+                  {t('profile.social.instagram.errors.txExpired')}
+                </Text>
+              ) : null}
+
+              {!instagramConnected &&
+              instagramBusyPhase !== 'pending' &&
+              instagramHint === 'conflict' ? (
+                <Text
+                  style={[styles.helperText, { color: palette.textMuted }]}
+                >
+                  {t('profile.social.instagram.errors.accountClaimed')}
+                </Text>
+              ) : null}
+
+              {!instagramConnected &&
+              instagramBusyPhase !== 'pending' &&
+              instagramLegacyUrl ? (
+                <Text
+                  style={[styles.helperText, { color: palette.textMuted }]}
+                >
+                  {t('profile.social.instagram.legacyStored')}
+                </Text>
+              ) : null}
+            </View>
+
             {cardConfigs.map((card) => {
               const connected = draft.connected[card.id];
               const error =
@@ -1748,6 +2419,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     justifyContent: 'center',
+  },
+  instagramPending: {
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  instagramCode: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.extrabold,
+    letterSpacing: 2,
+  },
+  instagramActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
   },
   pressed: { opacity: 0.9 },
   disabled: { opacity: 0.55 },
