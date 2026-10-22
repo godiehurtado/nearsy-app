@@ -4,7 +4,11 @@
     "appVersionSource": "local"
   },
   "build": {
+    "base": {
+      "node": "22.23.4"
+    },
     "development": {
+      "extends": "base",
       "developmentClient": true,
       "distribution": "internal",
       "environment": "development",
@@ -14,12 +18,14 @@
       }
     },
     "preview": {
+      "extends": "base",
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_NEARSY_FIREBASE_ENV": "production"
       }
     },
     "production": {
+      "extends": "base",
       "autoIncrement": true,
       "environment": "production",
       "env": {
