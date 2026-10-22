@@ -2,6 +2,7 @@
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { recordPresenceEvent } from './presenceDiagnostics';
 
 export const BG_LOCATION_TASK = 'nearsy-bg-location';
 
@@ -16,15 +17,32 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
   try {
     if (error) {
       if (__DEV__) console.warn('[BG Task iOS] error:', error);
+      await recordPresenceEvent({
+        event: 'skip',
+        platform: 'ios',
+        skip: 'runtime_gate',
+      });
       return;
     }
 
     const { locations } = (data as LocationTaskData) ?? {};
-    if (!locations?.length) return;
+    if (!locations?.length) {
+      await recordPresenceEvent({
+        event: 'skip',
+        platform: 'ios',
+        skip: 'empty_batch',
+      });
+      return;
+    }
 
     const uid = await AsyncStorage.getItem('NEARSY_BG_UID');
     if (!uid) {
       if (__DEV__) console.warn('[BG Task iOS] missing uid');
+      await recordPresenceEvent({
+        event: 'skip',
+        platform: 'ios',
+        skip: 'runtime_gate',
+      });
       return;
     }
 
@@ -34,6 +52,11 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
       if (__DEV__) {
         console.warn('[BG Task iOS] publish blocked — runtime gate');
       }
+      await recordPresenceEvent({
+        event: 'skip',
+        platform: 'ios',
+        skip: 'runtime_gate',
+      });
       return;
     }
 
@@ -41,6 +64,12 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
     const { latitude, longitude, accuracy } = fix.coords;
     const accuracyMeters =
       typeof accuracy === 'number' && Number.isFinite(accuracy) ? accuracy : 999;
+
+    await recordPresenceEvent({
+      event: 'callback',
+      platform: 'ios',
+      accuracyMeters,
+    });
 
     try {
       const { getVisibilityDiscoveryClient } = await import(
@@ -66,13 +95,39 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
             confirmedAt,
           });
         }
+        await recordPresenceEvent({
+          event: 'publish_ok',
+          platform: 'ios',
+          accuracyMeters,
+        });
       } else if (outcome.ok === false) {
         if (__DEV__) {
           console.warn('[BG Task iOS] publishLocation soft-fail', outcome.kind);
         }
+        if (outcome.kind === 'invalid-accuracy') {
+          await recordPresenceEvent({
+            event: 'skip',
+            platform: 'ios',
+            skip: 'invalid_accuracy',
+            accuracyMeters,
+          });
+        } else {
+          await recordPresenceEvent({
+            event: 'publish_fail',
+            platform: 'ios',
+            skip: 'callable_retryable',
+            accuracyMeters,
+          });
+        }
       }
     } catch (e) {
       if (__DEV__) console.warn('[BG Task iOS] publishLocation error:', e);
+      await recordPresenceEvent({
+        event: 'publish_fail',
+        platform: 'ios',
+        skip: 'callable_retryable',
+        accuracyMeters,
+      });
     }
   } catch (e) {
     if (__DEV__) console.warn('[BG Task iOS] persist error:', e);

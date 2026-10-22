@@ -28,6 +28,19 @@ import {
   wasForegroundNewlyGranted,
   reconcileBgVisibleWithBackgroundPermission,
 } from './backgroundLocationRuntimeGates';
+import { BG_LOCATION_TASK } from '../background/locationTask';
+import {
+  classifyIosRuntimeStop,
+  recordPresenceEvent,
+} from '../background/presenceDiagnostics';
+
+async function readTaskStarted(): Promise<boolean | undefined> {
+  try {
+    return await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);
+  } catch {
+    return undefined;
+  }
+}
 
 export {
   BackgroundLocationPermissionError,
@@ -85,7 +98,23 @@ export async function readBackgroundRuntimeAllowedUid(): Promise<string | null> 
 export async function syncBackgroundLocationRuntime(
   gates: BackgroundRuntimeGates,
 ): Promise<'started' | 'stopped'> {
+  const stopClass = classifyIosRuntimeStop({
+    hasUid: typeof gates.uid === 'string' && gates.uid.length > 0,
+    visibilityOn: gates.visibilityOn === true,
+    bgVisible: gates.bgVisible === true,
+    permissionOk: true,
+    startThrew: false,
+  });
   if (!shouldRunBackgroundLocationRuntime(gates)) {
+    const started = await readTaskStarted();
+    if (started !== false) {
+      await recordPresenceEvent({
+        event: 'stop',
+        platform: 'ios',
+        stop: stopClass,
+        started,
+      });
+    }
     await stopBackgroundLocation().catch(() => {});
     await clearRuntimeAllowed();
     return 'stopped';
@@ -94,6 +123,21 @@ export async function syncBackgroundLocationRuntime(
   const fg = await readForegroundPermissionSnapshot();
   const bg = await readBackgroundPermissionSnapshot();
   if (!fg.granted || !isBackgroundPermissionEffectivelyGranted(bg)) {
+    const started = await readTaskStarted();
+    if (started !== false) {
+      await recordPresenceEvent({
+        event: 'stop',
+        platform: 'ios',
+        stop: classifyIosRuntimeStop({
+          hasUid: true,
+          visibilityOn: true,
+          bgVisible: true,
+          permissionOk: false,
+          startThrew: false,
+        }),
+        started,
+      });
+    }
     await stopBackgroundLocation().catch(() => {});
     await clearRuntimeAllowed();
     return 'stopped';
@@ -102,13 +146,33 @@ export async function syncBackgroundLocationRuntime(
   // Allow Once / session FG is fine for foreground Visibility, but Always is
   // required for durable background. If BG status is granted, proceed.
   try {
+    const alreadyStarted = await readTaskStarted();
     await startBackgroundLocation({
       uid: gates.uid,
       requestPermissions: false,
     });
     await markRuntimeAllowed(gates.uid);
+    if (alreadyStarted !== true) {
+      await recordPresenceEvent({
+        event: 'start_ok',
+        platform: 'ios',
+        started: true,
+      });
+    }
     return 'started';
   } catch {
+    await recordPresenceEvent({
+      event: 'stop',
+      platform: 'ios',
+      stop: classifyIosRuntimeStop({
+        hasUid: true,
+        visibilityOn: true,
+        bgVisible: true,
+        permissionOk: true,
+        startThrew: true,
+      }),
+      started: false,
+    });
     await stopBackgroundLocation().catch(() => {});
     await clearRuntimeAllowed();
     return 'stopped';
@@ -190,7 +254,18 @@ export async function isBackgroundPublishAllowedForUid(
   });
 }
 
-export async function stopBackgroundLocationRuntime(): Promise<void> {
+export async function stopBackgroundLocationRuntime(
+  reason: 'logout' | 'other' = 'other',
+): Promise<void> {
+  const started = await readTaskStarted();
+  if (reason === 'logout' || started !== false) {
+    await recordPresenceEvent({
+      event: 'stop',
+      platform: 'ios',
+      stop: reason === 'logout' ? 'logout' : 'other',
+      started,
+    });
+  }
   await stopBackgroundLocation().catch(() => {});
   await clearRuntimeAllowed();
 }

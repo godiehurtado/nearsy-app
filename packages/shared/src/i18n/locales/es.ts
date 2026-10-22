@@ -1362,7 +1362,17 @@ const es: TranslationResources = {
       privacy: 'Privacidad y descubrimiento',
       preferences: 'Preferencias',
       about: 'Acerca de',
+      diagnostic: 'Diagnóstico',
       actions: 'Acciones de la cuenta',
+    },
+    diagnostic: {
+      exportTitle: 'Exportar registro de segundo plano',
+      exportNote:
+        'Comparte eventos de esta compilación de prueba. Sin coordenadas ni datos de cuenta.',
+      exportHint: 'Abre la hoja para compartir y enviar el registro',
+      emptyTitle: 'Aún no hay registro',
+      emptyBody: 'Usa Visibilidad en segundo plano y luego exporta.',
+      shareError: 'No se pudo compartir el registro.',
     },
     about: {
       cityDataTitle: 'Datos de ciudades',

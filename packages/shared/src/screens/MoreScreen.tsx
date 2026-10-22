@@ -68,6 +68,7 @@ import { BackgroundLocationEducationModal } from '../components/BackgroundLocati
 import { LocationPreparingModal } from '../components/LocationPreparingModal';
 import { evaluateBackgroundLocationSettingsReturn } from '../visibility/settingsRecovery';
 import { closeVisibilitySessionForLogout } from '../visibility/visibilitySessionGate';
+import { sharePresenceDiagnostics } from '../background/sharePresenceDiagnostics';
 import {
   ageFromBirthDate,
   applyBirthDateTextChange,
@@ -805,6 +806,20 @@ export default function MoreScreen() {
     }
   };
 
+  const handleExportBackgroundLog = async () => {
+    const result = await sharePresenceDiagnostics();
+    if (result === 'empty') {
+      Alert.alert(
+        t('settings.diagnostic.emptyTitle'),
+        t('settings.diagnostic.emptyBody'),
+      );
+      return;
+    }
+    if (result === 'failed') {
+      Alert.alert(t('common.error'), t('settings.diagnostic.shareError'));
+    }
+  };
+
   const handleLogout = async () => {
     try {
       const { clearPendingSocialProfilePrefill, clearFacebookProviderSession } =
@@ -999,6 +1014,17 @@ export default function MoreScreen() {
             onPress={handleOpenGeoNames}
             accessibilityRole="link"
             accessibilityHint={t('settings.about.openGeoNamesHint')}
+            isLast
+          />
+        </SettingsSection>
+
+        <SettingsSection title={t('settings.sections.diagnostic')}>
+          <SettingsRow
+            icon="share-outline"
+            title={t('settings.diagnostic.exportTitle')}
+            note={t('settings.diagnostic.exportNote')}
+            onPress={handleExportBackgroundLog}
+            accessibilityHint={t('settings.diagnostic.exportHint')}
             isLast
           />
         </SettingsSection>

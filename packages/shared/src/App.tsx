@@ -29,6 +29,7 @@ import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 import * as Notifications from 'expo-notifications';
 import { registerPushToken } from './services/pushTokens';
 import { stopBackgroundLocationRuntime, syncBackgroundLocationRuntime } from './visibility/backgroundLocationRuntime';
+import { attachBackgroundPresenceResume } from './background/attachPresenceDiagnostics';
 import { clearLocationPermissionJourneySession, reconcileLocationJourneyOnColdStart } from './visibility/locationPermissionJourney';
 
 import * as WebBrowser from 'expo-web-browser';
@@ -144,6 +145,8 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
     startAffiliationEntitySearchBootstrap();
   }, []);
 
+  useEffect(() => attachBackgroundPresenceResume(), []);
+
   useEffect(() => {
     ensureAndroidChannel();
   }, []);
@@ -159,7 +162,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
       async (user: any | null) => {
         if (!user) {
           if (Platform.OS !== 'web') {
-            await stopBackgroundLocationRuntime().catch(() => {});
+            await stopBackgroundLocationRuntime('logout').catch(() => {});
           }
           clearLocationPermissionJourneySession();
           lastUid = null;
