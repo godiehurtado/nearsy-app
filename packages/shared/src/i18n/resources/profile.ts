@@ -28,6 +28,8 @@ const en = {
     gallery: 'Gallery',
     configured: '{{count}} configured',
     empty: 'Not configured yet',
+    checking: 'Checking connections…',
+    checkError: 'Could not check connections',
     openA11y: 'Open {{section}}',
   },
   lifecycle: {
@@ -394,6 +396,8 @@ const es = {
       gallery: 'Galería',
       configured: '{{count}} configurados',
       empty: 'Aún no configurado',
+      checking: 'Comprobando conexiones…',
+      checkError: 'No se pudieron comprobar las conexiones',
       openA11y: 'Abrir {{section}}',
     },
     lifecycle: {

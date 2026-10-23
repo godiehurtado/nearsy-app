@@ -28,6 +28,7 @@ import {
   XOwnershipError,
   xOwnershipErrorToI18nKey,
 } from '../../social/xOwnership/xOwnershipCore.ts';
+import { shouldReportOwnershipConnectedChange } from '../../social/postCrjSocialEditor.ts';
 import {
   buildXOwnershipModeView,
   xOwnershipActionBlocked,
@@ -222,7 +223,8 @@ export function XOwnershipCard({
   }, [mode, api, refreshForMode, applyVerifiedIfCurrent]);
 
   useEffect(() => {
-    onConnectedChange?.(!!connected && phase !== 'loading');
+    if (!shouldReportOwnershipConnectedChange(phase)) return;
+    onConnectedChange?.(!!connected);
   }, [connected, phase, onConnectedChange]);
 
   const blocked = xOwnershipActionBlocked(phase);

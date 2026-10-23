@@ -28,6 +28,7 @@ import {
   TiktokOwnershipError,
   tiktokOwnershipErrorToI18nKey,
 } from '../../social/tiktokOwnership/tiktokOwnershipCore.ts';
+import { shouldReportOwnershipConnectedChange } from '../../social/postCrjSocialEditor.ts';
 import {
   buildTiktokOwnershipModeView,
   tiktokOwnershipActionBlocked,
@@ -223,7 +224,8 @@ export function TiktokOwnershipCard({
   }, [mode, api, refreshForMode, applyVerifiedIfCurrent]);
 
   useEffect(() => {
-    onConnectedChange?.(!!connected && phase !== 'loading');
+    if (!shouldReportOwnershipConnectedChange(phase)) return;
+    onConnectedChange?.(!!connected);
   }, [connected, phase, onConnectedChange]);
 
   const blocked = tiktokOwnershipActionBlocked(phase);

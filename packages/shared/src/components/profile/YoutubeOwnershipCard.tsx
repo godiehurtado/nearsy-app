@@ -32,6 +32,7 @@ import {
   YoutubeOwnershipError,
   youtubeOwnershipErrorToI18nKey,
 } from '../../social/youtubeOwnership/youtubeOwnershipCore.ts';
+import { shouldReportOwnershipConnectedChange } from '../../social/postCrjSocialEditor.ts';
 import {
   buildYoutubeOwnershipModeView,
   youtubeOwnershipActionBlocked,
@@ -253,7 +254,8 @@ export function YoutubeOwnershipCard({
   }, [mode, api, refreshForMode, applyVerifiedIfCurrent]);
 
   useEffect(() => {
-    onConnectedChange?.(!!connected && phase !== 'loading');
+    if (!shouldReportOwnershipConnectedChange(phase)) return;
+    onConnectedChange?.(!!connected);
   }, [connected, phase, onConnectedChange]);
 
   const blocked = youtubeOwnershipActionBlocked(phase);

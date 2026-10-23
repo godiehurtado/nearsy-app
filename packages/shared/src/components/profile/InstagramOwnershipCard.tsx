@@ -33,6 +33,7 @@ import {
   InstagramOwnershipError,
   instagramOwnershipErrorToI18nKey,
 } from '../../social/instagramOwnership/instagramOwnershipCore.ts';
+import { shouldReportOwnershipConnectedChange } from '../../social/postCrjSocialEditor.ts';
 import {
   buildInstagramOwnershipModeView,
   instagramOwnershipActionBlocked,
@@ -210,7 +211,8 @@ export function InstagramOwnershipCard({
   }, [mode, screenFocused, refreshForMode]);
 
   useEffect(() => {
-    onConnectedChange?.(!!verified && phase !== 'loading');
+    if (!shouldReportOwnershipConnectedChange(phase)) return;
+    onConnectedChange?.(!!verified);
   }, [verified, phase, onConnectedChange]);
 
   const pendingLive = shouldPollInstagramOwnership({

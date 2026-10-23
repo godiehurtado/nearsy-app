@@ -31,6 +31,7 @@ import {
   type CrjSocialPlatformId,
 } from '../social/onboardingSocialCatalog';
 import {
+  applyOwnershipVerifiedChange,
   buildPostCrjSocialLinksPersistencePatch,
   countValidPostCrjSocialConnections,
   emptyPostCrjSocialConnectedState,
@@ -153,11 +154,28 @@ export default function SocialMediaScreen() {
   >({});
   const [ownershipVerified, setOwnershipVerified] = useState<
     Partial<Record<AndroidOwnershipCardId, boolean>>
-  >(() =>
-    Platform.OS === 'android'
-      ? { youtube: false, tiktok: false, instagram: false, x: false }
-      : {},
-  );
+  >({});
+
+  const onYoutubeConnectedChange = useCallback((connected: boolean) => {
+    setOwnershipVerified((prev) =>
+      applyOwnershipVerifiedChange(prev, 'youtube', connected),
+    );
+  }, []);
+  const onTiktokConnectedChange = useCallback((connected: boolean) => {
+    setOwnershipVerified((prev) =>
+      applyOwnershipVerifiedChange(prev, 'tiktok', connected),
+    );
+  }, []);
+  const onInstagramConnectedChange = useCallback((connected: boolean) => {
+    setOwnershipVerified((prev) =>
+      applyOwnershipVerifiedChange(prev, 'instagram', connected),
+    );
+  }, []);
+  const onXConnectedChange = useCallback((connected: boolean) => {
+    setOwnershipVerified((prev) =>
+      applyOwnershipVerifiedChange(prev, 'x', connected),
+    );
+  }, []);
 
   const isDirty = isPostCrjSocialEditorDirty(snapshotRef.current, draft);
   const validConnectionCount = countValidPostCrjSocialConnections(
@@ -579,12 +597,7 @@ export default function SocialMediaScreen() {
                     mode={editorMode!}
                     label={card.label}
                     legacyUrl={draft.values.youtube}
-                    onConnectedChange={(connected) =>
-                      setOwnershipVerified((prev) => ({
-                        ...prev,
-                        youtube: connected,
-                      }))
-                    }
+                    onConnectedChange={onYoutubeConnectedChange}
                     glyph={
                       <PlatformGlyph
                         platform={{ ...card.platform, id: card.id }}
@@ -601,12 +614,7 @@ export default function SocialMediaScreen() {
                     mode={editorMode!}
                     label={card.label}
                     legacyUrl={draft.values.tiktok}
-                    onConnectedChange={(connected) =>
-                      setOwnershipVerified((prev) => ({
-                        ...prev,
-                        tiktok: connected,
-                      }))
-                    }
+                    onConnectedChange={onTiktokConnectedChange}
                     glyph={
                       <PlatformGlyph
                         platform={{ ...card.platform, id: card.id }}
@@ -623,12 +631,7 @@ export default function SocialMediaScreen() {
                     mode={editorMode!}
                     label={card.label}
                     legacyUrl={draft.values.instagram}
-                    onConnectedChange={(connected) =>
-                      setOwnershipVerified((prev) => ({
-                        ...prev,
-                        instagram: connected,
-                      }))
-                    }
+                    onConnectedChange={onInstagramConnectedChange}
                     glyph={
                       <PlatformGlyph
                         platform={{ ...card.platform, id: card.id }}
@@ -645,12 +648,7 @@ export default function SocialMediaScreen() {
                     mode={editorMode!}
                     label={card.label}
                     legacyUrl={draft.values.x}
-                    onConnectedChange={(connected) =>
-                      setOwnershipVerified((prev) => ({
-                        ...prev,
-                        x: connected,
-                      }))
-                    }
+                    onConnectedChange={onXConnectedChange}
                     glyph={
                       <PlatformGlyph
                         platform={{ ...card.platform, id: card.id }}
