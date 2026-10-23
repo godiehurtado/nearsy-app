@@ -294,6 +294,40 @@ const en = {
         generic: 'We couldn’t connect TikTok. Try again.',
       },
     },
+    instagramOwnership: {
+      connect: 'Connect Instagram',
+      connecting: 'Connecting…',
+      connected: 'Instagram connected',
+      disconnect: 'Disconnect',
+      disconnecting: 'Disconnecting…',
+      disconnectConfirmTitle: 'Disconnect Instagram?',
+      disconnectConfirmBody:
+        'Instagram will be removed from this profile mode. A pending code is cancelled. Your previously saved link stays private so you can connect again later.',
+      disconnectConfirmAction: 'Disconnect',
+      pendingTitle: 'Send this code',
+      pendingBody:
+        'Open Instagram and send this code by DM to @{{inbox}}. Do not share it anywhere else.',
+      waiting: 'Waiting for the message…',
+      expiresAt: 'Expires at {{time}}',
+      shareCode: 'Share code',
+      shareCodeA11y: 'Share the Instagram verification code',
+      openInbox: 'Open Instagram',
+      openInboxA11y: 'Open Instagram to send the code by DM',
+      legacyPrivateHint: 'A saved link is kept privately (not published).',
+      cancel: 'Cancel',
+      errors: {
+        notEnabled: 'Instagram connection is not available right now.',
+        accountClaimed:
+          'That Instagram account is already connected on another Nearsy account.',
+        rateLimited: 'Too many attempts today. Try again tomorrow.',
+        noUsername: 'Instagram did not return a usable username. Try again.',
+        txExpired: 'This code expired. Start again.',
+        unauthenticated: 'Sign in again to connect Instagram.',
+        sessionChanged:
+          'Your Nearsy session changed during connection. Please try again.',
+        generic: 'We couldn’t connect Instagram. Try again.',
+      },
+    },
   },
 } as const;
 
@@ -598,6 +632,41 @@ const es = {
           sessionChanged:
             'Tu sesión de Nearsy cambió durante la conexión. Inténtalo de nuevo.',
           generic: 'No pudimos conectar TikTok. Inténtalo de nuevo.',
+        },
+      },
+      instagramOwnership: {
+        connect: 'Conectar Instagram',
+        connecting: 'Conectando…',
+        connected: 'Instagram conectada',
+        disconnect: 'Desconectar',
+        disconnecting: 'Desconectando…',
+        disconnectConfirmTitle: '¿Desconectar Instagram?',
+        disconnectConfirmBody:
+          'Instagram se quitará de este modo de perfil. Un código pendiente se cancela. El enlace que tenías guardado permanece en privado para que puedas conectarlo de nuevo después.',
+        disconnectConfirmAction: 'Desconectar',
+        pendingTitle: 'Envía este código',
+        pendingBody:
+          'Abre Instagram y envía este código por DM a @{{inbox}}. No lo compartas en ningún otro lugar.',
+        waiting: 'Esperando el mensaje…',
+        expiresAt: 'Caduca a las {{time}}',
+        shareCode: 'Compartir código',
+        shareCodeA11y: 'Compartir el código de verificación de Instagram',
+        openInbox: 'Abrir Instagram',
+        openInboxA11y: 'Abrir Instagram para enviar el código por DM',
+        legacyPrivateHint: 'Hay un enlace guardado en privado (no publicado).',
+        cancel: 'Cancelar',
+        errors: {
+          notEnabled: 'La conexión de Instagram no está disponible ahora.',
+          accountClaimed:
+            'Esa cuenta de Instagram ya está conectada en otra cuenta de Nearsy.',
+          rateLimited: 'Demasiados intentos hoy. Inténtalo de nuevo mañana.',
+          noUsername:
+            'Instagram no devolvió un usuario válido. Inténtalo de nuevo.',
+          txExpired: 'Este código expiró. Empieza de nuevo.',
+          unauthenticated: 'Vuelve a iniciar sesión para conectar Instagram.',
+          sessionChanged:
+            'Tu sesión de Nearsy cambió durante la conexión. Inténtalo de nuevo.',
+          generic: 'No pudimos conectar Instagram. Inténtalo de nuevo.',
         },
       },
     },
