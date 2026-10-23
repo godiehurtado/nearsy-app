@@ -235,6 +235,38 @@ const en = {
       stay: 'Keep editing',
       discard: 'Discard',
     },
+    youtubeOwnership: {
+      connect: 'Connect YouTube',
+      connecting: 'Connecting…',
+      connected: 'YouTube connected',
+      disconnect: 'Disconnect',
+      disconnecting: 'Disconnecting…',
+      disconnectConfirmTitle: 'Disconnect YouTube?',
+      disconnectConfirmBody:
+        'YouTube will be removed from this profile mode. Your previously saved link stays private so you can connect again later.',
+      disconnectConfirmAction: 'Disconnect',
+      selectChannelTitle: 'Choose a YouTube channel',
+      selectChannelBody:
+        'Select the channel to connect for this profile mode. Only channels returned by Google are listed.',
+      legacyPrivateHint: 'A saved link is kept privately (not published).',
+      cancel: 'Cancel',
+      errors: {
+        notEnabled: 'YouTube connection is not available right now.',
+        noChannel: 'No YouTube channel was found for this Google account.',
+        channelClaimed:
+          'That YouTube channel is already connected on another Nearsy account.',
+        channelNotInCandidates: 'That channel is not available to select.',
+        notLinked: 'YouTube is not connected on this profile mode.',
+        txExpired: 'Connection expired. Please try again.',
+        txInvalid: 'Connection could not be completed. Please try again.',
+        proofInvalid: 'Connection could not be confirmed. Please try again.',
+        unauthenticated: 'Sign in again to connect YouTube.',
+        cancelled: 'Connection canceled.',
+        sessionChanged:
+          'Your Nearsy session changed during connection. Please try again.',
+        generic: 'We couldn’t connect YouTube. Try again.',
+      },
+    },
   },
 } as const;
 
@@ -478,6 +510,40 @@ const es = {
         body: 'Tienes cambios sin guardar en tus redes sociales. Si sales, se perderán.',
         stay: 'Seguir editando',
         discard: 'Descartar',
+      },
+      youtubeOwnership: {
+        connect: 'Conectar YouTube',
+        connecting: 'Conectando…',
+        connected: 'YouTube conectada',
+        disconnect: 'Desconectar',
+        disconnecting: 'Desconectando…',
+        disconnectConfirmTitle: '¿Desconectar YouTube?',
+        disconnectConfirmBody:
+          'YouTube se quitará de este modo de perfil. El enlace que tenías guardado permanece en privado para que puedas conectarlo de nuevo después.',
+        disconnectConfirmAction: 'Desconectar',
+        selectChannelTitle: 'Elige un canal de YouTube',
+        selectChannelBody:
+          'Selecciona el canal a conectar para este modo de perfil. Solo se listan los canales que devolvió Google.',
+        legacyPrivateHint: 'Hay un enlace guardado en privado (no publicado).',
+        cancel: 'Cancelar',
+        errors: {
+          notEnabled: 'La conexión de YouTube no está disponible ahora.',
+          noChannel:
+            'No se encontró un canal de YouTube en esta cuenta de Google.',
+          channelClaimed:
+            'Ese canal de YouTube ya está conectado en otra cuenta de Nearsy.',
+          channelNotInCandidates:
+            'Ese canal no está disponible para seleccionar.',
+          notLinked: 'YouTube no está conectada en este modo de perfil.',
+          txExpired: 'La conexión expiró. Inténtalo de nuevo.',
+          txInvalid: 'No se pudo completar la conexión. Inténtalo de nuevo.',
+          proofInvalid: 'No se pudo confirmar la conexión. Inténtalo de nuevo.',
+          unauthenticated: 'Vuelve a iniciar sesión para conectar YouTube.',
+          cancelled: 'Conexión cancelada.',
+          sessionChanged:
+            'Tu sesión de Nearsy cambió durante la conexión. Inténtalo de nuevo.',
+          generic: 'No pudimos conectar YouTube. Inténtalo de nuevo.',
+        },
       },
     },
   } as const;

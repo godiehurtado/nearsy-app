@@ -40,11 +40,13 @@ import {
   readPostCrjSocialEditorDraft,
   validatePostCrjSocialDraftForSave,
   buildValuesForPostCrjSocialSave,
+  type AndroidOwnershipCardId,
   type PostCrjSocialCardId,
   type PostCrjSocialEditorDraft,
 } from '../social/postCrjSocialEditor';
 import type { ProfileMode } from '../profile/profileModeFields';
 import type { CrjSocialFieldErrors } from '../social/socialLinkNormalize';
+import { YoutubeOwnershipCard } from '../components/profile/YoutubeOwnershipCard';
 
 type RouteParams = {
   uid?: string;
@@ -146,9 +148,19 @@ export default function SocialMediaScreen() {
   const inputRefs = useRef<
     Partial<Record<PostCrjSocialCardId, TextInput | null>>
   >({});
+  const [ownershipVerified, setOwnershipVerified] = useState<
+    Partial<Record<AndroidOwnershipCardId, boolean>>
+  >(() =>
+    Platform.OS === 'android'
+      ? { youtube: false, tiktok: false, instagram: false, x: false }
+      : {},
+  );
 
   const isDirty = isPostCrjSocialEditorDirty(snapshotRef.current, draft);
-  const validConnectionCount = countValidPostCrjSocialConnections(draft);
+  const validConnectionCount = countValidPostCrjSocialConnections(
+    draft,
+    Platform.OS === 'android' ? ownershipVerified : undefined,
+  );
 
   const screenTitle =
     editorMode === 'professional'
@@ -213,6 +225,13 @@ export default function SocialMediaScreen() {
           existing as Record<string, unknown>,
           editorMode,
         );
+        // Android ownership cards are not manual URL connect state.
+        if (Platform.OS === 'android') {
+          loaded.connected.youtube = false;
+          loaded.connected.tiktok = false;
+          loaded.connected.instagram = false;
+          loaded.connected.x = false;
+        }
         snapshotRef.current = loaded;
         setDraft(loaded);
         setLoadState('ready');
@@ -229,6 +248,16 @@ export default function SocialMediaScreen() {
   }, [editorMode, editorUid, parsed.ok]);
 
   const connectPlatform = (id: PostCrjSocialCardId) => {
+    // YouTube pilot: verification UI only — no manual URL connect.
+    if (
+      Platform.OS === 'android' &&
+      (id === 'youtube' ||
+        id === 'tiktok' ||
+        id === 'instagram' ||
+        id === 'x')
+    ) {
+      return;
+    }
     setDraft((prev) => ({
       ...prev,
       connected: { ...prev.connected, [id]: true },
@@ -245,6 +274,16 @@ export default function SocialMediaScreen() {
   };
 
   const disconnectPlatform = (id: PostCrjSocialCardId) => {
+    // YouTube pilot: do not clear legacy bag URL via manual disconnect.
+    if (
+      Platform.OS === 'android' &&
+      (id === 'youtube' ||
+        id === 'tiktok' ||
+        id === 'instagram' ||
+        id === 'x')
+    ) {
+      return;
+    }
     setDraft((prev) => {
       const nextConnected = { ...prev.connected, [id]: false };
       if (id === 'website') {
@@ -303,13 +342,36 @@ export default function SocialMediaScreen() {
 
     try {
       setSaving(true);
-      const valuesForSave = buildValuesForPostCrjSocialSave(draft);
+      // YouTube pilot: never treat manual connect as verified; keep legacy URL in the bag.
+      const draftForSave: PostCrjSocialEditorDraft = {
+        ...draft,
+        connected: {
+          ...draft.connected,
+          youtube: false,
+          tiktok: false,
+          instagram: false,
+          x: false,
+        },
+      };
+      const valuesForSave = buildValuesForPostCrjSocialSave(draftForSave);
+      const preserveLegacy = (id: 'youtube' | 'tiktok' | 'instagram' | 'x') => {
+        const legacy = (
+          snapshotRef.current.values[id] ??
+          draft.values[id] ??
+          ''
+        ).trim();
+        if (legacy) valuesForSave[id] = legacy;
+      };
+      preserveLegacy('youtube');
+      preserveLegacy('tiktok');
+      preserveLegacy('instagram');
+      preserveLegacy('x');
       const patch = buildPostCrjSocialLinksPersistencePatch(
         editorMode,
         valuesForSave,
-        draft.custom,
+        draftForSave.custom,
         {
-          website: draft.connected.website ? draft.website : '',
+          website: draftForSave.connected.website ? draftForSave.website : '',
         },
       );
       await updateUserProfilePartial(editorUid, patch);
@@ -507,6 +569,28 @@ export default function SocialMediaScreen() {
 
           <View style={styles.cards}>
             {cardConfigs.map((card) => {
+              if (card.id === 'youtube' && Platform.OS === 'android') {
+                return (
+                  <YoutubeOwnershipCard
+                    key={`youtube-${editorMode}`}
+                    mode={editorMode!}
+                    label={card.label}
+                    legacyUrl={draft.values.youtube}
+                    onConnectedChange={(connected) =>
+                      setOwnershipVerified((prev) => ({
+                        ...prev,
+                        youtube: connected,
+                      }))
+                    }
+                    glyph={
+                      <PlatformGlyph
+                        platform={{ ...card.platform, id: card.id }}
+                      />
+                    }
+                  />
+                );
+              }
+
               const connected = draft.connected[card.id];
               const error =
                 card.id === 'website'

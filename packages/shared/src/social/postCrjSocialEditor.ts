@@ -103,11 +103,37 @@ export function isPostCrjSocialEditorDirty(
   return !arePostCrjSocialDraftsEqual(snapshot, draft);
 }
 
+/** Own Profile Android ownership cards — never counted from the legacy URL bag. */
+export const ANDROID_OWNERSHIP_CARD_IDS = [
+  'youtube',
+  'tiktok',
+  'instagram',
+  'x',
+] as const satisfies readonly PostCrjSocialCardId[];
+
+export type AndroidOwnershipCardId =
+  (typeof ANDROID_OWNERSHIP_CARD_IDS)[number];
+
+export function isAndroidOwnershipCardId(
+  id: PostCrjSocialCardId,
+): id is AndroidOwnershipCardId {
+  return (ANDROID_OWNERSHIP_CARD_IDS as readonly string[]).includes(id);
+}
+
 export function countValidPostCrjSocialConnections(
   draft: PostCrjSocialEditorDraft,
+  ownershipVerified?: Partial<Record<AndroidOwnershipCardId, boolean>>,
 ): number {
   let count = 0;
   for (const platform of CRJ_SOCIAL_PLATFORMS) {
+    if (
+      ownershipVerified &&
+      isAndroidOwnershipCardId(platform.id) &&
+      Object.prototype.hasOwnProperty.call(ownershipVerified, platform.id)
+    ) {
+      if (ownershipVerified[platform.id]) count += 1;
+      continue;
+    }
     if (!draft.connected[platform.id]) continue;
     const result = normalizeSocialInput(
       platform.id,
