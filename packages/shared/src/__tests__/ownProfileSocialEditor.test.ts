@@ -281,6 +281,49 @@ describe('post-CRJ social editor helpers', () => {
     );
   });
 
+  it('counts verified X with YouTube, TikTok, and Instagram without twitter/x duplicates', () => {
+    const empty = readPostCrjSocialEditorDraft(null, 'personal');
+    assert.equal(
+      countValidPostCrjSocialConnections(empty, {
+        youtubeConnected: true,
+        tiktokConnected: true,
+        instagramConnected: true,
+        xConnected: true,
+      }),
+      4,
+    );
+
+    const withLegacyTwitter = {
+      ...empty,
+      connected: { ...empty.connected, x: true },
+      values: { ...empty.values, x: 'https://x.com/legacy' },
+    };
+    assert.equal(
+      countValidPostCrjSocialConnections(withLegacyTwitter, {
+        xConnected: true,
+      }),
+      1,
+    );
+    assert.equal(countValidPostCrjSocialConnections(withLegacyTwitter), 1);
+
+    const summary = extractOwnProfileSocialSummaryCounts(
+      {
+        socialLinksPersonal: {
+          twitter: 'https://x.com/legacy',
+        },
+        socialLinksProfessional: {
+          twitter: 'https://x.com/pro',
+        },
+      },
+      {
+        personalXConnected: true,
+        professionalXConnected: true,
+      },
+    );
+    assert.equal(summary.personal, 1);
+    assert.equal(summary.professional, 1);
+  });
+
   it('Own Profile summary counts YouTube ownership per mode without double-counting', () => {
     const doc = {
       socialLinksPersonal: {
@@ -383,6 +426,9 @@ describe('post-CRJ Social Media editor screen contract', () => {
     assert.match(screen, /resolveInstagramOwnershipConnectedByMode/);
     assert.match(screen, /personalInstagramConnected/);
     assert.match(screen, /professionalInstagramConnected/);
+    assert.match(screen, /resolveXOwnershipConnectedByMode/);
+    assert.match(screen, /personalXConnected/);
+    assert.match(screen, /professionalXConnected/);
   });
 
   it('SocialMediaScreen wires TikTok ownership without manual TikTok card', () => {
@@ -391,7 +437,23 @@ describe('post-CRJ Social Media editor screen contract', () => {
     assert.match(screen, /omitTiktokFromDraftValues/);
     assert.match(screen, /preserveLegacyTiktokInSocialPatch/);
     assert.match(screen, /tiktokConnected/);
-    assert.match(screen, /id !== 'youtube' && id !== 'tiktok' && id !== 'instagram'/);
+    assert.match(
+      screen,
+      /id !== 'youtube' &&\s*id !== 'tiktok' &&\s*id !== 'instagram' &&\s*id !== 'x'/,
+    );
+  });
+
+  it('SocialMediaScreen wires X ownership without manual X card and preserves twitter', () => {
+    const screen = readShared('screens/SocialMediaScreen.tsx');
+    assert.match(screen, /getXOwnershipController/);
+    assert.match(screen, /omitXFromDraftValues/);
+    assert.match(screen, /preserveLegacyXInSocialPatch/);
+    assert.match(screen, /xConnected/);
+    assert.match(screen, /existingLinks\.twitter/);
+    assert.match(screen, /isXResultCurrent/);
+    assert.match(screen, /outcome\.error\.stage === 'exchange'/);
+    assert.doesNotMatch(screen, /code_challenge_method/);
+    assert.doesNotMatch(screen, /33564921/);
   });
 
   it('SocialMediaScreen wires Instagram reverse-DM without manual Instagram card', () => {

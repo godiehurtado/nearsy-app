@@ -98,6 +98,20 @@ import {
   type InstagramOwnershipPending,
   type InstagramOwnershipVerified,
 } from '../social/instagramOwnership';
+import {
+  getXOwnershipClient,
+  getXOwnershipController,
+  isXActionLocked,
+  logXOwnershipDev,
+  omitXFromDraftValues,
+  preserveLegacyXInSocialPatch,
+  mapXOwnershipThrowable,
+  xConnectedForMode,
+  xOwnershipErrorMessageKey,
+  XOwnershipClientError,
+  type XOwnershipBusyPhase,
+  type XOwnershipVerified,
+} from '../social/xOwnership';
 
 type RouteParams = {
   uid?: string;
@@ -242,6 +256,13 @@ export default function SocialMediaScreen() {
   const instagramChallengeRef = useRef<InstagramOwnershipPending | null>(null);
   const screenFocused = useIsFocused();
 
+  const [xVerified, setXVerified] = useState<XOwnershipVerified | null>(null);
+  const [xLegacyUrl, setXLegacyUrl] = useState<string | null>(null);
+  const [xBusyPhase, setXBusyPhase] = useState<XOwnershipBusyPhase>('idle');
+  const [xNeedsRetry, setXNeedsRetry] = useState(false);
+  const xRequestGenRef = useRef(0);
+  const xEditorModeRef = useRef<ProfileMode | null>(editorMode);
+
   const existingLinksRef = useRef<ReturnType<typeof readExistingSocialLinks> | null>(
     null,
   );
@@ -256,12 +277,15 @@ export default function SocialMediaScreen() {
   const instagramConnected =
     !!editorMode &&
     instagramConnectedForMode(instagramVerified, editorMode);
+  const xActionLocked = isXActionLocked(xBusyPhase);
+  const xConnected = !!editorMode && xConnectedForMode(xVerified, editorMode);
 
   const isDirty = isPostCrjSocialEditorDirty(snapshotRef.current, draft);
   const validConnectionCount = countValidPostCrjSocialConnections(draft, {
     youtubeConnected,
     tiktokConnected,
     instagramConnected,
+    xConnected,
   });
   const saveDisabled = saving || !isDirty;
 
@@ -312,6 +336,7 @@ export default function SocialMediaScreen() {
     youtubeEditorModeRef.current = editorMode;
     tiktokEditorModeRef.current = editorMode;
     instagramEditorModeRef.current = editorMode;
+    xEditorModeRef.current = editorMode;
   }, [editorMode]);
   instagramChallengeRef.current = instagramChallenge;
 
@@ -324,6 +349,7 @@ export default function SocialMediaScreen() {
     const requestGen = ++youtubeRequestGenRef.current;
     tiktokRequestGenRef.current = requestGen;
     instagramRequestGenRef.current = requestGen;
+    xRequestGenRef.current = requestGen;
     const modeForRequest = editorMode;
     let cancelled = false;
 
@@ -341,6 +367,9 @@ export default function SocialMediaScreen() {
     setInstagramNeedsRetry(false);
     setInstagramHint(null);
     setInstagramBusyPhase('loading');
+    setXVerified(null);
+    setXNeedsRetry(false);
+    setXBusyPhase('loading');
 
     (async () => {
       try {
@@ -353,6 +382,7 @@ export default function SocialMediaScreen() {
           setYoutubeBusyPhase('idle');
           setTiktokBusyPhase('idle');
           setInstagramBusyPhase('idle');
+          setXBusyPhase('idle');
           return;
         }
 
@@ -367,6 +397,8 @@ export default function SocialMediaScreen() {
         loaded.values.tiktok = '';
         loaded.connected.instagram = false;
         loaded.values.instagram = '';
+        loaded.connected.x = false;
+        loaded.values.x = '';
         const existingLinks = readExistingSocialLinks(
           existing as Record<string, unknown>,
           modeForRequest,
@@ -384,11 +416,16 @@ export default function SocialMediaScreen() {
           typeof existingLinks.instagram === 'string'
             ? existingLinks.instagram.trim()
             : '';
+        const xLegacy =
+          typeof existingLinks.twitter === 'string'
+            ? existingLinks.twitter.trim()
+            : '';
         snapshotRef.current = loaded;
         setDraft(loaded);
         setYoutubeLegacyUrl(youtubeLegacy || null);
         setTiktokLegacyUrl(tiktokLegacy || null);
         setInstagramLegacyUrl(instagramLegacy || null);
+        setXLegacyUrl(xLegacy || null);
 
         await Promise.all([
           (async () => {
@@ -446,6 +483,22 @@ export default function SocialMediaScreen() {
               setInstagramChallenge(null);
             }
           })(),
+          (async () => {
+            try {
+              const client = await getXOwnershipClient();
+              const get = await client.get(modeForRequest);
+              if (cancelled || requestGen !== xRequestGenRef.current) {
+                return;
+              }
+              if (xEditorModeRef.current !== modeForRequest) return;
+              setXVerified(get.result === 'verified' ? get : null);
+            } catch {
+              if (cancelled || requestGen !== xRequestGenRef.current) {
+                return;
+              }
+              setXVerified(null);
+            }
+          })(),
         ]);
 
         if (!cancelled && requestGen === youtubeRequestGenRef.current) {
@@ -455,6 +508,7 @@ export default function SocialMediaScreen() {
           setInstagramBusyPhase((phase) =>
             phase === 'pending' ? 'pending' : 'idle',
           );
+          setXBusyPhase('idle');
         }
       } catch {
         if (!cancelled && requestGen === youtubeRequestGenRef.current) {
@@ -462,6 +516,7 @@ export default function SocialMediaScreen() {
           setYoutubeBusyPhase('idle');
           setTiktokBusyPhase('idle');
           setInstagramBusyPhase('idle');
+          setXBusyPhase('idle');
         }
       }
     })();
@@ -1132,8 +1187,162 @@ export default function SocialMediaScreen() {
     t,
   ]);
 
+  const presentXError = useCallback(
+    (err: unknown, onRetry?: () => void) => {
+      const mapped =
+        err instanceof XOwnershipClientError
+          ? err
+          : mapXOwnershipThrowable(err);
+      logXOwnershipDev('present_error', {
+        stage: mapped.stage ?? 'unknown',
+        mappedCode: mapped.code,
+        wireCode: mapped.wireCode ?? '',
+        retryable: mapped.retryable,
+      });
+      const key = xOwnershipErrorMessageKey(mapped.code);
+      setXNeedsRetry(true);
+      const buttons: Array<{
+        text: string;
+        style?: 'cancel' | 'destructive' | 'default';
+        onPress?: () => void;
+      }> = [{ text: t('common.cancel'), style: 'cancel' }];
+      if (onRetry) {
+        buttons.push({
+          text: t('profile.social.x.retry'),
+          onPress: onRetry,
+        });
+      }
+      Alert.alert(t('common.error'), t(key as any), buttons);
+    },
+    [t],
+  );
+
+  const isXResultCurrent = useCallback(
+    (requestGen: number, modeForRequest: ProfileMode) =>
+      requestGen === xRequestGenRef.current &&
+      xEditorModeRef.current === modeForRequest,
+    [],
+  );
+
+  const handleXConnectRef = useRef<() => void>(() => {});
+
+  const handleXConnect = useCallback(async () => {
+    if (xActionLocked || !editorMode) return;
+    const requestGen = xRequestGenRef.current;
+    const modeForRequest = editorMode;
+    try {
+      setXNeedsRetry(false);
+      setXBusyPhase('connecting');
+      const controller = await getXOwnershipController();
+      const outcome = await controller.connect(modeForRequest);
+      if (!isXResultCurrent(requestGen, modeForRequest)) return;
+
+      if (outcome.kind === 'cancelled') {
+        setXBusyPhase('idle');
+        return;
+      }
+      if (outcome.kind === 'error') {
+        if (outcome.error.stage === 'exchange') {
+          try {
+            const client = await getXOwnershipClient();
+            const get = await client.get(modeForRequest);
+            if (!isXResultCurrent(requestGen, modeForRequest)) return;
+            setXVerified(get.result === 'verified' ? get : null);
+          } catch {
+            // Keep prior verified state if Get also fails.
+          }
+        }
+        setXBusyPhase('idle');
+        presentXError(
+          outcome.error,
+          outcome.error.retryable
+            ? () => {
+                handleXConnectRef.current();
+              }
+            : undefined,
+        );
+        return;
+      }
+      setXVerified(outcome.verified);
+      setXNeedsRetry(false);
+      setXBusyPhase('idle');
+    } catch (err) {
+      if (!isXResultCurrent(requestGen, modeForRequest)) return;
+      setXBusyPhase('idle');
+      const mapped = mapXOwnershipThrowable(err, 'exchange');
+      presentXError(
+        mapped,
+        mapped.retryable
+          ? () => {
+              handleXConnectRef.current();
+            }
+          : undefined,
+      );
+    }
+  }, [editorMode, isXResultCurrent, presentXError, xActionLocked]);
+
+  handleXConnectRef.current = () => {
+    void handleXConnect();
+  };
+
+  const handleXDisconnect = useCallback(() => {
+    if (xActionLocked || !editorMode) return;
+    Alert.alert(
+      t('profile.social.x.unlinkConfirmTitle'),
+      t('profile.social.x.unlinkConfirmBody'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('profile.social.x.disconnect'),
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              const requestGen = xRequestGenRef.current;
+              const modeForRequest = editorMode;
+              try {
+                setXNeedsRetry(false);
+                setXBusyPhase('disconnecting');
+                const client = await getXOwnershipClient();
+                await client.unlink(modeForRequest);
+                if (!isXResultCurrent(requestGen, modeForRequest)) return;
+                setXVerified(null);
+                setXNeedsRetry(false);
+              } catch (err) {
+                if (!isXResultCurrent(requestGen, modeForRequest)) return;
+                try {
+                  const client = await getXOwnershipClient();
+                  const get = await client.get(modeForRequest);
+                  if (!isXResultCurrent(requestGen, modeForRequest)) {
+                    return;
+                  }
+                  setXVerified(get.result === 'verified' ? get : null);
+                } catch {
+                  // Keep prior verified state if Get also fails.
+                }
+                if (!isXResultCurrent(requestGen, modeForRequest)) return;
+                presentXError(err, () => {
+                  handleXDisconnect();
+                });
+              } finally {
+                if (isXResultCurrent(requestGen, modeForRequest)) {
+                  setXBusyPhase('idle');
+                }
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [editorMode, isXResultCurrent, presentXError, t, xActionLocked]);
+
   const connectPlatform = (id: PostCrjSocialCardId) => {
-    if (id === 'youtube' || id === 'tiktok' || id === 'instagram') return;
+    if (
+      id === 'youtube' ||
+      id === 'tiktok' ||
+      id === 'instagram' ||
+      id === 'x'
+    )
+      return;
     setDraft((prev) => ({
       ...prev,
       connected: { ...prev.connected, [id]: true },
@@ -1150,7 +1359,13 @@ export default function SocialMediaScreen() {
   };
 
   const disconnectPlatform = (id: PostCrjSocialCardId) => {
-    if (id === 'youtube' || id === 'tiktok' || id === 'instagram') return;
+    if (
+      id === 'youtube' ||
+      id === 'tiktok' ||
+      id === 'instagram' ||
+      id === 'x'
+    )
+      return;
     setDraft((prev) => {
       const nextConnected = { ...prev.connected, [id]: false };
       if (id === 'website') {
@@ -1209,24 +1424,30 @@ export default function SocialMediaScreen() {
 
     try {
       setSaving(true);
-      const valuesForSave = omitInstagramFromDraftValues(
-        omitTiktokFromDraftValues(
-          omitYoutubeFromDraftValues(buildValuesForPostCrjSocialSave(draft)),
+      const valuesForSave = omitXFromDraftValues(
+        omitInstagramFromDraftValues(
+          omitTiktokFromDraftValues(
+            omitYoutubeFromDraftValues(buildValuesForPostCrjSocialSave(draft)),
+          ),
         ),
       );
-      const patch = preserveLegacyInstagramInSocialPatch(
+      const patch = preserveLegacyXInSocialPatch(
         editorMode,
-        preserveLegacyTiktokInSocialPatch(
+        preserveLegacyInstagramInSocialPatch(
           editorMode,
-          preserveLegacyYoutubeInSocialPatch(
+          preserveLegacyTiktokInSocialPatch(
             editorMode,
-            buildPostCrjSocialLinksPersistencePatch(
+            preserveLegacyYoutubeInSocialPatch(
               editorMode,
-              valuesForSave,
-              draft.custom,
-              {
-                website: draft.connected.website ? draft.website : '',
-              },
+              buildPostCrjSocialLinksPersistencePatch(
+                editorMode,
+                valuesForSave,
+                draft.custom,
+                {
+                  website: draft.connected.website ? draft.website : '',
+                },
+              ),
+              existingLinksRef.current,
             ),
             existingLinksRef.current,
           ),
@@ -1254,7 +1475,11 @@ export default function SocialMediaScreen() {
   const cardConfigs = useMemo(
     () =>
       POST_CRJ_SOCIAL_CARD_ORDER.filter(
-        (id) => id !== 'youtube' && id !== 'tiktok' && id !== 'instagram',
+        (id) =>
+          id !== 'youtube' &&
+          id !== 'tiktok' &&
+          id !== 'instagram' &&
+          id !== 'x',
       ).map((id) => {
         if (id === 'website') {
           return {
@@ -1290,6 +1515,10 @@ export default function SocialMediaScreen() {
   const instagramPlatform = getCrjSocialPlatform('instagram');
   const instagramLabel = t(
     `onboarding.profileCompletion.socialMedia.platforms.${instagramPlatform.nameKey}` as any,
+  );
+  const xPlatform = getCrjSocialPlatform('x');
+  const xLabel = t(
+    `onboarding.profileCompletion.socialMedia.platforms.${xPlatform.nameKey}` as any,
   );
 
   if (!parsed.ok || loadState === 'blocked') {
@@ -2012,6 +2241,134 @@ export default function SocialMediaScreen() {
                   style={[styles.helperText, { color: palette.textMuted }]}
                 >
                   {t('profile.social.instagram.legacyStored')}
+                </Text>
+              ) : null}
+            </View>
+
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: palette.panel,
+                  borderColor: xConnected ? palette.primary : palette.border,
+                  borderWidth: xConnected ? 1.5 : 1,
+                },
+              ]}
+            >
+              <View style={styles.cardTopRow}>
+                <PlatformGlyph platform={{ ...xPlatform, id: 'x' }} />
+                <View style={styles.cardTextCol}>
+                  <Text
+                    style={[
+                      styles.platformName,
+                      { color: palette.textPrimary },
+                    ]}
+                  >
+                    {xLabel}
+                  </Text>
+                  {xBusyPhase === 'connecting' ||
+                  xBusyPhase === 'disconnecting' ? (
+                    <Text
+                      style={[styles.connectedLabel, { color: palette.textMuted }]}
+                    >
+                      {xBusyPhase === 'disconnecting'
+                        ? t('profile.social.x.disconnecting')
+                        : t('profile.social.x.connecting')}
+                    </Text>
+                  ) : xConnected ? (
+                    <View style={styles.connectedRow}>
+                      <View
+                        style={[
+                          styles.connectedDot,
+                          { backgroundColor: palette.success },
+                        ]}
+                        accessibilityElementsHidden
+                        importantForAccessibility="no"
+                      />
+                      <Text
+                        style={[
+                          styles.connectedLabel,
+                          { color: palette.success },
+                        ]}
+                      >
+                        {t('profile.social.x.connected')}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text
+                      style={[styles.notConnected, { color: palette.textMuted }]}
+                    >
+                      {t('profile.social.x.notConnected')}
+                    </Text>
+                  )}
+                </View>
+                {xConnected ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t('profile.social.x.disconnectA11y')}
+                    disabled={xActionLocked}
+                    onPress={handleXDisconnect}
+                    style={({ pressed }) => [
+                      styles.toggleBtn,
+                      {
+                        backgroundColor: 'transparent',
+                        borderColor: palette.danger,
+                        opacity: xActionLocked ? 0.5 : 1,
+                      },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={[styles.toggleText, { color: palette.danger }]}>
+                      {xBusyPhase === 'disconnecting'
+                        ? t('profile.social.x.disconnecting')
+                        : t('profile.social.x.disconnect')}
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t('profile.social.x.connectA11y')}
+                    disabled={xActionLocked}
+                    onPress={() => {
+                      void handleXConnect();
+                    }}
+                    style={({ pressed }) => [
+                      styles.toggleBtn,
+                      {
+                        backgroundColor: palette.primary,
+                        borderColor: palette.primary,
+                        opacity: xActionLocked ? 0.5 : 1,
+                      },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text
+                      style={[styles.toggleText, { color: palette.surface }]}
+                    >
+                      {xBusyPhase === 'connecting'
+                        ? t('profile.social.x.connecting')
+                        : xNeedsRetry
+                          ? t('profile.social.x.retry')
+                          : t('profile.social.x.connect')}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+
+              {xConnected && xVerified ? (
+                <Text
+                  style={[styles.helperText, { color: palette.textSecondary }]}
+                  numberOfLines={2}
+                >
+                  {xVerified.canonicalUrl}
+                </Text>
+              ) : null}
+
+              {!xConnected && xLegacyUrl ? (
+                <Text
+                  style={[styles.helperText, { color: palette.textMuted }]}
+                >
+                  {t('profile.social.x.legacyStored')}
                 </Text>
               ) : null}
             </View>
