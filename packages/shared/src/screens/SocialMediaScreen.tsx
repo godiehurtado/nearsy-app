@@ -49,6 +49,7 @@ import type { CrjSocialFieldErrors } from '../social/socialLinkNormalize';
 import { YoutubeOwnershipCard } from '../components/profile/YoutubeOwnershipCard';
 import { TiktokOwnershipCard } from '../components/profile/TiktokOwnershipCard';
 import { InstagramOwnershipCard } from '../components/profile/InstagramOwnershipCard';
+import { XOwnershipCard } from '../components/profile/XOwnershipCard';
 
 type RouteParams = {
   uid?: string;
@@ -626,6 +627,28 @@ export default function SocialMediaScreen() {
                       setOwnershipVerified((prev) => ({
                         ...prev,
                         instagram: connected,
+                      }))
+                    }
+                    glyph={
+                      <PlatformGlyph
+                        platform={{ ...card.platform, id: card.id }}
+                      />
+                    }
+                  />
+                );
+              }
+
+              if (card.id === 'x' && Platform.OS === 'android') {
+                return (
+                  <XOwnershipCard
+                    key={`x-${editorMode}`}
+                    mode={editorMode!}
+                    label={card.label}
+                    legacyUrl={draft.values.x}
+                    onConnectedChange={(connected) =>
+                      setOwnershipVerified((prev) => ({
+                        ...prev,
+                        x: connected,
                       }))
                     }
                     glyph={

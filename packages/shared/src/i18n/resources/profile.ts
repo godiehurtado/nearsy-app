@@ -328,6 +328,39 @@ const en = {
         generic: 'We couldn’t connect Instagram. Try again.',
       },
     },
+    xOwnership: {
+      connect: 'Connect X',
+      connecting: 'Connecting…',
+      connected: 'X connected',
+      disconnect: 'Disconnect',
+      disconnecting: 'Disconnecting…',
+      disconnectConfirmTitle: 'Disconnect X?',
+      disconnectConfirmBody:
+        'X will be removed from this profile mode. Your previously saved link stays private so you can connect again later.',
+      disconnectConfirmAction: 'Disconnect',
+      legacyPrivateHint: 'A saved link is kept privately (not published).',
+      cancel: 'Cancel',
+      errors: {
+        notEnabled: 'X connection is not available right now.',
+        noAccount: 'No usable X account was found for this login.',
+        accountClaimed:
+          'That X account is already connected on another Nearsy account.',
+        oauth: 'X authorization was declined. You can try again.',
+        rateLimited: 'Too many attempts. Try again later.',
+        creditsOrAccess:
+          'X could not complete this connection right now. Try again later.',
+        forbidden:
+          'X blocked this connection. Try a different account or try again later.',
+        txExpired: 'Connection expired. Please try again.',
+        txInvalid: 'Connection could not be completed. Please try again.',
+        proofInvalid: 'Connection could not be confirmed. Please try again.',
+        unauthenticated: 'Sign in again to connect X.',
+        cancelled: 'Connection canceled.',
+        sessionChanged:
+          'Your Nearsy session changed during connection. Please try again.',
+        generic: 'We couldn’t connect X. Try again.',
+      },
+    },
   },
 } as const;
 
@@ -667,6 +700,40 @@ const es = {
           sessionChanged:
             'Tu sesión de Nearsy cambió durante la conexión. Inténtalo de nuevo.',
           generic: 'No pudimos conectar Instagram. Inténtalo de nuevo.',
+        },
+      },
+      xOwnership: {
+        connect: 'Conectar X',
+        connecting: 'Conectando…',
+        connected: 'X conectada',
+        disconnect: 'Desconectar',
+        disconnecting: 'Desconectando…',
+        disconnectConfirmTitle: '¿Desconectar X?',
+        disconnectConfirmBody:
+          'X se quitará de este modo de perfil. El enlace que tenías guardado permanece en privado para que puedas conectarlo de nuevo después.',
+        disconnectConfirmAction: 'Desconectar',
+        legacyPrivateHint: 'Hay un enlace guardado en privado (no publicado).',
+        cancel: 'Cancelar',
+        errors: {
+          notEnabled: 'La conexión de X no está disponible ahora.',
+          noAccount:
+            'No se encontró una cuenta de X usable para este inicio de sesión.',
+          accountClaimed:
+            'Esa cuenta de X ya está conectada en otra cuenta de Nearsy.',
+          oauth: 'Se rechazó la autorización de X. Puedes intentarlo de nuevo.',
+          rateLimited: 'Demasiados intentos. Inténtalo más tarde.',
+          creditsOrAccess:
+            'X no pudo completar esta conexión ahora. Inténtalo más tarde.',
+          forbidden:
+            'X bloqueó esta conexión. Prueba con otra cuenta o inténtalo más tarde.',
+          txExpired: 'La conexión expiró. Inténtalo de nuevo.',
+          txInvalid: 'No se pudo completar la conexión. Inténtalo de nuevo.',
+          proofInvalid: 'No se pudo confirmar la conexión. Inténtalo de nuevo.',
+          unauthenticated: 'Vuelve a iniciar sesión para conectar X.',
+          cancelled: 'Conexión cancelada.',
+          sessionChanged:
+            'Tu sesión de Nearsy cambió durante la conexión. Inténtalo de nuevo.',
+          generic: 'No pudimos conectar X. Inténtalo de nuevo.',
         },
       },
     },
