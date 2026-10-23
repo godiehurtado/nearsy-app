@@ -458,7 +458,8 @@ describe('NEARSY-209 YouTube ownership Android wiring', () => {
   it('SocialMediaScreen uses ownership card and preserves legacy youtube', () => {
     const screen = readSrc('screens/SocialMediaScreen.tsx');
     assert.match(screen, /YoutubeOwnershipCard/);
-    assert.match(screen, /legacyYoutube/);
+    assert.match(screen, /legacyUrl=\{draft\.values\.youtube\}/);
+    assert.match(screen, /preserveLegacy\('youtube'\)/);
     assert.match(screen, /connected\.youtube = false/);
     assert.match(screen, /mode=\{editorMode/);
     assert.match(screen, /key=\{`youtube-\$\{editorMode\}`\}/);
