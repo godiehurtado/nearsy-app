@@ -71,6 +71,21 @@ export function decideBackgroundPublication(
 }
 
 /**
+ * Native FGS start vs an already-running registration.
+ * Never starts a new foreground service from a backgrounded JS context.
+ */
+export type BackgroundServiceStartPlan = 'keep-running' | 'start-new' | 'defer-new';
+
+export function planBackgroundServiceStart(input: {
+  alreadyStarted: boolean;
+  appState: string;
+}): BackgroundServiceStartPlan {
+  if (input.alreadyStarted) return 'keep-running';
+  if (input.appState === 'active') return 'start-new';
+  return 'defer-new';
+}
+
+/**
  * Whether More/Home should attempt to start the FGS after preference + perms.
  */
 export function shouldStartBackgroundLocationService(input: {

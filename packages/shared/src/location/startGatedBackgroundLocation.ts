@@ -3,7 +3,7 @@
  * All FGS starts must pass visibility ∧ bgVisible ∧ permissions.
  */
 
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -16,6 +16,7 @@ import {
   decideBackgroundPublication,
   requiresSettingsForBackgroundPermission,
   isAndroidFineLocationGranted,
+  planBackgroundServiceStart,
   shouldStartBackgroundLocationService,
 } from './backgroundPublicationGate';
 import {
@@ -242,11 +243,24 @@ export async function startGatedBackgroundLocation(
 
   try {
     const alreadyStarted = await readTaskStarted();
-    await startBackgroundLocation({
-      uid: opts.uid,
-      notificationTitle: opts.notificationTitle,
-      notificationBody: opts.notificationBody,
+    const plan = planBackgroundServiceStart({
+      alreadyStarted: alreadyStarted === true,
+      appState: String(AppState.currentState ?? 'unknown'),
     });
+    if (plan === 'defer-new') {
+      // Do not start a new FGS from a backgrounded context (Android 12+).
+      return noteStartResult({ ok: false, reason: 'gate', gateReason: 'background' });
+    }
+    if (plan === 'start-new') {
+      await startBackgroundLocation({
+        uid: opts.uid,
+        notificationTitle: opts.notificationTitle,
+        notificationBody: opts.notificationBody,
+      });
+    } else {
+      // keep-running: do not stop+start an existing FGS (would recreate it).
+      await AsyncStorage.setItem('NEARSY_BG_UID', opts.uid);
+    }
     if (
       getPublicationSessionPhase() !== 'unbound' &&
       !isPublicationRuntimeOpen(opts.uid)
