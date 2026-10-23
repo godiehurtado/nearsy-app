@@ -47,6 +47,7 @@ import {
 import type { ProfileMode } from '../profile/profileModeFields';
 import type { CrjSocialFieldErrors } from '../social/socialLinkNormalize';
 import { YoutubeOwnershipCard } from '../components/profile/YoutubeOwnershipCard';
+import { TiktokOwnershipCard } from '../components/profile/TiktokOwnershipCard';
 
 type RouteParams = {
   uid?: string;
@@ -580,6 +581,28 @@ export default function SocialMediaScreen() {
                       setOwnershipVerified((prev) => ({
                         ...prev,
                         youtube: connected,
+                      }))
+                    }
+                    glyph={
+                      <PlatformGlyph
+                        platform={{ ...card.platform, id: card.id }}
+                      />
+                    }
+                  />
+                );
+              }
+
+              if (card.id === 'tiktok' && Platform.OS === 'android') {
+                return (
+                  <TiktokOwnershipCard
+                    key={`tiktok-${editorMode}`}
+                    mode={editorMode!}
+                    label={card.label}
+                    legacyUrl={draft.values.tiktok}
+                    onConnectedChange={(connected) =>
+                      setOwnershipVerified((prev) => ({
+                        ...prev,
+                        tiktok: connected,
                       }))
                     }
                     glyph={

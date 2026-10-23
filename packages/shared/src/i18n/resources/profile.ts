@@ -267,6 +267,33 @@ const en = {
         generic: 'We couldn’t connect YouTube. Try again.',
       },
     },
+    tiktokOwnership: {
+      connect: 'Connect TikTok',
+      connecting: 'Connecting…',
+      connected: 'TikTok connected',
+      disconnect: 'Disconnect',
+      disconnecting: 'Disconnecting…',
+      disconnectConfirmTitle: 'Disconnect TikTok?',
+      disconnectConfirmBody:
+        'TikTok will be removed from this profile mode. Your previously saved link stays private so you can connect again later.',
+      disconnectConfirmAction: 'Disconnect',
+      legacyPrivateHint: 'A saved link is kept privately (not published).',
+      cancel: 'Cancel',
+      errors: {
+        notEnabled: 'TikTok connection is not available right now.',
+        noAccount: 'No TikTok account was found for this login.',
+        accountClaimed:
+          'That TikTok account is already connected on another Nearsy account.',
+        txExpired: 'Connection expired. Please try again.',
+        txInvalid: 'Connection could not be completed. Please try again.',
+        proofInvalid: 'Connection could not be confirmed. Please try again.',
+        unauthenticated: 'Sign in again to connect TikTok.',
+        cancelled: 'Connection canceled.',
+        sessionChanged:
+          'Your Nearsy session changed during connection. Please try again.',
+        generic: 'We couldn’t connect TikTok. Try again.',
+      },
+    },
   },
 } as const;
 
@@ -543,6 +570,34 @@ const es = {
           sessionChanged:
             'Tu sesión de Nearsy cambió durante la conexión. Inténtalo de nuevo.',
           generic: 'No pudimos conectar YouTube. Inténtalo de nuevo.',
+        },
+      },
+      tiktokOwnership: {
+        connect: 'Conectar TikTok',
+        connecting: 'Conectando…',
+        connected: 'TikTok conectada',
+        disconnect: 'Desconectar',
+        disconnecting: 'Desconectando…',
+        disconnectConfirmTitle: '¿Desconectar TikTok?',
+        disconnectConfirmBody:
+          'TikTok se quitará de este modo de perfil. El enlace que tenías guardado permanece en privado para que puedas conectarlo de nuevo después.',
+        disconnectConfirmAction: 'Desconectar',
+        legacyPrivateHint: 'Hay un enlace guardado en privado (no publicado).',
+        cancel: 'Cancelar',
+        errors: {
+          notEnabled: 'La conexión de TikTok no está disponible ahora.',
+          noAccount:
+            'No se encontró una cuenta de TikTok en este inicio de sesión.',
+          accountClaimed:
+            'Esa cuenta de TikTok ya está conectada en otra cuenta de Nearsy.',
+          txExpired: 'La conexión expiró. Inténtalo de nuevo.',
+          txInvalid: 'No se pudo completar la conexión. Inténtalo de nuevo.',
+          proofInvalid: 'No se pudo confirmar la conexión. Inténtalo de nuevo.',
+          unauthenticated: 'Vuelve a iniciar sesión para conectar TikTok.',
+          cancelled: 'Conexión cancelada.',
+          sessionChanged:
+            'Tu sesión de Nearsy cambió durante la conexión. Inténtalo de nuevo.',
+          generic: 'No pudimos conectar TikTok. Inténtalo de nuevo.',
         },
       },
     },
