@@ -16,6 +16,7 @@ import {
   shouldStartBackgroundLocationService,
   isLocationSampleAdequateForNearby,
   isAndroidFineLocationGranted,
+  planBackgroundServiceStart,
   ANDROID_BACKGROUND_SETTINGS_API_LEVEL,
 } from '../backgroundPublicationGate.ts';
 import {
@@ -30,6 +31,7 @@ import {
 } from '../contractualLogout.ts';
 import {
   decideCallbackPublication,
+  isPersistedBackgroundAuthCurrent,
   type BackgroundRuntimeAuth,
 } from '../backgroundRuntimeAuth.ts';
 import {
@@ -97,6 +99,20 @@ describe('backgroundPublicationGate', () => {
     });
     assert.equal(d.action, 'stop');
     assert.equal(d.reason, 'visibility-off');
+  });
+
+  it('bgVisible OFF → stop even when Visibility is ON', () => {
+    const d = decideBackgroundPublication({
+      authenticated: true,
+      visibility: true,
+      bgVisible: false,
+      foregroundGranted: true,
+      backgroundGranted: true,
+      storedTaskUid: 'u1',
+      currentUid: 'u1',
+    });
+    assert.equal(d.action, 'stop');
+    assert.equal(d.reason, 'bg-preference-off');
   });
 
   it('bgVisible true + Visibility OFF does not start service', () => {
@@ -168,6 +184,25 @@ describe('backgroundPublicationGate', () => {
     });
     assert.equal(d.action, 'stop');
     assert.equal(d.reason, 'foreground-denied');
+  });
+
+  it('keeps an already-running FGS and never starts a new one from background', () => {
+    assert.equal(
+      planBackgroundServiceStart({ alreadyStarted: true, appState: 'background' }),
+      'keep-running',
+    );
+    assert.equal(
+      planBackgroundServiceStart({ alreadyStarted: true, appState: 'active' }),
+      'keep-running',
+    );
+    assert.equal(
+      planBackgroundServiceStart({ alreadyStarted: false, appState: 'active' }),
+      'start-new',
+    );
+    assert.equal(
+      planBackgroundServiceStart({ alreadyStarted: false, appState: 'background' }),
+      'defer-new',
+    );
   });
 });
 
@@ -842,6 +877,43 @@ describe('backgroundRuntimeAuth callback gate', () => {
         runtimeAuth: auth,
         foregroundGranted: true,
         backgroundGranted: false,
+      }),
+      'stop',
+    );
+  });
+
+  it('continuity does not treat leftover persisted auth as current', () => {
+    assert.equal(
+      isPersistedBackgroundAuthCurrent({
+        authUid: 'u1',
+        storedTaskUid: 'u1',
+        runtimeAuth: auth,
+      }),
+      true,
+    );
+    assert.equal(
+      isPersistedBackgroundAuthCurrent({
+        authUid: 'u1',
+        storedTaskUid: 'u1',
+        runtimeAuth: null,
+      }),
+      false,
+    );
+    assert.equal(
+      isPersistedBackgroundAuthCurrent({
+        authUid: 'u2',
+        storedTaskUid: 'u1',
+        runtimeAuth: auth,
+      }),
+      false,
+    );
+    assert.equal(
+      decideCallbackPublication({
+        authUid: 'u1',
+        storedTaskUid: 'u1',
+        runtimeAuth: null,
+        foregroundGranted: true,
+        backgroundGranted: true,
       }),
       'stop',
     );

@@ -6,8 +6,10 @@
  *   task after process death). Only the persisted runtime authorization
  *   (backgroundRuntimeAuth) applies.
  * - 'pending': signed in, Visibility not yet confirmed for this session.
- *   Runtime, Nearby search and background publication stay blocked until a
- *   confirmed activate/publish.
+ *   Nearby, cadence and a *new* FGS stay blocked until a confirmed
+ *   activate/publish. An already-authorized FGS may keep publishing for this
+ *   uid (continuity) until close / uid switch; callbacks still require live
+ *   runtime auth + OS permissions.
  * - 'open': activate/publish confirmed for `uid` at this generation.
  * - 'closed': logout in progress or signed out — nothing may publish.
  *
@@ -28,6 +30,11 @@ export type PublicationTicket = {
   purpose: PublicationTicketPurpose;
   /** Taken while the context was unbound (headless background task). */
   unbound?: boolean;
+  /**
+   * Live-process FGS tick while this uid is pending confirmation.
+   * Never opens Nearby/cadence and never confirms the session.
+   */
+  continuity?: boolean;
 };
 
 type Listener = () => void;
@@ -35,6 +42,12 @@ type Listener = () => void;
 let phase: PublicationSessionPhase = 'unbound';
 let sessionUid: string | null = null;
 let generation = 0;
+/**
+ * True until this JS context closes the gate or switches uid.
+ * Cold start / session restore (unbound → pending for the same account) stays
+ * eligible so a previously authorized FGS is not treated as a new session.
+ */
+let continuityEligible = true;
 const inFlight = new Set<Promise<unknown>>();
 const listeners = new Set<Listener>();
 
@@ -70,6 +83,9 @@ export function getPublicationSessionGeneration(): number {
 export function bindPublicationSession(uid: string): void {
   if (!uid) return;
   if ((phase === 'pending' || phase === 'open') && sessionUid === uid) return;
+  if (phase === 'closed' || (sessionUid !== null && sessionUid !== uid)) {
+    continuityEligible = false;
+  }
   generation += 1;
   sessionUid = uid;
   phase = 'pending';
@@ -78,6 +94,7 @@ export function bindPublicationSession(uid: string): void {
 
 /** Logout (before signOut) / signed out. Invalidates every ticket. */
 export function closePublicationSession(): void {
+  continuityEligible = false;
   generation += 1;
   sessionUid = null;
   phase = 'closed';
@@ -102,8 +119,10 @@ export function acquirePublicationTicket(
 }
 
 /**
- * Background task ticket: a bound context requires an open session; an
- * unbound (headless) context defers to the persisted runtime authorization.
+ * Background task ticket.
+ * Unbound (headless) and pending continuity defer to persisted runtime auth
+ * after the ticket is taken. Nearby / cadence still use acquirePublicationTicket
+ * and require phase === 'open'.
  */
 export function acquireBackgroundPublicationTicket(
   authUid: string | null | undefined,
@@ -112,7 +131,14 @@ export function acquireBackgroundPublicationTicket(
   if (phase === 'unbound') {
     return { uid: authUid, generation, purpose: 'runtime', unbound: true };
   }
-  return acquirePublicationTicket(authUid, 'runtime');
+  if (phase === 'closed' || sessionUid !== authUid) return null;
+  if (phase === 'open') {
+    return { uid: authUid, generation, purpose: 'runtime' };
+  }
+  if (phase === 'pending' && continuityEligible) {
+    return { uid: authUid, generation, purpose: 'runtime', continuity: true };
+  }
+  return null;
 }
 
 export function isPublicationTicketCurrent(
@@ -120,9 +146,19 @@ export function isPublicationTicketCurrent(
   authUid: string | null | undefined,
 ): boolean {
   if (!ticket || !authUid || ticket.uid !== authUid) return false;
+  if (ticket.unbound) {
+    if (phase === 'unbound' && ticket.generation === generation) return true;
+    return (
+      continuityEligible &&
+      sessionUid === ticket.uid &&
+      (phase === 'pending' || phase === 'open')
+    );
+  }
   if (ticket.generation !== generation) return false;
-  if (ticket.unbound) return phase === 'unbound';
   if (sessionUid !== ticket.uid) return false;
+  if (ticket.continuity) {
+    return continuityEligible && (phase === 'pending' || phase === 'open');
+  }
   return ticket.purpose === 'runtime'
     ? phase === 'open'
     : phase === 'pending' || phase === 'open';
@@ -132,7 +168,7 @@ export function isPublicationTicketCurrent(
 export function confirmPublicationSession(
   ticket: PublicationTicket | null | undefined,
 ): boolean {
-  if (!ticket || ticket.unbound) return false;
+  if (!ticket || ticket.unbound || ticket.continuity) return false;
   if (!isPublicationTicketCurrent(ticket, ticket.uid)) return false;
   if (phase !== 'open') {
     phase = 'open';
@@ -205,6 +241,7 @@ export function resetPublicationSessionForTests(): void {
   phase = 'unbound';
   sessionUid = null;
   generation = 0;
+  continuityEligible = true;
   inFlight.clear();
   listeners.clear();
 }

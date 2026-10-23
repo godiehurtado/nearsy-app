@@ -102,8 +102,9 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
 
         if (Platform.OS === 'web') return;
 
-        // New uid/session starts pending: runtime waits for Home's confirmed
-        // activate/publish (startGatedBackgroundLocation enforces it).
+        // New uid/session starts pending: Nearby / cadence / a new FGS wait
+        // for Home's confirmed activate/publish. An already-running FGS may
+        // continue via persisted runtime auth until close or uid switch.
         bindPublicationSession(user.uid);
         bindLocationJourneySessionUid(user.uid);
 
