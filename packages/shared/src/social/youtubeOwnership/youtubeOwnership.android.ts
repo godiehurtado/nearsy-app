@@ -23,6 +23,7 @@ import {
   YOUTUBE_OWNERSHIP_RETURN_URL,
   YOUTUBE_TX_STORAGE_KEY,
   type YoutubeOwnershipChannelCandidate,
+  type YoutubeOwnershipExchangeResponse,
   type YoutubeOwnershipGetResponse,
   type YoutubeOwnershipUnlinkResponse,
   type YoutubeOwnershipVerified,
@@ -42,6 +43,12 @@ import {
   type YoutubeConnectOutcome,
   type YoutubeOwnershipFunctionsPort,
 } from './youtubeOwnershipCore.ts';
+import { createOwnershipLinkingPort } from '../ownershipOAuth/ownershipOAuthAndroid.ts';
+import {
+  createOwnershipOAuthCoordinator,
+  type OwnershipBrowserSessionResult,
+  type OwnershipHandleResult,
+} from '../ownershipOAuth/ownershipOAuthCoordinator.ts';
 
 export type { YoutubeConnectOutcome };
 import { parseYoutubeOwnershipReturnUrl } from './youtubeOwnershipDeepLink.ts';
@@ -116,6 +123,104 @@ async function clearStoredTx(): Promise<void> {
   } catch {
     // best-effort
   }
+}
+
+const youtubeOAuth = createOwnershipOAuthCoordinator<YoutubeOwnershipExchangeResponse>(
+  {
+    parseReturnUrl: parseYoutubeOwnershipReturnUrl,
+    readStoredTx,
+    clearStoredTx,
+    currentUid: () => firebaseAuth.currentUser?.uid ?? null,
+    exchange: async (tx) => {
+      const functions = createFunctionsPort();
+      return youtubeOwnershipExchange(
+        functions,
+        tx.transactionId,
+        tx.clientProofVerifier,
+      );
+    },
+  },
+);
+
+function youtubeOutcomeFromHandle(
+  handled:
+    | OwnershipHandleResult<YoutubeOwnershipExchangeResponse>
+    | OwnershipBrowserSessionResult<YoutubeOwnershipExchangeResponse>,
+  scopedMode: ProfileMode,
+  forResume: boolean,
+): YoutubeConnectOutcome | { status: 'ignored' } {
+  if (handled.status === 'cancelled') {
+    return forResume ? { status: 'ignored' } : { status: 'cancelled' };
+  }
+  if (handled.status === 'ignored' || handled.status === 'duplicate') {
+    return forResume
+      ? { status: 'ignored' }
+      : {
+          status: 'failed',
+          error: new YoutubeOwnershipError(
+            'TX_INVALID',
+            'Verification return was already processed.',
+            'TX_INVALID',
+          ),
+        };
+  }
+  if (handled.status === 'browser_failed') {
+    return {
+      status: 'failed',
+      error: new YoutubeOwnershipError(
+        'BROWSER_FAILED',
+        'Could not complete browser verification.',
+      ),
+    };
+  }
+  if (handled.status === 'provider_error') {
+    return {
+      status: 'failed',
+      error: new YoutubeOwnershipError(
+        handled.errorCode,
+        handled.errorCode,
+        handled.errorCode,
+      ),
+    };
+  }
+  if (handled.status === 'failed') {
+    return {
+      status: 'failed',
+      error: new YoutubeOwnershipError(
+        handled.code,
+        handled.message,
+        handled.code,
+      ),
+    };
+  }
+  const exchange = handled.result;
+  if (exchange.result === 'verified') {
+    if (exchange.mode !== scopedMode) {
+      return {
+        status: 'failed',
+        error: new YoutubeOwnershipError(
+          'BAD_RESPONSE',
+          'Verified mode mismatch.',
+        ),
+      };
+    }
+    return { status: 'verified', verified: exchange };
+  }
+  if (exchange.mode !== scopedMode) {
+    return {
+      status: 'failed',
+      error: new YoutubeOwnershipError(
+        'BAD_RESPONSE',
+        'Select-channel mode mismatch.',
+      ),
+    };
+  }
+  return {
+    status: 'select_channel',
+    transactionId: exchange.transactionId,
+    mode: exchange.mode,
+    channels: exchange.channels,
+  };
 }
 
 async function ensureAppCheckReady(): Promise<void> {
@@ -238,48 +343,20 @@ export async function connectYoutubeOwnership(
     mode: scopedMode,
   });
 
-  const browserOutcome = await browser.openAuthSession(
-    start.authorizationUrl,
-    YOUTUBE_OWNERSHIP_RETURN_URL,
-  );
-
-  if (
-    browserOutcome.type === 'cancel' ||
-    browserOutcome.type === 'dismiss'
-  ) {
-    await clearStoredTx();
-    return { status: 'cancelled' };
-  }
-  if (
-    browserOutcome.type === 'failed' ||
-    browserOutcome.type === 'unavailable'
-  ) {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error: new YoutubeOwnershipError(
-        'BROWSER_FAILED',
-        'Could not complete browser verification.',
+  const handled = await youtubeOAuth.completeBrowserSession({
+    authorizationUrl: start.authorizationUrl,
+    returnUrl: YOUTUBE_OWNERSHIP_RETURN_URL,
+    expectedUid: uid,
+    expectedMode: scopedMode,
+    openAuthSession: (authorizationUrl, returnUrl) =>
+      browser.openAuthSession(
+        authorizationUrl,
+        returnUrl as typeof YOUTUBE_OWNERSHIP_RETURN_URL,
       ),
-    };
-  }
-
-  assertSameUid(uid);
-
-  const parsed = parseYoutubeOwnershipReturnUrl(browserOutcome.url);
-  if (parsed.kind === 'provider_error') {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error: new YoutubeOwnershipError(
-        parsed.errorCode,
-        parsed.errorCode,
-        parsed.errorCode,
-      ),
-    };
-  }
-  if (parsed.kind !== 'success') {
-    await clearStoredTx();
+    linking: createOwnershipLinkingPort(),
+  });
+  const outcome = youtubeOutcomeFromHandle(handled, scopedMode, false);
+  if (outcome.status === 'ignored') {
     return {
       status: 'failed',
       error: new YoutubeOwnershipError(
@@ -289,97 +366,64 @@ export async function connectYoutubeOwnership(
       ),
     };
   }
+  return outcome;
+}
 
-  // Deep-link mode is informative; reject mismatches against the Start mode.
-  if (parsed.mode && parsed.mode !== scopedMode) {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error: new YoutubeOwnershipError(
-        'TX_INVALID',
-        'Return mode does not match Start.',
-        'TX_INVALID',
-      ),
-    };
+/**
+ * Cold-start / process-recreation resume. Never Starts or opens OAuth.
+ */
+export async function resumeYoutubeOwnershipReturn(
+  mode: ProfileMode,
+): Promise<YoutubeConnectOutcome | { status: 'ignored' }> {
+  const scopedMode = assertYoutubeOwnershipMode(mode);
+  if (!firebaseAuth.currentUser?.uid) {
+    return { status: 'ignored' };
   }
+  await ensureAppCheckReady();
+  const handled = await youtubeOAuth.inspectInitialReturn(
+    createOwnershipLinkingPort(),
+    scopedMode,
+  );
+  return youtubeOutcomeFromHandle(handled, scopedMode, true);
+}
 
-  const stored = await readStoredTx();
-  if (
-    !stored ||
-    stored.uid !== uid ||
-    stored.mode !== scopedMode ||
-    stored.transactionId !== parsed.transactionId
-  ) {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error: new YoutubeOwnershipError(
-        'TX_INVALID',
-        'Verification transaction mismatch.',
-        'TX_INVALID',
-      ),
-    };
-  }
-  if (Date.now() > stored.expiresAt) {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error: new YoutubeOwnershipError(
-        'TX_EXPIRED',
-        'Verification expired.',
-        'TX_EXPIRED',
-      ),
-    };
-  }
-
-  assertSameUid(uid);
-
-  try {
-    const exchange = await youtubeOwnershipExchange(
-      functions,
-      stored.transactionId,
-      stored.clientProofVerifier,
-    );
-    await clearStoredTx();
-    assertSameUid(uid);
-
-    if (exchange.result === 'verified') {
-      if (exchange.mode !== scopedMode) {
-        return {
-          status: 'failed',
-          error: new YoutubeOwnershipError(
-            'BAD_RESPONSE',
-            'Verified mode mismatch.',
-          ),
-        };
-      }
-      return { status: 'verified', verified: exchange };
-    }
-    if (exchange.mode !== scopedMode) {
-      return {
-        status: 'failed',
-        error: new YoutubeOwnershipError(
-          'BAD_RESPONSE',
-          'Select-channel mode mismatch.',
-        ),
-      };
-    }
-    return {
-      status: 'select_channel',
-      transactionId: exchange.transactionId,
-      mode: exchange.mode,
-      channels: exchange.channels,
-    };
-  } catch (err) {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error:
-        err instanceof YoutubeOwnershipError
-          ? err
-          : mapCallableError(err),
-    };
-  }
+/**
+ * Live Linking returns while the card is mounted and Connect is not in flight.
+ */
+export function watchYoutubeOwnershipReturns(
+  mode: ProfileMode,
+  onOutcome: (
+    outcome: Exclude<
+      YoutubeConnectOutcome | { status: 'ignored' },
+      { status: 'ignored' }
+    >,
+  ) => void,
+): { remove: () => void } {
+  const scopedMode = assertYoutubeOwnershipMode(mode);
+  return youtubeOAuth.subscribeReturnUrls(
+    createOwnershipLinkingPort(),
+    (url) => {
+      void (async () => {
+        try {
+          await ensureAppCheckReady();
+          const handled = await youtubeOAuth.handleReturnUrl(url, {
+            source: 'linking',
+            expectedMode: scopedMode,
+          });
+          const outcome = youtubeOutcomeFromHandle(
+            handled,
+            scopedMode,
+            true,
+          );
+          if (outcome.status !== 'ignored') {
+            onOutcome(outcome);
+          }
+        } catch {
+          // best-effort; Get reconciliation covers the rest
+        }
+      })();
+    },
+  );
 }
 
 export async function selectYoutubeOwnershipChannel(

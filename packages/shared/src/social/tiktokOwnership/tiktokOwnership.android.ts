@@ -24,6 +24,7 @@ import {
   TIKTOK_TX_STORAGE_KEY,
   type TiktokOwnershipGetResponse,
   type TiktokOwnershipUnlinkResponse,
+  type TiktokOwnershipVerified,
   type TiktokStoredTransaction,
 } from './tiktokOwnershipContract.ts';
 import {
@@ -39,6 +40,12 @@ import {
   type TiktokConnectOutcome,
   type TiktokOwnershipFunctionsPort,
 } from './tiktokOwnershipCore.ts';
+import { createOwnershipLinkingPort } from '../ownershipOAuth/ownershipOAuthAndroid.ts';
+import {
+  createOwnershipOAuthCoordinator,
+  type OwnershipBrowserSessionResult,
+  type OwnershipHandleResult,
+} from '../ownershipOAuth/ownershipOAuthCoordinator.ts';
 
 export type { TiktokConnectOutcome };
 import { parseTiktokOwnershipReturnUrl } from './tiktokOwnershipDeepLink.ts';
@@ -112,6 +119,84 @@ async function clearStoredTx(): Promise<void> {
   } catch {
     // best-effort
   }
+}
+
+const tiktokOAuth = createOwnershipOAuthCoordinator<TiktokOwnershipVerified>({
+  parseReturnUrl: parseTiktokOwnershipReturnUrl,
+  readStoredTx,
+  clearStoredTx,
+  currentUid: () => firebaseAuth.currentUser?.uid ?? null,
+  exchange: async (tx) => {
+    const functions = createFunctionsPort();
+    return tiktokOwnershipExchange(
+      functions,
+      tx.transactionId,
+      tx.clientProofVerifier,
+    );
+  },
+});
+
+function tiktokOutcomeFromHandle(
+  handled:
+    | OwnershipHandleResult<TiktokOwnershipVerified>
+    | OwnershipBrowserSessionResult<TiktokOwnershipVerified>,
+  scopedMode: ProfileMode,
+  forResume: boolean,
+): TiktokConnectOutcome | { status: 'ignored' } {
+  if (handled.status === 'cancelled') {
+    return forResume ? { status: 'ignored' } : { status: 'cancelled' };
+  }
+  if (handled.status === 'ignored' || handled.status === 'duplicate') {
+    return forResume
+      ? { status: 'ignored' }
+      : {
+          status: 'failed',
+          error: new TiktokOwnershipError(
+            'TX_INVALID',
+            'Verification return was already processed.',
+            'TX_INVALID',
+          ),
+        };
+  }
+  if (handled.status === 'browser_failed') {
+    return {
+      status: 'failed',
+      error: new TiktokOwnershipError(
+        'BROWSER_FAILED',
+        'Could not complete browser verification.',
+      ),
+    };
+  }
+  if (handled.status === 'provider_error') {
+    return {
+      status: 'failed',
+      error: new TiktokOwnershipError(
+        handled.errorCode,
+        handled.errorCode,
+        handled.errorCode,
+      ),
+    };
+  }
+  if (handled.status === 'failed') {
+    return {
+      status: 'failed',
+      error: new TiktokOwnershipError(
+        handled.code,
+        handled.message,
+        handled.code,
+      ),
+    };
+  }
+  if (handled.result.mode !== scopedMode) {
+    return {
+      status: 'failed',
+      error: new TiktokOwnershipError(
+        'BAD_RESPONSE',
+        'Verified mode mismatch.',
+      ),
+    };
+  }
+  return { status: 'verified', verified: handled.result };
 }
 
 async function ensureAppCheckReady(): Promise<void> {
@@ -234,48 +319,20 @@ export async function connectTiktokOwnership(
     mode: scopedMode,
   });
 
-  const browserOutcome = await browser.openAuthSession(
-    start.authorizationUrl,
-    TIKTOK_OWNERSHIP_RETURN_URL,
-  );
-
-  if (
-    browserOutcome.type === 'cancel' ||
-    browserOutcome.type === 'dismiss'
-  ) {
-    await clearStoredTx();
-    return { status: 'cancelled' };
-  }
-  if (
-    browserOutcome.type === 'failed' ||
-    browserOutcome.type === 'unavailable'
-  ) {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error: new TiktokOwnershipError(
-        'BROWSER_FAILED',
-        'Could not complete browser verification.',
+  const handled = await tiktokOAuth.completeBrowserSession({
+    authorizationUrl: start.authorizationUrl,
+    returnUrl: TIKTOK_OWNERSHIP_RETURN_URL,
+    expectedUid: uid,
+    expectedMode: scopedMode,
+    openAuthSession: (authorizationUrl, returnUrl) =>
+      browser.openAuthSession(
+        authorizationUrl,
+        returnUrl as typeof TIKTOK_OWNERSHIP_RETURN_URL,
       ),
-    };
-  }
-
-  assertSameUid(uid);
-
-  const parsed = parseTiktokOwnershipReturnUrl(browserOutcome.url);
-  if (parsed.kind === 'provider_error') {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error: new TiktokOwnershipError(
-        parsed.errorCode,
-        parsed.errorCode,
-        parsed.errorCode,
-      ),
-    };
-  }
-  if (parsed.kind !== 'success') {
-    await clearStoredTx();
+    linking: createOwnershipLinkingPort(),
+  });
+  const outcome = tiktokOutcomeFromHandle(handled, scopedMode, false);
+  if (outcome.status === 'ignored') {
     return {
       status: 'failed',
       error: new TiktokOwnershipError(
@@ -285,80 +342,60 @@ export async function connectTiktokOwnership(
       ),
     };
   }
+  return outcome;
+}
 
-  // Deep-link mode is informative; reject mismatches against the Start mode.
-  if (parsed.mode && parsed.mode !== scopedMode) {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error: new TiktokOwnershipError(
-        'TX_INVALID',
-        'Return mode does not match Start.',
-        'TX_INVALID',
-      ),
-    };
+/**
+ * Cold-start / process-recreation resume. Never Starts or opens OAuth.
+ */
+export async function resumeTiktokOwnershipReturn(
+  mode: ProfileMode,
+): Promise<TiktokConnectOutcome | { status: 'ignored' }> {
+  const scopedMode = assertTiktokOwnershipMode(mode);
+  if (!firebaseAuth.currentUser?.uid) {
+    return { status: 'ignored' };
   }
+  await ensureAppCheckReady();
+  const handled = await tiktokOAuth.inspectInitialReturn(
+    createOwnershipLinkingPort(),
+    scopedMode,
+  );
+  return tiktokOutcomeFromHandle(handled, scopedMode, true);
+}
 
-  const stored = await readStoredTx();
-  if (
-    !stored ||
-    stored.uid !== uid ||
-    stored.mode !== scopedMode ||
-    stored.transactionId !== parsed.transactionId
-  ) {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error: new TiktokOwnershipError(
-        'TX_INVALID',
-        'Verification transaction mismatch.',
-        'TX_INVALID',
-      ),
-    };
-  }
-  if (Date.now() > stored.expiresAt) {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error: new TiktokOwnershipError(
-        'TX_EXPIRED',
-        'Verification expired.',
-        'TX_EXPIRED',
-      ),
-    };
-  }
-
-  assertSameUid(uid);
-
-  try {
-    const exchange = await tiktokOwnershipExchange(
-      functions,
-      stored.transactionId,
-      stored.clientProofVerifier,
-    );
-    await clearStoredTx();
-    assertSameUid(uid);
-
-    if (exchange.mode !== scopedMode) {
-      return {
-        status: 'failed',
-        error: new TiktokOwnershipError(
-          'BAD_RESPONSE',
-          'Verified mode mismatch.',
-        ),
-      };
-    }
-    return { status: 'verified', verified: exchange };
-  } catch (err) {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error:
-        err instanceof TiktokOwnershipError
-          ? err
-          : mapCallableError(err),
-    };
-  }
+/**
+ * Live Linking returns while the card is mounted and Connect is not in flight.
+ */
+export function watchTiktokOwnershipReturns(
+  mode: ProfileMode,
+  onOutcome: (
+    outcome: Exclude<
+      TiktokConnectOutcome | { status: 'ignored' },
+      { status: 'ignored' }
+    >,
+  ) => void,
+): { remove: () => void } {
+  const scopedMode = assertTiktokOwnershipMode(mode);
+  return tiktokOAuth.subscribeReturnUrls(
+    createOwnershipLinkingPort(),
+    (url) => {
+      void (async () => {
+        try {
+          await ensureAppCheckReady();
+          const handled = await tiktokOAuth.handleReturnUrl(url, {
+            source: 'linking',
+            expectedMode: scopedMode,
+          });
+          const outcome = tiktokOutcomeFromHandle(handled, scopedMode, true);
+          if (outcome.status !== 'ignored') {
+            onOutcome(outcome);
+          }
+        } catch {
+          // best-effort; Get reconciliation covers the rest
+        }
+      })();
+    },
+  );
 }
 
 export async function getTiktokOwnershipState(

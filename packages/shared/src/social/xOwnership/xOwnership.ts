@@ -50,3 +50,16 @@ export async function unlinkXOwnership(
 ): Promise<XOwnershipUnlinkResponse> {
   unsupported();
 }
+
+export async function resumeXOwnershipReturn(
+  _mode: ProfileMode,
+): Promise<XConnectOutcome | { status: 'ignored' }> {
+  return { status: 'ignored' };
+}
+
+export function watchXOwnershipReturns(
+  _mode: ProfileMode,
+  _onOutcome: (outcome: XConnectOutcome) => void,
+): { remove: () => void } {
+  return { remove: () => {} };
+}

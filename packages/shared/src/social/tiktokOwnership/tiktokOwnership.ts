@@ -50,3 +50,16 @@ export async function unlinkTiktokOwnership(
 ): Promise<TiktokOwnershipUnlinkResponse> {
   unsupported();
 }
+
+export async function resumeTiktokOwnershipReturn(
+  _mode: ProfileMode,
+): Promise<TiktokConnectOutcome | { status: 'ignored' }> {
+  return { status: 'ignored' };
+}
+
+export function watchTiktokOwnershipReturns(
+  _mode: ProfileMode,
+  _onOutcome: (outcome: TiktokConnectOutcome) => void,
+): { remove: () => void } {
+  return { remove: () => {} };
+}

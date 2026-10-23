@@ -60,3 +60,16 @@ export async function unlinkYoutubeOwnership(
   unsupported();
 }
 
+export async function resumeYoutubeOwnershipReturn(
+  _mode: ProfileMode,
+): Promise<YoutubeConnectOutcome | { status: 'ignored' }> {
+  return { status: 'ignored' };
+}
+
+export function watchYoutubeOwnershipReturns(
+  _mode: ProfileMode,
+  _onOutcome: (outcome: YoutubeConnectOutcome) => void,
+): { remove: () => void } {
+  return { remove: () => {} };
+}
+

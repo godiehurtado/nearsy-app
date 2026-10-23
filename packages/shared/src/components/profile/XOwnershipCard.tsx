@@ -36,18 +36,24 @@ import {
   type XOwnershipUiPhase,
 } from '../../social/xOwnership/xOwnershipPresentation.ts';
 
+type XConnectOutcome =
+  import('../../social/xOwnership/xOwnershipCore.ts').XConnectOutcome;
+
 type XApi = {
-  connectXOwnership: (
-    mode: ProfileMode,
-  ) => Promise<
-    import('../../social/xOwnership/xOwnershipCore.ts').XConnectOutcome
-  >;
+  connectXOwnership: (mode: ProfileMode) => Promise<XConnectOutcome>;
   getXOwnershipState: (
     mode: ProfileMode,
   ) => Promise<XOwnershipGetResponse>;
   unlinkXOwnership: (
     mode: ProfileMode,
   ) => Promise<XOwnershipUnlinkResponse>;
+  resumeXOwnershipReturn: (
+    mode: ProfileMode,
+  ) => Promise<XConnectOutcome | { status: 'ignored' }>;
+  watchXOwnershipReturns: (
+    mode: ProfileMode,
+    onOutcome: (outcome: XConnectOutcome) => void,
+  ) => { remove: () => void };
 };
 
 function loadXApi(): XApi | null {
@@ -181,11 +187,39 @@ export function XOwnershipCard({
   );
 
   useEffect(() => {
-    void refreshForMode(mode);
+    const forMode = mode;
+    let cancelled = false;
+    void (async () => {
+      if (api?.resumeXOwnershipReturn) {
+        const resumed = await api.resumeXOwnershipReturn(forMode);
+        if (cancelled || forMode !== modeRef.current) return;
+        if (resumed.status === 'verified') {
+          applyVerifiedIfCurrent(
+            requestGenRef.current,
+            forMode,
+            resumed.verified,
+          );
+          return;
+        }
+      }
+      await refreshForMode(forMode);
+    })();
+    const watch = api?.watchXOwnershipReturns?.(forMode, (outcome) => {
+      if (cancelled || forMode !== modeRef.current) return;
+      if (outcome.status === 'verified') {
+        applyVerifiedIfCurrent(
+          requestGenRef.current,
+          forMode,
+          outcome.verified,
+        );
+      }
+    });
     return () => {
+      cancelled = true;
       requestGenRef.current += 1;
+      watch?.remove();
     };
-  }, [mode, refreshForMode]);
+  }, [mode, api, refreshForMode, applyVerifiedIfCurrent]);
 
   useEffect(() => {
     onConnectedChange?.(!!connected && phase !== 'loading');

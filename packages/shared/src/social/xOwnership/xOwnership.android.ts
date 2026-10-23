@@ -24,6 +24,7 @@ import {
   X_TX_STORAGE_KEY,
   type XOwnershipGetResponse,
   type XOwnershipUnlinkResponse,
+  type XOwnershipVerified,
   type XStoredTransaction,
 } from './xOwnershipContract.ts';
 import {
@@ -39,6 +40,12 @@ import {
   type XConnectOutcome,
   type XOwnershipFunctionsPort,
 } from './xOwnershipCore.ts';
+import { createOwnershipLinkingPort } from '../ownershipOAuth/ownershipOAuthAndroid.ts';
+import {
+  createOwnershipOAuthCoordinator,
+  type OwnershipBrowserSessionResult,
+  type OwnershipHandleResult,
+} from '../ownershipOAuth/ownershipOAuthCoordinator.ts';
 
 export type { XConnectOutcome };
 import { parseXOwnershipReturnUrl } from './xOwnershipDeepLink.ts';
@@ -112,6 +119,77 @@ async function clearStoredTx(): Promise<void> {
   } catch {
     // best-effort
   }
+}
+
+const xOAuth = createOwnershipOAuthCoordinator<XOwnershipVerified>({
+  parseReturnUrl: parseXOwnershipReturnUrl,
+  readStoredTx,
+  clearStoredTx,
+  currentUid: () => firebaseAuth.currentUser?.uid ?? null,
+  exchange: async (tx) => {
+    const functions = createFunctionsPort();
+    return xOwnershipExchange(
+      functions,
+      tx.transactionId,
+      tx.clientProofVerifier,
+    );
+  },
+});
+
+function xOutcomeFromHandle(
+  handled:
+    | OwnershipHandleResult<XOwnershipVerified>
+    | OwnershipBrowserSessionResult<XOwnershipVerified>,
+  scopedMode: ProfileMode,
+  forResume: boolean,
+): XConnectOutcome | { status: 'ignored' } {
+  if (handled.status === 'cancelled') {
+    return forResume ? { status: 'ignored' } : { status: 'cancelled' };
+  }
+  if (handled.status === 'ignored' || handled.status === 'duplicate') {
+    return forResume
+      ? { status: 'ignored' }
+      : {
+          status: 'failed',
+          error: new XOwnershipError(
+            'TX_INVALID',
+            'Verification return was already processed.',
+            'TX_INVALID',
+          ),
+        };
+  }
+  if (handled.status === 'browser_failed') {
+    return {
+      status: 'failed',
+      error: new XOwnershipError(
+        'BROWSER_FAILED',
+        'Could not complete browser verification.',
+      ),
+    };
+  }
+  if (handled.status === 'provider_error') {
+    return {
+      status: 'failed',
+      error: new XOwnershipError(
+        handled.errorCode,
+        handled.errorCode,
+        handled.errorCode,
+      ),
+    };
+  }
+  if (handled.status === 'failed') {
+    return {
+      status: 'failed',
+      error: new XOwnershipError(handled.code, handled.message, handled.code),
+    };
+  }
+  if (handled.result.mode !== scopedMode) {
+    return {
+      status: 'failed',
+      error: new XOwnershipError('BAD_RESPONSE', 'Verified mode mismatch.'),
+    };
+  }
+  return { status: 'verified', verified: handled.result };
 }
 
 async function ensureAppCheckReady(): Promise<void> {
@@ -234,48 +312,20 @@ export async function connectXOwnership(
     mode: scopedMode,
   });
 
-  const browserOutcome = await browser.openAuthSession(
-    start.authorizationUrl,
-    X_OWNERSHIP_RETURN_URL,
-  );
-
-  if (
-    browserOutcome.type === 'cancel' ||
-    browserOutcome.type === 'dismiss'
-  ) {
-    await clearStoredTx();
-    return { status: 'cancelled' };
-  }
-  if (
-    browserOutcome.type === 'failed' ||
-    browserOutcome.type === 'unavailable'
-  ) {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error: new XOwnershipError(
-        'BROWSER_FAILED',
-        'Could not complete browser verification.',
+  const handled = await xOAuth.completeBrowserSession({
+    authorizationUrl: start.authorizationUrl,
+    returnUrl: X_OWNERSHIP_RETURN_URL,
+    expectedUid: uid,
+    expectedMode: scopedMode,
+    openAuthSession: (authorizationUrl, returnUrl) =>
+      browser.openAuthSession(
+        authorizationUrl,
+        returnUrl as typeof X_OWNERSHIP_RETURN_URL,
       ),
-    };
-  }
-
-  assertSameUid(uid);
-
-  const parsed = parseXOwnershipReturnUrl(browserOutcome.url);
-  if (parsed.kind === 'provider_error') {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error: new XOwnershipError(
-        parsed.errorCode,
-        parsed.errorCode,
-        parsed.errorCode,
-      ),
-    };
-  }
-  if (parsed.kind !== 'success') {
-    await clearStoredTx();
+    linking: createOwnershipLinkingPort(),
+  });
+  const outcome = xOutcomeFromHandle(handled, scopedMode, false);
+  if (outcome.status === 'ignored') {
     return {
       status: 'failed',
       error: new XOwnershipError(
@@ -285,80 +335,57 @@ export async function connectXOwnership(
       ),
     };
   }
+  return outcome;
+}
 
-  // Deep-link mode is informative; reject mismatches against the Start mode.
-  if (parsed.mode && parsed.mode !== scopedMode) {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error: new XOwnershipError(
-        'TX_INVALID',
-        'Return mode does not match Start.',
-        'TX_INVALID',
-      ),
-    };
+/**
+ * Cold-start / process-recreation resume. Never Starts or opens OAuth.
+ */
+export async function resumeXOwnershipReturn(
+  mode: ProfileMode,
+): Promise<XConnectOutcome | { status: 'ignored' }> {
+  const scopedMode = assertXOwnershipMode(mode);
+  if (!firebaseAuth.currentUser?.uid) {
+    return { status: 'ignored' };
   }
+  await ensureAppCheckReady();
+  const handled = await xOAuth.inspectInitialReturn(
+    createOwnershipLinkingPort(),
+    scopedMode,
+  );
+  return xOutcomeFromHandle(handled, scopedMode, true);
+}
 
-  const stored = await readStoredTx();
-  if (
-    !stored ||
-    stored.uid !== uid ||
-    stored.mode !== scopedMode ||
-    stored.transactionId !== parsed.transactionId
-  ) {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error: new XOwnershipError(
-        'TX_INVALID',
-        'Verification transaction mismatch.',
-        'TX_INVALID',
-      ),
-    };
-  }
-  if (Date.now() > stored.expiresAt) {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error: new XOwnershipError(
-        'TX_EXPIRED',
-        'Verification expired.',
-        'TX_EXPIRED',
-      ),
-    };
-  }
-
-  assertSameUid(uid);
-
-  try {
-    const exchange = await xOwnershipExchange(
-      functions,
-      stored.transactionId,
-      stored.clientProofVerifier,
-    );
-    await clearStoredTx();
-    assertSameUid(uid);
-
-    if (exchange.mode !== scopedMode) {
-      return {
-        status: 'failed',
-        error: new XOwnershipError(
-          'BAD_RESPONSE',
-          'Verified mode mismatch.',
-        ),
-      };
-    }
-    return { status: 'verified', verified: exchange };
-  } catch (err) {
-    await clearStoredTx();
-    return {
-      status: 'failed',
-      error:
-        err instanceof XOwnershipError
-          ? err
-          : mapCallableError(err),
-    };
-  }
+/**
+ * Live Linking returns while the card is mounted and Connect is not in flight.
+ */
+export function watchXOwnershipReturns(
+  mode: ProfileMode,
+  onOutcome: (
+    outcome: Exclude<
+      XConnectOutcome | { status: 'ignored' },
+      { status: 'ignored' }
+    >,
+  ) => void,
+): { remove: () => void } {
+  const scopedMode = assertXOwnershipMode(mode);
+  return xOAuth.subscribeReturnUrls(createOwnershipLinkingPort(), (url) => {
+    void (async () => {
+      try {
+        await ensureAppCheckReady();
+        const handled = await xOAuth.handleReturnUrl(url, {
+          source: 'linking',
+          expectedMode: scopedMode,
+        });
+        const outcome = xOutcomeFromHandle(handled, scopedMode, true);
+        if (outcome.status !== 'ignored') {
+          onOutcome(outcome);
+        }
+      } catch {
+        // best-effort; Get reconciliation covers the rest
+      }
+    })();
+  });
 }
 
 export async function getXOwnershipState(

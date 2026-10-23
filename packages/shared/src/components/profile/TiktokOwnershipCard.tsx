@@ -35,18 +35,26 @@ import {
   type TiktokOwnershipUiPhase,
 } from '../../social/tiktokOwnership/tiktokOwnershipPresentation.ts';
 
+type TiktokConnectOutcome =
+  import('../../social/tiktokOwnership/tiktokOwnershipCore.ts').TiktokConnectOutcome;
+
 type TiktokApi = {
   connectTiktokOwnership: (
     mode: ProfileMode,
-  ) => Promise<
-    import('../../social/tiktokOwnership/tiktokOwnershipCore.ts').TiktokConnectOutcome
-  >;
+  ) => Promise<TiktokConnectOutcome>;
   getTiktokOwnershipState: (
     mode: ProfileMode,
   ) => Promise<TiktokOwnershipGetResponse>;
   unlinkTiktokOwnership: (
     mode: ProfileMode,
   ) => Promise<TiktokOwnershipUnlinkResponse>;
+  resumeTiktokOwnershipReturn: (
+    mode: ProfileMode,
+  ) => Promise<TiktokConnectOutcome | { status: 'ignored' }>;
+  watchTiktokOwnershipReturns: (
+    mode: ProfileMode,
+    onOutcome: (outcome: TiktokConnectOutcome) => void,
+  ) => { remove: () => void };
 };
 
 function loadTiktokApi(): TiktokApi | null {
@@ -180,11 +188,39 @@ export function TiktokOwnershipCard({
   );
 
   useEffect(() => {
-    void refreshForMode(mode);
+    const forMode = mode;
+    let cancelled = false;
+    void (async () => {
+      if (api?.resumeTiktokOwnershipReturn) {
+        const resumed = await api.resumeTiktokOwnershipReturn(forMode);
+        if (cancelled || forMode !== modeRef.current) return;
+        if (resumed.status === 'verified') {
+          applyVerifiedIfCurrent(
+            requestGenRef.current,
+            forMode,
+            resumed.verified,
+          );
+          return;
+        }
+      }
+      await refreshForMode(forMode);
+    })();
+    const watch = api?.watchTiktokOwnershipReturns?.(forMode, (outcome) => {
+      if (cancelled || forMode !== modeRef.current) return;
+      if (outcome.status === 'verified') {
+        applyVerifiedIfCurrent(
+          requestGenRef.current,
+          forMode,
+          outcome.verified,
+        );
+      }
+    });
     return () => {
+      cancelled = true;
       requestGenRef.current += 1;
+      watch?.remove();
     };
-  }, [mode, refreshForMode]);
+  }, [mode, api, refreshForMode, applyVerifiedIfCurrent]);
 
   useEffect(() => {
     onConnectedChange?.(!!connected && phase !== 'loading');

@@ -39,25 +39,31 @@ import {
   type YoutubeOwnershipUiPhase,
 } from '../../social/youtubeOwnership/youtubeOwnershipPresentation.ts';
 
+type YoutubeConnectOutcome =
+  import('../../social/youtubeOwnership/youtubeOwnershipCore.ts').YoutubeConnectOutcome;
+
 type YoutubeApi = {
   connectYoutubeOwnership: (
     mode: ProfileMode,
-  ) => Promise<
-    import('../../social/youtubeOwnership/youtubeOwnershipCore.ts').YoutubeConnectOutcome
-  >;
+  ) => Promise<YoutubeConnectOutcome>;
   selectYoutubeOwnershipChannel: (
     transactionId: string,
     channelId: string,
     expectedMode: ProfileMode,
-  ) => Promise<
-    import('../../social/youtubeOwnership/youtubeOwnershipCore.ts').YoutubeConnectOutcome
-  >;
+  ) => Promise<YoutubeConnectOutcome>;
   getYoutubeOwnershipState: (
     mode: ProfileMode,
   ) => Promise<YoutubeOwnershipGetResponse>;
   unlinkYoutubeOwnership: (
     mode: ProfileMode,
   ) => Promise<YoutubeOwnershipUnlinkResponse>;
+  resumeYoutubeOwnershipReturn: (
+    mode: ProfileMode,
+  ) => Promise<YoutubeConnectOutcome | { status: 'ignored' }>;
+  watchYoutubeOwnershipReturns: (
+    mode: ProfileMode,
+    onOutcome: (outcome: YoutubeConnectOutcome) => void,
+  ) => { remove: () => void };
 };
 
 function loadYoutubeApi(): YoutubeApi | null {
@@ -196,12 +202,55 @@ export function YoutubeOwnershipCard({
   );
 
   useEffect(() => {
-    void refreshForMode(mode);
+    const forMode = mode;
+    let cancelled = false;
+    void (async () => {
+      if (api?.resumeYoutubeOwnershipReturn) {
+        const resumed = await api.resumeYoutubeOwnershipReturn(forMode);
+        if (cancelled || forMode !== modeRef.current) return;
+        if (resumed.status === 'verified') {
+          applyVerifiedIfCurrent(
+            requestGenRef.current,
+            forMode,
+            resumed.verified,
+          );
+          return;
+        }
+        if (resumed.status === 'select_channel') {
+          setChannelPicker({
+            transactionId: resumed.transactionId,
+            channels: resumed.channels,
+          });
+          setPhase('idle');
+          return;
+        }
+      }
+      await refreshForMode(forMode);
+    })();
+    const watch = api?.watchYoutubeOwnershipReturns?.(forMode, (outcome) => {
+      if (cancelled || forMode !== modeRef.current) return;
+      if (outcome.status === 'verified') {
+        applyVerifiedIfCurrent(
+          requestGenRef.current,
+          forMode,
+          outcome.verified,
+        );
+        return;
+      }
+      if (outcome.status === 'select_channel') {
+        setChannelPicker({
+          transactionId: outcome.transactionId,
+          channels: outcome.channels,
+        });
+        setPhase('idle');
+      }
+    });
     return () => {
-      // Invalidate in-flight work when leaving this mode's card instance.
+      cancelled = true;
       requestGenRef.current += 1;
+      watch?.remove();
     };
-  }, [mode, refreshForMode]);
+  }, [mode, api, refreshForMode, applyVerifiedIfCurrent]);
 
   useEffect(() => {
     onConnectedChange?.(!!connected && phase !== 'loading');
