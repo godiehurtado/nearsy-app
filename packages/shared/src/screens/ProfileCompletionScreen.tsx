@@ -2,8 +2,8 @@
  * Profile Completion wizard — CRJ profile-creation phase after Authentication.
  *
  * Flow: Profile Type → Name → Last Name → Photo → Profile Details →
- * Interests (11 category screens) → Interests Celebration / Affiliations
- * Transition → Affiliations (7 category screens) → Social Media →
+ * Interests (11 category screens) → Interests Celebration →
+ * Affiliations (accordion, initially closed) → Social Media →
  * Gallery → Location → Notifications → Registration Success → MainTabs.
  *
  * TEMPORARY: Phone OTP remains out of scope (handled earlier in Register).
@@ -33,10 +33,12 @@ import { CountrySearchField } from '../components/profile/CountrySearchField';
 import { LanguageMultiSelectField } from '../components/profile/LanguageMultiSelectField';
 import ProfileAvatarImage from '../components/profile/ProfileAvatarImage';
 import { OnboardingInterestCategoryPanel } from '../components/registration/OnboardingInterestCategoryPanel';
-import { OnboardingAffiliationCategoryPanel } from '../components/registration/OnboardingAffiliationCategoryPanel';
+import { AffiliationCategoryAccordionList } from '../components/registration/AffiliationCategoryAccordionList';
 import { OnboardingSocialMediaStep } from '../components/registration/OnboardingSocialMediaStep';
 import {
   IDLE_AFFILIATION_SEARCH_UI,
+  affiliationSearchUiEqual,
+  resolvePendingAffiliationSearchUi,
   type AffiliationSearchUiSnapshot,
 } from '../affiliations/affiliationSearchInteraction';
 import { OnboardingGalleryStep } from '../components/registration/OnboardingGalleryStep';
@@ -197,11 +199,7 @@ type ResolvedStep =
       categoryId: OnboardingInterestCategoryId;
     }
   | { kind: 'interestsCelebration' }
-  | {
-      kind: 'affiliation';
-      affiliationCategoryIndex: number;
-      categoryId: OnboardingAffiliationCategoryId;
-    }
+  | { kind: 'affiliation' }
   | { kind: 'socialMedia' }
   | { kind: PostAffiliationStep };
 
@@ -221,15 +219,10 @@ function resolveStep(stepIndex: number): ResolvedStep {
   offset -= INTEREST_CATEGORY_IDS.length;
   if (offset === 0) return { kind: 'interestsCelebration' };
   offset -= 1;
-  if (offset < AFFILIATION_CATEGORY_IDS.length) {
-    const categoryId = AFFILIATION_CATEGORY_IDS[offset]!;
-    return {
-      kind: 'affiliation',
-      affiliationCategoryIndex: offset,
-      categoryId,
-    };
+  if (offset === 0) {
+    return { kind: 'affiliation' };
   }
-  offset -= AFFILIATION_CATEGORY_IDS.length;
+  offset -= 1;
   if (offset === 0) return { kind: 'socialMedia' };
   offset -= 1;
   return { kind: POST_AFFILIATION_STEPS[offset]! };
@@ -405,9 +398,21 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [selectedAffiliations, setSelectedAffiliations] = useState<
     OnboardingSelectedAffiliation[]
   >([]);
-  const [affiliationSearchUi, setAffiliationSearchUi] =
-    useState<AffiliationSearchUiSnapshot>(IDLE_AFFILIATION_SEARCH_UI);
-  const affiliationAddRef = useRef<(() => void) | null>(null);
+  const [expandedAffiliationId, setExpandedAffiliationId] =
+    useState<OnboardingAffiliationCategoryId | null>(null);
+  const [affiliationSearchUiByCategory, setAffiliationSearchUiByCategory] =
+    useState<
+      Partial<Record<OnboardingAffiliationCategoryId, AffiliationSearchUiSnapshot>>
+    >({});
+  const affiliationAddByCategoryRef = useRef<
+    Partial<
+      Record<
+        OnboardingAffiliationCategoryId,
+        React.MutableRefObject<(() => void) | null>
+      >
+    >
+  >({});
+  const affiliationHeaderHeightRef = useRef(0);
   const stepScrollRef = useRef<ScrollView>(null);
   const [socialDraft, setSocialDraft] = useState<CrjSocialDraftValues>(
     emptyCrjSocialDraftValues,
@@ -463,12 +468,42 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const step = useMemo(() => resolveStep(stepIndex), [stepIndex]);
   const interestCategoryIndex =
     step.kind === 'interest' ? step.interestCategoryIndex : 0;
-  const affiliationCategoryIndex =
-    step.kind === 'affiliation' ? step.affiliationCategoryIndex : 0;
+
+  const getAffiliationAddRef = (
+    categoryId: OnboardingAffiliationCategoryId,
+  ): React.MutableRefObject<(() => void) | null> => {
+    const existing = affiliationAddByCategoryRef.current[categoryId];
+    if (existing) return existing;
+    const created: React.MutableRefObject<(() => void) | null> = {
+      current: null,
+    };
+    affiliationAddByCategoryRef.current[categoryId] = created;
+    return created;
+  };
+
+  const pendingAffiliationSearch = resolvePendingAffiliationSearchUi(
+    affiliationSearchUiByCategory,
+    AFFILIATION_CATEGORY_IDS,
+  );
+  const affiliationSearchUi =
+    pendingAffiliationSearch?.ui ??
+    (AFFILIATION_CATEGORY_IDS.some(
+      (id) => affiliationSearchUiByCategory[id]?.hideJourneyFooter,
+    )
+      ? {
+          phase: 'searching' as const,
+          hideJourneyFooter: true,
+          showAddCta: false,
+          addName: null,
+        }
+      : IDLE_AFFILIATION_SEARCH_UI);
 
   useEffect(() => {
-    setAffiliationSearchUi(IDLE_AFFILIATION_SEARCH_UI);
-  }, [step.kind, affiliationCategoryIndex]);
+    if (step.kind !== 'affiliation') {
+      setAffiliationSearchUiByCategory({});
+      setExpandedAffiliationId(null);
+    }
+  }, [step.kind]);
 
   const progressPhase = progressPhaseForStep(step);
   const progressValue =
@@ -1412,16 +1447,17 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   async function advanceAffiliation() {
     if (step.kind !== 'affiliation' || submitting) return;
 
-    const isLast =
-      affiliationCategoryIndex >= AFFILIATION_CATEGORY_IDS.length - 1;
+    const blockedCategory = AFFILIATION_CATEGORY_IDS.find(
+      (id) => affiliationSearchUiByCategory[id]?.hideJourneyFooter,
+    );
+    if (blockedCategory) {
+      setExpandedAffiliationId(blockedCategory);
+      return;
+    }
 
     try {
       setSubmitting(true);
-      if (isLast) {
-        await leaveLastAffiliationCategory();
-      } else {
-        setStepIndex((i) => i + 1);
-      }
+      await leaveLastAffiliationCategory();
     } catch (e: any) {
       Alert.alert(
         t('onboarding.profileCompletion.saveErrorTitle'),
@@ -1641,9 +1677,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const animKey =
     step.kind === 'interest'
       ? `interest-${step.categoryId}-${interestActiveGroupId ?? 'overview'}`
-      : step.kind === 'affiliation'
-        ? `affiliation-${step.categoryId}`
-        : step.kind;
+      : step.kind;
 
   const displayName = [realName.trim(), lastName.trim()]
     .filter(Boolean)
@@ -1716,7 +1750,10 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                   : t('onboarding.profileCompletion.affiliations.add' as any)
               }
               onPress={() => {
-                affiliationAddRef.current?.();
+                if (!pendingAffiliationSearch) return;
+                setExpandedAffiliationId(pendingAffiliationSearch.categoryId);
+                getAffiliationAddRef(pendingAffiliationSearch.categoryId)
+                  .current?.();
               }}
               disabled={submitting}
               loading={submitting}
@@ -2243,14 +2280,49 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
           )}
 
           {step.kind === 'affiliation' && (
-            <OnboardingAffiliationCategoryPanel
-              categoryId={step.categoryId}
-              selected={selectedAffiliations}
-              onChangeSelected={setSelectedAffiliations}
-              onSearchUiChange={setAffiliationSearchUi}
-              searchAddRef={affiliationAddRef}
-              contentScrollRef={stepScrollRef}
-            />
+            <View>
+              <View
+                onLayout={(e) => {
+                  affiliationHeaderHeightRef.current =
+                    e.nativeEvent.layout.height;
+                }}
+              >
+                <Text
+                  style={[styles.introEyebrow, { color: palette.chipText }]}
+                >
+                  {t(
+                    'onboarding.profileCompletion.affiliations.eyebrow' as any,
+                  )}
+                </Text>
+                <Text
+                  style={[styles.subtitle, { color: palette.textSecondary }]}
+                >
+                  {t(
+                    'onboarding.profileCompletion.affiliations.optionalLine' as any,
+                  )}
+                </Text>
+              </View>
+              <View style={styles.affiliationList}>
+                <AffiliationCategoryAccordionList
+                  categoryIds={AFFILIATION_CATEGORY_IDS}
+                  selected={selectedAffiliations}
+                  onChangeSelected={setSelectedAffiliations}
+                  expandedId={expandedAffiliationId}
+                  onExpandedIdChange={setExpandedAffiliationId}
+                  onSearchUiChange={(categoryId, ui) => {
+                    setAffiliationSearchUiByCategory((prev) => {
+                      if (affiliationSearchUiEqual(prev[categoryId], ui)) {
+                        return prev;
+                      }
+                      return { ...prev, [categoryId]: ui };
+                    });
+                  }}
+                  getAddRef={getAffiliationAddRef}
+                  contentScrollRef={stepScrollRef}
+                  headerHeightRef={affiliationHeaderHeightRef}
+                />
+              </View>
+            </View>
           )}
 
           {step.kind === 'socialMedia' && (
@@ -2510,6 +2582,9 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     textTransform: 'uppercase',
     marginBottom: spacing.sm,
+  },
+  affiliationList: {
+    marginTop: spacing.lg,
   },
   introSupport: {
     fontSize: fontSize.sm,

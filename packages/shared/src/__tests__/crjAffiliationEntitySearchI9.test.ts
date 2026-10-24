@@ -465,8 +465,8 @@ describe('CRJ-I9-C shared panel surfaces (CRJ + AffiliationsScreen)', () => {
       'panel must call runtime without explicit context',
     );
 
-    assert.ok(crj.includes('OnboardingAffiliationCategoryPanel'));
-    assert.ok(own.includes('OnboardingAffiliationCategoryPanel'));
+    assert.ok(crj.includes('AffiliationCategoryAccordionList'));
+    assert.ok(own.includes('AffiliationCategoryAccordionList'));
     assert.ok(
       !crj.includes('getAffiliationEntitySearchProvider'),
       'CRJ must not bypass the shared panel provider',

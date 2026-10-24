@@ -64,12 +64,13 @@ type Props = {
   contentScrollRef?: React.RefObject<ScrollView | null>;
   /**
    * Content-offset Y of this panel within the parent ScrollView.
-   * Multi-panel screens (Own Profile) must set this so search focus
-   * scrolls to the active category instead of y=0.
-   * CRJ single-panel may omit it (falls back to y=0).
+   * Accordion hosts must set this so search focus scrolls to the
+   * open category instead of y=0.
    */
   scrollAnchorYRef?: React.RefObject<number>;
   removeAffiliationAccessibilityLabel?: (name: string) => string;
+  /** Accordion host already shows icon / name / count. */
+  embeddedInAccordion?: boolean;
 };
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -99,6 +100,7 @@ export function OnboardingAffiliationCategoryPanel({
   contentScrollRef,
   scrollAnchorYRef,
   removeAffiliationAccessibilityLabel,
+  embeddedInAccordion = false,
 }: Props) {
   const { palette } = useAppTheme();
   const { t } = useTranslation();
@@ -446,35 +448,43 @@ export function OnboardingAffiliationCategoryPanel({
 
   return (
     <View style={[styles.wrap, compactSearch ? styles.wrapSearch : null]}>
-      <Text style={[styles.eyebrow, { color: palette.chipText }]}>
-        {t('onboarding.profileCompletion.affiliations.eyebrow' as any)}
-      </Text>
-      <View style={styles.titleRow}>
-        <Text
-          style={styles.emoji}
-          accessibilityElementsHidden
-          importantForAccessibility="no"
-        >
-          {category.emoji}
-        </Text>
-        <Text style={[styles.title, { color: palette.textPrimary }]}>
-          {t(
-            `onboarding.profileCompletion.affiliations.categories.${category.nameKey}` as any,
-            { defaultValue: category.name },
-          )}
-        </Text>
-      </View>
+      {embeddedInAccordion ? null : (
+        <>
+          <Text style={[styles.eyebrow, { color: palette.chipText }]}>
+            {t('onboarding.profileCompletion.affiliations.eyebrow' as any)}
+          </Text>
+          <View style={styles.titleRow}>
+            <Text
+              style={styles.emoji}
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            >
+              {category.emoji}
+            </Text>
+            <Text style={[styles.title, { color: palette.textPrimary }]}>
+              {t(
+                `onboarding.profileCompletion.affiliations.categories.${category.nameKey}` as any,
+                { defaultValue: category.name },
+              )}
+            </Text>
+          </View>
+        </>
+      )}
       {!compactSearch ? (
         <>
-          <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
-            {t(
-              `onboarding.profileCompletion.affiliations.subtitles.${category.subtitleKey}` as any,
-              { defaultValue: category.subtitle },
-            )}
-          </Text>
-          <Text style={[styles.countLabel, { color: palette.chipText }]}>
-            {countLabel}
-          </Text>
+          {embeddedInAccordion ? null : (
+            <>
+              <Text style={[styles.subtitle, { color: palette.textSecondary }]}>
+                {t(
+                  `onboarding.profileCompletion.affiliations.subtitles.${category.subtitleKey}` as any,
+                  { defaultValue: category.subtitle },
+                )}
+              </Text>
+              <Text style={[styles.countLabel, { color: palette.chipText }]}>
+                {countLabel}
+              </Text>
+            </>
+          )}
 
           {selectedInCategory.length > 0 ? (
             <View style={styles.selectedWrap}>

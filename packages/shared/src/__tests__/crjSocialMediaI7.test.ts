@@ -36,9 +36,7 @@ describe('CRJ-I7 Social Media architecture', () => {
   it('A — Social Media follows Affiliations', () => {
     assert.equal(POST_AFFILIATIONS_CRJ_STEP, 'socialMedia');
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
-    const affIdx = screen.indexOf(
-      'offset -= AFFILIATION_CATEGORY_IDS.length',
-    );
+    const affIdx = screen.indexOf("return { kind: 'affiliation' }");
     const socialReturn = screen.indexOf(
       "if (offset === 0) return { kind: 'socialMedia' }",
     );
