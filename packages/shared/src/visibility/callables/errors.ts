@@ -63,6 +63,25 @@ const KNOWN_CODES = new Set<string>([
   'internal',
 ]);
 
+export type ProfileIncompleteMissingField =
+  | 'realName'
+  | 'lastName'
+  | 'profileImage'
+  | 'occupation'
+  | 'bio'
+  | 'company';
+
+export type ProfileIncompleteDestinationMode = 'personal' | 'professional';
+
+const PROFILE_INCOMPLETE_FIELDS = new Set<string>([
+  'realName',
+  'lastName',
+  'profileImage',
+  'occupation',
+  'bio',
+  'company',
+]);
+
 export class VisibilityDiscoveryClientError extends Error {
   readonly kind = 'VisibilityDiscoveryClientError' as const;
   readonly code: VisibilityFirebaseErrorCode;
@@ -74,6 +93,11 @@ export class VisibilityDiscoveryClientError extends Error {
    * Diagnostic only — must not override contractual retryable for invalid-location.
    */
   readonly detailsRetryableReceived?: boolean;
+  /** Stable domain code, e.g. PROFILE_INCOMPLETE. */
+  readonly detailsCode?: string;
+  /** Destination face that failed completeness (PROFILE_INCOMPLETE). */
+  readonly destinationMode?: ProfileIncompleteDestinationMode;
+  readonly missingFields?: ProfileIncompleteMissingField[];
   /** Original throwable — logging only; never surface to UI. */
   readonly causeForLog?: unknown;
 
@@ -83,6 +107,9 @@ export class VisibilityDiscoveryClientError extends Error {
     field?: string;
     retryable: boolean;
     detailsRetryableReceived?: boolean;
+    detailsCode?: string;
+    destinationMode?: ProfileIncompleteDestinationMode;
+    missingFields?: ProfileIncompleteMissingField[];
     message: string;
     causeForLog?: unknown;
   }) {
@@ -94,6 +121,13 @@ export class VisibilityDiscoveryClientError extends Error {
     if (input.field !== undefined) this.field = input.field;
     if (input.detailsRetryableReceived !== undefined) {
       this.detailsRetryableReceived = input.detailsRetryableReceived;
+    }
+    if (input.detailsCode !== undefined) this.detailsCode = input.detailsCode;
+    if (input.destinationMode !== undefined) {
+      this.destinationMode = input.destinationMode;
+    }
+    if (input.missingFields !== undefined) {
+      this.missingFields = input.missingFields;
     }
     if (input.causeForLog !== undefined) this.causeForLog = input.causeForLog;
   }
@@ -165,6 +199,31 @@ function readDetails(err: unknown): Record<string, unknown> | null {
   return details as Record<string, unknown>;
 }
 
+function parseDestinationMode(
+  raw: unknown,
+): ProfileIncompleteDestinationMode | undefined {
+  return raw === 'personal' || raw === 'professional' ? raw : undefined;
+}
+
+function parseMissingFields(raw: unknown): ProfileIncompleteMissingField[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const fields = raw.filter(
+    (value): value is ProfileIncompleteMissingField =>
+      typeof value === 'string' && PROFILE_INCOMPLETE_FIELDS.has(value),
+  );
+  return fields.length > 0 ? fields : undefined;
+}
+
+export function isProfileIncompleteModeError(err: unknown): boolean {
+  if (!isVisibilityDiscoveryClientError(err)) return false;
+  if (err.detailsCode === 'PROFILE_INCOMPLETE') return true;
+  return (
+    err.code === 'failed-precondition' &&
+    err.reason.kind === 'known' &&
+    err.reason.value === 'profile-incomplete'
+  );
+}
+
 /**
  * Map RNFB / Firebase callable throwables into a discriminated client error.
  * Unknown reasons are preserved — never treated as success.
@@ -200,12 +259,22 @@ export function normalizeVisibilityCallableError(
     retryable = defaultRetryableForCode(code);
   }
 
+  const detailsCode =
+    typeof details?.code === 'string' && details.code.trim()
+      ? details.code.trim()
+      : undefined;
+  const destinationMode = parseDestinationMode(details?.mode);
+  const missingFields = parseMissingFields(details?.missingFields);
+
   return new VisibilityDiscoveryClientError({
     code,
     reason,
     field,
     retryable,
     detailsRetryableReceived,
+    detailsCode,
+    destinationMode,
+    missingFields,
     message: 'Visibility callable failed.',
     causeForLog: err,
   });

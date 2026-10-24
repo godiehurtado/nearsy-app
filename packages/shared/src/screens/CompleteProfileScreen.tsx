@@ -47,6 +47,8 @@ import {
   setActiveProfileModeFlow,
   shouldResyncProfessionalActiveModeAfterSave,
 } from '../visibility/activeProfileModeSync';
+import { isProfileIncompleteModeError } from '../visibility/callables';
+import { shouldApplyActiveProfileModeSwitch } from '../visibility/setActiveProfileModeClientSemantics';
 import { resolveProfileImageForPersistence } from '../profile/socialProfilePhotoImport';
 import {
   consumePendingSocialProfilePrefill,
@@ -683,6 +685,21 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       }
 
       if (result.ok === false) {
+        if (isProfileIncompleteModeError(result.error)) {
+          const dest = result.error.destinationMode ?? targetMode;
+          applyModeFields(profileDoc, dest);
+          setMode(dest);
+          const missing = result.error.missingFields ?? [];
+          Alert.alert(
+            t('profile.mode.incompleteDestinationTitle'),
+            missing.length
+              ? `${t('profile.mode.incompleteDestinationBody')}\n\n${missing
+                  .map((field) => validationMessage(field))
+                  .join('\n')}`
+              : t('profile.mode.incompleteDestinationBody'),
+          );
+          return;
+        }
         const presentation = presentActiveProfileModeError(t, result.error);
         Alert.alert(presentation.title, presentation.userMessage);
         return;
@@ -693,6 +710,15 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       }
 
       const { response } = result;
+      if (
+        !shouldApplyActiveProfileModeSwitch({
+          confirmedMode: activeConfirmed,
+          response,
+        })
+      ) {
+        return;
+      }
+
       const nextDoc = applyActiveProfileModeResponseToUserDoc(
         profileDoc ?? {},
         response,
@@ -998,9 +1024,16 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
           return;
         }
         if (outcome.ok === false) {
-          const presentation = presentActiveProfileModeError(t, outcome.error);
-          Alert.alert(presentation.title, presentation.userMessage);
-        } else {
+          if (!isProfileIncompleteModeError(outcome.error)) {
+            const presentation = presentActiveProfileModeError(t, outcome.error);
+            Alert.alert(presentation.title, presentation.userMessage);
+          }
+        } else if (
+          shouldApplyActiveProfileModeSwitch({
+            confirmedMode: confirmedMode ?? mode,
+            response: outcome.response,
+          })
+        ) {
           nextProfileDoc = applyActiveProfileModeResponseToUserDoc(
             nextProfileDoc,
             outcome.response,

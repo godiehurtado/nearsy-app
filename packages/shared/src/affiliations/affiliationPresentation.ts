@@ -1,22 +1,18 @@
 /**
- * Affiliation display + Family / topic-sufficient rules for Nearsy 2.0.9.
- *
- * Category storage id `identity_lifestyle` is unchanged (legacy rows keep it).
- * Presentation name is Family. Topic ids below are the iOS catalog until
- * Functions publishes docs/design/NEARSY-209-affiliations-final-contract.md;
- * do not invent a second wire contract.
+ * Affiliation display + Family / topic-sufficient rules.
+ * Contract: docs/design/NEARSY-209-affiliations-final-contract.md
+ * (`family` for new writes; `identity_lifestyle` legacy read/edit only).
  */
 
 import {
   getOnboardingAffiliationCategory,
   isFreeTextAffiliationCategory,
-  listOnboardingAffiliationCategoryIds,
+  listAllAffiliationCategoryIds,
   type OnboardingAffiliationCategoryId,
-  type OnboardingSelectedAffiliation,
 } from './onboardingAffiliationCatalog';
 
 export const FAMILY_AFFILIATION_CATEGORY_ID: OnboardingAffiliationCategoryId =
-  'identity_lifestyle';
+  'family';
 
 export const FAMILY_TOPIC_IDS = [
   'father_of',
@@ -39,25 +35,7 @@ const TOPIC_SUFFICIENT_CATEGORY_IDS = new Set<OnboardingAffiliationCategoryId>([
   'political_civic',
 ]);
 
-const KNOWN_CATEGORY_IDS = new Set<string>(listOnboardingAffiliationCategoryIds());
-
-/** English labels previously stored as `topic` for Identity & Lifestyle. */
-const LEGACY_TOPIC_LABEL_TO_ID: Record<string, string> = {
-  'cultural background': 'cultural_background',
-  hometown: 'hometown',
-  parent: 'parent',
-  'pet parent': 'pet_parent',
-  veteran: 'veteran',
-  'personality type': 'personality_type',
-  'father of': 'father_of',
-  'mother of': 'mother_of',
-  'child of': 'child_of',
-  'sibling of': 'sibling_of',
-  'spouse of': 'spouse_of',
-  'partner of': 'partner_of',
-  'grandparent of': 'grandparent_of',
-  'grandchild of': 'grandchild_of',
-};
+const KNOWN_CATEGORY_IDS = new Set<string>(listAllAffiliationCategoryIds());
 
 export type AffiliationTranslate = (
   key: string,
@@ -91,6 +69,12 @@ export function isFamilyTopicId(value: string | null | undefined): boolean {
   return typeof value === 'string' && FAMILY_TOPIC_SET.has(value);
 }
 
+export function isKnownAffiliationCategoryId(
+  value: string | null | undefined,
+): value is OnboardingAffiliationCategoryId {
+  return typeof value === 'string' && KNOWN_CATEGORY_IDS.has(value);
+}
+
 export function affiliationRequiresName(
   categoryId: OnboardingAffiliationCategoryId,
 ): boolean {
@@ -104,9 +88,17 @@ export function affiliationAllowsLogoDev(
   return !isFreeTextAffiliationCategory(categoryId);
 }
 
+function slugTopicLabel(label: string): string {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
 /**
- * Resolve stored topic (id or legacy English label) to a catalog topic id.
- * Unknown values are returned trimmed; never remapped to a Family relation.
+ * Resolve stored topic (id or historical EN label) within that category.
+ * Never maps identity_lifestyle `parent` / `pet_parent` onto Family relations.
  */
 export function resolveAffiliationTopicId(
   categoryId: string | null | undefined,
@@ -117,23 +109,29 @@ export function resolveAffiliationTopicId(
   if (!trimmed) return null;
 
   const lower = trimmed.toLowerCase();
-  const fromLegacy = LEGACY_TOPIC_LABEL_TO_ID[lower];
-  if (fromLegacy) return fromLegacy;
-
-  if (!categoryId || !KNOWN_CATEGORY_IDS.has(categoryId)) {
-    return /^[a-z0-9]+(?:_[a-z0-9]+)*$/i.test(trimmed) ? lower : trimmed;
+  if (isFamilyTopicId(lower) && !categoryId) return lower;
+  if (
+    isKnownAffiliationCategoryId(categoryId) === false &&
+    /^[a-z0-9]+(?:_[a-z0-9]+)*$/i.test(trimmed)
+  ) {
+    return lower;
   }
 
-  const category = getOnboardingAffiliationCategory(
-    categoryId as OnboardingAffiliationCategoryId,
-  );
+  if (!isKnownAffiliationCategoryId(categoryId)) {
+    return trimmed;
+  }
+
+  const category = getOnboardingAffiliationCategory(categoryId);
   const byId = category.topics.find((topic) => topic.id === lower);
   if (byId) return byId.id;
+  const slugged = slugTopicLabel(trimmed);
+  const bySlug = category.topics.find((topic) => topic.id === slugged);
+  if (bySlug) return bySlug.id;
   const byLabel = category.topics.find(
-    (topic) => topic.label.toLowerCase() === lower,
+    (topic) => slugTopicLabel(topic.label) === slugged,
   );
   if (byLabel) return byLabel.id;
-  return trimmed;
+  return null;
 }
 
 export function resolveAffiliationTopicLabel(
@@ -141,27 +139,31 @@ export function resolveAffiliationTopicLabel(
   storedTopic: string | null | undefined,
   translate: AffiliationTranslate,
 ): string | null {
-  const topicId = resolveAffiliationTopicId(categoryId, storedTopic);
+  const topicId =
+    resolveAffiliationTopicId(categoryId, storedTopic) ??
+    (typeof storedTopic === 'string' && storedTopic.trim()
+      ? storedTopic.trim()
+      : null);
   if (!topicId) return null;
+  if (isKnownAffiliationCategoryId(topicId)) return null;
 
-  if (KNOWN_CATEGORY_IDS.has(categoryId ?? '')) {
-    const category = getOnboardingAffiliationCategory(
-      categoryId as OnboardingAffiliationCategoryId,
-    );
-    const topic = category.topics.find((row) => row.id === topicId);
-    if (topic) {
-      return translate(
-        `onboarding.profileCompletion.affiliations.topics.${topic.id}`,
-        topic.label,
-      );
-    }
-  }
-
-  const fallback = topicId
+  let fallback = topicId
     .split('_')
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(' ');
+  if (isKnownAffiliationCategoryId(categoryId)) {
+    const topic = getOnboardingAffiliationCategory(categoryId).topics.find(
+      (row) => row.id === topicId,
+    );
+    if (topic?.label) fallback = topic.label;
+  } else if (isFamilyTopicId(topicId)) {
+    const topic = getOnboardingAffiliationCategory('family').topics.find(
+      (row) => row.id === topicId,
+    );
+    if (topic?.label) fallback = topic.label;
+  }
+
   return translate(
     `onboarding.profileCompletion.affiliations.topics.${topicId}`,
     fallback,
@@ -184,19 +186,24 @@ export function formatAffiliationDisplay(input: {
   translate: AffiliationTranslate;
 }): AffiliationDisplayParts | null {
   const name = trimName(input.name);
+  const inferredCategory = isFamilyTopicId(input.topic)
+    ? FAMILY_AFFILIATION_CATEGORY_ID
+    : input.categoryId;
   const topicLabel = resolveAffiliationTopicLabel(
-    input.categoryId,
+    inferredCategory,
     input.topic,
     input.translate,
   );
 
-  const topicId = resolveAffiliationTopicId(input.categoryId, input.topic);
+  const topicId = resolveAffiliationTopicId(inferredCategory, input.topic);
   if (
-    isFamilyAffiliationCategory(input.categoryId) &&
+    (isFamilyAffiliationCategory(inferredCategory) || isFamilyTopicId(topicId)) &&
     topicLabel &&
     isFamilyTopicId(topicId)
   ) {
-    const primary = name ? `${topicLabel} ${name}`.replace(/\s+/g, ' ').trim() : topicLabel;
+    const primary = name
+      ? `${topicLabel} ${name}`.replace(/\s+/g, ' ').trim()
+      : topicLabel;
     if (!primary) return null;
     return {
       primary,

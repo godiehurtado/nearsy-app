@@ -73,7 +73,7 @@ type Props = {
 };
 
 const SEARCH_DEBOUNCE_MS = 300;
-const QUERY_MAX = 40;
+const QUERY_MAX = 120;
 
 function readClientPublishableKey(): string | undefined {
   const fromEnv = readLogoDevPublishableKey();
@@ -195,7 +195,7 @@ export function OnboardingAffiliationCategoryPanel({
     providerId?: string | null;
   }): string | undefined {
     if (input.logoUrl?.trim()) return input.logoUrl.trim();
-    // Family (identity_lifestyle) never reconstructs Logo.dev logos for existing rows.
+    // Family and Identity & Lifestyle never reconstruct Logo.dev logos for existing rows.
     if (freeTextCategory) return undefined;
     return buildLogoDevImageUrl(
       domainFromAffiliationFields(input),
@@ -393,14 +393,13 @@ export function OnboardingAffiliationCategoryPanel({
       return;
     }
 
-    const idSeed =
-      validated.name || activeTopic?.id || categoryId;
     const next: OnboardingSelectedAffiliation = {
       id: isCustom
         ? buildCustomAffiliationId(
             categoryId,
-            idSeed,
+            validated.name,
             selected.map((row) => row.id),
+            activeTopic?.id,
           )
         : matched!.providerId,
       name: validated.name,

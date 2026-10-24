@@ -117,9 +117,9 @@ describe('CHG-AFF-02 parsing — malformed rows are hidden individually', () => 
       { id: 'e', name: '  Echo  ', type: '  community ', logoUrl: ' https://cdn.example/e.png ' },
     ]);
     assert.deepEqual(parsed, [
-      { id: 'a', name: 'Alpha', type: 'education', topic: null, logoUrl: null },
-      { id: 'd', name: 'Delta', type: null, topic: null, logoUrl: null },
-      { id: 'e', name: 'Echo', type: 'community', topic: null, logoUrl: 'https://cdn.example/e.png' },
+      { id: 'a', name: 'Alpha', type: 'education', logoUrl: null },
+      { id: 'd', name: 'Delta', type: null, logoUrl: null },
+      { id: 'e', name: 'Echo', type: 'community', logoUrl: 'https://cdn.example/e.png' },
     ]);
   });
 

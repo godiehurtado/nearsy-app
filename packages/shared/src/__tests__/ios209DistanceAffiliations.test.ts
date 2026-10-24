@@ -42,13 +42,14 @@ describe('IOS-209 hide distance presentation', () => {
 });
 
 describe('IOS-209 Identity & Lifestyle free text', () => {
-  it('marks only identity_lifestyle as free-text', () => {
+  it('marks family and identity_lifestyle as free-text', () => {
+    assert.equal(isFreeTextAffiliationCategory('family'), true);
     assert.equal(isFreeTextAffiliationCategory('identity_lifestyle'), true);
     assert.equal(isFreeTextAffiliationCategory('education'), false);
     assert.equal(isFreeTextAffiliationCategory('professional'), false);
   });
 
-  it('panel skips entity search and Logo.dev rebuild for identity_lifestyle', () => {
+  it('panel skips entity search and Logo.dev rebuild for family and identity_lifestyle', () => {
     const panel = readShared(
       'components/registration/OnboardingAffiliationCategoryPanel.tsx',
     );
@@ -58,7 +59,7 @@ describe('IOS-209 Identity & Lifestyle free text', () => {
     assert.match(panel, /freeTextCategory \? false : results\.length/);
     assert.match(
       panel,
-      /Family \(identity_lifestyle\) never reconstructs Logo\.dev|if \(freeTextCategory\) return undefined/,
+      /Family and Identity & Lifestyle never reconstructs Logo\.dev|if \(freeTextCategory\) return undefined/,
     );
   });
 
@@ -227,7 +228,9 @@ describe('IOS-209 Identity & Lifestyle i18n topics', () => {
     }
     assert.match(en, /identityFreeTextHint:/);
     assert.match(es, /identityFreeTextHint:/);
-    assert.match(en, /identity_lifestyle: 'Family'/);
-    assert.match(es, /identity_lifestyle: 'Familia'/);
+    assert.match(en, /family: 'Family'/);
+    assert.match(es, /family: 'Familia'/);
+    assert.match(en, /identity_lifestyle: 'Identity & Lifestyle'/);
+    assert.match(es, /identity_lifestyle: 'Identidad y estilo de vida'/);
   });
 });

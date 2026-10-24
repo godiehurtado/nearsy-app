@@ -315,15 +315,18 @@ function readOnboardingAffiliations(
     const row = item as Record<string, unknown>;
     if (
       typeof row.id !== 'string' ||
-      typeof row.name !== 'string' ||
       typeof row.categoryId !== 'string' ||
       (row.source !== 'provider' && row.source !== 'custom')
     ) {
       continue;
     }
+    const name = typeof row.name === 'string' ? row.name : '';
+    const topic =
+      typeof row.topic === 'string' && row.topic.trim() ? row.topic : '';
+    if (!name.trim() && !topic) continue;
     out.push({
       id: row.id,
-      name: row.name,
+      name,
       categoryId: row.categoryId as OnboardingAffiliationCategoryId,
       source: row.source,
       ...(typeof row.providerId === 'string' && row.providerId

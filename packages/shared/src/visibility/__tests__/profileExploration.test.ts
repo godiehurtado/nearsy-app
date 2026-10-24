@@ -361,6 +361,30 @@ describe('profile exploration affiliations wire parser (V1.4C)', () => {
     assert.deepEqual(rows.map((r) => r.id), ['y']);
   });
 
+  it('empty name with a subcategory type is kept', () => {
+    const rows = parseDiscoveryAffiliations([
+      { id: 'x', name: '', type: 'catholic', logoUrl: null },
+    ]);
+    assert.deepEqual(rows, [
+      { id: 'x', name: '', type: 'catholic', logoUrl: null },
+    ]);
+  });
+
+  it('extra topic key hides the public row', () => {
+    assert.deepEqual(
+      parseDiscoveryAffiliations([
+        {
+          id: 'x',
+          name: 'Org',
+          type: 'catholic',
+          logoUrl: null,
+          topic: 'catholic',
+        },
+      ]),
+      [],
+    );
+  });
+
   it('HTTP logoUrl falls back to the initials mark (logoUrl null)', () => {
     const rows = parseDiscoveryAffiliations([
       {

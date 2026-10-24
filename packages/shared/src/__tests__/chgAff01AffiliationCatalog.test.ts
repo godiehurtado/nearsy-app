@@ -1,16 +1,26 @@
 /**
- * CHG-AFF-01 — retired Identity & Lifestyle topics stay gone.
- * Nearsy 2.0.9 presents this category as Family with relationship topics.
+ * CHG-AFF-01 — Family is the new-write category; Identity & Lifestyle stays legacy.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  ONBOARDING_AFFILIATION_CATEGORIES,
   getOnboardingAffiliationCategory,
+  listOnboardingAffiliationCategoryIds,
 } from '../affiliations/onboardingAffiliationCatalog';
 import { isSelectableCatalogInterestId } from '../interests/onboardingInterestCatalog';
 
 const RETIRED_TOPICS = ['zodiac_sign', 'languages', 'nationality'] as const;
+const FAMILY_TOPICS = [
+  'father_of',
+  'mother_of',
+  'child_of',
+  'sibling_of',
+  'spouse_of',
+  'partner_of',
+  'grandparent_of',
+  'grandchild_of',
+  'pet_parent',
+] as const;
 
 test('CHG-AFF-01: retired topics absent from Identity & Lifestyle', () => {
   const cat = getOnboardingAffiliationCategory('identity_lifestyle');
@@ -20,38 +30,39 @@ test('CHG-AFF-01: retired topics absent from Identity & Lifestyle', () => {
   }
 });
 
-test('CHG-AFF-01: personality_type is no longer a Family picker topic', () => {
-  const cat = getOnboardingAffiliationCategory('identity_lifestyle');
+test('CHG-AFF-01: personality_type stays on Identity & Lifestyle, not Family', () => {
+  const identity = getOnboardingAffiliationCategory('identity_lifestyle');
+  const family = getOnboardingAffiliationCategory('family');
   assert.equal(
-    cat.topics.some((t) => t.id === 'personality_type'),
+    identity.topics.some((t) => t.id === 'personality_type'),
+    true,
+  );
+  assert.equal(
+    family.topics.some((t) => t.id === 'personality_type'),
     false,
   );
 });
 
-test('CHG-AFF-01: Family relationship topics replace Identity & Lifestyle picker', () => {
-  const cat = getOnboardingAffiliationCategory('identity_lifestyle');
+test('CHG-AFF-01: Family relationship topics are the new-write picker', () => {
+  const cat = getOnboardingAffiliationCategory('family');
   assert.equal(cat.name, 'Family');
   assert.deepEqual(
     cat.topics.map((t) => t.id),
-    [
-      'father_of',
-      'mother_of',
-      'child_of',
-      'sibling_of',
-      'spouse_of',
-      'partner_of',
-      'grandparent_of',
-      'grandchild_of',
-      'pet_parent',
-    ],
+    [...FAMILY_TOPICS],
   );
 });
 
-test('CHG-AFF-01: category count and other categories intact', () => {
-  assert.equal(ONBOARDING_AFFILIATION_CATEGORIES.length, 7);
-  for (const cat of ONBOARDING_AFFILIATION_CATEGORIES) {
-    assert.ok(cat.topics.length > 0, cat.id);
-  }
+test('CHG-AFF-01: seven new-write categories; Identity & Lifestyle remains readable', () => {
+  assert.deepEqual(listOnboardingAffiliationCategoryIds(), [
+    'education',
+    'professional',
+    'community',
+    'sports_clubs',
+    'faith',
+    'political_civic',
+    'family',
+  ]);
+  assert.equal(getOnboardingAffiliationCategory('identity_lifestyle').name, 'Identity & Lifestyle');
   assert.ok(
     getOnboardingAffiliationCategory('education').topics.some(
       (t) => t.id === 'college_or_university',

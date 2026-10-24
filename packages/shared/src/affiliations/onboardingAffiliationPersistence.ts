@@ -5,6 +5,11 @@ import {
   type OnboardingSelectedAffiliation,
 } from './onboardingAffiliationCatalog';
 import { isEphemeralProviderLogoUrl } from './affiliationLogoDev';
+import {
+  isFamilyAffiliationCategory,
+  isTopicSufficientAffiliationCategory,
+  resolveAffiliationTopicId,
+} from './affiliationPresentation';
 
 /** Field-only affiliation bags — never includes lifecycle keys. */
 export type AffiliationFieldPersistencePatch = {
@@ -21,14 +26,25 @@ export type CrjAffiliationPersistencePatch = AffiliationFieldPersistencePatch & 
 function sanitizeOnboardingAffiliationForPersistence(
   item: OnboardingSelectedAffiliation,
 ): Record<string, string> {
+  const topicId =
+    resolveAffiliationTopicId(item.categoryId, item.topic) ??
+    (item.topic?.trim() || undefined);
+  const name = item.name.trim();
+  const family = isFamilyAffiliationCategory(item.categoryId);
+  const namelessCivic =
+    isTopicSufficientAffiliationCategory(item.categoryId) && !name;
+  const source = family || namelessCivic ? 'custom' : item.source;
   const row: Record<string, string> = {
     id: item.id,
-    name: item.name,
+    name,
     categoryId: item.categoryId,
-    source: item.source,
+    source,
   };
-  if (item.providerId) row.providerId = item.providerId;
-  if (item.provider) row.provider = item.provider;
+  if (!family && !namelessCivic) {
+    if (item.providerId) row.providerId = item.providerId;
+    if (item.provider) row.provider = item.provider;
+    if (item.website) row.website = item.website;
+  }
   if (
     item.logoUrl &&
     !/^(file|content|ph|assets-library):/i.test(item.logoUrl) &&
@@ -36,8 +52,7 @@ function sanitizeOnboardingAffiliationForPersistence(
   ) {
     row.logoUrl = item.logoUrl;
   }
-  if (item.website) row.website = item.website;
-  if (item.topic) row.topic = item.topic;
+  if (topicId) row.topic = topicId;
   return row;
 }
 

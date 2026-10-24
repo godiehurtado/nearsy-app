@@ -26,7 +26,7 @@ import { radius } from '../theme/radius';
 import { cardShadow } from '../theme/shadows';
 import { OnboardingAffiliationCategoryPanel } from '../components/registration/OnboardingAffiliationCategoryPanel';
 import {
-  listOnboardingAffiliationCategoryIds,
+  listEditableAffiliationCategoryIds,
   type OnboardingAffiliationCategoryId,
   type OnboardingSelectedAffiliation,
 } from '../affiliations/onboardingAffiliationCatalog';
@@ -131,7 +131,10 @@ export default function AffiliationsScreen() {
       (categoryLocalYRef.current[categoryId] ?? 0);
   };
 
-  const categoryIds = useMemo(() => listOnboardingAffiliationCategoryIds(), []);
+  const categoryIds = useMemo(
+    () => listEditableAffiliationCategoryIds(selected),
+    [selected],
+  );
   const pendingSearch = resolvePendingAffiliationSearchUi(
     searchUiByCategory,
     categoryIds,

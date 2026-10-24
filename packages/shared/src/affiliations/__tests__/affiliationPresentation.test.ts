@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  affiliationIdentityKey,
+  buildCustomAffiliationId,
   getOnboardingAffiliationCategory,
   isDuplicateAffiliation,
   isFreeTextAffiliationCategory,
+  listOnboardingAffiliationCategoryIds,
 } from '../onboardingAffiliationCatalog';
 import {
   affiliationRequiresName,
@@ -35,13 +38,20 @@ const translateEs: (key: string, fallback: string) => string = (key, fallback) =
 };
 
 describe('Family / topic-sufficient affiliation presentation', () => {
-  it('keeps identity_lifestyle as the Family storage id and free-text (no logo.dev)', () => {
-    assert.equal(isFamilyAffiliationCategory('identity_lifestyle'), true);
+  it('uses family for new writes and keeps identity_lifestyle as legacy', () => {
+    assert.equal(isFamilyAffiliationCategory('family'), true);
+    assert.equal(isFamilyAffiliationCategory('identity_lifestyle'), false);
+    assert.equal(isFreeTextAffiliationCategory('family'), true);
     assert.equal(isFreeTextAffiliationCategory('identity_lifestyle'), true);
-    assert.equal(affiliationRequiresName('identity_lifestyle'), true);
-    assert.equal(getOnboardingAffiliationCategory('identity_lifestyle').name, 'Family');
+    assert.equal(affiliationRequiresName('family'), true);
+    assert.equal(getOnboardingAffiliationCategory('family').name, 'Family');
+    assert.equal(
+      getOnboardingAffiliationCategory('identity_lifestyle').name,
+      'Identity & Lifestyle',
+    );
+    assert.deepEqual(listOnboardingAffiliationCategoryIds().at(-1), 'family');
     assert.deepEqual(
-      getOnboardingAffiliationCategory('identity_lifestyle').topics.map((t) => t.id),
+      getOnboardingAffiliationCategory('family').topics.map((t) => t.id),
       [
         'father_of',
         'mother_of',
@@ -67,7 +77,7 @@ describe('Family / topic-sufficient affiliation presentation', () => {
     assert.equal(
       formatAffiliationPrimaryLabel({
         name: 'Sofía',
-        categoryId: 'identity_lifestyle',
+        categoryId: 'family',
         topic: 'father_of',
         translate: translateEs,
       }),
@@ -76,7 +86,7 @@ describe('Family / topic-sufficient affiliation presentation', () => {
     assert.equal(
       formatAffiliationPrimaryLabel({
         name: 'Sofía',
-        categoryId: 'identity_lifestyle',
+        categoryId: 'family',
         topic: 'father_of',
         translate: translateEn,
       }),
@@ -97,7 +107,7 @@ describe('Family / topic-sufficient affiliation presentation', () => {
     assert.equal(
       formatAffiliationPrimaryLabel({
         name: '',
-        categoryId: 'identity_lifestyle',
+        categoryId: 'family',
         topic: 'mother_of',
         translate: translateEs,
       }),
@@ -126,8 +136,10 @@ describe('Family / topic-sufficient affiliation presentation', () => {
     );
   });
 
-  it('preserves legacy Identity & Lifestyle topic labels without remapping them', () => {
+  it('preserves legacy Identity & Lifestyle topic labels without remapping parent to father_of', () => {
     assert.equal(resolveAffiliationTopicId('identity_lifestyle', 'Veteran'), 'veteran');
+    assert.equal(resolveAffiliationTopicId('identity_lifestyle', 'parent'), 'parent');
+    assert.equal(resolveAffiliationTopicId('family', 'parent'), null);
     assert.equal(
       formatAffiliationPrimaryLabel({
         name: 'Navy',
@@ -144,7 +156,7 @@ describe('Family / topic-sufficient affiliation presentation', () => {
       {
         id: 'a',
         name: 'Sofía',
-        categoryId: 'identity_lifestyle' as const,
+        categoryId: 'family' as const,
         source: 'custom' as const,
         topic: 'father_of',
       },
@@ -153,7 +165,7 @@ describe('Family / topic-sufficient affiliation presentation', () => {
       isDuplicateAffiliation(existing, {
         name: 'Sofía',
         source: 'custom',
-        categoryId: 'identity_lifestyle',
+        categoryId: 'family',
         topic: 'father_of',
       }),
       true,
@@ -162,10 +174,40 @@ describe('Family / topic-sufficient affiliation presentation', () => {
       isDuplicateAffiliation(existing, {
         name: 'Sofía',
         source: 'custom',
-        categoryId: 'identity_lifestyle',
+        categoryId: 'family',
         topic: 'mother_of',
       }),
       false,
+    );
+  });
+
+  it('does not invent provider keys for Family or nameless civic/faith', () => {
+    assert.equal(
+      affiliationIdentityKey({
+        name: 'Sofía',
+        source: 'provider',
+        providerId: 'logo.dev:sofia',
+        categoryId: 'family',
+        topic: 'father_of',
+      }),
+      'family:father_of:sofía',
+    );
+    assert.equal(
+      affiliationIdentityKey({
+        name: '',
+        source: 'custom',
+        categoryId: 'faith',
+        topic: 'catholic',
+      }),
+      'topic:faith:catholic',
+    );
+    assert.match(
+      buildCustomAffiliationId('faith', '', [], 'catholic'),
+      /^custom_faith_catholic/,
+    );
+    assert.doesNotMatch(
+      buildCustomAffiliationId('faith', '', [], 'catholic'),
+      /_org$/,
     );
   });
 });
