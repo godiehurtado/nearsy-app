@@ -4,6 +4,7 @@ import {
   type OnboardingSelectedAffiliation,
 } from './onboardingAffiliationCatalog.ts';
 import { isEphemeralProviderLogoUrl } from './affiliationLogoDev.ts';
+import { formatAffiliationCaption } from './affiliationPresentation.ts';
 
 /** Field-only affiliation bags — never includes lifecycle keys. */
 export type AffiliationFieldPersistencePatch = {
@@ -46,7 +47,7 @@ export function onboardingAffiliationsToLegacy(
 ): AffiliationItem[] {
   return selected.map((item) => ({
     category: CRJ_AFFILIATION_TO_LEGACY_CATEGORY[item.categoryId],
-    label: item.name,
+    label: formatAffiliationCaption(item, (_id, fallback) => fallback),
     imageUrl:
       item.logoUrl &&
       !/^(file|content|ph|assets-library):/i.test(item.logoUrl) &&

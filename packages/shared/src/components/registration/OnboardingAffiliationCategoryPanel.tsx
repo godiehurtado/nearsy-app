@@ -28,10 +28,15 @@ import {
   getOnboardingAffiliationCategory,
   isDuplicateAffiliation,
   isFreeTextAffiliationCategory,
-  validateCustomAffiliationName,
+  validateAffiliationEntryName,
   type OnboardingAffiliationCategoryId,
   type OnboardingSelectedAffiliation,
 } from '../../affiliations/onboardingAffiliationCatalog.ts';
+import {
+  affiliationNameRequired,
+  formatAffiliationCaption,
+  isTopicOptionalNameCategory,
+} from '../../affiliations/affiliationPresentation.ts';
 import type { AffiliationEntitySearchResult } from '../../affiliations/affiliationEntitySearchProvider.ts';
 import { AffiliationEntitySearchClientError } from '../../affiliations/affiliationEntitySearchContract.ts';
 import { getAffiliationEntitySearchProvider } from '../../affiliations/affiliationEntitySearchRuntime.ts';
@@ -125,8 +130,19 @@ export function OnboardingAffiliationCategoryPanel({
   const activeTopic = category.topics.find((topic) => topic.id === topicId);
   const topicOpen = !!activeTopic;
   const trimmedQuery = query.trim();
-  const customNameValid = validateCustomAffiliationName(trimmedQuery).ok === true;
-  const searchHintVisible = !freeText && trimmedQuery.length < 2;
+  const topicOnlyCategory = isTopicOptionalNameCategory(categoryId);
+  const nameRequired = affiliationNameRequired(categoryId);
+  const customNameValid =
+    validateAffiliationEntryName(trimmedQuery, {
+      allowEmpty: topicOnlyCategory && !!activeTopic,
+    }).ok === true;
+  const topicOnlyReady =
+    topicOnlyCategory && !!activeTopic && customNameValid && !pickedName;
+  const searchHintVisible = !freeText && !topicOnlyCategory && trimmedQuery.length < 2;
+  const localizeTopic = (id: string, fallback: string) =>
+    t(`onboarding.profileCompletion.affiliations.topics.${id}` as any, {
+      defaultValue: fallback,
+    });
   const searchUi = useMemo(
     () =>
       resolveAffiliationSearchUi({
@@ -134,11 +150,12 @@ export function OnboardingAffiliationCategoryPanel({
         pickedName: freeText ? null : pickedName,
         customName: trimmedQuery,
         customNameValid,
-        hasProviderResults: freeText ? false : results.length > 0,
-        searchPending: freeText ? false : searchPending,
+        hasProviderResults: freeText || topicOnlyReady ? false : results.length > 0,
+        searchPending: freeText || topicOnlyReady ? false : searchPending,
         // freeText: treat as "no suggestions" so valid names can be added without Logo.dev.
         suggestionsUnavailable: freeText ? true : suggestionsUnavailable,
         hasDraftImage: !!draftImage,
+        topicOnlyReady,
       }),
     [
       freeText,
@@ -150,6 +167,7 @@ export function OnboardingAffiliationCategoryPanel({
       searchPending,
       suggestionsUnavailable,
       draftImage,
+      topicOnlyReady,
     ],
   );
   const compactSearch = searchUi.hideJourneyFooter;
@@ -296,11 +314,24 @@ export function OnboardingAffiliationCategoryPanel({
 
   function addFromSearch() {
     const nameCandidate = (pickedName || trimmedQuery).slice(0, QUERY_MAX);
-    const validated = validateCustomAffiliationName(nameCandidate);
+    const validated = validateAffiliationEntryName(nameCandidate, {
+      allowEmpty: topicOnlyCategory && !!activeTopic,
+    });
     if (validated.ok === false) return;
+    if (nameRequired && !validated.name) return;
+    const storedName = validated.name || activeTopic?.label || '';
+    if (!storedName) return;
+    const persistCaption = formatAffiliationCaption(
+      {
+        name: storedName,
+        categoryId,
+        ...(activeTopic ? { topic: activeTopic.label } : {}),
+      },
+      localizeTopic,
+    );
 
     if (freeText) {
-      const candidate = { name: validated.name, source: 'custom' as const };
+      const candidate = { name: persistCaption, source: 'custom' as const };
       if (
         isDuplicateAffiliation(selected, candidate, { categoryId })
       ) {
@@ -312,10 +343,10 @@ export function OnboardingAffiliationCategoryPanel({
       const next: OnboardingSelectedAffiliation = {
         id: buildUniqueCustomAffiliationId(
           categoryId,
-          validated.name,
+          persistCaption,
           selected.map((s) => s.id),
         ),
-        name: validated.name,
+        name: persistCaption,
         categoryId,
         source: 'custom',
         ...(() => {
@@ -340,7 +371,7 @@ export function OnboardingAffiliationCategoryPanel({
     }
 
     const matched = results.find(
-      (row) => row.name.toLowerCase() === validated.name.toLowerCase(),
+      (row) => row.name.toLowerCase() === storedName.toLowerCase(),
     );
     const explicitlyPicked =
       !!pickedName &&
@@ -349,9 +380,9 @@ export function OnboardingAffiliationCategoryPanel({
       pickedName.toLowerCase() === matched.name.toLowerCase();
     const isCustom = !explicitlyPicked;
     const candidate = isCustom
-      ? { name: validated.name, source: 'custom' as const }
+      ? { name: persistCaption, source: 'custom' as const }
       : {
-          name: validated.name,
+          name: persistCaption,
           source: 'provider' as const,
           providerId: matched!.providerId,
         };
@@ -365,9 +396,9 @@ export function OnboardingAffiliationCategoryPanel({
 
     const next: OnboardingSelectedAffiliation = {
       id: isCustom
-        ? buildCustomAffiliationId(categoryId, validated.name)
+        ? buildCustomAffiliationId(categoryId, persistCaption)
         : matched!.providerId,
-      name: validated.name,
+      name: persistCaption,
       categoryId,
       source: isCustom ? 'custom' : 'provider',
       ...(isCustom ? {} : { providerId: matched!.providerId }),
@@ -482,7 +513,7 @@ export function OnboardingAffiliationCategoryPanel({
                     style={[styles.selectedLabel, { color: palette.textPrimary }]}
                     numberOfLines={2}
                   >
-                    {item.name}
+                    {formatAffiliationCaption(item, localizeTopic)}
                   </Text>
                 </View>
               ))}
@@ -543,7 +574,9 @@ export function OnboardingAffiliationCategoryPanel({
           ]}
         >
           <Text style={[styles.topicEyebrow, { color: palette.chipText }]}>
-            {activeTopic?.label}
+            {activeTopic
+              ? localizeTopic(activeTopic.id, activeTopic.label)
+              : ''}
           </Text>
           <View collapsable={false}>
             <TextInput
@@ -555,8 +588,10 @@ export function OnboardingAffiliationCategoryPanel({
               )}
               placeholder={t(
                 freeText
-                  ? ('onboarding.profileCompletion.affiliations.freeTextPlaceholder' as any)
-                  : ('onboarding.profileCompletion.affiliations.searchPlaceholder' as any),
+                  ? ('onboarding.profileCompletion.affiliations.familyNamePlaceholder' as any)
+                  : topicOnlyCategory
+                    ? ('onboarding.profileCompletion.affiliations.topicOnlyPlaceholder' as any)
+                    : ('onboarding.profileCompletion.affiliations.searchPlaceholder' as any),
               )}
               placeholderTextColor={palette.placeholder}
               value={query}
@@ -590,7 +625,11 @@ export function OnboardingAffiliationCategoryPanel({
 
           {freeText ? (
             <Text style={[styles.searchHint, { color: palette.textSecondary }]}>
-              {t('onboarding.profileCompletion.affiliations.freeTextHint' as any)}
+              {t('onboarding.profileCompletion.affiliations.familyNameHint' as any)}
+            </Text>
+          ) : topicOnlyCategory ? (
+            <Text style={[styles.searchHint, { color: palette.textSecondary }]}>
+              {t('onboarding.profileCompletion.affiliations.topicOnlyHint' as any)}
             </Text>
           ) : searchHintVisible ? (
             <Text style={[styles.searchHint, { color: palette.textSecondary }]}>

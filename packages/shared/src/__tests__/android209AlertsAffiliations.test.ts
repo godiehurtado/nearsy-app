@@ -181,7 +181,7 @@ describe('209 Identity & Lifestyle free-text', () => {
     );
     assert.match(panel, /isFreeTextAffiliationCategory/);
     assert.match(panel, /buildUniqueCustomAffiliationId/);
-    assert.match(panel, /freeTextHint/);
+    assert.match(panel, /familyNameHint/);
     assert.match(panel, /isEphemeralProviderLogoUrl/);
   });
 

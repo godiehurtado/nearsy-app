@@ -183,20 +183,23 @@ export const ONBOARDING_AFFILIATION_CATEGORIES: OnboardingAffiliationCategory[] 
     {
       id: 'identity_lifestyle',
       nameKey: 'identity_lifestyle',
-      name: 'Identity & Lifestyle',
+      name: 'Family',
       subtitleKey: 'identity_lifestyle',
-      subtitle: 'What shapes who you are.',
-      emoji: '🪪',
-      icon: 'sparkles-outline',
+      subtitle: 'Family relationships and pets.',
+      emoji: '👨‍👩‍👧',
+      icon: 'people-circle-outline',
       iconColor: '#CA8A04',
       entrySource: 'freeText',
       topics: [
-        topic('Cultural background', '🌍'),
-        topic('Hometown', '🏠'),
-        topic('Parent', '👶'),
+        topic('Father of', '👨'),
+        topic('Mother of', '👩'),
+        topic('Child of', '🧒'),
+        topic('Sibling of', '👫'),
+        topic('Spouse of', '💍'),
+        topic('Partner of', '🤍'),
+        topic('Grandparent of', '👴'),
+        topic('Grandchild of', '👶'),
         topic('Pet parent', '🐾'),
-        topic('Veteran', '🎖️'),
-        topic('Personality type', '🧠'),
       ],
     },
   ];
@@ -300,4 +303,17 @@ export function validateCustomAffiliationName(name: string): {
   if (!trimmed) return { ok: false, reason: 'empty' };
   if (trimmed.length > 80) return { ok: false, reason: 'tooLong' };
   return { ok: true, name: trimmed };
+}
+
+export function validateAffiliationEntryName(
+  name: string,
+  options?: { allowEmpty?: boolean },
+): { ok: true; name: string } | { ok: false; reason: 'empty' | 'tooLong' } {
+  const trimmed = normalizeAffiliationName(name);
+  if (!trimmed) {
+    return options?.allowEmpty
+      ? { ok: true, name: '' }
+      : { ok: false, reason: 'empty' };
+  }
+  return validateCustomAffiliationName(trimmed);
 }
