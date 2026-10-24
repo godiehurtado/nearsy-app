@@ -1333,6 +1333,44 @@ const es: TranslationResources = {
           generic: 'No pudimos conectar Instagram. Inténtalo de nuevo.',
         },
       },
+      x: {
+        connect: 'Conectar X',
+        connectA11y: 'Conectar una cuenta de X para este perfil',
+        connecting: 'Conectando…',
+        disconnect: 'Desconectar',
+        disconnectA11y: 'Desconectar X de este perfil',
+        disconnecting: 'Desconectando…',
+        connected: 'Conectado',
+        notConnected: 'No conectado',
+        retry: 'Reintentar',
+        legacyStored:
+          'Hay un enlace de X anterior en tu perfil, pero no está verificado para mostrarse en público.',
+        unlinkConfirmTitle: '¿Desconectar X?',
+        unlinkConfirmBody:
+          'Esto desconecta X de este perfil. Puedes volver a conectarlo cuando quieras.',
+        errors: {
+          notEnabled: 'La conexión de X no está disponible ahora.',
+          noAccount:
+            'No se encontró una cuenta de X usable para este inicio de sesión.',
+          accountClaimed:
+            'Esa cuenta de X ya está conectada en otra cuenta de Nearsy.',
+          oauth: 'Se rechazó la autorización de X. Puedes intentarlo de nuevo.',
+          rateLimited: 'Demasiados intentos. Inténtalo más tarde.',
+          creditsOrAccess:
+            'X no pudo completar esta conexión ahora. Inténtalo más tarde.',
+          forbidden:
+            'X bloqueó esta conexión. Prueba con otra cuenta o inténtalo más tarde.',
+          txExpired: 'La conexión expiró. Empieza de nuevo.',
+          txInvalid: 'No se pudo continuar la conexión. Empieza de nuevo.',
+          proofInvalid: 'Falló la prueba de conexión. Empieza de nuevo.',
+          unauthenticated: 'Vuelve a iniciar sesión para conectar X.',
+          cancelled: 'Se canceló la conexión de X.',
+          sessionChanged:
+            'La cuenta iniciada cambió durante la conexión. Empieza de nuevo.',
+          network: 'Error de red. Revisa tu conexión e inténtalo de nuevo.',
+          generic: 'No pudimos conectar X. Inténtalo de nuevo.',
+        },
+      },
     },
   },
   alignment: {

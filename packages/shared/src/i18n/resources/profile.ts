@@ -333,5 +333,42 @@ export default {
         generic: 'We could not connect Instagram. Try again.',
       },
     },
+    x: {
+      connect: 'Connect X',
+      connectA11y: 'Connect an X account for this profile',
+      connecting: 'Connecting…',
+      disconnect: 'Disconnect',
+      disconnectA11y: 'Disconnect X from this profile',
+      disconnecting: 'Disconnecting…',
+      connected: 'Connected',
+      notConnected: 'Not connected',
+      retry: 'Try again',
+      legacyStored:
+        'A previous X link is stored on your profile but is not verified for public display.',
+      unlinkConfirmTitle: 'Disconnect X?',
+      unlinkConfirmBody:
+        'This disconnects X from this profile. You can connect again anytime.',
+      errors: {
+        notEnabled: 'X connection is not available right now.',
+        noAccount: 'No usable X account was found for this login.',
+        accountClaimed:
+          'That X account is already connected on another Nearsy account.',
+        oauth: 'X authorization was declined. You can try again.',
+        rateLimited: 'Too many attempts. Try again later.',
+        creditsOrAccess:
+          'X could not complete this connection right now. Try again later.',
+        forbidden:
+          'X blocked this connection. Try a different account or try again later.',
+        txExpired: 'Connection expired. Start again.',
+        txInvalid: 'Connection could not continue. Start again.',
+        proofInvalid: 'Connection proof failed. Start again.',
+        unauthenticated: 'Sign in again to connect X.',
+        cancelled: 'X connection was cancelled.',
+        sessionChanged:
+          'Your signed-in account changed during connection. Start again.',
+        network: 'Network error. Check your connection and try again.',
+        generic: 'We could not connect X. Try again.',
+      },
+    },
   },
 } as const;
