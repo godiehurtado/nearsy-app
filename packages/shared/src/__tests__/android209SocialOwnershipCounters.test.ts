@@ -57,8 +57,8 @@ describe('NEARSY-209 Android ownership counters and legacy bag', () => {
       instagram: false,
       x: false,
     });
-    // LinkedIn + Facebook + Snapchat still count from the bag.
-    assert.equal(none, 3);
+    // LinkedIn + Facebook still count from the bag. Snapchat is hidden.
+    assert.equal(none, 2);
 
     const allVerified = countValidPostCrjSocialConnections(draft, {
       youtube: true,
@@ -66,7 +66,7 @@ describe('NEARSY-209 Android ownership counters and legacy bag', () => {
       instagram: true,
       x: true,
     });
-    assert.equal(allVerified, 7);
+    assert.equal(allVerified, 6);
 
     const emptyValues = draftWithLegacy();
     emptyValues.values.youtube = '';
@@ -84,7 +84,7 @@ describe('NEARSY-209 Android ownership counters and legacy bag', () => {
         instagram: true,
         x: true,
       }),
-      7,
+      6,
     );
   });
 
@@ -111,14 +111,41 @@ describe('NEARSY-209 Android ownership counters and legacy bag', () => {
     );
   });
 
-  it('keeps LinkedIn, Facebook, and Snapchat in the catalog and editor', () => {
+  it('hides Snapchat from editor and public surfaces while keeping LinkedIn/Facebook', () => {
     const ids = CRJ_SOCIAL_PLATFORMS.map((p) => p.id);
     assert.ok(ids.includes('linkedin'));
     assert.ok(ids.includes('facebook'));
     assert.ok(ids.includes('snapchat'));
     const screen = readSrc('screens/SocialMediaScreen.tsx');
     assert.match(screen, /POST_CRJ_SOCIAL_CARD_ORDER/);
-    assert.doesNotMatch(screen, /filter\(.*linkedin|omit.*snapchat/i);
+    assert.match(screen, /valuesForSave\.snapchat/);
+    const order = readSrc('social/postCrjSocialEditor.ts');
+    assert.match(order, /VISIBLE_CRJ_SOCIAL_PLATFORMS/);
+    const cardOrder = order.slice(
+      order.indexOf('export const POST_CRJ_SOCIAL_CARD_ORDER'),
+      order.indexOf('export type PostCrjSocialEditorDraft'),
+    );
+    assert.doesNotMatch(cardOrder, /snapchat/);
+  });
+
+  it('unifies Connect/Disconnect action pills across ownership and legacy cards', () => {
+    const styles = readSrc('components/profile/socialActionButtonStyles.ts');
+    assert.match(styles, /borderRadius: radius\.pill/);
+    assert.match(styles, /minHeight: 32/);
+    assert.doesNotMatch(styles, /minHeight: 44/);
+    assert.match(styles, /SOCIAL_ACTION_HIT_SLOP/);
+    for (const rel of [
+      'screens/SocialMediaScreen.tsx',
+      'components/profile/InstagramOwnershipCard.tsx',
+      'components/profile/YoutubeOwnershipCard.tsx',
+      'components/profile/TiktokOwnershipCard.tsx',
+      'components/profile/XOwnershipCard.tsx',
+    ]) {
+      const src = readSrc(rel);
+      assert.match(src, /socialActionButtonStyles/);
+      assert.match(src, /SOCIAL_ACTION_HIT_SLOP/);
+      assert.doesNotMatch(src, /toggleBtn:\s*\{/);
+    }
   });
 
   it('SocialMediaScreen preserves all four legacy bags and zeros manual connect', () => {

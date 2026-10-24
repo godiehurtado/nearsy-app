@@ -147,6 +147,7 @@ import {
   type OnboardingSelectedAffiliation,
 } from '../affiliations/onboardingAffiliationCatalog';
 import { buildCrjAffiliationPersistencePatch } from '../affiliations/onboardingAffiliationPersistence';
+import { readOnboardingAffiliationsFromDoc } from '../affiliations/postCrjAffiliationEditor';
 import {
   emptyCrjSocialDraftValues,
   type CrjSocialDraftValues,
@@ -303,44 +304,7 @@ function readOnboardingAffiliations(
   data: Record<string, unknown> | null | undefined,
   mode: ProfileMode,
 ): OnboardingSelectedAffiliation[] {
-  const key =
-    mode === 'professional'
-      ? 'professionalOnboardingAffiliations'
-      : 'personalOnboardingAffiliations';
-  const raw = data?.[key];
-  if (!Array.isArray(raw)) return [];
-  const out: OnboardingSelectedAffiliation[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== 'object') continue;
-    const row = item as Record<string, unknown>;
-    if (
-      typeof row.id !== 'string' ||
-      typeof row.name !== 'string' ||
-      typeof row.categoryId !== 'string' ||
-      (row.source !== 'provider' && row.source !== 'custom')
-    ) {
-      continue;
-    }
-    out.push({
-      id: row.id,
-      name: row.name,
-      categoryId: row.categoryId as OnboardingAffiliationCategoryId,
-      source: row.source,
-      ...(typeof row.providerId === 'string' && row.providerId
-        ? { providerId: row.providerId }
-        : {}),
-      ...(typeof row.logoUrl === 'string' && row.logoUrl
-        ? { logoUrl: row.logoUrl }
-        : {}),
-      ...(typeof row.website === 'string' && row.website
-        ? { website: row.website }
-        : {}),
-      ...(typeof row.topic === 'string' && row.topic
-        ? { topic: row.topic }
-        : {}),
-    });
-  }
-  return out;
+  return readOnboardingAffiliationsFromDoc(data, mode);
 }
 
 function progressPhaseForStep(step: ResolvedStep): CrjProgressPhase | null {

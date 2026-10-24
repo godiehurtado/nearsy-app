@@ -35,6 +35,23 @@ export type VisibilityErrorReason =
   | { kind: 'unknown'; value: string }
   | { kind: 'none' };
 
+/** Stable client code from setActiveProfileMode PROFILE_INCOMPLETE details. */
+export const PROFILE_INCOMPLETE_DETAILS_CODE = 'PROFILE_INCOMPLETE';
+
+export const PROFILE_INCOMPLETE_MISSING_FIELDS = [
+  'realName',
+  'lastName',
+  'profileImage',
+  'occupation',
+  'bio',
+  'company',
+] as const;
+
+export type ProfileIncompleteMissingField =
+  (typeof PROFILE_INCOMPLETE_MISSING_FIELDS)[number];
+
+export type ProfileIncompleteDestinationMode = 'personal' | 'professional';
+
 const KNOWN_REASONS = new Set<string>([
   'contract-version-unsupported',
   'invalid-location',
@@ -76,6 +93,11 @@ export class VisibilityDiscoveryClientError extends Error {
   readonly detailsRetryableReceived?: boolean;
   /** Original throwable — logging only; never surface to UI. */
   readonly causeForLog?: unknown;
+  /** `details.code` when present (`PROFILE_INCOMPLETE`). */
+  readonly detailsCode?: string;
+  /** Destination face that failed activation — not the still-active mode. */
+  readonly destinationMode?: ProfileIncompleteDestinationMode;
+  readonly missingFields?: ProfileIncompleteMissingField[];
 
   constructor(input: {
     code: VisibilityFirebaseErrorCode;
@@ -85,6 +107,9 @@ export class VisibilityDiscoveryClientError extends Error {
     detailsRetryableReceived?: boolean;
     message: string;
     causeForLog?: unknown;
+    detailsCode?: string;
+    destinationMode?: ProfileIncompleteDestinationMode;
+    missingFields?: ProfileIncompleteMissingField[];
   }) {
     super(input.message);
     this.name = 'VisibilityDiscoveryClientError';
@@ -96,6 +121,13 @@ export class VisibilityDiscoveryClientError extends Error {
       this.detailsRetryableReceived = input.detailsRetryableReceived;
     }
     if (input.causeForLog !== undefined) this.causeForLog = input.causeForLog;
+    if (input.detailsCode !== undefined) this.detailsCode = input.detailsCode;
+    if (input.destinationMode !== undefined) {
+      this.destinationMode = input.destinationMode;
+    }
+    if (input.missingFields !== undefined) {
+      this.missingFields = input.missingFields;
+    }
   }
 }
 
@@ -165,6 +197,25 @@ function readDetails(err: unknown): Record<string, unknown> | null {
   return details as Record<string, unknown>;
 }
 
+const MISSING_FIELD_SET = new Set<string>(PROFILE_INCOMPLETE_MISSING_FIELDS);
+
+export function parseProfileIncompleteDestinationMode(
+  raw: unknown,
+): ProfileIncompleteDestinationMode | undefined {
+  return raw === 'personal' || raw === 'professional' ? raw : undefined;
+}
+
+export function parseProfileIncompleteMissingFields(
+  raw: unknown,
+): ProfileIncompleteMissingField[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const fields = raw.filter(
+    (value): value is ProfileIncompleteMissingField =>
+      typeof value === 'string' && MISSING_FIELD_SET.has(value),
+  );
+  return fields.length > 0 ? fields : undefined;
+}
+
 /**
  * Map RNFB / Firebase callable throwables into a discriminated client error.
  * Unknown reasons are preserved — never treated as success.
@@ -180,11 +231,25 @@ export function normalizeVisibilityCallableError(
   const anyErr = err as { code?: unknown; message?: unknown };
   const code = normalizeFirebaseErrorCode(anyErr?.code);
   const details = readDetails(err);
-  const reason = parseKnownReason(details?.reason);
+  let reason = parseKnownReason(details?.reason);
+  const detailsCode =
+    typeof details?.code === 'string' && details.code.trim()
+      ? details.code.trim()
+      : undefined;
+  if (
+    reason.kind === 'none' &&
+    detailsCode === PROFILE_INCOMPLETE_DETAILS_CODE
+  ) {
+    reason = { kind: 'known', value: 'profile-incomplete' };
+  }
+  const destinationMode = parseProfileIncompleteDestinationMode(details?.mode);
+  const missingFields = parseProfileIncompleteMissingFields(
+    details?.missingFields,
+  );
   const field =
     typeof details?.field === 'string' && details.field.trim()
       ? details.field.trim()
-      : undefined;
+      : missingFields?.[0];
 
   const detailsRetryableReceived =
     typeof details?.retryable === 'boolean' ? details.retryable : undefined;
@@ -192,6 +257,8 @@ export function normalizeVisibilityCallableError(
   let retryable: boolean;
   if (reason.kind === 'known' && reason.value === 'invalid-location') {
     retryable = true;
+  } else if (reason.kind === 'known' && reason.value === 'profile-incomplete') {
+    retryable = false;
   } else if (detailsRetryableReceived !== undefined) {
     retryable = detailsRetryableReceived;
   } else if (reason.kind === 'known') {
@@ -206,8 +273,14 @@ export function normalizeVisibilityCallableError(
     field,
     retryable,
     detailsRetryableReceived,
-    message: 'Visibility callable failed.',
+    message:
+      reason.kind === 'known' && reason.value === 'profile-incomplete'
+        ? 'Destination profile is incomplete. (PROFILE_INCOMPLETE)'
+        : 'Visibility callable failed.',
     causeForLog: err,
+    ...(detailsCode ? { detailsCode } : {}),
+    ...(destinationMode ? { destinationMode } : {}),
+    ...(missingFields ? { missingFields } : {}),
   });
 }
 

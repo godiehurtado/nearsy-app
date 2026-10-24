@@ -3,7 +3,7 @@
  * grid (no carousel). Compact tiles keep the CRJ logo mark (square + radius).
  * Not pressable — no approved navigation target.
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -24,8 +24,8 @@ import {
   useAppTheme,
 } from '../../theme';
 import { cardShadow } from '../../theme/shadows';
+import { formatPublicAffiliationCaption } from '../../affiliations/affiliationPresentation';
 import {
-  formatDiscoveryAffiliationTypeLabel,
   MAX_DISCOVERY_AFFILIATIONS,
   resolveDiscoveryAffiliationGrid,
   type DiscoveryPublicAffiliation,
@@ -42,32 +42,21 @@ export function DiscoveryAffiliationsCard({ affiliations }: Props) {
   const { t } = useTranslation();
   const [gridWidth, setGridWidth] = useState(0);
 
+  const localizeTopic = (id: string, fallback: string) =>
+    t(`onboarding.profileCompletion.affiliations.topics.${id}` as any, {
+      defaultValue: fallback,
+    });
+
   const items = Array.isArray(affiliations)
     ? affiliations
-        .filter((a) => a?.id && a?.name)
+        .filter((a) => a?.id && (a.name || a.type))
         .slice(0, MAX_DISCOVERY_AFFILIATIONS)
     : [];
 
-  const translateCategory = useCallback(
-    (nameKey: string, fallback: string) =>
-      t(
-        `onboarding.profileCompletion.affiliations.categories.${nameKey}` as any,
-        { defaultValue: fallback },
-      ),
-    [t],
-  );
-
-  const labeled = useMemo(
-    () =>
-      items.map((item) => ({
-        item,
-        typeLabel: formatDiscoveryAffiliationTypeLabel(
-          item.type,
-          translateCategory,
-        ),
-      })),
-    [items, translateCategory],
-  );
+  const labeled = items.map((item) => ({
+    ...item,
+    caption: formatPublicAffiliationCaption(item, localizeTopic),
+  }));
 
   const onGridLayout = useCallback((event: LayoutChangeEvent) => {
     const width = Math.round(event.nativeEvent.layout.width);
@@ -96,7 +85,7 @@ export function DiscoveryAffiliationsCard({ affiliations }: Props) {
         {t('discoveryProfile.affiliations')}
       </Text>
       <View style={styles.grid} onLayout={onGridLayout}>
-        {labeled.map(({ item, typeLabel }) => (
+        {labeled.map((item) => (
           <View
             key={item.id}
             style={[
@@ -108,12 +97,10 @@ export function DiscoveryAffiliationsCard({ affiliations }: Props) {
               },
             ]}
             accessibilityRole="text"
-            accessibilityLabel={
-              typeLabel ? `${item.name}, ${typeLabel}` : item.name
-            }
+            accessibilityLabel={item.caption}
           >
             <AffiliationLogoMark
-              name={item.name}
+              name={item.caption}
               type={item.type}
               logoUrl={item.logoUrl}
               size={AFFILIATION_DISCOVERY_LOGO_SIZE}
@@ -123,16 +110,8 @@ export function DiscoveryAffiliationsCard({ affiliations }: Props) {
               style={[styles.name, { color: palette.textPrimary }]}
               numberOfLines={2}
             >
-              {item.name}
+              {item.caption}
             </Text>
-            {typeLabel ? (
-              <Text
-                style={[styles.type, { color: palette.textSecondary }]}
-                numberOfLines={1}
-              >
-                {typeLabel}
-              </Text>
-            ) : null}
           </View>
         ))}
       </View>
@@ -173,11 +152,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: fontWeight.bold,
     lineHeight: 16,
-  },
-  type: {
-    marginTop: 3,
-    fontSize: 11,
-    fontWeight: fontWeight.semibold,
-    lineHeight: 14,
   },
 });

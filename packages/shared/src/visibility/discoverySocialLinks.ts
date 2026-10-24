@@ -106,6 +106,7 @@ function parseSocialLinkItem(value: unknown): DiscoveryPublicSocialLink | null {
     return null;
   }
   if (!isDiscoverySocialPlatform(row.platform)) return null;
+  if (row.platform === 'snapchat') return null;
   if (typeof row.url !== 'string' || !/^https:\/\//i.test(row.url.trim())) {
     return null;
   }

@@ -97,6 +97,13 @@ export const CRJ_SOCIAL_PLATFORMS: readonly CrjSocialPlatform[] = [
 export const CRJ_SOCIAL_PLATFORM_IDS: CrjSocialPlatformId[] =
   CRJ_SOCIAL_PLATFORMS.map((p) => p.id);
 
+/** Visible CRJ/editor platforms. Snapchat stays in storage but is hidden. */
+export const VISIBLE_CRJ_SOCIAL_PLATFORMS: readonly CrjSocialPlatform[] =
+  CRJ_SOCIAL_PLATFORMS.filter((platform) => platform.id !== 'snapchat');
+
+export const VISIBLE_CRJ_SOCIAL_PLATFORM_IDS: CrjSocialPlatformId[] =
+  VISIBLE_CRJ_SOCIAL_PLATFORMS.map((p) => p.id);
+
 export const CUSTOM_NETWORK_NAME_MAX = 22;
 
 export type CrjSocialDraftValues = Record<CrjSocialPlatformId, string>;
@@ -123,7 +130,7 @@ export function countConnectedSocials(
   values: CrjSocialDraftValues,
   custom: SocialCustomLink[],
 ): number {
-  const filled = CRJ_SOCIAL_PLATFORM_IDS.filter(
+  const filled = VISIBLE_CRJ_SOCIAL_PLATFORM_IDS.filter(
     (id) => (values[id] ?? '').trim().length > 0,
   ).length;
   return filled + custom.length;

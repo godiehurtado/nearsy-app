@@ -17,6 +17,7 @@ import {
   clearActiveProfileModeConfirmation,
   recordActiveProfileModeConfirmation,
 } from './activeProfileModeReconciliation';
+import { isOwnProfileModeActivationRejected } from '../profile/ownProfileModeActivation';
 
 export type SetActiveProfileModeOutcome =
   | { ok: true; response: SetActiveProfileModeResponse }
@@ -104,6 +105,13 @@ export function presentActiveProfileModeError(
   t: TFunction,
   err: VisibilityDiscoveryClientError,
 ): ActiveProfileModeErrorPresentation {
+  if (isOwnProfileModeActivationRejected(err)) {
+    return {
+      title: t('activeProfileMode.errors.title'),
+      userMessage: t('activeProfileMode.incomplete.switchBlocked'),
+      retryable: false,
+    };
+  }
   if (
     err.code === 'unavailable' ||
     err.retryable

@@ -35,6 +35,10 @@ import {
 } from '../../social/instagramOwnership/instagramOwnershipCore.ts';
 import { shouldReportOwnershipConnectedChange } from '../../social/postCrjSocialEditor.ts';
 import {
+  SOCIAL_ACTION_HIT_SLOP,
+  socialActionButtonStyles,
+} from './socialActionButtonStyles.ts';
+import {
   buildInstagramOwnershipModeView,
   instagramOwnershipActionBlocked,
   instagramOwnershipHandleLabel,
@@ -459,9 +463,10 @@ export function InstagramOwnershipCard({
             accessibilityLabel={primaryLabel}
             accessibilityState={{ disabled: blocked || !api, busy: blocked }}
             disabled={blocked || !api}
+            hitSlop={SOCIAL_ACTION_HIT_SLOP}
             onPress={onDisconnect}
             style={({ pressed }) => [
-              styles.toggleBtn,
+              socialActionButtonStyles.button,
               {
                 backgroundColor: 'transparent',
                 borderColor: palette.danger,
@@ -473,7 +478,7 @@ export function InstagramOwnershipCard({
             {blocked ? (
               <ActivityIndicator color={palette.danger} />
             ) : (
-              <Text style={[styles.toggleText, { color: palette.danger }]}>
+              <Text style={[socialActionButtonStyles.text, { color: palette.danger }]}>
                 {primaryLabel}
               </Text>
             )}
@@ -484,11 +489,12 @@ export function InstagramOwnershipCard({
             accessibilityLabel={primaryLabel}
             accessibilityState={{ disabled: blocked || !api, busy: blocked }}
             disabled={blocked || !api}
+            hitSlop={SOCIAL_ACTION_HIT_SLOP}
             onPress={() =>
               view.connected ? onDisconnect() : void onConnect()
             }
             style={({ pressed }) => [
-              styles.toggleBtn,
+              socialActionButtonStyles.button,
               view.connected
                 ? {
                     backgroundColor: 'transparent',
@@ -509,7 +515,7 @@ export function InstagramOwnershipCard({
             ) : (
               <Text
                 style={[
-                  styles.toggleText,
+                  socialActionButtonStyles.text,
                   {
                     color: view.connected ? palette.danger : palette.surface,
                   },
@@ -565,9 +571,10 @@ export function InstagramOwnershipCard({
               accessibilityLabel={t(
                 'profile.social.instagramOwnership.shareCodeA11y',
               )}
+              hitSlop={SOCIAL_ACTION_HIT_SLOP}
               onPress={onShareCode}
               style={({ pressed }) => [
-                styles.toggleBtn,
+                socialActionButtonStyles.button,
                 {
                   backgroundColor: palette.surface,
                   borderColor: palette.border,
@@ -575,7 +582,7 @@ export function InstagramOwnershipCard({
                 pressed && styles.pressed,
               ]}
             >
-              <Text style={[styles.toggleText, { color: palette.textPrimary }]}>
+              <Text style={[socialActionButtonStyles.text, { color: palette.textPrimary }]}>
                 {t('profile.social.instagramOwnership.shareCode')}
               </Text>
             </Pressable>
@@ -584,9 +591,10 @@ export function InstagramOwnershipCard({
               accessibilityLabel={t(
                 'profile.social.instagramOwnership.openInboxA11y',
               )}
+              hitSlop={SOCIAL_ACTION_HIT_SLOP}
               onPress={onOpenInbox}
               style={({ pressed }) => [
-                styles.toggleBtn,
+                socialActionButtonStyles.button,
                 {
                   backgroundColor: palette.primary,
                   borderColor: palette.primary,
@@ -594,7 +602,7 @@ export function InstagramOwnershipCard({
                 pressed && styles.pressed,
               ]}
             >
-              <Text style={[styles.toggleText, { color: palette.surface }]}>
+              <Text style={[socialActionButtonStyles.text, { color: palette.surface }]}>
                 {t('profile.social.instagramOwnership.openInbox')}
               </Text>
             </Pressable>
@@ -655,18 +663,6 @@ const styles = StyleSheet.create({
   },
   notConnected: {
     fontSize: fontSize.sm,
-  },
-  toggleBtn: {
-    borderWidth: 1,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    minWidth: 112,
-    alignItems: 'center',
-  },
-  toggleText: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
   },
   channelUrl: { fontSize: fontSize.sm },
   legacyHint: {

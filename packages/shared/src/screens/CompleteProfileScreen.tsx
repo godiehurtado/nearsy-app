@@ -65,6 +65,13 @@ import {
   mergeCompleteProfilePrefill,
 } from '../authentication/social';
 import { resolveModePresentation, type ProfileMode } from '../profile/profileModeFields';
+import {
+  draftForOwnProfileFace,
+  evaluateOwnProfileModeActivation,
+  isOwnProfileModeActivationRejected,
+  oppositeOwnProfileMode,
+  shouldApplyOwnProfileModeSwitch,
+} from '../profile/ownProfileModeActivation';
 import { resolvePersistedProfileImageUrl } from '../profile/socialProfilePhotoCopy.ts';
 import {
   buildOwnProfileSavePatch,
@@ -112,6 +119,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const [lastName, setLastName] = useState('');
   const [bio, setBio] = useState('');
   const [mode, setMode] = useState<'personal' | 'professional' | null>(null);
+  const [editorMode, setEditorMode] = useState<ProfileMode | null>(null);
   const [occupation, setOccupation] = useState('');
   const [company, setCompany] = useState('');
   const [profileImage, setProfileImage] = useState<string | null>(null);
@@ -157,7 +165,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     useState(0);
   const { socialSubtitle, loadSocialSummary } = useOwnProfileSocialSummary({
     getUid,
-    mode: (mode ?? 'personal') as ProfileMode,
+    mode: (editorMode ?? mode ?? 'personal') as ProfileMode,
     mountedRef,
   });
   const [personalGallerySummaryCount, setPersonalGallerySummaryCount] =
@@ -362,6 +370,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       };
 
       setMode(currentMode);
+      setEditorMode(currentMode);
       applyModeFields(loadedDoc, currentMode);
 
       const loadedDraft = createOwnProfileDraftFromPresentation({
@@ -501,17 +510,17 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   }, [navigation, confirmDiscardChanges]);
 
   const interestsCount =
-    (mode ?? 'personal') === 'professional'
+    (editorMode ?? mode ?? 'personal') === 'professional'
       ? professionalInterestsSummaryCount
       : personalInterestsSummaryCount;
 
   const photosCount =
-    (mode ?? 'personal') === 'professional'
+    (editorMode ?? mode ?? 'personal') === 'professional'
       ? professionalGallerySummaryCount
       : personalGallerySummaryCount;
 
   const affiliationsCount =
-    (mode ?? 'personal') === 'professional'
+    (editorMode ?? mode ?? 'personal') === 'professional'
       ? professionalAffiliationsSummaryCount
       : personalAffiliationsSummaryCount;
 
@@ -580,11 +589,10 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     ]);
   };
 
-  const runModeSwitch = async () => {
+  const runModeSwitch = async (targetMode: ProfileMode) => {
     const confirmedMode: ProfileMode =
       (mode ?? 'personal') === 'professional' ? 'professional' : 'personal';
-    const targetMode: ProfileMode =
-      confirmedMode === 'personal' ? 'professional' : 'personal';
+    if (targetMode === confirmedMode) return;
 
     if (modeSwitchLoading || modeSwitchSessionRef.current.isBusy()) {
       return;
@@ -612,6 +620,22 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
       if (result.ok === false) {
         const presentation = presentActiveProfileModeError(t, result.error);
+        if (isOwnProfileModeActivationRejected(result.error)) {
+          const dest = result.error.destinationMode ?? targetMode;
+          setEditorMode(dest);
+          const missing = (result.error.missingFields ?? []).map((field) =>
+            validationMessage(field),
+          );
+          Alert.alert(
+            presentation.title,
+            [
+              presentation.userMessage,
+              ...missing,
+              t('activeProfileMode.incomplete.keepEditing'),
+            ].join('\n'),
+          );
+          return;
+        }
         Alert.alert(presentation.title, presentation.userMessage);
         return;
       }
@@ -621,11 +645,25 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       }
 
       const { response } = result;
+      if (
+        !shouldApplyOwnProfileModeSwitch({
+          requestedMode: targetMode,
+          responseMode: response.mode,
+          targetProfileComplete: response.targetProfileComplete,
+        })
+      ) {
+        Alert.alert(
+          t('activeProfileMode.errors.title'),
+          t('activeProfileMode.incomplete.switchBlocked'),
+        );
+        return;
+      }
       const nextDoc = applyActiveProfileModeResponseToUserDoc(
         profileDoc ?? {},
         response,
       );
       setMode(response.mode);
+      setEditorMode(response.mode);
       applyModeFields(nextDoc, response.mode);
       setProfileDoc(nextDoc);
       commitSnapshot(
@@ -633,13 +671,6 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
           resolveModePresentation(nextDoc, response.mode),
         ),
       );
-
-      if (!response.targetProfileComplete) {
-        Alert.alert(
-          t('activeProfileMode.errors.title'),
-          t('activeProfileMode.incomplete.message'),
-        );
-      }
     } catch (e) {
       if (__DEV__) {
         console.error('[CompleteProfile] Error switching mode', e);
@@ -660,13 +691,34 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     if (modeSwitchLoading || modeSwitchSessionRef.current.isBusy()) {
       return;
     }
-    if (isDirtyRef.current) {
-      confirmDiscardChanges(() => {
-        void runModeSwitch();
+    const currentEditor: ProfileMode =
+      (editorMode ?? mode ?? 'personal') === 'professional'
+        ? 'professional'
+        : 'personal';
+    const targetMode = oppositeOwnProfileMode(currentEditor);
+    const openTarget = () => {
+      const targetDraft = draftForOwnProfileFace(profileDoc, targetMode);
+      applyModeFields(profileDoc, targetMode);
+      commitSnapshot(targetDraft);
+      setEditorMode(targetMode);
+      const activation = evaluateOwnProfileModeActivation({
+        targetMode,
+        targetDraft,
       });
+      if (activation.ok === false) {
+        Alert.alert(
+          t('activeProfileMode.errors.title'),
+          `${t('activeProfileMode.incomplete.switchBlocked')}\n${validationMessage(activation.field)}\n${t('activeProfileMode.incomplete.keepEditing')}`,
+        );
+        return;
+      }
+      void runModeSwitch(targetMode);
+    };
+    if (isDirtyRef.current) {
+      confirmDiscardChanges(openTarget);
       return;
     }
-    void runModeSwitch();
+    openTarget();
   };
 
   const validationMessage = (field: OwnProfileValidationField) => {
@@ -729,7 +781,11 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         return;
       }
 
-      const validation = validateOwnProfileDraft(editorDraft, mode);
+      const faceMode: ProfileMode =
+        (editorMode ?? mode ?? 'personal') === 'professional'
+          ? 'professional'
+          : 'personal';
+      const validation = validateOwnProfileDraft(editorDraft, faceMode);
       if (validation.ok === false) {
         Alert.alert(t('common.error'), validationMessage(validation.field));
         return;
@@ -764,7 +820,10 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         editorDraft,
         uploadedImageUrl,
       );
-      const modePatch = buildOwnProfileSavePatch({ mode, draft: persistedDraft });
+      const modePatch = buildOwnProfileSavePatch({
+        mode: faceMode,
+        draft: persistedDraft,
+      });
       const contextPatch = buildProfileContextSavePatch(contextDraft);
       const nextContext = normalizeProfileContext(contextDraft);
       const cityPatch = buildCurrentCityWritePatch(
@@ -805,14 +864,16 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         ...(nextContext.currentCity ? { currentCity: nextContext.currentCity } : {}),
         profiles: {
           ...((profileDoc?.profiles as any) ?? {}),
-          [mode]: {
-            ...(((profileDoc?.profiles as any)?.[mode] as object) ?? {}),
+          [faceMode]: {
+            ...(((profileDoc?.profiles as any)?.[faceMode] as object) ?? {}),
             realName: persistedDraft.realName,
             lastName: persistedDraft.lastName,
             profileImage: persistedDraft.profileImage,
             occupation: persistedDraft.occupation,
             bio: persistedDraft.bio,
-            ...(mode === 'professional' ? { company: persistedDraft.company } : {}),
+            ...(faceMode === 'professional'
+              ? { company: persistedDraft.company }
+              : {}),
           },
         },
       };
@@ -820,7 +881,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       // BUG-PROFILE-02: restore Discovery projection after complete Professional save.
       const client = await getVisibilityDiscoveryClient().catch(() => null);
       const professionalFaceComplete =
-        validateOwnProfileDraft(persistedDraft, mode).ok === true;
+        validateOwnProfileDraft(persistedDraft, faceMode).ok === true;
       const resync = client
         ? await resyncProfessionalDiscoveryProjectionAfterSave({
             activeMode: mode,
@@ -838,6 +899,13 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       }
 
       setProfileDoc(nextDoc);
+      if (
+        professionalFaceComplete &&
+        faceMode !== mode &&
+        !modeSwitchSessionRef.current.isBusy()
+      ) {
+        void runModeSwitch(faceMode);
+      }
 
       clearPendingSocialProfilePrefill();
       Keyboard.dismiss();
@@ -864,7 +932,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
     navigation.navigate('Gallery', {
       uid,
-      mode: mode ?? 'personal',
+      mode: editorMode ?? mode ?? 'personal',
     });
   };
 
@@ -874,7 +942,9 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     const uid = getUid();
     if (!uid) return;
 
-    const activeMode = (mode ?? 'personal') as 'personal' | 'professional';
+    const activeMode = (editorMode ?? mode ?? 'personal') as
+      | 'personal'
+      | 'professional';
 
     const currentRouteNames = navigation.getState?.()?.routeNames ?? [];
 
@@ -895,7 +965,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
     navigation.navigate('SocialMedia', {
       uid,
-      mode: mode ?? 'personal',
+      mode: editorMode ?? mode ?? 'personal',
     });
   };
 
@@ -905,11 +975,13 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
     navigation.navigate('Affiliations', {
       uid,
-      mode: mode ?? 'personal',
+      mode: editorMode ?? mode ?? 'personal',
     });
   };
 
-  const activeMode = (mode ?? 'personal') as 'personal' | 'professional';
+  const activeMode = (editorMode ?? mode ?? 'personal') as
+    | 'personal'
+    | 'professional';
   const modeContextLabel =
     activeMode === 'professional'
       ? t('profile.mode.contextProfessional')

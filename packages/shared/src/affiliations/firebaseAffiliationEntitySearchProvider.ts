@@ -2,7 +2,10 @@ import type {
   AffiliationEntitySearchProvider,
   AffiliationEntitySearchResult,
 } from './affiliationEntitySearchProvider.ts';
-import type { OnboardingAffiliationCategoryId } from './onboardingAffiliationCatalog.ts';
+import {
+  isFamilyAffiliationCategory,
+  type OnboardingAffiliationCategoryId,
+} from './onboardingAffiliationCatalog.ts';
 import {
   AFFILIATION_ENTITY_SEARCH_DEFAULT_LIMIT,
   AFFILIATION_ENTITY_SEARCH_TIMEOUT_MS,
@@ -71,6 +74,7 @@ export function createFirebaseAffiliationEntitySearchProvider(
     ): Promise<AffiliationEntitySearchResult[]> {
       const normalized = normalizeAffiliationSearchQuery(query);
       if (!shouldSearchAffiliationEntities(normalized)) return [];
+      if (isFamilyAffiliationCategory(categoryId)) return [];
 
       try {
         const data = await withTimeout(

@@ -1,9 +1,16 @@
 import type { AffiliationItem } from '../types/profile.ts';
 import {
+  affiliationAllowsProviderIdentity,
   CRJ_AFFILIATION_TO_LEGACY_CATEGORY,
+  isFamilyAffiliationCategory,
+  isLegacyIdentityLifestyleCategory,
   type OnboardingSelectedAffiliation,
 } from './onboardingAffiliationCatalog.ts';
 import { isEphemeralProviderLogoUrl } from './affiliationLogoDev.ts';
+import {
+  formatAffiliationCaption,
+  persistAffiliationTopicId,
+} from './affiliationPresentation.ts';
 
 /** Field-only affiliation bags — never includes lifecycle keys. */
 export type AffiliationFieldPersistencePatch = {
@@ -20,14 +27,20 @@ export type CrjAffiliationPersistencePatch = AffiliationFieldPersistencePatch & 
 function sanitizeOnboardingAffiliationForPersistence(
   item: OnboardingSelectedAffiliation,
 ): Record<string, string> {
+  const familyOrLegacy =
+    isFamilyAffiliationCategory(item.categoryId) ||
+    isLegacyIdentityLifestyleCategory(item.categoryId);
   const row: Record<string, string> = {
     id: item.id,
-    name: item.name,
+    name: item.name.trim(),
     categoryId: item.categoryId,
-    source: item.source,
+    source: familyOrLegacy ? 'custom' : item.source,
   };
-  if (item.providerId) row.providerId = item.providerId;
-  if (item.provider) row.provider = item.provider;
+  if (affiliationAllowsProviderIdentity(item)) {
+    if (item.providerId) row.providerId = item.providerId;
+    if (item.provider) row.provider = item.provider;
+    if (item.website) row.website = item.website;
+  }
   if (
     item.logoUrl &&
     !/^(file|content|ph|assets-library):/i.test(item.logoUrl) &&
@@ -35,8 +48,8 @@ function sanitizeOnboardingAffiliationForPersistence(
   ) {
     row.logoUrl = item.logoUrl;
   }
-  if (item.website) row.website = item.website;
-  if (item.topic) row.topic = item.topic;
+  const topic = persistAffiliationTopicId(item.categoryId, item.topic);
+  if (topic) row.topic = topic;
   return row;
 }
 
@@ -46,7 +59,7 @@ export function onboardingAffiliationsToLegacy(
 ): AffiliationItem[] {
   return selected.map((item) => ({
     category: CRJ_AFFILIATION_TO_LEGACY_CATEGORY[item.categoryId],
-    label: item.name,
+    label: formatAffiliationCaption(item, (_id, fallback) => fallback),
     imageUrl:
       item.logoUrl &&
       !/^(file|content|ph|assets-library):/i.test(item.logoUrl) &&

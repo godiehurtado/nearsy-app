@@ -11,6 +11,7 @@ const QUERY_SUFFIXES: Record<OnboardingAffiliationCategoryId, string[]> = {
   sports_clubs: ['Club', 'League', 'Team'],
   faith: ['', 'Group', 'Community'],
   political_civic: ['', 'Group', 'Community'],
+  family: ['', 'Group', 'Community'],
   identity_lifestyle: ['', 'Group', 'Community'],
 };
 

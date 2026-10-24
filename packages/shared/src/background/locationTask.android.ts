@@ -81,8 +81,9 @@ TaskManager.defineTask(BG_LOCATION_TASK, async ({ data, error }) => {
     const { locations } = (data as LocationTaskData) ?? {};
     if (!locations?.length) return;
 
-    // Taken before any await: a callback that outlives its session (logout,
-    // uid change, pending re-confirmation) can never publish.
+    // Taken before any await: logout / uid change invalidate the ticket.
+    // Pending confirmation still allows continuity of an already-authorized
+    // FGS; runtime auth + OS permissions are checked after this.
     const authUidAtStart = firebaseAuth.currentUser?.uid ?? null;
     const ticket = acquireBackgroundPublicationTicket(authUidAtStart);
     // Signed out falls through to the runtime gate below, which stops the task.

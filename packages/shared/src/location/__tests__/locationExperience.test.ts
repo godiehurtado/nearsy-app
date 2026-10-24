@@ -16,6 +16,7 @@ import {
   shouldStartBackgroundLocationService,
   isLocationSampleAdequateForNearby,
   isAndroidFineLocationGranted,
+  planBackgroundServiceStart,
   ANDROID_BACKGROUND_SETTINGS_API_LEVEL,
 } from '../backgroundPublicationGate.ts';
 import {
@@ -30,6 +31,7 @@ import {
 } from '../contractualLogout.ts';
 import {
   decideCallbackPublication,
+  isPersistedBackgroundAuthCurrent,
   type BackgroundRuntimeAuth,
 } from '../backgroundRuntimeAuth.ts';
 import {
@@ -844,6 +846,58 @@ describe('backgroundRuntimeAuth callback gate', () => {
         backgroundGranted: false,
       }),
       'stop',
+    );
+  });
+
+  it('continuity does not treat leftover persisted auth as current', () => {
+    assert.equal(
+      isPersistedBackgroundAuthCurrent({
+        authUid: 'u1',
+        storedTaskUid: 'u1',
+        runtimeAuth: auth,
+      }),
+      true,
+    );
+    assert.equal(
+      isPersistedBackgroundAuthCurrent({
+        authUid: 'u1',
+        storedTaskUid: 'u1',
+        runtimeAuth: null,
+      }),
+      false,
+    );
+    assert.equal(
+      isPersistedBackgroundAuthCurrent({
+        authUid: 'u2',
+        storedTaskUid: 'u1',
+        runtimeAuth: auth,
+      }),
+      false,
+    );
+    assert.equal(
+      decideCallbackPublication({
+        authUid: 'u1',
+        storedTaskUid: 'u1',
+        runtimeAuth: null,
+        foregroundGranted: true,
+        backgroundGranted: true,
+      }),
+      'stop',
+    );
+  });
+
+  it('does not start a new FGS from a backgrounded JS context', () => {
+    assert.equal(
+      planBackgroundServiceStart({ alreadyStarted: true, appState: 'background' }),
+      'keep-running',
+    );
+    assert.equal(
+      planBackgroundServiceStart({ alreadyStarted: false, appState: 'active' }),
+      'start-new',
+    );
+    assert.equal(
+      planBackgroundServiceStart({ alreadyStarted: false, appState: 'background' }),
+      'defer-new',
     );
   });
 });

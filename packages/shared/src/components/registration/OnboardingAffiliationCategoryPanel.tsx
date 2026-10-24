@@ -23,15 +23,22 @@ import {
   type AffiliationSearchUiSnapshot,
 } from '../../affiliations/affiliationSearchInteraction.ts';
 import {
-  buildCustomAffiliationId,
+  AFFILIATION_NAME_MAX_CHARS,
+  affiliationBelongsToEditorCategory,
   buildUniqueCustomAffiliationId,
   getOnboardingAffiliationCategory,
   isDuplicateAffiliation,
   isFreeTextAffiliationCategory,
-  validateCustomAffiliationName,
+  validateAffiliationEntryName,
   type OnboardingAffiliationCategoryId,
   type OnboardingSelectedAffiliation,
 } from '../../affiliations/onboardingAffiliationCatalog.ts';
+import {
+  affiliationAllowsLogoDev,
+  affiliationNameRequired,
+  formatAffiliationCaption,
+  isTopicOptionalNameCategory,
+} from '../../affiliations/affiliationPresentation.ts';
 import type { AffiliationEntitySearchResult } from '../../affiliations/affiliationEntitySearchProvider.ts';
 import { AffiliationEntitySearchClientError } from '../../affiliations/affiliationEntitySearchContract.ts';
 import { getAffiliationEntitySearchProvider } from '../../affiliations/affiliationEntitySearchRuntime.ts';
@@ -118,15 +125,31 @@ export function OnboardingAffiliationCategoryPanel({
   const publishableKey = readClientPublishableKey();
 
   const selectedInCategory = useMemo(
-    () => selected.filter((s) => s.categoryId === categoryId),
+    () =>
+      selected.filter((s) =>
+        affiliationBelongsToEditorCategory(s.categoryId, categoryId),
+      ),
     [selected, categoryId],
   );
 
   const activeTopic = category.topics.find((topic) => topic.id === topicId);
   const topicOpen = !!activeTopic;
   const trimmedQuery = query.trim();
-  const customNameValid = validateCustomAffiliationName(trimmedQuery).ok === true;
-  const searchHintVisible = !freeText && trimmedQuery.length < 2;
+  const topicOnlyCategory = isTopicOptionalNameCategory(categoryId);
+  const nameMax =
+    freeText || topicOnlyCategory ? AFFILIATION_NAME_MAX_CHARS : QUERY_MAX;
+  const nameRequired = affiliationNameRequired(categoryId);
+  const customNameValid =
+    validateAffiliationEntryName(trimmedQuery, {
+      allowEmpty: topicOnlyCategory && !!activeTopic,
+    }).ok === true;
+  const topicOnlyReady =
+    topicOnlyCategory && !!activeTopic && !trimmedQuery && !pickedName;
+  const searchHintVisible = !freeText && !topicOnlyCategory && trimmedQuery.length < 2;
+  const localizeTopic = (id: string, fallback: string) =>
+    t(`onboarding.profileCompletion.affiliations.topics.${id}` as any, {
+      defaultValue: fallback,
+    });
   const searchUi = useMemo(
     () =>
       resolveAffiliationSearchUi({
@@ -134,11 +157,12 @@ export function OnboardingAffiliationCategoryPanel({
         pickedName: freeText ? null : pickedName,
         customName: trimmedQuery,
         customNameValid,
-        hasProviderResults: freeText ? false : results.length > 0,
-        searchPending: freeText ? false : searchPending,
+        hasProviderResults: freeText || topicOnlyReady ? false : results.length > 0,
+        searchPending: freeText || topicOnlyReady ? false : searchPending,
         // freeText: treat as "no suggestions" so valid names can be added without Logo.dev.
         suggestionsUnavailable: freeText ? true : suggestionsUnavailable,
         hasDraftImage: !!draftImage,
+        topicOnlyReady,
       }),
     [
       freeText,
@@ -150,6 +174,7 @@ export function OnboardingAffiliationCategoryPanel({
       searchPending,
       suggestionsUnavailable,
       draftImage,
+      topicOnlyReady,
     ],
   );
   const compactSearch = searchUi.hideJourneyFooter;
@@ -160,8 +185,7 @@ export function OnboardingAffiliationCategoryPanel({
     providerId?: string | null;
   }): string | undefined {
     const own = input.logoUrl?.trim();
-    if (freeText) {
-      // Identity & Lifestyle: never rebuild Logo.dev; own image or fallback only.
+    if (!affiliationAllowsLogoDev(categoryId)) {
       if (own && !isEphemeralProviderLogoUrl(own)) return own;
       return undefined;
     }
@@ -275,7 +299,7 @@ export function OnboardingAffiliationCategoryPanel({
 
   function pickResult(result: AffiliationEntitySearchResult) {
     setPickedName(result.name);
-    setQuery(result.name.slice(0, QUERY_MAX));
+    setQuery(result.name.slice(0, nameMax));
     setDraftImage(null);
     setDuplicateError(null);
   }
@@ -295,12 +319,23 @@ export function OnboardingAffiliationCategoryPanel({
   }
 
   function addFromSearch() {
-    const nameCandidate = (pickedName || trimmedQuery).slice(0, QUERY_MAX);
-    const validated = validateCustomAffiliationName(nameCandidate);
+    const nameCandidate = (pickedName || trimmedQuery).slice(0, nameMax);
+    const validated = validateAffiliationEntryName(nameCandidate, {
+      allowEmpty: topicOnlyCategory && !!activeTopic,
+    });
     if (validated.ok === false) return;
+    if (nameRequired && !validated.name) return;
+    const storedName = validated.name;
+    if (!storedName && !activeTopic) return;
+    const topicIdToPersist = activeTopic?.id;
 
     if (freeText) {
-      const candidate = { name: validated.name, source: 'custom' as const };
+      const candidate = {
+        name: storedName,
+        source: 'custom' as const,
+        categoryId,
+        ...(topicIdToPersist ? { topic: topicIdToPersist } : {}),
+      };
       if (
         isDuplicateAffiliation(selected, candidate, { categoryId })
       ) {
@@ -312,17 +347,18 @@ export function OnboardingAffiliationCategoryPanel({
       const next: OnboardingSelectedAffiliation = {
         id: buildUniqueCustomAffiliationId(
           categoryId,
-          validated.name,
+          storedName,
           selected.map((s) => s.id),
+          topicIdToPersist,
         ),
-        name: validated.name,
+        name: storedName,
         categoryId,
         source: 'custom',
         ...(() => {
           const logoUrl = resolveInMemorySelectedLogoUrl(draftImage, undefined);
           return logoUrl ? { logoUrl } : {};
         })(),
-        ...(activeTopic ? { topic: activeTopic.label } : {}),
+        ...(topicIdToPersist ? { topic: topicIdToPersist } : {}),
       };
       onChangeSelected([...selected, next]);
       setQuery('');
@@ -340,7 +376,7 @@ export function OnboardingAffiliationCategoryPanel({
     }
 
     const matched = results.find(
-      (row) => row.name.toLowerCase() === validated.name.toLowerCase(),
+      (row) => row.name.toLowerCase() === storedName.toLowerCase(),
     );
     const explicitlyPicked =
       !!pickedName &&
@@ -349,11 +385,18 @@ export function OnboardingAffiliationCategoryPanel({
       pickedName.toLowerCase() === matched.name.toLowerCase();
     const isCustom = !explicitlyPicked;
     const candidate = isCustom
-      ? { name: validated.name, source: 'custom' as const }
+      ? {
+          name: storedName,
+          source: 'custom' as const,
+          categoryId,
+          ...(topicIdToPersist ? { topic: topicIdToPersist } : {}),
+        }
       : {
-          name: validated.name,
+          name: storedName,
           source: 'provider' as const,
           providerId: matched!.providerId,
+          categoryId,
+          ...(topicIdToPersist ? { topic: topicIdToPersist } : {}),
         };
 
     if (isDuplicateAffiliation(selected, candidate)) {
@@ -365,9 +408,14 @@ export function OnboardingAffiliationCategoryPanel({
 
     const next: OnboardingSelectedAffiliation = {
       id: isCustom
-        ? buildCustomAffiliationId(categoryId, validated.name)
+        ? buildUniqueCustomAffiliationId(
+            categoryId,
+            storedName,
+            selected.map((s) => s.id),
+            topicIdToPersist,
+          )
         : matched!.providerId,
-      name: validated.name,
+      name: storedName,
       categoryId,
       source: isCustom ? 'custom' : 'provider',
       ...(isCustom ? {} : { providerId: matched!.providerId }),
@@ -380,7 +428,7 @@ export function OnboardingAffiliationCategoryPanel({
         return logoUrl ? { logoUrl } : {};
       })(),
       ...(!isCustom && matched?.website ? { website: matched.website } : {}),
-      ...(activeTopic ? { topic: activeTopic.label } : {}),
+      ...(topicIdToPersist ? { topic: topicIdToPersist } : {}),
     };
 
     onChangeSelected([...selected, next]);
@@ -457,10 +505,17 @@ export function OnboardingAffiliationCategoryPanel({
                       accessibilityRole="button"
                       accessibilityLabel={
                         removeAffiliationAccessibilityLabel
-                          ? removeAffiliationAccessibilityLabel(item.name)
+                          ? removeAffiliationAccessibilityLabel(
+                              formatAffiliationCaption(item, localizeTopic),
+                            )
                           : t(
                               'onboarding.profileCompletion.affiliations.removeA11y' as any,
-                              { name: item.name },
+                              {
+                                name: formatAffiliationCaption(
+                                  item,
+                                  localizeTopic,
+                                ),
+                              },
                             )
                       }
                       hitSlop={8}
@@ -482,7 +537,7 @@ export function OnboardingAffiliationCategoryPanel({
                     style={[styles.selectedLabel, { color: palette.textPrimary }]}
                     numberOfLines={2}
                   >
-                    {item.name}
+                    {formatAffiliationCaption(item, localizeTopic)}
                   </Text>
                 </View>
               ))}
@@ -543,7 +598,9 @@ export function OnboardingAffiliationCategoryPanel({
           ]}
         >
           <Text style={[styles.topicEyebrow, { color: palette.chipText }]}>
-            {activeTopic?.label}
+            {activeTopic
+              ? localizeTopic(activeTopic.id, activeTopic.label)
+              : ''}
           </Text>
           <View collapsable={false}>
             <TextInput
@@ -555,13 +612,15 @@ export function OnboardingAffiliationCategoryPanel({
               )}
               placeholder={t(
                 freeText
-                  ? ('onboarding.profileCompletion.affiliations.freeTextPlaceholder' as any)
-                  : ('onboarding.profileCompletion.affiliations.searchPlaceholder' as any),
+                  ? ('onboarding.profileCompletion.affiliations.familyNamePlaceholder' as any)
+                  : topicOnlyCategory
+                    ? ('onboarding.profileCompletion.affiliations.topicOnlyPlaceholder' as any)
+                    : ('onboarding.profileCompletion.affiliations.searchPlaceholder' as any),
               )}
               placeholderTextColor={palette.placeholder}
               value={query}
               onChangeText={(value) => {
-                setQuery(value.slice(0, QUERY_MAX));
+                setQuery(value.slice(0, nameMax));
                 setPickedName(null);
                 setDuplicateError(null);
               }}
@@ -590,7 +649,11 @@ export function OnboardingAffiliationCategoryPanel({
 
           {freeText ? (
             <Text style={[styles.searchHint, { color: palette.textSecondary }]}>
-              {t('onboarding.profileCompletion.affiliations.freeTextHint' as any)}
+              {t('onboarding.profileCompletion.affiliations.familyNameHint' as any)}
+            </Text>
+          ) : topicOnlyCategory ? (
+            <Text style={[styles.searchHint, { color: palette.textSecondary }]}>
+              {t('onboarding.profileCompletion.affiliations.topicOnlyHint' as any)}
             </Text>
           ) : searchHintVisible ? (
             <Text style={[styles.searchHint, { color: palette.textSecondary }]}>

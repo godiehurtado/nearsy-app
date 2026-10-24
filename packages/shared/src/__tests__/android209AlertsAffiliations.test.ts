@@ -169,7 +169,8 @@ describe('209 Alerts discoverNearby + shared provider', () => {
 });
 
 describe('209 Identity & Lifestyle free-text', () => {
-  it('identity_lifestyle is freeText; others remain search', () => {
+  it('family and legacy identity_lifestyle are freeText; others remain search', () => {
+    assert.equal(isFreeTextAffiliationCategory('family'), true);
     assert.equal(isFreeTextAffiliationCategory('identity_lifestyle'), true);
     assert.equal(isFreeTextAffiliationCategory('professional'), false);
     assert.equal(isFreeTextAffiliationCategory('education'), false);
@@ -181,15 +182,15 @@ describe('209 Identity & Lifestyle free-text', () => {
     );
     assert.match(panel, /isFreeTextAffiliationCategory/);
     assert.match(panel, /buildUniqueCustomAffiliationId/);
-    assert.match(panel, /freeTextHint/);
+    assert.match(panel, /familyNameHint/);
     assert.match(panel, /isEphemeralProviderLogoUrl/);
   });
 
   it('unique custom ids avoid slug collisions without changing prefix scheme', () => {
-    const a = buildUniqueCustomAffiliationId('identity_lifestyle', 'C++', []);
-    assert.match(a, /^custom_identity_lifestyle_/);
-    const b = buildUniqueCustomAffiliationId('identity_lifestyle', 'C#', [a]);
-    assert.match(b, /^custom_identity_lifestyle_/);
+    const a = buildUniqueCustomAffiliationId('family', 'C++', []);
+    assert.match(a, /^custom_family_/);
+    const b = buildUniqueCustomAffiliationId('family', 'C#', [a]);
+    assert.match(b, /^custom_family_/);
     assert.notEqual(a, b);
   });
 
@@ -206,7 +207,7 @@ describe('209 Identity & Lifestyle free-text', () => {
       isDuplicateAffiliation(
         list,
         { name: 'Veteran', source: 'custom' },
-        { categoryId: 'identity_lifestyle' },
+        { categoryId: 'family' },
       ),
       false,
     );
@@ -251,7 +252,7 @@ describe('209 Identity & Lifestyle free-text', () => {
 
   it('public discovery strips Logo.dev logos for Identity & Lifestyle', () => {
     const discovery = read('visibility/discoveryAffiliations.ts');
-    assert.match(discovery, /isFreeTextAffiliationCategory/);
+    assert.match(discovery, /publicTypeSuppressesLogoDev/);
     assert.match(discovery, /isEphemeralProviderLogoUrl/);
     const parsed = parseDiscoveryAffiliations([
       {

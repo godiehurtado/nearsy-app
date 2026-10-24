@@ -1,6 +1,7 @@
 import type { SocialCustomLink, SocialLinks } from '../types/profile.ts';
 import {
   CRJ_SOCIAL_PLATFORMS,
+  VISIBLE_CRJ_SOCIAL_PLATFORMS,
   emptyCrjSocialDraftValues,
   type CrjSocialDraftValues,
   type CrjSocialPlatformId,
@@ -31,7 +32,7 @@ export type PostCrjSocialCardId = CrjSocialPlatformId | 'website';
  * cannot adopt without breaking the eight-platform contract.
  */
 export const POST_CRJ_SOCIAL_CARD_ORDER: readonly PostCrjSocialCardId[] = [
-  ...CRJ_SOCIAL_PLATFORMS.map((p) => p.id),
+  ...VISIBLE_CRJ_SOCIAL_PLATFORMS.map((p) => p.id),
   'website',
 ];
 
@@ -125,7 +126,7 @@ export function countValidPostCrjSocialConnections(
   ownershipVerified?: Partial<Record<AndroidOwnershipCardId, boolean>>,
 ): number {
   let count = 0;
-  for (const platform of CRJ_SOCIAL_PLATFORMS) {
+  for (const platform of VISIBLE_CRJ_SOCIAL_PLATFORMS) {
     if (
       ownershipVerified &&
       isAndroidOwnershipCardId(platform.id) &&
@@ -164,7 +165,7 @@ export function validatePostCrjSocialDraftForSave(
 ): PostCrjSocialValidationResult {
   const errors: CrjSocialFieldErrors & { website?: string } = {};
 
-  for (const platform of CRJ_SOCIAL_PLATFORMS) {
+  for (const platform of VISIBLE_CRJ_SOCIAL_PLATFORMS) {
     if (!draft.connected[platform.id]) continue;
     const raw = (draft.values[platform.id] ?? '').trim();
     if (!raw) {
@@ -200,6 +201,10 @@ export function buildValuesForPostCrjSocialSave(
 ): CrjSocialDraftValues {
   const values = emptyCrjSocialDraftValues();
   for (const platform of CRJ_SOCIAL_PLATFORMS) {
+    if (platform.id === 'snapchat') {
+      values.snapchat = draft.values.snapchat ?? '';
+      continue;
+    }
     if (draft.connected[platform.id]) {
       values[platform.id] = draft.values[platform.id] ?? '';
     }
@@ -228,6 +233,7 @@ export function countConfiguredSocialLinksInBag(
   const xConnected = options?.xConnected === true;
   let count = 0;
   for (const platform of CRJ_SOCIAL_PLATFORMS) {
+    if (platform.id === 'snapchat') continue;
     if (platform.id === 'youtube' && youtubeConnected) continue;
     if (platform.id === 'tiktok' && tiktokConnected) continue;
     if (platform.id === 'instagram' && instagramConnected) continue;

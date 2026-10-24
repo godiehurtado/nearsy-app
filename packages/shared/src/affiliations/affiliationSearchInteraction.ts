@@ -31,7 +31,17 @@ export function resolveAffiliationSearchUi(input: {
   searchPending: boolean;
   suggestionsUnavailable: boolean;
   hasDraftImage: boolean;
+  topicOnlyReady?: boolean;
 }): AffiliationSearchUiSnapshot {
+  if (input.topicOnlyReady) {
+    return {
+      phase: 'custom_ready',
+      // Keep subcategory chips visible; Add replaces Skip/Next via showAddCta.
+      hideJourneyFooter: false,
+      showAddCta: true,
+      addName: input.customName.trim() || null,
+    };
+  }
   const pendingCandidate = Boolean(input.pickedName) || input.hasDraftImage;
   const allowCustomAdd =
     input.customNameValid &&

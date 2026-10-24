@@ -22,6 +22,7 @@ import { PrimaryButton } from '../components/PrimaryButton';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import {
   ONBOARDING_AFFILIATION_CATEGORIES,
+  affiliationBelongsToEditorCategory,
   listOnboardingAffiliationCategoryIds,
   type OnboardingAffiliationCategoryId,
   type OnboardingSelectedAffiliation,
@@ -207,12 +208,15 @@ export default function AffiliationsScreen() {
   }
 
   const footer =
-    pendingSearch?.ui.showAddCta && pendingSearch.ui.addName ? (
+    pendingSearch?.ui.showAddCta ? (
       <PrimaryButton
-        label={t('onboarding.profileCompletion.affiliations.addNamed' as any, {
-          name: pendingSearch.ui.addName,
-          defaultValue: `Add ${pendingSearch.ui.addName}`,
-        })}
+        label={
+          pendingSearch.ui.addName
+            ? t('onboarding.profileCompletion.affiliations.addA11y' as any, {
+                name: pendingSearch.ui.addName,
+              })
+            : t('onboarding.profileCompletion.affiliations.add' as any)
+        }
         onPress={() => searchAddRef.current?.()}
       />
     ) : (
@@ -242,7 +246,9 @@ export default function AffiliationsScreen() {
     >
       {ONBOARDING_AFFILIATION_CATEGORIES.map((category) => {
         const open = expandedId === category.id;
-        const count = draft.filter((a) => a.categoryId === category.id).length;
+        const count = draft.filter((a) =>
+          affiliationBelongsToEditorCategory(a.categoryId, category.id),
+        ).length;
         return (
           <View
             key={category.id}

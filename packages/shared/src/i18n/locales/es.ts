@@ -207,6 +207,10 @@ export const es: TranslationResources = {
     },
     incomplete: {
       message: 'Completa este perfil antes de volver a estar visible.',
+      switchBlocked:
+        'Completa los campos obligatorios antes de cambiar a este perfil.',
+      keepEditing:
+        'Puedes seguir editando este perfil. Seguirá inactivo hasta que esté completo.',
     },
   },
   notifications: {

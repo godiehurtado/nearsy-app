@@ -19,30 +19,42 @@ const REMOVED_TOPIC_IDS = [
   'nationality',
 ] as const;
 
-test('CHG-AFF-01: removed Identity topics absent; personality_type kept', () => {
-  const identity = getOnboardingAffiliationCategory('identity_lifestyle');
-  const ids = identity.topics.map((t) => t.id);
+test('CHG-AFF-01: removed Identity topics absent from Family catalog', () => {
+  const family = getOnboardingAffiliationCategory('family');
+  const ids = family.topics.map((t) => t.id);
   for (const id of REMOVED_TOPIC_IDS) {
     assert.equal(ids.includes(id), false, `should remove ${id}`);
   }
-  assert.ok(ids.includes('personality_type'));
-  const personality = identity.topics.find((t) => t.id === 'personality_type');
-  assert.equal(personality?.label, 'Personality type');
-  assert.equal(personality?.emoji, '🧠');
+  assert.equal(ids.includes('personality_type'), false);
+  assert.ok(ids.includes('pet_parent'));
 });
 
-test('CHG-AFF-01: unrelated Identity topics and other categories intact', () => {
-  const identity = getOnboardingAffiliationCategory('identity_lifestyle');
-  const ids = identity.topics.map((t) => t.id);
+test('CHG-AFF-01: Family topics are on family; Identity stays a legacy catalog', () => {
+  const family = getOnboardingAffiliationCategory('family');
+  const ids = family.topics.map((t) => t.id);
   assert.deepEqual(ids, [
-    'cultural_background',
-    'hometown',
-    'parent',
+    'father_of',
+    'mother_of',
+    'child_of',
+    'sibling_of',
+    'spouse_of',
+    'partner_of',
+    'grandparent_of',
+    'grandchild_of',
     'pet_parent',
-    'veteran',
-    'personality_type',
   ]);
+  const identity = getOnboardingAffiliationCategory('identity_lifestyle');
+  assert.ok(identity.topics.some((t) => t.id === 'parent'));
+  assert.ok(identity.topics.some((t) => t.id === 'pet_parent'));
   assert.equal(ONBOARDING_AFFILIATION_CATEGORIES.length, 7);
+  assert.equal(
+    ONBOARDING_AFFILIATION_CATEGORIES.some((c) => c.id === 'family'),
+    true,
+  );
+  assert.equal(
+    ONBOARDING_AFFILIATION_CATEGORIES.some((c) => c.id === 'identity_lifestyle'),
+    false,
+  );
   assert.ok(
     getOnboardingAffiliationCategory('education').topics.some(
       (t) => t.id === 'college_or_university',
@@ -73,5 +85,5 @@ test('CHG-AFF-01: profile context modules unchanged by affiliation topic trim', 
   assert.doesNotMatch(affSrc, /topic\('Zodiac sign'/);
   assert.doesNotMatch(affSrc, /topic\('Languages'/);
   assert.doesNotMatch(affSrc, /topic\('Nationality'/);
-  assert.match(affSrc, /topic\('Personality type'/);
+  assert.match(affSrc, /topic\('Pet parent'/);
 });

@@ -6,10 +6,9 @@
 import { isEphemeralProviderLogoUrl } from '../affiliations/affiliationLogoDev.ts';
 import {
   getOnboardingAffiliationCategory,
-  isFreeTextAffiliationCategory,
-  listOnboardingAffiliationCategoryIds,
-  type OnboardingAffiliationCategoryId,
+  isOnboardingAffiliationCategoryId,
 } from '../affiliations/onboardingAffiliationCatalog.ts';
+import { publicTypeSuppressesLogoDev } from '../affiliations/affiliationPresentation.ts';
 
 /** Contract cap — matches backend `MAX_PUBLIC_AFFILIATIONS`. */
 export const MAX_DISCOVERY_AFFILIATIONS = 48;
@@ -26,8 +25,6 @@ export type DiscoveryPublicAffiliation = {
 };
 
 const AFFILIATION_ALLOWED_KEYS = new Set(['id', 'name', 'type', 'logoUrl']);
-
-const KNOWN_CATEGORY_IDS = new Set<string>(listOnboardingAffiliationCategoryIds());
 
 function nonEmptyTrimmed(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -54,12 +51,7 @@ function sanitizeLogoUrl(
   } catch {
     return null;
   }
-  if (
-    type &&
-    KNOWN_CATEGORY_IDS.has(type) &&
-    isFreeTextAffiliationCategory(type as OnboardingAffiliationCategoryId) &&
-    isEphemeralProviderLogoUrl(trimmed)
-  ) {
+  if (publicTypeSuppressesLogoDev(type) && isEphemeralProviderLogoUrl(trimmed)) {
     return null;
   }
   return trimmed;
@@ -74,9 +66,11 @@ function parseAffiliationItem(value: unknown): DiscoveryPublicAffiliation | null
     return null;
   }
   const id = nonEmptyTrimmed(row.id);
-  const name = nonEmptyTrimmed(row.name);
-  if (!id || !name) return null;
+  if (!id) return null;
+  const name =
+    typeof row.name === 'string' ? row.name.trim() : '';
   const type = nonEmptyTrimmed(row.type);
+  if (!name && !type) return null;
 
   return {
     id,
@@ -146,10 +140,8 @@ export function formatDiscoveryAffiliationTypeLabel(
   const trimmed = type.trim();
   if (!trimmed) return null;
 
-  if (KNOWN_CATEGORY_IDS.has(trimmed)) {
-    const cat = getOnboardingAffiliationCategory(
-      trimmed as OnboardingAffiliationCategoryId,
-    );
+  if (isOnboardingAffiliationCategoryId(trimmed)) {
+    const cat = getOnboardingAffiliationCategory(trimmed);
     return translateCategory(cat.nameKey, cat.name);
   }
 
