@@ -387,12 +387,19 @@ export default function SocialMediaScreen() {
       preserveLegacy('tiktok');
       preserveLegacy('instagram');
       preserveLegacy('x');
+      const snapchatLegacy = (
+        snapshotRef.current.values.snapchat ??
+        draft.values.snapchat ??
+        ''
+      ).trim();
+      if (snapchatLegacy) valuesForSave.snapchat = snapchatLegacy;
       const patch = buildPostCrjSocialLinksPersistencePatch(
         editorMode,
         valuesForSave,
         draftForSave.custom,
         {
           website: draftForSave.connected.website ? draftForSave.website : '',
+          existing: { snapchat: snapchatLegacy || undefined },
         },
       );
       await updateUserProfilePartial(editorUid, patch);
