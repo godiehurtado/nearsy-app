@@ -15,11 +15,17 @@ import {
 import {
   FAMILY_CATEGORY_ID,
   LEGACY_IDENTITY_LIFESTYLE_CATEGORY,
+  affiliationAllowsProviderIdentity,
+  affiliationIdentityKey,
   buildUniqueCustomAffiliationId,
   getOnboardingAffiliationCategory,
   listOnboardingAffiliationCategoryIds,
 } from '../affiliations/onboardingAffiliationCatalog.ts';
 import { buildPostCrjAffiliationPersistencePatch } from '../affiliations/onboardingAffiliationPersistence.ts';
+import {
+  countAffiliationsForOwnProfileSummary,
+  readOnboardingAffiliationsFromDoc,
+} from '../affiliations/postCrjAffiliationEditor.ts';
 import { parseDiscoveryAffiliations } from '../visibility/discoveryAffiliations.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -166,7 +172,7 @@ describe('NEARSY-209 affiliation captions', () => {
     assert.equal(parsed[1].type, 'father_of');
   });
 
-  it('persists topic IDs and omits empty civic names', () => {
+  it('persists topic IDs and empty civic names as name:""', () => {
     assert.equal(
       persistAffiliationTopicId('political_civic', 'Democratic Party'),
       'democratic_party',
@@ -196,8 +202,65 @@ describe('NEARSY-209 affiliation captions', () => {
     assert.equal(rows[0]?.categoryId, 'family');
     assert.equal(rows[0]?.name, 'Sofía');
     assert.equal(rows[0]?.topic, 'father_of');
-    assert.equal(rows[1]?.name, undefined);
+    assert.equal(rows[0]?.source, 'custom');
+    assert.equal(rows[0]?.providerId, undefined);
+    assert.equal(rows[1]?.name, '');
     assert.equal(rows[1]?.topic, 'democratic_party');
+    assert.equal(rows[1]?.providerId, undefined);
+    const familyWithProvider = buildPostCrjAffiliationPersistencePatch(
+      'personal',
+      [
+        {
+          id: 'custom_family_sofia',
+          name: 'Sofía',
+          categoryId: 'family',
+          source: 'provider',
+          providerId: 'logo.dev:sofia',
+          provider: 'logo_dev',
+          website: 'https://sofia.example',
+          topic: 'father_of',
+        },
+      ],
+    ).personalOnboardingAffiliations?.[0];
+    assert.equal(familyWithProvider?.source, 'custom');
+    assert.equal(familyWithProvider?.providerId, undefined);
+    assert.equal(familyWithProvider?.website, undefined);
+    const doc = {
+      personalOnboardingAffiliations: rows,
+    };
+    assert.equal(readOnboardingAffiliationsFromDoc(doc, 'personal').length, 2);
+    assert.equal(countAffiliationsForOwnProfileSummary(doc, 'personal'), 2);
+  });
+
+  it('does not mint provider identity keys for Family or nameless civic', () => {
+    assert.equal(
+      affiliationAllowsProviderIdentity({
+        name: 'Sofía',
+        categoryId: 'family',
+        source: 'provider',
+        providerId: 'logo.dev:sofia',
+      }),
+      false,
+    );
+    assert.equal(
+      affiliationIdentityKey({
+        name: 'Sofía',
+        categoryId: 'family',
+        source: 'provider',
+        providerId: 'logo.dev:sofia',
+        topic: 'father_of',
+      }).startsWith('provider:'),
+      false,
+    );
+    assert.equal(
+      affiliationAllowsProviderIdentity({
+        name: '',
+        categoryId: 'political_civic',
+        source: 'provider',
+        providerId: 'logo.dev:dems',
+      }),
+      false,
+    );
   });
 
   it('editor and Discovery no longer caption the general category', () => {
@@ -208,6 +271,11 @@ describe('NEARSY-209 affiliation captions', () => {
     assert.match(panel, /formatAffiliationCaption/);
     assert.match(panel, /topicOnlyReady/);
     assert.match(panel, /familyNameHint/);
+    const crj = readFileSync(
+      path.join(root, 'screens/ProfileCompletionScreen.tsx'),
+      'utf8',
+    );
+    assert.match(crj, /readOnboardingAffiliationsFromDoc/);
     const card = readFileSync(
       path.join(root, 'components/profileExploration/DiscoveryAffiliationsCard.tsx'),
       'utf8',

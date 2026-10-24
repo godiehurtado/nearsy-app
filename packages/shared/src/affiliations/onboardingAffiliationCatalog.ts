@@ -371,13 +371,29 @@ export function normalizeAffiliationName(name: string): string {
   return name.trim().replace(/\s+/g, ' ');
 }
 
+export function affiliationAllowsProviderIdentity(
+  item: Pick<
+    OnboardingSelectedAffiliation,
+    'name' | 'providerId' | 'source' | 'categoryId'
+  >,
+): boolean {
+  if (
+    isFamilyAffiliationCategory(item.categoryId) ||
+    isLegacyIdentityLifestyleCategory(item.categoryId)
+  ) {
+    return false;
+  }
+  if (!normalizeAffiliationName(item.name)) return false;
+  return item.source === 'provider' && !!item.providerId;
+}
+
 export function affiliationIdentityKey(
   item: Pick<
     OnboardingSelectedAffiliation,
     'name' | 'providerId' | 'source' | 'topic' | 'categoryId'
   >,
 ): string {
-  if (item.source === 'provider' && item.providerId) {
+  if (affiliationAllowsProviderIdentity(item) && item.providerId) {
     return `provider:${item.providerId}`;
   }
   const name = normalizeAffiliationName(item.name).toLowerCase();

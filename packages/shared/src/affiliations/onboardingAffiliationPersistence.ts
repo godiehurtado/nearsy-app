@@ -1,6 +1,9 @@
 import type { AffiliationItem } from '../types/profile.ts';
 import {
+  affiliationAllowsProviderIdentity,
   CRJ_AFFILIATION_TO_LEGACY_CATEGORY,
+  isFamilyAffiliationCategory,
+  isLegacyIdentityLifestyleCategory,
   type OnboardingSelectedAffiliation,
 } from './onboardingAffiliationCatalog.ts';
 import { isEphemeralProviderLogoUrl } from './affiliationLogoDev.ts';
@@ -24,15 +27,20 @@ export type CrjAffiliationPersistencePatch = AffiliationFieldPersistencePatch & 
 function sanitizeOnboardingAffiliationForPersistence(
   item: OnboardingSelectedAffiliation,
 ): Record<string, string> {
+  const familyOrLegacy =
+    isFamilyAffiliationCategory(item.categoryId) ||
+    isLegacyIdentityLifestyleCategory(item.categoryId);
   const row: Record<string, string> = {
     id: item.id,
+    name: item.name.trim(),
     categoryId: item.categoryId,
-    source: item.source,
+    source: familyOrLegacy ? 'custom' : item.source,
   };
-  const name = item.name.trim();
-  if (name) row.name = name;
-  if (item.providerId) row.providerId = item.providerId;
-  if (item.provider) row.provider = item.provider;
+  if (affiliationAllowsProviderIdentity(item)) {
+    if (item.providerId) row.providerId = item.providerId;
+    if (item.provider) row.provider = item.provider;
+    if (item.website) row.website = item.website;
+  }
   if (
     item.logoUrl &&
     !/^(file|content|ph|assets-library):/i.test(item.logoUrl) &&
@@ -40,7 +48,6 @@ function sanitizeOnboardingAffiliationForPersistence(
   ) {
     row.logoUrl = item.logoUrl;
   }
-  if (item.website) row.website = item.website;
   const topic = persistAffiliationTopicId(item.categoryId, item.topic);
   if (topic) row.topic = topic;
   return row;
