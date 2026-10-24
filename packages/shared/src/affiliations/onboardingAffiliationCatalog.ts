@@ -174,19 +174,22 @@ export const ONBOARDING_AFFILIATION_CATEGORIES: OnboardingAffiliationCategory[] 
     {
       id: 'identity_lifestyle',
       nameKey: 'identity_lifestyle',
-      name: 'Identity & Lifestyle',
+      name: 'Family',
       subtitleKey: 'identity_lifestyle',
-      subtitle: 'What shapes who you are.',
-      emoji: '🪪',
-      icon: 'sparkles-outline',
+      subtitle: 'Family relationships you want to share.',
+      emoji: '👨‍👩‍👧',
+      icon: 'people-circle-outline',
       iconColor: '#CA8A04',
       topics: [
-        topic('Cultural background', '🌍'),
-        topic('Hometown', '🏠'),
-        topic('Parent', '👶'),
-        topic('Pet parent', '🐾'),
-        topic('Veteran', '🎖️'),
-        topic('Personality type', '🧠'),
+        { id: 'father_of', label: 'Father of', emoji: '👨' },
+        { id: 'mother_of', label: 'Mother of', emoji: '👩' },
+        { id: 'child_of', label: 'Child of', emoji: '🧒' },
+        { id: 'sibling_of', label: 'Sibling of', emoji: '👫' },
+        { id: 'spouse_of', label: 'Spouse of', emoji: '💍' },
+        { id: 'partner_of', label: 'Partner of', emoji: '💛' },
+        { id: 'grandparent_of', label: 'Grandparent of', emoji: '👴' },
+        { id: 'grandchild_of', label: 'Grandchild of', emoji: '👶' },
+        { id: 'pet_parent', label: 'Pet parent', emoji: '🐾' },
       ],
     },
   ];
@@ -243,7 +246,7 @@ export function buildCustomAffiliationId(
   return `${base}_${n}`;
 }
 
-/** Identity & Lifestyle uses free text + optional own image (no Logo.dev). */
+/** Family (identity_lifestyle) uses free text + optional own image (no Logo.dev). */
 export function isFreeTextAffiliationCategory(
   categoryId: OnboardingAffiliationCategoryId,
 ): boolean {
@@ -254,24 +257,41 @@ export function normalizeAffiliationName(name: string): string {
   return name.trim().replace(/\s+/g, ' ');
 }
 
-export function affiliationIdentityKey(item: Pick<
-  OnboardingSelectedAffiliation,
-  'name' | 'providerId' | 'source'
->): string {
+export function affiliationIdentityKey(
+  item: Pick<
+    OnboardingSelectedAffiliation,
+    'name' | 'providerId' | 'source' | 'topic' | 'categoryId'
+  >,
+): string {
   if (item.source === 'provider' && item.providerId) {
     return `provider:${item.providerId}`;
   }
-  return `name:${normalizeAffiliationName(item.name).toLowerCase()}`;
+  const name = normalizeAffiliationName(item.name).toLowerCase();
+  const topic = (item.topic ?? '').trim().toLowerCase();
+  if (item.categoryId === 'identity_lifestyle' && topic) {
+    return `family:${topic}:${name}`;
+  }
+  if (!name && topic) {
+    return `topic:${item.categoryId ?? ''}:${topic}`;
+  }
+  return `name:${name}`;
 }
 
 export function isDuplicateAffiliation(
   list: OnboardingSelectedAffiliation[],
-  candidate: Pick<OnboardingSelectedAffiliation, 'name' | 'providerId' | 'source'>,
+  candidate: Pick<
+    OnboardingSelectedAffiliation,
+    'name' | 'providerId' | 'source' | 'topic' | 'categoryId'
+  >,
 ): boolean {
   const key = affiliationIdentityKey(candidate);
   const normalizedName = normalizeAffiliationName(candidate.name).toLowerCase();
   return list.some((entry) => {
     if (affiliationIdentityKey(entry) === key) return true;
+    if (!normalizedName) return false;
+    if (entry.categoryId === 'identity_lifestyle' || candidate.categoryId === 'identity_lifestyle') {
+      return false;
+    }
     return normalizeAffiliationName(entry.name).toLowerCase() === normalizedName;
   });
 }

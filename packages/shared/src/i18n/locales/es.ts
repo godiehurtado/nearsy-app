@@ -478,10 +478,13 @@ const es: TranslationResources = {
         searchA11y: 'Buscar por nombre',
         searchPlaceholder: 'Buscar por nombre…',
         searchHint: 'Escribe al menos 2 caracteres — buscaremos el logo oficial.',
-        identityFreeTextA11y: 'Escribe una palabra o frase corta',
-        identityFreeTextPlaceholder: 'Escribe una palabra o frase corta…',
+        identityFreeTextA11y: 'Nombre para esta relación familiar',
+        identityFreeTextPlaceholder: 'Sofía',
         identityFreeTextHint:
-          'Agrega una palabra que te describa. La imagen es opcional.',
+          'El nombre es obligatorio. Se verá como “Padre de Sofía”. La imagen es opcional.',
+        topicOnlyHint:
+          'Con la subcategoría es suficiente. El nombre y la imagen son opcionales.',
+        topicOnlyAddA11y: 'Agregar {{topic}}',
         add: 'Agregar',
         addA11y: 'Agregar {{name}}',
         removeA11y: 'Eliminar {{name}}',
@@ -500,7 +503,7 @@ const es: TranslationResources = {
           sports_clubs: 'Deportes y clubes',
           faith: 'Fe y espiritualidad',
           political_civic: 'Política y cívica',
-          identity_lifestyle: 'Identidad y estilo de vida',
+          identity_lifestyle: 'Familia',
         },
         subtitles: {
           education: 'Escuelas, títulos y vida de alumni.',
@@ -509,15 +512,23 @@ const es: TranslationResources = {
           sports_clubs: 'Equipos, clubes y ligas.',
           faith: 'Tu fe o camino espiritual.',
           political_civic: 'Vida cívica y afiliación política.',
-          identity_lifestyle: 'Lo que da forma a quién eres.',
+          identity_lifestyle: 'Relaciones familiares que quieres compartir.',
         },
         topics: {
           cultural_background: 'Origen cultural',
           hometown: 'Ciudad natal',
           parent: 'Padre o madre',
-          pet_parent: 'Dueño de mascota',
+          pet_parent: 'Pet parent',
           veteran: 'Veterano',
           personality_type: 'Tipo de personalidad',
+          father_of: 'Padre de',
+          mother_of: 'Madre de',
+          child_of: 'Hijo/a de',
+          sibling_of: 'Hermano/a de',
+          spouse_of: 'Esposo/a de',
+          partner_of: 'Pareja de',
+          grandparent_of: 'Abuelo/a de',
+          grandchild_of: 'Nieto/a de',
         },
       },
       socialMedia: {
@@ -1040,6 +1051,13 @@ const es: TranslationResources = {
       professionalA11y: 'Perfil profesional',
       contextPersonal: 'Editando tu perfil Personal',
       contextProfessional: 'Editando tu perfil Profesional',
+      contextInactivePersonal:
+        'Editando Personal — Profesional sigue siendo tu perfil activo. Guarda esta cara antes de cambiar.',
+      contextInactiveProfessional:
+        'Editando Profesional — Personal sigue siendo tu perfil activo. Guarda esta cara antes de cambiar.',
+      incompleteDestinationTitle: 'Completa este perfil primero',
+      incompleteDestinationBody:
+        'Tu perfil actual permanece activo. Completa los campos que faltan, guarda y luego cambia.',
     },
     quickActions: {
       title: 'Contenido del perfil',

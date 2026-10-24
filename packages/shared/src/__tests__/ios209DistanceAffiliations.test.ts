@@ -58,7 +58,7 @@ describe('IOS-209 Identity & Lifestyle free text', () => {
     assert.match(panel, /freeTextCategory \? false : results\.length/);
     assert.match(
       panel,
-      /Identity & Lifestyle never reconstructs Logo\.dev|if \(freeTextCategory\) return undefined/,
+      /Family \(identity_lifestyle\) never reconstructs Logo\.dev|if \(freeTextCategory\) return undefined/,
     );
   });
 
@@ -213,11 +213,21 @@ describe('IOS-209 Identity & Lifestyle i18n topics', () => {
       'pet_parent',
       'veteran',
       'personality_type',
+      'father_of',
+      'mother_of',
+      'child_of',
+      'sibling_of',
+      'spouse_of',
+      'partner_of',
+      'grandparent_of',
+      'grandchild_of',
     ]) {
       assert.match(en, new RegExp(`${key}:`));
       assert.match(es, new RegExp(`${key}:`));
     }
     assert.match(en, /identityFreeTextHint:/);
     assert.match(es, /identityFreeTextHint:/);
+    assert.match(en, /identity_lifestyle: 'Family'/);
+    assert.match(es, /identity_lifestyle: 'Familia'/);
   });
 });

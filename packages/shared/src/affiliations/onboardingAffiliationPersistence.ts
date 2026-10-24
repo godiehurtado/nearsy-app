@@ -1,6 +1,7 @@
 import type { AffiliationItem } from '../types/profile';
 import {
   CRJ_AFFILIATION_TO_LEGACY_CATEGORY,
+  getOnboardingAffiliationCategory,
   type OnboardingSelectedAffiliation,
 } from './onboardingAffiliationCatalog';
 import { isEphemeralProviderLogoUrl } from './affiliationLogoDev';
@@ -40,13 +41,30 @@ function sanitizeOnboardingAffiliationForPersistence(
   return row;
 }
 
+function legacyAffiliationLabel(item: OnboardingSelectedAffiliation): string {
+  const name = item.name.trim();
+  if (name) return name;
+  if (item.topic) {
+    try {
+      const topic = getOnboardingAffiliationCategory(item.categoryId).topics.find(
+        (row) => row.id === item.topic,
+      );
+      if (topic?.label) return topic.label;
+    } catch {
+      // Unknown category ids stay as stored topic.
+    }
+    return item.topic;
+  }
+  return item.categoryId;
+}
+
 /** Bridge CRJ selections to legacy ProfileDetail AffiliationItem rows. */
 export function onboardingAffiliationsToLegacy(
   selected: OnboardingSelectedAffiliation[],
 ): AffiliationItem[] {
   return selected.map((item) => ({
     category: CRJ_AFFILIATION_TO_LEGACY_CATEGORY[item.categoryId],
-    label: item.name,
+    label: legacyAffiliationLabel(item),
     imageUrl:
       item.logoUrl &&
       !/^(file|content|ph|assets-library):/i.test(item.logoUrl) &&

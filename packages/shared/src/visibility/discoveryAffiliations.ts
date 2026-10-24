@@ -1,13 +1,14 @@
 /**
  * Public affiliations for getDiscoveryProfile (Detail only).
- * No provider / website / topic / source bags.
+ * Optional `topic` is adopted from the pending Functions contract so
+ * Family / subcategory labels can render. Extra private bags still hide the row.
  */
 
 import {
-  getOnboardingAffiliationCategory,
-  listOnboardingAffiliationCategoryIds,
-  type OnboardingAffiliationCategoryId,
-} from '../affiliations/onboardingAffiliationCatalog';
+  formatAffiliationDisplay,
+  type AffiliationTranslate,
+} from '../affiliations/affiliationPresentation';
+import { listOnboardingAffiliationCategoryIds } from '../affiliations/onboardingAffiliationCatalog';
 import { isAllowedDiscoverySocialHttpsUrl } from './discoverySocialLinks';
 
 /** Contractual cap — mirrors Functions `MAX_PUBLIC_AFFILIATIONS`. */
@@ -17,12 +18,17 @@ export type DiscoveryPublicAffiliation = {
   id: string;
   name: string;
   type: string | null;
+  topic: string | null;
   logoUrl: string | null;
 };
 
-const AFFILIATION_ALLOWED_KEYS = new Set(['id', 'name', 'type', 'logoUrl']);
-
-const KNOWN_CATEGORY_IDS = new Set<string>(listOnboardingAffiliationCategoryIds());
+const AFFILIATION_ALLOWED_KEYS = new Set([
+  'id',
+  'name',
+  'type',
+  'topic',
+  'logoUrl',
+]);
 
 function nonEmptyString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -51,13 +57,15 @@ function parseAffiliationItem(value: unknown): DiscoveryPublicAffiliation | null
   }
 
   const id = nonEmptyString(row.id);
-  const name = nonEmptyString(row.name);
-  if (!id || !name) return null;
+  const name = nonEmptyString(row.name) ?? '';
+  const topic = nonEmptyString(row.topic);
+  if (!id || (!name && !topic)) return null;
 
   return {
     id,
     name,
     type: nonEmptyString(row.type),
+    topic,
     logoUrl: httpsLogoOrNull(row.logoUrl),
   };
 }
@@ -88,32 +96,35 @@ export function parseDiscoveryAffiliations(
   return out;
 }
 
+const KNOWN_CATEGORY_IDS = new Set<string>(listOnboardingAffiliationCategoryIds());
+
 /**
- * Localized category label when `type` matches CRJ onboarding category id;
- * otherwise a safe humanized presentation (never raw technical dumps).
+ * Subcategory label for Discovery. General category ids are never shown.
  */
 export function formatDiscoveryAffiliationTypeLabel(
   type: string | null | undefined,
-  translateCategory: (nameKey: string, fallback: string) => string,
+  translate: AffiliationTranslate,
 ): string | null {
   if (typeof type !== 'string') return null;
   const trimmed = type.trim();
-  if (!trimmed) return null;
+  if (!trimmed || KNOWN_CATEGORY_IDS.has(trimmed)) return null;
+  return (
+    formatAffiliationDisplay({
+      name: null,
+      topic: trimmed,
+      translate,
+    })?.primary ?? null
+  );
+}
 
-  if (KNOWN_CATEGORY_IDS.has(trimmed)) {
-    const cat = getOnboardingAffiliationCategory(
-      trimmed as OnboardingAffiliationCategoryId,
-    );
-    return translateCategory(cat.nameKey, cat.name);
-  }
-
-  if (/^[a-z0-9]+(?:_[a-z0-9]+)*$/i.test(trimmed)) {
-    return trimmed
-      .split('_')
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-      .join(' ');
-  }
-
-  return trimmed;
+export function formatDiscoveryAffiliationDisplay(
+  item: Pick<DiscoveryPublicAffiliation, 'name' | 'type' | 'topic'>,
+  translate: AffiliationTranslate,
+) {
+  return formatAffiliationDisplay({
+    name: item.name,
+    categoryId: item.type,
+    topic: item.topic ?? undefined,
+    translate,
+  });
 }

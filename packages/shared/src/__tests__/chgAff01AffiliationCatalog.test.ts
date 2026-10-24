@@ -1,5 +1,6 @@
 /**
- * CHG-AFF-01 — retire three Identity & Lifestyle topics; keep personality_type.
+ * CHG-AFF-01 — retired Identity & Lifestyle topics stay gone.
+ * Nearsy 2.0.9 presents this category as Family with relationship topics.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -19,24 +20,29 @@ test('CHG-AFF-01: retired topics absent from Identity & Lifestyle', () => {
   }
 });
 
-test('CHG-AFF-01: personality_type remains selectable', () => {
+test('CHG-AFF-01: personality_type is no longer a Family picker topic', () => {
   const cat = getOnboardingAffiliationCategory('identity_lifestyle');
-  const personality = cat.topics.find((t) => t.id === 'personality_type');
-  assert.ok(personality);
-  assert.equal(personality!.label, 'Personality type');
+  assert.equal(
+    cat.topics.some((t) => t.id === 'personality_type'),
+    false,
+  );
 });
 
-test('CHG-AFF-01: remaining identity topics order', () => {
+test('CHG-AFF-01: Family relationship topics replace Identity & Lifestyle picker', () => {
   const cat = getOnboardingAffiliationCategory('identity_lifestyle');
+  assert.equal(cat.name, 'Family');
   assert.deepEqual(
     cat.topics.map((t) => t.id),
     [
-      'cultural_background',
-      'hometown',
-      'parent',
+      'father_of',
+      'mother_of',
+      'child_of',
+      'sibling_of',
+      'spouse_of',
+      'partner_of',
+      'grandparent_of',
+      'grandchild_of',
       'pet_parent',
-      'veteran',
-      'personality_type',
     ],
   );
 });
