@@ -82,10 +82,8 @@ import {
   type OwnProfileLifecycleAuth,
   type OwnProfileValidationField,
 } from '../profile/ownProfileEditorState';
-import { extractOwnProfileInterestSummaryCounts } from '../interests/postCrjInterestEditor';
-import { extractOwnProfileAffiliationSummaryCounts } from '../affiliations/postCrjAffiliationEditor';
-import { extractOwnProfileSocialSummaryCounts } from '../social/postCrjSocialEditor';
-import { extractOwnProfileGallerySummaryCounts } from '../gallery/postCrjGalleryEditor';
+import { extractOwnProfileQuickActionBagCounts } from '../profile/ownProfileQuickActionBagCounts';
+import { useOwnProfileSocialSummary } from '../social/useOwnProfileSocialSummary';
 
 const NAME_MAX = 40;
 const OCCUPATION_MAX = 60;
@@ -157,9 +155,11 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     useState(0);
   const [professionalAffiliationsSummaryCount, setProfessionalAffiliationsSummaryCount] =
     useState(0);
-  const [personalSocialSummaryCount, setPersonalSocialSummaryCount] = useState(0);
-  const [professionalSocialSummaryCount, setProfessionalSocialSummaryCount] =
-    useState(0);
+  const { socialSubtitle, loadSocialSummary } = useOwnProfileSocialSummary({
+    getUid,
+    mode: (mode ?? 'personal') as ProfileMode,
+    mountedRef,
+  });
   const [personalGallerySummaryCount, setPersonalGallerySummaryCount] =
     useState(0);
   const [professionalGallerySummaryCount, setProfessionalGallerySummaryCount] =
@@ -419,18 +419,14 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       );
 
       const doc = existing as Record<string, unknown>;
-      const interestCounts = extractOwnProfileInterestSummaryCounts(doc);
-      setPersonalInterestsSummaryCount(interestCounts.personal);
-      setProfessionalInterestsSummaryCount(interestCounts.professional);
-      const affiliationCounts = extractOwnProfileAffiliationSummaryCounts(doc);
-      setPersonalAffiliationsSummaryCount(affiliationCounts.personal);
-      setProfessionalAffiliationsSummaryCount(affiliationCounts.professional);
-      const socialCounts = extractOwnProfileSocialSummaryCounts(doc);
-      setPersonalSocialSummaryCount(socialCounts.personal);
-      setProfessionalSocialSummaryCount(socialCounts.professional);
-      const galleryCounts = extractOwnProfileGallerySummaryCounts(doc);
-      setPersonalGallerySummaryCount(galleryCounts.personal);
-      setProfessionalGallerySummaryCount(galleryCounts.professional);
+      const bag = extractOwnProfileQuickActionBagCounts(doc);
+      setPersonalInterestsSummaryCount(bag.interests.personal);
+      setProfessionalInterestsSummaryCount(bag.interests.professional);
+      setPersonalAffiliationsSummaryCount(bag.affiliations.personal);
+      setProfessionalAffiliationsSummaryCount(bag.affiliations.professional);
+      setPersonalGallerySummaryCount(bag.gallery.personal);
+      setProfessionalGallerySummaryCount(bag.gallery.professional);
+      await loadSocialSummary(doc, currentMode);
     } catch {
       setLifecycleAuth('error');
     } finally {
@@ -442,6 +438,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     applyDraftToForm,
     commitSnapshot,
     redirectIncompleteToCrj,
+    loadSocialSummary,
   ]);
 
   const refreshProfileSummaries = useCallback(async () => {
@@ -452,23 +449,19 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       const existing = await getUserProfile(uid);
       if (!existing) return;
       const doc = existing as Record<string, unknown>;
-      const interestCounts = extractOwnProfileInterestSummaryCounts(doc);
-      const affiliationCounts = extractOwnProfileAffiliationSummaryCounts(doc);
-      const socialCounts = extractOwnProfileSocialSummaryCounts(doc);
-      const galleryCounts = extractOwnProfileGallerySummaryCounts(doc);
+      const bag = extractOwnProfileQuickActionBagCounts(doc);
       if (!mountedRef.current) return;
-      setPersonalInterestsSummaryCount(interestCounts.personal);
-      setProfessionalInterestsSummaryCount(interestCounts.professional);
-      setPersonalAffiliationsSummaryCount(affiliationCounts.personal);
-      setProfessionalAffiliationsSummaryCount(affiliationCounts.professional);
-      setPersonalSocialSummaryCount(socialCounts.personal);
-      setProfessionalSocialSummaryCount(socialCounts.professional);
-      setPersonalGallerySummaryCount(galleryCounts.personal);
-      setProfessionalGallerySummaryCount(galleryCounts.professional);
+      setPersonalInterestsSummaryCount(bag.interests.personal);
+      setProfessionalInterestsSummaryCount(bag.interests.professional);
+      setPersonalAffiliationsSummaryCount(bag.affiliations.personal);
+      setProfessionalAffiliationsSummaryCount(bag.affiliations.professional);
+      setPersonalGallerySummaryCount(bag.gallery.personal);
+      setProfessionalGallerySummaryCount(bag.gallery.professional);
+      await loadSocialSummary(doc);
     } catch {
       // Fail-soft: keep prior summary counts.
     }
-  }, [route?.params?.uid]);
+  }, [route?.params?.uid, loadSocialSummary]);
 
   useFocusEffect(
     useCallback(() => {
@@ -511,11 +504,6 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     (mode ?? 'personal') === 'professional'
       ? professionalInterestsSummaryCount
       : personalInterestsSummaryCount;
-
-  const socialCount =
-    (mode ?? 'personal') === 'professional'
-      ? professionalSocialSummaryCount
-      : personalSocialSummaryCount;
 
   const photosCount =
     (mode ?? 'personal') === 'professional'
@@ -964,7 +952,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       id: 'social' as const,
       icon: 'share-social-outline' as const,
       title: t('profile.quickActions.socialMedia'),
-      subtitle: summaryForCount(socialCount),
+      subtitle: socialSubtitle,
       accessibilityLabel: t('profile.quickActions.openA11y', {
         section: t('profile.quickActions.socialMedia'),
       }),

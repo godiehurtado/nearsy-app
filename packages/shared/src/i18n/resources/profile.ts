@@ -28,6 +28,8 @@ const en = {
     gallery: 'Gallery',
     configured: '{{count}} configured',
     empty: 'Not configured yet',
+    checking: 'Checking connections…',
+    checkError: 'Could not check connections',
     openA11y: 'Open {{section}}',
   },
   lifecycle: {
@@ -235,6 +237,132 @@ const en = {
       stay: 'Keep editing',
       discard: 'Discard',
     },
+    youtubeOwnership: {
+      connect: 'Connect YouTube',
+      connecting: 'Connecting…',
+      connected: 'YouTube connected',
+      disconnect: 'Disconnect',
+      disconnecting: 'Disconnecting…',
+      disconnectConfirmTitle: 'Disconnect YouTube?',
+      disconnectConfirmBody:
+        'YouTube will be removed from this profile mode. Your previously saved link stays private so you can connect again later.',
+      disconnectConfirmAction: 'Disconnect',
+      selectChannelTitle: 'Choose a YouTube channel',
+      selectChannelBody:
+        'Select the channel to connect for this profile mode. Only channels returned by Google are listed.',
+      legacyPrivateHint: 'A saved link is kept privately (not published).',
+      cancel: 'Cancel',
+      errors: {
+        notEnabled: 'YouTube connection is not available right now.',
+        noChannel: 'No YouTube channel was found for this Google account.',
+        channelClaimed:
+          'That YouTube channel is already connected on another Nearsy account.',
+        channelNotInCandidates: 'That channel is not available to select.',
+        notLinked: 'YouTube is not connected on this profile mode.',
+        txExpired: 'Connection expired. Please try again.',
+        txInvalid: 'Connection could not be completed. Please try again.',
+        proofInvalid: 'Connection could not be confirmed. Please try again.',
+        unauthenticated: 'Sign in again to connect YouTube.',
+        cancelled: 'Connection canceled.',
+        sessionChanged:
+          'Your Nearsy session changed during connection. Please try again.',
+        generic: 'We couldn’t connect YouTube. Try again.',
+      },
+    },
+    tiktokOwnership: {
+      connect: 'Connect TikTok',
+      connecting: 'Connecting…',
+      connected: 'TikTok connected',
+      disconnect: 'Disconnect',
+      disconnecting: 'Disconnecting…',
+      disconnectConfirmTitle: 'Disconnect TikTok?',
+      disconnectConfirmBody:
+        'TikTok will be removed from this profile mode. Your previously saved link stays private so you can connect again later.',
+      disconnectConfirmAction: 'Disconnect',
+      legacyPrivateHint: 'A saved link is kept privately (not published).',
+      cancel: 'Cancel',
+      errors: {
+        notEnabled: 'TikTok connection is not available right now.',
+        noAccount: 'No TikTok account was found for this login.',
+        accountClaimed:
+          'That TikTok account is already connected on another Nearsy account.',
+        txExpired: 'Connection expired. Please try again.',
+        txInvalid: 'Connection could not be completed. Please try again.',
+        proofInvalid: 'Connection could not be confirmed. Please try again.',
+        unauthenticated: 'Sign in again to connect TikTok.',
+        cancelled: 'Connection canceled.',
+        sessionChanged:
+          'Your Nearsy session changed during connection. Please try again.',
+        generic: 'We couldn’t connect TikTok. Try again.',
+      },
+    },
+    instagramOwnership: {
+      connect: 'Connect Instagram',
+      connecting: 'Connecting…',
+      connected: 'Instagram connected',
+      disconnect: 'Disconnect',
+      disconnecting: 'Disconnecting…',
+      disconnectConfirmTitle: 'Disconnect Instagram?',
+      disconnectConfirmBody:
+        'Instagram will be removed from this profile mode. A pending code is cancelled. Your previously saved link stays private so you can connect again later.',
+      disconnectConfirmAction: 'Disconnect',
+      pendingTitle: 'Send this code',
+      pendingBody:
+        'Open Instagram and send this code by DM to @{{inbox}}. Do not share it anywhere else.',
+      waiting: 'Waiting for the message…',
+      expiresAt: 'Expires at {{time}}',
+      shareCode: 'Share code',
+      shareCodeA11y: 'Share the Instagram verification code',
+      openInbox: 'Open Instagram',
+      openInboxA11y: 'Open Instagram to send the code by DM',
+      legacyPrivateHint: 'A saved link is kept privately (not published).',
+      cancel: 'Cancel',
+      errors: {
+        notEnabled: 'Instagram connection is not available right now.',
+        accountClaimed:
+          'That Instagram account is already connected on another Nearsy account.',
+        rateLimited: 'Too many attempts today. Try again tomorrow.',
+        noUsername: 'Instagram did not return a usable username. Try again.',
+        txExpired: 'This code expired. Start again.',
+        unauthenticated: 'Sign in again to connect Instagram.',
+        sessionChanged:
+          'Your Nearsy session changed during connection. Please try again.',
+        generic: 'We couldn’t connect Instagram. Try again.',
+      },
+    },
+    xOwnership: {
+      connect: 'Connect X',
+      connecting: 'Connecting…',
+      connected: 'X connected',
+      disconnect: 'Disconnect',
+      disconnecting: 'Disconnecting…',
+      disconnectConfirmTitle: 'Disconnect X?',
+      disconnectConfirmBody:
+        'X will be removed from this profile mode. Your previously saved link stays private so you can connect again later.',
+      disconnectConfirmAction: 'Disconnect',
+      legacyPrivateHint: 'A saved link is kept privately (not published).',
+      cancel: 'Cancel',
+      errors: {
+        notEnabled: 'X connection is not available right now.',
+        noAccount: 'No usable X account was found for this login.',
+        accountClaimed:
+          'That X account is already connected on another Nearsy account.',
+        oauth: 'X authorization was declined. You can try again.',
+        rateLimited: 'Too many attempts. Try again later.',
+        creditsOrAccess:
+          'X could not complete this connection right now. Try again later.',
+        forbidden:
+          'X blocked this connection. Try a different account or try again later.',
+        txExpired: 'Connection expired. Please try again.',
+        txInvalid: 'Connection could not be completed. Please try again.',
+        proofInvalid: 'Connection could not be confirmed. Please try again.',
+        unauthenticated: 'Sign in again to connect X.',
+        cancelled: 'Connection canceled.',
+        sessionChanged:
+          'Your Nearsy session changed during connection. Please try again.',
+        generic: 'We couldn’t connect X. Try again.',
+      },
+    },
   },
 } as const;
 
@@ -268,6 +396,8 @@ const es = {
       gallery: 'Galería',
       configured: '{{count}} configurados',
       empty: 'Aún no configurado',
+      checking: 'Comprobando conexiones…',
+      checkError: 'No se pudieron comprobar las conexiones',
       openA11y: 'Abrir {{section}}',
     },
     lifecycle: {
@@ -478,6 +608,137 @@ const es = {
         body: 'Tienes cambios sin guardar en tus redes sociales. Si sales, se perderán.',
         stay: 'Seguir editando',
         discard: 'Descartar',
+      },
+      youtubeOwnership: {
+        connect: 'Conectar YouTube',
+        connecting: 'Conectando…',
+        connected: 'YouTube conectada',
+        disconnect: 'Desconectar',
+        disconnecting: 'Desconectando…',
+        disconnectConfirmTitle: '¿Desconectar YouTube?',
+        disconnectConfirmBody:
+          'YouTube se quitará de este modo de perfil. El enlace que tenías guardado permanece en privado para que puedas conectarlo de nuevo después.',
+        disconnectConfirmAction: 'Desconectar',
+        selectChannelTitle: 'Elige un canal de YouTube',
+        selectChannelBody:
+          'Selecciona el canal a conectar para este modo de perfil. Solo se listan los canales que devolvió Google.',
+        legacyPrivateHint: 'Hay un enlace guardado en privado (no publicado).',
+        cancel: 'Cancelar',
+        errors: {
+          notEnabled: 'La conexión de YouTube no está disponible ahora.',
+          noChannel:
+            'No se encontró un canal de YouTube en esta cuenta de Google.',
+          channelClaimed:
+            'Ese canal de YouTube ya está conectado en otra cuenta de Nearsy.',
+          channelNotInCandidates:
+            'Ese canal no está disponible para seleccionar.',
+          notLinked: 'YouTube no está conectada en este modo de perfil.',
+          txExpired: 'La conexión expiró. Inténtalo de nuevo.',
+          txInvalid: 'No se pudo completar la conexión. Inténtalo de nuevo.',
+          proofInvalid: 'No se pudo confirmar la conexión. Inténtalo de nuevo.',
+          unauthenticated: 'Vuelve a iniciar sesión para conectar YouTube.',
+          cancelled: 'Conexión cancelada.',
+          sessionChanged:
+            'Tu sesión de Nearsy cambió durante la conexión. Inténtalo de nuevo.',
+          generic: 'No pudimos conectar YouTube. Inténtalo de nuevo.',
+        },
+      },
+      tiktokOwnership: {
+        connect: 'Conectar TikTok',
+        connecting: 'Conectando…',
+        connected: 'TikTok conectada',
+        disconnect: 'Desconectar',
+        disconnecting: 'Desconectando…',
+        disconnectConfirmTitle: '¿Desconectar TikTok?',
+        disconnectConfirmBody:
+          'TikTok se quitará de este modo de perfil. El enlace que tenías guardado permanece en privado para que puedas conectarlo de nuevo después.',
+        disconnectConfirmAction: 'Desconectar',
+        legacyPrivateHint: 'Hay un enlace guardado en privado (no publicado).',
+        cancel: 'Cancelar',
+        errors: {
+          notEnabled: 'La conexión de TikTok no está disponible ahora.',
+          noAccount:
+            'No se encontró una cuenta de TikTok en este inicio de sesión.',
+          accountClaimed:
+            'Esa cuenta de TikTok ya está conectada en otra cuenta de Nearsy.',
+          txExpired: 'La conexión expiró. Inténtalo de nuevo.',
+          txInvalid: 'No se pudo completar la conexión. Inténtalo de nuevo.',
+          proofInvalid: 'No se pudo confirmar la conexión. Inténtalo de nuevo.',
+          unauthenticated: 'Vuelve a iniciar sesión para conectar TikTok.',
+          cancelled: 'Conexión cancelada.',
+          sessionChanged:
+            'Tu sesión de Nearsy cambió durante la conexión. Inténtalo de nuevo.',
+          generic: 'No pudimos conectar TikTok. Inténtalo de nuevo.',
+        },
+      },
+      instagramOwnership: {
+        connect: 'Conectar Instagram',
+        connecting: 'Conectando…',
+        connected: 'Instagram conectada',
+        disconnect: 'Desconectar',
+        disconnecting: 'Desconectando…',
+        disconnectConfirmTitle: '¿Desconectar Instagram?',
+        disconnectConfirmBody:
+          'Instagram se quitará de este modo de perfil. Un código pendiente se cancela. El enlace que tenías guardado permanece en privado para que puedas conectarlo de nuevo después.',
+        disconnectConfirmAction: 'Desconectar',
+        pendingTitle: 'Envía este código',
+        pendingBody:
+          'Abre Instagram y envía este código por DM a @{{inbox}}. No lo compartas en ningún otro lugar.',
+        waiting: 'Esperando el mensaje…',
+        expiresAt: 'Caduca a las {{time}}',
+        shareCode: 'Compartir código',
+        shareCodeA11y: 'Compartir el código de verificación de Instagram',
+        openInbox: 'Abrir Instagram',
+        openInboxA11y: 'Abrir Instagram para enviar el código por DM',
+        legacyPrivateHint: 'Hay un enlace guardado en privado (no publicado).',
+        cancel: 'Cancelar',
+        errors: {
+          notEnabled: 'La conexión de Instagram no está disponible ahora.',
+          accountClaimed:
+            'Esa cuenta de Instagram ya está conectada en otra cuenta de Nearsy.',
+          rateLimited: 'Demasiados intentos hoy. Inténtalo de nuevo mañana.',
+          noUsername:
+            'Instagram no devolvió un usuario válido. Inténtalo de nuevo.',
+          txExpired: 'Este código expiró. Empieza de nuevo.',
+          unauthenticated: 'Vuelve a iniciar sesión para conectar Instagram.',
+          sessionChanged:
+            'Tu sesión de Nearsy cambió durante la conexión. Inténtalo de nuevo.',
+          generic: 'No pudimos conectar Instagram. Inténtalo de nuevo.',
+        },
+      },
+      xOwnership: {
+        connect: 'Conectar X',
+        connecting: 'Conectando…',
+        connected: 'X conectada',
+        disconnect: 'Desconectar',
+        disconnecting: 'Desconectando…',
+        disconnectConfirmTitle: '¿Desconectar X?',
+        disconnectConfirmBody:
+          'X se quitará de este modo de perfil. El enlace que tenías guardado permanece en privado para que puedas conectarlo de nuevo después.',
+        disconnectConfirmAction: 'Desconectar',
+        legacyPrivateHint: 'Hay un enlace guardado en privado (no publicado).',
+        cancel: 'Cancelar',
+        errors: {
+          notEnabled: 'La conexión de X no está disponible ahora.',
+          noAccount:
+            'No se encontró una cuenta de X usable para este inicio de sesión.',
+          accountClaimed:
+            'Esa cuenta de X ya está conectada en otra cuenta de Nearsy.',
+          oauth: 'Se rechazó la autorización de X. Puedes intentarlo de nuevo.',
+          rateLimited: 'Demasiados intentos. Inténtalo más tarde.',
+          creditsOrAccess:
+            'X no pudo completar esta conexión ahora. Inténtalo más tarde.',
+          forbidden:
+            'X bloqueó esta conexión. Prueba con otra cuenta o inténtalo más tarde.',
+          txExpired: 'La conexión expiró. Inténtalo de nuevo.',
+          txInvalid: 'No se pudo completar la conexión. Inténtalo de nuevo.',
+          proofInvalid: 'No se pudo confirmar la conexión. Inténtalo de nuevo.',
+          unauthenticated: 'Vuelve a iniciar sesión para conectar X.',
+          cancelled: 'Conexión cancelada.',
+          sessionChanged:
+            'Tu sesión de Nearsy cambió durante la conexión. Inténtalo de nuevo.',
+          generic: 'No pudimos conectar X. Inténtalo de nuevo.',
+        },
       },
     },
   } as const;

@@ -280,7 +280,10 @@ describe('post-CRJ Gallery editor screen contract', () => {
 
   it('CompleteProfileScreen refreshes gallery summaries without full reload when dirty', () => {
     const screen = readShared('screens/CompleteProfileScreen.tsx');
-    assert.match(screen, /extractOwnProfileGallerySummaryCounts/);
+    assert.match(
+      screen,
+      /extractOwnProfileQuickActionBagCounts|extractOwnProfileGallerySummaryCounts/,
+    );
     assert.match(screen, /personalGallerySummaryCount/);
     assert.doesNotMatch(screen, /professionalGallery\.length/);
   });

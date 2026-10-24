@@ -103,11 +103,37 @@ export function isPostCrjSocialEditorDirty(
   return !arePostCrjSocialDraftsEqual(snapshot, draft);
 }
 
+/** Own Profile Android ownership cards — never counted from the legacy URL bag. */
+export const ANDROID_OWNERSHIP_CARD_IDS = [
+  'youtube',
+  'tiktok',
+  'instagram',
+  'x',
+] as const satisfies readonly PostCrjSocialCardId[];
+
+export type AndroidOwnershipCardId =
+  (typeof ANDROID_OWNERSHIP_CARD_IDS)[number];
+
+export function isAndroidOwnershipCardId(
+  id: PostCrjSocialCardId,
+): id is AndroidOwnershipCardId {
+  return (ANDROID_OWNERSHIP_CARD_IDS as readonly string[]).includes(id);
+}
+
 export function countValidPostCrjSocialConnections(
   draft: PostCrjSocialEditorDraft,
+  ownershipVerified?: Partial<Record<AndroidOwnershipCardId, boolean>>,
 ): number {
   let count = 0;
   for (const platform of CRJ_SOCIAL_PLATFORMS) {
+    if (
+      ownershipVerified &&
+      isAndroidOwnershipCardId(platform.id) &&
+      Object.prototype.hasOwnProperty.call(ownershipVerified, platform.id)
+    ) {
+      if (ownershipVerified[platform.id]) count += 1;
+      continue;
+    }
     if (!draft.connected[platform.id]) continue;
     const result = normalizeSocialInput(
       platform.id,
@@ -181,9 +207,31 @@ export function buildValuesForPostCrjSocialSave(
   return values;
 }
 
-export function countConfiguredSocialLinksInBag(links: SocialLinks): number {
+export type SocialConnectionCountOptions = {
+  /**
+   * When true, count verified ownership as one connection and skip the
+   * legacy bag URL so Connect + legacy do not double-count.
+   */
+  youtubeConnected?: boolean;
+  tiktokConnected?: boolean;
+  instagramConnected?: boolean;
+  xConnected?: boolean;
+};
+
+export function countConfiguredSocialLinksInBag(
+  links: SocialLinks,
+  options?: SocialConnectionCountOptions,
+): number {
+  const youtubeConnected = options?.youtubeConnected === true;
+  const tiktokConnected = options?.tiktokConnected === true;
+  const instagramConnected = options?.instagramConnected === true;
+  const xConnected = options?.xConnected === true;
   let count = 0;
   for (const platform of CRJ_SOCIAL_PLATFORMS) {
+    if (platform.id === 'youtube' && youtubeConnected) continue;
+    if (platform.id === 'tiktok' && tiktokConnected) continue;
+    if (platform.id === 'instagram' && instagramConnected) continue;
+    if (platform.id === 'x' && xConnected) continue;
     const stored = links[platform.storageKey];
     if (typeof stored === 'string' && stored.trim()) {
       count += 1;
@@ -192,20 +240,65 @@ export function countConfiguredSocialLinksInBag(links: SocialLinks): number {
   if (typeof links.website === 'string' && links.website.trim()) {
     count += 1;
   }
+  if (youtubeConnected) count += 1;
+  if (tiktokConnected) count += 1;
+  if (instagramConnected) count += 1;
+  if (xConnected) count += 1;
   return count;
 }
 
+export type OwnProfileSocialSummaryCountOptions = {
+  personalYoutubeConnected?: boolean;
+  professionalYoutubeConnected?: boolean;
+  personalTiktokConnected?: boolean;
+  professionalTiktokConnected?: boolean;
+  personalInstagramConnected?: boolean;
+  professionalInstagramConnected?: boolean;
+  personalXConnected?: boolean;
+  professionalXConnected?: boolean;
+};
+
 export function extractOwnProfileSocialSummaryCounts(
   data: Record<string, unknown> | null | undefined,
+  options?: OwnProfileSocialSummaryCountOptions,
 ): { personal: number; professional: number } {
   return {
     personal: countConfiguredSocialLinksInBag(
       readExistingSocialLinks(data, 'personal'),
+      {
+        youtubeConnected: options?.personalYoutubeConnected === true,
+        tiktokConnected: options?.personalTiktokConnected === true,
+        instagramConnected: options?.personalInstagramConnected === true,
+        xConnected: options?.personalXConnected === true,
+      },
     ),
     professional: countConfiguredSocialLinksInBag(
       readExistingSocialLinks(data, 'professional'),
+      {
+        youtubeConnected: options?.professionalYoutubeConnected === true,
+        tiktokConnected: options?.professionalTiktokConnected === true,
+        instagramConnected: options?.professionalInstagramConnected === true,
+        xConnected: options?.professionalXConnected === true,
+      },
     ),
   };
+}
+
+export function applyOwnershipVerifiedChange(
+  prev: Partial<Record<AndroidOwnershipCardId, boolean>>,
+  id: AndroidOwnershipCardId,
+  connected: boolean,
+): Partial<Record<AndroidOwnershipCardId, boolean>> {
+  if (prev[id] === connected) return prev;
+  return { ...prev, [id]: connected };
+}
+
+export function shouldReportOwnershipConnectedChange(phase: string): boolean {
+  return (
+    phase !== 'loading' &&
+    phase !== 'connecting' &&
+    phase !== 'disconnecting'
+  );
 }
 
 export { buildPostCrjSocialLinksPersistencePatch };
