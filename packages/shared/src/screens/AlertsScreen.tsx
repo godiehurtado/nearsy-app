@@ -88,7 +88,12 @@ export default function AlertsScreen() {
     [navigation],
   );
 
-  if (loading) {
+  const showInitialLoader =
+    loading &&
+    alerts.length === 0 &&
+    (me == null || me.visibility === true);
+
+  if (showInitialLoader) {
     return (
       <View
         style={[styles.centered, { backgroundColor: palette.background }]}

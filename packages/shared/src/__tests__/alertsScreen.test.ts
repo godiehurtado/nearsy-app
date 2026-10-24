@@ -148,6 +148,21 @@ describe('useNearbyAlerts functional surface', () => {
     assert.match(hook, /AUTO_REFRESH_MS = 30 \* 1000/);
     assert.match(hook, /interest_nearby/);
     assert.match(hook, /contact_nearby/);
+    assert.match(hook, /shouldUseNearbyFullScreenLoader/);
+    assert.match(hook, /shouldPreserveNearbyResultsDuringLoad/);
+    assert.match(hook, /shouldApplyNearbyLoadResult/);
+    assert.match(hook, /reason === 'interval'/);
+  });
+});
+
+describe('Alerts silent refresh', () => {
+  it('does not unmount the list for a full-screen loader when rows already exist', () => {
+    const screen = readShared('screens/AlertsScreen.tsx');
+    assert.match(screen, /showInitialLoader/);
+    assert.match(screen, /loading &&/);
+    assert.match(screen, /alerts\.length === 0/);
+    assert.match(screen, /RefreshControl/);
+    assert.doesNotMatch(screen, /if \(loading\) \{/);
   });
 });
 
