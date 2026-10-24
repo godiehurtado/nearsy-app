@@ -253,15 +253,78 @@ describe('headless background context (process death)', () => {
     assert.equal(acquirePublicationTicket(UID_A, 'runtime'), null);
   });
 
-  it('binding the context invalidates unbound tickets', () => {
+  it('Ericka race: in-flight unbound tick stays current after bind of the same uid', () => {
     const cb = backgroundCallback(() => UID_A);
     bindPublicationSession(UID_A);
-    assert.equal(cb.guard.isCurrent(), false);
+    assert.equal(getPublicationSessionPhase(), 'pending');
+    assert.equal(cb.guard.isCurrent(), true);
     assert.equal(confirmPublicationSession(cb.ticket), false);
+    assert.equal(acquirePublicationTicket(UID_A, 'runtime'), null);
   });
 
   it('signed out → no ticket', () => {
     assert.equal(acquireBackgroundPublicationTicket(null), null);
+  });
+});
+
+describe('authorized FGS continuity across bind → pending', () => {
+  it('Mayrela: ticks after bind still get a continuity ticket; Nearby stays closed', () => {
+    bindPublicationSession(UID_A);
+    const cb = backgroundCallback(() => UID_A);
+    assert.ok(cb.ticket?.continuity);
+    assert.equal(cb.guard.isCurrent(), true);
+    assert.equal(isPublicationRuntimeOpen(UID_A), false);
+    assert.equal(acquirePublicationTicket(UID_A, 'runtime'), null);
+    assert.equal(confirmPublicationSession(cb.ticket), false);
+  });
+
+  it('confirm mid-flight keeps the continuity ticket current', () => {
+    bindPublicationSession(UID_A);
+    const cb = backgroundCallback(() => UID_A);
+    const confirm = acquirePublicationTicket(UID_A, 'confirm');
+    assert.equal(confirmPublicationSession(confirm), true);
+    assert.equal(cb.guard.isCurrent(), true);
+    assert.equal(isPublicationRuntimeOpen(UID_A), true);
+  });
+
+  it('logout invalidates continuity and in-flight unbound tickets', async () => {
+    const unbound = backgroundCallback(() => UID_A);
+    bindPublicationSession(UID_A);
+    const pending = backgroundCallback(() => UID_A);
+    closePublicationSession();
+    assert.equal(unbound.guard.isCurrent(), false);
+    assert.equal(pending.guard.isCurrent(), false);
+    assert.equal(acquireBackgroundPublicationTicket(UID_A), null);
+    let sends = 0;
+    const out = await sendGuardedPublication(pending.guard, async () => {
+      sends += 1;
+    });
+    assert.deepEqual(out, { status: 'session-closed' });
+    assert.equal(sends, 0);
+  });
+
+  it('uid switch invalidates A and does not give B continuity', () => {
+    bindPublicationSession(UID_A);
+    const tickA = backgroundCallback(() => UID_A);
+    bindPublicationSession(UID_B);
+    assert.equal(tickA.guard.isCurrent(), false);
+    assert.equal(acquireBackgroundPublicationTicket(UID_A), null);
+    assert.equal(acquireBackgroundPublicationTicket(UID_B), null);
+    assert.equal(acquirePublicationTicket(UID_B, 'runtime'), null);
+    assert.ok(acquirePublicationTicket(UID_B, 'confirm'));
+  });
+
+  it('close then same uid bind requires confirm — leftover FGS is not treated as current', () => {
+    openSession(UID_A);
+    closePublicationSession();
+    bindPublicationSession(UID_A);
+    assert.equal(getPublicationSessionPhase(), 'pending');
+    assert.equal(acquireBackgroundPublicationTicket(UID_A), null);
+    assert.equal(acquirePublicationTicket(UID_A, 'runtime'), null);
+    const confirm = acquirePublicationTicket(UID_A, 'confirm');
+    assert.ok(confirm);
+    assert.equal(confirmPublicationSession(confirm), true);
+    assert.ok(acquireBackgroundPublicationTicket(UID_A));
   });
 });
 

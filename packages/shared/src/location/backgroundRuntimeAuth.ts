@@ -57,6 +57,27 @@ export async function readBackgroundRuntimeAuth(
 }
 
 /**
+ * Persisted FGS authorization for this uid, independent of the in-memory
+ * publication session. Stale when missing, uid-mismatched, or flags not true.
+ * Does not read Firestore; callbacks still apply OS permission gates separately.
+ */
+export function isPersistedBackgroundAuthCurrent(input: {
+  authUid: string | null;
+  storedTaskUid: string | null;
+  runtimeAuth: BackgroundRuntimeAuth | null;
+}): boolean {
+  const uid = input.authUid;
+  if (!uid || input.storedTaskUid !== uid) return false;
+  const auth = input.runtimeAuth;
+  return Boolean(
+    auth &&
+      auth.uid === uid &&
+      auth.visibility === true &&
+      auth.bgVisible === true,
+  );
+}
+
+/**
  * Steady-state callback gate: no Firestore profile read.
  */
 export function decideCallbackPublication(input: {
@@ -67,9 +88,13 @@ export function decideCallbackPublication(input: {
   fineLocationGranted?: boolean;
   backgroundGranted: boolean;
 }): 'publish' | 'stop' | 'skip' {
-  if (!input.authUid || !input.storedTaskUid) return 'stop';
-  if (input.authUid !== input.storedTaskUid) return 'stop';
-  if (!input.runtimeAuth || input.runtimeAuth.uid !== input.authUid) {
+  if (
+    !isPersistedBackgroundAuthCurrent({
+      authUid: input.authUid,
+      storedTaskUid: input.storedTaskUid,
+      runtimeAuth: input.runtimeAuth,
+    })
+  ) {
     return 'stop';
   }
   if (!input.foregroundGranted || !input.backgroundGranted) return 'stop';
