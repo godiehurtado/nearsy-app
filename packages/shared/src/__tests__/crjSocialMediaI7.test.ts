@@ -269,6 +269,23 @@ describe('CRJ-I7 Social Media data / validation', () => {
     assert.ok(!CRJ_SOCIAL_PLATFORM_IDS.includes('website' as never));
   });
 
+  it('preserves hidden Snapchat on save and excludes it from connected counts', () => {
+    const values = emptyCrjSocialDraftValues();
+    values.facebook = 'https://www.facebook.com/diego';
+    values.snapchat = 'diego';
+    const patch = buildCrjSocialLinksPersistencePatch(
+      'personal',
+      values,
+      [],
+      { snapchat: 'https://www.snapchat.com/add/hidden' },
+    );
+    assert.equal(
+      patch.socialLinksPersonal?.snapchat,
+      'https://www.snapchat.com/add/hidden',
+    );
+    assert.equal(countConnectedSocials(values, []), 1);
+  });
+
   it('custom network requires a usable URL', () => {
     const empty = normalizeCustomNetworkUrl('');
     assert.equal(empty.ok, true);

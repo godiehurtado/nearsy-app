@@ -2,6 +2,7 @@ import type { SocialCustomLink, SocialLinks } from '../types/profile';
 import {
   CRJ_SOCIAL_PLATFORMS,
   emptyCrjSocialDraftValues,
+  isSelectableSocialPlatform,
   type CrjSocialDraftValues,
   type CrjSocialPlatformId,
 } from './onboardingSocialCatalog';
@@ -34,6 +35,9 @@ export const POST_CRJ_SOCIAL_CARD_ORDER: readonly PostCrjSocialCardId[] = [
   ...CRJ_SOCIAL_PLATFORMS.map((p) => p.id),
   'website',
 ];
+
+export const VISIBLE_POST_CRJ_SOCIAL_CARD_ORDER: readonly PostCrjSocialCardId[] =
+  POST_CRJ_SOCIAL_CARD_ORDER.filter((id) => id !== 'snapchat');
 
 export type PostCrjSocialEditorDraft = {
   values: CrjSocialDraftValues;
@@ -124,6 +128,7 @@ export function countValidPostCrjSocialConnections(
   const xConnected = options?.xConnected === true;
   let count = 0;
   for (const platform of CRJ_SOCIAL_PLATFORMS) {
+    if (!isSelectableSocialPlatform(platform.id)) continue;
     if (platform.id === 'youtube' && youtubeConnected) continue;
     if (platform.id === 'tiktok' && tiktokConnected) continue;
     if (platform.id === 'instagram' && instagramConnected) continue;
@@ -163,6 +168,7 @@ export function validatePostCrjSocialDraftForSave(
   const errors: CrjSocialFieldErrors & { website?: string } = {};
 
   for (const platform of CRJ_SOCIAL_PLATFORMS) {
+    if (!isSelectableSocialPlatform(platform.id)) continue;
     if (!draft.connected[platform.id]) continue;
     const raw = (draft.values[platform.id] ?? '').trim();
     if (!raw) {
@@ -198,6 +204,7 @@ export function buildValuesForPostCrjSocialSave(
 ): CrjSocialDraftValues {
   const values = emptyCrjSocialDraftValues();
   for (const platform of CRJ_SOCIAL_PLATFORMS) {
+    if (!isSelectableSocialPlatform(platform.id)) continue;
     if (draft.connected[platform.id]) {
       values[platform.id] = draft.values[platform.id] ?? '';
     }
@@ -215,6 +222,7 @@ export function countConfiguredSocialLinksInBag(
   const xConnected = options?.xConnected === true;
   let count = 0;
   for (const platform of CRJ_SOCIAL_PLATFORMS) {
+    if (!isSelectableSocialPlatform(platform.id)) continue;
     if (platform.id === 'youtube' && youtubeConnected) continue;
     if (platform.id === 'tiktok' && tiktokConnected) continue;
     if (platform.id === 'instagram' && instagramConnected) continue;

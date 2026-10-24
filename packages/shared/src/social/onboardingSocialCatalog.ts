@@ -119,12 +119,21 @@ export function getCrjSocialPlatform(
   return CRJ_SOCIAL_PLATFORMS.find((p) => p.id === id)!;
 }
 
+export function isSelectableSocialPlatform(id: CrjSocialPlatformId): boolean {
+  return id !== 'snapchat';
+}
+
+export const SELECTABLE_CRJ_SOCIAL_PLATFORMS = CRJ_SOCIAL_PLATFORMS.filter(
+  (platform) => isSelectableSocialPlatform(platform.id),
+);
+
 export function countConnectedSocials(
   values: CrjSocialDraftValues,
   custom: SocialCustomLink[],
 ): number {
   const filled = CRJ_SOCIAL_PLATFORM_IDS.filter(
-    (id) => (values[id] ?? '').trim().length > 0,
+    (id) =>
+      isSelectableSocialPlatform(id) && (values[id] ?? '').trim().length > 0,
   ).length;
   return filled + custom.length;
 }

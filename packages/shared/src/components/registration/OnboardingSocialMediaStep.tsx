@@ -15,8 +15,8 @@ import { radius } from '../../theme/radius';
 import { useTranslation } from '../../i18n';
 import type { SocialCustomLink } from '../../types/profile';
 import {
-  CRJ_SOCIAL_PLATFORMS,
   CUSTOM_NETWORK_NAME_MAX,
+  SELECTABLE_CRJ_SOCIAL_PLATFORMS,
   countConnectedSocials,
   type CrjSocialDraftValues,
   type CrjSocialPlatform,
@@ -167,7 +167,7 @@ export function OnboardingSocialMediaStep({
           },
         ]}
       >
-        {CRJ_SOCIAL_PLATFORMS.map((platform) => {
+        {SELECTABLE_CRJ_SOCIAL_PLATFORMS.map((platform) => {
           const error = fieldErrors[platform.id];
           const label = t(
             `onboarding.profileCompletion.socialMedia.platforms.${platform.nameKey}` as any,

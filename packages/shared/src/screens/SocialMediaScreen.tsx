@@ -1445,6 +1445,7 @@ export default function SocialMediaScreen() {
                 draft.custom,
                 {
                   website: draft.connected.website ? draft.website : '',
+                  existing: existingLinksRef.current,
                 },
               ),
               existingLinksRef.current,
@@ -1479,7 +1480,8 @@ export default function SocialMediaScreen() {
           id !== 'youtube' &&
           id !== 'tiktok' &&
           id !== 'instagram' &&
-          id !== 'x',
+          id !== 'x' &&
+          id !== 'snapchat',
       ).map((id) => {
         if (id === 'website') {
           return {
