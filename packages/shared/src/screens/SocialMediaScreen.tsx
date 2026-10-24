@@ -51,6 +51,10 @@ import { YoutubeOwnershipCard } from '../components/profile/YoutubeOwnershipCard
 import { TiktokOwnershipCard } from '../components/profile/TiktokOwnershipCard';
 import { InstagramOwnershipCard } from '../components/profile/InstagramOwnershipCard';
 import { XOwnershipCard } from '../components/profile/XOwnershipCard';
+import {
+  SOCIAL_ACTION_HIT_SLOP,
+  socialActionButtonStyles,
+} from '../components/profile/socialActionButtonStyles';
 
 type RouteParams = {
   uid?: string;
@@ -740,13 +744,14 @@ export default function SocialMediaScreen() {
                             })
                       }
                       accessibilityState={{ selected: connected }}
+                      hitSlop={SOCIAL_ACTION_HIT_SLOP}
                       onPress={() =>
                         connected
                           ? disconnectPlatform(card.id)
                           : connectPlatform(card.id)
                       }
                       style={({ pressed }) => [
-                        styles.toggleBtn,
+                        socialActionButtonStyles.button,
                         connected
                           ? {
                               backgroundColor: 'transparent',
@@ -761,7 +766,7 @@ export default function SocialMediaScreen() {
                     >
                       <Text
                         style={[
-                          styles.toggleText,
+                          socialActionButtonStyles.text,
                           {
                             color: connected ? palette.danger : palette.surface,
                           },
@@ -992,18 +997,6 @@ const styles = StyleSheet.create({
   notConnected: {
     fontSize: fontSize.xs,
     marginTop: 2,
-  },
-  toggleBtn: {
-    minHeight: 44,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  toggleText: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.bold,
   },
   input: {
     minHeight: 44,

@@ -34,6 +34,10 @@ import {
 } from '../../social/youtubeOwnership/youtubeOwnershipCore.ts';
 import { shouldReportOwnershipConnectedChange } from '../../social/postCrjSocialEditor.ts';
 import {
+  SOCIAL_ACTION_HIT_SLOP,
+  socialActionButtonStyles,
+} from './socialActionButtonStyles.ts';
+import {
   buildYoutubeOwnershipModeView,
   youtubeOwnershipActionBlocked,
   youtubeOwnershipChannelLabel,
@@ -528,11 +532,12 @@ export function YoutubeOwnershipCard({
           accessibilityLabel={primaryLabel}
           accessibilityState={{ disabled: blocked || !api, busy: blocked }}
           disabled={blocked || !api}
+          hitSlop={SOCIAL_ACTION_HIT_SLOP}
           onPress={() =>
             view.connected ? onDisconnect() : void onConnect()
           }
           style={({ pressed }) => [
-            styles.toggleBtn,
+            socialActionButtonStyles.button,
             view.connected
               ? {
                   backgroundColor: 'transparent',
@@ -553,7 +558,7 @@ export function YoutubeOwnershipCard({
           ) : (
             <Text
               style={[
-                styles.toggleText,
+                socialActionButtonStyles.text,
                 {
                   color: view.connected ? palette.danger : palette.surface,
                 },
@@ -681,18 +686,6 @@ const styles = StyleSheet.create({
   },
   notConnected: {
     fontSize: fontSize.sm,
-  },
-  toggleBtn: {
-    borderWidth: 1,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    minWidth: 112,
-    alignItems: 'center',
-  },
-  toggleText: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
   },
   channelUrl: { fontSize: fontSize.sm },
   legacyHint: {
