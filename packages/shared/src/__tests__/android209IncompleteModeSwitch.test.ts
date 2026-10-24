@@ -10,6 +10,7 @@ import {
   shouldApplyOwnProfileModeSwitch,
 } from '../profile/ownProfileModeActivation.ts';
 import type { OwnProfileDraft } from '../profile/ownProfileEditorState.ts';
+import { normalizeVisibilityCallableError } from '../visibility/callables/errors.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -78,6 +79,12 @@ describe('NEARSY-209 incomplete profile mode switch', () => {
       }),
       false,
     );
+    const fromDetailsCode = normalizeVisibilityCallableError({
+      code: 'functions/failed-precondition',
+      details: { code: 'PROFILE_INCOMPLETE', retryable: false },
+    });
+    assert.equal(isOwnProfileModeActivationRejected(fromDetailsCode), true);
+    assert.equal(fromDetailsCode.retryable, false);
   });
 
   it('Own Profile edits the destination face without writing mode on save', () => {

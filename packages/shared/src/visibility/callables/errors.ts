@@ -35,6 +35,9 @@ export type VisibilityErrorReason =
   | { kind: 'unknown'; value: string }
   | { kind: 'none' };
 
+/** Stable client code from setActiveProfileMode PROFILE_INCOMPLETE details. */
+export const PROFILE_INCOMPLETE_DETAILS_CODE = 'PROFILE_INCOMPLETE';
+
 const KNOWN_REASONS = new Set<string>([
   'contract-version-unsupported',
   'invalid-location',
@@ -180,7 +183,14 @@ export function normalizeVisibilityCallableError(
   const anyErr = err as { code?: unknown; message?: unknown };
   const code = normalizeFirebaseErrorCode(anyErr?.code);
   const details = readDetails(err);
-  const reason = parseKnownReason(details?.reason);
+  let reason = parseKnownReason(details?.reason);
+  if (
+    reason.kind === 'none' &&
+    typeof details?.code === 'string' &&
+    details.code.trim() === PROFILE_INCOMPLETE_DETAILS_CODE
+  ) {
+    reason = { kind: 'known', value: 'profile-incomplete' };
+  }
   const field =
     typeof details?.field === 'string' && details.field.trim()
       ? details.field.trim()
@@ -192,6 +202,8 @@ export function normalizeVisibilityCallableError(
   let retryable: boolean;
   if (reason.kind === 'known' && reason.value === 'invalid-location') {
     retryable = true;
+  } else if (reason.kind === 'known' && reason.value === 'profile-incomplete') {
+    retryable = false;
   } else if (detailsRetryableReceived !== undefined) {
     retryable = detailsRetryableReceived;
   } else if (reason.kind === 'known') {
