@@ -1,8 +1,9 @@
 import type { OnboardingAffiliationCategoryId } from './onboardingAffiliationCatalog.ts';
 import {
   getOnboardingAffiliationCategory,
-  listOnboardingAffiliationCategoryIds,
+  isOnboardingAffiliationCategoryId,
 } from './onboardingAffiliationCatalog.ts';
+import { resolvePublicAffiliationCategoryId } from './affiliationPresentation.ts';
 
 /** CRJ selected-affiliation logo tile (OnboardingAffiliationCategoryPanel). */
 export const AFFILIATION_SELECTED_LOGO_SIZE = 64;
@@ -27,8 +28,6 @@ export const AFFILIATION_LOGO_PALETTE = [
   '#DC2626',
   '#4B5563',
 ] as const;
-
-const KNOWN_CATEGORY_IDS = new Set<string>(listOnboardingAffiliationCategoryIds());
 
 /** Claude `logoTint` hash. */
 export function deterministicAffiliationAvatarColor(name: string): string {
@@ -59,8 +58,8 @@ export function asOnboardingAffiliationCategoryId(
 ): OnboardingAffiliationCategoryId | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
-  if (!KNOWN_CATEGORY_IDS.has(trimmed)) return null;
-  return trimmed as OnboardingAffiliationCategoryId;
+  if (isOnboardingAffiliationCategoryId(trimmed)) return trimmed;
+  return resolvePublicAffiliationCategoryId(trimmed);
 }
 
 export type AffiliationLogoPresentation = {

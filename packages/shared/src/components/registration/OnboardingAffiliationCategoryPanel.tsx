@@ -23,7 +23,8 @@ import {
   type AffiliationSearchUiSnapshot,
 } from '../../affiliations/affiliationSearchInteraction.ts';
 import {
-  buildCustomAffiliationId,
+  AFFILIATION_NAME_MAX_CHARS,
+  affiliationBelongsToEditorCategory,
   buildUniqueCustomAffiliationId,
   getOnboardingAffiliationCategory,
   isDuplicateAffiliation,
@@ -33,6 +34,7 @@ import {
   type OnboardingSelectedAffiliation,
 } from '../../affiliations/onboardingAffiliationCatalog.ts';
 import {
+  affiliationAllowsLogoDev,
   affiliationNameRequired,
   formatAffiliationCaption,
   isTopicOptionalNameCategory,
@@ -123,7 +125,10 @@ export function OnboardingAffiliationCategoryPanel({
   const publishableKey = readClientPublishableKey();
 
   const selectedInCategory = useMemo(
-    () => selected.filter((s) => s.categoryId === categoryId),
+    () =>
+      selected.filter((s) =>
+        affiliationBelongsToEditorCategory(s.categoryId, categoryId),
+      ),
     [selected, categoryId],
   );
 
@@ -131,6 +136,8 @@ export function OnboardingAffiliationCategoryPanel({
   const topicOpen = !!activeTopic;
   const trimmedQuery = query.trim();
   const topicOnlyCategory = isTopicOptionalNameCategory(categoryId);
+  const nameMax =
+    freeText || topicOnlyCategory ? AFFILIATION_NAME_MAX_CHARS : QUERY_MAX;
   const nameRequired = affiliationNameRequired(categoryId);
   const customNameValid =
     validateAffiliationEntryName(trimmedQuery, {
@@ -178,8 +185,7 @@ export function OnboardingAffiliationCategoryPanel({
     providerId?: string | null;
   }): string | undefined {
     const own = input.logoUrl?.trim();
-    if (freeText) {
-      // Identity & Lifestyle: never rebuild Logo.dev; own image or fallback only.
+    if (!affiliationAllowsLogoDev(categoryId)) {
       if (own && !isEphemeralProviderLogoUrl(own)) return own;
       return undefined;
     }
@@ -293,7 +299,7 @@ export function OnboardingAffiliationCategoryPanel({
 
   function pickResult(result: AffiliationEntitySearchResult) {
     setPickedName(result.name);
-    setQuery(result.name.slice(0, QUERY_MAX));
+    setQuery(result.name.slice(0, nameMax));
     setDraftImage(null);
     setDuplicateError(null);
   }
@@ -313,25 +319,23 @@ export function OnboardingAffiliationCategoryPanel({
   }
 
   function addFromSearch() {
-    const nameCandidate = (pickedName || trimmedQuery).slice(0, QUERY_MAX);
+    const nameCandidate = (pickedName || trimmedQuery).slice(0, nameMax);
     const validated = validateAffiliationEntryName(nameCandidate, {
       allowEmpty: topicOnlyCategory && !!activeTopic,
     });
     if (validated.ok === false) return;
     if (nameRequired && !validated.name) return;
-    const storedName = validated.name || activeTopic?.label || '';
-    if (!storedName) return;
-    const persistCaption = formatAffiliationCaption(
-      {
-        name: storedName,
-        categoryId,
-        ...(activeTopic ? { topic: activeTopic.label } : {}),
-      },
-      localizeTopic,
-    );
+    const storedName = validated.name;
+    if (!storedName && !activeTopic) return;
+    const topicIdToPersist = activeTopic?.id;
 
     if (freeText) {
-      const candidate = { name: persistCaption, source: 'custom' as const };
+      const candidate = {
+        name: storedName,
+        source: 'custom' as const,
+        categoryId,
+        ...(topicIdToPersist ? { topic: topicIdToPersist } : {}),
+      };
       if (
         isDuplicateAffiliation(selected, candidate, { categoryId })
       ) {
@@ -343,17 +347,18 @@ export function OnboardingAffiliationCategoryPanel({
       const next: OnboardingSelectedAffiliation = {
         id: buildUniqueCustomAffiliationId(
           categoryId,
-          persistCaption,
+          storedName,
           selected.map((s) => s.id),
+          topicIdToPersist,
         ),
-        name: persistCaption,
+        name: storedName,
         categoryId,
         source: 'custom',
         ...(() => {
           const logoUrl = resolveInMemorySelectedLogoUrl(draftImage, undefined);
           return logoUrl ? { logoUrl } : {};
         })(),
-        ...(activeTopic ? { topic: activeTopic.label } : {}),
+        ...(topicIdToPersist ? { topic: topicIdToPersist } : {}),
       };
       onChangeSelected([...selected, next]);
       setQuery('');
@@ -380,11 +385,18 @@ export function OnboardingAffiliationCategoryPanel({
       pickedName.toLowerCase() === matched.name.toLowerCase();
     const isCustom = !explicitlyPicked;
     const candidate = isCustom
-      ? { name: persistCaption, source: 'custom' as const }
+      ? {
+          name: storedName,
+          source: 'custom' as const,
+          categoryId,
+          ...(topicIdToPersist ? { topic: topicIdToPersist } : {}),
+        }
       : {
-          name: persistCaption,
+          name: storedName,
           source: 'provider' as const,
           providerId: matched!.providerId,
+          categoryId,
+          ...(topicIdToPersist ? { topic: topicIdToPersist } : {}),
         };
 
     if (isDuplicateAffiliation(selected, candidate)) {
@@ -396,9 +408,14 @@ export function OnboardingAffiliationCategoryPanel({
 
     const next: OnboardingSelectedAffiliation = {
       id: isCustom
-        ? buildCustomAffiliationId(categoryId, persistCaption)
+        ? buildUniqueCustomAffiliationId(
+            categoryId,
+            storedName,
+            selected.map((s) => s.id),
+            topicIdToPersist,
+          )
         : matched!.providerId,
-      name: persistCaption,
+      name: storedName,
       categoryId,
       source: isCustom ? 'custom' : 'provider',
       ...(isCustom ? {} : { providerId: matched!.providerId }),
@@ -411,7 +428,7 @@ export function OnboardingAffiliationCategoryPanel({
         return logoUrl ? { logoUrl } : {};
       })(),
       ...(!isCustom && matched?.website ? { website: matched.website } : {}),
-      ...(activeTopic ? { topic: activeTopic.label } : {}),
+      ...(topicIdToPersist ? { topic: topicIdToPersist } : {}),
     };
 
     onChangeSelected([...selected, next]);
@@ -596,7 +613,7 @@ export function OnboardingAffiliationCategoryPanel({
               placeholderTextColor={palette.placeholder}
               value={query}
               onChangeText={(value) => {
-                setQuery(value.slice(0, QUERY_MAX));
+                setQuery(value.slice(0, nameMax));
                 setPickedName(null);
                 setDuplicateError(null);
               }}

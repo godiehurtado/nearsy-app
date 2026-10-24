@@ -7,11 +7,20 @@ import { fileURLToPath } from 'node:url';
 import {
   affiliationNameRequired,
   formatAffiliationCaption,
+  formatPublicAffiliationCaption,
   isFamilyAffiliationCategory,
   isTopicOptionalNameCategory,
-  LEGACY_IDENTITY_TOPICS,
+  persistAffiliationTopicId,
 } from '../affiliations/affiliationPresentation.ts';
-import { getOnboardingAffiliationCategory } from '../affiliations/onboardingAffiliationCatalog.ts';
+import {
+  FAMILY_CATEGORY_ID,
+  LEGACY_IDENTITY_LIFESTYLE_CATEGORY,
+  buildUniqueCustomAffiliationId,
+  getOnboardingAffiliationCategory,
+  listOnboardingAffiliationCategoryIds,
+} from '../affiliations/onboardingAffiliationCatalog.ts';
+import { buildPostCrjAffiliationPersistencePatch } from '../affiliations/onboardingAffiliationPersistence.ts';
+import { parseDiscoveryAffiliations } from '../visibility/discoveryAffiliations.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -20,33 +29,47 @@ function localize(id: string, fallback: string): string {
     father_of: 'Padre de',
     democratic_party: 'Partido Demócrata',
     sports_team: 'Equipo deportivo',
-    pet_parent: 'Dueño de mascota',
+    pet_parent: 'Pet parent de',
     parent: 'Padre o madre',
   };
   return es[id] ?? fallback;
 }
 
 describe('NEARSY-209 affiliation captions', () => {
-  it('keeps identity_lifestyle as Family storage id and does not invent a new category', () => {
-    const family = getOnboardingAffiliationCategory('identity_lifestyle');
-    assert.equal(family.id, 'identity_lifestyle');
+  it('persists new Family rows as family and keeps identity_lifestyle legacy', () => {
+    const family = getOnboardingAffiliationCategory('family');
+    assert.equal(family.id, FAMILY_CATEGORY_ID);
     assert.equal(family.name, 'Family');
     assert.equal(family.entrySource, 'freeText');
-    assert.equal(isFamilyAffiliationCategory('identity_lifestyle'), true);
+    assert.equal(isFamilyAffiliationCategory('family'), true);
+    assert.equal(isFamilyAffiliationCategory('identity_lifestyle'), false);
+    assert.equal(affiliationNameRequired('family'), true);
     assert.equal(affiliationNameRequired('identity_lifestyle'), true);
     assert.equal(isTopicOptionalNameCategory('political_civic'), true);
     assert.equal(affiliationNameRequired('political_civic'), false);
     assert.equal(affiliationNameRequired('faith'), false);
     assert.equal(affiliationNameRequired('sports_clubs'), true);
+    assert.equal(LEGACY_IDENTITY_LIFESTYLE_CATEGORY.id, 'identity_lifestyle');
+    assert.ok(
+      LEGACY_IDENTITY_LIFESTYLE_CATEGORY.topics.some((row) => row.id === 'parent'),
+    );
+    assert.equal(
+      listOnboardingAffiliationCategoryIds().includes('family'),
+      true,
+    );
+    assert.equal(
+      listOnboardingAffiliationCategoryIds().includes('identity_lifestyle'),
+      false,
+    );
   });
 
-  it('Family reads Padre de Sofía and preserves legacy Identity rows', () => {
+  it('Family reads Padre de Sofía and does not convert legacy Identity parent', () => {
     assert.equal(
       formatAffiliationCaption(
         {
           name: 'Sofía',
-          categoryId: 'identity_lifestyle',
-          topic: 'Father of',
+          categoryId: 'family',
+          topic: 'father_of',
         },
         localize,
       ),
@@ -56,25 +79,23 @@ describe('NEARSY-209 affiliation captions', () => {
       formatAffiliationCaption(
         {
           name: 'Luna',
-          categoryId: 'identity_lifestyle',
-          topic: 'Pet parent',
+          categoryId: 'family',
+          topic: 'pet_parent',
         },
         localize,
       ),
-      'Dueño de mascota Luna',
+      'Pet parent de Luna',
     );
-    const legacyParent = LEGACY_IDENTITY_TOPICS.find((row) => row.id === 'parent');
-    assert.ok(legacyParent);
     assert.equal(
       formatAffiliationCaption(
         {
           name: 'Ana',
           categoryId: 'identity_lifestyle',
-          topic: 'Parent',
+          topic: 'parent',
         },
         localize,
       ),
-      'Padre o madre Ana',
+      'Ana / Padre o madre',
     );
   });
 
@@ -84,7 +105,7 @@ describe('NEARSY-209 affiliation captions', () => {
         {
           name: 'Florida Demócratas',
           categoryId: 'political_civic',
-          topic: 'Democratic Party',
+          topic: 'democratic_party',
         },
         localize,
       ),
@@ -95,7 +116,7 @@ describe('NEARSY-209 affiliation captions', () => {
         {
           name: 'Inter Miami FC',
           categoryId: 'sports_clubs',
-          topic: 'Sports team',
+          topic: 'sports_team',
         },
         localize,
       ),
@@ -104,14 +125,79 @@ describe('NEARSY-209 affiliation captions', () => {
     assert.equal(
       formatAffiliationCaption(
         {
-          name: 'Democratic Party',
+          name: '',
           categoryId: 'political_civic',
-          topic: 'Democratic Party',
+          topic: 'democratic_party',
         },
         localize,
       ),
       'Partido Demócrata',
     );
+  });
+
+  it('public Discovery composes from type topic ids including nameless civic', () => {
+    assert.equal(
+      formatPublicAffiliationCaption(
+        { name: 'Sofía', type: 'father_of' },
+        localize,
+      ),
+      'Padre de Sofía',
+    );
+    assert.equal(
+      formatPublicAffiliationCaption(
+        { name: 'Florida Demócratas', type: 'democratic_party' },
+        localize,
+      ),
+      'Florida Demócratas / Partido Demócrata',
+    );
+    assert.equal(
+      formatPublicAffiliationCaption(
+        { name: '', type: 'democratic_party' },
+        localize,
+      ),
+      'Partido Demócrata',
+    );
+    const parsed = parseDiscoveryAffiliations([
+      { id: 'civic1', name: '', type: 'democratic_party', logoUrl: null },
+      { id: 'fam1', name: 'Sofía', type: 'father_of', logoUrl: null },
+    ]);
+    assert.equal(parsed.length, 2);
+    assert.equal(parsed[0].name, '');
+    assert.equal(parsed[1].type, 'father_of');
+  });
+
+  it('persists topic IDs and omits empty civic names', () => {
+    assert.equal(
+      persistAffiliationTopicId('political_civic', 'Democratic Party'),
+      'democratic_party',
+    );
+    const patch = buildPostCrjAffiliationPersistencePatch('personal', [
+      {
+        id: 'custom_family_sofia',
+        name: 'Sofía',
+        categoryId: 'family',
+        source: 'custom',
+        topic: 'Father of',
+      },
+      {
+        id: buildUniqueCustomAffiliationId(
+          'political_civic',
+          '',
+          [],
+          'democratic_party',
+        ),
+        name: '',
+        categoryId: 'political_civic',
+        source: 'custom',
+        topic: 'democratic_party',
+      },
+    ]);
+    const rows = patch.personalOnboardingAffiliations ?? [];
+    assert.equal(rows[0]?.categoryId, 'family');
+    assert.equal(rows[0]?.name, 'Sofía');
+    assert.equal(rows[0]?.topic, 'father_of');
+    assert.equal(rows[1]?.name, undefined);
+    assert.equal(rows[1]?.topic, 'democratic_party');
   });
 
   it('editor and Discovery no longer caption the general category', () => {
@@ -126,13 +212,15 @@ describe('NEARSY-209 affiliation captions', () => {
       path.join(root, 'components/profileExploration/DiscoveryAffiliationsCard.tsx'),
       'utf8',
     );
+    assert.match(card, /formatPublicAffiliationCaption/);
     assert.doesNotMatch(card, /formatDiscoveryAffiliationTypeLabel/);
     const onboarding = readFileSync(
       path.join(root, 'i18n/resources/onboarding.ts'),
       'utf8',
     );
-    assert.match(onboarding, /identity_lifestyle: 'Family'/);
-    assert.match(onboarding, /identity_lifestyle: 'Familia'/);
+    assert.match(onboarding, /family: 'Family'/);
+    assert.match(onboarding, /family: 'Familia'/);
+    assert.match(onboarding, /identity_lifestyle: 'Identity & Lifestyle'/);
     assert.match(onboarding, /father_of: 'Padre de'/);
   });
 });

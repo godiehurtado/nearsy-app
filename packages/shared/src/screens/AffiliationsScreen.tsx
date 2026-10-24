@@ -22,6 +22,7 @@ import { PrimaryButton } from '../components/PrimaryButton';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import {
   ONBOARDING_AFFILIATION_CATEGORIES,
+  affiliationBelongsToEditorCategory,
   listOnboardingAffiliationCategoryIds,
   type OnboardingAffiliationCategoryId,
   type OnboardingSelectedAffiliation,
@@ -242,7 +243,9 @@ export default function AffiliationsScreen() {
     >
       {ONBOARDING_AFFILIATION_CATEGORIES.map((category) => {
         const open = expandedId === category.id;
-        const count = draft.filter((a) => a.categoryId === category.id).length;
+        const count = draft.filter((a) =>
+          affiliationBelongsToEditorCategory(a.categoryId, category.id),
+        ).length;
         return (
           <View
             key={category.id}

@@ -24,6 +24,7 @@ import {
   useAppTheme,
 } from '../../theme';
 import { cardShadow } from '../../theme/shadows';
+import { formatPublicAffiliationCaption } from '../../affiliations/affiliationPresentation';
 import {
   MAX_DISCOVERY_AFFILIATIONS,
   resolveDiscoveryAffiliationGrid,
@@ -41,13 +42,21 @@ export function DiscoveryAffiliationsCard({ affiliations }: Props) {
   const { t } = useTranslation();
   const [gridWidth, setGridWidth] = useState(0);
 
+  const localizeTopic = (id: string, fallback: string) =>
+    t(`onboarding.profileCompletion.affiliations.topics.${id}` as any, {
+      defaultValue: fallback,
+    });
+
   const items = Array.isArray(affiliations)
     ? affiliations
-        .filter((a) => a?.id && a?.name)
+        .filter((a) => a?.id && (a.name || a.type))
         .slice(0, MAX_DISCOVERY_AFFILIATIONS)
     : [];
 
-  const labeled = items;
+  const labeled = items.map((item) => ({
+    ...item,
+    caption: formatPublicAffiliationCaption(item, localizeTopic),
+  }));
 
   const onGridLayout = useCallback((event: LayoutChangeEvent) => {
     const width = Math.round(event.nativeEvent.layout.width);
@@ -88,10 +97,10 @@ export function DiscoveryAffiliationsCard({ affiliations }: Props) {
               },
             ]}
             accessibilityRole="text"
-            accessibilityLabel={item.name}
+            accessibilityLabel={item.caption}
           >
             <AffiliationLogoMark
-              name={item.name}
+              name={item.caption}
               type={item.type}
               logoUrl={item.logoUrl}
               size={AFFILIATION_DISCOVERY_LOGO_SIZE}
@@ -101,7 +110,7 @@ export function DiscoveryAffiliationsCard({ affiliations }: Props) {
               style={[styles.name, { color: palette.textPrimary }]}
               numberOfLines={2}
             >
-              {item.name}
+              {item.caption}
             </Text>
           </View>
         ))}

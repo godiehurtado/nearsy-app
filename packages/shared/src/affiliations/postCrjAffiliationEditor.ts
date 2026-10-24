@@ -2,6 +2,7 @@ import type { AffiliationCategory, AffiliationItem } from '../types/profile.ts';
 import {
   buildCustomAffiliationId,
   isDuplicateAffiliation,
+  isOnboardingAffiliationCategoryId,
   normalizeAffiliationName,
   type OnboardingAffiliationCategoryId,
   type OnboardingSelectedAffiliation,
@@ -58,16 +59,17 @@ export function readOnboardingAffiliationsFromDoc(
     const row = item as Record<string, unknown>;
     if (
       typeof row.id !== 'string' ||
-      typeof row.name !== 'string' ||
       typeof row.categoryId !== 'string' ||
+      !isOnboardingAffiliationCategoryId(row.categoryId) ||
       (row.source !== 'provider' && row.source !== 'custom')
     ) {
       continue;
     }
+    const name = typeof row.name === 'string' ? row.name : '';
     out.push({
       id: row.id,
-      name: row.name,
-      categoryId: row.categoryId as OnboardingAffiliationCategoryId,
+      name,
+      categoryId: row.categoryId,
       source: row.source,
       ...(typeof row.providerId === 'string' && row.providerId
         ? { providerId: row.providerId }

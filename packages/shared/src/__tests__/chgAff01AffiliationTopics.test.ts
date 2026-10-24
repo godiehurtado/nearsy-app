@@ -20,8 +20,8 @@ const REMOVED_TOPIC_IDS = [
 ] as const;
 
 test('CHG-AFF-01: removed Identity topics absent from Family catalog', () => {
-  const identity = getOnboardingAffiliationCategory('identity_lifestyle');
-  const ids = identity.topics.map((t) => t.id);
+  const family = getOnboardingAffiliationCategory('family');
+  const ids = family.topics.map((t) => t.id);
   for (const id of REMOVED_TOPIC_IDS) {
     assert.equal(ids.includes(id), false, `should remove ${id}`);
   }
@@ -29,9 +29,9 @@ test('CHG-AFF-01: removed Identity topics absent from Family catalog', () => {
   assert.ok(ids.includes('pet_parent'));
 });
 
-test('CHG-AFF-01: Family topics replace Identity catalog without dropping the category', () => {
-  const identity = getOnboardingAffiliationCategory('identity_lifestyle');
-  const ids = identity.topics.map((t) => t.id);
+test('CHG-AFF-01: Family topics are on family; Identity stays a legacy catalog', () => {
+  const family = getOnboardingAffiliationCategory('family');
+  const ids = family.topics.map((t) => t.id);
   assert.deepEqual(ids, [
     'father_of',
     'mother_of',
@@ -43,7 +43,18 @@ test('CHG-AFF-01: Family topics replace Identity catalog without dropping the ca
     'grandchild_of',
     'pet_parent',
   ]);
+  const identity = getOnboardingAffiliationCategory('identity_lifestyle');
+  assert.ok(identity.topics.some((t) => t.id === 'parent'));
+  assert.ok(identity.topics.some((t) => t.id === 'pet_parent'));
   assert.equal(ONBOARDING_AFFILIATION_CATEGORIES.length, 7);
+  assert.equal(
+    ONBOARDING_AFFILIATION_CATEGORIES.some((c) => c.id === 'family'),
+    true,
+  );
+  assert.equal(
+    ONBOARDING_AFFILIATION_CATEGORIES.some((c) => c.id === 'identity_lifestyle'),
+    false,
+  );
   assert.ok(
     getOnboardingAffiliationCategory('education').topics.some(
       (t) => t.id === 'college_or_university',
@@ -74,6 +85,5 @@ test('CHG-AFF-01: profile context modules unchanged by affiliation topic trim', 
   assert.doesNotMatch(affSrc, /topic\('Zodiac sign'/);
   assert.doesNotMatch(affSrc, /topic\('Languages'/);
   assert.doesNotMatch(affSrc, /topic\('Nationality'/);
-  assert.doesNotMatch(affSrc, /topic\('Personality type'/);
   assert.match(affSrc, /topic\('Pet parent'/);
 });

@@ -4,7 +4,10 @@ import {
   type OnboardingSelectedAffiliation,
 } from './onboardingAffiliationCatalog.ts';
 import { isEphemeralProviderLogoUrl } from './affiliationLogoDev.ts';
-import { formatAffiliationCaption } from './affiliationPresentation.ts';
+import {
+  formatAffiliationCaption,
+  persistAffiliationTopicId,
+} from './affiliationPresentation.ts';
 
 /** Field-only affiliation bags — never includes lifecycle keys. */
 export type AffiliationFieldPersistencePatch = {
@@ -23,10 +26,11 @@ function sanitizeOnboardingAffiliationForPersistence(
 ): Record<string, string> {
   const row: Record<string, string> = {
     id: item.id,
-    name: item.name,
     categoryId: item.categoryId,
     source: item.source,
   };
+  const name = item.name.trim();
+  if (name) row.name = name;
   if (item.providerId) row.providerId = item.providerId;
   if (item.provider) row.provider = item.provider;
   if (
@@ -37,7 +41,8 @@ function sanitizeOnboardingAffiliationForPersistence(
     row.logoUrl = item.logoUrl;
   }
   if (item.website) row.website = item.website;
-  if (item.topic) row.topic = item.topic;
+  const topic = persistAffiliationTopicId(item.categoryId, item.topic);
+  if (topic) row.topic = topic;
   return row;
 }
 

@@ -201,7 +201,8 @@ describe('CHG-AFF-02 i18n EN/ES', () => {
     assert.match(readSrc('i18n/locales/es.ts'), /affiliations: 'Afiliaciones'/);
     const card = readSrc('components/profileExploration/DiscoveryAffiliationsCard.tsx');
     assert.match(card, /t\('discoveryProfile\.affiliations'\)/);
-    assert.match(card, /onboarding\.profileCompletion\.affiliations\.categories\.\$\{nameKey\}/);
+    assert.match(card, /onboarding\.profileCompletion\.affiliations\.topics\.\$\{id\}/);
+    assert.match(card, /formatPublicAffiliationCaption/);
   });
 });
 
