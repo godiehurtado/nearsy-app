@@ -116,10 +116,11 @@ describe('Own Profile navigation and source guards', () => {
     );
     assert.match(toggle, /isDirtyRef\.current/);
     assert.match(toggle, /confirmDiscardChanges/);
-    assert.match(toggle, /void runModeSwitch\(\)/);
+    assert.match(toggle, /openDestinationOrSwitch\(\)/);
     // Callable lives only inside runModeSwitch, not before confirm.
     assert.doesNotMatch(toggle, /switchMode/);
     assert.match(src, /modeSwitchSessionRef\.current\.switchMode/);
+    assert.match(src, /decideOwnProfileModeSwitch/);
     assert.doesNotMatch(src, /updateUserMode/);
     assert.doesNotMatch(src, /includeModeInPatch:\s*true/);
   });

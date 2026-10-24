@@ -8,6 +8,7 @@ import {
   createOwnProfileDraftFromPresentation,
   createOwnProfileSnapshot,
   decideDirtyNavigationGuard,
+  decideOwnProfileModeSwitch,
   isLocalProfileImageUri,
   isOwnProfileDraftDirty,
   isOwnProfileEditorAllowed,
@@ -89,6 +90,59 @@ describe('Own Profile load lifecycle classification', () => {
       isOwnProfileEditorAllowed({ profileSetupCompleted: true }),
       true,
     );
+  });
+});
+
+describe('Incomplete destination mode switch', () => {
+  it('keeps the confirmed face when Professional is missing company', () => {
+    const destination: OwnProfileDraft = {
+      ...completeDraft,
+      company: '',
+    };
+    assert.deepEqual(
+      decideOwnProfileModeSwitch({
+        confirmedMode: 'personal',
+        targetMode: 'professional',
+        destinationDraft: destination,
+      }),
+      { action: 'edit_destination', missingField: 'company' },
+    );
+  });
+
+  it('activates only after the destination face validates', () => {
+    assert.equal(
+      decideOwnProfileModeSwitch({
+        confirmedMode: 'personal',
+        targetMode: 'professional',
+        destinationDraft: completeDraft,
+      }).action,
+      'activate',
+    );
+  });
+
+  it('returns to the confirmed face without a callable', () => {
+    assert.deepEqual(
+      decideOwnProfileModeSwitch({
+        confirmedMode: 'personal',
+        targetMode: 'personal',
+        destinationDraft: completeDraft,
+      }),
+      { action: 'return_to_confirmed' },
+    );
+  });
+
+  it('inactive-face save does not project to top-level', () => {
+    const patch = buildOwnProfileSavePatch({
+      mode: 'professional',
+      draft: completeDraft,
+      projectActiveToTopLevel: false,
+    });
+    assert.equal(Object.prototype.hasOwnProperty.call(patch, 'occupation'), false);
+    assert.equal(
+      patch['profiles.professional.occupation'],
+      'Engineer',
+    );
+    assert.equal(Object.prototype.hasOwnProperty.call(patch, 'mode'), false);
   });
 });
 

@@ -266,6 +266,8 @@ export function buildOwnProfileSavePresentation(
 export function buildOwnProfileSavePatch(input: {
   mode: ProfileMode;
   draft: OwnProfileDraft;
+  /** False when saving the inactive face before activation. Default true. */
+  projectActiveToTopLevel?: boolean;
 }): Record<string, unknown> {
   const presentation = buildOwnProfileSavePresentation(input.draft, input.mode);
   if (isLocalProfileImageUri(presentation.profileImage)) {
@@ -274,9 +276,36 @@ export function buildOwnProfileSavePatch(input: {
   return buildActiveProfileSavePatch({
     mode: input.mode,
     presentation,
-    projectActiveToTopLevel: true,
+    projectActiveToTopLevel: input.projectActiveToTopLevel !== false,
     includeModeInPatch: false,
   });
+}
+
+export type OwnProfileModeSwitchDecision =
+  | { action: 'return_to_confirmed' }
+  | { action: 'edit_destination'; missingField: OwnProfileValidationField }
+  | { action: 'activate' };
+
+/**
+ * Client gate before setActiveProfileMode: incomplete destination stays on the
+ * confirmed face and can be edited/saved first.
+ */
+export function decideOwnProfileModeSwitch(input: {
+  confirmedMode: ProfileMode;
+  targetMode: ProfileMode;
+  destinationDraft: OwnProfileDraft;
+}): OwnProfileModeSwitchDecision {
+  if (input.targetMode === input.confirmedMode) {
+    return { action: 'return_to_confirmed' };
+  }
+  const validation = validateOwnProfileDraft(
+    input.destinationDraft,
+    input.targetMode,
+  );
+  if (validation.ok === false) {
+    return { action: 'edit_destination', missingField: validation.field };
+  }
+  return { action: 'activate' };
 }
 
 /**

@@ -46,6 +46,13 @@ export default {
     professionalA11y: 'Professional profile',
     contextPersonal: 'Editing your Personal profile',
     contextProfessional: 'Editing your Professional profile',
+    contextInactivePersonal:
+      'Editing Personal — Professional is still your active profile. Save this face before switching.',
+    contextInactiveProfessional:
+      'Editing Professional — Personal is still your active profile. Save this face before switching.',
+    incompleteDestinationTitle: 'Complete this profile first',
+    incompleteDestinationBody:
+      'Your current profile stays active. Fill in the missing fields and save, then switch.',
   },
   quickActions: {
     title: 'Profile content',

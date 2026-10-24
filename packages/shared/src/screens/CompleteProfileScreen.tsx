@@ -68,6 +68,7 @@ import {
   createOwnProfileDraftFromDoc,
   createOwnProfileSnapshot,
   decideDirtyNavigationGuard,
+  decideOwnProfileModeSwitch,
   isLocalProfileImageUri,
   isOwnProfileDraftDirty,
   isOwnProfileEditorWritable,
@@ -139,6 +140,9 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const [lastName, setLastName] = useState('');
   const [bio, setBio] = useState('');
   const [mode, setMode] = useState<'personal' | 'professional' | null>(null);
+  const [confirmedMode, setConfirmedMode] = useState<
+    'personal' | 'professional' | null
+  >(null);
   const [occupation, setOccupation] = useState('');
   const [company, setCompany] = useState('');
   const [profileImage, setProfileImage] = useState<string | null>(null);
@@ -392,6 +396,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       };
 
       setMode(currentMode);
+      setConfirmedMode(currentMode);
       applyModeFields(loadedDoc, currentMode);
 
       const loadedDraft = createOwnProfileDraftFromDoc(loadedDoc, {
@@ -647,11 +652,11 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     ]);
   };
 
-  const runModeSwitch = async () => {
-    const confirmedMode: ProfileMode =
-      (mode ?? 'personal') === 'professional' ? 'professional' : 'personal';
-    const targetMode: ProfileMode =
-      confirmedMode === 'personal' ? 'professional' : 'personal';
+  const runModeSwitch = async (targetMode: ProfileMode) => {
+    const activeConfirmed: ProfileMode =
+      (confirmedMode ?? mode ?? 'personal') === 'professional'
+        ? 'professional'
+        : 'personal';
 
     if (modeSwitchLoading || modeSwitchSessionRef.current.isBusy()) {
       return;
@@ -665,7 +670,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       const client = await getVisibilityDiscoveryClient();
       const result = await modeSwitchSessionRef.current.switchMode(targetMode, {
         client,
-        confirmedMode,
+        confirmedMode: activeConfirmed,
         uid,
       });
 
@@ -692,6 +697,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         profileDoc ?? {},
         response,
       );
+      setConfirmedMode(response.mode);
       setMode(response.mode);
       applyModeFields(nextDoc, response.mode);
       setProfileDoc(nextDoc);
@@ -723,6 +729,52 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     }
   };
 
+  const openDestinationOrSwitch = () => {
+    const activeConfirmed: ProfileMode =
+      (confirmedMode ?? mode ?? 'personal') === 'professional'
+        ? 'professional'
+        : 'personal';
+    const editing: ProfileMode =
+      (mode ?? 'personal') === 'professional' ? 'professional' : 'personal';
+    const targetMode: ProfileMode =
+      editing === 'personal' ? 'professional' : 'personal';
+
+    const destinationDraft = createOwnProfileDraftFromDoc(
+      profileDoc,
+      resolveModePresentation(profileDoc, targetMode),
+    );
+    const decision = decideOwnProfileModeSwitch({
+      confirmedMode: activeConfirmed,
+      targetMode,
+      destinationDraft,
+    });
+
+    if (decision.action === 'return_to_confirmed') {
+      applyModeFields(profileDoc, activeConfirmed);
+      setMode(activeConfirmed);
+      commitSnapshot(
+        createOwnProfileDraftFromDoc(
+          profileDoc,
+          resolveModePresentation(profileDoc, activeConfirmed),
+        ),
+      );
+      return;
+    }
+
+    if (decision.action === 'edit_destination') {
+      applyModeFields(profileDoc, targetMode);
+      setMode(targetMode);
+      commitSnapshot(destinationDraft);
+      Alert.alert(
+        t('profile.mode.incompleteDestinationTitle'),
+        `${t('profile.mode.incompleteDestinationBody')}\n\n${validationMessage(decision.missingField)}`,
+      );
+      return;
+    }
+
+    void runModeSwitch(targetMode);
+  };
+
   const handleToggleMode = () => {
     if (!editorWritable) return;
     if (modeSwitchLoading || modeSwitchSessionRef.current.isBusy()) {
@@ -730,11 +782,11 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     }
     if (isDirtyRef.current) {
       confirmDiscardChanges(() => {
-        void runModeSwitch();
+        openDestinationOrSwitch();
       });
       return;
     }
-    void runModeSwitch();
+    openDestinationOrSwitch();
   };
 
   const validationMessage = (field: OwnProfileValidationField) => {
@@ -879,6 +931,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       const modePatch = buildOwnProfileSavePatch({
         mode,
         draft: persistedDraft,
+        projectActiveToTopLevel: mode === (confirmedMode ?? mode),
       });
       const contextPatch = buildOwnProfileContextSavePatch(
         persistedDraft,
@@ -929,9 +982,11 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       // without requiring Personal → Professional toggle.
       if (
         shouldResyncProfessionalActiveModeAfterSave({
-          activeMode: mode,
+          activeMode: confirmedMode ?? mode,
           professionalFaceComplete: true,
-        })
+        }) &&
+        mode === 'professional' &&
+        (confirmedMode ?? mode) === 'professional'
       ) {
         const client = await getVisibilityDiscoveryClient();
         const outcome = await setActiveProfileModeFlow(
@@ -1037,8 +1092,16 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   };
 
   const activeMode = (mode ?? 'personal') as 'personal' | 'professional';
-  const modeContextLabel =
-    activeMode === 'professional'
+  const confirmedActive =
+    (confirmedMode ?? activeMode) === 'professional'
+      ? 'professional'
+      : 'personal';
+  const editingInactiveFace = confirmedActive !== activeMode;
+  const modeContextLabel = editingInactiveFace
+    ? activeMode === 'professional'
+      ? t('profile.mode.contextInactiveProfessional')
+      : t('profile.mode.contextInactivePersonal')
+    : activeMode === 'professional'
       ? t('profile.mode.contextProfessional')
       : t('profile.mode.contextPersonal');
 
