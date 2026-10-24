@@ -89,6 +89,15 @@ export function presentOwnProfileSocialSummary(
   return { kind: 'ready', count: 0 };
 }
 
+export function sameSocialSummaryPresentation(
+  a: SocialSummaryPresentation,
+  b: SocialSummaryPresentation,
+): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === 'ready' && b.kind === 'ready') return a.count === b.count;
+  return true;
+}
+
 export function shouldApplyOwnProfileSocialSummary(input: {
   requestGen: number;
   currentGen: number;

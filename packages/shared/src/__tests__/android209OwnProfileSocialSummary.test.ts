@@ -22,6 +22,7 @@ import {
   overlayOptionsFromPresence,
   presenceFromOwnershipGetResult,
   resolveOwnProfileSocialSummaryRequest,
+  sameSocialSummaryPresentation,
   shouldApplyOwnProfileSocialSummary,
   type OwnershipPresenceByMode,
   type OwnershipPresenceStatus,
@@ -399,5 +400,48 @@ describe('NEARSY-209 Own Profile Android social summary overlay', () => {
       profileTranslations.en.quickActions.empty,
       'Not configured yet',
     );
+  });
+
+  it('loads Android overlay via require without a .ts suffix so Metro picks .android.ts', () => {
+    const hook = readSrc('social/useOwnProfileSocialSummary.ts');
+    assert.match(
+      hook,
+      /return require\('\.\/ownProfileSocialSummaryLoad'\) as OverlayModule/,
+    );
+    assert.doesNotMatch(
+      hook,
+      /^import .+ from '\.\/ownProfileSocialSummaryLoad\.ts'/m,
+    );
+    assert.match(hook, /mode\?: ProfileMode/);
+    const stub = readSrc('social/ownProfileSocialSummaryLoad.ts');
+    const android = readSrc('social/ownProfileSocialSummaryLoad.android.ts');
+    assert.match(stub, /OWN_PROFILE_SOCIAL_OVERLAY_SOURCE = 'stub-bag-only'/);
+    assert.match(
+      android,
+      /OWN_PROFILE_SOCIAL_OVERLAY_SOURCE = 'android-identity-gets'/,
+    );
+    const screen = readSrc('screens/CompleteProfileScreen.tsx');
+    assert.match(screen, /loadSocialSummary\(doc, currentMode\)/);
+  });
+
+  it('ownership card mount effects do not re-run when refreshForMode identity changes', () => {
+    for (const card of [
+      'components/profile/YoutubeOwnershipCard.tsx',
+      'components/profile/TiktokOwnershipCard.tsx',
+      'components/profile/InstagramOwnershipCard.tsx',
+      'components/profile/XOwnershipCard.tsx',
+    ]) {
+      const src = readSrc(card);
+      assert.match(src, /useMemo\(\(\) => load\w+Api\(\), \[\]\)/);
+      assert.match(src, /refreshForModeRef\.current = refreshForMode/);
+      assert.doesNotMatch(src, /}, \[mode, api, refreshForMode/);
+      assert.doesNotMatch(src, /}, \[mode, screenFocused, refreshForMode\]/);
+    }
+    const loading = { kind: 'loading' as const };
+    const ready0 = { kind: 'ready' as const, count: 0 };
+    const ready4 = { kind: 'ready' as const, count: 4 };
+    assert.equal(sameSocialSummaryPresentation(loading, { kind: 'loading' }), true);
+    assert.equal(sameSocialSummaryPresentation(ready0, { kind: 'ready', count: 0 }), true);
+    assert.equal(sameSocialSummaryPresentation(ready0, ready4), false);
   });
 });

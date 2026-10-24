@@ -2,7 +2,7 @@
  * NEARSY-209 Android — Instagram reverse-DM ownership card scoped to the
  * Own Profile mode being edited. Start / Get / Unlink only. No inbox admin.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -79,7 +79,7 @@ export function InstagramOwnershipCard({
 }: Props) {
   const { t } = useTranslation();
   const { palette } = useAppTheme();
-  const api = loadInstagramApi();
+  const api = useMemo(() => loadInstagramApi(), []);
   const screenFocused = useIsFocused();
 
   const [phase, setPhase] = useState<InstagramOwnershipUiPhase>('loading');
@@ -186,6 +186,8 @@ export function InstagramOwnershipCard({
     },
     [api, applyGetIfCurrent, errorMessage, t],
   );
+  const refreshForModeRef = useRef(refreshForMode);
+  refreshForModeRef.current = refreshForMode;
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
@@ -204,11 +206,11 @@ export function InstagramOwnershipCard({
     setVerified(null);
     setChallenge(null);
     setHint(null);
-    void refreshForMode(mode);
+    void refreshForModeRef.current(mode);
     return () => {
       requestGenRef.current += 1;
     };
-  }, [mode, screenFocused, refreshForMode]);
+  }, [mode, screenFocused]);
 
   useEffect(() => {
     if (!shouldReportOwnershipConnectedChange(phase)) return;
@@ -239,22 +241,22 @@ export function InstagramOwnershipCard({
       ) {
         return;
       }
-      void refreshForMode(forMode, { alertTerminal: true });
+      void refreshForModeRef.current(forMode, { alertTerminal: true });
     }, INSTAGRAM_OWNERSHIP_POLL_INTERVAL_MS);
     const expireDelay = Math.max(0, expiresAtMs - Date.now());
     const expireTimer = setTimeout(() => {
-      void refreshForMode(forMode, { alertTerminal: true });
+      void refreshForModeRef.current(forMode, { alertTerminal: true });
     }, expireDelay);
     return () => {
       clearInterval(interval);
       clearTimeout(expireTimer);
     };
-  }, [api, pendingLive, challenge, mode, refreshForMode]);
+  }, [api, pendingLive, challenge, mode]);
 
   useEffect(() => {
     if (!api || !appActive || !screenFocused || phase !== 'pending') return;
-    void refreshForMode(mode, { alertTerminal: true });
-  }, [api, appActive, screenFocused, phase, mode, refreshForMode]);
+    void refreshForModeRef.current(mode, { alertTerminal: true });
+  }, [api, appActive, screenFocused, phase, mode]);
 
   const blocked = instagramOwnershipActionBlocked(phase);
   const connected = !!verified && verified.mode === mode;

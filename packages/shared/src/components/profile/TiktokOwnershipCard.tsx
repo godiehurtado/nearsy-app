@@ -3,7 +3,7 @@
  * being edited (Personal XOR Professional). Connect/unlink only that mode.
  * No channel picker. No dual publish toggles.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -85,7 +85,7 @@ export function TiktokOwnershipCard({
 }: Props) {
   const { t } = useTranslation();
   const { palette } = useAppTheme();
-  const api = loadTiktokApi();
+  const api = useMemo(() => loadTiktokApi(), []);
 
   const [phase, setPhase] = useState<TiktokOwnershipUiPhase>('loading');
   const [connected, setConnected] = useState<ConnectedSnapshot | null>(null);
@@ -187,6 +187,8 @@ export function TiktokOwnershipCard({
     },
     [api, applyDisconnectedIfCurrent, applyVerifiedIfCurrent, errorMessage, t],
   );
+  const refreshForModeRef = useRef(refreshForMode);
+  refreshForModeRef.current = refreshForMode;
 
   useEffect(() => {
     const forMode = mode;
@@ -204,7 +206,7 @@ export function TiktokOwnershipCard({
           return;
         }
       }
-      await refreshForMode(forMode);
+      await refreshForModeRef.current(forMode);
     })();
     const watch = api?.watchTiktokOwnershipReturns?.(forMode, (outcome) => {
       if (cancelled || forMode !== modeRef.current) return;
@@ -221,7 +223,7 @@ export function TiktokOwnershipCard({
       requestGenRef.current += 1;
       watch?.remove();
     };
-  }, [mode, api, refreshForMode, applyVerifiedIfCurrent]);
+  }, [mode, api, applyVerifiedIfCurrent]);
 
   useEffect(() => {
     if (!shouldReportOwnershipConnectedChange(phase)) return;

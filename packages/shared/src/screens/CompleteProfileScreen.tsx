@@ -426,7 +426,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       setProfessionalAffiliationsSummaryCount(bag.affiliations.professional);
       setPersonalGallerySummaryCount(bag.gallery.personal);
       setProfessionalGallerySummaryCount(bag.gallery.professional);
-      await loadSocialSummary(doc);
+      await loadSocialSummary(doc, currentMode);
     } catch {
       setLifecycleAuth('error');
     } finally {

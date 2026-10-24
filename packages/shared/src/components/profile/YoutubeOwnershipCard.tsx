@@ -3,7 +3,7 @@
  * being edited (Personal XOR Professional). Connect/unlink only that mode.
  * No dual publish toggles.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -94,7 +94,7 @@ export function YoutubeOwnershipCard({
 }: Props) {
   const { t } = useTranslation();
   const { palette } = useAppTheme();
-  const api = loadYoutubeApi();
+  const api = useMemo(() => loadYoutubeApi(), []);
 
   const [phase, setPhase] = useState<YoutubeOwnershipUiPhase>('loading');
   const [connected, setConnected] = useState<ConnectedSnapshot | null>(null);
@@ -201,6 +201,8 @@ export function YoutubeOwnershipCard({
     },
     [api, applyDisconnectedIfCurrent, applyVerifiedIfCurrent, errorMessage, t],
   );
+  const refreshForModeRef = useRef(refreshForMode);
+  refreshForModeRef.current = refreshForMode;
 
   useEffect(() => {
     const forMode = mode;
@@ -226,7 +228,7 @@ export function YoutubeOwnershipCard({
           return;
         }
       }
-      await refreshForMode(forMode);
+      await refreshForModeRef.current(forMode);
     })();
     const watch = api?.watchYoutubeOwnershipReturns?.(forMode, (outcome) => {
       if (cancelled || forMode !== modeRef.current) return;
@@ -251,7 +253,7 @@ export function YoutubeOwnershipCard({
       requestGenRef.current += 1;
       watch?.remove();
     };
-  }, [mode, api, refreshForMode, applyVerifiedIfCurrent]);
+  }, [mode, api, applyVerifiedIfCurrent]);
 
   useEffect(() => {
     if (!shouldReportOwnershipConnectedChange(phase)) return;

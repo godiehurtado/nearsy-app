@@ -48,6 +48,8 @@ async function presenceByMode(
   return { personal, professional };
 }
 
+export const OWN_PROFILE_SOCIAL_OVERLAY_SOURCE = 'android-identity-gets' as const;
+
 export async function loadOwnProfileSocialOwnershipOverlay(
   getters?: OwnProfileSocialOwnershipGetters,
 ): Promise<OwnershipPresenceByMode> {

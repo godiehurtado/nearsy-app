@@ -8,10 +8,25 @@ import {
   buildOwnProfileSocialSummary,
   ownProfileSocialSummarySubtitle,
   resolveOwnProfileSocialSummaryRequest,
+  sameSocialSummaryPresentation,
   type OwnershipPresenceByMode,
   type SocialSummaryPresentation,
 } from './ownProfileSocialSummary.ts';
-import { loadOwnProfileSocialOwnershipOverlay } from './ownProfileSocialSummaryLoad.ts';
+
+type OverlayModule = {
+  loadOwnProfileSocialOwnershipOverlay: () => Promise<OwnershipPresenceByMode>;
+};
+
+/**
+ * Metro only applies the Android overlay file when the specifier has no
+ * explicit TypeScript suffix. A suffixed import always binds the stub.
+ */
+function loadOverlayModule(): OverlayModule {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require('./ownProfileSocialSummaryLoad') as OverlayModule;
+}
+
+const overlayModule = loadOverlayModule();
 
 export function useOwnProfileSocialSummary(input: {
   getUid: () => string | null;
@@ -19,7 +34,10 @@ export function useOwnProfileSocialSummary(input: {
   mountedRef: { current: boolean };
 }): {
   socialSubtitle: string;
-  loadSocialSummary: (doc: Record<string, unknown>) => Promise<void>;
+  loadSocialSummary: (
+    doc: Record<string, unknown>,
+    mode?: ProfileMode,
+  ) => Promise<void>;
 } {
   const { t } = useTranslation();
   const genRef = useRef(0);
@@ -47,7 +65,11 @@ export function useOwnProfileSocialSummary(input: {
       presence: cache.presence,
       mode,
     });
-    setPresentation(built.presentation);
+    setPresentation((prev) =>
+      sameSocialSummaryPresentation(prev, built.presentation)
+        ? prev
+        : built.presentation,
+    );
   }, []);
 
   useEffect(() => {
@@ -55,12 +77,15 @@ export function useOwnProfileSocialSummary(input: {
   }, [applyCache, input.mode]);
 
   const loadSocialSummary = useCallback(
-    async (doc: Record<string, unknown>) => {
+    async (doc: Record<string, unknown>, mode?: ProfileMode) => {
+      if (mode) modeRef.current = mode;
       const requestUid = getUidRef.current() ?? '';
       const gen = ++genRef.current;
       cacheRef.current = null;
       if (Platform.OS === 'android') {
-        setPresentation({ kind: 'loading' });
+        setPresentation((prev) =>
+          prev.kind === 'loading' ? prev : { kind: 'loading' },
+        );
       }
       const result = await resolveOwnProfileSocialSummaryRequest({
         platform: Platform.OS,
@@ -70,7 +95,7 @@ export function useOwnProfileSocialSummary(input: {
           gen === genRef.current &&
           requestUid === (getUidRef.current() ?? '') &&
           input.mountedRef.current,
-        loadOverlay: loadOwnProfileSocialOwnershipOverlay,
+        loadOverlay: overlayModule.loadOwnProfileSocialOwnershipOverlay,
       });
       if (!result) return;
       cacheRef.current = {
