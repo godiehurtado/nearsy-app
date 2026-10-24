@@ -7,5 +7,9 @@ export default {
   },
   incomplete: {
     message: 'Complete this profile before becoming visible again.',
+    switchBlocked:
+      'Complete the required fields before switching to this profile.',
+    keepEditing:
+      'You can keep editing this profile. It stays inactive until it is complete.',
   },
 } as const;
