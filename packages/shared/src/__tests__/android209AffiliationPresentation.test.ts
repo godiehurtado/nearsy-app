@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { resolveAffiliationSearchUi } from '../affiliations/affiliationSearchInteraction.ts';
 import {
   affiliationNameRequired,
   formatAffiliationCaption,
@@ -170,6 +171,71 @@ describe('NEARSY-209 affiliation captions', () => {
     assert.equal(parsed.length, 2);
     assert.equal(parsed[0].name, '');
     assert.equal(parsed[1].type, 'father_of');
+    const namelessFaith = parseDiscoveryAffiliations([
+      { id: 'faith1', name: '', type: 'catholic', logoUrl: null },
+    ]);
+    assert.equal(namelessFaith.length, 1);
+    assert.equal(namelessFaith[0]?.name, '');
+    assert.equal(namelessFaith[0]?.type, 'catholic');
+    assert.equal(
+      formatPublicAffiliationCaption(
+        { name: '', type: 'catholic' },
+        localize,
+      ),
+      'Catholic',
+    );
+  });
+
+  it('selecting a Faith or Civic subcategory enables Add without copying the topic into name', () => {
+    const ui = resolveAffiliationSearchUi({
+      searchFocused: false,
+      pickedName: null,
+      customName: '',
+      customNameValid: true,
+      hasProviderResults: false,
+      searchPending: false,
+      suggestionsUnavailable: false,
+      hasDraftImage: false,
+      topicOnlyReady: true,
+    });
+    assert.equal(ui.showAddCta, true);
+    assert.equal(ui.addName, null);
+    assert.equal(ui.hideJourneyFooter, false);
+    const screen = readFileSync(
+      path.join(root, 'screens/AffiliationsScreen.tsx'),
+      'utf8',
+    );
+    assert.match(screen, /pendingSearch\?\.ui\.showAddCta \?/);
+    assert.doesNotMatch(
+      screen,
+      /showAddCta && pendingSearch\.ui\.addName/,
+    );
+    const panel = readFileSync(
+      path.join(
+        root,
+        'components/registration/OnboardingAffiliationCategoryPanel.tsx',
+      ),
+      'utf8',
+    );
+    assert.match(
+      panel,
+      /topicOnlyCategory && !!activeTopic && !trimmedQuery && !pickedName/,
+    );
+    const patch = buildPostCrjAffiliationPersistencePatch('professional', [
+      {
+        id: buildUniqueCustomAffiliationId('faith', '', [], 'catholic'),
+        name: '',
+        categoryId: 'faith',
+        source: 'custom',
+        topic: 'catholic',
+      },
+    ]);
+    const row = patch.professionalOnboardingAffiliations?.[0];
+    assert.equal(row?.name, '');
+    assert.equal(row?.topic, 'catholic');
+    assert.notEqual(row?.name, 'Catholic');
+    assert.equal(affiliationNameRequired('family'), true);
+    assert.equal(affiliationNameRequired('faith'), false);
   });
 
   it('persists topic IDs and empty civic names as name:""', () => {

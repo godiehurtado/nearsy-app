@@ -208,12 +208,15 @@ export default function AffiliationsScreen() {
   }
 
   const footer =
-    pendingSearch?.ui.showAddCta && pendingSearch.ui.addName ? (
+    pendingSearch?.ui.showAddCta ? (
       <PrimaryButton
-        label={t('onboarding.profileCompletion.affiliations.addNamed' as any, {
-          name: pendingSearch.ui.addName,
-          defaultValue: `Add ${pendingSearch.ui.addName}`,
-        })}
+        label={
+          pendingSearch.ui.addName
+            ? t('onboarding.profileCompletion.affiliations.addA11y' as any, {
+                name: pendingSearch.ui.addName,
+              })
+            : t('onboarding.profileCompletion.affiliations.add' as any)
+        }
         onPress={() => searchAddRef.current?.()}
       />
     ) : (

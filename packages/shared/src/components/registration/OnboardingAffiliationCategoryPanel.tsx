@@ -144,7 +144,7 @@ export function OnboardingAffiliationCategoryPanel({
       allowEmpty: topicOnlyCategory && !!activeTopic,
     }).ok === true;
   const topicOnlyReady =
-    topicOnlyCategory && !!activeTopic && customNameValid && !pickedName;
+    topicOnlyCategory && !!activeTopic && !trimmedQuery && !pickedName;
   const searchHintVisible = !freeText && !topicOnlyCategory && trimmedQuery.length < 2;
   const localizeTopic = (id: string, fallback: string) =>
     t(`onboarding.profileCompletion.affiliations.topics.${id}` as any, {
@@ -505,10 +505,17 @@ export function OnboardingAffiliationCategoryPanel({
                       accessibilityRole="button"
                       accessibilityLabel={
                         removeAffiliationAccessibilityLabel
-                          ? removeAffiliationAccessibilityLabel(item.name)
+                          ? removeAffiliationAccessibilityLabel(
+                              formatAffiliationCaption(item, localizeTopic),
+                            )
                           : t(
                               'onboarding.profileCompletion.affiliations.removeA11y' as any,
-                              { name: item.name },
+                              {
+                                name: formatAffiliationCaption(
+                                  item,
+                                  localizeTopic,
+                                ),
+                              },
                             )
                       }
                       hitSlop={8}

@@ -323,6 +323,18 @@ describe('CRJ-I9-C Search Mode keyboard UX', () => {
     assert.ok(screen.includes('contentScrollRef={stepScrollRef}'));
     assert.ok(!screen.includes('scrollAnchorYRef'));
   });
+
+  it('topic-only Faith/Civic with empty name shows Add without hiding chips', () => {
+    const ui = resolveAffiliationSearchUi({
+      ...idleInput,
+      customNameValid: true,
+      topicOnlyReady: true,
+    });
+    assert.equal(ui.phase, 'custom_ready');
+    assert.equal(ui.showAddCta, true);
+    assert.equal(ui.addName, null);
+    assert.equal(ui.hideJourneyFooter, false);
+  });
 });
 
 describe('Own Profile Affiliations Search Mode (out of J04 scope)', () => {

@@ -36,7 +36,8 @@ export function resolveAffiliationSearchUi(input: {
   if (input.topicOnlyReady) {
     return {
       phase: 'custom_ready',
-      hideJourneyFooter: true,
+      // Keep subcategory chips visible; Add replaces Skip/Next via showAddCta.
+      hideJourneyFooter: false,
       showAddCta: true,
       addName: input.customName.trim() || null,
     };
