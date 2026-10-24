@@ -1,7 +1,7 @@
 import type { OnboardingAffiliationCategoryId } from './onboardingAffiliationCatalog';
 import {
   getOnboardingAffiliationCategory,
-  listOnboardingAffiliationCategoryIds,
+  listAllAffiliationCategoryIds,
 } from './onboardingAffiliationCatalog';
 
 /** CRJ selected-affiliation logo tile (OnboardingAffiliationCategoryPanel). */
@@ -28,7 +28,7 @@ export const AFFILIATION_LOGO_PALETTE = [
   '#4B5563',
 ] as const;
 
-const KNOWN_CATEGORY_IDS = new Set<string>(listOnboardingAffiliationCategoryIds());
+const KNOWN_CATEGORY_IDS = new Set<string>(listAllAffiliationCategoryIds());
 
 /** Claude `logoTint` hash. */
 export function deterministicAffiliationAvatarColor(name: string): string {

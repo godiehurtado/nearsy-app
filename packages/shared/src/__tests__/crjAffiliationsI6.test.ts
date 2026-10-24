@@ -41,15 +41,18 @@ const APPROVED_CATEGORY_ORDER = [
   'sports_clubs',
   'faith',
   'political_civic',
-  'identity_lifestyle',
+  'family',
 ] as const;
 
 describe('CRJ-I6 Affiliations', () => {
   it('A — exactly 7 categories in approved order', () => {
-    assert.equal(ONBOARDING_AFFILIATION_CATEGORIES.length, 7);
+    assert.equal(listOnboardingAffiliationCategoryIds().length, 7);
     assert.deepEqual(listOnboardingAffiliationCategoryIds(), [
       ...APPROVED_CATEGORY_ORDER,
     ]);
+    assert.ok(
+      ONBOARDING_AFFILIATION_CATEGORIES.some((c) => c.id === 'identity_lifestyle'),
+    );
   });
 
   it('B — no N/M counter in ProfileCompletionScreen or affiliation panel', () => {

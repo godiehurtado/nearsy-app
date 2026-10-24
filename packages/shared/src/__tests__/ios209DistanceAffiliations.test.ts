@@ -42,13 +42,14 @@ describe('IOS-209 hide distance presentation', () => {
 });
 
 describe('IOS-209 Identity & Lifestyle free text', () => {
-  it('marks only identity_lifestyle as free-text', () => {
+  it('marks family and identity_lifestyle as free-text', () => {
+    assert.equal(isFreeTextAffiliationCategory('family'), true);
     assert.equal(isFreeTextAffiliationCategory('identity_lifestyle'), true);
     assert.equal(isFreeTextAffiliationCategory('education'), false);
     assert.equal(isFreeTextAffiliationCategory('professional'), false);
   });
 
-  it('panel skips entity search and Logo.dev rebuild for identity_lifestyle', () => {
+  it('panel skips entity search and Logo.dev rebuild for family and identity_lifestyle', () => {
     const panel = readShared(
       'components/registration/OnboardingAffiliationCategoryPanel.tsx',
     );
@@ -58,7 +59,7 @@ describe('IOS-209 Identity & Lifestyle free text', () => {
     assert.match(panel, /freeTextCategory \? false : results\.length/);
     assert.match(
       panel,
-      /Identity & Lifestyle never reconstructs Logo\.dev|if \(freeTextCategory\) return undefined/,
+      /Family and Identity & Lifestyle never reconstructs Logo\.dev|if \(freeTextCategory\) return undefined/,
     );
   });
 
@@ -213,11 +214,23 @@ describe('IOS-209 Identity & Lifestyle i18n topics', () => {
       'pet_parent',
       'veteran',
       'personality_type',
+      'father_of',
+      'mother_of',
+      'child_of',
+      'sibling_of',
+      'spouse_of',
+      'partner_of',
+      'grandparent_of',
+      'grandchild_of',
     ]) {
       assert.match(en, new RegExp(`${key}:`));
       assert.match(es, new RegExp(`${key}:`));
     }
     assert.match(en, /identityFreeTextHint:/);
     assert.match(es, /identityFreeTextHint:/);
+    assert.match(en, /family: 'Family'/);
+    assert.match(es, /family: 'Familia'/);
+    assert.match(en, /identity_lifestyle: 'Identity & Lifestyle'/);
+    assert.match(es, /identity_lifestyle: 'Identidad y estilo de vida'/);
   });
 });

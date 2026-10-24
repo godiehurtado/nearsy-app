@@ -312,24 +312,26 @@ describe('CRJ-I9-C Search Mode keyboard UX', () => {
     assert.ok(panel.includes('scrollTo'));
     assert.ok(panel.includes('scrollAnchorYRef'));
     assert.ok(panel.includes('useReducedMotion'));
-    assert.ok(screen.includes('searchAddRef'));
+    assert.ok(screen.includes('getAffiliationAddRef'));
     assert.ok(
       screen.includes(
         'onboarding.profileCompletion.affiliations.addA11y',
       ),
     );
     assert.ok(!panel.includes('ActivityIndicator'));
-    // CRJ single-panel omits scrollAnchorYRef → falls back to y=0
     assert.ok(screen.includes('contentScrollRef={stepScrollRef}'));
-    assert.ok(!screen.includes('scrollAnchorYRef'));
+    assert.ok(screen.includes('headerHeightRef={affiliationHeaderHeightRef}'));
   });
 });
 
 describe('Own Profile Affiliations Search Mode wiring', () => {
   it('AffiliationsScreen wires onSearchUiChange and searchAddRef', () => {
     const screen = readSharedSource('screens/AffiliationsScreen.tsx');
+    const accordion = readSharedSource(
+      'components/registration/AffiliationCategoryAccordionList.tsx',
+    );
     assert.ok(screen.includes('onSearchUiChange'));
-    assert.ok(screen.includes('searchAddRef'));
+    assert.ok(accordion.includes('searchAddRef'));
     assert.ok(screen.includes('resolvePendingAffiliationSearchUi'));
     assert.ok(screen.includes('handleAddPending'));
     assert.ok(screen.includes('showAddCta'));
@@ -344,12 +346,16 @@ describe('Own Profile Affiliations Search Mode wiring', () => {
 
   it('multi-panel search scroll targets active category anchor, not hard-coded y=0', () => {
     const screen = readSharedSource('screens/AffiliationsScreen.tsx');
+    const accordion = readSharedSource(
+      'components/registration/AffiliationCategoryAccordionList.tsx',
+    );
     const panel = readSharedSource(
       'components/registration/OnboardingAffiliationCategoryPanel.tsx',
     );
-    assert.ok(screen.includes('scrollAnchorYRef={getScrollAnchorRef(categoryId)}'));
-    assert.ok(screen.includes('syncScrollAnchor'));
+    assert.ok(accordion.includes('scrollAnchorYRef={getScrollAnchorRef(categoryId)}'));
+    assert.ok(accordion.includes('headerHeightRef'));
     assert.ok(screen.includes('aboveCategoriesHeightRef'));
+    assert.ok(screen.includes('headerHeightRef={aboveCategoriesHeightRef}'));
     assert.ok(panel.includes('scrollAnchorYRef?.current'));
     assert.ok(panel.includes('Math.max(0, anchor)'));
     // Must not hard-code scrollTo({ y: 0 }) as the only path
@@ -359,13 +365,16 @@ describe('Own Profile Affiliations Search Mode wiring', () => {
 
   it('focus active category keeps results usable (Add/Save wiring intact)', () => {
     const screen = readSharedSource('screens/AffiliationsScreen.tsx');
+    const accordion = readSharedSource(
+      'components/registration/AffiliationCategoryAccordionList.tsx',
+    );
     const panel = readSharedSource(
       'components/registration/OnboardingAffiliationCategoryPanel.tsx',
     );
     assert.ok(panel.includes('displayLogoUrl(result)'));
     assert.ok(panel.includes('displayLogoUrl(item)'));
     assert.ok(panel.includes('resolveInMemorySelectedLogoUrl'));
-    assert.ok(screen.includes('scrollAnchorYRef'));
+    assert.ok(accordion.includes('scrollAnchorYRef'));
     assert.ok(screen.includes('handleAddPending'));
     assert.ok(screen.includes('handleSave'));
   });

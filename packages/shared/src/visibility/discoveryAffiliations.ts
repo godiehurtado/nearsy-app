@@ -1,13 +1,16 @@
 /**
  * Public affiliations for getDiscoveryProfile (Detail only).
- * No provider / website / topic / source bags.
+ * Four-key DTO: { id, name, type, logoUrl }. `type` is the subcategory ID
+ * when known; never a private `topic` bag (2.0.8 drops extra keys).
+ * Contract: docs/design/NEARSY-209-affiliations-final-contract.md
  */
 
 import {
-  getOnboardingAffiliationCategory,
-  listOnboardingAffiliationCategoryIds,
-  type OnboardingAffiliationCategoryId,
-} from '../affiliations/onboardingAffiliationCatalog';
+  formatAffiliationDisplay,
+  isFamilyTopicId,
+  isKnownAffiliationCategoryId,
+  type AffiliationTranslate,
+} from '../affiliations/affiliationPresentation';
 import { isAllowedDiscoverySocialHttpsUrl } from './discoverySocialLinks';
 
 /** Contractual cap — mirrors Functions `MAX_PUBLIC_AFFILIATIONS`. */
@@ -22,9 +25,7 @@ export type DiscoveryPublicAffiliation = {
 
 const AFFILIATION_ALLOWED_KEYS = new Set(['id', 'name', 'type', 'logoUrl']);
 
-const KNOWN_CATEGORY_IDS = new Set<string>(listOnboardingAffiliationCategoryIds());
-
-function nonEmptyString(value: unknown): string | null {
+function stringOrNull(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
@@ -32,14 +33,15 @@ function nonEmptyString(value: unknown): string | null {
 
 /** Unusable logo → null so the UI falls back to initials / category mark. */
 function httpsLogoOrNull(value: unknown): string | null {
-  const trimmed = nonEmptyString(value);
+  const trimmed = stringOrNull(value);
   if (!trimmed) return null;
   return isAllowedDiscoverySocialHttpsUrl(trimmed) ? trimmed : null;
 }
 
 /**
  * One wire row → affiliation, or null when it must be hidden
- * (not an object, extra/private fields, missing id or name).
+ * (not an object, extra/private fields, missing id).
+ * Nameless civic/faith rows keep `name: ""` when `type` is a subcategory.
  */
 function parseAffiliationItem(value: unknown): DiscoveryPublicAffiliation | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -50,14 +52,20 @@ function parseAffiliationItem(value: unknown): DiscoveryPublicAffiliation | null
     if (!AFFILIATION_ALLOWED_KEYS.has(key)) return null;
   }
 
-  const id = nonEmptyString(row.id);
-  const name = nonEmptyString(row.name);
-  if (!id || !name) return null;
+  const id = stringOrNull(row.id);
+  if (!id) return null;
+
+  const name =
+    typeof row.name === 'string' ? row.name.trim() : null;
+  if (name === null) return null;
+  const type = stringOrNull(row.type);
+  if (!name && !type) return null;
+  if (!name && isKnownAffiliationCategoryId(type)) return null;
 
   return {
     id,
     name,
-    type: nonEmptyString(row.type),
+    type,
     logoUrl: httpsLogoOrNull(row.logoUrl),
   };
 }
@@ -89,31 +97,35 @@ export function parseDiscoveryAffiliations(
 }
 
 /**
- * Localized category label when `type` matches CRJ onboarding category id;
- * otherwise a safe humanized presentation (never raw technical dumps).
+ * Subcategory label for Discovery. General category ids are never shown.
  */
 export function formatDiscoveryAffiliationTypeLabel(
   type: string | null | undefined,
-  translateCategory: (nameKey: string, fallback: string) => string,
+  translate: AffiliationTranslate,
 ): string | null {
   if (typeof type !== 'string') return null;
   const trimmed = type.trim();
-  if (!trimmed) return null;
+  if (!trimmed || isKnownAffiliationCategoryId(trimmed)) return null;
+  return (
+    formatAffiliationDisplay({
+      name: null,
+      categoryId: isFamilyTopicId(trimmed) ? 'family' : null,
+      topic: trimmed,
+      translate,
+    })?.primary ?? null
+  );
+}
 
-  if (KNOWN_CATEGORY_IDS.has(trimmed)) {
-    const cat = getOnboardingAffiliationCategory(
-      trimmed as OnboardingAffiliationCategoryId,
-    );
-    return translateCategory(cat.nameKey, cat.name);
-  }
-
-  if (/^[a-z0-9]+(?:_[a-z0-9]+)*$/i.test(trimmed)) {
-    return trimmed
-      .split('_')
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-      .join(' ');
-  }
-
-  return trimmed;
+export function formatDiscoveryAffiliationDisplay(
+  item: Pick<DiscoveryPublicAffiliation, 'name' | 'type'>,
+  translate: AffiliationTranslate,
+) {
+  const type = item.type;
+  const topic = type && !isKnownAffiliationCategoryId(type) ? type : null;
+  return formatAffiliationDisplay({
+    name: item.name,
+    categoryId: isFamilyTopicId(type) ? 'family' : null,
+    topic,
+    translate,
+  });
 }

@@ -27,7 +27,7 @@ import {
 } from '../../theme';
 import { cardShadow } from '../../theme/shadows';
 import {
-  formatDiscoveryAffiliationTypeLabel,
+  formatDiscoveryAffiliationDisplay,
   type DiscoveryPublicAffiliation,
 } from '../../visibility/discoveryAffiliations';
 import { resolveDiscoveryAffiliationTileWidth } from './discoveryAffiliationsLayout';
@@ -44,30 +44,35 @@ export function DiscoveryAffiliationsCard({ affiliations }: Props) {
   const { t } = useTranslation();
   const [gridWidth, setGridWidth] = useState(0);
 
-  const items = Array.isArray(affiliations)
-    ? affiliations.filter((a) => a?.id && a?.name)
-    : [];
-
-  const translateCategory = useCallback(
-    (nameKey: string, fallback: string) =>
-      t(
-        `onboarding.profileCompletion.affiliations.categories.${nameKey}` as any,
-        { defaultValue: fallback },
-      ),
+  const translateAffiliation = useCallback(
+    (key: string, fallback: string) => t(key as any, { defaultValue: fallback }),
     [t],
   );
 
-  const labeled = useMemo(
-    () =>
-      items.map((item) => ({
+  const labeled = useMemo(() => {
+    if (!Array.isArray(affiliations)) return [];
+    const out: Array<{
+      item: DiscoveryPublicAffiliation;
+      primary: string;
+      secondary: string | null;
+      accessibilityLabel: string;
+    }> = [];
+    for (const item of affiliations) {
+      if (!item?.id) continue;
+      const display = formatDiscoveryAffiliationDisplay(
         item,
-        typeLabel: formatDiscoveryAffiliationTypeLabel(
-          item.type,
-          translateCategory,
-        ),
-      })),
-    [items, translateCategory],
-  );
+        translateAffiliation,
+      );
+      if (!display?.primary) continue;
+      out.push({
+        item,
+        primary: display.primary,
+        secondary: display.secondary,
+        accessibilityLabel: display.accessibilityLabel,
+      });
+    }
+    return out;
+  }, [affiliations, translateAffiliation]);
 
   const onGridLayout = useCallback((event: LayoutChangeEvent) => {
     const next = Math.round(event.nativeEvent.layout.width);
@@ -97,7 +102,7 @@ export function DiscoveryAffiliationsCard({ affiliations }: Props) {
         {t('discoveryProfile.affiliations')}
       </Text>
       <View style={styles.grid} onLayout={onGridLayout}>
-        {labeled.map(({ item, typeLabel }) => (
+        {labeled.map(({ item, primary, secondary, accessibilityLabel }) => (
           <View
             key={item.id}
             style={[
@@ -109,12 +114,10 @@ export function DiscoveryAffiliationsCard({ affiliations }: Props) {
               },
             ]}
             accessibilityRole="text"
-            accessibilityLabel={
-              typeLabel ? `${item.name}, ${typeLabel}` : item.name
-            }
+            accessibilityLabel={accessibilityLabel}
           >
             <AffiliationLogoMark
-              name={item.name}
+              name={primary}
               type={item.type}
               logoUrl={item.logoUrl}
               size={AFFILIATION_DISCOVERY_LOGO_SIZE}
@@ -124,14 +127,14 @@ export function DiscoveryAffiliationsCard({ affiliations }: Props) {
               style={[styles.name, { color: palette.textPrimary }]}
               numberOfLines={2}
             >
-              {item.name}
+              {primary}
             </Text>
-            {typeLabel ? (
+            {secondary ? (
               <Text
                 style={[styles.type, { color: palette.textSecondary }]}
                 numberOfLines={1}
               >
-                {typeLabel}
+                {secondary}
               </Text>
             ) : null}
           </View>

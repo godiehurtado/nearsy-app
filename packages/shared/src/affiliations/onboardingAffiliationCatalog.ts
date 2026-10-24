@@ -1,6 +1,10 @@
 import type { AffiliationCategory } from '../types/profile';
 
-/** CRJ-I6 affiliation category ids — seven onboarding screens. */
+/**
+ * CRJ affiliation category ids.
+ * `family` replaces `identity_lifestyle` for new writes (NEARSY-209 contract).
+ * `identity_lifestyle` remains readable/editable and is never rewritten.
+ */
 export type OnboardingAffiliationCategoryId =
   | 'education'
   | 'professional'
@@ -8,6 +12,7 @@ export type OnboardingAffiliationCategoryId =
   | 'sports_clubs'
   | 'faith'
   | 'political_civic'
+  | 'family'
   | 'identity_lifestyle';
 
 export type OnboardingAffiliationTopic = {
@@ -172,6 +177,27 @@ export const ONBOARDING_AFFILIATION_CATEGORIES: OnboardingAffiliationCategory[] 
       ],
     },
     {
+      id: 'family',
+      nameKey: 'family',
+      name: 'Family',
+      subtitleKey: 'family',
+      subtitle: 'Family relationships you want to share.',
+      emoji: '👨‍👩‍👧',
+      icon: 'people-circle-outline',
+      iconColor: '#CA8A04',
+      topics: [
+        { id: 'father_of', label: 'Father of', emoji: '👨' },
+        { id: 'mother_of', label: 'Mother of', emoji: '👩' },
+        { id: 'child_of', label: 'Child of', emoji: '🧒' },
+        { id: 'sibling_of', label: 'Sibling of', emoji: '👫' },
+        { id: 'spouse_of', label: 'Spouse of', emoji: '💍' },
+        { id: 'partner_of', label: 'Partner of', emoji: '💛' },
+        { id: 'grandparent_of', label: 'Grandparent of', emoji: '👴' },
+        { id: 'grandchild_of', label: 'Grandchild of', emoji: '👶' },
+        { id: 'pet_parent', label: 'Pet parent of', emoji: '🐾' },
+      ],
+    },
+    {
       id: 'identity_lifestyle',
       nameKey: 'identity_lifestyle',
       name: 'Identity & Lifestyle',
@@ -202,11 +228,38 @@ export const CRJ_AFFILIATION_TO_LEGACY_CATEGORY: Record<
   sports_clubs: 'favoriteTeam',
   faith: 'communityGroups',
   political_civic: 'communityGroups',
+  family: 'hobbiesClubs',
   identity_lifestyle: 'hobbiesClubs',
 };
 
+const NEW_WRITE_CATEGORY_IDS: OnboardingAffiliationCategoryId[] = [
+  'education',
+  'professional',
+  'community',
+  'sports_clubs',
+  'faith',
+  'political_civic',
+  'family',
+];
+
+/** Seven CRJ / new-write screens. Legacy `identity_lifestyle` is omitted. */
 export function listOnboardingAffiliationCategoryIds(): OnboardingAffiliationCategoryId[] {
+  return [...NEW_WRITE_CATEGORY_IDS];
+}
+
+export function listAllAffiliationCategoryIds(): OnboardingAffiliationCategoryId[] {
   return ONBOARDING_AFFILIATION_CATEGORIES.map((c) => c.id);
+}
+
+/** Editor: Family for new rows; Identity & Lifestyle only when legacy rows exist. */
+export function listEditableAffiliationCategoryIds(
+  selected: readonly Pick<OnboardingSelectedAffiliation, 'categoryId'>[],
+): OnboardingAffiliationCategoryId[] {
+  const ids = listOnboardingAffiliationCategoryIds();
+  if (selected.some((row) => row.categoryId === 'identity_lifestyle')) {
+    return [...ids, 'identity_lifestyle'];
+  }
+  return ids;
 }
 
 export function getOnboardingAffiliationCategory(
@@ -227,14 +280,22 @@ export function buildCustomAffiliationId(
   categoryId: OnboardingAffiliationCategoryId,
   name: string,
   occupiedIds: ReadonlySet<string> | readonly string[] = [],
+  topic?: string,
 ): string {
-  const slug = name
+  const nameSlug = name
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 40);
-  const base = `custom_${categoryId}_${slug || 'org'}`;
+  const topicSlug = (topic ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+  const disambiguator = nameSlug || topicSlug || 'item';
+  const base = `custom_${categoryId}_${disambiguator}`;
   const occupied =
     occupiedIds instanceof Set ? occupiedIds : new Set(occupiedIds);
   if (!occupied.has(base)) return base;
@@ -243,35 +304,57 @@ export function buildCustomAffiliationId(
   return `${base}_${n}`;
 }
 
-/** Identity & Lifestyle uses free text + optional own image (no Logo.dev). */
+/** Family never uses Logo.dev. Legacy Identity & Lifestyle stays free-text in 2.0.9. */
 export function isFreeTextAffiliationCategory(
   categoryId: OnboardingAffiliationCategoryId,
 ): boolean {
-  return categoryId === 'identity_lifestyle';
+  return categoryId === 'family' || categoryId === 'identity_lifestyle';
 }
 
 export function normalizeAffiliationName(name: string): string {
   return name.trim().replace(/\s+/g, ' ');
 }
 
-export function affiliationIdentityKey(item: Pick<
-  OnboardingSelectedAffiliation,
-  'name' | 'providerId' | 'source'
->): string {
+export function affiliationIdentityKey(
+  item: Pick<
+    OnboardingSelectedAffiliation,
+    'name' | 'providerId' | 'source' | 'topic' | 'categoryId'
+  >,
+): string {
+  const name = normalizeAffiliationName(item.name).toLowerCase();
+  const topic = (item.topic ?? '').trim().toLowerCase();
+  if (item.categoryId === 'family') {
+    return `family:${topic}:${name}`;
+  }
+  if (!name && topic) {
+    return `topic:${item.categoryId ?? ''}:${topic}`;
+  }
   if (item.source === 'provider' && item.providerId) {
     return `provider:${item.providerId}`;
   }
-  return `name:${normalizeAffiliationName(item.name).toLowerCase()}`;
+  return `name:${name}`;
 }
 
 export function isDuplicateAffiliation(
   list: OnboardingSelectedAffiliation[],
-  candidate: Pick<OnboardingSelectedAffiliation, 'name' | 'providerId' | 'source'>,
+  candidate: Pick<
+    OnboardingSelectedAffiliation,
+    'name' | 'providerId' | 'source' | 'topic' | 'categoryId'
+  >,
 ): boolean {
   const key = affiliationIdentityKey(candidate);
   const normalizedName = normalizeAffiliationName(candidate.name).toLowerCase();
   return list.some((entry) => {
     if (affiliationIdentityKey(entry) === key) return true;
+    if (!normalizedName) return false;
+    if (
+      entry.categoryId === 'family' ||
+      candidate.categoryId === 'family' ||
+      entry.categoryId === 'identity_lifestyle' ||
+      candidate.categoryId === 'identity_lifestyle'
+    ) {
+      return false;
+    }
     return normalizeAffiliationName(entry.name).toLowerCase() === normalizedName;
   });
 }
@@ -282,6 +365,6 @@ export function validateCustomAffiliationName(name: string): {
 } | { ok: false; reason: 'empty' | 'tooLong' } {
   const trimmed = normalizeAffiliationName(name);
   if (!trimmed) return { ok: false, reason: 'empty' };
-  if (trimmed.length > 80) return { ok: false, reason: 'tooLong' };
+  if (trimmed.length > 120) return { ok: false, reason: 'tooLong' };
   return { ok: true, name: trimmed };
 }

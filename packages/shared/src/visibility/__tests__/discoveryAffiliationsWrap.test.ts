@@ -218,10 +218,11 @@ describe('CHG-AFF-02 static — card, screen order, theme, i18n', () => {
     assert.ok(bio > 0 && aff > bio && interests > aff && photos > interests);
   });
 
-  it('title and category labels stay localized EN/ES', () => {
+  it('title and subcategory labels stay localized EN/ES', () => {
     assert.equal(enDiscovery.affiliations, 'Affiliations');
     assert.equal(es.discoveryProfile.affiliations, 'Afiliaciones');
     assert.match(cardSrc, /t\('discoveryProfile\.affiliations'\)/);
-    assert.match(cardSrc, /onboarding\.profileCompletion\.affiliations\.categories\./);
+    assert.match(cardSrc, /formatDiscoveryAffiliationDisplay/);
+    assert.doesNotMatch(cardSrc, /formatDiscoveryAffiliationTypeLabel/);
   });
 });

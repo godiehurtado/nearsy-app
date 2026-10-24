@@ -8,6 +8,7 @@ import type { TFunction } from 'i18next';
 import type { ProfileMode } from '../profile/profileModeFields';
 import {
   buildSetActiveProfileModeRequest,
+  isProfileIncompleteModeError,
   normalizeVisibilityCallableError,
   type SetActiveProfileModeResponse,
   type VisibilityDiscoveryClient,
@@ -72,6 +73,13 @@ export function presentActiveProfileModeError(
   t: TFunction,
   err: VisibilityDiscoveryClientError,
 ): ActiveProfileModeErrorPresentation {
+  if (isProfileIncompleteModeError(err)) {
+    return {
+      title: t('profile.mode.incompleteDestinationTitle'),
+      userMessage: t('profile.mode.incompleteDestinationBody'),
+      retryable: false,
+    };
+  }
   if (
     err.code === 'unavailable' ||
     err.retryable

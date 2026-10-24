@@ -62,7 +62,13 @@ function PlatformIcon({
 export function DiscoverySocialMediaRow({ links }: Props) {
   const { palette } = useAppTheme();
   const { t } = useTranslation();
-  const items = useMemo(() => parseDiscoverySocialLinks(links), [links]);
+  const items = useMemo(
+    () =>
+      parseDiscoverySocialLinks(links).filter(
+        (link) => link.platform !== 'snapchat',
+      ),
+    [links],
+  );
 
   const openLink = useCallback(
     async (link: DiscoveryPublicSocialLink) => {

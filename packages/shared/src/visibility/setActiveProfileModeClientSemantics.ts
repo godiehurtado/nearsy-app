@@ -39,3 +39,20 @@ export function isActiveFaceIncomplete(
 ): boolean {
   return response.targetProfileComplete === false;
 }
+
+/**
+ * Successful targetProfileComplete:false is the same-mode no-op only.
+ * Never treat it as a completed switch to the other face.
+ */
+export function shouldApplyActiveProfileModeSwitch(input: {
+  confirmedMode: 'personal' | 'professional';
+  response: Pick<SetActiveProfileModeResponse, 'mode' | 'targetProfileComplete'>;
+}): boolean {
+  if (
+    input.response.targetProfileComplete === false &&
+    input.response.mode !== input.confirmedMode
+  ) {
+    return false;
+  }
+  return true;
+}

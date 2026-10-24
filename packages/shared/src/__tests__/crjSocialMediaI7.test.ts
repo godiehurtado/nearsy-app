@@ -36,9 +36,7 @@ describe('CRJ-I7 Social Media architecture', () => {
   it('A — Social Media follows Affiliations', () => {
     assert.equal(POST_AFFILIATIONS_CRJ_STEP, 'socialMedia');
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
-    const affIdx = screen.indexOf(
-      'offset -= AFFILIATION_CATEGORY_IDS.length',
-    );
+    const affIdx = screen.indexOf("return { kind: 'affiliation' }");
     const socialReturn = screen.indexOf(
       "if (offset === 0) return { kind: 'socialMedia' }",
     );
@@ -267,6 +265,23 @@ describe('CRJ-I7 Social Media data / validation', () => {
     assert.equal(patch.socialLinksPersonal?.website, 'https://nearsy.app');
     assert.equal(patch.socialLinksPersonal?.instagram, undefined);
     assert.ok(!CRJ_SOCIAL_PLATFORM_IDS.includes('website' as never));
+  });
+
+  it('preserves hidden Snapchat on save and excludes it from connected counts', () => {
+    const values = emptyCrjSocialDraftValues();
+    values.facebook = 'https://www.facebook.com/diego';
+    values.snapchat = 'diego';
+    const patch = buildCrjSocialLinksPersistencePatch(
+      'personal',
+      values,
+      [],
+      { snapchat: 'https://www.snapchat.com/add/hidden' },
+    );
+    assert.equal(
+      patch.socialLinksPersonal?.snapchat,
+      'https://www.snapchat.com/add/hidden',
+    );
+    assert.equal(countConnectedSocials(values, []), 1);
   });
 
   it('custom network requires a usable URL', () => {

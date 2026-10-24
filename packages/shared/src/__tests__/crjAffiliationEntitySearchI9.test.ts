@@ -38,7 +38,10 @@ import {
 } from '../affiliations/affiliationCallableHttp';
 import { buildCrjAffiliationPersistencePatch } from '../affiliations/onboardingAffiliationPersistence';
 import { fixtureAffiliationEntitySearchProvider } from '../affiliations/fixtureAffiliationEntitySearchProvider';
-import { listOnboardingAffiliationCategoryIds } from '../affiliations/onboardingAffiliationCatalog';
+import {
+  isFreeTextAffiliationCategory,
+  listOnboardingAffiliationCategoryIds,
+} from '../affiliations/onboardingAffiliationCatalog';
 import { resolveAffiliationLogoPresentation } from '../affiliations/affiliationLogo';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -258,7 +261,7 @@ describe('CRJ-I9 panel wiring / custom fallback', () => {
     assert.ok(!panel.includes('ActivityIndicator'));
   });
 
-  it('coverage corpus spans all seven categories', () => {
+  it('coverage corpus spans searchable categories; Family never searches', () => {
     const ids = listOnboardingAffiliationCategoryIds();
     assert.deepEqual(ids, [
       'education',
@@ -267,14 +270,22 @@ describe('CRJ-I9 panel wiring / custom fallback', () => {
       'sports_clubs',
       'faith',
       'political_civic',
-      'identity_lifestyle',
+      'family',
     ]);
-    for (const id of ids) {
+    assert.equal(isFreeTextAffiliationCategory('family'), true);
+    const searchable = ids.filter((id) => !isFreeTextAffiliationCategory(id));
+    for (const id of searchable) {
       const count = AFFILIATION_ENTITY_SEARCH_COVERAGE_CORPUS.filter(
         (row) => row.categoryId === id,
       ).length;
       assert.equal(count, 10, `${id} should have 10 queries`);
     }
+    assert.equal(
+      AFFILIATION_ENTITY_SEARCH_COVERAGE_CORPUS.filter(
+        (row) => row.categoryId === 'family',
+      ).length,
+      0,
+    );
   });
 });
 
@@ -454,8 +465,8 @@ describe('CRJ-I9-C shared panel surfaces (CRJ + AffiliationsScreen)', () => {
       'panel must call runtime without explicit context',
     );
 
-    assert.ok(crj.includes('OnboardingAffiliationCategoryPanel'));
-    assert.ok(own.includes('OnboardingAffiliationCategoryPanel'));
+    assert.ok(crj.includes('AffiliationCategoryAccordionList'));
+    assert.ok(own.includes('AffiliationCategoryAccordionList'));
     assert.ok(
       !crj.includes('getAffiliationEntitySearchProvider'),
       'CRJ must not bypass the shared panel provider',

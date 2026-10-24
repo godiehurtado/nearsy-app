@@ -93,6 +93,7 @@ function buildSocialLinksObject(input: BuildSocialLinksFieldInput): SocialLinks 
   }
 
   for (const platform of CRJ_SOCIAL_PLATFORMS) {
+    if (platform.id === 'snapchat') continue;
     const result = normalizeSocialInput(
       platform.id,
       input.values[platform.id] ?? '',
@@ -101,6 +102,9 @@ function buildSocialLinksObject(input: BuildSocialLinksFieldInput): SocialLinks 
       links[platform.storageKey] = result.url;
     }
   }
+
+  const snapchat = input.existing?.snapchat?.trim();
+  if (snapchat) links.snapchat = snapchat;
 
   const customLinks = sanitizeCustom(input.custom);
   if (customLinks) links.custom = customLinks;

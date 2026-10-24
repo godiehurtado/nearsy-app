@@ -1,9 +1,15 @@
 import type { AffiliationItem } from '../types/profile';
 import {
   CRJ_AFFILIATION_TO_LEGACY_CATEGORY,
+  getOnboardingAffiliationCategory,
   type OnboardingSelectedAffiliation,
 } from './onboardingAffiliationCatalog';
 import { isEphemeralProviderLogoUrl } from './affiliationLogoDev';
+import {
+  isFamilyAffiliationCategory,
+  isTopicSufficientAffiliationCategory,
+  resolveAffiliationTopicId,
+} from './affiliationPresentation';
 
 /** Field-only affiliation bags — never includes lifecycle keys. */
 export type AffiliationFieldPersistencePatch = {
@@ -20,14 +26,25 @@ export type CrjAffiliationPersistencePatch = AffiliationFieldPersistencePatch & 
 function sanitizeOnboardingAffiliationForPersistence(
   item: OnboardingSelectedAffiliation,
 ): Record<string, string> {
+  const topicId =
+    resolveAffiliationTopicId(item.categoryId, item.topic) ??
+    (item.topic?.trim() || undefined);
+  const name = item.name.trim();
+  const family = isFamilyAffiliationCategory(item.categoryId);
+  const namelessCivic =
+    isTopicSufficientAffiliationCategory(item.categoryId) && !name;
+  const source = family || namelessCivic ? 'custom' : item.source;
   const row: Record<string, string> = {
     id: item.id,
-    name: item.name,
+    name,
     categoryId: item.categoryId,
-    source: item.source,
+    source,
   };
-  if (item.providerId) row.providerId = item.providerId;
-  if (item.provider) row.provider = item.provider;
+  if (!family && !namelessCivic) {
+    if (item.providerId) row.providerId = item.providerId;
+    if (item.provider) row.provider = item.provider;
+    if (item.website) row.website = item.website;
+  }
   if (
     item.logoUrl &&
     !/^(file|content|ph|assets-library):/i.test(item.logoUrl) &&
@@ -35,9 +52,25 @@ function sanitizeOnboardingAffiliationForPersistence(
   ) {
     row.logoUrl = item.logoUrl;
   }
-  if (item.website) row.website = item.website;
-  if (item.topic) row.topic = item.topic;
+  if (topicId) row.topic = topicId;
   return row;
+}
+
+function legacyAffiliationLabel(item: OnboardingSelectedAffiliation): string {
+  const name = item.name.trim();
+  if (name) return name;
+  if (item.topic) {
+    try {
+      const topic = getOnboardingAffiliationCategory(item.categoryId).topics.find(
+        (row) => row.id === item.topic,
+      );
+      if (topic?.label) return topic.label;
+    } catch {
+      // Unknown category ids stay as stored topic.
+    }
+    return item.topic;
+  }
+  return item.categoryId;
 }
 
 /** Bridge CRJ selections to legacy ProfileDetail AffiliationItem rows. */
@@ -46,7 +79,7 @@ export function onboardingAffiliationsToLegacy(
 ): AffiliationItem[] {
   return selected.map((item) => ({
     category: CRJ_AFFILIATION_TO_LEGACY_CATEGORY[item.categoryId],
-    label: item.name,
+    label: legacyAffiliationLabel(item),
     imageUrl:
       item.logoUrl &&
       !/^(file|content|ph|assets-library):/i.test(item.logoUrl) &&

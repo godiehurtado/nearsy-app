@@ -73,6 +73,25 @@ describe('post-CRJ affiliation editor helpers', () => {
     assert.equal(countAffiliationsForOwnProfileSummary(doc, 'personal'), 1);
   });
 
+  it('keeps nameless civic/faith rows in read and summary counts', () => {
+    const doc = {
+      personalOnboardingAffiliations: [
+        {
+          id: 'custom_faith_catholic',
+          name: '',
+          categoryId: 'faith',
+          source: 'custom',
+          topic: 'catholic',
+        },
+      ],
+    };
+    const read = readOnboardingAffiliationsFromDoc(doc, 'personal');
+    assert.equal(read.length, 1);
+    assert.equal(read[0]!.name, '');
+    assert.equal(read[0]!.topic, 'catholic');
+    assert.equal(countAffiliationsForOwnProfileSummary(doc, 'personal'), 1);
+  });
+
   it('isolates Personal and Professional bags', () => {
     const doc = {
       personalOnboardingAffiliations: [providerRow],
@@ -128,9 +147,10 @@ describe('post-CRJ Affiliations editor screen contract', () => {
     assert.doesNotMatch(screen, /buildCrjAffiliationPersistencePatch/);
     assert.doesNotMatch(screen, /useGuideAudio/);
     assert.doesNotMatch(screen, /TopHeader/);
-    assert.match(screen, /OnboardingAffiliationCategoryPanel/);
+    assert.match(screen, /AffiliationCategoryAccordionList/);
     assert.doesNotMatch(screen, /sk_[a-zA-Z0-9]+/);
     assert.match(screen, /readAffiliationsForPostCrjEditor/);
+    assert.match(screen, /listEditableAffiliationCategoryIds/);
   });
 
   it('AffiliationsScreen dismisses keyboard after successful save', () => {
@@ -189,10 +209,10 @@ describe('post-CRJ Affiliations editor screen contract', () => {
 
   it('Own Profile Affiliations search mode locks host scroll and avoids update loops', () => {
     const screen = readShared('screens/AffiliationsScreen.tsx');
-    assert.match(screen, /OnboardingAffiliationCategoryPanel/);
+    assert.match(screen, /AffiliationCategoryAccordionList/);
     assert.match(screen, /affiliationSearchUiEqual/);
     assert.match(screen, /scrollEnabled=\{!searchModeActive\}/);
-    assert.match(screen, /getAffiliationEntitySearchProvider|OnboardingAffiliationCategoryPanel/);
+    assert.match(screen, /getAddRef/);
   });
 
   it('CompleteProfileScreen refreshes affiliation summaries without full reload when dirty', () => {

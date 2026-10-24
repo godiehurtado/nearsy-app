@@ -24,9 +24,9 @@ import { spacing, screenPadding } from '../theme/spacing';
 import { fontSize, fontWeight } from '../theme/typography';
 import { radius } from '../theme/radius';
 import { cardShadow } from '../theme/shadows';
-import { OnboardingAffiliationCategoryPanel } from '../components/registration/OnboardingAffiliationCategoryPanel';
+import { AffiliationCategoryAccordionList } from '../components/registration/AffiliationCategoryAccordionList';
 import {
-  listOnboardingAffiliationCategoryIds,
+  listEditableAffiliationCategoryIds,
   type OnboardingAffiliationCategoryId,
   type OnboardingSelectedAffiliation,
 } from '../affiliations/onboardingAffiliationCatalog';
@@ -81,6 +81,8 @@ export default function AffiliationsScreen() {
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<OnboardingSelectedAffiliation[]>([]);
   const snapshotRef = useRef<OnboardingSelectedAffiliation[]>([]);
+  const [expandedId, setExpandedId] =
+    useState<OnboardingAffiliationCategoryId | null>(null);
   const [searchUiByCategory, setSearchUiByCategory] = useState<
     Partial<Record<OnboardingAffiliationCategoryId, AffiliationSearchUiSnapshot>>
   >({});
@@ -106,38 +108,19 @@ export default function AffiliationsScreen() {
   };
 
   const aboveCategoriesHeightRef = useRef(0);
-  const categoryLocalYRef = useRef(
-    {} as Partial<Record<OnboardingAffiliationCategoryId, number>>,
+
+  const categoryIds = useMemo(
+    () => listEditableAffiliationCategoryIds(selected),
+    [selected],
   );
-  const scrollAnchorByCategoryRef = useRef(
-    {} as Partial<
-      Record<OnboardingAffiliationCategoryId, React.MutableRefObject<number>>
-    >,
-  );
-
-  const getScrollAnchorRef = (
-    categoryId: OnboardingAffiliationCategoryId,
-  ): React.MutableRefObject<number> => {
-    const existing = scrollAnchorByCategoryRef.current[categoryId];
-    if (existing) return existing;
-    const created: React.MutableRefObject<number> = { current: 0 };
-    scrollAnchorByCategoryRef.current[categoryId] = created;
-    return created;
-  };
-
-  const syncScrollAnchor = (categoryId: OnboardingAffiliationCategoryId) => {
-    getScrollAnchorRef(categoryId).current =
-      aboveCategoriesHeightRef.current +
-      (categoryLocalYRef.current[categoryId] ?? 0);
-  };
-
-  const categoryIds = useMemo(() => listOnboardingAffiliationCategoryIds(), []);
   const pendingSearch = resolvePendingAffiliationSearchUi(
     searchUiByCategory,
     categoryIds,
   );
   const showAddCta = Boolean(pendingSearch);
-  const searchModeActive = Boolean(pendingSearch?.ui.hideJourneyFooter);
+  const searchModeActive = categoryIds.some(
+    (id) => searchUiByCategory[id]?.hideJourneyFooter,
+  );
   const selectedCount = selected.length;
   const isDirty = isPostCrjAffiliationEditorDirty(snapshotRef.current, selected);
 
@@ -224,11 +207,20 @@ export default function AffiliationsScreen() {
 
   const handleAddPending = () => {
     if (!pendingSearch || saving) return;
+    setExpandedId(pendingSearch.categoryId);
     addByCategoryRef.current[pendingSearch.categoryId]?.current?.();
   };
 
   const handleSave = async () => {
     if (!editorUid || !editorMode || saving) return;
+
+    const blockedCategory = categoryIds.find(
+      (id) => searchUiByCategory[id]?.hideJourneyFooter,
+    );
+    if (blockedCategory) {
+      setExpandedId(blockedCategory);
+      return;
+    }
 
     try {
       setSaving(true);
@@ -357,9 +349,6 @@ export default function AffiliationsScreen() {
           <View
             onLayout={(e) => {
               aboveCategoriesHeightRef.current = e.nativeEvent.layout.height;
-              for (const id of categoryIds) {
-                syncScrollAnchor(id);
-              }
             }}
           >
             <View style={styles.headerRow}>
@@ -403,32 +392,20 @@ export default function AffiliationsScreen() {
           </View>
 
           <View style={styles.categories}>
-            {categoryIds.map((categoryId) => (
-              <View
-                key={categoryId}
-                style={styles.categorySection}
-                onLayout={(e) => {
-                  categoryLocalYRef.current[categoryId] =
-                    e.nativeEvent.layout.y;
-                  syncScrollAnchor(categoryId);
-                }}
-              >
-                <OnboardingAffiliationCategoryPanel
-                  categoryId={categoryId}
-                  selected={selected}
-                  onChangeSelected={setSelected}
-                  onSearchUiChange={(ui) => {
-                    handleSearchUiChange(categoryId, ui);
-                  }}
-                  searchAddRef={getAddRef(categoryId)}
-                  contentScrollRef={scrollRef}
-                  scrollAnchorYRef={getScrollAnchorRef(categoryId)}
-                  removeAffiliationAccessibilityLabel={(name) =>
-                    t('profile.affiliations.removeA11y', { name })
-                  }
-                />
-              </View>
-            ))}
+            <AffiliationCategoryAccordionList
+              categoryIds={categoryIds}
+              selected={selected}
+              onChangeSelected={setSelected}
+              expandedId={expandedId}
+              onExpandedIdChange={setExpandedId}
+              onSearchUiChange={handleSearchUiChange}
+              getAddRef={getAddRef}
+              contentScrollRef={scrollRef}
+              headerHeightRef={aboveCategoriesHeightRef}
+              removeAffiliationAccessibilityLabel={(name) =>
+                t('profile.affiliations.removeA11y', { name })
+              }
+            />
           </View>
         </ScrollView>
 
@@ -576,7 +553,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   categories: {
-    gap: spacing.xxl,
     paddingHorizontal: screenPadding.horizontal,
   },
   categorySection: {

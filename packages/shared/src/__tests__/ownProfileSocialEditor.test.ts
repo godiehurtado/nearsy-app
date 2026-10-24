@@ -13,10 +13,14 @@ import {
   isPostCrjSocialEditorDirty,
   parsePostCrjSocialEditorParams,
   POST_CRJ_SOCIAL_CARD_ORDER,
+  VISIBLE_POST_CRJ_SOCIAL_CARD_ORDER,
   readPostCrjSocialEditorDraft,
   validatePostCrjSocialDraftForSave,
 } from '../social/postCrjSocialEditor';
-import { CRJ_SOCIAL_PLATFORMS } from '../social/onboardingSocialCatalog';
+import {
+  CRJ_SOCIAL_PLATFORMS,
+  emptyCrjSocialDraftValues,
+} from '../social/onboardingSocialCatalog';
 
 const labels = {
   requiredWhenConnected: 'Enter a profile link or handle',
@@ -45,6 +49,8 @@ describe('post-CRJ social editor helpers', () => {
     for (const platform of CRJ_SOCIAL_PLATFORMS) {
       assert.ok(POST_CRJ_SOCIAL_CARD_ORDER.includes(platform.id));
     }
+    assert.equal(VISIBLE_POST_CRJ_SOCIAL_CARD_ORDER.includes('snapchat'), false);
+    assert.ok(VISIBLE_POST_CRJ_SOCIAL_CARD_ORDER.includes('website'));
   });
 
   it('reads Personal and Professional bags in isolation', () => {
@@ -528,6 +534,29 @@ describe('post-CRJ Social Media editor screen contract', () => {
       'https://nearsy.app/',
     );
     assert.equal(patch.socialLinksPersonal?.custom?.length, 1);
+  });
+
+  it('hides Snapchat in the editor and preserves it from existing storage', () => {
+    const screen = readShared('screens/SocialMediaScreen.tsx');
+    assert.match(screen, /id !== 'snapchat'/);
+    const onboarding = readShared(
+      'components/registration/OnboardingSocialMediaStep.tsx',
+    );
+    assert.match(onboarding, /SELECTABLE_CRJ_SOCIAL_PLATFORMS\.map/);
+    assert.doesNotMatch(onboarding, /(?<!SELECTABLE_)CRJ_SOCIAL_PLATFORMS\.map/);
+    const patch = buildPostCrjSocialLinksPersistencePatch(
+      'personal',
+      emptyCrjSocialDraftValues(),
+      [],
+      {
+        website: '',
+        existing: { snapchat: 'https://www.snapchat.com/add/keep-me' },
+      },
+    );
+    assert.equal(
+      patch.socialLinksPersonal?.snapchat,
+      'https://www.snapchat.com/add/keep-me',
+    );
   });
 
   it('disconnect removes platform key on save', () => {
