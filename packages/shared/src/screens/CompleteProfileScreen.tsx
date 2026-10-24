@@ -620,10 +620,23 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
       if (result.ok === false) {
         const presentation = presentActiveProfileModeError(t, result.error);
-        Alert.alert(presentation.title, presentation.userMessage);
         if (isOwnProfileModeActivationRejected(result.error)) {
+          const dest = result.error.destinationMode ?? targetMode;
+          setEditorMode(dest);
+          const missing = (result.error.missingFields ?? []).map((field) =>
+            validationMessage(field),
+          );
+          Alert.alert(
+            presentation.title,
+            [
+              presentation.userMessage,
+              ...missing,
+              t('activeProfileMode.incomplete.keepEditing'),
+            ].join('\n'),
+          );
           return;
         }
+        Alert.alert(presentation.title, presentation.userMessage);
         return;
       }
 

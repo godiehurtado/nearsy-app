@@ -81,10 +81,26 @@ describe('NEARSY-209 incomplete profile mode switch', () => {
     );
     const fromDetailsCode = normalizeVisibilityCallableError({
       code: 'functions/failed-precondition',
-      details: { code: 'PROFILE_INCOMPLETE', retryable: false },
+      details: {
+        reason: 'profile-incomplete',
+        retryable: false,
+        code: 'PROFILE_INCOMPLETE',
+        mode: 'professional',
+        missingFields: ['company', 'bio'],
+      },
     });
     assert.equal(isOwnProfileModeActivationRejected(fromDetailsCode), true);
     assert.equal(fromDetailsCode.retryable, false);
+    assert.equal(fromDetailsCode.detailsCode, 'PROFILE_INCOMPLETE');
+    assert.equal(fromDetailsCode.destinationMode, 'professional');
+    assert.deepEqual(fromDetailsCode.missingFields, ['company', 'bio']);
+    assert.equal(
+      isOwnProfileModeActivationRejected({
+        code: 'failed-precondition',
+        reason: { kind: 'known', value: 'invalid-request' },
+      }),
+      false,
+    );
   });
 
   it('Own Profile edits the destination face without writing mode on save', () => {
@@ -96,6 +112,8 @@ describe('NEARSY-209 incomplete profile mode switch', () => {
     assert.match(screen, /evaluateOwnProfileModeActivation/);
     assert.match(screen, /shouldApplyOwnProfileModeSwitch/);
     assert.match(screen, /buildOwnProfileSavePatch\(\{\s*mode: faceMode/);
+    assert.match(screen, /destinationMode/);
+    assert.match(screen, /missingFields/);
     const editor = readFileSync(
       path.join(root, 'profile/ownProfileEditorState.ts'),
       'utf8',

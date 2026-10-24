@@ -39,11 +39,12 @@ export function evaluateOwnProfileModeActivation(input: {
 export function isOwnProfileModeActivationRejected(error: {
   code: string;
   reason: { kind: string; value?: string };
+  detailsCode?: string;
 }): boolean {
   if (error.reason.kind === 'known' && error.reason.value === 'profile-incomplete') {
     return true;
   }
-  return error.code === 'failed-precondition';
+  return error.detailsCode === 'PROFILE_INCOMPLETE';
 }
 
 export function shouldApplyOwnProfileModeSwitch(input: {
