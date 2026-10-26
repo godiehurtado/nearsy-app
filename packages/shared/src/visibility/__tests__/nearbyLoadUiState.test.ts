@@ -11,6 +11,8 @@ import {
   isNearbyViewerVisibilityConfirmedOff,
   shouldApplyNearbyLoadOutcome,
   shouldClearNearbyItemsOnOutcomeFailure,
+  shouldPreserveNearbyResultsDuringLoad,
+  shouldShowAlertsFullScreenLoading,
   shouldShowNearbyEmptyState,
   shouldShowNearbyFullScreenLoading,
 } from '../nearbyLoadUiState.ts';
@@ -208,6 +210,74 @@ describe('BUG-DISC-04 nearby load UI derivation', () => {
     assert.equal(shouldApplyNearbyLoadOutcome(2, 2), true);
     assert.equal(shouldApplyNearbyLoadOutcome(1, 2), false);
     assert.equal(shouldApplyNearbyLoadOutcome(3, 2), false);
+  });
+});
+
+describe('Alerts silent refresh UI derivation', () => {
+  it('full-screen loader only on initial load with no rows', () => {
+    assert.equal(
+      shouldShowAlertsFullScreenLoading({
+        loading: true,
+        itemCount: 0,
+        profileHydrated: false,
+        visibility: undefined,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldShowAlertsFullScreenLoading({
+        loading: true,
+        itemCount: 0,
+        profileHydrated: true,
+        visibility: true,
+      }),
+      true,
+    );
+  });
+
+  it('does not unmount the list when rows already exist', () => {
+    assert.equal(
+      shouldShowAlertsFullScreenLoading({
+        loading: true,
+        itemCount: 3,
+        profileHydrated: true,
+        visibility: true,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldPreserveNearbyResultsDuringLoad({
+        showFullScreenLoader: false,
+        itemCount: 3,
+      }),
+      true,
+    );
+  });
+
+  it('does not cover Visibility-off with a loader', () => {
+    assert.equal(
+      shouldShowAlertsFullScreenLoading({
+        loading: true,
+        itemCount: 0,
+        profileHydrated: true,
+        visibility: false,
+      }),
+      false,
+    );
+  });
+
+  it('silent refresh failure keeps rows; valid empty may replace', () => {
+    assert.equal(
+      shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader: false }),
+      false,
+    );
+    assert.equal(
+      shouldPreserveNearbyResultsDuringLoad({
+        showFullScreenLoader: false,
+        itemCount: 0,
+      }),
+      false,
+    );
   });
 });
 
