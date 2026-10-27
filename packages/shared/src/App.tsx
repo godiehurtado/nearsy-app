@@ -24,6 +24,7 @@ import {
 } from '@react-navigation/native';
 import AppNavigator, { buildNavigationTheme } from './navigation/AppNavigator';
 import { navigationRef } from './navigation/rootNavigationRef';
+import { AppUpdateNoticeHost } from './appUpdateNotice/AppUpdateNoticeHost';
 import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 
 import * as Notifications from 'expo-notifications';
@@ -272,6 +273,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
       />
       <NavigationContainer ref={navigationRef} theme={navTheme}>
         <LinkedInA3ResumeBridge />
+        <AppUpdateNoticeHost />
         <AppNavigator />
       </NavigationContainer>
     </>
