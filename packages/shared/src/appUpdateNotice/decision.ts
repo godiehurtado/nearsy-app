@@ -13,6 +13,7 @@ export function decideAppUpdateNotice(input: {
 }): AppUpdateNoticeDecision {
   const config = input.config;
   if (!config || !config.enabled) return 'skip';
+  if (!config.latestVersion) return 'skip';
   if (!input.installedNativeVersion) return 'skip';
   if (!isPublicVersionGreater(config.latestVersion, input.installedNativeVersion)) {
     return 'skip';

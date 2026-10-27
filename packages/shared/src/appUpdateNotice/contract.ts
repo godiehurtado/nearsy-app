@@ -1,28 +1,29 @@
 /**
- * Optional App Store update notice — client parse of the Functions-owned
- * payload. Field names `enabled` and `latestVersion` come from the 2.0.9
- * product contract Functions is publishing. Do not add a second endpoint
- * or extra required fields here.
+ * Optional App Store update notice — client parse of Functions
+ * `getAppUpdatePolicy` (PR #34, HEAD cf9fced).
  *
- * Transport name stays empty until that callable is published; an empty
- * name means the client must not invent or call a placeholder function.
+ * Canonical request: `{ platform: "ios" }`. Canonical response:
+ * `{ platform, enabled, latestVersion, storeUrl }`. Empty `latestVersion`
+ * means none configured. Extra keys (force / required / minVersion) are
+ * ignored and never treated as a force-update.
  */
 
+import { isOfficialIosStoreUrl } from './storeListing';
+
+export const GET_APP_UPDATE_POLICY = 'getAppUpdatePolicy' as const;
 export const APP_UPDATE_NOTICE_REGION = 'us-central1' as const;
-
-/**
- * Published callable name from Functions. Empty until the backend contract
- * lands — the iOS host then fail-softs and never hits the network.
- */
-export const APP_UPDATE_NOTICE_CALLABLE_NAME = '' as const;
-
 export const APP_UPDATE_NOTICE_HTTP_TIMEOUT_MS = 15_000;
+export const APP_UPDATE_NOTICE_REQUEST = { platform: 'ios' } as const;
 
-const VERSION_SHAPE = /^\d+(\.\d+)*$/;
+/** Three-component public store version from Functions. Empty is "none". */
+export const APP_UPDATE_VERSION_RE =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 export type AppUpdateNoticeConfig = {
+  platform: 'ios';
   enabled: boolean;
   latestVersion: string;
+  storeUrl: string;
 };
 
 export type AppUpdateNoticeParseResult =
@@ -34,29 +35,38 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 export function isCanonicalAppUpdateVersion(value: string): boolean {
-  return VERSION_SHAPE.test(value.trim());
+  return APP_UPDATE_VERSION_RE.test(value.trim());
 }
 
 /**
- * Fail-closed parser. Extra keys are ignored (never treated as force-update).
- * String booleans, build numbers, and JS bundle labels are invalid.
+ * Fail-closed parser of the Functions response. `latestVersion === ''` is
+ * valid (not configured). Unexpected store URLs are invalid.
  */
 export function parseAppUpdateNoticeConfig(
   data: unknown,
 ): AppUpdateNoticeParseResult {
   if (!isPlainObject(data)) return { ok: false };
 
+  if (data.platform !== 'ios') return { ok: false };
   if (typeof data.enabled !== 'boolean') return { ok: false };
   if (typeof data.latestVersion !== 'string') return { ok: false };
+  if (typeof data.storeUrl !== 'string') return { ok: false };
 
   const latestVersion = data.latestVersion.trim();
-  if (!isCanonicalAppUpdateVersion(latestVersion)) return { ok: false };
+  if (latestVersion.length > 0 && !isCanonicalAppUpdateVersion(latestVersion)) {
+    return { ok: false };
+  }
+
+  const storeUrl = data.storeUrl.trim();
+  if (!isOfficialIosStoreUrl(storeUrl)) return { ok: false };
 
   return {
     ok: true,
     config: {
+      platform: 'ios',
       enabled: data.enabled,
       latestVersion,
+      storeUrl,
     },
   };
 }

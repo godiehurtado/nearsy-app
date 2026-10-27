@@ -13,7 +13,7 @@ import {
   isSensitiveUpdateNoticeUrl,
   shouldSuppressUpdateNoticeModal,
 } from './sensitiveSession';
-import { IOS_APP_STORE_LISTING_URL } from './storeListing';
+import { isOfficialIosStoreUrl } from './storeListing';
 
 const snoozeStore = createAsyncStorageSnoozeStore();
 
@@ -59,8 +59,9 @@ export function AppUpdateNoticeHost() {
           );
           void latestVersion;
         }),
-      openStoreListing: () => {
-        void Linking.openURL(IOS_APP_STORE_LISTING_URL).catch(() => {});
+      openStoreListing: (storeUrl) => {
+        if (!isOfficialIosStoreUrl(storeUrl)) return;
+        void Linking.openURL(storeUrl).catch(() => {});
       },
     });
 

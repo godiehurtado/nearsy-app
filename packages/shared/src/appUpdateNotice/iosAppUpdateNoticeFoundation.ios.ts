@@ -1,19 +1,15 @@
 /**
- * iOS transport for the optional update notice. Does not invent a callable:
- * until Functions publishes `APP_UPDATE_NOTICE_CALLABLE_NAME`, this returns
- * undefined and the host fail-softs.
+ * iOS transport for `getAppUpdatePolicy` (Functions PR #34).
+ * App Check required; Auth is not sent. Any error fail-softs.
  */
 
 import Constants from 'expo-constants';
 
+import { createAppCheckBootstrap } from '../authentication/linkedinA3/appCheck/appCheckBootstrap';
+import { createNativeAppCheckPort } from '../authentication/linkedinA3/appCheck/nativeAppCheckPort';
 import { resolveNearsyFirebaseEnvironment } from '../authentication/linkedinA3/environment/nearsyFirebaseEnvironment';
-import { firebaseAuth } from '../config/firebaseConfig';
-import { invokeFirebaseCallableHttp } from '../firebase/callableHttp';
-import {
-  APP_UPDATE_NOTICE_CALLABLE_NAME,
-  APP_UPDATE_NOTICE_HTTP_TIMEOUT_MS,
-  APP_UPDATE_NOTICE_REGION,
-} from './contract';
+import { loadAppUpdatePolicy } from './callableHttp';
+import { APP_UPDATE_NOTICE_REGION } from './contract';
 
 type Extra = Record<string, unknown>;
 
@@ -33,39 +29,49 @@ function pick(name: string): string | undefined {
   return undefined;
 }
 
-export async function loadAppUpdateNoticeFromFunctions(): Promise<unknown> {
-  const functionName = APP_UPDATE_NOTICE_CALLABLE_NAME.trim();
-  if (!functionName) return undefined;
+let transportPromise: Promise<{
+  projectId: string;
+  port: Awaited<ReturnType<typeof createNativeAppCheckPort>>['port'];
+  appCheck: ReturnType<typeof createAppCheckBootstrap>;
+}> | null = null;
 
-  try {
-    const environment = resolveNearsyFirebaseEnvironment(
-      pick('EXPO_PUBLIC_NEARSY_FIREBASE_ENV'),
-    );
-    const projectId =
-      (firebaseAuth as { app?: { options?: { projectId?: string } } })?.app
-        ?.options?.projectId ??
-      pick('EXPO_PUBLIC_FIREBASE_PROJECT_ID') ??
-      environment.firebaseProjectId;
-    const region =
-      pick('EXPO_PUBLIC_FIREBASE_FUNCTIONS_REGION') ??
-      environment.functionsRegion ??
-      APP_UPDATE_NOTICE_REGION;
-
-    const auth = firebaseAuth as {
-      currentUser?: {
-        getIdToken?: (force?: boolean) => Promise<string>;
-      } | null;
-    };
-    const idToken = await auth.currentUser?.getIdToken?.(false);
-    if (!idToken?.trim()) return undefined;
-
-    return await invokeFirebaseCallableHttp({
-      url: `https://${region}-${projectId}.cloudfunctions.net/${functionName}`,
-      idToken,
-      appCheckToken: '',
-      data: {},
-      timeoutMs: APP_UPDATE_NOTICE_HTTP_TIMEOUT_MS,
+async function getTransport() {
+  if (!transportPromise) {
+    transportPromise = (async () => {
+      const environment = resolveNearsyFirebaseEnvironment(
+        pick('EXPO_PUBLIC_NEARSY_FIREBASE_ENV'),
+      );
+      const projectId = environment.firebaseProjectId;
+      const { port, getNativeProjectId } = await createNativeAppCheckPort();
+      const nativeProjectId = getNativeProjectId();
+      if (nativeProjectId && nativeProjectId !== projectId) {
+        throw new Error('getAppUpdatePolicy native project mismatch.');
+      }
+      const appCheck = createAppCheckBootstrap({ port });
+      await appCheck.initialize();
+      return { projectId, port, appCheck };
+    })().catch((err) => {
+      transportPromise = null;
+      throw err;
     });
+  }
+  return transportPromise;
+}
+
+export async function loadAppUpdateNoticeFromFunctions(): Promise<unknown> {
+  try {
+    const { projectId, port, appCheck } = await getTransport();
+    appCheck.ensureReady();
+    if (!port.withToken) {
+      throw new Error('App Check is not ready.');
+    }
+    return await port.withToken((appCheckToken) =>
+      loadAppUpdatePolicy({
+        projectId,
+        region: APP_UPDATE_NOTICE_REGION,
+        appCheckToken,
+      }),
+    );
   } catch {
     return undefined;
   }

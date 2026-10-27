@@ -20,7 +20,7 @@ export type AppUpdateNoticeControllerDeps = {
   snoozeStore: AppUpdateNoticeSnoozeStore;
   isSensitiveSession: () => boolean;
   present: (latestVersion: string) => Promise<AppUpdateNoticePresentChoice>;
-  openStoreListing: () => void | Promise<void>;
+  openStoreListing: (storeUrl: string) => void | Promise<void>;
   fetchThrottleMs?: number;
 };
 
@@ -90,7 +90,7 @@ export function createAppUpdateNoticeController(
           .catch(() => {});
         return;
       }
-      await Promise.resolve(deps.openStoreListing()).catch(() => {});
+      await Promise.resolve(deps.openStoreListing(config.storeUrl)).catch(() => {});
     } finally {
       modalOpen = false;
     }

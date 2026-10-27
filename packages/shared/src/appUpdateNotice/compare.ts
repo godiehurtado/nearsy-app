@@ -3,13 +3,14 @@
  * Not locale/text compare, not semver prerelease, not CFBundleVersion.
  */
 
-import { isCanonicalAppUpdateVersion } from './contract';
-
 export type VersionCompareResult = -1 | 0 | 1;
+
+/** Dotted non-negative integers (installed native or public store version). */
+const NUMERIC_VERSION = /^\d+(\.\d+)*$/;
 
 function toComponents(raw: string): number[] | null {
   const trimmed = raw.trim();
-  if (!isCanonicalAppUpdateVersion(trimmed)) return null;
+  if (!NUMERIC_VERSION.test(trimmed)) return null;
   const parts = trimmed.split('.').map((part) => Number(part));
   if (parts.some((n) => !Number.isInteger(n) || n < 0)) return null;
   return parts;
