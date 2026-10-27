@@ -3,7 +3,10 @@ import { describe, it } from 'node:test';
 
 import { FirebaseCallableHttpError } from '../../../firebase/callableHttp';
 import { createInstagramOwnershipCallableClient } from '../client';
-import { mapInstagramOwnershipThrowable } from '../errors';
+import {
+  InstagramOwnershipClientError,
+  mapInstagramOwnershipThrowable,
+} from '../errors';
 import {
   omitInstagramFromDraftValues,
   preserveLegacyInstagramInSocialPatch,
@@ -504,32 +507,54 @@ describe('instagram inbox authorize production Owner gate', () => {
 });
 
 describe('instagram inbox authorize open URL', () => {
-  it('opens a validated Instagram authorize URL without logging it', async () => {
+  it('opens the exact backend URL with openBrowserAsync and treats dismiss as close', async () => {
     const opened: string[] = [];
+    const arities: number[] = [];
     await openInstagramInboxAuthorizationUrl(
       'https://www.instagram.com/oauth/authorize?client_id=1',
       {
-        canOpenURL: async () => true,
-        openURL: async (url) => {
+        openBrowserAsync: async (url, ...rest: unknown[]) => {
           opened.push(url);
+          arities.push(1 + rest.length);
+          return { type: 'cancel' };
         },
       },
     );
     assert.deepEqual(opened, [
       'https://www.instagram.com/oauth/authorize?client_id=1',
     ]);
+    assert.deepEqual(arities, [1]);
+    await openInstagramInboxAuthorizationUrl(
+      'https://www.instagram.com/oauth/authorize?client_id=1',
+      {
+        openBrowserAsync: async () => ({ type: 'dismiss' }),
+      },
+    );
   });
 
-  it('rejects a non-Instagram URL before opening', async () => {
+  it('rejects a non-Instagram URL before opening and maps locked to a retryable error', async () => {
     let opened = false;
     await assert.rejects(() =>
       openInstagramInboxAuthorizationUrl('https://example.com/oauth/authorize', {
-        canOpenURL: async () => true,
-        openURL: async () => {
+        openBrowserAsync: async () => {
           opened = true;
+          return { type: 'cancel' };
         },
       }),
     );
     assert.equal(opened, false);
+    await assert.rejects(
+      () =>
+        openInstagramInboxAuthorizationUrl(
+          'https://www.instagram.com/oauth/authorize?client_id=1',
+          {
+            openBrowserAsync: async () => ({ type: 'locked' }),
+          },
+        ),
+      (err: unknown) =>
+        err instanceof InstagramOwnershipClientError &&
+        err.code === 'NETWORK' &&
+        err.retryable === true,
+    );
   });
 });

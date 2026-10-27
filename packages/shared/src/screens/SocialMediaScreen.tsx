@@ -15,6 +15,7 @@ import {
   Linking,
 } from 'react-native';
 import { useRoute, useNavigation, useIsFocused } from '@react-navigation/native';
+import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -995,8 +996,7 @@ export default function SocialMediaScreen() {
       const client = await getInstagramOwnershipClient();
       const started = await client.startInboxAuthorize();
       await openInstagramInboxAuthorizationUrl(started.authorizationUrl, {
-        canOpenURL: (url) => Linking.canOpenURL(url),
-        openURL: (url) => Linking.openURL(url),
+        openBrowserAsync: (url) => WebBrowser.openBrowserAsync(url),
       });
     } catch (err) {
       presentInstagramError(err, () => {

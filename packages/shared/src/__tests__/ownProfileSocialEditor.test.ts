@@ -493,12 +493,17 @@ describe('post-CRJ Social Media editor screen contract', () => {
       screen,
       /openInstagramInboxAuthorizationUrl\(started\.authorizationUrl,/,
     );
-    assert.match(screen, /Linking\.openURL\(url\)/);
+    assert.match(screen, /WebBrowser\.openBrowserAsync\(url\)/);
+    assert.doesNotMatch(screen, /openAuthSessionAsync/);
     assert.match(screen, /showInstagramInboxAuthorizeOwner \?/);
     const inboxHandler = screen.slice(
       screen.indexOf('const handleInstagramInboxAuthorize'),
       screen.indexOf('const applyInstagramGet'),
     );
+    assert.match(inboxHandler, /WebBrowser\.openBrowserAsync\(url\)/);
+    assert.doesNotMatch(inboxHandler, /Linking\.(openURL|canOpenURL)/);
+    assert.doesNotMatch(inboxHandler, /openAuthSessionAsync/);
+    assert.doesNotMatch(inboxHandler, /nearsy:\/\//);
     assert.doesNotMatch(inboxHandler, /console\.(log|warn|info|debug)/);
     assert.doesNotMatch(inboxHandler, /JSON\.stringify\(started/);
   });

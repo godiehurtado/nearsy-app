@@ -1,14 +1,20 @@
 import { InstagramOwnershipClientError } from './errors';
 import { assertInstagramInboxAuthorizeStartResponse } from './parse';
 
+export type InstagramInboxBrowserResult = {
+  type: string;
+};
+
 export type OpenInstagramInboxAuthorizationDeps = {
-  canOpenURL: (url: string) => Promise<boolean>;
-  openURL: (url: string) => Promise<unknown>;
+  openBrowserAsync: (url: string) => Promise<InstagramInboxBrowserResult>;
 };
 
 /**
- * Open a validated Instagram OAuth authorize URL in the system browser.
- * Does not log the URL, query, codes, or tokens.
+ * Open the backend authorizationUrl in an explicit in-app browser
+ * (expo-web-browser openBrowserAsync → SFSafariViewController on iOS).
+ * Callback is HTTPS HTML from Functions, not an app scheme: dismiss/cancel
+ * after the page is the expected close. Do not log the URL, query, codes,
+ * or tokens. Do not reconstruct query params or invent a return URL.
  */
 export async function openInstagramInboxAuthorizationUrl(
   authorizationUrl: string,
@@ -17,13 +23,21 @@ export async function openInstagramInboxAuthorizationUrl(
   const { authorizationUrl: url } = assertInstagramInboxAuthorizeStartResponse({
     authorizationUrl,
   });
-  const canOpen = await deps.canOpenURL(url);
-  if (!canOpen) {
+  let result: InstagramInboxBrowserResult;
+  try {
+    result = await deps.openBrowserAsync(url);
+  } catch {
     throw new InstagramOwnershipClientError(
       'NETWORK',
       'Could not open inbox authorization.',
       { retryable: true, stage: 'inboxAuthorize' },
     );
   }
-  await deps.openURL(url);
+  if (result.type === 'locked') {
+    throw new InstagramOwnershipClientError(
+      'NETWORK',
+      'Could not open inbox authorization.',
+      { retryable: true, stage: 'inboxAuthorize' },
+    );
+  }
 }
