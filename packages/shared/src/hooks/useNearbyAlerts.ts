@@ -1,6 +1,7 @@
 /**
  * Nearby alerts from discoverNearby (no peer users queries, no peer coords).
  * Shared interests are evaluated against the viewer's active profile mode only.
+ * Periodic refresh is silent once a list exists — same rules as Discovery.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -12,7 +13,12 @@ import {
 } from '../visibility';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 import {
+  shouldApplyNearbyLoadOutcome,
+  shouldClearNearbyItemsOnOutcomeFailure,
+} from '../visibility/nearbyLoadUiState';
+import {
   collectActiveModeInterestIds,
+  fingerprintActiveModeInterests,
   mapDiscoverResultsToInterestAlerts,
   type AlertItem,
   type AlertKind,
@@ -22,6 +28,7 @@ import {
 export type { AlertItem, AlertKind };
 export {
   collectActiveModeInterestIds,
+  fingerprintActiveModeInterests,
   mapDiscoverResultsToInterestAlerts,
 } from './nearbyAlertsMapping';
 
@@ -72,6 +79,25 @@ export function useNearbyAlertsState(): NearbyAlertsState {
   );
   /** Bumped on auth/mode/visibility/unmount so in-flight discoverNearby never applies. */
   const requestGenerationRef = useRef(0);
+  const cancelledRef = useRef(false);
+  const inFlightRef = useRef(false);
+  const initialFetchCompletedRef = useRef(false);
+  const viewerUidRef = useRef<string | null>(null);
+  const meRef = useRef<UserDoc | null>(null);
+  const alertsRef = useRef<AlertItem[]>([]);
+
+  meRef.current = me;
+  alertsRef.current = alerts;
+
+  const interestFingerprint = fingerprintActiveModeInterests(me);
+
+  useEffect(() => {
+    cancelledRef.current = false;
+    return () => {
+      cancelledRef.current = true;
+      requestGenerationRef.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     const unsub = firebaseAuth.onAuthStateChanged((user) => {
@@ -87,15 +113,15 @@ export function useNearbyAlertsState(): NearbyAlertsState {
       setMe(null);
       setAlerts([]);
       setErrorKind(null);
+      initialFetchCompletedRef.current = false;
+      viewerUidRef.current = null;
       return;
     }
 
-    setLoading(true);
     const unsub = dbOnUserSnapshot(authUid, (doc: UserDoc | null) => {
       const data = (doc ?? null) as UserDoc | null;
       if (data?.topBarColor) setTopColor(data.topBarColor);
       setMe(data ? { ...data, uid: authUid } : null);
-      setLoading(false);
     });
 
     return () => {
@@ -104,28 +130,38 @@ export function useNearbyAlertsState(): NearbyAlertsState {
     };
   }, [authUid]);
 
-  const buildAlerts = useCallback(async () => {
+  const buildAlerts = useCallback(async (showFullScreenLoader: boolean) => {
     const generation = ++requestGenerationRef.current;
-    const uid = firebaseAuth.currentUser?.uid;
-    if (!uid || uid !== authUid || !me?.visibility) {
-      if (generation === requestGenerationRef.current) {
-        setAlerts([]);
-        setErrorKind(null);
-      }
-      return;
+    const stillCurrent = () =>
+      shouldApplyNearbyLoadOutcome(generation, requestGenerationRef.current) &&
+      !cancelledRef.current;
+
+    inFlightRef.current = true;
+    if (showFullScreenLoader) {
+      setLoading(true);
+      setErrorKind(null);
+    } else if (__DEV__) {
+      console.log('[useNearbyAlerts] silent refresh');
     }
 
-    // Capture viewer snapshot for this generation (mode + interests at request time).
-    const viewer = me;
-
     try {
+      const viewer = meRef.current;
+      const uid = firebaseAuth.currentUser?.uid ?? authUid ?? viewer?.uid;
+      if (!uid || uid !== authUid || !viewer?.visibility) {
+        if (!stillCurrent()) return;
+        setAlerts([]);
+        setErrorKind(null);
+        return;
+      }
+
       const client = await getVisibilityDiscoveryClient();
       const response = await client.discoverNearby(
         buildDiscoverNearbyRequest({ limit: 50 }),
       );
-      if (generation !== requestGenerationRef.current) return;
+      if (!stillCurrent()) return;
       if (firebaseAuth.currentUser?.uid !== uid) return;
 
+      // Valid empty payloads replace the list; only failures may preserve.
       setAlerts(
         mapDiscoverResultsToInterestAlerts(
           response.results,
@@ -136,40 +172,62 @@ export function useNearbyAlertsState(): NearbyAlertsState {
       );
       setErrorKind(null);
     } catch (err) {
-      if (generation !== requestGenerationRef.current) return;
+      if (!stillCurrent()) return;
       if (__DEV__) {
         console.warn('[useNearbyAlerts] discoverNearby failed', err);
       }
-      setAlerts([]);
+      if (shouldClearNearbyItemsOnOutcomeFailure({ showFullScreenLoader })) {
+        setAlerts([]);
+      }
       setErrorKind(classifyAlertsError(err));
+    } finally {
+      if (generation === requestGenerationRef.current) {
+        inFlightRef.current = false;
+        setLoading(false);
+        initialFetchCompletedRef.current = true;
+      }
     }
-  }, [me, authUid]);
+  }, [authUid]);
 
   useEffect(() => {
     if (!me || !authUid) {
+      requestGenerationRef.current += 1;
+      inFlightRef.current = false;
       setAlerts([]);
       setErrorKind(null);
       return;
     }
 
-    // Mode / visibility / interest bags live on `me`; any change invalidates prior work.
-    setLoading(true);
-    buildAlerts().finally(() => {
-      // Only clear loading if this effect's generation is still current.
-      setLoading(false);
-    });
+    const uidChanged =
+      viewerUidRef.current != null && viewerUidRef.current !== authUid;
+    if (uidChanged) {
+      setAlerts([]);
+      initialFetchCompletedRef.current = false;
+    }
+    viewerUidRef.current = authUid;
+
+    const showFullScreenLoader =
+      !initialFetchCompletedRef.current || uidChanged;
+    void buildAlerts(showFullScreenLoader);
 
     const id = setInterval(() => {
-      buildAlerts();
+      if (inFlightRef.current) return;
+      void buildAlerts(false);
     }, AUTO_REFRESH_MS);
 
     return () => {
       requestGenerationRef.current += 1;
+      inFlightRef.current = false;
       clearInterval(id);
     };
-  }, [me, authUid, buildAlerts]);
+  }, [me?.uid, me?.visibility, interestFingerprint, authUid, buildAlerts]);
 
-  return { loading, alerts, topColor, me, errorKind, refresh: buildAlerts };
+  const refresh = useCallback(
+    () => buildAlerts(false),
+    [buildAlerts],
+  );
+
+  return { loading, alerts, topColor, me, errorKind, refresh };
 }
 
 /** @deprecated Prefer NearbyAlertsProvider + useNearbyAlerts from context. */

@@ -9,6 +9,7 @@ import { describe, it } from 'node:test';
 
 import {
   collectActiveModeInterestIds,
+  fingerprintActiveModeInterests,
   mapDiscoverResultsToInterestAlerts,
 } from '../hooks/nearbyAlertsMapping.ts';
 import {
@@ -160,6 +161,29 @@ describe('209 Alerts discoverNearby + shared provider', () => {
     assert.deepEqual(alerts[0].sharedInterests, ['music_genre_pop']);
   });
 
+  it('interest fingerprint ignores unrelated viewer fields and tracks mode', () => {
+    const personal = {
+      mode: 'personal' as const,
+      searchPreferences: {
+        personal: { interestIds: ['sports_outdoors_soccer'] },
+        professional: { interestIds: ['tech_coding'] },
+      },
+    };
+    const heartbeat = {
+      ...personal,
+      // location / lastSeen must not retrigger Alerts
+      lastSeen: 99,
+    };
+    assert.equal(
+      fingerprintActiveModeInterests(personal),
+      fingerprintActiveModeInterests(heartbeat),
+    );
+    assert.notEqual(
+      fingerprintActiveModeInterests(personal),
+      fingerprintActiveModeInterests({ ...personal, mode: 'professional' }),
+    );
+  });
+
   it('presentation keeps interest copy helpers without distance formatter', () => {
     const presentation = read('screens/alertsPresentation.ts');
     assert.match(presentation, /buildAlertRowMessage/);
@@ -279,7 +303,8 @@ describe('209 Identity & Lifestyle free-text', () => {
     const hook = read('hooks/useNearbyAlerts.ts');
     assert.match(hook, /requestGenerationRef/);
     assert.match(hook, /onAuthStateChanged/);
-    assert.match(hook, /generation !== requestGenerationRef\.current/);
+    assert.match(hook, /shouldApplyNearbyLoadOutcome/);
+    assert.match(hook, /cancelledRef/);
     assert.match(hook, /clearInterval\(id\)/);
   });
 });

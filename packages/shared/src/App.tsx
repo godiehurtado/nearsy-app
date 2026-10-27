@@ -8,6 +8,7 @@ import { firebaseAuth, firestoreDb } from './config/firebaseConfig';
 import { ensureAppCheckInitialized } from './config/appCheckBootstrap';
 import { startAffiliationEntitySearchBootstrap } from './affiliations/iosAffiliationEntitySearchBootstrap';
 import { initI18n } from './i18n';
+import { useAppUpdateNotice } from './appUpdate/useAppUpdateNotice';
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -74,6 +75,11 @@ export const navigationRef = createNavigationContainerRef();
  * Holds a neutral surface until the persisted appearance preference is known,
  * so the app never flashes the wrong theme before Theme Selection / Welcome.
  */
+function AppUpdateNoticeHost() {
+  useAppUpdateNotice();
+  return null;
+}
+
 function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
   const { theme, palette, hydrating, hasChosenTheme } = useAppTheme();
 
@@ -239,6 +245,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
       <NavigationContainer ref={navigationRef} theme={navTheme}>
         <AppNavigator />
       </NavigationContainer>
+      <AppUpdateNoticeHost />
     </>
   );
 }

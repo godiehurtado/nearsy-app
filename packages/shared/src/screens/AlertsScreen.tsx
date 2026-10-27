@@ -21,6 +21,7 @@ import type { RootTabsParamList } from '../navigation/RootTabs';
 import { registerPushToken } from '../services/pushTokens';
 import { useNearbyAlerts } from '../hooks/NearbyAlertsContext';
 import type { AlertItem } from '../hooks/nearbyAlertsMapping';
+import { shouldShowAlertsFullScreenLoading } from '../visibility/nearbyLoadUiState';
 import { useTranslation } from '../i18n';
 import {
   fontSize,
@@ -90,7 +91,14 @@ export default function AlertsScreen() {
     [navigation],
   );
 
-  if (loading) {
+  const showInitialLoader = shouldShowAlertsFullScreenLoading({
+    loading,
+    itemCount: alerts.length,
+    profileHydrated: me != null,
+    visibility: me?.visibility,
+  });
+
+  if (showInitialLoader) {
     return (
       <View
         style={[styles.centered, { backgroundColor: palette.background }]}

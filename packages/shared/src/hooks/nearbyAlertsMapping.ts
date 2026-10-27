@@ -54,6 +54,17 @@ export function collectActiveModeInterestIds(
   return new Set(ids);
 }
 
+/**
+ * Stable key for Alerts refetch. Location / lastSeen heartbeats on the
+ * viewer doc must not appear here — those snapshots used to remount the list.
+ */
+export function fingerprintActiveModeInterests(
+  me: NearbyAlertsViewerDoc | null | undefined,
+): string {
+  if (!me) return '';
+  return `${resolveViewerMode(me)}:${[...collectActiveModeInterestIds(me)].sort().join(',')}`;
+}
+
 export function mapDiscoverResultsToInterestAlerts(
   results: DiscoverNearbyResult[],
   myInterestIds: Set<string>,

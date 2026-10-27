@@ -95,22 +95,46 @@ describe('Android prod Firebase native env upload guard', () => {
 
   it('production eas profile forces prebuild --clean and production Firebase env', () => {
     const eas = JSON.parse(readRepo('apps/nearsy-android/eas.json')) as {
+      cli?: { appVersionSource?: string };
       build?: {
         production?: {
           autoIncrement?: boolean;
+          environment?: string;
+          distribution?: string;
           prebuildCommand?: string;
+          node?: string;
           env?: Record<string, string>;
+          android?: { buildType?: string };
         };
+      };
+      submit?: {
+        production?: { android?: { track?: string; releaseStatus?: string } };
       };
     };
     const prod = eas.build?.production;
     assert.ok(prod);
+    assert.equal(eas.cli?.appVersionSource, 'remote');
     assert.equal(prod?.autoIncrement, true);
+    assert.equal(prod?.environment, 'production');
+    assert.equal(prod?.distribution, 'store');
+    assert.equal(prod?.node, '22.23.4');
+    assert.equal(prod?.android?.buildType, 'app-bundle');
     assert.match(
       String(prod?.prebuildCommand ?? ''),
       /expo prebuild --platform android --clean/,
     );
     assert.equal(prod?.env?.NEARSY_FIREBASE_ENV, 'production');
     assert.equal(prod?.env?.NEARSY_DEV_CLIENT, 'false');
+    assert.equal(prod?.env?.FIREBASE_APP_CHECK_DEBUG_TOKEN, undefined);
+    assert.equal(eas.submit?.production?.android?.track, 'production');
+    assert.equal(eas.submit?.production?.android?.releaseStatus, 'draft');
+  });
+
+  it('app.json versionName 2.0.9 documents remote versionCode 40', () => {
+    const appJson = JSON.parse(readRepo('apps/nearsy-android/app.json')) as {
+      expo?: { version?: string; android?: { versionCode?: number } };
+    };
+    assert.equal(appJson.expo?.version, '2.0.9');
+    assert.equal(appJson.expo?.android?.versionCode, 40);
   });
 });
