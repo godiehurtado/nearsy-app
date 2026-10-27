@@ -1947,6 +1947,12 @@ const es: TranslationResources = {
       signOutButton: 'Cerrar sesión y volver al inicio de sesión',
     },
   },
+  appUpdateNotice: {
+    title: 'Nueva versión disponible',
+    message: 'Hay una nueva versión de Nearsy.',
+    update: 'Actualizar',
+    later: 'Más tarde',
+  },
 };
 
 export default es;

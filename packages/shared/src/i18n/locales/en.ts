@@ -1,5 +1,6 @@
 import alignment from '../resources/alignment';
 import activeProfileMode from '../resources/activeProfileMode';
+import appUpdateNotice from '../resources/appUpdateNotice';
 import authentication from '../resources/authentication';
 import common from '../resources/common';
 import discoveryProfile from '../resources/discoveryProfile';
@@ -27,6 +28,7 @@ const en = {
   notifications,
   settings,
   phoneOtp,
+  appUpdateNotice,
   zodiac,
 } as const;
 
