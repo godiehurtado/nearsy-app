@@ -11,6 +11,7 @@ import { phoneOtpTranslations } from '../resources/phoneOtp';
 import { profileTranslations } from '../resources/profile';
 import settings from '../resources/settings';
 import { validationTranslations } from '../resources/validation';
+import { appUpdateTranslations } from '../resources/appUpdate';
 
 export const en = {
   common: commonTranslations.en,
@@ -26,6 +27,7 @@ export const en = {
   notifications,
   settings,
   phoneOtp: phoneOtpTranslations.en,
+  appUpdate: appUpdateTranslations.en,
 } as const;
 
 type DeepStringRecord<T> = {

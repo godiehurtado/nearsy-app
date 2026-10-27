@@ -5,6 +5,7 @@ import { onboardingTranslations } from '../resources/onboarding';
 import { phoneOtpTranslations } from '../resources/phoneOtp';
 import { profileTranslations } from '../resources/profile';
 import { validationTranslations } from '../resources/validation';
+import { appUpdateTranslations } from '../resources/appUpdate';
 
 export const es: TranslationResources = {
   common: commonTranslations.es,
@@ -528,4 +529,5 @@ export const es: TranslationResources = {
     saveError: 'No se pudo guardar.',
   },
   phoneOtp: phoneOtpTranslations.es,
+  appUpdate: appUpdateTranslations.es,
 } as const;
