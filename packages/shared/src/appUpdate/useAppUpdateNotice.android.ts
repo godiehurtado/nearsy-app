@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { i18n } from '../i18n';
 import { fetchAppUpdatePolicy, readNativeStoreVersion } from './appUpdate';
 import { createAppUpdateNoticeSession } from './noticeSession.ts';
+import { officialAndroidStoreUrl } from './parsePolicy.ts';
 import {
   readAppUpdatePostpone,
   writeAppUpdatePostpone,
@@ -40,7 +41,9 @@ export function useAppUpdateNotice(): void {
       isAppActive: () => AppState.currentState === 'active',
       delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       openStoreUrl: (url) => {
-        void Linking.openURL(url).catch(() => {});
+        const official = officialAndroidStoreUrl(url);
+        if (!official) return;
+        void Linking.openURL(official).catch(() => {});
       },
       presentNotice: ({ copy: text, onUpdate, onLater }) => {
         Alert.alert(text.title, text.message, [

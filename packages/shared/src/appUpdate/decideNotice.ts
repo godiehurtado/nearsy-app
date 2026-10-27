@@ -1,6 +1,6 @@
 import type { AppUpdatePolicyResponse } from './contract.ts';
 import { compareStoreVersions } from './compareVersions.ts';
-import { parseStoreVersion } from './parsePolicy.ts';
+import { officialAndroidStoreUrl, parseStoreVersion } from './parsePolicy.ts';
 
 export type AppUpdatePostpone = {
   version: string;
@@ -31,6 +31,7 @@ export function decideAppUpdateNotice(
   const policy = input.policy;
   if (!policy || policy.enabled !== true) return { show: false };
 
+  // Empty latestVersion means none configured — not a force-update.
   const latestVersion = parseStoreVersion(policy.latestVersion);
   const installedVersion = parseStoreVersion(input.installedVersion);
   if (!latestVersion || !installedVersion) return { show: false };
@@ -47,9 +48,8 @@ export function decideAppUpdateNotice(
     return { show: false };
   }
 
-  if (typeof policy.storeUrl !== 'string' || policy.storeUrl.length === 0) {
-    return { show: false };
-  }
+  const storeUrl = officialAndroidStoreUrl(policy.storeUrl);
+  if (!storeUrl) return { show: false };
 
-  return { show: true, latestVersion, storeUrl: policy.storeUrl };
+  return { show: true, latestVersion, storeUrl };
 }

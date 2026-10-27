@@ -3,7 +3,11 @@ import {
   decideAppUpdateNotice,
   type AppUpdatePostpone,
 } from './decideNotice.ts';
-import { buildAppUpdatePolicyRequest, parseAppUpdatePolicyResponse } from './parsePolicy.ts';
+import {
+  ANDROID_APP_UPDATE_POLICY_REQUEST,
+  officialAndroidStoreUrl,
+  parseAppUpdatePolicyResponse,
+} from './parsePolicy.ts';
 
 /** Success-path cooldown so resume does not hammer `getAppUpdatePolicy`. */
 export const POLICY_FETCH_MIN_INTERVAL_MS = 15 * 60 * 1000;
@@ -76,7 +80,9 @@ export function createAppUpdateNoticeSession(deps: AppUpdateNoticeDeps) {
 
     try {
       const raw = await deps.fetchPolicy(
-        buildAppUpdatePolicyRequest(deps.platform),
+        deps.platform === 'android'
+          ? ANDROID_APP_UPDATE_POLICY_REQUEST
+          : { platform: deps.platform },
       );
       lastFetchAt = deps.now();
       const parsed = parseAppUpdatePolicyResponse(raw, deps.platform);
@@ -126,7 +132,9 @@ export function createAppUpdateNoticeSession(deps: AppUpdateNoticeDeps) {
       copy: deps.getCopy(),
       onUpdate: () =>
         finish(() => {
-          deps.openStoreUrl(storeUrl);
+          const url = officialAndroidStoreUrl(storeUrl);
+          if (!url) return;
+          deps.openStoreUrl(url);
         }),
       onLater: () =>
         finish(() => {

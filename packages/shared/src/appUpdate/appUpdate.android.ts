@@ -16,7 +16,10 @@ import {
   APP_UPDATE_FUNCTIONS_REGION,
   type AppUpdatePlatform,
 } from './contract.ts';
-import { parseStoreVersion } from './parsePolicy.ts';
+import {
+  ANDROID_APP_UPDATE_POLICY_REQUEST,
+  parseStoreVersion,
+} from './parsePolicy.ts';
 
 async function ensureAppCheckReady(): Promise<void> {
   const status = await ensureAppCheckInitialized();
@@ -26,7 +29,7 @@ async function ensureAppCheckReady(): Promise<void> {
   throw new Error('App Check is not ready.');
 }
 
-export async function fetchAppUpdatePolicy(request: {
+export async function fetchAppUpdatePolicy(_request?: {
   platform: AppUpdatePlatform;
 }): Promise<unknown> {
   await ensureAppCheckReady();
@@ -34,7 +37,8 @@ export async function fetchAppUpdatePolicy(request: {
     getApp(),
     APP_UPDATE_FUNCTIONS_REGION,
   ).httpsCallable(APP_UPDATE_CALLABLE_NAME);
-  const result = await callable(request);
+  // Exact contract JSON. Do not forward extra keys, uid, or Auth.
+  const result = await callable(ANDROID_APP_UPDATE_POLICY_REQUEST);
   return result.data;
 }
 

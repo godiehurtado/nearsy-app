@@ -13,13 +13,27 @@ export function parseStoreVersion(raw: string | undefined | null): string | null
   return trimmed;
 }
 
+/** Exact Android callable JSON. Extra keys are `invalid-argument` on the server. */
+export const ANDROID_APP_UPDATE_POLICY_REQUEST: AppUpdatePolicyRequest = {
+  platform: 'android',
+};
+
 /**
- * Client request: exact `{ platform: 'android' }` (or `ios`). Never send extras.
+ * Client request: exact `{ platform }`. Never send extras.
  */
 export function buildAppUpdatePolicyRequest(
   platform: AppUpdatePlatform,
 ): AppUpdatePolicyRequest {
-  return { platform };
+  return platform === 'android'
+    ? ANDROID_APP_UPDATE_POLICY_REQUEST
+    : { platform };
+}
+
+/** Server `storeUrl` must be the public Play listing; never Internal/TestFlight. */
+export function officialAndroidStoreUrl(url: unknown): string | null {
+  if (typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  return trimmed === ANDROID_PLAY_STORE_URL ? trimmed : null;
 }
 
 function isPlatform(value: unknown): value is AppUpdatePlatform {
@@ -49,10 +63,13 @@ export function parseAppUpdatePolicyResponse(
     return null;
   }
 
-  const storeUrl = raw.storeUrl.trim();
-  if (expectedPlatform === 'android' && storeUrl !== ANDROID_PLAY_STORE_URL) {
-    return null;
-  }
+  const storeUrl =
+    expectedPlatform === 'android'
+      ? officialAndroidStoreUrl(raw.storeUrl)
+      : typeof raw.storeUrl === 'string'
+        ? raw.storeUrl.trim()
+        : null;
+  if (!storeUrl) return null;
 
   return {
     platform: raw.platform,

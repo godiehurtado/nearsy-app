@@ -24,7 +24,11 @@ describe('209 optional Play update notice wiring', () => {
     assert.match(android, /ensureAppCheckInitialized/);
     assert.doesNotMatch(android, /getIdentityFunctions/);
     assert.doesNotMatch(android, /currentUser/);
+    assert.doesNotMatch(android, /firebaseAuth/);
+    assert.doesNotMatch(android, /getIdToken/);
     assert.doesNotMatch(android, /APP_UPDATE_ANDROID_ENABLED/);
+    assert.match(android, /ANDROID_APP_UPDATE_POLICY_REQUEST/);
+    assert.match(android, /callable\(ANDROID_APP_UPDATE_POLICY_REQUEST\)/);
   });
 
   it('request/response stay on the canonical contract', () => {
@@ -55,6 +59,7 @@ describe('209 optional Play update notice wiring', () => {
     const app = read('App.tsx');
     assert.match(hook, /Alert\.alert/);
     assert.match(hook, /AppState\.addEventListener/);
+    assert.match(hook, /officialAndroidStoreUrl/);
     assert.match(hook, /Linking\.openURL/);
     assert.match(hook, /consult\('start'\)/);
     assert.match(hook, /consult\('foreground'\)/);

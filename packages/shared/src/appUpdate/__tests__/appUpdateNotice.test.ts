@@ -19,7 +19,11 @@ import {
   type AppUpdateNoticeCopy,
   type AppUpdateNoticeDeps,
 } from '../noticeSession.ts';
-import { parseAppUpdatePolicyResponse } from '../parsePolicy.ts';
+import {
+  ANDROID_APP_UPDATE_POLICY_REQUEST,
+  officialAndroidStoreUrl,
+  parseAppUpdatePolicyResponse,
+} from '../parsePolicy.ts';
 import {
   parseAppUpdatePostpone,
   APP_UPDATE_POSTPONE_STORAGE_KEY,
@@ -75,6 +79,25 @@ describe('parseAppUpdatePolicyResponse', () => {
     assert.equal(parsed && 'required' in parsed, false);
   });
 
+  it('treats empty latestVersion as not configured', () => {
+    const parsed = parseAppUpdatePolicyResponse(
+      policy({ enabled: false, latestVersion: '' }),
+      'android',
+    );
+    assert.equal(parsed?.latestVersion, '');
+    assert.equal(parsed?.enabled, false);
+    assert.equal(
+      decideAppUpdateNotice({
+        policy: parsed,
+        installedVersion: '2.0.9',
+        nowMs: 1,
+        postpone: null,
+        modalVisible: false,
+      }).show,
+      false,
+    );
+  });
+
   it('fails closed on invalid / non-public store URLs', () => {
     assert.equal(parseAppUpdatePolicyResponse(null, 'android'), null);
     assert.equal(
@@ -125,6 +148,24 @@ describe('decideAppUpdateNotice', () => {
         ...base,
         installedVersion: '2.1.0',
         policy: policy({ latestVersion: '2.0.9' }),
+      }).show,
+      false,
+    );
+  });
+
+  it('refuses a non-official storeUrl even when enabled', () => {
+    assert.equal(
+      decideAppUpdateNotice({
+        policy: {
+          platform: 'android',
+          enabled: true,
+          latestVersion: '2.1.0',
+          storeUrl: 'https://play.google.com/apps/internaltest/foo',
+        },
+        installedVersion: '2.0.9',
+        nowMs: 1,
+        postpone: null,
+        modalVisible: false,
       }).show,
       false,
     );
@@ -293,6 +334,19 @@ describe('createAppUpdateNoticeSession (simulated policy)', () => {
     assert.equal(h.presented[0].storeUrl, PLAY);
     h.lastOnUpdate?.();
     assert.deepEqual(h.opened, [PLAY]);
+    assert.equal(officialAndroidStoreUrl(h.opened[0]), PLAY);
+  });
+
+  it('sends exact { platform: "android" } with no extra keys', async () => {
+    const h = harness({
+      fetch: async (request) => {
+        assert.deepEqual(request, ANDROID_APP_UPDATE_POLICY_REQUEST);
+        assert.deepEqual(Object.keys(request), ['platform']);
+        return policy();
+      },
+    });
+    await h.session.consult('start');
+    assert.equal(h.fetchCalls.length, 1);
   });
 
   it('Later postpones 24h for that version and skips duplicates', async () => {
