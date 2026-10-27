@@ -485,9 +485,22 @@ describe('post-CRJ Social Media editor screen contract', () => {
     assert.match(screen, /mapped\.retryable/);
     assert.match(screen, /isInstagramResultCurrent/);
     assert.doesNotMatch(screen, /shouldShowInstagramInboxAuthorizeDevAction/);
-    assert.doesNotMatch(screen, /startInboxAuthorize/);
     assert.doesNotMatch(screen, /inboxAuthorizeDev/);
     assert.doesNotMatch(screen, /INSTAGRAM_INBOX_AUTHORIZE_KEY/);
+    assert.match(screen, /shouldShowInstagramInboxAuthorizeOwnerAction/);
+    assert.match(screen, /client\.startInboxAuthorize\(\)/);
+    assert.match(
+      screen,
+      /openInstagramInboxAuthorizationUrl\(started\.authorizationUrl,/,
+    );
+    assert.match(screen, /Linking\.openURL\(url\)/);
+    assert.match(screen, /showInstagramInboxAuthorizeOwner \?/);
+    const inboxHandler = screen.slice(
+      screen.indexOf('const handleInstagramInboxAuthorize'),
+      screen.indexOf('const applyInstagramGet'),
+    );
+    assert.doesNotMatch(inboxHandler, /console\.(log|warn|info|debug)/);
+    assert.doesNotMatch(inboxHandler, /JSON\.stringify\(started/);
   });
 
   it('SocialMediaScreen dismisses keyboard after successful save', () => {

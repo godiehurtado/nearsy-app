@@ -91,6 +91,8 @@ import {
   presentInstagramGetResponse,
   shareInstagramChallengeCode,
   shouldPollInstagramOwnership,
+  shouldShowInstagramInboxAuthorizeOwnerAction,
+  openInstagramInboxAuthorizationUrl,
   INSTAGRAM_OWNERSHIP_POLL_INTERVAL_MS,
   InstagramOwnershipClientError,
   type InstagramGetHint,
@@ -251,6 +253,8 @@ export default function SocialMediaScreen() {
   const [instagramHint, setInstagramHint] = useState<InstagramGetHint | null>(
     null,
   );
+  const [instagramInboxAuthorizeBusy, setInstagramInboxAuthorizeBusy] =
+    useState(false);
   const instagramRequestGenRef = useRef(0);
   const instagramEditorModeRef = useRef<ProfileMode | null>(editorMode);
   const instagramChallengeRef = useRef<InstagramOwnershipPending | null>(null);
@@ -961,6 +965,51 @@ export default function SocialMediaScreen() {
 
   handleInstagramConnectRef.current = () => {
     void handleInstagramConnect();
+  };
+
+  const firebaseJsProjectId =
+    (firebaseAuth as { app?: { options?: { projectId?: string } } }).app
+      ?.options?.projectId ?? null;
+
+  const showInstagramInboxAuthorizeOwner =
+    shouldShowInstagramInboxAuthorizeOwnerAction({
+      platform: Platform.OS,
+      firebaseEnvironment: process.env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV,
+      firebaseProjectId: firebaseJsProjectId,
+      uid: firebaseAuth.currentUser?.uid ?? null,
+    });
+
+  const instagramInboxAuthorizeBusyRef = useRef(false);
+  const handleInstagramInboxAuthorizeRef = useRef<() => void>(() => {});
+
+  const handleInstagramInboxAuthorize = useCallback(async () => {
+    if (
+      !showInstagramInboxAuthorizeOwner ||
+      instagramInboxAuthorizeBusyRef.current
+    ) {
+      return;
+    }
+    instagramInboxAuthorizeBusyRef.current = true;
+    setInstagramInboxAuthorizeBusy(true);
+    try {
+      const client = await getInstagramOwnershipClient();
+      const started = await client.startInboxAuthorize();
+      await openInstagramInboxAuthorizationUrl(started.authorizationUrl, {
+        canOpenURL: (url) => Linking.canOpenURL(url),
+        openURL: (url) => Linking.openURL(url),
+      });
+    } catch (err) {
+      presentInstagramError(err, () => {
+        handleInstagramInboxAuthorizeRef.current();
+      });
+    } finally {
+      instagramInboxAuthorizeBusyRef.current = false;
+      setInstagramInboxAuthorizeBusy(false);
+    }
+  }, [presentInstagramError, showInstagramInboxAuthorizeOwner]);
+
+  handleInstagramInboxAuthorizeRef.current = () => {
+    void handleInstagramInboxAuthorize();
   };
 
   const applyInstagramGet = useCallback(
@@ -2246,6 +2295,59 @@ export default function SocialMediaScreen() {
                 </Text>
               ) : null}
             </View>
+
+            {showInstagramInboxAuthorizeOwner ? (
+              <View
+                style={[
+                  styles.card,
+                  {
+                    backgroundColor: palette.panel,
+                    borderColor: palette.border,
+                    borderWidth: 1,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.platformName, { color: palette.textPrimary }]}
+                >
+                  {t('profile.social.instagram.inboxAuthorizeTitle')}
+                </Text>
+                <Text
+                  style={[styles.helperText, { color: palette.textSecondary }]}
+                >
+                  {t('profile.social.instagram.inboxAuthorizeHint')}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t(
+                    'profile.social.instagram.inboxAuthorizeA11y',
+                  )}
+                  disabled={instagramInboxAuthorizeBusy}
+                  onPress={() => {
+                    void handleInstagramInboxAuthorize();
+                  }}
+                  style={({ pressed }) => [
+                    styles.toggleBtn,
+                    {
+                      marginTop: spacing.sm,
+                      alignSelf: 'flex-start',
+                      backgroundColor: palette.primary,
+                      borderColor: palette.primary,
+                      opacity: instagramInboxAuthorizeBusy ? 0.5 : 1,
+                    },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text
+                    style={[styles.toggleText, { color: palette.surface }]}
+                  >
+                    {instagramInboxAuthorizeBusy
+                      ? t('profile.social.instagram.inboxAuthorizeBusy')
+                      : t('profile.social.instagram.inboxAuthorize')}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
 
             <View
               style={[

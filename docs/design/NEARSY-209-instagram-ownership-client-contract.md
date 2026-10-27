@@ -18,7 +18,9 @@ This file records the iOS Own Profile mapping. Do not invent callables or fields
 
 `instagramOwnershipStart`, `instagramOwnershipGet`, `instagramOwnershipUnlink`.
 
-Inbox authorization is an Identity Owner procedure (`instagramInboxAuthorizeStart`), not Own Profile UI.
+Inbox authorization is an Identity Owner procedure (`instagramInboxAuthorizeStart`), not user Connect Instagram.
+
+Temporary production Owner action (this admin IPA only): Own Profile → Social shows **Authorize @nearsy.app inbox** solely when iOS + `nearsy-pj` + UID `ATuSeZ1dR7dtMUUo0FWzcy7seO43`. Calls `instagramInboxAuthorizeStart` with `{}` and opens `authorizationUrl` in the system browser. Do not log the URL, codes, or tokens. Effective allowlist remains Identity `INSTAGRAM_INBOX_ADMIN_UIDS`. Reverse-DM Start/Get/Unlink is unchanged.
 
 Start request: `{ mode: "personal"|"professional", platform: "ios" }`.
 

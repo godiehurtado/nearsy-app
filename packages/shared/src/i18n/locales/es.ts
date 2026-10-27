@@ -1384,6 +1384,13 @@ const es: TranslationResources = {
         unlinkConfirmTitle: '¿Desconectar Instagram?',
         unlinkConfirmBody:
           'Esto desconecta Instagram de este perfil. Puedes volver a conectarlo cuando quieras.',
+        inboxAuthorizeTitle: 'Inbox Nearsy (Owner)',
+        inboxAuthorize: 'Autorizar inbox de @nearsy.app',
+        inboxAuthorizeA11y:
+          'Autorizar el inbox de Instagram de Nearsy. Esto no es Conectar Instagram.',
+        inboxAuthorizeBusy: 'Abriendo autorización…',
+        inboxAuthorizeHint:
+          'Solo Owner. Abre Instagram para autorizar el inbox de @nearsy.app. Esto no es Conectar Instagram.',
         errors: {
           notEnabled: 'La conexión de Instagram no está disponible ahora.',
           accountClaimed:

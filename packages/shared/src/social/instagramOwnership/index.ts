@@ -54,6 +54,12 @@ export type {
   InstagramModeConnectionView,
 } from './instagramModePresentation';
 export { getInstagramOwnershipClient } from './iosInstagramOwnershipFoundation';
+export {
+  INSTAGRAM_INBOX_PRODUCTION_OWNER_UID,
+  INSTAGRAM_INBOX_PRODUCTION_PROJECT_ID,
+  shouldShowInstagramInboxAuthorizeOwnerAction,
+} from './inboxAuthorizeOwnerGate';
+export { openInstagramInboxAuthorizationUrl } from './openInboxAuthorization';
 export { resolveInstagramOwnershipConnectedByMode } from './ownershipSummary';
 export type { InstagramOwnershipConnectedByMode } from './ownershipSummary';
 export {

@@ -326,6 +326,13 @@ export default {
       unlinkConfirmTitle: 'Disconnect Instagram?',
       unlinkConfirmBody:
         'This disconnects Instagram from this profile. You can connect again anytime.',
+      inboxAuthorizeTitle: 'Nearsy inbox (Owner)',
+      inboxAuthorize: 'Authorize @nearsy.app inbox',
+      inboxAuthorizeA11y:
+        'Authorize the Nearsy Instagram inbox. This is not Connect Instagram.',
+      inboxAuthorizeBusy: 'Opening authorization…',
+      inboxAuthorizeHint:
+        'Owner-only. Opens Instagram so you can authorize the @nearsy.app inbox. This is not Connect Instagram.',
       errors: {
         notEnabled: 'Instagram connection is not available right now.',
         accountClaimed:

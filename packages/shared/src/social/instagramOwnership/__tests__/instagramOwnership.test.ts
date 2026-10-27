@@ -23,6 +23,12 @@ import {
   assertInstagramOwnershipVerified,
 } from '../parse';
 import {
+  INSTAGRAM_INBOX_PRODUCTION_OWNER_UID,
+  INSTAGRAM_INBOX_PRODUCTION_PROJECT_ID,
+  shouldShowInstagramInboxAuthorizeOwnerAction,
+} from '../inboxAuthorizeOwnerGate';
+import { openInstagramInboxAuthorizationUrl } from '../openInboxAuthorization';
+import {
   INSTAGRAM_OWNERSHIP_POLL_INTERVAL_MS,
   shouldPollInstagramOwnership,
 } from '../pollPolicy';
@@ -434,5 +440,96 @@ describe('instagram poll policy', () => {
       }),
       false,
     );
+  });
+});
+
+describe('instagram inbox authorize production Owner gate', () => {
+  const owner = {
+    platform: 'ios',
+    firebaseEnvironment: 'production',
+    firebaseProjectId: INSTAGRAM_INBOX_PRODUCTION_PROJECT_ID,
+    uid: INSTAGRAM_INBOX_PRODUCTION_OWNER_UID,
+  };
+
+  it('shows only for the production Owner on iOS nearsy-pj', () => {
+    assert.equal(shouldShowInstagramInboxAuthorizeOwnerAction(owner), true);
+    assert.equal(INSTAGRAM_INBOX_PRODUCTION_OWNER_UID, 'ATuSeZ1dR7dtMUUo0FWzcy7seO43');
+    assert.equal(INSTAGRAM_INBOX_PRODUCTION_PROJECT_ID, 'nearsy-pj');
+  });
+
+  it('hides for other users, development, and other projects', () => {
+    assert.equal(
+      shouldShowInstagramInboxAuthorizeOwnerAction({
+        ...owner,
+        uid: 'someone-else',
+      }),
+      false,
+    );
+    assert.equal(
+      shouldShowInstagramInboxAuthorizeOwnerAction({
+        ...owner,
+        uid: null,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldShowInstagramInboxAuthorizeOwnerAction({
+        ...owner,
+        platform: 'android',
+      }),
+      false,
+    );
+    assert.equal(
+      shouldShowInstagramInboxAuthorizeOwnerAction({
+        ...owner,
+        firebaseEnvironment: 'development',
+      }),
+      false,
+    );
+    assert.equal(
+      shouldShowInstagramInboxAuthorizeOwnerAction({
+        ...owner,
+        firebaseProjectId: 'nearsy-dev',
+      }),
+      false,
+    );
+    assert.equal(
+      shouldShowInstagramInboxAuthorizeOwnerAction({
+        ...owner,
+        firebaseProjectId: '',
+      }),
+      false,
+    );
+  });
+});
+
+describe('instagram inbox authorize open URL', () => {
+  it('opens a validated Instagram authorize URL without logging it', async () => {
+    const opened: string[] = [];
+    await openInstagramInboxAuthorizationUrl(
+      'https://www.instagram.com/oauth/authorize?client_id=1',
+      {
+        canOpenURL: async () => true,
+        openURL: async (url) => {
+          opened.push(url);
+        },
+      },
+    );
+    assert.deepEqual(opened, [
+      'https://www.instagram.com/oauth/authorize?client_id=1',
+    ]);
+  });
+
+  it('rejects a non-Instagram URL before opening', async () => {
+    let opened = false;
+    await assert.rejects(() =>
+      openInstagramInboxAuthorizationUrl('https://example.com/oauth/authorize', {
+        canOpenURL: async () => true,
+        openURL: async () => {
+          opened = true;
+        },
+      }),
+    );
+    assert.equal(opened, false);
   });
 });
