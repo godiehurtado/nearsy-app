@@ -5,8 +5,9 @@
  * catalog block (see crjStepOrder) → Social Media → Gallery → Location →
  * Notifications → Registration Success → MainTabs.
  * Android places Affiliations before Interests; other platforms keep
- * Interests then Affiliations. Incomplete registration still hydrates
- * bags and restarts at step 0.
+ * Interests then Affiliations. Android persists a named resume cursor
+ * (`androidCrjResume`); bags hydrate for the active mode. Empty bags
+ * do not mean a catalog or optional step was finished.
  *
  * TEMPORARY: Phone OTP remains out of scope (handled earlier in Register).
  */
@@ -53,6 +54,11 @@ import {
   resolveCrjStep,
   type CrjResolvedStep,
 } from '../components/registration/crjStepOrder';
+import {
+  ANDROID_CRJ_RESUME_FIELD,
+  buildAndroidCrjResumePatch,
+  recoverAndroidCrjResume,
+} from '../components/registration/crjResume';
 import { PrimaryButton, SecondaryButton } from '../components/PrimaryButton';
 import { BackgroundLocationDisclosureModal } from '../components/BackgroundLocationDisclosureModal';
 import {
@@ -411,7 +417,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         );
         setBgDisclosureVisible(false);
         setBgDisclosureBusy(false);
-        setStepIndex((i) => i + 1);
+        setStepIndex((i) => {
+          const next = i + 1;
+          void persistAndroidCrjResume(next);
+          return next;
+        });
       }
     })();
   }, [crjLocation.advance, crjLocation.bgVisible, crjLocation.recovery, uid, t]);
@@ -629,6 +639,19 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       if (nextPhoto) {
         wizardPhotoRef.current = nextPhoto;
         setPhotoUri(nextPhoto);
+      }
+
+      if (
+        Platform.OS === 'android' &&
+        existing &&
+        existing.profileSetupCompleted !== true
+      ) {
+        const resume = recoverAndroidCrjResume({
+          doc: existing as Record<string, unknown>,
+          affiliationIds: AFFILIATION_CATEGORY_IDS,
+          interestIds: INTEREST_CATEGORY_IDS,
+        });
+        setStepIndex(resume.stepIndex);
       }
     } finally {
       setHydrated(true);
@@ -960,6 +983,21 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     }));
   }
 
+  async function persistAndroidCrjResume(nextIndex: number) {
+    if (Platform.OS !== 'android' || !uid || !mode) return;
+    const patch = buildAndroidCrjResumePatch(mode, resolveStep(nextIndex));
+    await updateUserProfilePartial(uid, patch);
+    setShellData((prev) => ({
+      ...(prev ?? {}),
+      ...patch,
+    }));
+  }
+
+  async function commitStepIndex(nextIndex: number) {
+    await persistAndroidCrjResume(nextIndex);
+    setStepIndex(nextIndex);
+  }
+
   async function persistGallery() {
     if (!uid || !mode) return;
     if (!shouldPersistCrjGallery(galleryOriginal, galleryItems)) return;
@@ -1181,7 +1219,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       current.granted ||
       current.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
     if (already) {
-      setStepIndex((i) => i + 1);
+      await commitStepIndex(stepIndex + 1);
       return;
     }
     const req = await Notifications.requestPermissionsAsync({
@@ -1200,7 +1238,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         t('onboarding.profileCompletion.notifications.deniedMessage'),
       );
     }
-    setStepIndex((i) => i + 1);
+    await commitStepIndex(stepIndex + 1);
   }
 
   async function finishOnboarding() {
@@ -1216,6 +1254,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       // profileSetupCompleted is the completion gate for CRJ.
       await updateUserProfilePartial(uid, {
         profileSetupCompleted: true,
+        ...(Platform.OS === 'android'
+          ? { [ANDROID_CRJ_RESUME_FIELD]: firestoreDeleteField() }
+          : {}),
         ...(firstName.trim() ? { realName: firstName.trim() } : {}),
         ...(lastName.trim() ? { lastName: lastName.trim() } : {}),
       });
@@ -1297,12 +1338,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       return;
     }
     await persistInterests();
-    setStepIndex((i) => i + 1);
+    await commitStepIndex(stepIndex + 1);
   }
 
   async function leaveLastAffiliationCategory() {
     await persistAffiliations();
-    setStepIndex((i) => i + 1);
+    await commitStepIndex(stepIndex + 1);
   }
 
   async function advanceAffiliation() {
@@ -1316,7 +1357,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       if (isLast) {
         await leaveLastAffiliationCategory();
       } else {
-        setStepIndex((i) => i + 1);
+        await persistAffiliations();
+        await commitStepIndex(stepIndex + 1);
       }
     } catch (e: any) {
       Alert.alert(
@@ -1347,7 +1389,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       setSubmitting(true);
       await persistSocialMedia();
       setSocialFieldErrors({});
-      setStepIndex((i) => i + 1);
+      await commitStepIndex(stepIndex + 1);
     } catch (e: any) {
       Alert.alert(
         t('onboarding.profileCompletion.saveErrorTitle'),
@@ -1370,7 +1412,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         await cleanupAbandonedGalleryUploads();
         setGalleryItems(galleryOriginal);
       }
-      setStepIndex((i) => i + 1);
+      await commitStepIndex(stepIndex + 1);
     } catch (e: any) {
       Alert.alert(
         t('onboarding.profileCompletion.saveErrorTitle'),
@@ -1422,7 +1464,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       if (isLast) {
         await leaveLastInterestCategory();
       } else {
-        setStepIndex((i) => i + 1);
+        await persistInterests();
+        await commitStepIndex(stepIndex + 1);
       }
     } catch (e: any) {
       Alert.alert(
@@ -1440,20 +1483,20 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       setSubmitting(true);
       if (step.kind === 'type') {
         await persistType();
-        setStepIndex((i) => i + 1);
+        await commitStepIndex(stepIndex + 1);
       } else if (step.kind === 'identity') {
         await persistName();
-        setStepIndex((i) => i + 1);
+        await commitStepIndex(stepIndex + 1);
       } else if (step.kind === 'photo') {
         await persistPhoto();
-        setStepIndex((i) => i + 1);
+        await commitStepIndex(stepIndex + 1);
       } else if (step.kind === 'details') {
         await persistDetails();
-        setStepIndex((i) => i + 1);
+        await commitStepIndex(stepIndex + 1);
       } else if (step.kind === 'interestsIntro') {
-        setStepIndex((i) => i + 1);
+        await commitStepIndex(stepIndex + 1);
       } else if (step.kind === 'interestsCelebration') {
-        setStepIndex((i) => i + 1);
+        await commitStepIndex(stepIndex + 1);
       } else if (step.kind === 'success') {
         await finishOnboarding();
       }
@@ -1472,7 +1515,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     }
   }
 
-  function goBack() {
+  async function goBack() {
     if (step.kind === 'success' || stepIndex <= 0) return;
     if (step.kind === 'interest') {
       const interestCategory = getOnboardingCategory(step.categoryId);
@@ -1497,7 +1540,21 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         return;
       }
     }
-    setStepIndex((i) => i - 1);
+    try {
+      if (step.kind === 'affiliation') await persistAffiliations();
+      if (step.kind === 'interest') await persistInterests();
+      if (step.kind === 'socialMedia') await persistSocialMedia();
+      if (step.kind === 'gallery') await persistGallery();
+      if (step.kind === 'details' && isStepValid()) await persistDetails();
+      if (step.kind === 'identity' && isStepValid()) await persistName();
+      if (step.kind === 'photo' && photoUri) await persistPhoto();
+      await commitStepIndex(stepIndex - 1);
+    } catch (e: any) {
+      Alert.alert(
+        t('onboarding.profileCompletion.saveErrorTitle'),
+        e?.message || t('onboarding.profileCompletion.saveErrorMessage'),
+      );
+    }
   }
 
   if (!hydrated) {
@@ -1689,7 +1746,10 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             />
             <SecondaryButton
               label={t('onboarding.profileCompletion.location.skip')}
-              onPress={() => setStepIndex((i) => i + 1)}
+              onPress={() => {
+                if (submitting) return;
+                void commitStepIndex(stepIndex + 1);
+              }}
             />
           </View>
         ) : step.kind === 'notifications' ? (
@@ -1703,7 +1763,10 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             />
             <SecondaryButton
               label={t('onboarding.profileCompletion.notifications.skip')}
-              onPress={() => setStepIndex((i) => i + 1)}
+              onPress={() => {
+                if (submitting) return;
+                void commitStepIndex(stepIndex + 1);
+              }}
             />
           </View>
         ) : step.kind === 'success' ? (

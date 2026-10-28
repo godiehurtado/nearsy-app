@@ -98,9 +98,33 @@ function takeTail(offset: number): CrjResolvedStep {
   return { kind: CRJ_POST_SOCIAL_STEPS[offset - 1]! };
 }
 
+export function crjStepsEqual(a: CrjResolvedStep, b: CrjResolvedStep): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === 'affiliation' && b.kind === 'affiliation') {
+    return a.categoryId === b.categoryId;
+  }
+  if (a.kind === 'interest' && b.kind === 'interest') {
+    return a.categoryId === b.categoryId;
+  }
+  return true;
+}
+
+/** Named step → session index for the given walk. Unknown target → 0. */
+export function crjStepIndexFromFlag(
+  target: CrjResolvedStep,
+  affiliationsBeforeInterests: boolean,
+): number {
+  for (let i = 0; i < 80; i += 1) {
+    const step = resolveCrjStepFromFlag(i, affiliationsBeforeInterests);
+    if (crjStepsEqual(step, target)) return i;
+    if (step.kind === 'success') break;
+  }
+  return 0;
+}
+
 /**
- * CRJ wizard cursor. Incomplete registration still hydrates bags and
- * restarts at index 0 — this only changes the walk order.
+ * CRJ wizard walk. Android persists a named resume cursor separately;
+ * this function only maps an index to a step.
  */
 export function resolveCrjStepFromFlag(
   stepIndex: number,
