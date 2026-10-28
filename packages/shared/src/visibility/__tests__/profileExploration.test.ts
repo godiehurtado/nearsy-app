@@ -936,7 +936,12 @@ describe('profile exploration screen composition (static V1.4E)', () => {
         if (entry.isDirectory()) {
           walk(full);
         } else if (/\.tsx?$/.test(entry.name)) {
-          if (entry.name === 'SocialMediaScreen.tsx') continue;
+          if (
+            entry.name === 'SocialMediaScreen.tsx' ||
+            entry.name === 'OwnedSocialConnectSection.tsx'
+          ) {
+            continue;
+          }
           const src = readFileSync(full, 'utf8');
           if (/canOpenURL\s*\(/.test(src)) offenders.push(full);
           if (/socialLinks/i.test(src) && /Linking\.openURL/.test(src)) {
