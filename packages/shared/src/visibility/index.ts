@@ -27,3 +27,4 @@ export * from './contractualLocationRefresh';
 export * from './nearbyDiscoveryLoad';
 export * from './visibilityRecoveryIntent';
 export * from './nearbyLoadUi';
+export * from './discoveryProfileLoad';

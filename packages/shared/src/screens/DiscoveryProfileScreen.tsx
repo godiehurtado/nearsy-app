@@ -1,13 +1,16 @@
 /**
  * Profile Exploration — Discovery Profile Detail.
- * Candidate data: getDiscoveryProfile only (no peer users/{uid} read).
- * Public interests: full candidate profile.interestIds (catalog-resolved),
- * shown on the separate DiscoveryInterests screen.
+ * Candidate data: getDiscoveryProfile only (no peer users/{uid} read,
+ * no private social bags). Initial load on mount; silent refetch on later
+ * navigation focus and app foreground. Late responses are discarded.
+ * Client refetch does not enable Functions social pilots.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
+  type AppStateStatus,
   Dimensions,
   Image,
   Modal,
@@ -19,7 +22,12 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import {
+  RouteProp,
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+} from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -40,11 +48,15 @@ import {
 } from '../theme';
 import { cardShadow } from '../theme/shadows';
 import {
+  applyDiscoveryProfileFailure,
+  applyDiscoveryProfileSuccess,
   buildGetDiscoveryProfileRequest,
   galleryPreviewOverflowCount,
   galleryPreviewUrls,
   isVisibilityDiscoveryClientError,
+  shouldApplyDiscoveryProfileLoadResult,
   shouldShowGalleryPreviewOverflow,
+  shouldSilentDiscoveryProfileRefresh,
   toAlignment,
   type GetDiscoveryProfileResponse,
   type ProfileMode,
@@ -88,41 +100,105 @@ export default function DiscoveryProfileScreen() {
   const [blocking, setBlocking] = useState(false);
   const [blockError, setBlockError] = useState<string | null>(null);
   const blockInFlight = useRef(false);
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  const loadGenerationRef = useRef(0);
+  const skipNextFocusRefetchRef = useRef(true);
+  const screenFocusedRef = useRef(false);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const loadProfileRef = useRef<(opts?: { silent?: boolean }) => Promise<void>>(
+    async () => {},
+  );
 
-  const loadProfile = useCallback(async () => {
+  const loadProfile = useCallback(async (opts?: { silent?: boolean }) => {
     if (!uid) {
       setErrorKind('missing');
       setData(null);
       setLoading(false);
       return;
     }
-    setLoading(true);
-    setErrorKind('none');
-    setHeroFailed(false);
+    const requestId = ++loadGenerationRef.current;
+    const silent =
+      opts?.silent === true &&
+      shouldSilentDiscoveryProfileRefresh(dataRef.current);
+    if (!silent) {
+      setLoading(true);
+      setErrorKind('none');
+      setHeroFailed(false);
+    }
     try {
       const client = await getVisibilityDiscoveryClient();
       const response = await client.getDiscoveryProfile(
         buildGetDiscoveryProfileRequest(uid),
       );
-      setData(response);
-    } catch (err) {
-      setData(null);
       if (
-        isVisibilityDiscoveryClientError(err) &&
-        err.reason.kind === 'known'
+        !shouldApplyDiscoveryProfileLoadResult({
+          requestId,
+          latestRequestId: loadGenerationRef.current,
+        })
       ) {
-        setErrorKind('unavailable');
-      } else {
-        setErrorKind('load');
+        return;
       }
-    } finally {
-      setLoading(false);
+      const next = applyDiscoveryProfileSuccess(response);
+      setData(next.data);
+      setErrorKind(next.errorKind);
+      setLoading(next.loading);
+    } catch (err) {
+      if (
+        !shouldApplyDiscoveryProfileLoadResult({
+          requestId,
+          latestRequestId: loadGenerationRef.current,
+        })
+      ) {
+        return;
+      }
+      const failureKind =
+        isVisibilityDiscoveryClientError(err) && err.reason.kind === 'known'
+          ? 'unavailable'
+          : 'load';
+      const next = applyDiscoveryProfileFailure(dataRef.current, failureKind);
+      setData(next.data);
+      setErrorKind(next.errorKind);
+      setLoading(next.loading);
     }
   }, [uid]);
 
+  loadProfileRef.current = loadProfile;
+
   useEffect(() => {
-    void loadProfile();
+    skipNextFocusRefetchRef.current = true;
+    void loadProfile({ silent: false });
+    return () => {
+      loadGenerationRef.current += 1;
+    };
   }, [loadProfile]);
+
+  useFocusEffect(
+    useCallback(() => {
+      screenFocusedRef.current = true;
+      if (skipNextFocusRefetchRef.current) {
+        skipNextFocusRefetchRef.current = false;
+      } else {
+        void loadProfileRef.current({ silent: true });
+      }
+      return () => {
+        screenFocusedRef.current = false;
+      };
+    }, []),
+  );
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      const wasBackground =
+        appStateRef.current === 'inactive' ||
+        appStateRef.current === 'background';
+      appStateRef.current = next;
+      if (wasBackground && next === 'active' && screenFocusedRef.current) {
+        void loadProfileRef.current({ silent: true });
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   /** All public candidate interests — not filtered by viewer intersection. */
   const visibleInterestIds = useMemo(

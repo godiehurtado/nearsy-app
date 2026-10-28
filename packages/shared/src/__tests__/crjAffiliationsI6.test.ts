@@ -245,19 +245,20 @@ describe('CRJ-I6 Affiliations', () => {
     assert.equal(patch.profileSetupCompleted, false);
   });
 
-  it('O — Interests Celebration continues directly into Education', () => {
+  it('O — Interests Celebration continues into Social Media', () => {
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
-    assert.ok(screen.includes('continueTarget="affiliations"'));
-    assert.ok(screen.includes("if (offset === 0) return { kind: 'interestsCelebration' }"));
-    assert.ok(screen.includes('offset -= 1'));
+    assert.ok(screen.includes('continueTarget="social"'));
+    assert.ok(!screen.includes('continueTarget="affiliations"'));
     assert.ok(!screen.includes("kind: 'affiliationsIntro'"));
     assert.equal(listOnboardingAffiliationCategoryIds()[0], 'education');
   });
 
-  it('P — final Affiliations continuation enters Social Media', () => {
-    assert.equal(POST_AFFILIATIONS_CRJ_STEP, 'socialMedia');
+  it('P — final Affiliations continuation enters Interests intro', () => {
+    assert.equal(POST_AFFILIATIONS_CRJ_STEP, 'interestsIntro');
+    const journey = readSharedSource('onboarding/crjJourney.ts');
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
-    assert.ok(screen.includes("kind: 'socialMedia'"));
+    assert.ok(journey.includes("kind: POST_AFFILIATIONS_CRJ_STEP"));
+    assert.ok(screen.includes("step.kind === 'interestsIntro'"));
     assert.ok(screen.includes('async function leaveLastAffiliationCategory()'));
     assert.ok(screen.includes('await persistAffiliations()'));
   });
@@ -336,17 +337,14 @@ describe('CRJ-I6 Claude visual structure', () => {
 
 describe('CRJ-I6 Celebration / Affiliations transition', () => {
   it('A — last interest category is followed by celebration', () => {
-    const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
-    const afterInterests = screen.slice(
-      screen.indexOf('offset -= INTEREST_CATEGORY_IDS.length'),
-    );
+    const journey = readSharedSource('onboarding/crjJourney.ts');
     assert.match(
-      afterInterests,
+      journey,
       /if \(offset === 0\) return \{ kind: 'interestsCelebration' \}/,
     );
   });
 
-  it('B — celebration CTA label routes to first affiliation (Education)', () => {
+  it('B — celebration CTA label routes to Social Media', () => {
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
     const en = readSharedSource('i18n/resources/onboarding.ts');
     assert.ok(screen.includes("step.kind === 'interestsCelebration'"));
@@ -358,7 +356,7 @@ describe('CRJ-I6 Celebration / Affiliations transition', () => {
           "'onboarding.profileCompletion.interestsCelebration.continue'",
         ),
     );
-    assert.ok(en.includes("continue: 'Add my affiliations'"));
+    assert.ok(en.includes("continue: 'Add my social'"));
     assert.equal(listOnboardingAffiliationCategoryIds()[0], 'education');
   });
 
@@ -368,10 +366,10 @@ describe('CRJ-I6 Celebration / Affiliations transition', () => {
     assert.ok(!screen.includes('AffiliationsIntroVisual'));
   });
 
-  it('D/E — Back is a single step decrement (Education→Celebration→Interests)', () => {
+  it('D/E — Back is a single step decrement (Family→Details, Intro→Family)', () => {
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
     const back = screen.slice(screen.indexOf('function goBack()'));
-    assert.ok(back.includes('setStepIndex((i) => i - 1)'));
+    assert.ok(back.includes('shiftStep(-1)'));
     assert.ok(!screen.includes("kind: 'affiliationsIntro'"));
   });
 
@@ -385,7 +383,7 @@ describe('CRJ-I6 Celebration / Affiliations transition', () => {
       goNext.indexOf("step.kind === 'interestsCelebration'"),
       goNext.indexOf("step.kind === 'success'"),
     );
-    assert.ok(celebrationBranch.includes('setStepIndex((i) => i + 1)'));
+    assert.ok(celebrationBranch.includes('shiftStep(1)'));
     assert.ok(!celebrationBranch.includes('persistAffiliations'));
     assert.ok(!celebrationBranch.includes('profileSetupCompleted'));
   });

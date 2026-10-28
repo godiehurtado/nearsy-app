@@ -123,8 +123,34 @@ export function isSelectableSocialPlatform(id: CrjSocialPlatformId): boolean {
   return id !== 'snapchat';
 }
 
+/** Connect/Get/Unlink on CRJ and post-CRJ Own Profile. */
+export const CRJ_OWNED_SOCIAL_PLATFORM_IDS: readonly CrjSocialPlatformId[] = [
+  'youtube',
+  'tiktok',
+  'instagram',
+  'x',
+];
+
+/** Manual URL fields on CRJ. Snapchat stays hidden; owned platforms are not URLs. */
+export const CRJ_MANUAL_URL_PLATFORM_IDS: readonly CrjSocialPlatformId[] = [
+  'linkedin',
+  'facebook',
+];
+
+export function isCrjOwnedSocialPlatform(id: CrjSocialPlatformId): boolean {
+  return (CRJ_OWNED_SOCIAL_PLATFORM_IDS as readonly string[]).includes(id);
+}
+
+export function isCrjManualUrlPlatform(id: CrjSocialPlatformId): boolean {
+  return (CRJ_MANUAL_URL_PLATFORM_IDS as readonly string[]).includes(id);
+}
+
 export const SELECTABLE_CRJ_SOCIAL_PLATFORMS = CRJ_SOCIAL_PLATFORMS.filter(
   (platform) => isSelectableSocialPlatform(platform.id),
+);
+
+export const CRJ_MANUAL_URL_SOCIAL_PLATFORMS = CRJ_SOCIAL_PLATFORMS.filter(
+  (platform) => isCrjManualUrlPlatform(platform.id),
 );
 
 export function countConnectedSocials(

@@ -88,10 +88,10 @@ export default {
       title: "You're getting closer to your people",
       body: 'Your interests already help Nearsy find people you may have more in common with.',
       nextEyebrow: 'NEXT UP',
-      nextTitle: 'Your communities & affiliations',
+      nextTitle: 'Your social profiles',
       nextBody:
-        'Schools, companies, clubs and communities can reveal even more connections with people around you.',
-      continue: 'Add my affiliations',
+        'Connect YouTube, TikTok, Instagram or X. Facebook and LinkedIn stay optional links. You can skip any of this.',
+      continue: 'Add my social',
     },
     affiliations: {
       next: 'Next',

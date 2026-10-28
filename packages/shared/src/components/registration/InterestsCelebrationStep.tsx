@@ -22,8 +22,11 @@ import {
 } from '../../interests/onboardingInterestCatalog';
 import { celebrationEntryDelayMs, celebrationNextUpDelayMs } from './celebrationMotion';
 
-/** I6 can switch this to route into Affiliations without redesigning the screen. */
-export type InterestsCelebrationContinueTarget = 'location' | 'affiliations';
+/** Celebration continues into Social after affiliations moved before interests. */
+export type InterestsCelebrationContinueTarget =
+  | 'location'
+  | 'affiliations'
+  | 'social';
 
 type Props = {
   selected: OnboardingSelectedInterest[];
