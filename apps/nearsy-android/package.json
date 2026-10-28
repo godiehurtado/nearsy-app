@@ -8,7 +8,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "build": "eas build --platform android",
-    "postinstall": "patch-package"
+    "postinstall": "pnpm --workspace-root exec patch-package"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

@@ -1,6 +1,10 @@
 /**
  * Public social links for getDiscoveryProfile (Detail only).
  * No usernames, tokens, or private bags — platform + https url only.
+ *
+ * Functions DTO is the only published source. A leftover
+ * socialLinksPersonal/Professional URL after Unlink is private, not verified
+ * and not an icon. Do not map the bag with readPublicSocialLinks here.
  */
 
 import {

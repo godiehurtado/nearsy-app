@@ -163,7 +163,11 @@ export type GetDiscoveryProfileResponse = {
   distanceMeters: number;
   profile: DiscoveryProfileDetail;
   gallery: DiscoveryGalleryItem[];
-  /** Active-profile public links only; absent on older backends → parse to []. */
+  /**
+   * Active-profile public links only; absent on older backends → parse to [].
+   * Ownership networks (YouTube / TikTok / Instagram / X) belong here only when
+   * Functions published a verified connection — not because a private bag URL exists.
+   */
   socialLinks: DiscoveryPublicSocialLink[];
   /** Active-profile public affiliations; absent on older backends → parse to []. */
   affiliations: DiscoveryPublicAffiliation[];

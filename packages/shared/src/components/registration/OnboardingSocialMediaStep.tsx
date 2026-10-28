@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TextInput,
   Pressable,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
@@ -28,8 +29,19 @@ import {
   type CrjSocialFieldErrors,
   validateCustomNetworkName,
 } from '../../social/socialLinkNormalize.ts';
+import type { ProfileMode } from '../../profile/profileModeFields.ts';
+import {
+  ANDROID_OWNERSHIP_CARD_IDS,
+  applyOwnershipVerifiedChange,
+  type AndroidOwnershipCardId,
+} from '../../social/postCrjSocialEditor.ts';
+import { YoutubeOwnershipCard } from '../profile/YoutubeOwnershipCard.tsx';
+import { TiktokOwnershipCard } from '../profile/TiktokOwnershipCard.tsx';
+import { InstagramOwnershipCard } from '../profile/InstagramOwnershipCard.tsx';
+import { XOwnershipCard } from '../profile/XOwnershipCard.tsx';
 
 type Props = {
+  mode: ProfileMode;
   values: CrjSocialDraftValues;
   custom: SocialCustomLink[];
   onChangeValues: (next: CrjSocialDraftValues) => void;
@@ -76,6 +88,7 @@ function PlatformGlyph({
 }
 
 export function OnboardingSocialMediaStep({
+  mode,
   values,
   custom,
   onChangeValues,
@@ -89,8 +102,34 @@ export function OnboardingSocialMediaStep({
   const [otherName, setOtherName] = useState('');
   const [otherUrl, setOtherUrl] = useState('');
   const [otherError, setOtherError] = useState<string | null>(null);
+  const [ownershipVerified, setOwnershipVerified] = useState<
+    Partial<Record<AndroidOwnershipCardId, boolean>>
+  >({});
 
-  const connected = countConnectedSocials(values, custom);
+  const onOwnershipConnectedChange = useCallback(
+    (id: AndroidOwnershipCardId, connected: boolean) => {
+      setOwnershipVerified((prev) =>
+        applyOwnershipVerifiedChange(prev, id, connected),
+      );
+    },
+    [],
+  );
+
+  const urlValuesForCount =
+    Platform.OS === 'android'
+      ? {
+          ...values,
+          youtube: '',
+          tiktok: '',
+          instagram: '',
+          x: '',
+        }
+      : values;
+  const connected =
+    countConnectedSocials(urlValuesForCount, custom) +
+    (Platform.OS === 'android'
+      ? ANDROID_OWNERSHIP_CARD_IDS.filter((id) => ownershipVerified[id]).length
+      : 0);
   const connectedLabel =
     connected === 1
       ? t('onboarding.profileCompletion.socialMedia.connectedOne' as any)
@@ -172,10 +211,71 @@ export function OnboardingSocialMediaStep({
           const label = t(
             `onboarding.profileCompletion.socialMedia.platforms.${platform.nameKey}` as any,
           );
+          const glyph = (
+            <PlatformGlyph platform={platform} glyphColor="#FFFFFF" />
+          );
+
+          if (Platform.OS === 'android' && platform.id === 'youtube') {
+            return (
+              <YoutubeOwnershipCard
+                key={`youtube-${mode}`}
+                mode={mode}
+                label={label}
+                legacyUrl={values.youtube}
+                onConnectedChange={(connectedState) =>
+                  onOwnershipConnectedChange('youtube', connectedState)
+                }
+                glyph={glyph}
+              />
+            );
+          }
+          if (Platform.OS === 'android' && platform.id === 'tiktok') {
+            return (
+              <TiktokOwnershipCard
+                key={`tiktok-${mode}`}
+                mode={mode}
+                label={label}
+                legacyUrl={values.tiktok}
+                onConnectedChange={(connectedState) =>
+                  onOwnershipConnectedChange('tiktok', connectedState)
+                }
+                glyph={glyph}
+              />
+            );
+          }
+          if (Platform.OS === 'android' && platform.id === 'instagram') {
+            return (
+              <InstagramOwnershipCard
+                key={`instagram-${mode}`}
+                mode={mode}
+                label={label}
+                legacyUrl={values.instagram}
+                onConnectedChange={(connectedState) =>
+                  onOwnershipConnectedChange('instagram', connectedState)
+                }
+                glyph={glyph}
+              />
+            );
+          }
+          if (Platform.OS === 'android' && platform.id === 'x') {
+            return (
+              <XOwnershipCard
+                key={`x-${mode}`}
+                mode={mode}
+                label={label}
+                legacyUrl={values.x}
+                onConnectedChange={(connectedState) =>
+                  onOwnershipConnectedChange('x', connectedState)
+                }
+                glyph={glyph}
+              />
+            );
+          }
+
           return (
             <View key={platform.id} style={styles.row}>
               <View style={styles.rowHeader}>
-                <PlatformGlyph platform={platform} glyphColor="#FFFFFF" />
+                {glyph}
                 <Text style={[styles.platformName, { color: palette.textPrimary }]}>
                   {label}
                 </Text>

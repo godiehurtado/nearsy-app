@@ -39,6 +39,17 @@ export function authPhaseProgress(stepIndex: number, stepCount: number): number 
   return base + span * t;
 }
 
-export function crjPhaseProgress(phase: CrjProgressPhase): number {
+export function crjPhaseProgressFor(
+  phase: CrjProgressPhase,
+  affiliationsBeforeInterests: boolean,
+): number {
+  if (affiliationsBeforeInterests) {
+    if (phase === 'affiliations') return PHASE_PROGRESS.interests;
+    if (phase === 'interests') return PHASE_PROGRESS.affiliations;
+  }
   return PHASE_PROGRESS[phase];
+}
+
+export function crjPhaseProgress(phase: CrjProgressPhase): number {
+  return crjPhaseProgressFor(phase, false);
 }

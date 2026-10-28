@@ -2,9 +2,11 @@
  * Profile Completion wizard — CRJ profile-creation phase after Authentication.
  *
  * Flow: Profile Type → Name → Last Name → Photo → Profile Details →
- * Interests (11 category screens) → Interests Celebration / Affiliations
- * Transition → Affiliations (7 category screens) → Social Media →
- * Gallery → Location → Notifications → Registration Success → MainTabs.
+ * catalog block (see crjStepOrder) → Social Media → Gallery → Location →
+ * Notifications → Registration Success → MainTabs.
+ * Android places Affiliations before Interests; other platforms keep
+ * Interests then Affiliations. Incomplete registration still hydrates
+ * bags and restarts at step 0.
  *
  * TEMPORARY: Phone OTP remains out of scope (handled earlier in Register).
  */
@@ -41,9 +43,16 @@ import { OnboardingGalleryStep } from '../components/registration/OnboardingGall
 import { InterestsCelebrationStep } from '../components/registration/InterestsCelebrationStep';
 import { InterestsIntroVisual } from '../components/registration/InterestsIntroVisual';
 import {
-  crjPhaseProgress,
+  crjPhaseProgressFor,
   type CrjProgressPhase,
 } from '../components/registration/crjProgress';
+import {
+  CRJ_AFFILIATIONS_BEFORE_INTERESTS,
+  listCrjAffiliationCategoryIds,
+  listCrjInterestCategoryIds,
+  resolveCrjStep,
+  type CrjResolvedStep,
+} from '../components/registration/crjStepOrder';
 import { PrimaryButton, SecondaryButton } from '../components/PrimaryButton';
 import { BackgroundLocationDisclosureModal } from '../components/BackgroundLocationDisclosureModal';
 import {
@@ -127,7 +136,6 @@ import {
   countFinalOnboardingInterests,
   getOnboardingCategory,
   interestsRemainingToMinimum,
-  listOnboardingCategoryIds,
   meetsMinimumOnboardingInterests,
   type OnboardingInterestCategoryId,
   type OnboardingSelectedInterest,
@@ -142,8 +150,6 @@ import {
   resolveCrjInterestNextAction,
 } from '../interests/crjInterestSubcategoryNavigation';
 import {
-  listOnboardingAffiliationCategoryIds,
-  type OnboardingAffiliationCategoryId,
   type OnboardingSelectedAffiliation,
 } from '../affiliations/onboardingAffiliationCatalog';
 import { buildCrjAffiliationPersistencePatch } from '../affiliations/onboardingAffiliationPersistence';
@@ -153,13 +159,11 @@ import {
   type CrjSocialDraftValues,
 } from '../social/onboardingSocialCatalog';
 import {
-  POST_SOCIAL_MEDIA_CRJ_STEP,
   buildCrjSocialLinksPersistencePatch,
   readCrjSocialDraft,
   readExistingSocialLinks,
 } from '../social/onboardingSocialPersistence';
 import {
-  POST_GALLERY_CRJ_STEP,
   CRJ_GALLERY_UX_CAP,
   abandonedSessionUploadPaths,
   buildCrjGalleryPersistencePatch,
@@ -173,73 +177,18 @@ import {
   collectSocialFieldErrors,
   type CrjSocialFieldErrors,
 } from '../social/socialLinkNormalize';
+import { ANDROID_OWNERSHIP_CARD_IDS } from '../social/postCrjSocialEditor';
 import type { SocialCustomLink } from '../types/profile';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileCompletion'>;
 
-const PRE_INTEREST_STEPS = [
-  'type',
-  'identity',
-  'photo',
-  'details',
-  'interestsIntro',
-] as const;
-const AFFILIATION_CATEGORY_IDS = listOnboardingAffiliationCategoryIds();
-const POST_AFFILIATION_STEPS = [
-  POST_SOCIAL_MEDIA_CRJ_STEP,
-  POST_GALLERY_CRJ_STEP,
-  'notifications',
-  'success',
-] as const;
-const INTEREST_CATEGORY_IDS = listOnboardingCategoryIds();
+const AFFILIATION_CATEGORY_IDS = listCrjAffiliationCategoryIds();
+const INTEREST_CATEGORY_IDS = listCrjInterestCategoryIds();
 
-type FixedPreStep = (typeof PRE_INTEREST_STEPS)[number];
-type PostAffiliationStep = (typeof POST_AFFILIATION_STEPS)[number];
-
-type ResolvedStep =
-  | { kind: FixedPreStep }
-  | {
-      kind: 'interest';
-      interestCategoryIndex: number;
-      categoryId: OnboardingInterestCategoryId;
-    }
-  | { kind: 'interestsCelebration' }
-  | {
-      kind: 'affiliation';
-      affiliationCategoryIndex: number;
-      categoryId: OnboardingAffiliationCategoryId;
-    }
-  | { kind: 'socialMedia' }
-  | { kind: PostAffiliationStep };
+type ResolvedStep = CrjResolvedStep;
 
 function resolveStep(stepIndex: number): ResolvedStep {
-  if (stepIndex < PRE_INTEREST_STEPS.length) {
-    return { kind: PRE_INTEREST_STEPS[stepIndex]! };
-  }
-  let offset = stepIndex - PRE_INTEREST_STEPS.length;
-  if (offset < INTEREST_CATEGORY_IDS.length) {
-    const categoryId = INTEREST_CATEGORY_IDS[offset]!;
-    return {
-      kind: 'interest',
-      interestCategoryIndex: offset,
-      categoryId,
-    };
-  }
-  offset -= INTEREST_CATEGORY_IDS.length;
-  if (offset === 0) return { kind: 'interestsCelebration' };
-  offset -= 1;
-  if (offset < AFFILIATION_CATEGORY_IDS.length) {
-    const categoryId = AFFILIATION_CATEGORY_IDS[offset]!;
-    return {
-      kind: 'affiliation',
-      affiliationCategoryIndex: offset,
-      categoryId,
-    };
-  }
-  offset -= AFFILIATION_CATEGORY_IDS.length;
-  if (offset === 0) return { kind: 'socialMedia' };
-  offset -= 1;
-  return { kind: POST_AFFILIATION_STEPS[offset]! };
+  return resolveCrjStep(stepIndex);
 }
 
 function isLocalUri(value?: string | null) {
@@ -498,7 +447,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
 
   const progressPhase = progressPhaseForStep(step);
   const progressValue =
-    progressPhase != null ? crjPhaseProgress(progressPhase) : 0;
+    progressPhase != null
+      ? crjPhaseProgressFor(progressPhase, CRJ_AFFILIATIONS_BEFORE_INTERESTS)
+      : 0;
 
   function setWizardPhoto(uri: string | null) {
     wizardPhotoRef.current = uri;
@@ -1383,6 +1334,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     const errors = collectSocialFieldErrors(
       socialDraft,
       t('onboarding.profileCompletion.socialMedia.invalid' as any),
+      Platform.OS === 'android'
+        ? { skipPlatformIds: ANDROID_OWNERSHIP_CARD_IDS }
+        : undefined,
     );
     if (options.requireValidFields && Object.keys(errors).length > 0) {
       setSocialFieldErrors(errors);
@@ -1604,7 +1558,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                 ? t('onboarding.profileCompletion.interestsIntro.cta')
                 : step.kind === 'interestsCelebration'
                   ? t(
-                      'onboarding.profileCompletion.interestsCelebration.continue',
+                      CRJ_AFFILIATIONS_BEFORE_INTERESTS
+                        ? 'onboarding.profileCompletion.interestsCelebration.continueSocial'
+                        : 'onboarding.profileCompletion.interestsCelebration.continue',
                     )
                   : t('onboarding.profileCompletion.continue')
             }
@@ -2196,7 +2152,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
           {step.kind === 'interestsCelebration' && (
             <InterestsCelebrationStep
               selected={selectedInterests}
-              continueTarget="affiliations"
+              continueTarget={
+                CRJ_AFFILIATIONS_BEFORE_INTERESTS ? 'social' : 'affiliations'
+              }
             />
           )}
 
@@ -2211,8 +2169,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             />
           )}
 
-          {step.kind === 'socialMedia' && (
+          {step.kind === 'socialMedia' && mode != null && (
             <OnboardingSocialMediaStep
+              mode={mode}
               values={socialDraft}
               custom={socialCustom}
               onChangeValues={setSocialDraft}
