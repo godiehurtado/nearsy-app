@@ -14,14 +14,16 @@ import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { useTranslation } from '../../i18n';
 import type { SocialCustomLink } from '../../types/profile';
+import type { ProfileMode } from '../../profile/profileModeFields';
 import {
   CUSTOM_NETWORK_NAME_MAX,
-  SELECTABLE_CRJ_SOCIAL_PLATFORMS,
+  CRJ_MANUAL_URL_SOCIAL_PLATFORMS,
   countConnectedSocials,
   type CrjSocialDraftValues,
   type CrjSocialPlatform,
   type CrjSocialPlatformId,
 } from '../../social/onboardingSocialCatalog';
+import { OwnedSocialConnectSection } from './OwnedSocialConnectSection';
 import {
   isDuplicateCustomNetwork,
   normalizeCustomNetworkUrl,
@@ -30,6 +32,8 @@ import {
 } from '../../social/socialLinkNormalize';
 
 type Props = {
+  uid: string;
+  mode: ProfileMode;
   values: CrjSocialDraftValues;
   custom: SocialCustomLink[];
   onChangeValues: (next: CrjSocialDraftValues) => void;
@@ -76,6 +80,8 @@ function PlatformGlyph({
 }
 
 export function OnboardingSocialMediaStep({
+  uid,
+  mode,
   values,
   custom,
   onChangeValues,
@@ -89,8 +95,9 @@ export function OnboardingSocialMediaStep({
   const [otherName, setOtherName] = useState('');
   const [otherUrl, setOtherUrl] = useState('');
   const [otherError, setOtherError] = useState<string | null>(null);
+  const [ownedCount, setOwnedCount] = useState(0);
 
-  const connected = countConnectedSocials(values, custom);
+  const connected = countConnectedSocials(values, custom) + ownedCount;
   const connectedLabel =
     connected === 1
       ? t('onboarding.profileCompletion.socialMedia.connectedOne' as any)
@@ -158,6 +165,12 @@ export function OnboardingSocialMediaStep({
         {connectedLabel}
       </Text>
 
+      <OwnedSocialConnectSection
+        uid={uid}
+        mode={mode}
+        onOwnedCountChange={setOwnedCount}
+      />
+
       <View
         style={[
           styles.card,
@@ -167,7 +180,7 @@ export function OnboardingSocialMediaStep({
           },
         ]}
       >
-        {SELECTABLE_CRJ_SOCIAL_PLATFORMS.map((platform) => {
+        {CRJ_MANUAL_URL_SOCIAL_PLATFORMS.map((platform) => {
           const error = fieldErrors[platform.id];
           const label = t(
             `onboarding.profileCompletion.socialMedia.platforms.${platform.nameKey}` as any,

@@ -34,25 +34,25 @@ describe('Affiliation category accordions (CRJ + post-CRJ)', () => {
     assert.ok(accordion.includes('onChangeSelected={onChangeSelected}'));
     assert.ok(accordion.includes('{open ? ('));
     assert.ok(crj.includes('selectedAffiliations'));
-    assert.ok(crj.includes('expandedAffiliationId'));
     assert.ok(editor.includes('[expandedId, setExpandedId]'));
-    assert.match(crj, /useState<OnboardingAffiliationCategoryId \| null>\(\s*null\)/);
     assert.match(editor, /useState<OnboardingAffiliationCategoryId \| null>\(\s*null\)/);
   });
 
-  it('CRJ and post-CRJ editor both host the accordion list', () => {
+  it('post-CRJ editor hosts the accordion; CRJ restores per-category screens', () => {
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
     const editor = readShared('screens/AffiliationsScreen.tsx');
-    assert.ok(crj.includes('<AffiliationCategoryAccordionList'));
+    const journey = readShared('onboarding/crjJourney.ts');
+    assert.ok(!crj.includes('<AffiliationCategoryAccordionList'));
+    assert.ok(crj.includes('<OnboardingAffiliationCategoryPanel'));
     assert.ok(editor.includes('<AffiliationCategoryAccordionList'));
-    assert.ok(crj.includes("kind: 'affiliation'"));
-    assert.ok(!crj.includes('affiliationCategoryIndex'));
+    assert.ok(crj.includes("step.kind === 'affiliation'"));
+    assert.ok(journey.includes('affiliationCategoryIndex'));
   });
 
-  it('blocked save/continue opens the affected category', () => {
+  it('blocked save/continue opens the affected category on post-CRJ', () => {
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
     const editor = readShared('screens/AffiliationsScreen.tsx');
-    assert.ok(crj.includes('setExpandedAffiliationId(blockedCategory)'));
+    assert.ok(!crj.includes('setExpandedAffiliationId(blockedCategory)'));
     assert.ok(editor.includes('setExpandedId(blockedCategory)'));
     assert.ok(crj.includes('hideJourneyFooter'));
     assert.ok(editor.includes('hideJourneyFooter'));

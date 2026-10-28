@@ -542,8 +542,9 @@ describe('post-CRJ Social Media editor screen contract', () => {
     const onboarding = readShared(
       'components/registration/OnboardingSocialMediaStep.tsx',
     );
-    assert.match(onboarding, /SELECTABLE_CRJ_SOCIAL_PLATFORMS\.map/);
-    assert.doesNotMatch(onboarding, /(?<!SELECTABLE_)CRJ_SOCIAL_PLATFORMS\.map/);
+    assert.match(onboarding, /CRJ_MANUAL_URL_SOCIAL_PLATFORMS\.map/);
+    assert.doesNotMatch(onboarding, /SELECTABLE_CRJ_SOCIAL_PLATFORMS\.map/);
+    assert.doesNotMatch(onboarding, /(?<!SELECTABLE_|CRJ_MANUAL_URL_)CRJ_SOCIAL_PLATFORMS\.map/);
     const patch = buildPostCrjSocialLinksPersistencePatch(
       'personal',
       emptyCrjSocialDraftValues(),

@@ -320,7 +320,7 @@ describe('CRJ-I9-C Search Mode keyboard UX', () => {
     );
     assert.ok(!panel.includes('ActivityIndicator'));
     assert.ok(screen.includes('contentScrollRef={stepScrollRef}'));
-    assert.ok(screen.includes('headerHeightRef={affiliationHeaderHeightRef}'));
+    assert.ok(screen.includes('searchAddRef={getAffiliationAddRef(step.categoryId)}'));
   });
 });
 

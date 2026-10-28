@@ -464,10 +464,10 @@ const es: TranslationResources = {
         title: 'Te acercas a tu gente',
         body: 'Tus intereses ya ayudan a Nearsy a encontrar personas con las que puedes tener más en común.',
         nextEyebrow: 'SIGUIENTE',
-        nextTitle: 'Tus comunidades y afiliaciones',
+        nextTitle: 'Tus redes sociales',
         nextBody:
-          'Escuelas, empresas, clubes y comunidades pueden revelar aún más conexiones con personas a tu alrededor.',
-        continue: 'Agregar mis afiliaciones',
+          'Conecta YouTube, TikTok, Instagram o X. Facebook y LinkedIn se agregan como enlaces. Puedes omitir cualquiera.',
+        continue: 'Agregar mis redes',
       },
       affiliations: {
         next: 'Siguiente',

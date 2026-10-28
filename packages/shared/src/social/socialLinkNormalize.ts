@@ -1,6 +1,6 @@
 import type { SocialCustomLink } from '../types/profile';
 import {
-  CRJ_SOCIAL_PLATFORMS,
+  CRJ_MANUAL_URL_SOCIAL_PLATFORMS,
   CUSTOM_NETWORK_NAME_MAX,
   type CrjSocialDraftValues,
   type CrjSocialPlatformId,
@@ -68,7 +68,7 @@ export function collectSocialFieldErrors(
   reasonLabel: string,
 ): CrjSocialFieldErrors {
   const errors: CrjSocialFieldErrors = {};
-  for (const platform of CRJ_SOCIAL_PLATFORMS) {
+  for (const platform of CRJ_MANUAL_URL_SOCIAL_PLATFORMS) {
     const result = normalizeSocialInput(platform.id, values[platform.id] ?? '');
     if (!result.ok) errors[platform.id] = reasonLabel;
   }

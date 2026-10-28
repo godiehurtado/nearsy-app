@@ -137,5 +137,5 @@ export function buildPostCrjAffiliationPersistencePatch(
   return buildAffiliationFieldPersistencePatch(mode, selected);
 }
 
-/** After final affiliation category — CRJ-I7 Social Media. */
-export const POST_AFFILIATIONS_CRJ_STEP = 'socialMedia' as const;
+/** After final affiliation category — Interests intro (affiliations before interests). */
+export const POST_AFFILIATIONS_CRJ_STEP = 'interestsIntro' as const;

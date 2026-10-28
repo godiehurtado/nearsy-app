@@ -45,8 +45,9 @@ function readyPhoto(
 describe('CRJ-I8 Gallery navigation', () => {
   it('A — Social Media → Gallery', () => {
     assert.equal(POST_SOCIAL_MEDIA_CRJ_STEP, 'gallery');
+    const journey = readSharedSource('onboarding/crjJourney.ts');
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
-    assert.ok(screen.includes('POST_SOCIAL_MEDIA_CRJ_STEP'));
+    assert.ok(journey.includes('POST_SOCIAL_MEDIA_CRJ_STEP'));
     assert.ok(screen.includes("kind === 'gallery'"));
   });
 
@@ -60,9 +61,10 @@ describe('CRJ-I8 Gallery navigation', () => {
 
   it('C — Gallery → Location', () => {
     assert.equal(POST_GALLERY_CRJ_STEP, 'location');
+    const journey = readSharedSource('onboarding/crjJourney.ts');
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
     assert.ok(screen.includes('advanceGallery({ persist: true })'));
-    assert.ok(screen.includes('POST_GALLERY_CRJ_STEP'));
+    assert.ok(journey.includes('POST_GALLERY_CRJ_STEP'));
   });
 
   it('D — Gallery Skip → Location', () => {
@@ -79,16 +81,16 @@ describe('CRJ-I8 Gallery navigation', () => {
   });
 
   it('F — Gallery Back → Social Media', () => {
-    const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
-    const social = screen.indexOf("if (offset === 0) return { kind: 'socialMedia' }");
-    const galleryConst = screen.indexOf('POST_SOCIAL_MEDIA_CRJ_STEP');
+    const journey = readSharedSource('onboarding/crjJourney.ts');
+    const social = journey.indexOf("if (offset === 0) return { kind: 'socialMedia' }");
+    const galleryConst = journey.indexOf('POST_SOCIAL_MEDIA_CRJ_STEP');
     assert.ok(social > 0);
     assert.ok(galleryConst > 0);
   });
 
   it('G — Gallery appears exactly once in navigation resolve', () => {
-    const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
-    const returns = screen.match(/POST_SOCIAL_MEDIA_CRJ_STEP/g) ?? [];
+    const journey = readSharedSource('onboarding/crjJourney.ts');
+    const returns = journey.match(/POST_SOCIAL_MEDIA_CRJ_STEP/g) ?? [];
     assert.ok(returns.length >= 1);
     assert.equal(POST_SOCIAL_MEDIA_CRJ_STEP, 'gallery');
   });

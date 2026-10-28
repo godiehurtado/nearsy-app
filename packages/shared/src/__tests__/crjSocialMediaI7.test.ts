@@ -33,27 +33,30 @@ function readSharedSource(relativeFromSharedSrc: string): string {
 }
 
 describe('CRJ-I7 Social Media architecture', () => {
-  it('A — Social Media follows Affiliations', () => {
-    assert.equal(POST_AFFILIATIONS_CRJ_STEP, 'socialMedia');
-    const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
-    const affIdx = screen.indexOf("return { kind: 'affiliation' }");
-    const socialReturn = screen.indexOf(
+  it('A — Social Media follows Interests celebration, after Affiliations', () => {
+    assert.equal(POST_AFFILIATIONS_CRJ_STEP, 'interestsIntro');
+    const journey = readSharedSource('onboarding/crjJourney.ts');
+    const celebration = journey.indexOf(
+      "return { kind: 'interestsCelebration' }",
+    );
+    const socialReturn = journey.indexOf(
       "if (offset === 0) return { kind: 'socialMedia' }",
     );
-    assert.ok(affIdx > 0);
-    assert.ok(socialReturn > affIdx);
+    assert.ok(celebration > 0);
+    assert.ok(socialReturn > celebration);
   });
 
   it('B — Social Media precedes Gallery', () => {
     assert.equal(POST_SOCIAL_MEDIA_CRJ_STEP, 'gallery');
+    const journey = readSharedSource('onboarding/crjJourney.ts');
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
-    assert.ok(screen.includes('POST_SOCIAL_MEDIA_CRJ_STEP'));
-    assert.ok(screen.includes("kind: 'socialMedia'"));
+    assert.ok(journey.includes('POST_SOCIAL_MEDIA_CRJ_STEP'));
+    assert.ok(screen.includes("step.kind === 'socialMedia'"));
   });
 
   it('C — Social Media appears exactly once in navigation resolve', () => {
-    const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
-    const returns = screen.match(/return \{ kind: 'socialMedia' \}/g) ?? [];
+    const journey = readSharedSource('onboarding/crjJourney.ts');
+    const returns = journey.match(/return \{ kind: 'socialMedia' \}/g) ?? [];
     assert.equal(returns.length, 1);
     assert.equal(CRJ_SOCIAL_PLATFORMS.length, 7);
     assert.deepEqual(CRJ_SOCIAL_PLATFORM_IDS, [
@@ -106,15 +109,15 @@ describe('CRJ-I7 Social Media architecture', () => {
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
     assert.ok(screen.includes('function goBack()'));
     assert.ok(screen.includes('setStepIndex((i) => i - 1)'));
-    assert.ok(screen.includes("kind: 'socialMedia'"));
+    assert.ok(screen.includes("step.kind === 'socialMedia'"));
   });
 
-  it('I — Social Media Back → final affiliation category', () => {
+  it('I — Social Media Back → interests celebration', () => {
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
     const catalog = readSharedSource(
       'affiliations/onboardingAffiliationCatalog.ts',
     );
-    assert.ok(screen.includes("kind: 'affiliation'"));
+    assert.ok(screen.includes("step.kind === 'interestsCelebration'"));
     assert.ok(screen.includes('function goBack()'));
     assert.ok(catalog.includes("'identity_lifestyle'"));
   });
