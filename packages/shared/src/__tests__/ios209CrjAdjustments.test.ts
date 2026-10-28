@@ -79,14 +79,21 @@ describe('iOS 2.0.9 CRJ order — affiliations before interests', () => {
     assert.ok(crjPhaseProgress('affiliations') < crjPhaseProgress('interests'));
   });
 
-  it('does not remap a stored numeric index — resume hydrates bags and re-walks', () => {
+  it('resumes from a named stage, not by reusing an old numeric index', () => {
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
     const journey = readShared('onboarding/crjJourney.ts');
-    assert.match(crj, /useState\(0\)/);
+    const resume = readShared('onboarding/crjResume.ts');
+    assert.match(crj, /resolveCrjResume/);
+    assert.match(crj, /crjIndexForResolvedStep\(resume\.step\)/);
     assert.match(crj, /readOnboardingAffiliations/);
     assert.match(crj, /readOnboardingInterests/);
     assert.match(crj, /readCrjSocialDraft/);
-    assert.match(journey, /never by remapping a stored numeric index/);
+    assert.match(crj, /Hydrates every stored row, including legacy/);
+    assert.match(resume, /mapLegacyCrjStageToCurrent/);
+    assert.match(resume, /CRJ_RESUME_STAGE_VERSION_PREFIX/);
+    assert.match(resume, /Old indexes must never be reused/);
+    assert.doesNotMatch(resume, /resolveCrjStep\(Number\(/);
+    assert.match(journey, /never persisted/);
     assert.match(crj, /profileSetupCompleted: false/);
   });
 });

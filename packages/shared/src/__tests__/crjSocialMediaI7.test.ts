@@ -101,14 +101,14 @@ describe('CRJ-I7 Social Media architecture', () => {
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
     assert.ok(screen.includes('advanceSocialMedia({ requireValidFields: true })'));
     assert.ok(screen.includes('await persistSocialMedia()'));
-    assert.ok(screen.includes('setStepIndex((i) => i + 1)'));
+    assert.ok(screen.includes('shiftStep(1)'));
     assert.equal(POST_SOCIAL_MEDIA_CRJ_STEP, 'gallery');
   });
 
   it('H — Location Back → Social Media', () => {
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
     assert.ok(screen.includes('function goBack()'));
-    assert.ok(screen.includes('setStepIndex((i) => i - 1)'));
+    assert.ok(screen.includes('shiftStep(-1)'));
     assert.ok(screen.includes("step.kind === 'socialMedia'"));
   });
 

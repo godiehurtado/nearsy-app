@@ -6,10 +6,11 @@
  * Interests celebration → Social → Gallery → Location → Notifications →
  * Success.
  *
- * stepIndex is in-memory only. Incomplete registrations resume by hydrating
- * persisted bags (affiliations, interests, social) and re-walking from step 0
- * with fields filled — never by remapping a stored numeric index, which would
- * land mid-flow users on the wrong screen after this reorder.
+ * `stepIndex` is a derived offset of a named stage (kind + categoryId). It is
+ * never persisted. Incomplete registrations resume via `crjResume.ts`: a v2
+ * named cursor, or an explicit old-journey → new-journey correspondence from
+ * persisted bags. Numeric indexes from the pre-reorder walk must not be
+ * applied to this map.
  */
 import {
   listOnboardingAffiliationCategoryIds,
@@ -118,4 +119,66 @@ export function isLastAffiliationCategory(step: ResolvedCrjStep): boolean {
 
 export function isFirstAffiliationCategory(step: ResolvedCrjStep): boolean {
   return step.kind === 'affiliation' && step.affiliationCategoryIndex === 0;
+}
+
+export function firstAffiliationCrjStep(): Extract<
+  ResolvedCrjStep,
+  { kind: 'affiliation' }
+> {
+  const categoryId = CRJ_AFFILIATION_CATEGORY_IDS[0]!;
+  return {
+    kind: 'affiliation',
+    affiliationCategoryIndex: 0,
+    categoryId,
+  };
+}
+
+export function crjStepForAffiliationCategory(
+  categoryId: OnboardingAffiliationCategoryId,
+): Extract<ResolvedCrjStep, { kind: 'affiliation' }> | null {
+  const affiliationCategoryIndex =
+    CRJ_AFFILIATION_CATEGORY_IDS.indexOf(categoryId);
+  if (affiliationCategoryIndex < 0) return null;
+  return {
+    kind: 'affiliation',
+    affiliationCategoryIndex,
+    categoryId,
+  };
+}
+
+export function crjStepForInterestCategory(
+  categoryId: OnboardingInterestCategoryId,
+): Extract<ResolvedCrjStep, { kind: 'interest' }> | null {
+  const interestCategoryIndex = CRJ_INTEREST_CATEGORY_IDS.indexOf(categoryId);
+  if (interestCategoryIndex < 0) return null;
+  return {
+    kind: 'interest',
+    interestCategoryIndex,
+    categoryId,
+  };
+}
+
+/** Inverse of `resolveCrjStep`. Unknown kinds fall back to 0. */
+export function crjIndexForResolvedStep(step: ResolvedCrjStep): number {
+  const pre = (PRE_AFFILIATION_STEPS as readonly string[]).indexOf(step.kind);
+  if (pre >= 0) return pre;
+
+  if (step.kind === 'affiliation') {
+    return PRE_AFFILIATION_STEPS.length + step.affiliationCategoryIndex;
+  }
+
+  let base = PRE_AFFILIATION_STEPS.length + CRJ_AFFILIATION_CATEGORY_IDS.length;
+  if (step.kind === 'interestsIntro') return base;
+  base += 1;
+  if (step.kind === 'interest') {
+    return base + step.interestCategoryIndex;
+  }
+  base += CRJ_INTEREST_CATEGORY_IDS.length;
+  if (step.kind === 'interestsCelebration') return base;
+  base += 1;
+  if (step.kind === 'socialMedia') return base;
+  base += 1;
+  const post = (POST_SOCIAL_STEPS as readonly string[]).indexOf(step.kind);
+  if (post >= 0) return base + post;
+  return 0;
 }

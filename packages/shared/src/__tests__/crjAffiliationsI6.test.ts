@@ -369,7 +369,7 @@ describe('CRJ-I6 Celebration / Affiliations transition', () => {
   it('D/E — Back is a single step decrement (Family→Details, Intro→Family)', () => {
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
     const back = screen.slice(screen.indexOf('function goBack()'));
-    assert.ok(back.includes('setStepIndex((i) => i - 1)'));
+    assert.ok(back.includes('shiftStep(-1)'));
     assert.ok(!screen.includes("kind: 'affiliationsIntro'"));
   });
 
@@ -383,7 +383,7 @@ describe('CRJ-I6 Celebration / Affiliations transition', () => {
       goNext.indexOf("step.kind === 'interestsCelebration'"),
       goNext.indexOf("step.kind === 'success'"),
     );
-    assert.ok(celebrationBranch.includes('setStepIndex((i) => i + 1)'));
+    assert.ok(celebrationBranch.includes('shiftStep(1)'));
     assert.ok(!celebrationBranch.includes('persistAffiliations'));
     assert.ok(!celebrationBranch.includes('profileSetupCompleted'));
   });

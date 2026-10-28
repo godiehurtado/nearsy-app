@@ -114,6 +114,8 @@ export type UserProfile = {
 
   visibility?: boolean;
   profileSetupCompleted?: boolean;
+  /** Named CRJ stage token (`v2:…`). Never a numeric wizard index. */
+  crjResumeStage?: string | null;
 
   /** @deprecated */
   socialLinks?: SocialLinks;

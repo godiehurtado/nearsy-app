@@ -76,7 +76,7 @@ describe('CRJ-I8 Gallery navigation', () => {
   it('E — Location Back → Gallery', () => {
     const screen = readSharedSource('screens/ProfileCompletionScreen.tsx');
     assert.ok(screen.includes('function goBack()'));
-    assert.ok(screen.includes('setStepIndex((i) => i - 1)'));
+    assert.ok(screen.includes('shiftStep(-1)'));
     assert.ok(screen.includes("kind === 'gallery'"));
   });
 
