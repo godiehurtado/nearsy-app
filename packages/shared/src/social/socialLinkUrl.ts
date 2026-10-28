@@ -207,9 +207,9 @@ export function normalizeSocialLinkUrl(
 }
 
 /**
- * Map a persisted `socialLinksPersonal | socialLinksProfessional` bag to public links.
- * Same order and filtering as the backend Discovery contract; `custom` is never included.
- * Invalid entries are skipped individually.
+ * Map a persisted `socialLinksPersonal | socialLinksProfessional` bag to HTTPS links.
+ * Legacy ProfileDetail only — not Discovery. A bag URL is not verified/published.
+ * Discovery must use getDiscoveryProfile.socialLinks. `custom` is never included.
  */
 export function readPublicSocialLinks(bag: unknown): PublicSocialLink[] {
   if (!bag || typeof bag !== 'object' || Array.isArray(bag)) return [];

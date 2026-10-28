@@ -60,9 +60,12 @@ export type CrjSocialFieldErrors = Partial<
 export function collectSocialFieldErrors(
   values: CrjSocialDraftValues,
   reasonLabel: string,
+  options?: { skipPlatformIds?: readonly CrjSocialPlatformId[] },
 ): CrjSocialFieldErrors {
+  const skip = new Set(options?.skipPlatformIds ?? []);
   const errors: CrjSocialFieldErrors = {};
   for (const platform of CRJ_SOCIAL_PLATFORMS) {
+    if (skip.has(platform.id)) continue;
     const result = normalizeSocialInput(platform.id, values[platform.id] ?? '');
     if (!result.ok) errors[platform.id] = reasonLabel;
   }

@@ -19,7 +19,12 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import {
+  RouteProp,
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+} from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { firebaseAuth } from '../config/firebaseConfig';
@@ -51,6 +56,11 @@ import {
   type ProfileMode,
 } from '../visibility';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
+import { DISCOVERY_PROFILE_REFETCH_ON_FOCUS } from '../visibility/discoveryProfileReload';
+import {
+  decideDiscoveryProfileApply,
+  discoveryProfileLoadMode,
+} from '../visibility/discoveryProfileReloadCore';
 import { blockCandidateUser } from '../visibility/blockCandidate';
 import {
   shouldShowBio,
@@ -88,26 +98,64 @@ export default function DiscoveryProfileScreen() {
   const [blocking, setBlocking] = useState(false);
   const [blockError, setBlockError] = useState<string | null>(null);
   const blockInFlight = useRef(false);
+  const dataRef = useRef<GetDiscoveryProfileResponse | null>(null);
+  const loadGenRef = useRef(0);
+  const uidRef = useRef(uid);
+  const mountedRef = useRef(true);
+  uidRef.current = uid;
 
   const translateItem = useInterestItemTranslator();
 
-  const loadProfile = useCallback(async () => {
+  const loadProfile = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true;
+    const requestKey = uid ?? '';
     if (!uid) {
       setErrorKind('missing');
       setData(null);
+      dataRef.current = null;
       setLoading(false);
       return;
     }
-    setLoading(true);
-    setErrorKind('none');
-    setHeroFailed(false);
+    const gen = ++loadGenRef.current;
+    if (!silent) {
+      setLoading(true);
+      setErrorKind('none');
+      setHeroFailed(false);
+    }
     try {
       const client = await getVisibilityDiscoveryClient();
       const response = await client.getDiscoveryProfile(
         buildGetDiscoveryProfileRequest(uid),
       );
-      setData(response);
+      const decision = decideDiscoveryProfileApply({
+        requestGen: gen,
+        currentGen: loadGenRef.current,
+        requestKey,
+        currentKey: uidRef.current ?? '',
+        unmounted: !mountedRef.current,
+        silent,
+        previous: dataRef.current,
+        result: { ok: true, data: response },
+      });
+      if (decision.action === 'discard' || decision.action === 'keep') return;
+      if (decision.action === 'apply') {
+        dataRef.current = decision.data;
+        setData(decision.data);
+        if (silent) setErrorKind('none');
+      }
     } catch (err) {
+      const decision = decideDiscoveryProfileApply({
+        requestGen: gen,
+        currentGen: loadGenRef.current,
+        requestKey,
+        currentKey: uidRef.current ?? '',
+        unmounted: !mountedRef.current,
+        silent,
+        previous: dataRef.current,
+        result: { ok: false },
+      });
+      if (decision.action === 'discard' || decision.action === 'keep') return;
+      dataRef.current = null;
       setData(null);
       if (
         isVisibilityDiscoveryClientError(err) &&
@@ -118,13 +166,46 @@ export default function DiscoveryProfileScreen() {
         setErrorKind('load');
       }
     } finally {
-      setLoading(false);
+      if (gen === loadGenRef.current && !silent && mountedRef.current) {
+        setLoading(false);
+      }
     }
   }, [uid]);
 
   useEffect(() => {
-    void loadProfile();
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      loadGenRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    dataRef.current = null;
+    loadGenRef.current += 1;
+  }, [uid]);
+
+  useEffect(() => {
+    const mode = discoveryProfileLoadMode({
+      refetchOnFocus: DISCOVERY_PROFILE_REFETCH_ON_FOCUS,
+      hasData: false,
+      trigger: 'mount',
+    });
+    if (mode === 'skip') return;
+    void loadProfile({ silent: false });
   }, [loadProfile]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const mode = discoveryProfileLoadMode({
+        refetchOnFocus: DISCOVERY_PROFILE_REFETCH_ON_FOCUS,
+        hasData: dataRef.current != null,
+        trigger: 'focus',
+      });
+      if (mode === 'skip') return;
+      void loadProfile({ silent: mode === 'silent' });
+    }, [loadProfile]),
+  );
 
   const interestPills = useMemo(() => {
     if (!data) return [];

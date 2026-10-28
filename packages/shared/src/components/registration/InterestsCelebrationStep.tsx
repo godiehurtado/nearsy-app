@@ -22,8 +22,11 @@ import {
 } from '../../interests/onboardingInterestCatalog.ts';
 import { celebrationEntryDelayMs, celebrationNextUpDelayMs } from './celebrationMotion.ts';
 
-/** I6 can switch this to route into Affiliations without redesigning the screen. */
-export type InterestsCelebrationContinueTarget = 'location' | 'affiliations';
+/** Next CRJ block after the interests celebration. */
+export type InterestsCelebrationContinueTarget =
+  | 'location'
+  | 'affiliations'
+  | 'social';
 
 type Props = {
   selected: OnboardingSelectedInterest[];
@@ -81,7 +84,10 @@ function CelebrationIconBadge({
   );
 }
 
-export function InterestsCelebrationStep({ selected }: Props) {
+export function InterestsCelebrationStep({
+  selected,
+  continueTarget,
+}: Props) {
   const { palette } = useAppTheme();
   const { t } = useTranslation();
   const reduceMotion = useReducedMotion();
@@ -259,10 +265,18 @@ export function InterestsCelebrationStep({ selected }: Props) {
           {t('onboarding.profileCompletion.interestsCelebration.nextEyebrow')}
         </Text>
         <Text style={[styles.nextTitle, { color: palette.textPrimary }]}>
-          {t('onboarding.profileCompletion.interestsCelebration.nextTitle')}
+          {t(
+            continueTarget === 'social'
+              ? 'onboarding.profileCompletion.interestsCelebration.nextTitleSocial'
+              : 'onboarding.profileCompletion.interestsCelebration.nextTitle',
+          )}
         </Text>
         <Text style={[styles.nextBody, { color: palette.textSecondary }]}>
-          {t('onboarding.profileCompletion.interestsCelebration.nextBody')}
+          {t(
+            continueTarget === 'social'
+              ? 'onboarding.profileCompletion.interestsCelebration.nextBodySocial'
+              : 'onboarding.profileCompletion.interestsCelebration.nextBody',
+          )}
         </Text>
       </Animated.View>
     </View>

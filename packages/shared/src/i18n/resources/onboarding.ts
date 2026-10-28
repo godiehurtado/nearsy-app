@@ -103,6 +103,10 @@ export const onboardingTranslations = {
       nextBody:
         'Schools, companies, clubs and communities can reveal even more connections with people around you.',
       continue: 'Add my affiliations',
+      nextTitleSocial: 'Your social networks',
+      nextBodySocial:
+        'Connect YouTube, TikTok, Instagram or X if you want. You can skip this and add them later.',
+      continueSocial: 'Continue to social networks',
     },
     affiliations: {
       next: 'Next',
@@ -705,6 +709,10 @@ export const onboardingTranslations = {
         nextBody:
           'Escuelas, empresas, clubes y comunidades pueden revelar aún más conexiones con personas a tu alrededor.',
         continue: 'Agregar mis afiliaciones',
+        nextTitleSocial: 'Tus redes sociales',
+        nextBodySocial:
+          'Conecta YouTube, TikTok, Instagram o X si quieres. Puedes omitirlo y añadirlas después.',
+        continueSocial: 'Continuar a redes sociales',
       },
       affiliations: {
         next: 'Siguiente',
