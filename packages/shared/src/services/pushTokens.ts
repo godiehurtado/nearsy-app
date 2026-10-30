@@ -1,4 +1,5 @@
-// src/services/pushTokens.ts  ✅ Web Firestore + RNFirebase Auth
+// This-device Expo push token: register under the current UID, release that
+// same token under the previous UID before the session is lost.
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
@@ -6,63 +7,65 @@ import { Platform } from 'react-native';
 
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import {
+  createPushTokenSession,
+  type PushTokenSessionIO,
+  type RegisterPushTokenResult,
+  type SyncPushTokenAuthResult,
+} from './pushTokenSession';
+import type { PushTokenReleaseOutcome } from './pushTokenLifecycle';
 
-type RegisterResult =
-  | { ok: true; token: string }
-  | { ok: false; reason: string };
+function thisDeviceTokenRef(uid: string, token: string) {
+  return doc(firestoreDb, 'users', uid, 'pushTokens', token);
+}
 
-export async function registerPushToken(): Promise<RegisterResult> {
+export function createDefaultPushTokenIO(): PushTokenSessionIO {
+  return {
+    getCurrentUid: () => firebaseAuth.currentUser?.uid ?? null,
+    async getPermissionGranted() {
+      const current = await Notifications.getPermissionsAsync();
+      return (
+        current.granted ||
+        current.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
+      );
+    },
+    async getExpoPushToken() {
+      const projectId =
+        Constants?.expoConfig?.extra?.eas?.projectId ||
+        Constants?.easConfig?.projectId;
+      if (!projectId && __DEV__) {
+        console.warn('[PushTokens] Missing EAS projectId');
+      }
+      const { data: token } = await Notifications.getExpoPushTokenAsync(
+        projectId ? { projectId } : undefined,
+      );
+      return token || null;
+    },
+    async writeThisDeviceToken(uid, token) {
+      await setDoc(
+        thisDeviceTokenRef(uid, token),
+        {
+          token,
+          platform: Platform.OS,
+          deviceName: Device.deviceName ?? null,
+          osName: Device.osName ?? null,
+          osVersion: Device.osVersion ?? null,
+          updatedAt: Date.now(),
+        },
+        { merge: true },
+      );
+    },
+    async deleteThisDeviceToken(uid, token) {
+      await deleteDoc(thisDeviceTokenRef(uid, token));
+    },
+  };
+}
+
+const session = createPushTokenSession(createDefaultPushTokenIO());
+
+export async function registerPushToken(): Promise<RegisterPushTokenResult> {
   try {
-    const user = firebaseAuth.currentUser;
-    if (!user) return { ok: false, reason: 'no-user' };
-
-    // Read existing OS permission only — never prompt here.
-    // Native authorization is owned by the dedicated CRJ notifications step
-    // (and any future explicit user-facing request). App auth bootstrap may
-    // still register a token once permission is already granted.
-    const current = await Notifications.getPermissionsAsync();
-    const granted =
-      current.granted ||
-      current.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
-
-    if (!granted) return { ok: false, reason: 'permission-not-granted' };
-
-    // 2) Obtener Expo push token
-    const projectId =
-      Constants?.expoConfig?.extra?.eas?.projectId ||
-      Constants?.easConfig?.projectId;
-
-    if (!projectId && __DEV__) {
-      console.warn('[PushTokens] Missing EAS projectId');
-    }
-
-    const { data: token } = await Notifications.getExpoPushTokenAsync(
-      projectId ? { projectId } : undefined,
-    );
-
-    if (!token) return { ok: false, reason: 'no-token' };
-
-    // Double-check: el usuario pudo cambiar durante el await
-    const stillUser = firebaseAuth.currentUser;
-    if (!stillUser) return { ok: false, reason: 'user-changed' };
-
-    // 3) Guardar token como docId (idempotente)
-    const ref = doc(firestoreDb, 'users', stillUser.uid, 'pushTokens', token);
-
-    await setDoc(
-      ref,
-      {
-        token,
-        platform: Platform.OS,
-        deviceName: Device.deviceName ?? null,
-        osName: Device.osName ?? null,
-        osVersion: Device.osVersion ?? null,
-        updatedAt: Date.now(),
-      },
-      { merge: true },
-    );
-
-    return { ok: true, token };
+    return await session.register();
   } catch (err) {
     if (__DEV__) {
       console.warn('[PushTokens] registerPushToken error:', err);
@@ -72,19 +75,63 @@ export async function registerPushToken(): Promise<RegisterResult> {
 }
 
 /**
- * Llama esto al hacer logout para limpiar el token actual (opcional pero recomendado).
- * Si no tienes el token en memoria, puedes pasar el que devuelve registerPushToken().
+ * Delete only this device's Expo token under `uid`. Sibling pushTokens docs
+ * (other devices) are left intact.
  */
-export async function unregisterPushToken(token?: string) {
+export async function releaseThisDevicePushTokenForUid(
+  uid: string,
+): Promise<PushTokenReleaseOutcome> {
   try {
-    const user = firebaseAuth.currentUser;
-    if (!user || !token) return;
-
-    const ref = doc(firestoreDb, 'users', user.uid, 'pushTokens', token);
-    await deleteDoc(ref);
+    return await session.releaseForUid(uid);
   } catch (err) {
     if (__DEV__) {
-      console.warn('[PushTokens] unregisterPushToken error:', err);
+      console.warn('[PushTokens] releaseForUid error:', err);
     }
+    return { status: 'failed', reason: 'exception', uid };
   }
+}
+
+/** Call while currentUser is still the identity that owns the association. */
+export async function releaseThisDevicePushTokenForCurrentUser(): Promise<PushTokenReleaseOutcome> {
+  try {
+    return await session.releaseForCurrentUser();
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[PushTokens] releaseForCurrentUser error:', err);
+    }
+    return { status: 'failed', reason: 'exception' };
+  }
+}
+
+/**
+ * Auth listener entry: A→B releases A's this-device token before registering B.
+ * Logout (nextUid null) only invalidates in-flight registers — the signed-in
+ * path must have released already.
+ */
+export async function syncPushTokenForAuthUser(
+  previousUid: string | null,
+  nextUid: string | null,
+): Promise<SyncPushTokenAuthResult> {
+  try {
+    return await session.syncAuth(previousUid, nextUid);
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[PushTokens] syncPushTokenForAuthUser error:', err);
+    }
+    return { ok: false, reason: 'exception', registered: false };
+  }
+}
+
+/**
+ * @deprecated Use releaseThisDevicePushTokenForCurrentUser before signOut.
+ * Kept as a thin alias so older call sites cannot pass a token after session loss.
+ */
+export async function unregisterPushToken(token?: string) {
+  if (!token) {
+    await releaseThisDevicePushTokenForCurrentUser();
+    return;
+  }
+  const uid = firebaseAuth.currentUser?.uid;
+  if (!uid) return;
+  await releaseThisDevicePushTokenForUid(uid);
 }

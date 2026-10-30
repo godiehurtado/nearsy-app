@@ -33,7 +33,7 @@ describe('iOS 2.0.9 phone notifications — current evidence (no new infra)', ()
     assert.doesNotMatch(tokens, /requestPermissionsAsync/);
     assert.match(tokens, /getExpoPushTokenAsync/);
     assert.match(tokens, /pushTokens/);
-    assert.match(app, /registerPushToken/);
+    assert.match(app, /syncPushTokenForAuthUser/);
     assert.match(app, /setNotificationHandler/);
     assert.match(app, /addNotificationResponseReceivedListener/);
     assert.match(app, /actorUid/);

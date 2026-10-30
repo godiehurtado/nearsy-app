@@ -68,6 +68,7 @@ import { BackgroundLocationEducationModal } from '../components/BackgroundLocati
 import { LocationPreparingModal } from '../components/LocationPreparingModal';
 import { evaluateBackgroundLocationSettingsReturn } from '../visibility/settingsRecovery';
 import { closeVisibilitySessionForLogout } from '../visibility/visibilitySessionGate';
+import { releaseThisDevicePushTokenForCurrentUser } from '../services/pushTokens';
 import {
   ageFromBirthDate,
   applyBirthDateTextChange,
@@ -817,14 +818,16 @@ export default function MoreScreen() {
       // Contractual logout order:
       // 1) close the presence gate, stop/unregister the background runtime and
       //    wait for already-sent publications (each step bounded)
-      // 2) signOut
-      // 3) navigation reset
+      // 2) release this-device push token under the signed-in UID
+      // 3) signOut
+      // 4) navigation reset
       // Logout never writes Visibility: the account keeps its persisted
       // preference and returns to it on the next login.
       await closeVisibilitySessionForLogout({
         stopRuntime: stopBackgroundLocationRuntime,
       });
       clearLocationPermissionJourneySession();
+      await releaseThisDevicePushTokenForCurrentUser();
       await firebaseAuth.signOut();
       // Idempotent Facebook SDK logout; never blocks guest navigation.
       await clearFacebookProviderSession();
