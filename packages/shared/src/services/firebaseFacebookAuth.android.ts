@@ -7,6 +7,7 @@
  */
 import auth from '@react-native-firebase/auth';
 import { firebaseAuth } from '../config/firebaseConfig.android';
+import { releaseOutgoingDevicePushToken } from './pushTokens';
 import {
   extractFacebookIdentity,
   type FacebookFirebaseSession,
@@ -15,6 +16,7 @@ import {
 export async function signInWithFacebookAccessToken(
   accessToken: string,
 ): Promise<FacebookFirebaseSession> {
+  await releaseOutgoingDevicePushToken();
   const credential = auth.FacebookAuthProvider.credential(accessToken);
   const userCredential = await firebaseAuth.signInWithCredential(credential);
   return {

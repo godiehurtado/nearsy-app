@@ -8,7 +8,8 @@
  * 3. stop + unregister FGS/task (+ clear NEARSY_BG_UID / runtime auth)
  * 4. wait (bounded) for publishLocation calls already sent
  * 5. sign out native provider sessions (Facebook), best effort
- * 6. signOut
+ * 6. unregister this device's push token under the outgoing UID
+ * 7. signOut
  * Navigation reset remains the caller's responsibility.
  *
  * Logout never writes Visibility: the persisted preference belongs to the
@@ -23,6 +24,11 @@ export type ContractualLogoutDeps = {
   drainInFlightPublications: () => Promise<unknown>;
   /** Idempotent native provider logout; failures never block Firebase signOut. */
   signOutProviderSessions?: () => void | Promise<void>;
+  /**
+   * Drop this device's push token while the outgoing Firebase session is still
+   * valid. Optional so iOS callers keep the previous sequence.
+   */
+  unregisterDevicePush?: () => void | Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -37,6 +43,11 @@ export async function runContractualAndroidLogout(
     await deps.signOutProviderSessions?.();
   } catch {
     // Best effort; Firebase signOut below is the contractual step.
+  }
+  try {
+    await deps.unregisterDevicePush?.();
+  } catch {
+    // Best effort; must not block signOut if Firestore is already gone.
   }
   await deps.signOut();
 }

@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApp } from '@react-native-firebase/app';
 import { getFunctions } from '@react-native-firebase/functions';
 import { firebaseAuth } from '../config/firebaseConfig.android';
+import { unregisterCurrentDevicePushToken } from '../services/pushTokens';
 import {
   ensureAppCheckInitialized,
   getAppCheckInitStatus,
@@ -147,6 +148,7 @@ async function cleanupAfterDeletion(uid: string): Promise<void> {
       logOutFacebookSession();
       await discardGoogleSignInSession();
     },
+    unregisterDevicePush: () => unregisterCurrentDevicePushToken(),
     signOut: async () => {
       await firebaseAuth.signOut();
     },

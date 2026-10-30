@@ -515,8 +515,8 @@ export type AccountDeletionCleanupDeps = ContractualLogoutDeps & {
 
 /**
  * After a confirmed deletion: the contractual logout sequence (publication
- * gate, FGS/background, in-flight publications, provider sessions, signOut),
- * then per-account local caches.
+ * gate, FGS/background, in-flight publications, provider sessions,
+ * this-device push unregister, signOut), then per-account local caches.
  */
 export async function runAccountDeletionCleanup(
   uid: string,

@@ -6,6 +6,7 @@
  */
 import auth from '@react-native-firebase/auth';
 import { firebaseAuth } from '../config/firebaseConfig.android';
+import { releaseOutgoingDevicePushToken } from './pushTokens';
 
 export type FirebaseGoogleAuthResult = {
   uid: string;
@@ -100,6 +101,7 @@ export async function signInWithGoogleIdToken(
   }
 
   try {
+    await releaseOutgoingDevicePushToken();
     const credential = auth.GoogleAuthProvider.credential(trimmed);
     const userCredential = await firebaseAuth.signInWithCredential(credential);
     const user = userCredential.user;
