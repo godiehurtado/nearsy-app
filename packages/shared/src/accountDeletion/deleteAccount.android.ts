@@ -9,6 +9,10 @@ import { getApp } from '@react-native-firebase/app';
 import { getFunctions } from '@react-native-firebase/functions';
 import { firebaseAuth } from '../config/firebaseConfig.android';
 import {
+  restorePushTokenWritesAfterAbortedDeletion,
+  sealPushTokenWritesForAccountDeletion,
+} from '../services/pushTokens';
+import {
   ensureAppCheckInitialized,
   getAppCheckInitStatus,
 } from '../config/appCheckBootstrap';
@@ -79,13 +83,20 @@ async function invokeCallable(
       details: { reason: 'UNAUTHENTICATED' },
     };
   }
-  await user.getIdToken(true);
-  await ensureAppCheckReady();
-  const callable = getFunctions(getApp(), REGION).httpsCallable(name, {
-    timeout: CALLABLE_TIMEOUT_MS,
-  });
-  const result = await callable(payload);
-  return result.data;
+  const uid = user.uid;
+  await sealPushTokenWritesForAccountDeletion();
+  try {
+    await user.getIdToken(true);
+    await ensureAppCheckReady();
+    const callable = getFunctions(getApp(), REGION).httpsCallable(name, {
+      timeout: CALLABLE_TIMEOUT_MS,
+    });
+    const result = await callable(payload);
+    return result.data;
+  } catch (err) {
+    await restorePushTokenWritesAfterAbortedDeletion(uid);
+    throw err;
+  }
 }
 
 /** Reload errors that prove the Auth identity no longer exists. */

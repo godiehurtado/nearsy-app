@@ -232,6 +232,67 @@ describe('contractualLogout + preference reconcile', () => {
     assert.deepEqual(steps, ['prefill', 'closeGate', 'stop', 'drain', 'signOut']);
   });
 
+  it('unregisters this device push token after providers and before signOut', async () => {
+    const steps: string[] = [];
+    await runContractualAndroidLogout({
+      clearSocialPrefill: () => steps.push('prefill'),
+      closePublicationGate: () => steps.push('closeGate'),
+      stopBackground: async () => {
+        steps.push('stop');
+      },
+      drainInFlightPublications: async () => {
+        steps.push('drain');
+      },
+      signOutProviderSessions: async () => {
+        steps.push('providers');
+      },
+      unregisterDevicePush: async () => {
+        steps.push('unregisterPush');
+      },
+      signOut: async () => {
+        steps.push('signOut');
+      },
+    });
+    assert.deepEqual(steps, [
+      'prefill',
+      'closeGate',
+      'stop',
+      'drain',
+      'providers',
+      'unregisterPush',
+      'signOut',
+    ]);
+  });
+
+  it('push unregister failure never blocks signOut', async () => {
+    const steps: string[] = [];
+    await runContractualAndroidLogout({
+      clearSocialPrefill: () => steps.push('prefill'),
+      closePublicationGate: () => steps.push('closeGate'),
+      stopBackground: async () => {
+        steps.push('stop');
+      },
+      drainInFlightPublications: async () => {
+        steps.push('drain');
+      },
+      unregisterDevicePush: async () => {
+        steps.push('unregisterPush');
+        throw new Error('firestore');
+      },
+      signOut: async () => {
+        steps.push('signOut');
+      },
+    });
+    assert.deepEqual(steps, [
+      'prefill',
+      'closeGate',
+      'stop',
+      'drain',
+      'unregisterPush',
+      'signOut',
+    ]);
+  });
+
   it('logout source never deactivates Visibility', () => {
     const src = readFileSync(
       fileURLToPath(new URL('../contractualLogout.ts', import.meta.url)),

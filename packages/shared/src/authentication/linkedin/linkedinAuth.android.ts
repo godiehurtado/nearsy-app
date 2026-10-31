@@ -7,6 +7,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 import { Linking } from 'react-native';
 import { firebaseAuth } from '../../config/firebaseConfig.android';
+import { runWithOutgoingPushRelease } from '../../services/pushTokens';
 import {
   ensureAppCheckInitialized,
   getAppCheckInitStatus,
@@ -207,8 +208,10 @@ function createDefaultFirebaseAuthPort(): LinkedInFirebaseAuthPort {
   sharedFirebaseAuthPort = {
     getCurrentUserId: () => firebaseAuth.currentUser?.uid ?? null,
     async signInWithCustomToken(customToken) {
-      const cred = await firebaseAuth.signInWithCustomToken(customToken);
-      return { uid: cred.user.uid };
+      return runWithOutgoingPushRelease(async () => {
+        const cred = await firebaseAuth.signInWithCustomToken(customToken);
+        return { uid: cred.user.uid };
+      });
     },
     getAuthResolution: () => resolution,
   };

@@ -74,9 +74,10 @@ describe('No client-side deletion', () => {
       assert.doesNotMatch(src, /storageWeb|firebase\/storage|\.ref\(|listAll/, file);
       assert.doesNotMatch(
         src,
-        /contactHashes|discoveryProfiles|proximitySignals|pushTokens|blockedUsers|matching/,
+        /contactHashes|discoveryProfiles|proximitySignals|blockedUsers|matching/,
         file,
       );
+      assert.doesNotMatch(src, /collection\(['"]pushTokens['"]\)/, file);
       assert.doesNotMatch(src, /firestoreService|storageService/, file);
     }
   });
@@ -119,7 +120,12 @@ describe('Callable adapter', () => {
     assert.match(android, /closePublicationGate: \(\) => closePublicationSession\(\)/);
     assert.match(android, /stopBackground: \(\) => stopBackgroundLocation\(\)/);
     assert.match(android, /drainInFlightPublications: \(\) => drainInFlightPublications\(\)/);
-    assert.match(android, /clearSocialPrefill: \(\) => clearPendingSocialProfilePrefill\(\)/);
+    assert.match(
+      android,
+      /clearSocialPrefill: \(\) => \{\s*clearPendingSocialProfilePrefill\(\);/,
+    );
+    assert.match(android, /await sealPushTokenWritesForAccountDeletion\(\);/);
+    assert.doesNotMatch(android, /unregisterDevicePush|unregisterCurrentDevicePushToken/);
     assert.match(android, /logOutFacebookSession\(\);\s*await discardGoogleSignInSession\(\);/);
     assert.match(android, /forgetLastConfirmedVisibility\(deletedUid, AsyncStorage\)/);
     assert.match(core, /runContractualAndroidLogout\(deps\)/);

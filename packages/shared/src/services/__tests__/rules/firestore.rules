@@ -1,0 +1,589 @@
+// Snapshot of nearsy-functions/firestore/firestore.rules sha=561ef1d91d8f968eb42f687a679e0dfb113c11b6
+// Read-only for rules-unit-testing. Do not deploy from nearsy-app.
+rules_version = '2';
+
+/**
+ * Nearsy application Firestore rules — Source of Truth for nearsy-dev/(default).
+ *
+ * Baseline: production-parity authorization (users, subcollections, reports,
+ * moderation, LinkedIn deny-all) plus Visibility & Discovery hardening.
+ *
+ * Future deploy (authorized, nearsy-dev only):
+ *   cd firestore && firebase deploy --only firestore:rules --project nearsy-dev
+ *
+ * Unit 3A: client cannot set profileSetupCompleted=true unless the
+ * existing document already has backend-owned phoneVerified=true.
+ *
+ * ENH-PROFILE-01: owner may write top-level birthCountryCode /
+ * residenceCountryCode / languageCodes (validated); zodiacSign and
+ * nesting those fields under profiles.* are client-denied.
+ *
+ * NEARSY-209 affiliations: owner may write Family (`family`) and keep
+ * legacy `identity_lifestyle` bags. No enum gate here — 2.0.8 still writes
+ * identity_lifestyle; Discovery sanitizes on read.
+ *
+ * CURRENT-CITY-01: owner may set or delete top-level currentCity
+ * { id, provider: 'geonames', name, countryCode, region? } (exact keys, no
+ * coordinates). residenceCountryCode is legacy: still accepted (validated)
+ * only because published 2.0.7 clients write it; backend ignores it.
+ *
+ * DO NOT deploy from nearsy-identity-functions or functions-visibility-discovery.
+ */
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function locationHasAuthoritativeKeys(loc) {
+      return loc is map && loc.keys().hasAny([
+        'latitude',
+        'longitude',
+        'accuracyMeters',
+        'observedAt',
+        'confirmedAt',
+        'geohash'
+      ]);
+    }
+
+    function clientLocationWriteAllowedOnCreate() {
+      return !('location' in request.resource.data)
+        || request.resource.data.location == null
+        || (
+          request.resource.data.location is map
+          && !locationHasAuthoritativeKeys(request.resource.data.location)
+        );
+    }
+
+    function clientLocationWriteAllowedOnUpdate() {
+      return !('location' in request.resource.data.diff(resource.data).affectedKeys())
+        || (
+          !locationHasAuthoritativeKeys(resource.data.get('location', null))
+          && (
+            request.resource.data.location == null
+            || (
+              request.resource.data.location is map
+              && !locationHasAuthoritativeKeys(request.resource.data.location)
+            )
+          )
+        );
+    }
+
+    function visibilityAndSchemaImmutableOnUpdate() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['visibility', 'schemaVersion']);
+    }
+
+    function validUserCreateLifecycle() {
+      return request.resource.data.get('visibility', false) == false
+        && !('schemaVersion' in request.resource.data);
+    }
+
+    function validInterestIdAt(ids, i) {
+      return ids.size() <= i
+        || (
+          ids[i] is string
+          && ids[i].size() > 0
+          && ids[i].size() <= 128
+        );
+    }
+
+    function validInterestIds(ids) {
+      return ids is list
+        && ids.size() <= 12
+        && validInterestIdAt(ids, 0)
+        && validInterestIdAt(ids, 1)
+        && validInterestIdAt(ids, 2)
+        && validInterestIdAt(ids, 3)
+        && validInterestIdAt(ids, 4)
+        && validInterestIdAt(ids, 5)
+        && validInterestIdAt(ids, 6)
+        && validInterestIdAt(ids, 7)
+        && validInterestIdAt(ids, 8)
+        && validInterestIdAt(ids, 9)
+        && validInterestIdAt(ids, 10)
+        && validInterestIdAt(ids, 11);
+    }
+
+    function validModeSearchPreferences(prefs) {
+      return prefs is map
+        && prefs.keys().hasOnly([
+          'ageMin',
+          'ageMax',
+          'maxDistanceMeters',
+          'interestIds',
+          'updatedAt'
+        ])
+        && prefs.keys().hasAll([
+          'ageMin',
+          'ageMax',
+          'maxDistanceMeters',
+          'interestIds'
+        ])
+        && prefs.ageMin is int
+        && prefs.ageMin >= 18
+        && prefs.ageMin <= 99
+        && prefs.ageMax is int
+        && prefs.ageMax >= 18
+        && prefs.ageMax <= 99
+        && prefs.ageMin <= prefs.ageMax
+        && prefs.maxDistanceMeters is number
+        && prefs.maxDistanceMeters >= 5
+        && prefs.maxDistanceMeters <= 60.96
+        && validInterestIds(prefs.interestIds)
+        && (
+          !('updatedAt' in prefs)
+          || prefs.updatedAt is number
+          || prefs.updatedAt is timestamp
+        );
+    }
+
+    function validSearchPreferencesBag(bag) {
+      return bag is map
+        && bag.keys().hasOnly(['personal', 'professional'])
+        && (!('personal' in bag) || validModeSearchPreferences(bag.personal))
+        && (!('professional' in bag) || validModeSearchPreferences(bag.professional));
+    }
+
+    function validVisibleAgeGates() {
+      return (
+          !('visibleToMinAge' in request.resource.data)
+          || request.resource.data.visibleToMinAge == null
+          || (
+            request.resource.data.visibleToMinAge is int
+            && request.resource.data.visibleToMinAge >= 18
+            && request.resource.data.visibleToMinAge <= 99
+          )
+        )
+        && (
+          !('visibleToMaxAge' in request.resource.data)
+          || request.resource.data.visibleToMaxAge == null
+          || (
+            request.resource.data.visibleToMaxAge is int
+            && request.resource.data.visibleToMaxAge >= 18
+            && request.resource.data.visibleToMaxAge <= 99
+          )
+        )
+        && (
+          !('visibleToMinAge' in request.resource.data)
+          || !('visibleToMaxAge' in request.resource.data)
+          || request.resource.data.visibleToMinAge == null
+          || request.resource.data.visibleToMaxAge == null
+          || request.resource.data.visibleToMinAge <= request.resource.data.visibleToMaxAge
+        );
+    }
+
+    function validBlockDoc(targetUid) {
+      return request.resource.data is map
+        && request.resource.data.keys().hasOnly([
+          'blockedUid',
+          'createdAt',
+          'source',
+          'at'
+        ])
+        && targetUid is string
+        && targetUid.size() > 0
+        && targetUid.size() <= 128
+        && (
+          !('blockedUid' in request.resource.data)
+          || request.resource.data.blockedUid == targetUid
+        );
+    }
+
+    function clientBackendOnlyPhoneFields() {
+      return [
+        'phoneHash',
+        'phoneHashVersion',
+        'phoneVerificationProvider',
+        'phoneVerificationVersion',
+      ];
+    }
+
+    function clientBackendOnlyPhoneFieldsAbsentOnCreate() {
+      return !request.resource.data.keys().hasAny(clientBackendOnlyPhoneFields());
+    }
+
+    function validClientPhoneVerificationOnCreate() {
+      return (!('phoneVerified' in request.resource.data)
+          || (
+            request.resource.data.phoneVerified is bool
+            && request.resource.data.phoneVerified == false
+          ))
+        && (!('phoneVerifiedAt' in request.resource.data)
+          || request.resource.data.phoneVerifiedAt == null);
+    }
+
+    function phoneFieldReallyChanged() {
+      return ('phone' in request.resource.data.diff(resource.data).affectedKeys())
+        && request.resource.data.get('phone', null) != resource.data.get('phone', null);
+    }
+
+    function clientBackendOnlyPhoneFieldsImmutableOnUpdate() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(clientBackendOnlyPhoneFields());
+    }
+
+    function clientPhoneVerificationFieldsUnchangedOnUpdate() {
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      return (!affected.hasAny(['phoneVerified'])
+          || request.resource.data.phoneVerified == resource.data.get('phoneVerified', false))
+        && (!affected.hasAny(['phoneVerifiedAt'])
+          || request.resource.data.phoneVerifiedAt == resource.data.get('phoneVerifiedAt', null));
+    }
+
+    function clientPhoneChangeClearsVerification() {
+      return request.resource.data.phoneVerified == false
+        && request.resource.data.phoneVerifiedAt == null;
+    }
+
+    function clientPhoneVerificationUpdateAllowed() {
+      return clientBackendOnlyPhoneFieldsImmutableOnUpdate()
+        && (
+          !phoneFieldReallyChanged()
+            ? clientPhoneVerificationFieldsUnchangedOnUpdate()
+            : clientPhoneChangeClearsVerification()
+        );
+    }
+
+    function existingAuthoritativePhoneVerified() {
+      return resource.data.get('phoneVerified', false) == true;
+    }
+
+    function resultingAuthoritativePhoneVerified() {
+      return request.resource.data.get('phoneVerified', false) == true;
+    }
+
+    function isTransitioningProfileSetupCompletedToTrue() {
+      return request.resource.data.get('profileSetupCompleted', false) == true
+        && resource.data.get('profileSetupCompleted', false) != true;
+    }
+
+    function profileCompletionAllowedOnCreate() {
+      return request.resource.data.get('profileSetupCompleted', false) != true;
+    }
+
+    function profileCompletionTransitionAllowedOnUpdate() {
+      return !isTransitioningProfileSetupCompletedToTrue()
+        || (
+          existingAuthoritativePhoneVerified()
+          && resultingAuthoritativePhoneVerified()
+        );
+    }
+
+    // ENH-PROFILE-01 — user-global public context (top-level only).
+    // Countries: ISO 3166-1 alpha-2 uppercase. Languages: BCP 47-ish tags, max 10.
+    // zodiacSign is derived server-side — clients must never write it.
+    // Do not nest context under profiles.personal|professional.
+
+    function validCountryCodeOrNull(value) {
+      return value == null
+        || (value is string && value.matches('^[A-Z]{2}$'));
+    }
+
+    function validLanguageCodeAt(ids, i) {
+      return ids.size() <= i
+        || (
+          ids[i] is string
+          && ids[i].size() > 0
+          && ids[i].size() <= 35
+          && ids[i].matches('^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8}){0,3}$')
+        );
+    }
+
+    function validLanguageCodes(ids) {
+      return ids is list
+        && ids.size() <= 10
+        && validLanguageCodeAt(ids, 0)
+        && validLanguageCodeAt(ids, 1)
+        && validLanguageCodeAt(ids, 2)
+        && validLanguageCodeAt(ids, 3)
+        && validLanguageCodeAt(ids, 4)
+        && validLanguageCodeAt(ids, 5)
+        && validLanguageCodeAt(ids, 6)
+        && validLanguageCodeAt(ids, 7)
+        && validLanguageCodeAt(ids, 8)
+        && validLanguageCodeAt(ids, 9);
+    }
+
+    // CURRENT-CITY-01 — GeoNames city chosen via searchCities. Absent = no city
+    // (clients delete the field); null and any extra key (e.g. coordinates) are denied.
+    function validCityText(value) {
+      return value is string
+        && value.size() > 0
+        && value.size() <= 120
+        && value.trim() == value;
+    }
+
+    function validCurrentCity(city) {
+      return city is map
+        && city.keys().hasOnly(['id', 'provider', 'name', 'countryCode', 'region'])
+        && city.keys().hasAll(['id', 'provider', 'name', 'countryCode'])
+        && city.id is string
+        && city.id.matches('^[1-9][0-9]{0,11}$')
+        && city.provider == 'geonames'
+        && validCityText(city.name)
+        && city.countryCode is string
+        && city.countryCode.matches('^[A-Z]{2}$')
+        && (!('region' in city) || validCityText(city.region));
+    }
+
+    function currentCityAllowedOnCreate() {
+      return !('currentCity' in request.resource.data)
+        || validCurrentCity(request.resource.data.currentCity);
+    }
+
+    function currentCityAllowedOnUpdate() {
+      return !('currentCity' in request.resource.data.diff(resource.data).affectedKeys())
+        || !('currentCity' in request.resource.data)
+        || validCurrentCity(request.resource.data.currentCity);
+    }
+
+    function validPublicProfileContextFields() {
+      return (
+          !('birthCountryCode' in request.resource.data)
+          || validCountryCodeOrNull(request.resource.data.birthCountryCode)
+        )
+        // Legacy (2.0.7 compatibility): validated but ignored by the backend.
+        && (
+          !('residenceCountryCode' in request.resource.data)
+          || validCountryCodeOrNull(request.resource.data.residenceCountryCode)
+        )
+        && (
+          !('languageCodes' in request.resource.data)
+          || request.resource.data.languageCodes == null
+          || validLanguageCodes(request.resource.data.languageCodes)
+        );
+    }
+
+    function zodiacSignAbsentOnCreate() {
+      return !('zodiacSign' in request.resource.data);
+    }
+
+    function zodiacSignImmutableOnUpdate() {
+      return !('zodiacSign' in request.resource.data.diff(resource.data).affectedKeys());
+    }
+
+    function modeFaceHasNoGlobalContext(face) {
+      return !(face is map)
+        || !face.keys().hasAny([
+          'birthCountryCode',
+          'residenceCountryCode',
+          'currentCity',
+          'languageCodes',
+          'zodiacSign'
+        ]);
+    }
+
+    function cleanProfilesBag(bag) {
+      return bag is map
+        && (!('personal' in bag) || modeFaceHasNoGlobalContext(bag.personal))
+        && (!('professional' in bag) || modeFaceHasNoGlobalContext(bag.professional));
+    }
+
+    function profilesContextAllowedOnCreate() {
+      return !('profiles' in request.resource.data)
+        || request.resource.data.profiles == null
+        || cleanProfilesBag(request.resource.data.profiles);
+    }
+
+    function profilesContextAllowedOnUpdate() {
+      return !('profiles' in request.resource.data.diff(resource.data).affectedKeys())
+        || request.resource.data.profiles == null
+        || cleanProfilesBag(request.resource.data.profiles);
+    }
+
+    // ========= users =========
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId)
+        && validUserCreateLifecycle()
+        && clientLocationWriteAllowedOnCreate()
+        && clientBackendOnlyPhoneFieldsAbsentOnCreate()
+        && validClientPhoneVerificationOnCreate()
+        && profileCompletionAllowedOnCreate()
+        && (
+          !request.resource.data.keys().hasAny(['searchPreferences'])
+          || request.resource.data.searchPreferences == null
+          || validSearchPreferencesBag(request.resource.data.searchPreferences)
+        )
+        && validVisibleAgeGates()
+        && validPublicProfileContextFields()
+        && currentCityAllowedOnCreate()
+        && zodiacSignAbsentOnCreate()
+        && profilesContextAllowedOnCreate();
+
+      allow update: if isOwner(userId)
+        && visibilityAndSchemaImmutableOnUpdate()
+        && clientLocationWriteAllowedOnUpdate()
+        && clientPhoneVerificationUpdateAllowed()
+        && profileCompletionTransitionAllowedOnUpdate()
+        && (
+          !('searchPreferences' in request.resource.data.diff(resource.data).affectedKeys())
+          || request.resource.data.searchPreferences == null
+          || validSearchPreferencesBag(request.resource.data.searchPreferences)
+        )
+        && validVisibleAgeGates()
+        && validPublicProfileContextFields()
+        && currentCityAllowedOnUpdate()
+        && zodiacSignImmutableOnUpdate()
+        && profilesContextAllowedOnUpdate();
+
+      allow delete: if isOwner(userId);
+    }
+
+    match /users/{userId}/pushTokens/{tokenId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/contactHashes/{contactId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/blockedUsers/{blockedUid} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) && validBlockDoc(blockedUid);
+      allow delete: if isOwner(userId);
+    }
+
+    // Visibility projection — Admin SDK / Functions only.
+    match /discoveryProfiles/{uid} {
+      allow read, write: if false;
+    }
+
+    // ========= reports / moderation =========
+    match /reports/{reportId} {
+      allow create: if isSignedIn();
+      allow read: if false;
+      allow update, delete: if false;
+    }
+
+    match /moderationEvents/{eventId} {
+      allow create: if isSignedIn();
+      allow read: if false;
+      allow update, delete: if false;
+    }
+
+    // LinkedIn technical collections — clients never (Admin SDK only).
+    match /linkedinAuthTransactions/{id} {
+      allow read, write: if false;
+    }
+    match /linkedinAuthStateIndex/{id} {
+      allow read, write: if false;
+    }
+    match /linkedinIdentities/{id} {
+      allow read, write: if false;
+    }
+
+    // YouTube ownership — Admin SDK / Identity Functions only (explicit deny; do not OR-open).
+    // Additive block for NEARSY-209; does not alter LinkedIn/phone/matching rules above/below.
+    match /youtubeOwnershipTransactions/{id} {
+      allow read, write: if false;
+    }
+    match /youtubeOwnershipStateIndex/{id} {
+      allow read, write: if false;
+    }
+    match /youtubeChannelClaims/{id} {
+      allow read, write: if false;
+    }
+    match /youtubeOwnershipLinks/{id} {
+      allow read, write: if false;
+    }
+    // Legacy pilot uid-level docs — keep deny; Discovery reads youtubeOwnershipLinks.
+    match /youtubeOwnershipByUid/{id} {
+      allow read, write: if false;
+    }
+
+    // TikTok ownership — Admin SDK / Identity Functions only (explicit deny).
+    match /tiktokOwnershipTransactions/{id} {
+      allow read, write: if false;
+    }
+    match /tiktokOwnershipStateIndex/{id} {
+      allow read, write: if false;
+    }
+    match /tiktokAccountClaims/{id} {
+      allow read, write: if false;
+    }
+    match /tiktokOwnershipLinks/{id} {
+      allow read, write: if false;
+    }
+
+    // Instagram reverse-DM ownership — Admin SDK / Identity Functions only (explicit deny).
+    match /instagramOwnershipChallenges/{id} {
+      allow read, write: if false;
+    }
+    match /instagramOwnershipCodeIndex/{id} {
+      allow read, write: if false;
+    }
+    match /instagramOwnershipActive/{id} {
+      allow read, write: if false;
+    }
+    match /instagramAccountClaims/{id} {
+      allow read, write: if false;
+    }
+    match /instagramOwnershipLinks/{id} {
+      allow read, write: if false;
+    }
+    match /instagramOwnershipRateLimits/{id} {
+      allow read, write: if false;
+    }
+    match /instagramInboxOauthState/{id} {
+      allow read, write: if false;
+    }
+    match /instagramInboxCredential/{id} {
+      allow read, write: if false;
+    }
+
+    // X ownership — Admin SDK / Identity Functions only (explicit deny).
+    match /xOwnershipTransactions/{id} {
+      allow read, write: if false;
+    }
+    match /xOwnershipStateIndex/{id} {
+      allow read, write: if false;
+    }
+    match /xAccountClaims/{id} {
+      allow read, write: if false;
+    }
+    match /xOwnershipLinks/{id} {
+      allow read, write: if false;
+    }
+
+    // Phone OTP — Admin SDK / Functions only (explicit deny; do not OR-open).
+    match /phoneOtpChallenges/{challengeId} {
+      allow read, write: if false;
+    }
+    match /verifiedPhoneClaims/{claimId} {
+      allow read, write: if false;
+    }
+    match /phoneOtpRateLimits/{id} {
+      allow read, write: if false;
+    }
+    match /phoneOtpUidActive/{uid} {
+      allow read, write: if false;
+    }
+    match /systemConfig/phoneOtp {
+      allow read, write: if false;
+    }
+
+    // Matching productive embeddings — Admin SDK only (explicit deny; do not OR-open).
+    match /matchingEmbeddingCache/{document=**} {
+      allow read, write: if false;
+    }
+    match /matchingFaces/{document=**} {
+      allow read, write: if false;
+    }
+    match /matchingJobs/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

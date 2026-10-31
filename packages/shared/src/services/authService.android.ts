@@ -1,6 +1,7 @@
 // src/services/authService.ts  ✅ Cross-platform (iOS Web SDK + Android RNFirebase)
 import { Platform } from 'react-native';
 import { firebaseAuth } from '../config/firebaseConfig.android';
+import { runWithOutgoingPushRelease } from './pushTokens';
 
 // Tipos suaves (para que compile con ambos SDKs)
 type AnyUser = any;
@@ -25,9 +26,10 @@ export const registerWithEmail = async (
   password: string,
 ): Promise<AnyUserCredential> => {
   try {
-    const userCredential = await (
-      firebaseAuth as any
-    ).createUserWithEmailAndPassword(email, password);
+    const userCredential: AnyUserCredential = await runWithOutgoingPushRelease(
+      () =>
+        (firebaseAuth as any).createUserWithEmailAndPassword(email, password),
+    );
 
     // TEMP: Email verification temporarily disabled (Android only).
     // await sendVerificationEmail(userCredential.user);
@@ -46,9 +48,9 @@ export const loginWithEmail = async (
   password: string,
 ): Promise<AnyUserCredential> => {
   try {
-    const userCredential = await (
-      firebaseAuth as any
-    ).signInWithEmailAndPassword(email, password);
+    const userCredential: AnyUserCredential = await runWithOutgoingPushRelease(
+      () => (firebaseAuth as any).signInWithEmailAndPassword(email, password),
+    );
 
     // Web SDK: await user.reload()
     // RNFirebase: await user.reload()

@@ -31,6 +31,7 @@ import { SettingsSection } from '../components/settings/SettingsSection';
 import { SettingsRow } from '../components/settings/SettingsRow';
 import { SettingsToggleRow } from '../components/settings/SettingsToggleRow';
 import { firebaseAuth } from '../config/firebaseConfig';
+import { unregisterCurrentDevicePushToken } from '../services/pushTokens';
 import { clearPendingSocialProfilePrefill } from '../authentication/social';
 import { hasFacebookProvider } from '../authentication/facebook/facebookAuthCore';
 import { logOutFacebookSession } from '../services/facebookSession';
@@ -838,6 +839,10 @@ export default function MoreScreen() {
             logOutFacebookSession();
           }
         },
+        unregisterDevicePush:
+          Platform.OS === 'android'
+            ? () => unregisterCurrentDevicePushToken()
+            : undefined,
         signOut: async () => {
           await firebaseAuth.signOut();
         },

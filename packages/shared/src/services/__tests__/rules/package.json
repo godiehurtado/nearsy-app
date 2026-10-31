@@ -1,0 +1,12 @@
+{
+  "name": "nearsy-push-token-rules-tests",
+  "private": true,
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project demo-nearsy-rules \"node --test --test-concurrency=1 pushTokenAuthorization.rules.test.cjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.4.0",
+    "firebase-tools": "^14.18.0"
+  }
+}
