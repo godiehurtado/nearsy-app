@@ -124,7 +124,8 @@ describe('Callable adapter', () => {
       android,
       /clearSocialPrefill: \(\) => \{\s*clearPendingSocialProfilePrefill\(\);/,
     );
-    assert.match(android, /unregisterDevicePush: \(\) => unregisterCurrentDevicePushToken\(\),/);
+    assert.match(android, /await sealPushTokenWritesForAccountDeletion\(\);/);
+    assert.doesNotMatch(android, /unregisterDevicePush|unregisterCurrentDevicePushToken/);
     assert.match(android, /logOutFacebookSession\(\);\s*await discardGoogleSignInSession\(\);/);
     assert.match(android, /forgetLastConfirmedVisibility\(deletedUid, AsyncStorage\)/);
     assert.match(core, /runContractualAndroidLogout\(deps\)/);

@@ -10,6 +10,9 @@ import { describe, it } from 'node:test';
 import {
   createPushTokenSessionStore,
   registerDevicePushToken,
+  restoreDevicePushTokenIfSession,
+  runWithOutgoingPushRelease,
+  sealDevicePushTokenSession,
   unregisterDevicePushToken,
 } from '../pushTokenLifecycle.ts';
 
@@ -109,8 +112,9 @@ describe('registerDevicePushToken', () => {
       }),
     );
     const pending = h.register(true);
-    await h.unregister();
+    const unreg = h.unregister();
     releaseMint();
+    await unreg;
     assert.deepEqual(await pending, { ok: false, reason: 'stale-generation' });
     assert.equal(
       h.writes.some((w) => w.op === 'set'),
@@ -133,7 +137,7 @@ describe('registerDevicePushToken', () => {
     assert.deepEqual(h.writes, []);
   });
 
-  it('compensating-deletes the outgoing UID doc if persist loses the race', async () => {
+  it('compensating-deletes under A only while Auth is still A, after awaiting in-flight', async () => {
     const h = createHarness('uid-a');
     let releasePersist: () => void = () => {};
     h.setPersistDelay(
@@ -143,8 +147,9 @@ describe('registerDevicePushToken', () => {
     );
     const pending = h.register(true);
     await h.persistStarted;
-    await h.unregister();
+    const unreg = h.unregister();
     releasePersist();
+    await unreg;
     assert.deepEqual(await pending, { ok: false, reason: 'stale-generation' });
     assert.deepEqual(h.writes, [
       { op: 'delete', uid: 'uid-a', token: 'ExponentPushToken[device]' },
@@ -152,6 +157,24 @@ describe('registerDevicePushToken', () => {
       { op: 'delete', uid: 'uid-a', token: 'ExponentPushToken[device]' },
     ]);
     assert.equal(h.store.bound, null);
+  });
+
+  it('does not compensating-delete under A after the session already moved', async () => {
+    const h = createHarness('uid-a');
+    let releasePersist: () => void = () => {};
+    h.setPersistDelay(
+      new Promise<void>((resolve) => {
+        releasePersist = resolve;
+      }),
+    );
+    const pending = h.register(true);
+    await h.persistStarted;
+    h.setUid('uid-b');
+    releasePersist();
+    assert.deepEqual(await pending, { ok: false, reason: 'stale-generation' });
+    assert.deepEqual(h.writes, [
+      { op: 'set', uid: 'uid-a', token: 'ExponentPushToken[device]' },
+    ]);
   });
 });
 
@@ -205,5 +228,118 @@ describe('unregisterDevicePushToken', () => {
       },
     });
     assert.deepEqual(deletes, ['uid-a/ExponentPushToken[this]']);
+  });
+});
+
+describe('failed login after release restores A', () => {
+  it('re-registers under A when the new login fails and the session remains', async () => {
+    const events: string[] = [];
+    let uid: string | null = 'uid-a';
+    await assert.rejects(
+      runWithOutgoingPushRelease({
+        getUid: () => uid,
+        release: async () => {
+          events.push('release');
+        },
+        restore: async () => {
+          events.push('restore');
+        },
+        operation: async () => {
+          events.push('login');
+          throw new Error('cancelled');
+        },
+      }),
+    );
+    assert.deepEqual(events, ['release', 'login', 'restore']);
+  });
+
+  it('does not restore when the session already moved to B', async () => {
+    const events: string[] = [];
+    let uid: string | null = 'uid-a';
+    await assert.rejects(
+      runWithOutgoingPushRelease({
+        getUid: () => uid,
+        release: async () => {
+          events.push('release');
+        },
+        restore: async () => {
+          events.push('restore');
+        },
+        operation: async () => {
+          uid = 'uid-b';
+          events.push('login');
+          throw new Error('failed-after-switch');
+        },
+      }),
+    );
+    assert.deepEqual(events, ['release', 'login']);
+  });
+
+  it('does not replace the account when release fails', async () => {
+    const events: string[] = [];
+    await assert.rejects(
+      runWithOutgoingPushRelease({
+        getUid: () => 'uid-a',
+        release: async () => {
+          events.push('release');
+          throw new Error('firestore-denied');
+        },
+        restore: async () => {
+          events.push('restore');
+        },
+        operation: async () => {
+          events.push('login');
+          return 'b';
+        },
+      }),
+    );
+    assert.deepEqual(events, ['release', 'restore']);
+  });
+});
+
+describe('Delete Account seals client writes', () => {
+  it('in-flight register does not persist or compensating-delete after seal', async () => {
+    const h = createHarness('uid-a');
+    let releaseMint: () => void = () => {};
+    h.setMintDelay(
+      new Promise<void>((resolve) => {
+        releaseMint = resolve;
+      }),
+    );
+    const pending = h.register(true);
+    const sealed = sealDevicePushTokenSession(h.store);
+    releaseMint();
+    await sealed;
+    assert.deepEqual(await pending, { ok: false, reason: 'writes-sealed' });
+    assert.deepEqual(h.writes, []);
+    assert.equal(h.store.writesAllowed, false);
+    assert.deepEqual(await h.register(true), {
+      ok: false,
+      reason: 'writes-sealed',
+    });
+  });
+
+  it('aborted deletion restores registration only for the same UID', async () => {
+    const store = createPushTokenSessionStore();
+    await sealDevicePushTokenSession(store);
+    let uid: string | null = 'uid-a';
+    const restored = await restoreDevicePushTokenIfSession({
+      store,
+      expectedUid: 'uid-a',
+      getUid: () => uid,
+      restore: async () => 'ok',
+    });
+    assert.equal(restored, 'ok');
+    assert.equal(store.writesAllowed, true);
+    uid = 'uid-b';
+    await sealDevicePushTokenSession(store);
+    const skipped = await restoreDevicePushTokenIfSession({
+      store,
+      expectedUid: 'uid-a',
+      getUid: () => uid,
+      restore: async () => 'ok',
+    });
+    assert.equal(skipped, null);
+    assert.equal(store.writesAllowed, false);
   });
 });

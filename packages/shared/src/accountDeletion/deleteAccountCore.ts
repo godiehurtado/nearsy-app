@@ -515,8 +515,9 @@ export type AccountDeletionCleanupDeps = ContractualLogoutDeps & {
 
 /**
  * After a confirmed deletion: the contractual logout sequence (publication
- * gate, FGS/background, in-flight publications, provider sessions,
- * this-device push unregister, signOut), then per-account local caches.
+ * gate, FGS/background, in-flight publications, provider sessions, signOut),
+ * then per-account local caches. Client push writes were sealed before the
+ * callable so cleanup never recreates Firestore documents.
  */
 export async function runAccountDeletionCleanup(
   uid: string,

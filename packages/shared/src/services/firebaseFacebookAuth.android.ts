@@ -7,7 +7,7 @@
  */
 import auth from '@react-native-firebase/auth';
 import { firebaseAuth } from '../config/firebaseConfig.android';
-import { releaseOutgoingDevicePushToken } from './pushTokens';
+import { runWithOutgoingPushRelease } from './pushTokens';
 import {
   extractFacebookIdentity,
   type FacebookFirebaseSession,
@@ -16,22 +16,23 @@ import {
 export async function signInWithFacebookAccessToken(
   accessToken: string,
 ): Promise<FacebookFirebaseSession> {
-  await releaseOutgoingDevicePushToken();
-  const credential = auth.FacebookAuthProvider.credential(accessToken);
-  const userCredential = await firebaseAuth.signInWithCredential(credential);
-  return {
-    uid: userCredential.user.uid,
-    email: userCredential.user.email ?? null,
-    identity: extractFacebookIdentity({
-      user: userCredential.user,
-      additionalUserInfo: userCredential.additionalUserInfo
-        ? {
-            profile: (userCredential.additionalUserInfo.profile ??
-              null) as Record<string, unknown> | null,
-          }
-        : null,
-    }),
-  };
+  return runWithOutgoingPushRelease(async () => {
+    const credential = auth.FacebookAuthProvider.credential(accessToken);
+    const userCredential = await firebaseAuth.signInWithCredential(credential);
+    return {
+      uid: userCredential.user.uid,
+      email: userCredential.user.email ?? null,
+      identity: extractFacebookIdentity({
+        user: userCredential.user,
+        additionalUserInfo: userCredential.additionalUserInfo
+          ? {
+              profile: (userCredential.additionalUserInfo.profile ??
+                null) as Record<string, unknown> | null,
+            }
+          : null,
+      }),
+    };
+  });
 }
 
 export async function reauthenticateWithFacebookAccessToken(
