@@ -3,19 +3,26 @@
  * Does not rotate APNs keys, change entitlements, or prompt for permission.
  */
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it, afterEach } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  authenticatedIdentityCanMutatePushTokenDoc,
   mayRegisterAfterRelease,
+  mayRegisterThisDeviceUnderUid,
   planPushTokenAuthSync,
   resolveThisDeviceTokenForRelease,
   shouldApplyPushTokenRegisterResult,
   thisDevicePushTokenDoc,
 } from '../pushTokenLifecycle';
 import { createPushTokenSession } from '../pushTokenSession';
+import {
+  bindPushTokenAuthReplaceHandlers,
+  resetPushTokenAuthReplaceHandlersForTests,
+  withPushTokenReleaseAroundSessionReplace,
+} from '../pushTokenBeforeAuthReplace';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -30,6 +37,7 @@ function createFakeIo(opts?: {
   failDelete?: boolean;
   failWrite?: boolean;
   getTokenDelayMs?: number;
+  registrationAllowed?: boolean;
 }) {
   let uid = opts?.uid ?? 'user-a';
   const writes: Array<{ uid: string; token: string }> = [];
@@ -60,6 +68,11 @@ function createFakeIo(opts?: {
     deleteThisDeviceToken: async (targetUid: string, token: string) => {
       if (opts?.failDelete) throw new Error('delete');
       deletes.push({ uid: targetUid, token });
+    },
+    isRegistrationAllowed: (nextUid: string) => {
+      if (opts?.registrationAllowed === false) return false;
+      void nextUid;
+      return true;
     },
   };
   return io;
@@ -105,14 +118,20 @@ describe('push token lifecycle — decisions', () => {
     );
   });
 
-  it('plans logout vs direct account switch vs first login', () => {
+  it('Firestore owner rule: only the authenticated uid can mutate its pushTokens doc', () => {
+    assert.equal(authenticatedIdentityCanMutatePushTokenDoc('a', 'a'), true);
+    assert.equal(authenticatedIdentityCanMutatePushTokenDoc('b', 'a'), false);
+    assert.equal(authenticatedIdentityCanMutatePushTokenDoc(null, 'a'), false);
+  });
+
+  it('plans logout vs live-uid register; listener never deletes the previous uid', () => {
     assert.deepEqual(
       planPushTokenAuthSync({ previousUid: 'a', nextUid: null }),
       { action: 'none' },
     );
     assert.deepEqual(
       planPushTokenAuthSync({ previousUid: 'a', nextUid: 'b' }),
-      { action: 'release-then-register', previousUid: 'a' },
+      { action: 'register' },
     );
     assert.deepEqual(
       planPushTokenAuthSync({ previousUid: null, nextUid: 'b' }),
@@ -145,12 +164,36 @@ describe('push token lifecycle — decisions', () => {
     });
   });
 
-  it('does not allow register after an unconfirmed release', () => {
+  it('does not allow register after an unconfirmed release or under a foreign association', () => {
     assert.equal(mayRegisterAfterRelease({ status: 'released', uid: 'a', token: 't' }), true);
     assert.equal(mayRegisterAfterRelease({ status: 'nothing-to-release' }), true);
     assert.equal(
       mayRegisterAfterRelease({ status: 'failed', reason: 'delete-failed', uid: 'a' }),
       false,
+    );
+    assert.equal(
+      mayRegisterThisDeviceUnderUid({
+        nextUid: 'b',
+        association: { uid: 'a', token: 't' },
+        registrationAllowed: true,
+      }),
+      false,
+    );
+    assert.equal(
+      mayRegisterThisDeviceUnderUid({
+        nextUid: 'b',
+        association: null,
+        registrationAllowed: false,
+      }),
+      false,
+    );
+    assert.equal(
+      mayRegisterThisDeviceUnderUid({
+        nextUid: 'b',
+        association: null,
+        registrationAllowed: true,
+      }),
+      true,
     );
   });
 });
@@ -190,16 +233,20 @@ describe('push token session — register / release / switch', () => {
     assert.equal(io.deletes.length, 1);
   });
 
-  it('direct account switch releases A then registers B with the same device token', async () => {
+  it('direct A→B deletes A while still A; listener as B only registers B', async () => {
     const io = createFakeIo({ uid: 'user-a' });
     const session = createPushTokenSession(io);
     await session.register();
-    io.setUid('user-b');
-    const sync = await session.syncAuth('user-a', 'user-b');
-    assert.deepEqual(sync, { ok: true, registered: true });
+    const prepared = await session.prepareForIncomingAuth();
+    assert.equal(prepared.previousUid, 'user-a');
+    assert.equal(prepared.released, true);
     assert.deepEqual(io.deletes, [
       { uid: 'user-a', token: 'ExponentPushToken[device]' },
     ]);
+    io.setUid('user-b');
+    const sync = await session.syncAuth('user-a', 'user-b');
+    assert.deepEqual(sync, { ok: true, registered: true });
+    assert.equal(io.deletes.length, 1);
     assert.deepEqual(io.writes[1], {
       uid: 'user-b',
       token: 'ExponentPushToken[device]',
@@ -207,15 +254,42 @@ describe('push token session — register / release / switch', () => {
     assert.equal(session.getAssociation()?.uid, 'user-b');
   });
 
-  it('does not register B when release of A fails', async () => {
-    const io = createFakeIo({ uid: 'user-a', failDelete: true });
+  it('listener observing B cannot delete A and does not claim a switch if A is still associated', async () => {
+    const io = createFakeIo({ uid: 'user-a' });
     const session = createPushTokenSession(io);
     await session.register();
     io.setUid('user-b');
     const sync = await session.syncAuth('user-a', 'user-b');
     assert.deepEqual(sync, {
       ok: false,
-      reason: 'release-unconfirmed',
+      reason: 'previous-release-unconfirmed',
+      registered: false,
+    });
+    assert.equal(io.deletes.length, 0);
+    assert.equal(
+      io.writes.filter((w) => w.uid === 'user-b').length,
+      0,
+    );
+    const refused = await session.releaseForUid('user-a');
+    assert.deepEqual(refused, {
+      status: 'failed',
+      reason: 'identity-mismatch',
+      uid: 'user-a',
+    });
+    assert.equal(io.deletes.length, 0);
+  });
+
+  it('does not register B when release of A fails', async () => {
+    const io = createFakeIo({ uid: 'user-a', failDelete: true });
+    const session = createPushTokenSession(io);
+    await session.register();
+    const prepared = await session.prepareForIncomingAuth();
+    assert.equal(prepared.released, false);
+    io.setUid('user-b');
+    const sync = await session.syncAuth('user-a', 'user-b');
+    assert.deepEqual(sync, {
+      ok: false,
+      reason: 'previous-release-unconfirmed',
       registered: false,
     });
     assert.equal(io.writes.length, 1);
@@ -237,6 +311,8 @@ describe('push token session — register / release / switch', () => {
     const io = createFakeIo({ uid: 'user-a', getTokenDelayMs: 20 });
     const session = createPushTokenSession(io);
     const pending = session.register();
+    const prepared = await session.prepareForIncomingAuth();
+    assert.equal(prepared.released, true);
     io.setUid('user-b');
     const sync = await session.syncAuth('user-a', 'user-b');
     const stale = await pending;
@@ -250,6 +326,51 @@ describe('push token session — register / release / switch', () => {
     assert.ok(io.writes.some((w) => w.uid === 'user-b'));
   });
 
+  it('restores A when the incoming login fails and A is still authenticated', async () => {
+    const io = createFakeIo({ uid: 'user-a' });
+    const session = createPushTokenSession(io);
+    await session.register();
+    const prepared = await session.prepareForIncomingAuth();
+    assert.equal(prepared.released, true);
+    assert.equal(session.getAssociation(), null);
+    assert.equal(io.getCurrentUid(), 'user-a');
+    const restored = await session.restoreAfterAbortedAuth(prepared);
+    assert.equal(restored.ok, true);
+    assert.equal(session.getAssociation()?.uid, 'user-a');
+    assert.ok(io.writes.filter((w) => w.uid === 'user-a').length >= 2);
+  });
+
+  it('does not restore A after a failed login if the live uid is already B', async () => {
+    const io = createFakeIo({ uid: 'user-a' });
+    const session = createPushTokenSession(io);
+    await session.register();
+    const prepared = await session.prepareForIncomingAuth();
+    io.setUid('user-b');
+    const restored = await session.restoreAfterAbortedAuth(prepared);
+    assert.deepEqual(restored, { ok: true, registered: false });
+    assert.equal(
+      io.writes.filter((w) => w.uid === 'user-a').length,
+      1,
+    );
+  });
+
+  it('does not recreate a token after account deletion suppresses registration', async () => {
+    const io = createFakeIo({ uid: 'user-a', registrationAllowed: false });
+    const session = createPushTokenSession(io);
+    assert.deepEqual(await session.register(), {
+      ok: false,
+      reason: 'registration-suppressed',
+    });
+    assert.equal(io.writes.length, 0);
+    const sync = await session.syncAuth(null, 'user-a');
+    assert.deepEqual(sync, {
+      ok: false,
+      reason: 'registration-suppressed',
+      registered: false,
+    });
+    assert.equal(io.writes.length, 0);
+  });
+
   it('requires a session to register after a confirmed switch', async () => {
     const io = createFakeIo({ uid: 'user-a' });
     const session = createPushTokenSession(io);
@@ -258,6 +379,53 @@ describe('push token session — register / release / switch', () => {
     const sync = await session.syncAuth('user-a', null);
     assert.deepEqual(sync, { ok: true, registered: false });
     assert.equal(io.writes.length, 1);
+  });
+});
+
+describe('push token lifecycle — session replace wrap', () => {
+  afterEach(() => {
+    resetPushTokenAuthReplaceHandlersForTests();
+  });
+
+  it('releases before replace and restores when replace throws', async () => {
+    const events: string[] = [];
+    bindPushTokenAuthReplaceHandlers({
+      prepare: async () => {
+        events.push('prepare');
+        return { previousUid: 'user-a', released: true };
+      },
+      restore: async (prepared) => {
+        events.push(`restore:${prepared.previousUid}`);
+      },
+    });
+    await assert.rejects(
+      () =>
+        withPushTokenReleaseAroundSessionReplace(async () => {
+          events.push('replace');
+          throw new Error('sign-in-failed');
+        }),
+      /sign-in-failed/,
+    );
+    assert.deepEqual(events, ['prepare', 'replace', 'restore:user-a']);
+  });
+
+  it('does not restore after a successful replace', async () => {
+    const events: string[] = [];
+    bindPushTokenAuthReplaceHandlers({
+      prepare: async () => {
+        events.push('prepare');
+        return { previousUid: 'user-a', released: true };
+      },
+      restore: async () => {
+        events.push('restore');
+      },
+    });
+    const value = await withPushTokenReleaseAroundSessionReplace(async () => {
+      events.push('replace');
+      return 'ok';
+    });
+    assert.equal(value, 'ok');
+    assert.deepEqual(events, ['prepare', 'replace']);
   });
 });
 
@@ -273,18 +441,44 @@ describe('push token lifecycle — iOS auth wiring', () => {
     assert.ok(releaseIdx >= 0 && signIdx > releaseIdx);
   });
 
-  it('App auth listener syncs tokens on uid change including LinkedIn', () => {
-    const app = readShared('App.tsx');
-    assert.match(app, /syncPushTokenForAuthUser\(previousUid, null\)/);
-    assert.match(app, /syncPushTokenForAuthUser\(previousUid, user\.uid\)/);
-    assert.match(app, /Google \/ Apple \/ Facebook \/ LinkedIn/);
+  it('session-replacing sign-ins release before Firebase replace, including LinkedIn', () => {
+    const email = readShared('services/authService.ios.ts');
+    const login = email.slice(email.indexOf('export const loginWithEmail'));
+    assert.match(login, /withPushTokenReleaseAroundSessionReplace/);
+    assert.match(login, /signInWithEmailAndPassword/);
+    assert.ok(
+      login.indexOf('withPushTokenReleaseAroundSessionReplace') <
+        login.indexOf('signInWithEmailAndPassword'),
+    );
+
+    const social = readShared(
+      'authentication/social/infrastructure/firebase/firebaseJsAuthenticationAdapter.ios.ts',
+    );
+    assert.match(social, /signInReplacingFirebaseSession/);
+    assert.match(social, /withPushTokenReleaseAroundSessionReplace/);
+    assert.match(social, /signInWithCredential/);
+
     const linkedIn = readShared(
       'authentication/linkedinA3/authenticateWithLinkedIn.ts',
     );
-    assert.doesNotMatch(linkedIn, /pushTokens|registerPushToken|syncPushToken/);
+    assert.match(linkedIn, /withPushTokenReleaseAroundSessionReplace/);
+    assert.match(linkedIn, /signInWithCustomToken\(firebaseAuth, customToken\)/);
+    const wrapIdx = linkedIn.indexOf('withPushTokenReleaseAroundSessionReplace');
+    const customIdx = linkedIn.indexOf(
+      'signInWithCustomToken(firebaseAuth, customToken)',
+    );
+    assert.ok(wrapIdx >= 0 && customIdx > wrapIdx);
   });
 
-  it('Delete Account releases this-device token before signOut', () => {
+  it('App auth listener syncs tokens on uid change without deleting A after B is live', () => {
+    const app = readShared('App.tsx');
+    assert.match(app, /syncPushTokenForAuthUser\(previousUid, null\)/);
+    assert.match(app, /syncPushTokenForAuthUser\(previousUid, user\.uid\)/);
+    assert.match(app, /Firestore owner rules forbid/);
+    assert.match(app, /LinkedIn custom/);
+  });
+
+  it('Delete Account releases this-device token before signOut and does not recreate after closure', () => {
     const screen = readShared('screens/DeleteAccountScreen.tsx');
     const block = screen.slice(
       screen.indexOf('ensureSignedOut:'),
@@ -293,6 +487,10 @@ describe('push token lifecycle — iOS auth wiring', () => {
     const releaseIdx = block.indexOf('releaseThisDevicePushTokenForCurrentUser');
     const signIdx = block.indexOf('firebaseAuth.signOut');
     assert.ok(releaseIdx >= 0 && signIdx > releaseIdx);
+
+    const tokens = readShared('services/pushTokens.ts');
+    assert.match(tokens, /isAccountDeletionSessionActive/);
+    assert.match(tokens, /isAccountClosedByDeletion/);
   });
 
   it('does not request OS notification permission and does not bulk-delete tokens', () => {

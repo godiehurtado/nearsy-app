@@ -162,6 +162,8 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
         lastUid = user?.uid ?? null;
 
         if (!user) {
+          // Logout: More / Delete Account already released under A.
+          // Generation bump discards in-flight registers; do not write.
           await syncPushTokenForAuthUser(previousUid, null);
           if (Platform.OS !== 'web') {
             await stopBackgroundLocationRuntime().catch(() => {});
@@ -171,8 +173,10 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
         }
 
         if (previousUid && previousUid !== user.uid) {
-          // Account switch (email / Google / Apple / Facebook / LinkedIn):
-          // cancel prior journey and release this-device token under A first.
+          // Direct A→B (email / Google / Apple / Facebook / LinkedIn custom
+          // token): session is already B, so Firestore owner rules forbid
+          // deleting users/A/pushTokens/{token}. Release ran before the
+          // session-replacing sign-in. Listener only registers B.
           clearLocationPermissionJourneySession();
         }
 

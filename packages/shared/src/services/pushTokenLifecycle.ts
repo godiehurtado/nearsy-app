@@ -1,6 +1,11 @@
 /**
  * This-device Expo push token lifecycle (pure).
  * Deletes only users/{uid}/pushTokens/{thisDeviceToken} — never sibling device docs.
+ *
+ * Firestore (client-enforced counterpart of owner rules, which live in Functions
+ * and are not in this repo): a users/{userId}/** write/delete is allowed only
+ * when request.auth != null && request.auth.uid == userId. After a session
+ * replace the listener may already observe B, so it must not delete A's doc.
  */
 
 export type PushTokenAssociation = {
@@ -10,13 +15,17 @@ export type PushTokenAssociation = {
 
 export type PushAuthSyncPlan =
   | { action: 'none' }
-  | { action: 'register' }
-  | { action: 'release-then-register'; previousUid: string };
+  | { action: 'register' };
 
 export type PushTokenReleaseOutcome =
   | { status: 'released'; uid: string; token: string }
   | { status: 'nothing-to-release' }
   | { status: 'failed'; reason: string; uid?: string };
+
+export type PushTokenAuthReplacePreparation = {
+  previousUid: string | null;
+  released: boolean;
+};
 
 export function shouldApplyPushTokenRegisterResult(input: {
   requestGeneration: number;
@@ -31,18 +40,22 @@ export function shouldApplyPushTokenRegisterResult(input: {
   );
 }
 
+/**
+ * Owner rule: mutate users/{targetUid}/pushTokens/{token} only as targetUid.
+ */
+export function authenticatedIdentityCanMutatePushTokenDoc(
+  authenticatedUid: string | null,
+  targetUid: string,
+): boolean {
+  return authenticatedUid != null && authenticatedUid === targetUid;
+}
+
 export function planPushTokenAuthSync(input: {
   previousUid: string | null;
   nextUid: string | null;
 }): PushAuthSyncPlan {
   if (!input.nextUid) {
     return { action: 'none' };
-  }
-  if (input.previousUid && input.previousUid !== input.nextUid) {
-    return {
-      action: 'release-then-register',
-      previousUid: input.previousUid,
-    };
   }
   return { action: 'register' };
 }
@@ -62,6 +75,22 @@ export function mayRegisterAfterRelease(
   release: PushTokenReleaseOutcome,
 ): boolean {
   return release.status !== 'failed';
+}
+
+/**
+ * Do not write B while this device is still associated with A, and do not
+ * recreate docs after account deletion has started or completed.
+ */
+export function mayRegisterThisDeviceUnderUid(input: {
+  nextUid: string;
+  association: PushTokenAssociation | null;
+  registrationAllowed: boolean;
+}): boolean {
+  if (!input.registrationAllowed) return false;
+  if (input.association && input.association.uid !== input.nextUid) {
+    return false;
+  }
+  return true;
 }
 
 export function thisDevicePushTokenDoc(uid: string, token: string): {

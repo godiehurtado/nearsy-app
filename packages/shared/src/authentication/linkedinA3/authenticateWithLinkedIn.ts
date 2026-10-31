@@ -6,6 +6,7 @@
 import { signInWithCustomToken } from 'firebase/auth';
 import { getUserProfile, isProfileComplete } from '../../services/firestoreService';
 import { firebaseAuth } from '../../config/firebaseConfig';
+import { withPushTokenReleaseAroundSessionReplace } from '../../services/pushTokenBeforeAuthReplace';
 import { createExpoLinkedInAuthBrowser } from './browserSession';
 import { createExpoClientProofCrypto } from './clientProof';
 import { getLinkedInA3CallableClient } from './iosLinkedInA3Foundation';
@@ -57,18 +58,20 @@ export function createLinkedInA3FirebaseAuthPort(): LinkedInA3FirebaseAuthPort {
   return {
     getCurrentUid: () => firebaseAuth.currentUser?.uid ?? null,
     async signInWithCustomToken(customToken: string) {
-      const cred = await signInWithCustomToken(firebaseAuth, customToken);
-      const user = cred.user ?? firebaseAuth.currentUser;
-      if (!user?.uid) {
-        throw new LinkedInA3ClientError(
-          'FIREBASE_SIGN_IN_FAILED',
-          'Firebase user missing after custom token sign-in.',
-        );
-      }
-      return {
-        uid: user.uid,
-        email: typeof user.email === 'string' ? user.email : null,
-      };
+      return withPushTokenReleaseAroundSessionReplace(async () => {
+        const cred = await signInWithCustomToken(firebaseAuth, customToken);
+        const user = cred.user ?? firebaseAuth.currentUser;
+        if (!user?.uid) {
+          throw new LinkedInA3ClientError(
+            'FIREBASE_SIGN_IN_FAILED',
+            'Firebase user missing after custom token sign-in.',
+          );
+        }
+        return {
+          uid: user.uid,
+          email: typeof user.email === 'string' ? user.email : null,
+        };
+      });
     },
   };
 }

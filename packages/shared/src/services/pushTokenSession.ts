@@ -1,9 +1,11 @@
 import {
-  mayRegisterAfterRelease,
+  authenticatedIdentityCanMutatePushTokenDoc,
+  mayRegisterThisDeviceUnderUid,
   planPushTokenAuthSync,
   resolveThisDeviceTokenForRelease,
   shouldApplyPushTokenRegisterResult,
   type PushTokenAssociation,
+  type PushTokenAuthReplacePreparation,
   type PushTokenReleaseOutcome,
 } from './pushTokenLifecycle';
 
@@ -21,6 +23,7 @@ export type PushTokenSessionIO = {
   getExpoPushToken: () => Promise<string | null>;
   writeThisDeviceToken: (uid: string, token: string) => Promise<void>;
   deleteThisDeviceToken: (uid: string, token: string) => Promise<void>;
+  isRegistrationAllowed?: (uid: string) => boolean;
 };
 
 export function createPushTokenSession(io: PushTokenSessionIO) {
@@ -30,6 +33,10 @@ export function createPushTokenSession(io: PushTokenSessionIO) {
   function bumpGeneration(): number {
     generation += 1;
     return generation;
+  }
+
+  function registrationAllowed(uid: string): boolean {
+    return io.isRegistrationAllowed ? io.isRegistrationAllowed(uid) : true;
   }
 
   function snapshotApply(requestGeneration: number, requestUid: string): boolean {
@@ -51,6 +58,9 @@ export function createPushTokenSession(io: PushTokenSessionIO) {
 
   async function releaseForUid(uid: string): Promise<PushTokenReleaseOutcome> {
     bumpGeneration();
+    if (!authenticatedIdentityCanMutatePushTokenDoc(io.getCurrentUid(), uid)) {
+      return { status: 'failed', reason: 'identity-mismatch', uid };
+    }
     let token: string | null;
     try {
       token = await resolveTokenForUid(uid);
@@ -75,6 +85,19 @@ export function createPushTokenSession(io: PushTokenSessionIO) {
   async function register(): Promise<RegisterPushTokenResult> {
     const requestUid = io.getCurrentUid();
     if (!requestUid) return { ok: false, reason: 'no-user' };
+    if (!registrationAllowed(requestUid)) {
+      bumpGeneration();
+      return { ok: false, reason: 'registration-suppressed' };
+    }
+    if (
+      !mayRegisterThisDeviceUnderUid({
+        nextUid: requestUid,
+        association,
+        registrationAllowed: true,
+      })
+    ) {
+      return { ok: false, reason: 'previous-release-unconfirmed' };
+    }
     const requestGeneration = generation;
 
     let granted: boolean;
@@ -104,10 +127,14 @@ export function createPushTokenSession(io: PushTokenSessionIO) {
     }
 
     if (!snapshotApply(requestGeneration, requestUid)) {
-      try {
-        await io.deleteThisDeviceToken(requestUid, token);
-      } catch {
-        // Compensating delete failed; caller must not treat register as confirmed.
+      if (
+        authenticatedIdentityCanMutatePushTokenDoc(io.getCurrentUid(), requestUid)
+      ) {
+        try {
+          await io.deleteThisDeviceToken(requestUid, token);
+        } catch {
+          // Compensating delete failed; caller must not treat register as confirmed.
+        }
       }
       return { ok: false, reason: 'stale' };
     }
@@ -125,24 +152,63 @@ export function createPushTokenSession(io: PushTokenSessionIO) {
     return releaseForUid(uid);
   }
 
+  async function prepareForIncomingAuth(): Promise<PushTokenAuthReplacePreparation> {
+    const uid = io.getCurrentUid();
+    if (!uid) {
+      bumpGeneration();
+      return { previousUid: null, released: false };
+    }
+    const release = await releaseForCurrentUser();
+    return {
+      previousUid: uid,
+      released: release.status !== 'failed',
+    };
+  }
+
+  async function restoreAfterAbortedAuth(
+    prepared: PushTokenAuthReplacePreparation,
+  ): Promise<RegisterPushTokenResult | { ok: true; registered: false }> {
+    if (!prepared.previousUid) {
+      return { ok: true, registered: false };
+    }
+    if (io.getCurrentUid() !== prepared.previousUid) {
+      return { ok: true, registered: false };
+    }
+    const result = await register();
+    if (!result.ok) {
+      return result;
+    }
+    return { ok: true, token: result.token };
+  }
+
   async function syncAuth(
     previousUid: string | null,
     nextUid: string | null,
   ): Promise<SyncPushTokenAuthResult> {
     const plan = planPushTokenAuthSync({ previousUid, nextUid });
-    if (plan.action === 'none') {
-      bumpGeneration();
+    bumpGeneration();
+    if (plan.action === 'none' || !nextUid) {
       return { ok: true, registered: false };
     }
-    if (plan.action === 'release-then-register') {
-      const release = await releaseForUid(plan.previousUid);
-      if (!mayRegisterAfterRelease(release)) {
-        return {
-          ok: false,
-          reason: 'release-unconfirmed',
-          registered: false,
-        };
-      }
+    if (!registrationAllowed(nextUid)) {
+      return {
+        ok: false,
+        reason: 'registration-suppressed',
+        registered: false,
+      };
+    }
+    if (
+      !mayRegisterThisDeviceUnderUid({
+        nextUid,
+        association,
+        registrationAllowed: true,
+      })
+    ) {
+      return {
+        ok: false,
+        reason: 'previous-release-unconfirmed',
+        registered: false,
+      };
     }
     const result = await register();
     if (!result.ok) {
@@ -155,6 +221,8 @@ export function createPushTokenSession(io: PushTokenSessionIO) {
     register,
     releaseForUid,
     releaseForCurrentUser,
+    prepareForIncomingAuth,
+    restoreAfterAbortedAuth,
     syncAuth,
     getAssociation: () => association,
     getGeneration: () => generation,

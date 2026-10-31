@@ -1,5 +1,5 @@
 // This-device Expo push token: register under the current UID, release that
-// same token under the previous UID before the session is lost.
+// same token under the previous UID before the session is replaced or signed out.
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
@@ -8,12 +8,20 @@ import { Platform } from 'react-native';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import {
+  isAccountClosedByDeletion,
+  isAccountDeletionSessionActive,
+} from './accountDeletionSession';
+import { bindPushTokenAuthReplaceHandlers } from './pushTokenBeforeAuthReplace';
+import {
   createPushTokenSession,
   type PushTokenSessionIO,
   type RegisterPushTokenResult,
   type SyncPushTokenAuthResult,
 } from './pushTokenSession';
-import type { PushTokenReleaseOutcome } from './pushTokenLifecycle';
+import type {
+  PushTokenAuthReplacePreparation,
+  PushTokenReleaseOutcome,
+} from './pushTokenLifecycle';
 
 function thisDeviceTokenRef(uid: string, token: string) {
   return doc(firestoreDb, 'users', uid, 'pushTokens', token);
@@ -58,10 +66,20 @@ export function createDefaultPushTokenIO(): PushTokenSessionIO {
     async deleteThisDeviceToken(uid, token) {
       await deleteDoc(thisDeviceTokenRef(uid, token));
     },
+    isRegistrationAllowed(uid) {
+      if (isAccountDeletionSessionActive()) return false;
+      if (isAccountClosedByDeletion(uid)) return false;
+      return true;
+    },
   };
 }
 
 const session = createPushTokenSession(createDefaultPushTokenIO());
+
+bindPushTokenAuthReplaceHandlers({
+  prepare: () => session.prepareForIncomingAuth(),
+  restore: (prepared) => session.restoreAfterAbortedAuth(prepared),
+});
 
 export async function registerPushToken(): Promise<RegisterPushTokenResult> {
   try {
@@ -76,7 +94,7 @@ export async function registerPushToken(): Promise<RegisterPushTokenResult> {
 
 /**
  * Delete only this device's Expo token under `uid`. Sibling pushTokens docs
- * (other devices) are left intact.
+ * (other devices) are left intact. Call only while currentUser.uid === uid.
  */
 export async function releaseThisDevicePushTokenForUid(
   uid: string,
@@ -103,10 +121,33 @@ export async function releaseThisDevicePushTokenForCurrentUser(): Promise<PushTo
   }
 }
 
+export async function prepareThisDevicePushTokenForIncomingAuth(): Promise<PushTokenAuthReplacePreparation> {
+  try {
+    return await session.prepareForIncomingAuth();
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[PushTokens] prepareForIncomingAuth error:', err);
+    }
+    return { previousUid: firebaseAuth.currentUser?.uid ?? null, released: false };
+  }
+}
+
+export async function restoreThisDevicePushTokenAfterAbortedAuth(
+  prepared: PushTokenAuthReplacePreparation,
+): Promise<void> {
+  try {
+    await session.restoreAfterAbortedAuth(prepared);
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[PushTokens] restoreAfterAbortedAuth error:', err);
+    }
+  }
+}
+
 /**
- * Auth listener entry: A→B releases A's this-device token before registering B.
- * Logout (nextUid null) only invalidates in-flight registers — the signed-in
- * path must have released already.
+ * Auth listener entry. Logout (nextUid null) and A→B only bump generation
+ * and, when allowed, register the live uid. Deleting users/A/pushTokens/{token}
+ * must already have happened while authenticated as A.
  */
 export async function syncPushTokenForAuthUser(
   previousUid: string | null,

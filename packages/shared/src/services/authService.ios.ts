@@ -9,13 +9,12 @@ import {
 } from 'firebase/auth';
 
 import { firebaseAuth } from '../config/firebaseConfig.ios';
+import { withPushTokenReleaseAroundSessionReplace } from './pushTokenBeforeAuthReplace';
 
 // ✅ Registro
 export const registerWithEmail = async (email: string, password: string) => {
-  const cred = await createUserWithEmailAndPassword(
-    firebaseAuth as any,
-    email,
-    password,
+  const cred = await withPushTokenReleaseAroundSessionReplace(() =>
+    createUserWithEmailAndPassword(firebaseAuth as any, email, password),
   );
 
   // TEMP: Email verification temporarily disabled — restore block below.
@@ -28,10 +27,8 @@ export const registerWithEmail = async (email: string, password: string) => {
 
 // ✅ Login
 export const loginWithEmail = async (email: string, password: string) => {
-  const cred = await signInWithEmailAndPassword(
-    firebaseAuth as any,
-    email,
-    password,
+  const cred = await withPushTokenReleaseAroundSessionReplace(() =>
+    signInWithEmailAndPassword(firebaseAuth as any, email, password),
   );
 
   // refrescar user
