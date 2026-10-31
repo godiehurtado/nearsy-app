@@ -13,14 +13,16 @@ function readSharedSource(relativeFromSharedSrc: string): string {
 describe('iOS post-MVP batch 1 — notification permission timing', () => {
   it('registerPushToken never requests native notification authorization', () => {
     const push = readSharedSource('services/pushTokens.ts');
+    const session = readSharedSource('services/pushTokenSession.ts');
     assert.match(push, /getPermissionsAsync/);
     assert.doesNotMatch(push, /requestPermissionsAsync/);
-    assert.match(push, /permission-not-granted/);
+    assert.doesNotMatch(session, /requestPermissionsAsync/);
+    assert.match(session, /permission-not-granted/);
   });
 
   it('App auth bootstrap may register token but uses non-prompting helper', () => {
     const app = readSharedSource('App.tsx');
-    assert.match(app, /registerPushToken/);
+    assert.match(app, /syncPushTokenForAuthUser/);
     assert.doesNotMatch(app, /requestPermissionsAsync/);
   });
 

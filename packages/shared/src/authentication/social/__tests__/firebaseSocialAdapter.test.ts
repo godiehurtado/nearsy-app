@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, it } from 'node:test';
+import { afterEach, describe, it } from 'node:test';
+import {
+  bindPushTokenAuthReplaceHandlers,
+  resetPushTokenAuthReplaceHandlersForTests,
+} from '../../../services/pushTokenBeforeAuthReplace';
 
 import {
   createFirebaseJsAuthenticationAdapter,
@@ -144,6 +148,72 @@ describe('isNewUser via modular getAdditionalUserInfo()', () => {
 });
 
 describe('createFirebaseJsAuthenticationAdapter (Google + Apple)', () => {
+  afterEach(() => {
+    resetPushTokenAuthReplaceHandlersForTests();
+  });
+
+  it('does not call Google signInWithCredential when this-device release of A is unconfirmed', async () => {
+    bindPushTokenAuthReplaceHandlers({
+      prepare: async () => ({ previousUid: 'user-a', released: false }),
+      restore: async () => undefined,
+    });
+    let signInCalls = 0;
+    const adapter = createFirebaseJsAuthenticationAdapter({
+      GoogleAuthProvider: {
+        credential: () => ({ type: 'google-cred' }),
+      },
+      async signInWithCredential() {
+        signInCalls += 1;
+        return fakeUserCredential({ uid: 'user-b', providerIds: ['google.com'] });
+      },
+      auth: { name: 'firebase-auth' },
+    });
+    await assert.rejects(
+      () =>
+        adapter.signInWithSocialCredential({
+          provider: 'google',
+          idToken: 'google-id-token',
+        }),
+      (err: unknown) =>
+        err instanceof SocialAuthError &&
+        err.social.code === 'PUSH_TOKEN_RELEASE_UNCONFIRMED' &&
+        err.social.recoverable === true &&
+        err.social.messageKey === 'authentication.errors.pushTokenReleaseUnconfirmed',
+    );
+    assert.equal(signInCalls, 0);
+  });
+
+  it('releases this-device push token before Google signInWithCredential and restores on failure', async () => {
+    const events: string[] = [];
+    bindPushTokenAuthReplaceHandlers({
+      prepare: async () => {
+        events.push('prepare');
+        return { previousUid: 'user-a', released: true };
+      },
+      restore: async () => {
+        events.push('restore');
+      },
+    });
+    const adapter = createFirebaseJsAuthenticationAdapter({
+      GoogleAuthProvider: {
+        credential: () => ({ type: 'google-cred' }),
+      },
+      async signInWithCredential() {
+        events.push('signIn');
+        throw Object.assign(new Error('denied'), { code: 'auth/network-request-failed' });
+      },
+      auth: { name: 'firebase-auth' },
+    });
+    await assert.rejects(
+      () =>
+        adapter.signInWithSocialCredential({
+          provider: 'google',
+          idToken: 'google-id-token',
+        }),
+    );
+    assert.deepEqual(events, ['prepare', 'signIn', 'restore']);
+  });
+
   it('preserves Google credential exchange behavior', async () => {
     const calls: Array<{ kind: string; payload: unknown }> = [];
     const adapter = createFirebaseJsAuthenticationAdapter({

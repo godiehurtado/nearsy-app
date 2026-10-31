@@ -26,6 +26,11 @@ import {
   type AdditionalUserInfoForTrace,
   type FirebaseCredentialForTrace,
 } from '../../application/facebookAuthTrace';
+import {
+  isPushTokenReleaseUnconfirmedError,
+  PUSH_TOKEN_RELEASE_UNCONFIRMED_CODE,
+  withPushTokenReleaseAroundSessionReplace,
+} from '../../../../services/pushTokenBeforeAuthReplace';
 
 /** Injectable runtime for unit tests (defaults to Firebase JS SDK). */
 export type FirebaseJsAuthRuntime = {
@@ -87,6 +92,16 @@ export function mapFirebaseSocialError(
   provider: 'google' | 'apple' | 'facebook',
   err: unknown,
 ): never {
+  if (isPushTokenReleaseUnconfirmedError(err)) {
+    throw createSocialAuthError({
+      code: 'PUSH_TOKEN_RELEASE_UNCONFIRMED',
+      provider,
+      recoverable: true,
+      messageKey: messageKeyForCode('PUSH_TOKEN_RELEASE_UNCONFIRMED'),
+      diagnosticCode: PUSH_TOKEN_RELEASE_UNCONFIRMED_CODE,
+    });
+  }
+
   const firebaseCode =
     typeof err === 'object' &&
     err !== null &&
@@ -147,6 +162,16 @@ function resolveDefaultAuth(): unknown {
   return mod.firebaseAuth as any;
 }
 
+function signInReplacingFirebaseSession(
+  signIn: FirebaseJsAuthRuntime['signInWithCredential'],
+  auth: unknown,
+  credential: unknown,
+): Promise<UserCredential> {
+  return withPushTokenReleaseAroundSessionReplace(() =>
+    signIn(auth, credential),
+  );
+}
+
 /**
  * iOS Firebase adapter using the existing Firebase JavaScript SDK (TS-007).
  * Supports Google, Apple and Facebook social credentials — no email-based linking.
@@ -184,7 +209,11 @@ export function createFirebaseJsAuthenticationAdapter(
             input.idToken,
             input.accessToken,
           );
-          const userCredential = await signIn(resolveAuth(), credential);
+          const userCredential = await signInReplacingFirebaseSession(
+            signIn,
+            resolveAuth(),
+            credential,
+          );
           return toSession(userCredential, readAdditional);
         } catch (err: unknown) {
           mapFirebaseSocialError('google', err);
@@ -223,7 +252,11 @@ export function createFirebaseJsAuthenticationAdapter(
             idToken: input.identityToken,
             rawNonce: input.rawNonce,
           });
-          const userCredential = await signIn(resolveAuth(), credential);
+          const userCredential = await signInReplacingFirebaseSession(
+            signIn,
+            resolveAuth(),
+            credential,
+          );
           return toSession(userCredential, readAdditional);
         } catch (err: unknown) {
           mapFirebaseSocialError('apple', err);
@@ -297,7 +330,11 @@ export function createFirebaseJsAuthenticationAdapter(
             projectId:
               typeof appOptions?.projectId === 'string' ? appOptions.projectId : 'missing',
           });
-          const userCredential = await signIn(auth, credential);
+          const userCredential = await signInReplacingFirebaseSession(
+            signIn,
+            auth,
+            credential,
+          );
           const session = toSession(userCredential, readAdditional);
           traceFacebookAuth(
             'firebase_sign_in_success',

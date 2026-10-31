@@ -22,6 +22,27 @@ import {
   LinkedInA3ClientError,
   linkedInA3RetrySafe,
 } from './sanitize';
+import {
+  isPushTokenReleaseUnconfirmedError,
+  PUSH_TOKEN_RELEASE_UNCONFIRMED_CODE,
+} from '../../services/pushTokenBeforeAuthReplace';
+
+export function mapLinkedInCustomTokenSignInError(
+  err: unknown,
+): LinkedInA3ClientError {
+  if (isPushTokenReleaseUnconfirmedError(err)) {
+    return new LinkedInA3ClientError(
+      'NETWORK',
+      'This-device push token release was not confirmed.',
+      PUSH_TOKEN_RELEASE_UNCONFIRMED_CODE,
+    );
+  }
+  return new LinkedInA3ClientError(
+    'FIREBASE_SIGN_IN_FAILED',
+    'Firebase sign-in failed after LinkedIn exchange.',
+    err instanceof Error ? err.name : undefined,
+  );
+}
 
 export type LinkedInA3FlowStatus =
   | 'authenticated'
@@ -342,11 +363,7 @@ export async function runLinkedInA3BrowserAuthFlow(
         return terminal(
           {
             status: 'failed',
-            error: new LinkedInA3ClientError(
-              'FIREBASE_SIGN_IN_FAILED',
-              'Firebase sign-in failed after LinkedIn exchange.',
-              err instanceof Error ? err.name : undefined,
-            ),
+            error: mapLinkedInCustomTokenSignInError(err),
           },
           true,
         );

@@ -28,7 +28,7 @@ import { AppUpdateNoticeHost } from './appUpdateNotice/AppUpdateNoticeHost';
 import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 
 import * as Notifications from 'expo-notifications';
-import { registerPushToken } from './services/pushTokens';
+import { syncPushTokenForAuthUser } from './services/pushTokens';
 import { stopBackgroundLocationRuntime, syncBackgroundLocationRuntime } from './visibility/backgroundLocationRuntime';
 import { clearLocationPermissionJourneySession, reconcileLocationJourneyOnColdStart } from './visibility/locationPermissionJourney';
 
@@ -158,25 +158,32 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
     let lastUid: string | null = null;
     const unsubscribe = firebaseAuth.onAuthStateChanged(
       async (user: any | null) => {
+        const previousUid = lastUid;
+        lastUid = user?.uid ?? null;
+
         if (!user) {
+          // Logout: More / Delete Account already released under A.
+          // Generation bump discards in-flight registers; do not write.
+          await syncPushTokenForAuthUser(previousUid, null);
           if (Platform.OS !== 'web') {
             await stopBackgroundLocationRuntime().catch(() => {});
           }
           clearLocationPermissionJourneySession();
-          lastUid = null;
           return;
         }
 
-        if (lastUid && lastUid !== user.uid) {
-          // Account switch: cancel prior journey / session education guard.
+        if (previousUid && previousUid !== user.uid) {
+          // Direct A→B (email / Google / Apple / Facebook / LinkedIn custom
+          // token): session is already B, so Firestore owner rules forbid
+          // deleting users/A/pushTokens/{token}. Release ran before the
+          // session-replacing sign-in. Listener only registers B.
           clearLocationPermissionJourneySession();
         }
-        lastUid = user.uid;
 
         try {
-          await registerPushToken();
+          await syncPushTokenForAuthUser(previousUid, user.uid);
         } catch (e) {
-          if (__DEV__) console.warn('[App] registerPushToken error:', e);
+          if (__DEV__) console.warn('[App] syncPushTokenForAuthUser error:', e);
         }
 
         if (Platform.OS === 'web') return;

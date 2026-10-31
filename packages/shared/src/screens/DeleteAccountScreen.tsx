@@ -43,6 +43,7 @@ import {
   type PendingAccountDeletionPhase,
 } from '../services/accountDeletionReconciliation';
 import { resolveDeletionFailureMessageKey } from '../services/accountDeletionErrorPresentation';
+import { releaseThisDevicePushTokenForCurrentUser } from '../services/pushTokens';
 import {
   DELETE_METHOD_ACTION_KEY,
   DELETE_METHOD_LABEL_KEY,
@@ -195,6 +196,12 @@ export default function DeleteAccountScreen() {
       },
       clearFacebookProviderSession,
       ensureSignedOut: async () => {
+        // Best-effort: a push failure must not block account closure.
+        try {
+          await releaseThisDevicePushTokenForCurrentUser();
+        } catch {
+          // Backend already removes users/{uid}; do not recreate docs.
+        }
         if (firebaseAuth.currentUser) {
           await firebaseAuth.signOut();
         }

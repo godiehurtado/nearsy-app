@@ -355,6 +355,8 @@ const es: TranslationResources = {
       operationNotAllowedRegister:
         'El registro con correo y contraseña está deshabilitado.',
       default: 'Algo salió mal. Inténtalo de nuevo.',
+      pushTokenReleaseUnconfirmed:
+        'Este dispositivo no pudo salir de la cuenta anterior. Comprueba la conexión e inténtalo de nuevo.',
       missingPassword: 'Ingresa tu contraseña.',
       passwordMin8: 'La contraseña debe tener al menos 8 caracteres.',
       passwordStrong:

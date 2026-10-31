@@ -35,6 +35,7 @@ export function resolveFacebookSignInAlertMessageKey(
     case 'NETWORK_ERROR':
     case 'ACCOUNT_CONFLICT':
     case 'CONFIGURATION_ERROR':
+    case 'PUSH_TOKEN_RELEASE_UNCONFIRMED':
       return error.messageKey;
     default:
       return FACEBOOK_SIGN_IN_FAILED_MESSAGE_KEY;

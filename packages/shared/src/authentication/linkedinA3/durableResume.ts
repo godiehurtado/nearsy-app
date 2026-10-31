@@ -16,6 +16,7 @@ import {
   type LinkedInA3FirebaseAuthPort,
   type LinkedInA3FlowResult,
   getLinkedInA3OrchestratorBusy,
+  mapLinkedInCustomTokenSignInError,
 } from './orchestrator';
 import { parseLinkedInMobileReturnUrl } from './returnUrl';
 import {
@@ -195,11 +196,7 @@ export async function resumeLinkedInA3FromReturnUrl(
       return terminal(
         {
           status: 'failed',
-          error: new LinkedInA3ClientError(
-            'FIREBASE_SIGN_IN_FAILED',
-            'Firebase sign-in failed after LinkedIn exchange.',
-            err instanceof Error ? err.name : undefined,
-          ),
+          error: mapLinkedInCustomTokenSignInError(err),
         },
         true,
       );
