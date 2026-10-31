@@ -12,6 +12,7 @@ import {
   authenticatedIdentityCanMutatePushTokenDoc,
   mayRegisterAfterRelease,
   mayRegisterThisDeviceUnderUid,
+  mayReplaceFirebaseSession,
   planPushTokenAuthSync,
   resolveThisDeviceTokenForRelease,
   shouldApplyPushTokenRegisterResult,
@@ -20,6 +21,10 @@ import {
 import { createPushTokenSession } from '../pushTokenSession';
 import {
   bindPushTokenAuthReplaceHandlers,
+  isPushTokenReleaseUnconfirmedError,
+  PUSH_TOKEN_RELEASE_UNCONFIRMED_CODE,
+  PUSH_TOKEN_RELEASE_UNCONFIRMED_MESSAGE_KEY,
+  PushTokenReleaseUnconfirmedError,
   resetPushTokenAuthReplaceHandlersForTests,
   withPushTokenReleaseAroundSessionReplace,
 } from '../pushTokenBeforeAuthReplace';
@@ -38,6 +43,10 @@ function createFakeIo(opts?: {
   failWrite?: boolean;
   getTokenDelayMs?: number;
   registrationAllowed?: boolean;
+  writeHold?: Promise<void>;
+  onWriteSent?: () => void;
+  onWriteFinished?: () => void;
+  onDelete?: () => void;
 }) {
   let uid = opts?.uid ?? 'user-a';
   const writes: Array<{ uid: string; token: string }> = [];
@@ -62,10 +71,14 @@ function createFakeIo(opts?: {
       return opts?.token === undefined ? 'ExponentPushToken[device]' : opts.token;
     },
     writeThisDeviceToken: async (targetUid: string, token: string) => {
+      opts?.onWriteSent?.();
+      if (opts?.writeHold) await opts.writeHold;
       if (opts?.failWrite) throw new Error('write');
       writes.push({ uid: targetUid, token });
+      opts?.onWriteFinished?.();
     },
     deleteThisDeviceToken: async (targetUid: string, token: string) => {
+      opts?.onDelete?.();
       if (opts?.failDelete) throw new Error('delete');
       deletes.push({ uid: targetUid, token });
     },
@@ -196,6 +209,21 @@ describe('push token lifecycle — decisions', () => {
       true,
     );
   });
+
+  it('blocks A→B session replace until this-device release of A is confirmed', () => {
+    assert.equal(
+      mayReplaceFirebaseSession({ previousUid: null, released: false }),
+      true,
+    );
+    assert.equal(
+      mayReplaceFirebaseSession({ previousUid: 'a', released: true }),
+      true,
+    );
+    assert.equal(
+      mayReplaceFirebaseSession({ previousUid: 'a', released: false }),
+      false,
+    );
+  });
 });
 
 describe('push token session — register / release / switch', () => {
@@ -285,7 +313,19 @@ describe('push token session — register / release / switch', () => {
     await session.register();
     const prepared = await session.prepareForIncomingAuth();
     assert.equal(prepared.released, false);
-    io.setUid('user-b');
+    bindPushTokenAuthReplaceHandlers({
+      prepare: async () => prepared,
+      restore: async () => undefined,
+    });
+    await assert.rejects(
+      () =>
+        withPushTokenReleaseAroundSessionReplace(async () => {
+          io.setUid('user-b');
+          return 'switched';
+        }),
+      isPushTokenReleaseUnconfirmedError,
+    );
+    assert.equal(io.getCurrentUid(), 'user-a');
     const sync = await session.syncAuth('user-a', 'user-b');
     assert.deepEqual(sync, {
       ok: false,
@@ -294,6 +334,7 @@ describe('push token session — register / release / switch', () => {
     });
     assert.equal(io.writes.length, 1);
     assert.equal(io.writes[0].uid, 'user-a');
+    resetPushTokenAuthReplaceHandlersForTests();
   });
 
   it('discards a late register after logout generation bump', async () => {
@@ -371,6 +412,80 @@ describe('push token session — register / release / switch', () => {
     assert.equal(io.writes.length, 0);
   });
 
+  it('waits for an already-sent A register, then deletes, then allows replace', async () => {
+    const events: string[] = [];
+    let releaseWrite: () => void = () => {};
+    const writeHold = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    let markSent: () => void = () => {};
+    const writeSent = new Promise<void>((resolve) => {
+      markSent = resolve;
+    });
+    const io = createFakeIo({
+      uid: 'user-a',
+      writeHold,
+      onWriteSent: () => {
+        events.push('write-sent');
+        markSent();
+      },
+      onWriteFinished: () => {
+        events.push('write-finished');
+      },
+      onDelete: () => {
+        events.push('delete');
+      },
+    });
+    const session = createPushTokenSession(io);
+    const registerP = session.register();
+    await writeSent;
+    assert.equal(io.writes.length, 0);
+    assert.equal(io.deletes.length, 0);
+
+    const releaseP = session.prepareForIncomingAuth();
+    await Promise.resolve();
+    assert.equal(
+      io.deletes.length,
+      0,
+      'delete must wait for the already-sent setDoc',
+    );
+
+    events.push('write-completing');
+    releaseWrite();
+    const prepared = await releaseP;
+    const stale = await registerP;
+    assert.equal(prepared.released, true);
+    assert.equal(stale.ok, false);
+    assert.deepEqual(events, [
+      'write-sent',
+      'write-completing',
+      'write-finished',
+      'delete',
+    ]);
+    assert.deepEqual(io.deletes, [
+      { uid: 'user-a', token: 'ExponentPushToken[device]' },
+    ]);
+
+    bindPushTokenAuthReplaceHandlers({
+      prepare: async () => prepared,
+      restore: async () => undefined,
+    });
+    const replaced = await withPushTokenReleaseAroundSessionReplace(async () => {
+      events.push('replace');
+      return 'b';
+    });
+    assert.equal(replaced, 'b');
+    assert.equal(events.at(-1), 'replace');
+  });
+
+  it('does not treat IO order mocks as Firestore authorization', () => {
+    // Live rules are not in this client repo. The IO fake only records call
+    // order. Authorization depends on request.auth.uid === path uid while A
+    // is still signed in; a mock delete/write does not prove that.
+    assert.equal(authenticatedIdentityCanMutatePushTokenDoc('a', 'a'), true);
+    assert.equal(authenticatedIdentityCanMutatePushTokenDoc('b', 'a'), false);
+  });
+
   it('requires a session to register after a confirmed switch', async () => {
     const io = createFakeIo({ uid: 'user-a' });
     const session = createPushTokenSession(io);
@@ -409,6 +524,33 @@ describe('push token lifecycle — session replace wrap', () => {
     assert.deepEqual(events, ['prepare', 'replace', 'restore:user-a']);
   });
 
+  it('does not replace A with B when release of A is unconfirmed', async () => {
+    const events: string[] = [];
+    bindPushTokenAuthReplaceHandlers({
+      prepare: async () => {
+        events.push('prepare');
+        return { previousUid: 'user-a', released: false };
+      },
+      restore: async (prepared) => {
+        events.push(`restore:${prepared.previousUid}`);
+      },
+    });
+    await assert.rejects(
+      () =>
+        withPushTokenReleaseAroundSessionReplace(async () => {
+          events.push('replace');
+          return 'switched';
+        }),
+      (err: unknown) =>
+        isPushTokenReleaseUnconfirmedError(err) &&
+        err.recoverable === true &&
+        err.messageKey === PUSH_TOKEN_RELEASE_UNCONFIRMED_MESSAGE_KEY &&
+        err.code === PUSH_TOKEN_RELEASE_UNCONFIRMED_CODE,
+    );
+    assert.deepEqual(events, ['prepare', 'restore:user-a']);
+    assert.equal(new PushTokenReleaseUnconfirmedError().recoverable, true);
+  });
+
   it('does not restore after a successful replace', async () => {
     const events: string[] = [];
     bindPushTokenAuthReplaceHandlers({
@@ -430,7 +572,7 @@ describe('push token lifecycle — session replace wrap', () => {
 });
 
 describe('push token lifecycle — iOS auth wiring', () => {
-  it('More logout releases this-device token before signOut', () => {
+  it('More logout releases this-device token before signOut and does not block on push failure', () => {
     const more = readShared('screens/MoreScreen.tsx');
     const logout = more.slice(
       more.indexOf('const handleLogout'),
@@ -439,6 +581,10 @@ describe('push token lifecycle — iOS auth wiring', () => {
     const releaseIdx = logout.indexOf('releaseThisDevicePushTokenForCurrentUser');
     const signIdx = logout.indexOf('firebaseAuth.signOut');
     assert.ok(releaseIdx >= 0 && signIdx > releaseIdx);
+    assert.match(
+      logout,
+      /try \{\s*await releaseThisDevicePushTokenForCurrentUser\(\);\s*\} catch \{[\s\S]*\}\s*await firebaseAuth\.signOut/,
+    );
   });
 
   it('session-replacing sign-ins release before Firebase replace, including LinkedIn', () => {
@@ -487,10 +633,28 @@ describe('push token lifecycle — iOS auth wiring', () => {
     const releaseIdx = block.indexOf('releaseThisDevicePushTokenForCurrentUser');
     const signIdx = block.indexOf('firebaseAuth.signOut');
     assert.ok(releaseIdx >= 0 && signIdx > releaseIdx);
+    assert.match(
+      block,
+      /try \{\s*await releaseThisDevicePushTokenForCurrentUser\(\);\s*\} catch \{[\s\S]*\}\s*if \(firebaseAuth\.currentUser\) \{\s*await firebaseAuth\.signOut/,
+    );
 
     const tokens = readShared('services/pushTokens.ts');
     assert.match(tokens, /isAccountDeletionSessionActive/);
     assert.match(tokens, /isAccountClosedByDeletion/);
+  });
+
+  it('surfaces the recoverable push-release error on email and LinkedIn login', () => {
+    const login = readShared('screens/LoginScreen.tsx');
+    assert.match(login, /push-token-release-unconfirmed/);
+    assert.match(login, /authentication\.errors\.pushTokenReleaseUnconfirmed/);
+    const register = readShared('screens/RegisterScreen.tsx');
+    assert.match(register, /push-token-release-unconfirmed/);
+    const hook = readShared('hooks/useLinkedInSignInFlow.ios.ts');
+    assert.match(hook, /PUSH_TOKEN_RELEASE_UNCONFIRMED_MESSAGE_KEY/);
+    const en = readShared('i18n/resources/authentication.ts');
+    assert.match(en, /pushTokenReleaseUnconfirmed:/);
+    const es = readShared('i18n/locales/es.ts');
+    assert.match(es, /pushTokenReleaseUnconfirmed:/);
   });
 
   it('does not request OS notification permission and does not bulk-delete tokens', () => {

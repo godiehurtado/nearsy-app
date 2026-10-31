@@ -325,6 +325,8 @@ export default function RegisterScreen({ navigation }: Props) {
         message = t('authentication.errors.weakPasswordRegister');
       } else if (code === 'auth/network-request-failed') {
         message = t('authentication.errors.networkError');
+      } else if (code === 'push-token-release-unconfirmed') {
+        message = t('authentication.errors.pushTokenReleaseUnconfirmed');
       }
       Alert.alert(t('authentication.register.alerts.invalidEmailTitle'), message);
     } finally {

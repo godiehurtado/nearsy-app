@@ -196,7 +196,12 @@ export default function DeleteAccountScreen() {
       },
       clearFacebookProviderSession,
       ensureSignedOut: async () => {
-        await releaseThisDevicePushTokenForCurrentUser();
+        // Best-effort: a push failure must not block account closure.
+        try {
+          await releaseThisDevicePushTokenForCurrentUser();
+        } catch {
+          // Backend already removes users/{uid}; do not recreate docs.
+        }
         if (firebaseAuth.currentUser) {
           await firebaseAuth.signOut();
         }

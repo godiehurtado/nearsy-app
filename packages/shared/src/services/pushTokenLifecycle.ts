@@ -27,6 +27,17 @@ export type PushTokenAuthReplacePreparation = {
   released: boolean;
 };
 
+/**
+ * App-initiated A→B must not replace the Firebase session while this device
+ * is still registered under A. Logged-out first login (no previousUid) may proceed.
+ */
+export function mayReplaceFirebaseSession(
+  prepared: PushTokenAuthReplacePreparation,
+): boolean {
+  if (!prepared.previousUid) return true;
+  return prepared.released === true;
+}
+
 export function shouldApplyPushTokenRegisterResult(input: {
   requestGeneration: number;
   currentGeneration: number;

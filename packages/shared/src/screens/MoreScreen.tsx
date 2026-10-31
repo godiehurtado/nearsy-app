@@ -827,7 +827,12 @@ export default function MoreScreen() {
         stopRuntime: stopBackgroundLocationRuntime,
       });
       clearLocationPermissionJourneySession();
-      await releaseThisDevicePushTokenForCurrentUser();
+      // Best-effort: a failed this-device push release must not block signOut.
+      try {
+        await releaseThisDevicePushTokenForCurrentUser();
+      } catch {
+        // Keep going; leftover association is recovered on the next login as A.
+      }
       await firebaseAuth.signOut();
       // Idempotent Facebook SDK logout; never blocks guest navigation.
       await clearFacebookProviderSession();

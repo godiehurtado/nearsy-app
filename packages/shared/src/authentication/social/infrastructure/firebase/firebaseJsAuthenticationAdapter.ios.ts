@@ -26,7 +26,11 @@ import {
   type AdditionalUserInfoForTrace,
   type FirebaseCredentialForTrace,
 } from '../../application/facebookAuthTrace';
-import { withPushTokenReleaseAroundSessionReplace } from '../../../../services/pushTokenBeforeAuthReplace';
+import {
+  isPushTokenReleaseUnconfirmedError,
+  PUSH_TOKEN_RELEASE_UNCONFIRMED_CODE,
+  withPushTokenReleaseAroundSessionReplace,
+} from '../../../../services/pushTokenBeforeAuthReplace';
 
 /** Injectable runtime for unit tests (defaults to Firebase JS SDK). */
 export type FirebaseJsAuthRuntime = {
@@ -88,6 +92,16 @@ export function mapFirebaseSocialError(
   provider: 'google' | 'apple' | 'facebook',
   err: unknown,
 ): never {
+  if (isPushTokenReleaseUnconfirmedError(err)) {
+    throw createSocialAuthError({
+      code: 'PUSH_TOKEN_RELEASE_UNCONFIRMED',
+      provider,
+      recoverable: true,
+      messageKey: messageKeyForCode('PUSH_TOKEN_RELEASE_UNCONFIRMED'),
+      diagnosticCode: PUSH_TOKEN_RELEASE_UNCONFIRMED_CODE,
+    });
+  }
+
   const firebaseCode =
     typeof err === 'object' &&
     err !== null &&

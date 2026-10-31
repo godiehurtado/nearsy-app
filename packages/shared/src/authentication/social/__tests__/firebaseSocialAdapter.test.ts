@@ -152,6 +152,37 @@ describe('createFirebaseJsAuthenticationAdapter (Google + Apple)', () => {
     resetPushTokenAuthReplaceHandlersForTests();
   });
 
+  it('does not call Google signInWithCredential when this-device release of A is unconfirmed', async () => {
+    bindPushTokenAuthReplaceHandlers({
+      prepare: async () => ({ previousUid: 'user-a', released: false }),
+      restore: async () => undefined,
+    });
+    let signInCalls = 0;
+    const adapter = createFirebaseJsAuthenticationAdapter({
+      GoogleAuthProvider: {
+        credential: () => ({ type: 'google-cred' }),
+      },
+      async signInWithCredential() {
+        signInCalls += 1;
+        return fakeUserCredential({ uid: 'user-b', providerIds: ['google.com'] });
+      },
+      auth: { name: 'firebase-auth' },
+    });
+    await assert.rejects(
+      () =>
+        adapter.signInWithSocialCredential({
+          provider: 'google',
+          idToken: 'google-id-token',
+        }),
+      (err: unknown) =>
+        err instanceof SocialAuthError &&
+        err.social.code === 'PUSH_TOKEN_RELEASE_UNCONFIRMED' &&
+        err.social.recoverable === true &&
+        err.social.messageKey === 'authentication.errors.pushTokenReleaseUnconfirmed',
+    );
+    assert.equal(signInCalls, 0);
+  });
+
   it('releases this-device push token before Google signInWithCredential and restores on failure', async () => {
     const events: string[] = [];
     bindPushTokenAuthReplaceHandlers({

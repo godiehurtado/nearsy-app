@@ -106,6 +106,9 @@ export default function LoginScreen({ navigation }: any) {
       case 'auth/operation-not-allowed':
         return t('authentication.errors.operationNotAllowedLogin');
 
+      case 'push-token-release-unconfirmed':
+        return t('authentication.errors.pushTokenReleaseUnconfirmed');
+
       default:
         return t('authentication.errors.default');
     }

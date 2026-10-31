@@ -26,13 +26,36 @@ export type PushTokenSessionIO = {
   isRegistrationAllowed?: (uid: string) => boolean;
 };
 
+type PendingMutation = {
+  uid: string;
+  token: string;
+  done: Promise<void>;
+};
+
 export function createPushTokenSession(io: PushTokenSessionIO) {
   let generation = 0;
   let association: PushTokenAssociation | null = null;
+  let submitted: PushTokenAssociation | null = null;
+  let pendingMutations: PendingMutation[] = [];
 
   function bumpGeneration(): number {
     generation += 1;
     return generation;
+  }
+
+  function trackMutation(uid: string, token: string, op: Promise<void>): Promise<void> {
+    const entry: PendingMutation = { uid, token, done: Promise.resolve() };
+    const done = op.finally(() => {
+      pendingMutations = pendingMutations.filter((item) => item !== entry);
+    });
+    entry.done = done;
+    pendingMutations.push(entry);
+    return done;
+  }
+
+  async function awaitPendingMutationsFor(uid: string): Promise<void> {
+    const pending = pendingMutations.filter((item) => item.uid === uid);
+    await Promise.all(pending.map((item) => item.done.catch(() => undefined)));
   }
 
   function registrationAllowed(uid: string): boolean {
@@ -51,6 +74,7 @@ export function createPushTokenSession(io: PushTokenSessionIO) {
   async function resolveTokenForUid(uid: string): Promise<string | null> {
     const fromAssoc = resolveThisDeviceTokenForRelease({ uid, association });
     if (fromAssoc.token) return fromAssoc.token;
+    if (submitted?.uid === uid) return submitted.token;
     const granted = await io.getPermissionGranted();
     if (!granted) return null;
     return io.getExpoPushToken();
@@ -61,6 +85,7 @@ export function createPushTokenSession(io: PushTokenSessionIO) {
     if (!authenticatedIdentityCanMutatePushTokenDoc(io.getCurrentUid(), uid)) {
       return { status: 'failed', reason: 'identity-mismatch', uid };
     }
+    await awaitPendingMutationsFor(uid);
     let token: string | null;
     try {
       token = await resolveTokenForUid(uid);
@@ -69,6 +94,7 @@ export function createPushTokenSession(io: PushTokenSessionIO) {
     }
     if (!token) {
       if (association?.uid === uid) association = null;
+      if (submitted?.uid === uid) submitted = null;
       return { status: 'nothing-to-release' };
     }
     try {
@@ -78,6 +104,9 @@ export function createPushTokenSession(io: PushTokenSessionIO) {
     }
     if (association?.uid === uid && association.token === token) {
       association = null;
+    }
+    if (submitted?.uid === uid && submitted.token === token) {
+      submitted = null;
     }
     return { status: 'released', uid, token };
   }
@@ -120,22 +149,20 @@ export function createPushTokenSession(io: PushTokenSessionIO) {
       return { ok: false, reason: 'stale' };
     }
 
+    submitted = { uid: requestUid, token };
     try {
-      await io.writeThisDeviceToken(requestUid, token);
+      await trackMutation(
+        requestUid,
+        token,
+        io.writeThisDeviceToken(requestUid, token),
+      );
     } catch {
       return { ok: false, reason: 'exception' };
     }
 
     if (!snapshotApply(requestGeneration, requestUid)) {
-      if (
-        authenticatedIdentityCanMutatePushTokenDoc(io.getCurrentUid(), requestUid)
-      ) {
-        try {
-          await io.deleteThisDeviceToken(requestUid, token);
-        } catch {
-          // Compensating delete failed; caller must not treat register as confirmed.
-        }
-      }
+      // Release serializes this write then deletes while still A. Do not
+      // compensate here: after the session is B, owner rules forbid deleting A.
       return { ok: false, reason: 'stale' };
     }
 

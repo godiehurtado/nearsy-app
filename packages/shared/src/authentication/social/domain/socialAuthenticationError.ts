@@ -14,6 +14,7 @@ export type SocialAuthenticationErrorCode =
   | 'TOKEN_INVALID'
   | 'FIREBASE_ERROR'
   | 'ACCOUNT_CONFLICT'
+  | 'PUSH_TOKEN_RELEASE_UNCONFIRMED'
   | 'UNKNOWN';
 
 export interface SocialAuthenticationError {
@@ -51,6 +52,8 @@ const MESSAGE_KEYS: Record<SocialAuthenticationErrorCode, string> = {
   TOKEN_INVALID: 'authentication.social.errors.invalidCredential',
   FIREBASE_ERROR: 'authentication.social.errors.generic',
   ACCOUNT_CONFLICT: 'authentication.social.errors.accountConflict',
+  PUSH_TOKEN_RELEASE_UNCONFIRMED:
+    'authentication.errors.pushTokenReleaseUnconfirmed',
   UNKNOWN: 'authentication.social.errors.generic',
 };
 
@@ -65,7 +68,8 @@ export function isRecoverableCode(code: SocialAuthenticationErrorCode): boolean 
     code === 'CANCELLED' ||
     code === 'NETWORK_ERROR' ||
     code === 'IN_PROGRESS' ||
-    code === 'ACCOUNT_CONFLICT'
+    code === 'ACCOUNT_CONFLICT' ||
+    code === 'PUSH_TOKEN_RELEASE_UNCONFIRMED'
   );
 }
 

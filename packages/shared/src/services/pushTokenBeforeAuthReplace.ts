@@ -7,12 +7,45 @@
  *
  * Default handlers are no-ops so Node auth-adapter tests stay Firebase-free.
  * The live session binds real handlers from pushTokens.ts.
+ *
+ * Logout and account deletion do not use this wrap: a push failure must not
+ * block sign-out or account closure.
  */
 
-export type PushTokenAuthReplacePreparation = {
-  previousUid: string | null;
-  released: boolean;
-};
+import {
+  mayReplaceFirebaseSession,
+  type PushTokenAuthReplacePreparation,
+} from './pushTokenLifecycle';
+
+export type { PushTokenAuthReplacePreparation };
+
+export const PUSH_TOKEN_RELEASE_UNCONFIRMED_CODE =
+  'push-token-release-unconfirmed';
+export const PUSH_TOKEN_RELEASE_UNCONFIRMED_MESSAGE_KEY =
+  'authentication.errors.pushTokenReleaseUnconfirmed';
+
+export class PushTokenReleaseUnconfirmedError extends Error {
+  readonly code = PUSH_TOKEN_RELEASE_UNCONFIRMED_CODE;
+  readonly recoverable = true;
+  readonly messageKey = PUSH_TOKEN_RELEASE_UNCONFIRMED_MESSAGE_KEY;
+
+  constructor() {
+    super(PUSH_TOKEN_RELEASE_UNCONFIRMED_CODE);
+    this.name = 'PushTokenReleaseUnconfirmedError';
+  }
+}
+
+export function isPushTokenReleaseUnconfirmedError(
+  err: unknown,
+): err is PushTokenReleaseUnconfirmedError {
+  return (
+    err instanceof PushTokenReleaseUnconfirmedError ||
+    (typeof err === 'object' &&
+      err !== null &&
+      'code' in err &&
+      (err as { code?: unknown }).code === PUSH_TOKEN_RELEASE_UNCONFIRMED_CODE)
+  );
+}
 
 export type PushTokenAuthReplaceHandlers = {
   prepare: () => Promise<PushTokenAuthReplacePreparation>;
@@ -52,6 +85,14 @@ export async function withPushTokenReleaseAroundSessionReplace<T>(
   replaceSession: () => Promise<T>,
 ): Promise<T> {
   const prepared = await handlers.prepare();
+  if (!mayReplaceFirebaseSession(prepared)) {
+    try {
+      await handlers.restore(prepared);
+    } catch {
+      // Stay on A; the unconfirmed error is what the caller surfaces.
+    }
+    throw new PushTokenReleaseUnconfirmedError();
+  }
   try {
     return await replaceSession();
   } catch (err) {

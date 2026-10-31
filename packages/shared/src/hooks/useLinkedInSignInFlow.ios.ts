@@ -8,6 +8,24 @@ import {
 } from '../authentication/linkedinA3/authenticateWithLinkedIn';
 import { LinkedInA3ClientError } from '../authentication/linkedinA3/sanitize';
 import { applyPostAuthNavigation } from '../phoneOtp/applyPostAuthNavigation';
+import {
+  isPushTokenReleaseUnconfirmedError,
+  PUSH_TOKEN_RELEASE_UNCONFIRMED_CODE,
+  PUSH_TOKEN_RELEASE_UNCONFIRMED_MESSAGE_KEY,
+} from '../services/pushTokenBeforeAuthReplace';
+
+function linkedInFailureMessageKey(err: unknown): string {
+  if (isPushTokenReleaseUnconfirmedError(err)) {
+    return PUSH_TOKEN_RELEASE_UNCONFIRMED_MESSAGE_KEY;
+  }
+  if (
+    err instanceof LinkedInA3ClientError &&
+    err.causeCode === PUSH_TOKEN_RELEASE_UNCONFIRMED_CODE
+  ) {
+    return PUSH_TOKEN_RELEASE_UNCONFIRMED_MESSAGE_KEY;
+  }
+  return 'authentication.social.errors.generic';
+}
 
 /**
  * iOS LinkedIn A3 → Firebase session → profile routing.
@@ -74,7 +92,7 @@ export function useLinkedInSignInFlow() {
         }
         Alert.alert(
           t('authentication.login.alerts.loginErrorTitle'),
-          t('authentication.social.errors.generic'),
+          t(linkedInFailureMessageKey(err) as any),
         );
         return;
       }
@@ -99,7 +117,7 @@ export function useLinkedInSignInFlow() {
       }
       Alert.alert(
         t('authentication.login.alerts.loginErrorTitle'),
-        t('authentication.social.errors.generic'),
+        t(linkedInFailureMessageKey(err) as any),
       );
     } finally {
       setSubmitting(false);

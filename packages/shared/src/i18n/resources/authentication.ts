@@ -304,6 +304,8 @@ export default {
     operationNotAllowedRegister:
       'Email/password sign-up is disabled for this project.',
     default: 'Something went wrong. Please try again.',
+    pushTokenReleaseUnconfirmed:
+      'This device could not leave the previous account. Check your connection and try again.',
     missingPassword: 'Please enter your password.',
     passwordMin8: 'Password must be at least 8 characters long.',
     passwordStrong:
