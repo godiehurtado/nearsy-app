@@ -27,12 +27,21 @@ export {
 export type PostCrjSocialCardId = CrjSocialPlatformId | 'website';
 
 /**
- * Post-CRJ editor order: production CRJ catalog + Website.
- * Claude handoff order (IG, LI, X, FB, TT, WA) omits YouTube, Snapchat, Website —
- * cannot adopt without breaking the eight-platform contract.
+ * Post-CRJ editor order matches CRJ, then optional Website.
+ * Snapchat stays hidden. Do not reorder SOCIAL_LINK_PLATFORMS (wire).
  */
 export const POST_CRJ_SOCIAL_CARD_ORDER: readonly PostCrjSocialCardId[] = [
   ...VISIBLE_CRJ_SOCIAL_PLATFORMS.map((p) => p.id),
+  'website',
+];
+
+export const EXPECTED_SOCIAL_DISPLAY_ORDER: readonly PostCrjSocialCardId[] = [
+  'youtube',
+  'tiktok',
+  'instagram',
+  'x',
+  'facebook',
+  'linkedin',
   'website',
 ];
 

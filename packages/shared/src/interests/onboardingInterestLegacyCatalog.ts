@@ -225,6 +225,20 @@ export const DEPRECATED_INTEREST_DISPLAY_ITEMS: readonly LegacyInterestDisplayIt
       'earth-outline',
       '#059669',
     ),
+    legacy(
+      'travel',
+      'travel_cultural',
+      'Cultural Experiences',
+      'globe-outline',
+      '#DB2777',
+    ),
+    legacy(
+      'travel',
+      'travel_latin_culture',
+      'Latin Culture',
+      'flag-outline',
+      '#DC2626',
+    ),
   ];
 
 const deprecatedById = new Map<string, LegacyInterestDisplayItem>(

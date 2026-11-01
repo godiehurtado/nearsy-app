@@ -81,7 +81,8 @@ describe('supported formula versions', () => {
     assert.equal(enAlignment.tiers.strong, 'Closely aligned');
     const card = read('components/profileExploration/DiscoveryCompatibilityCard.tsx');
     assert.match(card, /<AlignmentScoreRing score=\{alignment\.score\} variant="detail" \/>/);
-    assert.match(card, /alignmentTierLabel\(t, alignment\.tier\)/);
+    assert.doesNotMatch(card, /alignmentTierLabel\(t, alignment\.tier\)/);
+    assert.match(card, /formatAlignmentPercent\(alignment\.score\)/);
     const presentation = read('visibility/alignmentPresentation.ts');
     assert.match(presentation, /formatAlignmentPercent\(score: number\): string/);
   });

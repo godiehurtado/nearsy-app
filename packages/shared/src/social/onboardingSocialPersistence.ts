@@ -143,7 +143,7 @@ export function buildSocialLinksFieldPersistencePatch(
 
 /**
  * CRJ write — field bag + explicit mid-wizard lifecycle.
- * Preserves `existing.website` (Website not shown in CRJ).
+ * Website is optional in CRJ (`draft`); never sets profileSetupCompleted true.
  * Callers: ProfileCompletionScreen only.
  */
 export function buildCrjSocialLinksPersistencePatch(
@@ -151,16 +151,53 @@ export function buildCrjSocialLinksPersistencePatch(
   values: CrjSocialDraftValues,
   custom: SocialCustomLink[],
   existing?: SocialLinks | null,
+  options?: { website?: string },
 ): CrjSocialPersistencePatch {
+  const websiteDraft = options?.website;
+  const hasWebsiteDraft = typeof websiteDraft === 'string';
   return {
     ...buildSocialLinksFieldPersistencePatch(mode, {
       values,
       custom,
-      websiteMode: 'preserve-existing',
+      websiteMode: hasWebsiteDraft ? 'draft' : 'preserve-existing',
+      websiteDraft,
       existing,
     }),
     profileSetupCompleted: false,
   };
+}
+
+export type ImmediateManualSocialField = 'facebook' | 'linkedin' | 'website';
+
+/**
+ * Read-modify-write one manual link into the active mode bag.
+ * Never touches lifecycle, the opposite mode, or ownership Identity rows.
+ */
+export function buildImmediateManualSocialPatch(
+  mode: 'personal' | 'professional',
+  existing: SocialLinks | null | undefined,
+  field: ImmediateManualSocialField,
+  url: string | null,
+): SocialLinksFieldPersistencePatch {
+  const values = emptyCrjSocialDraftValues();
+  values.facebook = existing?.facebook ?? '';
+  values.linkedin = existing?.linkedin ?? '';
+  values.instagram = existing?.instagram ?? '';
+  values.youtube = existing?.youtube ?? '';
+  values.x = existing?.twitter ?? '';
+  values.tiktok = existing?.tiktok ?? '';
+  values.snapchat = existing?.snapchat ?? '';
+  if (field === 'facebook') values.facebook = url ?? '';
+  if (field === 'linkedin') values.linkedin = url ?? '';
+  const website =
+    field === 'website' ? url ?? '' : existing?.website ?? '';
+  return buildSocialLinksFieldPersistencePatch(mode, {
+    values,
+    custom: existing?.custom ?? [],
+    websiteMode: 'draft',
+    websiteDraft: website,
+    existing,
+  });
 }
 
 /**

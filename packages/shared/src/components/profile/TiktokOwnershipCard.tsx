@@ -33,6 +33,7 @@ import {
   SOCIAL_ACTION_HIT_SLOP,
   socialActionButtonStyles,
 } from './socialActionButtonStyles.ts';
+import { OwnershipExplainModal } from './OwnershipExplainModal.tsx';
 import {
   buildTiktokOwnershipModeView,
   tiktokOwnershipActionBlocked,
@@ -91,6 +92,7 @@ export function TiktokOwnershipCard({
   const { palette } = useAppTheme();
   const api = useMemo(() => loadTiktokApi(), []);
 
+  const [explainOpen, setExplainOpen] = useState(false);
   const [phase, setPhase] = useState<TiktokOwnershipUiPhase>('loading');
   const [connected, setConnected] = useState<ConnectedSnapshot | null>(null);
 
@@ -428,7 +430,7 @@ export function TiktokOwnershipCard({
           disabled={blocked || !api}
           hitSlop={SOCIAL_ACTION_HIT_SLOP}
           onPress={() =>
-            view.connected ? onDisconnect() : void onConnect()
+            view.connected ? onDisconnect() : setExplainOpen(true)
           }
           style={({ pressed }) => [
             socialActionButtonStyles.button,
@@ -478,6 +480,17 @@ export function TiktokOwnershipCard({
           {t('profile.social.tiktokOwnership.legacyPrivateHint')}
         </Text>
       ) : null}
+      <OwnershipExplainModal
+        visible={explainOpen}
+        title={t('profile.social.ownershipExplain.tiktokTitle')}
+        body={t('profile.social.ownershipExplain.tiktokBody')}
+        confirmLabel={t('profile.social.ownershipExplain.continue')}
+        onCancel={() => setExplainOpen(false)}
+        onConfirm={() => {
+          setExplainOpen(false);
+          void onConnect();
+        }}
+      />
     </View>
   );
 }

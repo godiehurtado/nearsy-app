@@ -401,7 +401,7 @@ describe('Alignment unavailable presentation (BUG-ALIGN-01)', () => {
     );
     assert.equal(
       alignmentUnavailableLabel(tEs, 'insufficient'),
-      'Aún no hay suficiente información para calcular la alineación.',
+      'Aún no hay suficiente información para calcular la compatibilidad.',
     );
     assert.equal(
       alignmentUnavailableLabel(tEn, 'processing'),
@@ -409,7 +409,7 @@ describe('Alignment unavailable presentation (BUG-ALIGN-01)', () => {
     );
     assert.equal(
       alignmentUnavailableLabel(tEs, 'processing'),
-      'La alineación aún se está calculando.',
+      'La compatibilidad aún se está calculando.',
     );
     assert.equal(
       alignmentUnavailableLabel(tEn, 'unavailable'),
@@ -417,7 +417,7 @@ describe('Alignment unavailable presentation (BUG-ALIGN-01)', () => {
     );
     assert.equal(
       alignmentUnavailableLabel(tEs, 'unavailable'),
-      'La alineación no está disponible en este momento.',
+      'La compatibilidad no está disponible en este momento.',
     );
 
     for (const reason of DISCOVERY_COMPATIBILITY_UNAVAILABLE_REASONS) {
@@ -432,22 +432,24 @@ describe('Alignment unavailable presentation (BUG-ALIGN-01)', () => {
 });
 
 describe('Alignment presentation helpers', () => {
-  it('shows Nearby badge only for strong and full', () => {
-    assert.equal(shouldShowNearbyTierBadge('strong'), true);
-    assert.equal(shouldShowNearbyTierBadge('full'), true);
+  it('never shows Nearby classification badges', () => {
+    assert.equal(shouldShowNearbyTierBadge('strong'), false);
+    assert.equal(shouldShowNearbyTierBadge('full'), false);
     assert.equal(shouldShowNearbyTierBadge('weak'), false);
     assert.equal(shouldShowNearbyTierBadge('partial'), false);
     assert.equal(shouldShowNearbyTierBadge(undefined), false);
   });
 
-  it('a11y EN/ES includes tier when present', () => {
+  it('a11y EN/ES is score-only without classification labels', () => {
     const enLabel = alignmentAccessibilityLabel(tEn, {
       available: true,
       score: 66,
       tier: 'strong',
     });
     assert.match(enLabel, /66/);
-    assert.match(enLabel, /Closely aligned/i);
+    assert.match(enLabel, /alignment/i);
+    assert.doesNotMatch(enLabel, /Closely aligned/i);
+    assert.doesNotMatch(enLabel, /Rare alignment/i);
 
     const esLabel = alignmentAccessibilityLabel(tEs, {
       available: true,
@@ -455,7 +457,9 @@ describe('Alignment presentation helpers', () => {
       tier: 'strong',
     });
     assert.match(esLabel, /66/);
-    assert.match(esLabel, /Muy alineados/i);
+    assert.match(esLabel, /compatibilidad/i);
+    assert.doesNotMatch(esLabel, /Muy alineados/i);
+    assert.doesNotMatch(esLabel, /Alineación excepcional/i);
   });
 });
 
@@ -466,14 +470,14 @@ describe('Alignment i18n EN/ES', () => {
       assert.ok(es.alignment.tiers[tier]);
     }
     assert.equal(enAlignment.title, 'Alignment');
-    assert.equal(es.alignment.title, 'Alineación');
+    assert.equal(es.alignment.title, 'Compatibilidad');
     assert.equal(
       enAlignment.insufficient,
       "There isn't enough information yet to calculate alignment.",
     );
     assert.equal(
       es.alignment.insufficient,
-      'Aún no hay suficiente información para calcular la alineación.',
+      'Aún no hay suficiente información para calcular la compatibilidad.',
     );
     assert.equal(
       enAlignment.processing,
@@ -481,7 +485,7 @@ describe('Alignment i18n EN/ES', () => {
     );
     assert.equal(
       es.alignment.processing,
-      'La alineación aún se está calculando.',
+      'La compatibilidad aún se está calculando.',
     );
     assert.equal(
       enAlignment.unavailable,
@@ -489,7 +493,7 @@ describe('Alignment i18n EN/ES', () => {
     );
     assert.equal(
       es.alignment.unavailable,
-      'La alineación no está disponible en este momento.',
+      'La compatibilidad no está disponible en este momento.',
     );
     assert.equal(es.alignment.tiers.full, 'Alineación excepcional');
     const bundle = JSON.stringify({ en: enAlignment, es: es.alignment });
@@ -522,7 +526,8 @@ describe('Alignment UI contract (static)', () => {
     assert.match(nearbySrc, /AlignmentScoreRing/);
     assert.match(nearbySrc, /variant="compact"/);
     assert.match(nearbySrc, /toAlignment\(item\.compatibility\)/);
-    assert.match(nearbySrc, /shouldShowNearbyTierBadge/);
+    assert.doesNotMatch(nearbySrc, /shouldShowNearbyTierBadge/);
+    assert.doesNotMatch(nearbySrc, /alignmentTierLabel/);
     assert.doesNotMatch(nearbySrc, /getDiscoveryProfile/);
   });
 

@@ -13,6 +13,26 @@
  * Legacy InterestLabel / InterestsWithLogo remains for affiliation logos only.
  */
 
+import {
+  ONBOARDING_CUSTOM_INTEREST_ICON_OPTIONS,
+  ONBOARDING_CUSTOM_INTEREST_ICONS,
+} from './customInterestIconCatalog.ts';
+
+export {
+  CUSTOM_INTEREST_ICON_CATALOG,
+  CUSTOM_INTEREST_ICON_CATEGORY_ORDER,
+  customInterestIconCategoryLabel,
+  filterCustomInterestIcons,
+  isOnboardingCustomInterestIcon,
+  ONBOARDING_CUSTOM_INTEREST_ICON_OPTIONS,
+  ONBOARDING_CUSTOM_INTEREST_ICONS,
+  resolveCustomInterestIconOption,
+} from './customInterestIconCatalog.ts';
+export type {
+  CustomInterestIconCategoryId,
+  CustomInterestIconOption,
+} from './customInterestIconCatalog.ts';
+
 export const MIN_ONBOARDING_INTERESTS = 10;
 export const CUSTOM_INTEREST_MAX_LENGTH = 40;
 
@@ -329,8 +349,19 @@ export const ONBOARDING_INTEREST_CATEGORIES: OnboardingInterestCategory[] = [
         item('sports_golf', 'Golf', 'golf-outline', '#059669'),
         item('sports_volleyball', 'Volleyball', 'football-outline', '#0891B2'),
         item('sports_hockey', 'Hockey', 'snow-outline', '#4F46E5'),
+        item('sports_field_hockey', 'Field Hockey', 'flag-outline', '#16A34A'),
         item('sports_pickleball', 'Pickleball', 'tennisball-outline', '#0D9488'),
+        item('sports_padel', 'Padel', 'tennisball-outline', '#0891B2'),
+        item('sports_table_tennis', 'Table Tennis', 'tennisball-outline', '#CA8A04'),
+        item('sports_badminton', 'Badminton', 'tennisball-outline', '#0D9488'),
         item('sports_boxing', 'Boxing', 'fitness-outline', '#DC2626'),
+        item('sports_mma', 'MMA', 'fitness-outline', '#DC2626'),
+        item('sports_martial_arts', 'Martial Arts', 'body-outline', '#EA580C'),
+        item('sports_fencing', 'Fencing', 'flash-outline', '#4F46E5'),
+        item('sports_archery', 'Archery', 'locate-outline', '#059669'),
+        item('sports_rugby', 'Rugby', 'american-football-outline', '#EA580C'),
+        item('sports_cricket', 'Cricket', 'baseball-outline', '#16A34A'),
+        item('sports_polo', 'Polo', 'trophy-outline', '#CA8A04'),
         item('sports_motorsports', 'Motorsports', 'speedometer-outline', '#EA580C'),
         item('sports_college', 'College Sports', 'school-outline', '#7C3AED'),
         item('sports_outdoors_group_sports_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
@@ -364,10 +395,9 @@ export const ONBOARDING_INTEREST_CATEGORIES: OnboardingInterestCategory[] = [
       item('travel_cruises', 'Cruises', 'boat-outline', '#0891B2'),
       item('travel_local', 'Local Exploration', 'map-outline', '#0D9488'),
       item('travel_languages', 'Languages', 'language-outline', '#7C3AED'),
-      item('travel_cultural', 'Cultural Experiences', 'globe-outline', '#DB2777'),
+      item('travel_world_cultures', 'World Cultures', 'globe-outline', '#DB2777'),
       item('travel_museums', 'Museums', 'library-outline', '#4F46E5'),
       item('travel_history', 'History', 'library-outline', '#DC2626'),
-      item('travel_latin_culture', 'Latin Culture', 'flag-outline', '#DC2626'),
       item('travel_other', 'Other', OTHER_ICON, OTHER_COLOR, { isOther: true }),
     ],
   },
@@ -433,57 +463,6 @@ export const ONBOARDING_INTEREST_CATEGORIES: OnboardingInterestCategory[] = [
   },
 
 ];
-
-/** Controlled Ionicons catalog for custom interests (no free-text icons). */
-export const ONBOARDING_CUSTOM_INTEREST_ICONS = [
-  'star-outline',
-  'heart-outline',
-  'flame-outline',
-  'leaf-outline',
-  'musical-notes-outline',
-  'camera-outline',
-  'bicycle-outline',
-  'airplane-outline',
-  'book-outline',
-  'briefcase-outline',
-  'cafe-outline',
-  'game-controller-outline',
-  'globe-outline',
-  'home-outline',
-  'people-outline',
-  'rocket-outline',
-  'football-outline',
-  'color-palette-outline',
-  'hardware-chip-outline',
-  'restaurant-outline',
-] as const;
-
-/** Deterministic colored icon options for the custom-interest picker. */
-export const ONBOARDING_CUSTOM_INTEREST_ICON_OPTIONS = [
-  { icon: 'star-outline', iconColor: '#CA8A04' },
-  { icon: 'heart-outline', iconColor: '#DB2777' },
-  { icon: 'flame-outline', iconColor: '#EA580C' },
-  { icon: 'leaf-outline', iconColor: '#16A34A' },
-  { icon: 'musical-notes-outline', iconColor: '#7C3AED' },
-  { icon: 'camera-outline', iconColor: '#2563EB' },
-  { icon: 'bicycle-outline', iconColor: '#0891B2' },
-  { icon: 'airplane-outline', iconColor: '#4F46E5' },
-  { icon: 'book-outline', iconColor: '#0D9488' },
-  { icon: 'briefcase-outline', iconColor: '#059669' },
-  { icon: 'cafe-outline', iconColor: '#C026D3' },
-  { icon: 'game-controller-outline', iconColor: '#DC2626' },
-  { icon: 'globe-outline', iconColor: '#2563EB' },
-  { icon: 'home-outline', iconColor: '#EA580C' },
-  { icon: 'people-outline', iconColor: '#0891B2' },
-  { icon: 'rocket-outline', iconColor: '#7C3AED' },
-  { icon: 'football-outline', iconColor: '#16A34A' },
-  { icon: 'color-palette-outline', iconColor: '#DB2777' },
-  { icon: 'hardware-chip-outline', iconColor: '#4F46E5' },
-  { icon: 'restaurant-outline', iconColor: '#EA580C' },
-] as const satisfies ReadonlyArray<{
-  icon: (typeof ONBOARDING_CUSTOM_INTEREST_ICONS)[number];
-  iconColor: string;
-}>;
 
 export function resolveCustomInterestIconColor(icon: string): string {
   const found = ONBOARDING_CUSTOM_INTEREST_ICON_OPTIONS.find(

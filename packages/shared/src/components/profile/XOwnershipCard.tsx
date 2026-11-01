@@ -33,6 +33,7 @@ import {
   SOCIAL_ACTION_HIT_SLOP,
   socialActionButtonStyles,
 } from './socialActionButtonStyles.ts';
+import { OwnershipExplainModal } from './OwnershipExplainModal.tsx';
 import {
   buildXOwnershipModeView,
   xOwnershipActionBlocked,
@@ -90,6 +91,7 @@ export function XOwnershipCard({
   const { palette } = useAppTheme();
   const api = useMemo(() => loadXApi(), []);
 
+  const [explainOpen, setExplainOpen] = useState(false);
   const [phase, setPhase] = useState<XOwnershipUiPhase>('loading');
   const [connected, setConnected] = useState<ConnectedSnapshot | null>(null);
 
@@ -443,7 +445,7 @@ export function XOwnershipCard({
           disabled={blocked || !api}
           hitSlop={SOCIAL_ACTION_HIT_SLOP}
           onPress={() =>
-            view.connected ? onDisconnect() : void onConnect()
+            view.connected ? onDisconnect() : setExplainOpen(true)
           }
           style={({ pressed }) => [
             socialActionButtonStyles.button,
@@ -493,6 +495,17 @@ export function XOwnershipCard({
           {t('profile.social.xOwnership.legacyPrivateHint')}
         </Text>
       ) : null}
+      <OwnershipExplainModal
+        visible={explainOpen}
+        title={t('profile.social.ownershipExplain.xTitle')}
+        body={t('profile.social.ownershipExplain.xBody')}
+        confirmLabel={t('profile.social.ownershipExplain.continue')}
+        onCancel={() => setExplainOpen(false)}
+        onConfirm={() => {
+          setExplainOpen(false);
+          void onConnect();
+        }}
+      />
     </View>
   );
 }

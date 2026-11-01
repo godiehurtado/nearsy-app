@@ -341,7 +341,8 @@ describe('NEARSY-209 Instagram ownership Android wiring', () => {
     assert.match(card, /shouldPollInstagramOwnership/);
     assert.match(card, /INSTAGRAM_OWNERSHIP_POLL_INTERVAL_MS/);
     assert.match(card, /AppState/);
-    assert.match(card, /Share\.share/);
+    assert.match(card, /copyTextToClipboard/);
+    assert.doesNotMatch(card, /Share\.share/);
     assert.match(card, /Linking\.openURL/);
     assert.match(card, /requestGenRef/);
     assert.doesNotMatch(card, /instagramOwnershipExchange/);

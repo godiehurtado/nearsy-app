@@ -3,9 +3,9 @@ import type { SocialCustomLink, SocialLinks } from '../types/profile.ts';
 /**
  * CRJ-I7 Social Media catalog.
  *
- * Claude wizard order is visual truth. Production `SocialLinks` keys are
- * storage truth (`twitter` not `x`; `website` remains in the model but is
- * not shown in CRJ — it is preserved on persist).
+ * Display order (CRJ + editor): YouTube → TikTok → Instagram → X →
+ * Facebook → LinkedIn → Web. Production `SocialLinks` keys stay storage
+ * truth (`twitter` not `x`). Snapchat remains in storage but is hidden.
  */
 export type CrjSocialPlatformId =
   | 'linkedin'
@@ -30,33 +30,6 @@ export type CrjSocialPlatform = {
 
 export const CRJ_SOCIAL_PLATFORMS: readonly CrjSocialPlatform[] = [
   {
-    id: 'linkedin',
-    storageKey: 'linkedin',
-    nameKey: 'linkedin',
-    placeholderKey: 'linkedin',
-    ionicon: 'logo-linkedin',
-    iconSet: 'ionicons',
-    color: '#0A66C2',
-  },
-  {
-    id: 'instagram',
-    storageKey: 'instagram',
-    nameKey: 'instagram',
-    placeholderKey: 'instagram',
-    ionicon: 'logo-instagram',
-    iconSet: 'ionicons',
-    color: '#E1306C',
-  },
-  {
-    id: 'facebook',
-    storageKey: 'facebook',
-    nameKey: 'facebook',
-    placeholderKey: 'facebook',
-    ionicon: 'logo-facebook',
-    iconSet: 'ionicons',
-    color: '#1877F2',
-  },
-  {
     id: 'youtube',
     storageKey: 'youtube',
     nameKey: 'youtube',
@@ -64,15 +37,6 @@ export const CRJ_SOCIAL_PLATFORMS: readonly CrjSocialPlatform[] = [
     ionicon: 'logo-youtube',
     iconSet: 'ionicons',
     color: '#FF0000',
-  },
-  {
-    id: 'x',
-    storageKey: 'twitter',
-    nameKey: 'x',
-    placeholderKey: 'x',
-    ionicon: 'x-twitter',
-    iconSet: 'fontawesome6',
-    color: '#111111',
   },
   {
     id: 'tiktok',
@@ -84,6 +48,42 @@ export const CRJ_SOCIAL_PLATFORMS: readonly CrjSocialPlatform[] = [
     color: '#111111',
   },
   {
+    id: 'instagram',
+    storageKey: 'instagram',
+    nameKey: 'instagram',
+    placeholderKey: 'instagram',
+    ionicon: 'logo-instagram',
+    iconSet: 'ionicons',
+    color: '#E1306C',
+  },
+  {
+    id: 'x',
+    storageKey: 'twitter',
+    nameKey: 'x',
+    placeholderKey: 'x',
+    ionicon: 'x-twitter',
+    iconSet: 'fontawesome6',
+    color: '#111111',
+  },
+  {
+    id: 'facebook',
+    storageKey: 'facebook',
+    nameKey: 'facebook',
+    placeholderKey: 'facebook',
+    ionicon: 'logo-facebook',
+    iconSet: 'ionicons',
+    color: '#1877F2',
+  },
+  {
+    id: 'linkedin',
+    storageKey: 'linkedin',
+    nameKey: 'linkedin',
+    placeholderKey: 'linkedin',
+    ionicon: 'logo-linkedin',
+    iconSet: 'ionicons',
+    color: '#0A66C2',
+  },
+  {
     id: 'snapchat',
     storageKey: 'snapchat',
     nameKey: 'snapchat',
@@ -93,6 +93,11 @@ export const CRJ_SOCIAL_PLATFORMS: readonly CrjSocialPlatform[] = [
     color: '#FFFC00',
   },
 ] as const;
+
+export const MANUAL_CRJ_SOCIAL_PLATFORM_IDS = [
+  'facebook',
+  'linkedin',
+] as const satisfies readonly CrjSocialPlatformId[];
 
 export const CRJ_SOCIAL_PLATFORM_IDS: CrjSocialPlatformId[] =
   CRJ_SOCIAL_PLATFORMS.map((p) => p.id);
@@ -129,9 +134,11 @@ export function getCrjSocialPlatform(
 export function countConnectedSocials(
   values: CrjSocialDraftValues,
   custom: SocialCustomLink[],
+  website?: string,
 ): number {
   const filled = VISIBLE_CRJ_SOCIAL_PLATFORM_IDS.filter(
     (id) => (values[id] ?? '').trim().length > 0,
   ).length;
-  return filled + custom.length;
+  const web = (website ?? '').trim().length > 0 ? 1 : 0;
+  return filled + custom.length + web;
 }

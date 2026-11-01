@@ -12,9 +12,9 @@ import {
 import { useTranslation } from '../../i18n';
 import {
   alignmentAccessibilityLabel,
-  alignmentTierLabel,
   alignmentTitleLabel,
   alignmentUnavailableLabel,
+  formatAlignmentPercent,
 } from '../../visibility/alignmentPresentation';
 import {
   toAlignment,
@@ -91,9 +91,6 @@ export function DiscoveryCompatibilityCard({ compatibility }: Props) {
   }
 
   const a11yLabel = alignmentAccessibilityLabel(t, alignment);
-  const tierLabel = alignment.tier
-    ? alignmentTierLabel(t, alignment.tier)
-    : null;
 
   return (
     <View
@@ -118,16 +115,14 @@ export function DiscoveryCompatibilityCard({ compatibility }: Props) {
         >
           {alignmentTitleLabel(t)}
         </Text>
-        {tierLabel ? (
-          <Text
-            style={[styles.body, { color: palette.textSecondary }]}
-            maxFontSizeMultiplier={1.5}
-            accessibilityElementsHidden
-            importantForAccessibility="no"
-          >
-            {tierLabel}
-          </Text>
-        ) : null}
+        <Text
+          style={[styles.body, { color: palette.textSecondary }]}
+          maxFontSizeMultiplier={1.5}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+        >
+          {formatAlignmentPercent(alignment.score)}
+        </Text>
       </View>
     </View>
   );
