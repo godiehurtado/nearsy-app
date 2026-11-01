@@ -59,7 +59,7 @@ import {
   mapInstagramOwnershipThrowable,
   presentInstagramGetResponse,
   resolveInstagramOwnershipClientPlatform,
-  shareInstagramChallengeCode,
+  copyInstagramChallengeCode,
   shouldPollInstagramOwnership,
   INSTAGRAM_OWNERSHIP_POLL_INTERVAL_MS,
   InstagramOwnershipClientError,
@@ -80,6 +80,7 @@ import {
   type XOwnershipBusyPhase,
   type XOwnershipVerified,
 } from '../../social/xOwnership';
+import { SocialConnectionModal } from '../social/SocialConnectionModal';
 
 type Props = {
   uid: string;
@@ -175,6 +176,10 @@ export function OwnedSocialConnectSection({
   const instagramRequestGenRef = useRef(0);
   const instagramEditorModeRef = useRef<ProfileMode>(mode);
   const instagramChallengeRef = useRef<InstagramOwnershipPending | null>(null);
+  const [connectSheet, setConnectSheet] = useState<
+    'youtube' | 'tiktok' | 'instagram' | 'x' | null
+  >(null);
+  const [instagramCopied, setInstagramCopied] = useState(false);
 
   const [xVerified, setXVerified] = useState<XOwnershipVerified | null>(null);
   const [xLegacyUrl, setXLegacyUrl] = useState<string | null>(null);
@@ -694,6 +699,13 @@ export function OwnedSocialConnectSection({
   const handleInstagramConnectRef = useRef<() => void>(() => {});
   const handleInstagramConnect = useCallback(async () => {
     if (instagramActionLocked) return;
+    const live = instagramChallengeRef.current;
+    if (live && live.expiresAt > Date.now()) {
+      setInstagramChallenge(live);
+      setInstagramBusyPhase('pending');
+      setConnectSheet('instagram');
+      return;
+    }
     const requestGen = instagramRequestGenRef.current;
     const modeForRequest = mode;
     try {
@@ -869,15 +881,21 @@ export function OwnedSocialConnectSection({
   const handleInstagramShare = useCallback(() => {
     const code = instagramChallenge?.code;
     if (!code) return;
-    void shareInstagramChallengeCode(code).catch(() => {
-      presentInstagramError(
-        new InstagramOwnershipClientError(
-          'UNKNOWN',
-          'Could not share Instagram code.',
-          { stage: 'unknown' },
-        ),
-      );
-    });
+    void copyInstagramChallengeCode(code)
+      .then((result) => {
+        if (result === 'copied') {
+          setInstagramCopied(true);
+        }
+      })
+      .catch(() => {
+        presentInstagramError(
+          new InstagramOwnershipClientError(
+            'UNKNOWN',
+            'Could not copy Instagram code.',
+            { stage: 'unknown' },
+          ),
+        );
+      });
   }, [instagramChallenge, presentInstagramError]);
 
   const handleInstagramOpen = useCallback(() => {
@@ -1283,7 +1301,7 @@ export function OwnedSocialConnectSection({
         connectA11y: t('profile.social.youtube.connectA11y'),
         disconnectA11y: t('profile.social.youtube.disconnectA11y'),
         onConnect: () => {
-          void handleYoutubeConnect();
+          setConnectSheet('youtube');
         },
         onDisconnect: handleYoutubeDisconnect,
         canonicalUrl: youtubeVerified?.canonicalUrl,
@@ -1351,7 +1369,7 @@ export function OwnedSocialConnectSection({
         connectA11y: t('profile.social.tiktok.connectA11y'),
         disconnectA11y: t('profile.social.tiktok.disconnectA11y'),
         onConnect: () => {
-          void handleTiktokConnect();
+          setConnectSheet('tiktok');
         },
         onDisconnect: handleTiktokDisconnect,
         canonicalUrl: tiktokVerified?.canonicalUrl,
@@ -1376,7 +1394,12 @@ export function OwnedSocialConnectSection({
         connectA11y: t('profile.social.instagram.connectA11y'),
         disconnectA11y: t('profile.social.instagram.disconnectA11y'),
         onConnect: () => {
-          void handleInstagramConnect();
+          const live = instagramChallengeRef.current;
+          if (live && live.expiresAt > Date.now()) {
+            setInstagramChallenge(live);
+            setInstagramBusyPhase('pending');
+          }
+          setConnectSheet('instagram');
         },
         onDisconnect: handleInstagramDisconnect,
         hideConnect: instagramBusyPhase === 'pending',
@@ -1504,13 +1527,130 @@ export function OwnedSocialConnectSection({
         connectA11y: t('profile.social.x.connectA11y'),
         disconnectA11y: t('profile.social.x.disconnectA11y'),
         onConnect: () => {
-          void handleXConnect();
+          setConnectSheet('x');
         },
         onDisconnect: handleXDisconnect,
         canonicalUrl: xVerified?.canonicalUrl,
         legacyUrl: xLegacyUrl,
         legacyLabel: t('profile.social.x.legacyStored'),
       })}
+      <SocialConnectionModal
+        visible={connectSheet !== null}
+        title={
+          connectSheet
+            ? t(`profile.social.connectModal.${connectSheet}.title` as any)
+            : ''
+        }
+        body={
+          connectSheet
+            ? t(`profile.social.connectModal.${connectSheet}.body` as any)
+            : ''
+        }
+        primaryLabel={
+          connectSheet === 'instagram' && instagramChallenge
+            ? t('profile.social.instagram.openInbox')
+            : connectSheet
+              ? t(`profile.social.connectModal.${connectSheet}.action` as any)
+              : ''
+        }
+        primaryA11y={
+          connectSheet === 'instagram' && instagramChallenge
+            ? t('profile.social.instagram.openInboxA11y')
+            : undefined
+        }
+        onPrimary={() => {
+          if (connectSheet === 'youtube') {
+            setConnectSheet(null);
+            void handleYoutubeConnect();
+            return;
+          }
+          if (connectSheet === 'tiktok') {
+            setConnectSheet(null);
+            void handleTiktokConnect();
+            return;
+          }
+          if (connectSheet === 'x') {
+            setConnectSheet(null);
+            void handleXConnect();
+            return;
+          }
+          if (connectSheet === 'instagram') {
+            if (instagramChallenge) {
+              handleInstagramOpen();
+              return;
+            }
+            void handleInstagramConnect();
+          }
+        }}
+        onRequestClose={() => {
+          setConnectSheet(null);
+          setInstagramCopied(false);
+        }}
+      >
+        {connectSheet === 'instagram' ? (
+          <View style={styles.instagramPending}>
+            <Text style={[styles.helperText, { color: palette.textSecondary }]}>
+              {t('profile.social.connectModal.instagram.stepCopy')}
+            </Text>
+            <Text style={[styles.helperText, { color: palette.textSecondary }]}>
+              {t('profile.social.connectModal.instagram.stepOpen')}
+            </Text>
+            <Text style={[styles.helperText, { color: palette.textSecondary }]}>
+              {t('profile.social.connectModal.instagram.stepMessage')}
+            </Text>
+            <Text style={[styles.helperText, { color: palette.textSecondary }]}>
+              {t('profile.social.connectModal.instagram.stepPaste')}
+            </Text>
+            {instagramChallenge ? (
+              <>
+                <Text
+                  selectable
+                  accessibilityLabel={t('profile.social.instagram.shareCodeA11y')}
+                  style={[
+                    styles.instagramCode,
+                    {
+                      color: palette.textPrimary,
+                      borderColor: palette.border,
+                      backgroundColor: palette.surface,
+                    },
+                  ]}
+                >
+                  {instagramChallenge.code}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('profile.social.instagram.shareCodeA11y')}
+                  onPress={handleInstagramShare}
+                  style={({ pressed }) => [
+                    styles.toggleBtn,
+                    {
+                      backgroundColor: palette.surface,
+                      borderColor: palette.border,
+                    },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={[styles.toggleText, { color: palette.textPrimary }]}>
+                    {instagramCopied
+                      ? t('profile.social.copied')
+                      : t('profile.social.instagram.shareCode')}
+                  </Text>
+                </Pressable>
+                <Text
+                  accessibilityLiveRegion="polite"
+                  style={[styles.helperText, { color: palette.textMuted }]}
+                >
+                  {instagramCopied
+                    ? t('profile.social.copied')
+                    : instagramBusyPhase === 'pending'
+                      ? t('profile.social.instagram.waiting')
+                      : ''}
+                </Text>
+              </>
+            ) : null}
+          </View>
+        ) : null}
+      </SocialConnectionModal>
     </View>
   );
 }

@@ -258,7 +258,7 @@ describe('CRJ-I7 Social Media data / validation', () => {
     assert.ok(patch.socialLinksPersonal?.custom);
   });
 
-  it('preserves existing website without showing it in CRJ platforms', () => {
+  it('preserves existing website when the CRJ caller omits a website draft', () => {
     const patch = buildCrjSocialLinksPersistencePatch(
       'personal',
       emptyCrjSocialDraftValues(),
@@ -268,6 +268,18 @@ describe('CRJ-I7 Social Media data / validation', () => {
     assert.equal(patch.socialLinksPersonal?.website, 'https://nearsy.app');
     assert.equal(patch.socialLinksPersonal?.instagram, undefined);
     assert.ok(!CRJ_SOCIAL_PLATFORM_IDS.includes('website' as never));
+  });
+
+  it('persists optional CRJ website from a draft without completing the wizard', () => {
+    const patch = buildCrjSocialLinksPersistencePatch(
+      'personal',
+      emptyCrjSocialDraftValues(),
+      [],
+      { website: 'https://old.example' },
+      'https://nearsy.app',
+    );
+    assert.equal(patch.profileSetupCompleted, false);
+    assert.equal(patch.socialLinksPersonal?.website, 'https://nearsy.app/');
   });
 
   it('preserves hidden Snapchat on save and excludes it from connected counts', () => {

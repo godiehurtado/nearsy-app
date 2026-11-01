@@ -60,7 +60,7 @@ export function isDuplicateCustomNetwork(
 }
 
 export type CrjSocialFieldErrors = Partial<
-  Record<CrjSocialPlatformId | 'custom', string>
+  Record<CrjSocialPlatformId | 'custom' | 'website', string>
 >;
 
 export function collectSocialFieldErrors(

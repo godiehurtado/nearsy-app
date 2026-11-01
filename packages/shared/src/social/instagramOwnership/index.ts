@@ -60,4 +60,7 @@ export {
   INSTAGRAM_OWNERSHIP_POLL_INTERVAL_MS,
   shouldPollInstagramOwnership,
 } from './pollPolicy';
-export { shareInstagramChallengeCode } from './copyChallenge';
+export {
+  copyInstagramChallengeCode,
+  shareInstagramChallengeCode,
+} from './copyChallenge';

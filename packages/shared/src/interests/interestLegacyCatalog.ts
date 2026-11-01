@@ -151,6 +151,20 @@ export const LEGACY_DISPLAY_INTEREST_ITEMS: readonly OnboardingInterestItem[] = 
     'earth-outline',
     '#059669',
   ),
+
+  // Altercall 2.0.9 — retired from new options; still visible and deletable
+  legacyItem(
+    'travel_cultural',
+    'Cultural Experiences',
+    'globe-outline',
+    '#DB2777',
+  ),
+  legacyItem(
+    'travel_latin_culture',
+    'Latin Culture',
+    'flag-outline',
+    '#DC2626',
+  ),
 ];
 
 const legacyById = new Map(

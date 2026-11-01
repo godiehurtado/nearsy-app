@@ -27,19 +27,29 @@ import { OwnedSocialConnectSection } from './OwnedSocialConnectSection';
 import {
   isDuplicateCustomNetwork,
   normalizeCustomNetworkUrl,
+  normalizeSocialInput,
   type CrjSocialFieldErrors,
   validateCustomNetworkName,
 } from '../../social/socialLinkNormalize';
+import { SocialConnectionModal } from '../social/SocialConnectionModal';
+
+type ManualSheetId = 'facebook' | 'linkedin' | 'website';
 
 type Props = {
   uid: string;
   mode: ProfileMode;
   values: CrjSocialDraftValues;
+  website: string;
   custom: SocialCustomLink[];
   onChangeValues: (next: CrjSocialDraftValues) => void;
+  onChangeWebsite: (next: string) => void;
   onChangeCustom: (next: SocialCustomLink[]) => void;
+  onPersistManual: (
+    nextValues: CrjSocialDraftValues,
+    nextWebsite: string,
+  ) => Promise<void>;
   fieldErrors: CrjSocialFieldErrors;
-  onClearFieldError: (id: CrjSocialPlatformId | 'custom') => void;
+  onClearFieldError: (id: CrjSocialPlatformId | 'custom' | 'website') => void;
 };
 
 function PlatformGlyph({
@@ -83,9 +93,12 @@ export function OnboardingSocialMediaStep({
   uid,
   mode,
   values,
+  website,
   custom,
   onChangeValues,
+  onChangeWebsite,
   onChangeCustom,
+  onPersistManual,
   fieldErrors,
   onClearFieldError,
 }: Props) {
@@ -96,8 +109,15 @@ export function OnboardingSocialMediaStep({
   const [otherUrl, setOtherUrl] = useState('');
   const [otherError, setOtherError] = useState<string | null>(null);
   const [ownedCount, setOwnedCount] = useState(0);
+  const [manualSheet, setManualSheet] = useState<ManualSheetId | null>(null);
+  const [manualDraft, setManualDraft] = useState('');
+  const [manualError, setManualError] = useState<string | null>(null);
+  const [manualSaving, setManualSaving] = useState(false);
 
-  const connected = countConnectedSocials(values, custom) + ownedCount;
+  const connected =
+    countConnectedSocials(values, custom) +
+    ownedCount +
+    (website.trim() ? 1 : 0);
   const connectedLabel =
     connected === 1
       ? t('onboarding.profileCompletion.socialMedia.connectedOne' as any)
@@ -116,9 +136,58 @@ export function OnboardingSocialMediaStep({
     [palette],
   );
 
-  function setValue(id: CrjSocialPlatformId, text: string) {
-    onClearFieldError(id);
-    onChangeValues({ ...values, [id]: text });
+  function openManualSheet(id: ManualSheetId) {
+    setManualSheet(id);
+    setManualDraft(id === 'website' ? website : values[id]);
+    setManualError(null);
+  }
+
+  async function saveManualSheet() {
+    if (!manualSheet || manualSaving) return;
+    const raw = manualDraft.trim();
+    const result =
+      manualSheet === 'website'
+        ? normalizeCustomNetworkUrl(raw)
+        : normalizeSocialInput(manualSheet, raw);
+    if (!raw || !result.ok || !result.url) {
+      setManualError(
+        t('onboarding.profileCompletion.socialMedia.invalid' as any),
+      );
+      return;
+    }
+    const nextValues =
+      manualSheet === 'website'
+        ? values
+        : { ...values, [manualSheet]: result.url };
+    const nextWebsite = manualSheet === 'website' ? result.url : website;
+    setManualSaving(true);
+    try {
+      if (manualSheet === 'website') {
+        onChangeWebsite(nextWebsite);
+        onClearFieldError('website');
+      } else {
+        onChangeValues(nextValues);
+        onClearFieldError(manualSheet);
+      }
+      await onPersistManual(nextValues, nextWebsite);
+      setManualSheet(null);
+    } finally {
+      setManualSaving(false);
+    }
+  }
+
+  async function clearManual(id: ManualSheetId) {
+    const nextValues =
+      id === 'website' ? values : { ...values, [id]: '' };
+    const nextWebsite = id === 'website' ? '' : website;
+    if (id === 'website') {
+      onChangeWebsite('');
+      onClearFieldError('website');
+    } else {
+      onChangeValues(nextValues);
+      onClearFieldError(id);
+    }
+    await onPersistManual(nextValues, nextWebsite);
   }
 
   function addOther() {
@@ -185,6 +254,7 @@ export function OnboardingSocialMediaStep({
           const label = t(
             `onboarding.profileCompletion.socialMedia.platforms.${platform.nameKey}` as any,
           );
+          const filled = (values[platform.id] ?? '').trim().length > 0;
           return (
             <View key={platform.id} style={styles.row}>
               <View style={styles.rowHeader}>
@@ -192,29 +262,27 @@ export function OnboardingSocialMediaStep({
                 <Text style={[styles.platformName, { color: palette.textPrimary }]}>
                   {label}
                 </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() =>
+                    filled
+                      ? void clearManual(platform.id as ManualSheetId)
+                      : openManualSheet(platform.id as ManualSheetId)
+                  }
+                  style={styles.manualAction}
+                >
+                  <Text style={{ color: filled ? palette.danger : palette.primary }}>
+                    {filled
+                      ? t('profile.social.disconnect')
+                      : t('profile.social.connect')}
+                  </Text>
+                </Pressable>
               </View>
-              <TextInput
-                value={values[platform.id]}
-                onChangeText={(text) => setValue(platform.id, text)}
-                placeholder={t(
-                  `onboarding.profileCompletion.socialMedia.placeholders.${platform.placeholderKey}` as any,
-                )}
-                placeholderTextColor={palette.placeholder}
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="off"
-                keyboardType="url"
-                textContentType="URL"
-                accessibilityLabel={t(
-                  'onboarding.profileCompletion.socialMedia.inputA11y' as any,
-                  { name: label },
-                )}
-                style={[
-                  styles.input,
-                  inputStyle,
-                  error ? { borderColor: palette.danger } : null,
-                ]}
-              />
+              {filled ? (
+                <Text style={[styles.helper, { color: palette.textSecondary }]}>
+                  {values[platform.id]}
+                </Text>
+              ) : null}
               {error ? (
                 <Text style={[styles.error, { color: palette.danger }]}>
                   {error}
@@ -223,6 +291,43 @@ export function OnboardingSocialMediaStep({
             </View>
           );
         })}
+
+        {(() => {
+          const label = t(
+            'onboarding.profileCompletion.socialMedia.platforms.website' as any,
+          );
+          const filled = website.trim().length > 0;
+          return (
+            <View style={styles.row}>
+              <View style={styles.rowHeader}>
+                <View style={[styles.glyph, { backgroundColor: '#64748B' }]}>
+                  <Ionicons name="globe-outline" size={14} color="#FFFFFF" />
+                </View>
+                <Text style={[styles.platformName, { color: palette.textPrimary }]}>
+                  {label}
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() =>
+                    filled ? void clearManual('website') : openManualSheet('website')
+                  }
+                  style={styles.manualAction}
+                >
+                  <Text style={{ color: filled ? palette.danger : palette.primary }}>
+                    {filled
+                      ? t('profile.social.disconnect')
+                      : t('profile.social.connect')}
+                  </Text>
+                </Pressable>
+              </View>
+              {filled ? (
+                <Text style={[styles.helper, { color: palette.textSecondary }]}>
+                  {website}
+                </Text>
+              ) : null}
+            </View>
+          );
+        })()}
 
         {custom.map((row, index) => (
           <View key={`${row.name}-${index}`} style={styles.row}>
@@ -377,6 +482,77 @@ export function OnboardingSocialMediaStep({
           </View>
         ) : null}
       </View>
+      <SocialConnectionModal
+        visible={manualSheet !== null}
+        title={
+          manualSheet
+            ? t(`profile.social.connectModal.${manualSheet}.title` as any)
+            : ''
+        }
+        body={
+          manualSheet
+            ? t(`profile.social.connectModal.${manualSheet}.body` as any)
+            : ''
+        }
+        primaryLabel={t('profile.social.saveLink')}
+        primaryA11y={
+          manualSheet
+            ? t('profile.social.saveLinkA11y', {
+                platform: t(
+                  `onboarding.profileCompletion.socialMedia.platforms.${manualSheet}` as any,
+                ),
+              })
+            : undefined
+        }
+        primaryBusy={manualSaving}
+        onPrimary={() => {
+          void saveManualSheet();
+        }}
+        onRequestClose={() => {
+          if (manualSaving) return;
+          setManualSheet(null);
+          setManualError(null);
+        }}
+      >
+        {manualSheet ? (
+          <>
+            <TextInput
+              value={manualDraft}
+              onChangeText={(text) => {
+                setManualDraft(text);
+                setManualError(null);
+              }}
+              placeholder={t(
+                `onboarding.profileCompletion.socialMedia.placeholders.${manualSheet}` as any,
+              )}
+              placeholderTextColor={palette.placeholder}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="off"
+              keyboardType="url"
+              textContentType="URL"
+              accessibilityLabel={t(
+                'onboarding.profileCompletion.socialMedia.inputA11y' as any,
+                {
+                  name: t(
+                    `onboarding.profileCompletion.socialMedia.platforms.${manualSheet}` as any,
+                  ),
+                },
+              )}
+              style={[
+                styles.input,
+                inputStyle,
+                manualError ? { borderColor: palette.danger } : null,
+              ]}
+            />
+            {manualError ? (
+              <Text style={[styles.error, { color: palette.danger }]}>
+                {manualError}
+              </Text>
+            ) : null}
+          </>
+        ) : null}
+      </SocialConnectionModal>
     </View>
   );
 }
@@ -424,6 +600,16 @@ const styles = StyleSheet.create({
   platformName: {
     fontSize: 13.5,
     fontWeight: fontWeight.extrabold,
+    flex: 1,
+  },
+  helper: {
+    fontSize: fontSize.sm,
+    marginTop: 4,
+  },
+  manualAction: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 4,
   },
   input: {
     width: '100%',

@@ -390,6 +390,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     emptyCrjSocialDraftValues,
   );
   const [socialCustom, setSocialCustom] = useState<SocialCustomLink[]>([]);
+  const [socialWebsite, setSocialWebsite] = useState('');
   const [socialFieldErrors, setSocialFieldErrors] =
     useState<CrjSocialFieldErrors>({});
   const [galleryItems, setGalleryItems] = useState<CrjGalleryItem[]>([]);
@@ -515,6 +516,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     const social = readCrjSocialDraft(data, nextMode);
     setSocialDraft(social.values);
     setSocialCustom(social.custom);
+    setSocialWebsite(readExistingSocialLinks(data, nextMode).website ?? '');
     setSocialFieldErrors({});
     const gallery = readCrjGallery(data, nextMode);
     setGalleryItems(gallery);
@@ -1017,6 +1019,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               valuesForSave,
               socialCustom,
               existing,
+              socialWebsite,
             ),
             existing,
           ),
@@ -2299,9 +2302,57 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               uid={uid}
               mode={mode}
               values={socialDraft}
+              website={socialWebsite}
               custom={socialCustom}
               onChangeValues={setSocialDraft}
+              onChangeWebsite={setSocialWebsite}
               onChangeCustom={setSocialCustom}
+              onPersistManual={async (nextValues, nextWebsite) => {
+                if (!uid || !mode) return;
+                setSocialDraft(nextValues);
+                setSocialWebsite(nextWebsite);
+                const existing = readExistingSocialLinks(shellData, mode);
+                const valuesForSave = omitXFromDraftValues(
+                  omitInstagramFromDraftValues(
+                    omitTiktokFromDraftValues(
+                      omitYoutubeFromDraftValues(nextValues),
+                    ),
+                  ),
+                );
+                const patch = preserveLegacyXInSocialPatch(
+                  mode,
+                  preserveLegacyInstagramInSocialPatch(
+                    mode,
+                    preserveLegacyTiktokInSocialPatch(
+                      mode,
+                      preserveLegacyYoutubeInSocialPatch(
+                        mode,
+                        buildCrjSocialLinksPersistencePatch(
+                          mode,
+                          valuesForSave,
+                          socialCustom,
+                          existing,
+                          nextWebsite,
+                        ),
+                        existing,
+                      ),
+                      existing,
+                    ),
+                    existing,
+                  ),
+                  existing,
+                );
+                await updateUserProfilePartial(uid, {
+                  ...patch,
+                  profileSetupCompleted: false,
+                });
+                setShellData((prev) => ({
+                  ...(prev ?? {}),
+                  mode,
+                  ...patch,
+                  profileSetupCompleted: false,
+                }));
+              }}
               fieldErrors={socialFieldErrors}
               onClearFieldError={(id) => {
                 setSocialFieldErrors((prev) => {
