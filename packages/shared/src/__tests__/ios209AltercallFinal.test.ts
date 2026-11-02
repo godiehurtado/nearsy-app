@@ -32,11 +32,13 @@ import { buildCrjSocialLinksPersistencePatch } from '../social/onboardingSocialP
 import { emptyCrjSocialDraftValues } from '../social/onboardingSocialCatalog';
 import enOnboarding from '../i18n/resources/onboarding';
 import enAuth from '../i18n/resources/authentication';
+import enProfile from '../i18n/resources/profile';
 import enAlignment from '../i18n/resources/alignment';
 import es from '../i18n/locales/es';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const nearsyRoot = join(here, '../../../..', '..');
+const worktreeRoot = join(here, '../../../..');
+const nearsyRoot = join(worktreeRoot, '..');
 
 function readShared(rel: string): string {
   return readFileSync(join(here, '..', rel), 'utf8');
@@ -47,8 +49,8 @@ const translateItem = (nameKey: string, fallback: string) => fallback;
 const REUSED_SPORTS = {
   sports_boxing: 'Boxing',
   sports_pickleball: 'Pickleball',
-  sports_motorsports: 'Car Racing',
-  sports_hockey: 'Ice Hockey',
+  sports_motorsports: 'Motorsports',
+  sports_hockey: 'Hockey',
 } as const;
 
 const NEW_SPORTS = [
@@ -164,10 +166,26 @@ describe('iOS 2.0.9 Altercall — sports and travel manifesto', () => {
     const esItems = (es as any).onboarding.profileCompletion.interests.items;
     assert.equal(enItems.sports_mma, 'MMA');
     assert.equal(esItems.sports_mma, 'Artes marciales mixtas');
-    assert.equal(enItems.sports_motorsports, 'Car Racing');
-    assert.equal(esItems.sports_motorsports, 'Automovilismo');
-    assert.equal(enItems.sports_hockey, 'Ice Hockey');
-    assert.equal(esItems.sports_hockey, 'Hockey sobre hielo');
+    assert.equal(enItems.sports_motorsports, 'Motorsports');
+    assert.equal(esItems.sports_motorsports, 'Deportes de motor');
+    assert.equal(enItems.sports_hockey, 'Hockey');
+    assert.equal(esItems.sports_hockey, 'Hockey');
+  });
+
+  it('ships an accessible manifesto and does not narrow motorsports or hockey', () => {
+    const manifesto = readShared('interests/ios209AltercallInterestManifesto.md');
+    assert.match(manifesto, /sports_motorsports/);
+    assert.match(manifesto, /Motorsports/);
+    assert.match(manifesto, /Deportes de motor/);
+    assert.match(manifesto, /sports_hockey/);
+    assert.match(manifesto, /sports_field_hockey/);
+    assert.match(manifesto, /travel_world_cultures/);
+    assert.match(manifesto, /legacy/);
+    assert.match(manifesto, /f2855a1/);
+    assert.match(manifesto, /Not created: `sports_car_racing`, `sports_ice_hockey`/);
+    const catalog = readShared('interests/onboardingInterestCatalog.ts');
+    assert.match(catalog, /item\('sports_hockey', 'Hockey'/);
+    assert.match(catalog, /item\('sports_motorsports', 'Motorsports'/);
   });
 
   it('retires Cultural Experiences and Latin Culture without converting saved rows', () => {
@@ -237,22 +255,58 @@ describe('iOS 2.0.9 Altercall — social order, Web in CRJ, copy, immediate save
 
   it('Instagram copy reuses a live challenge and does not treat close as connected', () => {
     const copy = readShared('social/instagramOwnership/copyChallenge.ts');
+    const copyFn = copy.slice(
+      copy.indexOf('export async function copyInstagramChallengeCode'),
+      copy.indexOf('export async function shareInstagramChallengeCode'),
+    );
+    const controls = readShared(
+      'social/instagramOwnership/InstagramChallengeCopyControls.tsx',
+    );
     const owned = readShared(
       'components/registration/OwnedSocialConnectSection.tsx',
     );
     const screen = readShared('screens/SocialMediaScreen.tsx');
+    const pkg = readFileSync(
+      join(worktreeRoot, 'apps/nearsy-ios/package.json'),
+      'utf8',
+    );
+    const lock = readFileSync(join(worktreeRoot, 'pnpm-lock.yaml'), 'utf8');
+    const appConfig = readFileSync(
+      join(worktreeRoot, 'apps/nearsy-ios/app.config.js'),
+      'utf8',
+    );
     assert.match(copy, /copyInstagramChallengeCode/);
     assert.match(copy, /expo-clipboard/);
+    assert.match(copyFn, /setStringAsync/);
+    assert.doesNotMatch(copyFn, /Share\.share/);
+    assert.match(copy, /shareInstagramChallengeCode/);
+    assert.match(copy, /alternative: 'ios-share-sheet'/);
+    assert.match(controls, /InstagramChallengeCopyControls/);
+    assert.match(controls, /profile\.social\.instagram\.shareSheet/);
+    assert.match(controls, /clipboardUnavailable/);
+    assert.doesNotMatch(controls, /result === 'copied'/);
+    assert.match(pkg, /"expo-clipboard": "~8\.0\.8"/);
+    assert.match(lock, /expo-clipboard@/);
+    assert.match(appConfig, /expo-clipboard/);
     assert.match(owned, /live\.expiresAt > Date\.now\(\)/);
     assert.match(owned, /setConnectSheet\(null\)/);
+    assert.match(owned, /InstagramChallengeCopyControls/);
     assert.doesNotMatch(owned, /inboxAuthorizeStart/);
+    assert.match(screen, /InstagramChallengeCopyControls/);
     assert.match(screen, /persistDraftBag/);
     assert.match(screen, /profile\.social\.saveLink/);
+    assert.equal(enProfile.social.instagram.shareSheet, 'Share');
+    assert.equal(enProfile.social.instagram.shareCode, 'Copy code');
+    assert.equal(es.profile.social.instagram.shareSheet, 'Compartir');
+    assert.equal(
+      es.profile.social.instagram.clipboardUnavailable.includes('Compartir'),
+      true,
+    );
   });
 });
 
 describe('iOS 2.0.9 Altercall — Functions #40 contacts/alerts blockage', () => {
-  it('does not invent encounter-notify callables while contracts are missing', () => {
+  it('does not invent encounter-notify callables while Identity wire is not in this repo', () => {
     const contractA = join(nearsyRoot, 'encounter-notify-contracts-v1.md');
     const contractB = join(
       nearsyRoot,

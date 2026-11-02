@@ -59,7 +59,7 @@ import {
   mapInstagramOwnershipThrowable,
   presentInstagramGetResponse,
   resolveInstagramOwnershipClientPlatform,
-  copyInstagramChallengeCode,
+  InstagramChallengeCopyControls,
   shouldPollInstagramOwnership,
   INSTAGRAM_OWNERSHIP_POLL_INTERVAL_MS,
   InstagramOwnershipClientError,
@@ -179,7 +179,6 @@ export function OwnedSocialConnectSection({
   const [connectSheet, setConnectSheet] = useState<
     'youtube' | 'tiktok' | 'instagram' | 'x' | null
   >(null);
-  const [instagramCopied, setInstagramCopied] = useState(false);
 
   const [xVerified, setXVerified] = useState<XOwnershipVerified | null>(null);
   const [xLegacyUrl, setXLegacyUrl] = useState<string | null>(null);
@@ -878,26 +877,6 @@ export function OwnedSocialConnectSection({
     mode,
   ]);
 
-  const handleInstagramShare = useCallback(() => {
-    const code = instagramChallenge?.code;
-    if (!code) return;
-    void copyInstagramChallengeCode(code)
-      .then((result) => {
-        if (result === 'copied') {
-          setInstagramCopied(true);
-        }
-      })
-      .catch(() => {
-        presentInstagramError(
-          new InstagramOwnershipClientError(
-            'UNKNOWN',
-            'Could not copy Instagram code.',
-            { stage: 'unknown' },
-          ),
-        );
-      });
-  }, [instagramChallenge, presentInstagramError]);
-
   const handleInstagramOpen = useCallback(() => {
     const url = instagramChallenge?.inboxProfileUrl;
     if (!url) return;
@@ -1437,30 +1416,13 @@ export function OwnedSocialConnectSection({
                   })}
                 </Text>
                 <View style={styles.instagramActions}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={t(
-                      'profile.social.instagram.shareCodeA11y',
-                    )}
-                    onPress={handleInstagramShare}
-                    style={({ pressed }) => [
-                      styles.toggleBtn,
-                      {
-                        backgroundColor: palette.surface,
-                        borderColor: palette.border,
-                      },
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.toggleText,
-                        { color: palette.textPrimary },
-                      ]}
-                    >
-                      {t('profile.social.instagram.shareCode')}
-                    </Text>
-                  </Pressable>
+                  <InstagramChallengeCopyControls
+                    code={instagramChallenge.code}
+                    textColor={palette.textPrimary}
+                    mutedColor={palette.textMuted}
+                    borderColor={palette.border}
+                    surfaceColor={palette.surface}
+                  />
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={t(
@@ -1584,7 +1546,6 @@ export function OwnedSocialConnectSection({
         }}
         onRequestClose={() => {
           setConnectSheet(null);
-          setInstagramCopied(false);
         }}
       >
         {connectSheet === 'instagram' ? (
@@ -1617,35 +1578,21 @@ export function OwnedSocialConnectSection({
                 >
                   {instagramChallenge.code}
                 </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t('profile.social.instagram.shareCodeA11y')}
-                  onPress={handleInstagramShare}
-                  style={({ pressed }) => [
-                    styles.toggleBtn,
-                    {
-                      backgroundColor: palette.surface,
-                      borderColor: palette.border,
-                    },
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={[styles.toggleText, { color: palette.textPrimary }]}>
-                    {instagramCopied
-                      ? t('profile.social.copied')
-                      : t('profile.social.instagram.shareCode')}
+                <InstagramChallengeCopyControls
+                  code={instagramChallenge.code}
+                  textColor={palette.textPrimary}
+                  mutedColor={palette.textMuted}
+                  borderColor={palette.border}
+                  surfaceColor={palette.surface}
+                />
+                {instagramBusyPhase === 'pending' ? (
+                  <Text
+                    accessibilityLiveRegion="polite"
+                    style={[styles.helperText, { color: palette.textMuted }]}
+                  >
+                    {t('profile.social.instagram.waiting')}
                   </Text>
-                </Pressable>
-                <Text
-                  accessibilityLiveRegion="polite"
-                  style={[styles.helperText, { color: palette.textMuted }]}
-                >
-                  {instagramCopied
-                    ? t('profile.social.copied')
-                    : instagramBusyPhase === 'pending'
-                      ? t('profile.social.instagram.waiting')
-                      : ''}
-                </Text>
+                ) : null}
               </>
             ) : null}
           </View>

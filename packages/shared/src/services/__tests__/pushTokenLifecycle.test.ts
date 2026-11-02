@@ -18,7 +18,10 @@ import {
   shouldApplyPushTokenRegisterResult,
   thisDevicePushTokenDoc,
 } from '../pushTokenLifecycle';
-import { createPushTokenSession } from '../pushTokenSession';
+import {
+  createPushTokenSession,
+  isRegisterPushTokenFailure,
+} from '../pushTokenSession';
 import {
   bindPushTokenAuthReplaceHandlers,
   isPushTokenReleaseUnconfirmedError,
@@ -410,6 +413,22 @@ describe('push token session — register / release / switch', () => {
       registered: false,
     });
     assert.equal(io.writes.length, 0);
+  });
+
+  it('narrows a failed register result without touching the success variant', async () => {
+    const denied = createFakeIo({ granted: false, uid: 'user-a' });
+    const session = createPushTokenSession(denied);
+    const result = await session.register();
+    assert.equal(isRegisterPushTokenFailure(result), true);
+    if (isRegisterPushTokenFailure(result)) {
+      assert.equal(result.reason, 'permission-not-granted');
+    }
+    const sync = await session.syncAuth(null, 'user-a');
+    assert.deepEqual(sync, {
+      ok: false,
+      reason: 'permission-not-granted',
+      registered: false,
+    });
   });
 
   it('waits for an already-sent A register, then deletes, then allows replace', async () => {

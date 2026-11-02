@@ -62,5 +62,7 @@ export {
 } from './pollPolicy';
 export {
   copyInstagramChallengeCode,
+  isCopyInstagramChallengeFailure,
   shareInstagramChallengeCode,
 } from './copyChallenge';
+export { InstagramChallengeCopyControls } from './InstagramChallengeCopyControls';

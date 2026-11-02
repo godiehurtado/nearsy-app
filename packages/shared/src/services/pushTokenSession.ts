@@ -13,6 +13,12 @@ export type RegisterPushTokenResult =
   | { ok: true; token: string }
   | { ok: false; reason: string };
 
+export function isRegisterPushTokenFailure(
+  result: RegisterPushTokenResult,
+): result is Extract<RegisterPushTokenResult, { ok: false }> {
+  return result.ok === false;
+}
+
 export type SyncPushTokenAuthResult =
   | { ok: true; registered: boolean }
   | { ok: false; reason: string; registered: false };
@@ -202,7 +208,7 @@ export function createPushTokenSession(io: PushTokenSessionIO) {
       return { ok: true, registered: false };
     }
     const result = await register();
-    if (!result.ok) {
+    if (isRegisterPushTokenFailure(result)) {
       return result;
     }
     return { ok: true, token: result.token };
@@ -238,7 +244,7 @@ export function createPushTokenSession(io: PushTokenSessionIO) {
       };
     }
     const result = await register();
-    if (!result.ok) {
+    if (isRegisterPushTokenFailure(result)) {
       return { ok: false, reason: result.reason, registered: false };
     }
     return { ok: true, registered: true };

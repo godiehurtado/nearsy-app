@@ -94,7 +94,7 @@ import {
   preserveLegacyInstagramInSocialPatch,
   resolveInstagramOwnershipClientPlatform,
   presentInstagramGetResponse,
-  copyInstagramChallengeCode,
+  InstagramChallengeCopyControls,
   shouldPollInstagramOwnership,
   INSTAGRAM_OWNERSHIP_POLL_INTERVAL_MS,
   InstagramOwnershipClientError,
@@ -268,7 +268,6 @@ export default function SocialMediaScreen() {
   >(null);
   const [manualDraft, setManualDraft] = useState('');
   const [manualError, setManualError] = useState<string | null>(null);
-  const [instagramCopied, setInstagramCopied] = useState(false);
 
   const [xVerified, setXVerified] = useState<XOwnershipVerified | null>(null);
   const [xLegacyUrl, setXLegacyUrl] = useState<string | null>(null);
@@ -1103,24 +1102,6 @@ export default function SocialMediaScreen() {
     isInstagramResultCurrent,
     screenFocused,
   ]);
-
-  const handleInstagramShare = useCallback(() => {
-    const code = instagramChallenge?.code;
-    if (!code) return;
-    void copyInstagramChallengeCode(code)
-      .then((result) => {
-        if (result === 'copied') setInstagramCopied(true);
-      })
-      .catch(() => {
-        presentInstagramError(
-          new InstagramOwnershipClientError(
-            'UNKNOWN',
-            'Could not copy Instagram code.',
-            { stage: 'unknown' },
-          ),
-        );
-      });
-  }, [instagramChallenge, presentInstagramError]);
 
   const handleInstagramOpen = useCallback(() => {
     const url = instagramChallenge?.inboxProfileUrl;
@@ -2220,30 +2201,13 @@ export default function SocialMediaScreen() {
                     })}
                   </Text>
                   <View style={styles.instagramActions}>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={t(
-                        'profile.social.instagram.shareCodeA11y',
-                      )}
-                      onPress={handleInstagramShare}
-                      style={({ pressed }) => [
-                        styles.toggleBtn,
-                        {
-                          backgroundColor: palette.surface,
-                          borderColor: palette.border,
-                        },
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.toggleText,
-                          { color: palette.textPrimary },
-                        ]}
-                      >
-                        {t('profile.social.instagram.shareCode')}
-                      </Text>
-                    </Pressable>
+                    <InstagramChallengeCopyControls
+                      code={instagramChallenge.code}
+                      textColor={palette.textPrimary}
+                      mutedColor={palette.textMuted}
+                      borderColor={palette.border}
+                      surfaceColor={palette.surface}
+                    />
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={t(
@@ -2666,7 +2630,6 @@ export default function SocialMediaScreen() {
         }}
         onRequestClose={() => {
           setOwnedSheet(null);
-          setInstagramCopied(false);
         }}
       >
         {ownedSheet === 'instagram' && instagramChallenge ? (
@@ -2687,21 +2650,13 @@ export default function SocialMediaScreen() {
             >
               {instagramChallenge.code}
             </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('profile.social.instagram.shareCodeA11y')}
-              onPress={handleInstagramShare}
-              style={[
-                styles.toggleBtn,
-                { borderColor: palette.border, backgroundColor: palette.surface },
-              ]}
-            >
-              <Text style={[styles.toggleText, { color: palette.textPrimary }]}>
-                {instagramCopied
-                  ? t('profile.social.copied')
-                  : t('profile.social.instagram.shareCode')}
-              </Text>
-            </Pressable>
+            <InstagramChallengeCopyControls
+              code={instagramChallenge.code}
+              textColor={palette.textPrimary}
+              mutedColor={palette.textMuted}
+              borderColor={palette.border}
+              surfaceColor={palette.surface}
+            />
           </View>
         ) : null}
       </SocialConnectionModal>

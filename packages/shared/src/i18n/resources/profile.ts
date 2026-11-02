@@ -356,6 +356,10 @@ export default {
       retry: 'Try again',
       shareCode: 'Copy code',
       shareCodeA11y: 'Copy the Instagram verification code',
+      shareSheet: 'Share',
+      shareSheetA11y: 'Share the Instagram verification code',
+      clipboardUnavailable:
+        'Clipboard is not available in this app build. Use Share.',
       openInbox: 'Open Instagram',
       openInboxA11y: 'Open Instagram to send the code by DM',
       pendingTitle: 'Send this code',

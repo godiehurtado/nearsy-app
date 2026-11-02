@@ -473,12 +473,11 @@ describe('post-CRJ Social Media editor screen contract', () => {
     assert.doesNotMatch(screen, /instagramOwnershipConfirm/);
     assert.match(screen, /shouldPollInstagramOwnership/);
     assert.match(screen, /AppState\.addEventListener/);
-    assert.match(screen, /copyInstagramChallengeCode/);
-    assert.match(screen, /handleInstagramShare/);
+    assert.match(screen, /InstagramChallengeCopyControls/);
     assert.match(screen, /presentInstagramGetResponse/);
     assert.match(screen, /instagramHint === 'expired'/);
     assert.match(screen, /instagramHint === 'conflict'/);
-    assert.match(screen, /profile\.social\.instagram\.shareCode/);
+    assert.doesNotMatch(screen, /handleInstagramShare/);
     assert.doesNotMatch(screen, /profile\.social\.instagram\.copy/);
     assert.match(screen, /mapInstagramOwnershipThrowable\(err, 'start'\)/);
     assert.match(screen, /mapped\.retryable/);
