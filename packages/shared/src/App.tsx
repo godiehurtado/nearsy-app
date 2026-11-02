@@ -39,6 +39,7 @@ import {
   bindSocialPhotoCopySession,
   clearSocialPhotoCopySessionCache,
 } from './profile/socialProfilePhotoCopy';
+import { parseEncounterNotifyPayload } from './alerts/encounterNotifyPayload';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -200,7 +201,8 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
     const responseSub = Notifications.addNotificationResponseReceivedListener(
       (response) => {
         const data = response.notification.request.content.data as any;
-        const actorUid = data?.actorUid;
+        const parsed = parseEncounterNotifyPayload(data);
+        const actorUid = parsed?.actorUid ?? data?.actorUid;
 
         if (actorUid && navigationRef.isReady()) {
           // DiscoveryProfile uses getDiscoveryProfile (no peer users/{uid} read).

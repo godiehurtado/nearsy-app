@@ -246,6 +246,12 @@ export const es: TranslationResources = {
     kinds: {
       interestNearby: 'Interés compartido cercano',
     },
+    unseen: 'Alerta no leída',
+    push: {
+      interest: '{{name}} está cerca y comparte intereses contigo.',
+      contact: '{{name}}, uno de tus contactos, está cerca.',
+      both: '{{name}}, uno de tus contactos, está cerca y comparte intereses contigo.',
+    },
   },
   settings: {
     title: 'Ajustes',
@@ -292,6 +298,11 @@ export const es: TranslationResources = {
       maxBounds: 'La edad máxima debe estar entre {{min}} y {{max}}.',
       order: 'La edad mínima no puede ser mayor que la máxima.',
       saved: 'Rango de edad de visibilidad actualizado',
+    },
+    nearbyNotices: {
+      title: 'Avisos de intereses cercanos',
+      description:
+        'Recibe un aviso cuando alguien cerca comparte un interés oficial contigo.',
     },
     backgroundVisibility: {
       title: 'Permanecer visible en segundo plano',

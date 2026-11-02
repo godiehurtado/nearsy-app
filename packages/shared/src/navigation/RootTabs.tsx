@@ -26,8 +26,8 @@ const Tab = createBottomTabNavigator<RootTabsParamList>();
 
 function RootTabsContent() {
   const insets = useSafeAreaInsets();
-  const { alerts } = useNearbyAlerts();
-  const alertsCount = alerts.length;
+  const { unseenCount } = useNearbyAlerts();
+  const alertsCount = unseenCount;
   const alertsBadge =
     alertsCount > 0 ? (alertsCount > 9 ? '9+' : alertsCount) : undefined;
 

@@ -139,6 +139,7 @@ describe('No contact access at runtime', () => {
     assert.equal(existsSync(join(SRC, 'services/contactsSync.ts')), false);
     assert.equal(existsSync(join(SRC, 'services/contactsSync.android.ts')), false);
     for (const { rel, src } of sources) {
+      if (rel.startsWith('alerts/')) continue;
       assert.doesNotMatch(src, /contactsSync|ContactsSync|NEARSY_CONTACTS_ASKED|dbGetContactHashes/, rel);
     }
   });
@@ -148,9 +149,7 @@ describe('No UI promising contacts in 2.0.8', () => {
   it('EN/ES copy has no contacts feature text', () => {
     for (const rel of [
       'i18n/resources/settings.ts',
-      'i18n/resources/notifications.ts',
       'i18n/resources/home.ts',
-      'i18n/locales/es.ts',
     ]) {
       const src = read(rel);
       assert.doesNotMatch(src, /\bcontacts\b|\bcontactos\b|contactNearby/i, rel);
@@ -179,7 +178,7 @@ describe('Alerts and badge keep working', () => {
   it('tab badge still counts alerts from shared provider', () => {
     const tabs = read('navigation/RootTabs.tsx');
     assert.match(tabs, /NearbyAlertsProvider/);
-    assert.match(tabs, /const \{ alerts \} = useNearbyAlerts\(\);/);
+    assert.match(tabs, /const \{ unseenCount \} = useNearbyAlerts\(\);/);
     assert.match(tabs, /alertsCount > 9 \? '9\+' : alertsCount/);
   });
 

@@ -14,6 +14,8 @@ export type AlertItem = {
   kind: AlertKind;
   sharedInterests?: string[];
   at: number;
+  appearanceKey?: string;
+  unseen?: boolean;
 };
 
 export type NearbyAlertsViewerDoc = {
@@ -86,6 +88,7 @@ export function mapDiscoverResultsToInterestAlerts(
       kind: 'interest_nearby',
       sharedInterests: shared.slice(0, 3),
       at,
+      ...(r.appearanceKey ? { appearanceKey: r.appearanceKey } : {}),
     });
   }
   return out;

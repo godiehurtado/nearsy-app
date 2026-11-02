@@ -18,6 +18,7 @@ import {
   recordActiveProfileModeConfirmation,
 } from './activeProfileModeReconciliation';
 import { isOwnProfileModeActivationRejected } from '../profile/ownProfileModeActivation';
+import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
 
 export type SetActiveProfileModeOutcome =
   | { ok: true; response: SetActiveProfileModeResponse }
@@ -43,6 +44,7 @@ export async function setActiveProfileModeFlow(
       mode: response.mode,
       visibility: response.visibility,
     });
+    scheduleReevaluateProximityNotices();
     return { ok: true, response };
   } catch (err) {
     return {

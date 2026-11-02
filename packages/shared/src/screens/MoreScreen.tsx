@@ -39,6 +39,8 @@ import {
   getUserProfile,
   updateUserProfilePartial,
 } from '../services/firestoreService';
+import { buildNotifyNearbyInterestsPatch } from '../alerts/notifyPrefs';
+import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
 import {
   changeAppLanguage,
   isSupportedLanguage,
@@ -118,6 +120,7 @@ type ProfileDoc = {
   visibleToMaxAge?: number | null;
   bgVisible?: boolean;
   visibility?: boolean;
+  notifyNearbyInterests?: boolean;
 };
 
 type EditorKind = 'birthDate' | 'visibilityAge' | null;
@@ -222,6 +225,7 @@ export default function MoreScreen() {
   const [visibleToMinAge, setVisibleToMinAge] = useState<number | null>(null);
   const [visibleToMaxAge, setVisibleToMaxAge] = useState<number | null>(null);
   const [bgVisible, setBgVisible] = useState(false);
+  const [notifyNearbyInterests, setNotifyNearbyInterests] = useState(true);
   const [visibilityOn, setVisibilityOn] = useState(false);
   const [bgChanging, setBgChanging] = useState(false);
   const [bgDisclosureVisible, setBgDisclosureVisible] = useState(false);
@@ -304,6 +308,7 @@ export default function MoreScreen() {
     setVisibleToMaxAge(
       typeof data.visibleToMaxAge === 'number' ? data.visibleToMaxAge : null,
     );
+    setNotifyNearbyInterests(data.notifyNearbyInterests !== false);
     let bgPref = !!data.bgVisible;
     setVisibilityOn(!!data.visibility);
     try {
@@ -452,6 +457,23 @@ export default function MoreScreen() {
       updatedAt: Date.now(),
     });
     setBgVisible(enabled);
+  };
+
+  const handleToggleNotifyNearbyInterests = async (enabled: boolean) => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) return;
+    const previous = notifyNearbyInterests;
+    setNotifyNearbyInterests(enabled);
+    try {
+      await updateUserProfilePartial(uid, {
+        ...buildNotifyNearbyInterestsPatch(enabled),
+        updatedAt: Date.now(),
+      });
+      scheduleReevaluateProximityNotices();
+    } catch (e: any) {
+      setNotifyNearbyInterests(previous);
+      Alert.alert(t('common.error'), e?.message || t('settings.saveError'));
+    }
   };
 
   const runBackgroundEnableAfterDisclosure = async () => {
@@ -963,6 +985,13 @@ export default function MoreScreen() {
         </SettingsSection>
 
         <SettingsSection title={t('settings.sections.privacy')}>
+          <SettingsToggleRow
+            icon="notifications-outline"
+            title={t('settings.nearbyNotices.title')}
+            description={t('settings.nearbyNotices.description')}
+            value={notifyNearbyInterests}
+            onValueChange={handleToggleNotifyNearbyInterests}
+          />
           <SettingsRow
             icon="people-outline"
             title={t('settings.visibilityAge.title')}

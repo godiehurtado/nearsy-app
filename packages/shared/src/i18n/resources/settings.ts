@@ -44,6 +44,11 @@ export default {
     order: 'Minimum age cannot be greater than maximum age.',
     saved: 'Visibility age updated',
   },
+  nearbyNotices: {
+    title: 'Interest nearby notices',
+    description:
+      'Get notified when someone nearby shares an official interest with you.',
+  },
   backgroundVisibility: {
     title: 'Stay visible in background',
     description:
