@@ -38,6 +38,7 @@ import { useLinkedInSignInFlow } from '../hooks/useLinkedInSignInFlow';
 import { useDirectProviderLoginWarning } from '../hooks/useDirectProviderLoginWarning';
 import { shouldWarnBeforeDirectProviderLogin } from '../authentication/social/application/directProviderLoginWarning';
 import { applyPostAuthNavigation } from '../phoneOtp/applyPostAuthNavigation';
+import { usePasswordVisibility } from '../components/usePasswordVisibility';
 import Constants from 'expo-constants';
 
 export default function LoginScreen({ navigation }: any) {
@@ -52,7 +53,7 @@ export default function LoginScreen({ navigation }: any) {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [passwordVisible, setPasswordVisible] = useState(false);
+  const passwordVisibility = usePasswordVisibility(true);
   const [submitting, setSubmitting] = useState(false);
 
   const [infoModalVisible, setInfoModalVisible] = useState(false);
@@ -342,19 +343,37 @@ export default function LoginScreen({ navigation }: any) {
                   style={[styles.input, { color: palette.textPrimary }]}
                   placeholder={t('authentication.login.password')}
                   placeholderTextColor={palette.placeholder}
-                  secureTextEntry={!passwordVisible}
+                  secureTextEntry={passwordVisibility.secureTextEntry}
                   value={password}
                   onChangeText={setPassword}
                   editable={!submitting}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  textContentType="password"
+                  autoComplete="password"
+                  selection={passwordVisibility.selection}
+                  onSelectionChange={passwordVisibility.onSelectionChange}
+                  accessibilityLabel={t('authentication.login.password')}
                 />
                 <TouchableOpacity
-                  onPress={() => setPasswordVisible((prev) => !prev)}
+                  onPress={passwordVisibility.toggle}
                   style={styles.eyeButton}
                   activeOpacity={0.7}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    passwordVisibility.hidden
+                      ? t('authentication.login.showPassword')
+                      : t('authentication.login.hidePassword')
+                  }
+                  accessibilityState={{ selected: passwordVisibility.visible }}
                 >
                   <Ionicons
-                    name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
+                    name={
+                      passwordVisibility.visible
+                        ? 'eye-off-outline'
+                        : 'eye-outline'
+                    }
                     size={18}
                     color={palette.placeholder}
                   />

@@ -183,7 +183,7 @@ describe('iOS 2.0.9 CRJ social — ownership Connect/Get/Unlink, no inbox admin'
       'instagram',
       'x',
     ]);
-    assert.deepEqual(CRJ_MANUAL_URL_PLATFORM_IDS, ['linkedin', 'facebook']);
+    assert.deepEqual(CRJ_MANUAL_URL_PLATFORM_IDS, ['facebook', 'linkedin']);
     assert.match(owned, /getYoutubeOwnershipController/);
     assert.match(owned, /getTiktokOwnershipController/);
     assert.match(owned, /getInstagramOwnershipClient/);

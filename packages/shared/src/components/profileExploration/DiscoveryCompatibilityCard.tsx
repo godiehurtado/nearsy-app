@@ -12,7 +12,6 @@ import {
 import { useTranslation } from '../../i18n';
 import {
   alignmentAccessibilityLabel,
-  alignmentTierLabel,
   alignmentTitleLabel,
   alignmentUnavailableLabel,
 } from '../../visibility/alignmentPresentation';
@@ -45,9 +44,7 @@ export function DiscoveryCompatibilityCard({ compatibility }: Props) {
 
   if (alignment.available === true) {
     const a11yLabel = alignmentAccessibilityLabel(t, alignment);
-    const tierLabel = alignment.tier
-      ? alignmentTierLabel(t, alignment.tier)
-      : null;
+    const tierLabel = null;
 
     return (
       <View

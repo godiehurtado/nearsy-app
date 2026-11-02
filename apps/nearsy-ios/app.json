@@ -50,6 +50,7 @@
         }
       ],
       "expo-notifications",
+      "expo-clipboard",
       [
         "expo-contacts",
         {
