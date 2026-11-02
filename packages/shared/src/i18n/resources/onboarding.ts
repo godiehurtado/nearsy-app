@@ -594,7 +594,7 @@ export const onboardingTranslations = {
     location: {
       title: 'Turn on location',
       subtitle:
-        "Nearsy shows you people who are actually close by. Without location we can't do that.",
+        'Nearsy collects your device location while you use the app to show people who are actually nearby. Location is sent securely to Nearsy for nearby discovery. Without location we cannot do that.',
       enable: 'Enable location',
       skip: 'Skip for now',
       deniedTitle: 'Location not enabled',
@@ -1218,7 +1218,7 @@ export const onboardingTranslations = {
       location: {
         title: 'Activa la ubicación',
         subtitle:
-          'Nearsy te muestra personas que están realmente cerca. Sin ubicación no podemos hacerlo.',
+          'Nearsy recopila la ubicación de tu dispositivo mientras usas la app para mostrarte personas que están realmente cerca. La ubicación se envía de forma segura a Nearsy para el descubrimiento cercano. Sin ubicación no podemos hacerlo.',
         enable: 'Activar ubicación',
         skip: 'Omitir por ahora',
         deniedTitle: 'Ubicación no activada',

@@ -769,22 +769,10 @@ export default function MainHomeScreen({ navigation }: Props) {
               })
             ) {
               postLoginRecoveryStartedRef.current = true;
-              const perm = await ensureForegroundPermission();
-              if (cancelled) return;
-              if (perm.status !== 'granted') {
-                setPermissionsValid(false);
-                setPermissionValidationPending(false);
-                const client = await getVisibilityDiscoveryClient();
-                const outcome = await deactivateVisibilityFlow(client);
-                if (outcome.ok) {
-                  setProfile((p) => ({ ...p, visibility: false }));
-                }
-                await stopBackgroundLocation().catch(() => {});
-                return;
-              }
-              setPermissionsValid(true);
+              // Disclosure before any OS location prompt — do not call
+              // ensureForegroundPermission() here. Enable on the modal may
+              // request FG/BG only after affirmative consent.
               setPermissionValidationPending(false);
-              // No preparation between FG and education.
               await offerBackgroundEducationIfNeeded({ forceFull: true });
               return;
             }
@@ -1062,7 +1050,23 @@ export default function MainHomeScreen({ navigation }: Props) {
 
     const goingActive = !visibilityHydration.displayActive;
     if (goingActive) {
-      await activateVisibility();
+      // Affirmative disclosure before any FG runtime prompt inside activate.
+      Alert.alert(
+        t('home.visibility.locationConsentTitle'),
+        t('home.visibility.locationConsentBody'),
+        [
+          {
+            text: t('home.visibility.locationConsentCancel'),
+            style: 'cancel',
+          },
+          {
+            text: t('home.visibility.locationConsentContinue'),
+            onPress: () => {
+              void activateVisibility();
+            },
+          },
+        ],
+      );
       return;
     }
 

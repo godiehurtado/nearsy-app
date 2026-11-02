@@ -528,15 +528,12 @@ export default function MoreScreen() {
     return (err as { message?: string })?.message || t('settings.saveError');
   };
 
-  const handleToggleContactsSync = async (enabled: boolean) => {
-    const uid = firebaseAuth.currentUser?.uid;
-    if (!uid || Platform.OS !== 'android' || contactsBusy) return;
+  const runContactsSyncEnable = async (uid: string, opGen: number) => {
     const previous = contactsSyncEnabled;
     const previousNotices = notifyNearbyContacts;
-    const opGen = ++contactsOpGenRef.current;
     setContactsBusy(true);
     // Optimistic UI only; hard-cap / fence errors revert and never claim success.
-    setContactsSyncEnabled(enabled);
+    setContactsSyncEnabled(true);
     try {
       let state = contactsStateRef.current;
       if (!state) state = await loadContactsLocalState(uid);
@@ -547,9 +544,78 @@ export default function MoreScreen() {
         return;
       }
       const liveEpoch = contactsEpochFromUserDoc(state.contactsEpoch);
-      const outcome = enabled
-        ? await enableThenSyncContacts(state, liveEpoch)
-        : await disableContactsIntegration(state);
+      // OS READ_CONTACTS is requested inside enableThenSync only after this consent.
+      const outcome = await enableThenSyncContacts(state, liveEpoch);
+      if (
+        opGen !== contactsOpGenRef.current ||
+        firebaseAuth.currentUser?.uid !== uid
+      ) {
+        return;
+      }
+      contactsStateRef.current = outcome.state;
+      setContactsSyncEnabled(outcome.result.contactsSyncEnabled);
+      setNotifyNearbyContacts(outcome.result.notifyNearbyContactsEffective);
+    } catch (err) {
+      if (
+        opGen === contactsOpGenRef.current &&
+        firebaseAuth.currentUser?.uid === uid
+      ) {
+        setContactsSyncEnabled(previous);
+        setNotifyNearbyContacts(previousNotices);
+        Alert.alert(t('common.error'), contactsErrorMessage(err));
+      }
+    } finally {
+      if (opGen === contactsOpGenRef.current) {
+        setContactsBusy(false);
+      }
+    }
+  };
+
+  const handleToggleContactsSync = async (enabled: boolean) => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid || Platform.OS !== 'android' || contactsBusy) return;
+    const previous = contactsSyncEnabled;
+    const previousNotices = notifyNearbyContacts;
+    const opGen = ++contactsOpGenRef.current;
+
+    if (enabled) {
+      // In-app disclosure + affirmative Continue before READ_CONTACTS / Identity sync.
+      Alert.alert(
+        t('settings.contactsSync.consentTitle'),
+        t('settings.contactsSync.consentBody'),
+        [
+          {
+            text: t('settings.contactsSync.consentCancel'),
+            style: 'cancel',
+            onPress: () => {
+              if (opGen === contactsOpGenRef.current) {
+                setContactsSyncEnabled(false);
+              }
+            },
+          },
+          {
+            text: t('settings.contactsSync.consentContinue'),
+            onPress: () => {
+              void runContactsSyncEnable(uid, opGen);
+            },
+          },
+        ],
+      );
+      return;
+    }
+
+    setContactsBusy(true);
+    setContactsSyncEnabled(false);
+    try {
+      let state = contactsStateRef.current;
+      if (!state) state = await loadContactsLocalState(uid);
+      if (!state) {
+        if (opGen === contactsOpGenRef.current) {
+          setContactsSyncEnabled(previous);
+        }
+        return;
+      }
+      const outcome = await disableContactsIntegration(state);
       if (
         opGen !== contactsOpGenRef.current ||
         firebaseAuth.currentUser?.uid !== uid
@@ -612,13 +678,15 @@ export default function MoreScreen() {
   const runBackgroundEnableAfterDisclosure = async () => {
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) return;
+    // Affirmative consent already happened on the disclosure primary button.
+    // Only then may we request OS location permissions / open Settings / start FGS.
     setBgDisclosureBusy(true);
     try {
       if (bgDisclosureVariant === 'full') {
         await markBackgroundLocationEducationSeen().catch(() => {});
       }
 
-      const snap = await getLocationPermissionSnapshot();
+      let snap = await getLocationPermissionSnapshot();
       if (!snap.foregroundGranted) {
         let fg = await Location.getForegroundPermissionsAsync();
         if (fg.status !== 'granted' && (fg.status === 'undetermined' || fg.canAskAgain)) {
@@ -642,9 +710,10 @@ export default function MoreScreen() {
           );
           return;
         }
+        snap = await getLocationPermissionSnapshot();
       }
 
-      if (!snap.fineLocationGranted && snap.foregroundGranted) {
+      if (!snap.fineLocationGranted) {
         setBgVisible(false);
         Alert.alert(
           t('settings.backgroundVisibility.approximateTitle'),
@@ -663,31 +732,33 @@ export default function MoreScreen() {
         return;
       }
 
-      if (requiresSettingsForBackgroundPermission(Platform.Version)) {
-        pendingBgEnableIntentRef.current = true;
-        void Linking.openSettings();
-        return;
-      }
+      if (!snap.backgroundGranted) {
+        if (requiresSettingsForBackgroundPermission(Platform.Version)) {
+          pendingBgEnableIntentRef.current = true;
+          void Linking.openSettings();
+          return;
+        }
 
-      // Android 10-compatible path: request BG dialog, then start only if Visibility ON.
-      const bg = await Location.requestBackgroundPermissionsAsync();
-      if (bg.status !== 'granted') {
-        setBgVisible(false);
-        Alert.alert(
-          t('common.appName'),
-          t('settings.backgroundVisibility.needsBackgroundPermission'),
-          [
-            { text: t('common.actions.cancel'), style: 'cancel' },
-            {
-              text: t('settings.backgroundVisibility.openSettings'),
-              onPress: () => {
-                pendingBgEnableIntentRef.current = true;
-                void Linking.openSettings();
+        // Android 10-compatible path: request BG dialog after disclosure consent.
+        const bg = await Location.requestBackgroundPermissionsAsync();
+        if (bg.status !== 'granted') {
+          setBgVisible(false);
+          Alert.alert(
+            t('common.appName'),
+            t('settings.backgroundVisibility.needsBackgroundPermission'),
+            [
+              { text: t('common.actions.cancel'), style: 'cancel' },
+              {
+                text: t('settings.backgroundVisibility.openSettings'),
+                onPress: () => {
+                  pendingBgEnableIntentRef.current = true;
+                  void Linking.openSettings();
+                },
               },
-            },
-          ],
-        );
-        return;
+            ],
+          );
+          return;
+        }
       }
 
       await persistBgPreference(uid, true);
@@ -760,68 +831,9 @@ export default function MoreScreen() {
         return;
       }
 
-      // Do not flip UI optimistically — only after successful grant path.
-      const snap = await getLocationPermissionSnapshot();
-      if (snap.backgroundGranted && snap.foregroundGranted) {
-        await persistBgPreference(uid, true);
-        if (visibilityOnRef.current) {
-          const result = await startGatedBackgroundLocation({
-            uid,
-            visibility: true,
-            bgVisible: true,
-            requestPermissions: false,
-            ...fgsCopy,
-          });
-          if (!result.ok) {
-            await persistBgPreference(uid, false);
-            setBgVisible(false);
-            Alert.alert(
-              t('common.error'),
-              t('settings.backgroundVisibility.error'),
-            );
-            return;
-          }
-        } else {
-          await stopBackgroundLocation().catch(() => {});
-        }
-        Alert.alert(
-          t('common.appName'),
-          t('settings.backgroundVisibility.enabled'),
-        );
-        return;
-      }
-
-      // Explicit More action: brief if education seen; API 30+ Open Settings via modal.
-      let foregroundGranted = snap.foregroundGranted;
-      if (!foregroundGranted) {
-        let fg = await Location.getForegroundPermissionsAsync();
-        if (
-          fg.status !== 'granted' &&
-          (fg.status === 'undetermined' || fg.canAskAgain)
-        ) {
-          fg = await Location.requestForegroundPermissionsAsync();
-        }
-        foregroundGranted = fg.status === 'granted' || !!fg.granted;
-        if (!foregroundGranted) {
-          setBgVisible(false);
-          Alert.alert(
-            t('common.appName'),
-            t('settings.backgroundVisibility.needsForegroundPermission'),
-            [
-              { text: t('common.actions.cancel'), style: 'cancel' },
-              {
-                text: t('settings.backgroundVisibility.openSettings'),
-                onPress: () => {
-                  pendingBgEnableIntentRef.current = true;
-                  void Linking.openSettings();
-                },
-              },
-            ],
-          );
-          return;
-        }
-      }
-
+      // Play Prominent Disclosure: never request OS location / open Settings /
+      // start FGS before the in-app disclosure and an affirmative Enable tap.
+      // Existing OS grants are not consent for this background-visibility purpose.
       const variant = await resolveBackgroundDisclosureVariant();
       setBgDisclosureVariant(variant);
       setBgDisclosureVisible(true);
