@@ -41,7 +41,17 @@ export type ContactsControllerPorts = {
 
 export type ContactsControllerOutcome =
   | { ok: true; result: ContactsWireResult; bookSynced: boolean }
-  | { ok: false; reason: string; bookSynced: false };
+  | {
+      ok: false;
+      reason: string;
+      bookSynced: false;
+      /**
+       * When Identity enable already committed but address-book sync failed,
+       * keep the toggle on and offer retry instead of pretending enable rolled back.
+       */
+      identityEnabled?: boolean;
+      result?: ContactsWireResult;
+    };
 
 async function persistSession(
   ports: ContactsControllerPorts,
@@ -116,6 +126,15 @@ export async function enableAndSyncContacts(
   await notifyAfterIdentity(ports, enabled);
 
   const synced = await syncGrantedAddressBook(ports);
+  if (synced.ok === false) {
+    return {
+      ok: false,
+      reason: synced.reason,
+      bookSynced: false,
+      identityEnabled: enabled.contactsSyncEnabled === true,
+      result: enabled,
+    };
+  }
   return synced;
 }
 

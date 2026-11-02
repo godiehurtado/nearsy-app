@@ -1077,7 +1077,11 @@ export default function MainHomeScreen({ navigation }: Props) {
         }
       } catch (err) {
         if (epoch === localEpochRef.current) {
-          Alert.alert(t('home.errors.title'), t('home.errors.generic'));
+          // Filter persist is independent of Visibility — never reuse Visibility copy.
+          Alert.alert(
+            t('home.preferences.errors.title'),
+            t('home.preferences.errors.saveFailed'),
+          );
         }
         const text = err instanceof Error ? err.message : '';
         if (text.includes(INTEREST_IDS_OVER_MAX_REASON)) {

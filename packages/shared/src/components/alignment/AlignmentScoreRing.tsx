@@ -39,6 +39,12 @@ type Props = {
 };
 
 /**
+ * Half-clip bleed past the square so iOS overflow:hidden does not flatten the
+ * stroke at 6 o'clock (visible on compact rings once progress paints the bottom).
+ */
+const HALF_CLIP_BLEED = 1;
+
+/**
  * Two half-clips + 180° semicircle borders (not a full colored ring).
  * Outer -90deg starts the arc at 12 o'clock; positive rotation is clockwise.
  */
@@ -59,6 +65,7 @@ function ProgressArc({
 
   const half = size / 2;
   const { firstHalfDegrees, secondHalfDegrees, isFull } = geometry;
+  const clipHeight = size + HALF_CLIP_BLEED * 2;
 
   const semiBase = {
     width: size,
@@ -67,7 +74,7 @@ function ProgressArc({
     borderWidth: stroke,
     borderColor: 'transparent' as const,
     position: 'absolute' as const,
-    top: 0,
+    top: HALF_CLIP_BLEED,
   };
 
   return (
@@ -78,7 +85,15 @@ function ProgressArc({
     >
       {/* First 0–50%: right half-clip, max 180° via top+right semicircle */}
       <View
-        style={[styles.halfClip, { width: half, height: size, left: half }]}
+        style={[
+          styles.halfClip,
+          {
+            width: half + HALF_CLIP_BLEED,
+            height: clipHeight,
+            left: half,
+            top: -HALF_CLIP_BLEED,
+          },
+        ]}
         collapsable={false}
       >
         <View
@@ -97,14 +112,22 @@ function ProgressArc({
       {/* Second 50–100%: left half-clip paints only the excess over 180° */}
       {secondHalfDegrees > 0 ? (
         <View
-          style={[styles.halfClip, { width: half, height: size, left: 0 }]}
+          style={[
+            styles.halfClip,
+            {
+              width: half + HALF_CLIP_BLEED,
+              height: clipHeight,
+              left: -HALF_CLIP_BLEED,
+              top: -HALF_CLIP_BLEED,
+            },
+          ]}
           collapsable={false}
         >
           <View
             style={[
               semiBase,
               {
-                left: 0,
+                left: HALF_CLIP_BLEED,
                 borderBottomColor: color,
                 borderLeftColor: color,
                 transform: [{ rotate: `${secondHalfDegrees - 180}deg` }],
@@ -199,16 +222,17 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'visible',
   },
   track: {
     ...StyleSheet.absoluteFillObject,
   },
   progressRoot: {
     ...StyleSheet.absoluteFillObject,
+    overflow: 'visible',
   },
   halfClip: {
     position: 'absolute',
-    top: 0,
     overflow: 'hidden',
   },
   label: {

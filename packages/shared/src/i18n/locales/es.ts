@@ -1027,6 +1027,10 @@ const es: TranslationResources = {
       distanceRange: 'Rango de búsqueda',
       distanceValueFt: 'hasta {{value}} ft',
       distanceValueM: 'hasta {{value}} m',
+      errors: {
+        title: 'Filtros de descubrimiento',
+        saveFailed: 'No se pudieron guardar tus filtros. Inténtalo de nuevo.',
+      },
     },
     discovery: {
       title: 'Descubrimiento',
@@ -1719,6 +1723,28 @@ const es: TranslationResources = {
       permissionDenied:
         'Se necesita acceso a Contactos para sincronizar tu libreta. Puedes activarlo en Ajustes de iPhone.',
       error: 'No se pudo actualizar la sincronización de Contactos. Inténtalo más tarde.',
+      syncing: 'Sincronizando contactos…',
+      syncSuccess: 'Contactos sincronizados.',
+      syncFailedTitle: 'Sincronización de contactos',
+      retry: 'Reintentar',
+      errors: {
+        generic: 'No se pudieron sincronizar los contactos. Inténtalo de nuevo.',
+        unauthenticated: 'Vuelve a iniciar sesión para sincronizar contactos.',
+        accountGone:
+          'Esta cuenta ya no está disponible para sincronizar contactos.',
+        notEnabled: 'Activa Contactos cercanos antes de sincronizar.',
+        stale:
+          'La sincronización de contactos está desactualizada. Reintenta para reconciliar.',
+        sourceRemoved:
+          'Se quitó la sincronización de contactos. Actívala de nuevo para continuar.',
+        cap: 'Tu libreta es demasiado grande para sincronizar ahora.',
+        invalid:
+          'Algunos identificadores de contacto no se pudieron sincronizar. Inténtalo de nuevo.',
+        unavailable:
+          'La sincronización de contactos no está disponible temporalmente. Inténtalo en breve.',
+        timeout:
+          'La sincronización de contactos está tardando demasiado. Puedes reintentar.',
+      },
     },
     visibilityAge: {
       title: 'Quién puede encontrarme por edad',

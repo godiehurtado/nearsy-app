@@ -117,12 +117,20 @@ import {
 import {
   disableContactsSyncFlow,
   enableAndSyncContacts,
+  syncGrantedAddressBook,
 } from '../contacts/controller';
+import {
+  CONTACTS_SYNC_TIMEOUT_MS,
+  isContactsSyncRetryable,
+  presentContactsSyncError,
+} from '../contacts/contactsErrorPresentation';
 import { createContactsAddressBookPort } from '../contacts/iosAddressBook';
 import { getContactsHmacClient } from '../contacts/iosContactsFoundation';
 import { createContactsSessionStore } from '../contacts/iosContactsSession';
 import { shouldCallReevaluateAfterIdentity } from '../contacts/parse';
 import type { ContactsWireResult } from '../contacts/wireTypes';
+
+type ContactsSyncPhase = 'idle' | 'syncing' | 'success' | 'error';
 
 type ProfileDoc = {
   phone?: string | null;
@@ -245,6 +253,14 @@ export default function MoreScreen() {
   const [contactsSyncEnabled, setContactsSyncEnabled] = useState(false);
   const [notifyNearbyContacts, setNotifyNearbyContacts] = useState(false);
   const [contactsBusy, setContactsBusy] = useState(false);
+  const [contactsSyncPhase, setContactsSyncPhase] =
+    useState<ContactsSyncPhase>('idle');
+  const [contactsSyncError, setContactsSyncError] = useState<string | null>(
+    null,
+  );
+  const contactsSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const [bgChanging, setBgChanging] = useState(false);
   const [bgEducationOpen, setBgEducationOpen] = useState(false);
   const [bgEducationVariant, setBgEducationVariant] =
@@ -525,6 +541,90 @@ export default function MoreScreen() {
     },
   });
 
+  const clearContactsSuccessTimer = () => {
+    if (contactsSuccessTimerRef.current) {
+      clearTimeout(contactsSuccessTimerRef.current);
+      contactsSuccessTimerRef.current = null;
+    }
+  };
+
+  const withContactsTimeout = async <T,>(promise: Promise<T>): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('contacts-timeout')),
+            CONTACTS_SYNC_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
+  const presentContactsFailure = (reason: string, offerRetry: boolean) => {
+    const message = presentContactsSyncError(reason, t);
+    setContactsSyncPhase('error');
+    setContactsSyncError(message);
+    const buttons = offerRetry
+      ? [
+          { text: t('common.cancel'), style: 'cancel' as const },
+          {
+            text: t('settings.contacts.retry'),
+            onPress: () => {
+              void handleRetryContactsSync();
+            },
+          },
+        ]
+      : [{ text: t('common.ok') }];
+    Alert.alert(t('settings.contacts.syncFailedTitle'), message, buttons);
+  };
+
+  const markContactsSyncSuccess = () => {
+    clearContactsSuccessTimer();
+    setContactsSyncPhase('success');
+    setContactsSyncError(null);
+    contactsSuccessTimerRef.current = setTimeout(() => {
+      setContactsSyncPhase('idle');
+      contactsSuccessTimerRef.current = null;
+    }, 2500);
+  };
+
+  const handleRetryContactsSync = async () => {
+    if (contactsBusy) return;
+    clearContactsSuccessTimer();
+    setContactsBusy(true);
+    setContactsSyncPhase('syncing');
+    setContactsSyncError(null);
+    try {
+      const ports = await contactsPorts();
+      // Reconcile session/fingerprint before retrying Identity sync.
+      await ports.session.load();
+      const outcome = await withContactsTimeout(syncGrantedAddressBook(ports));
+      if (outcome.ok === false) {
+        presentContactsFailure(
+          outcome.reason,
+          isContactsSyncRetryable(outcome.reason),
+        );
+        return;
+      }
+      setContactsSyncEnabled(outcome.result.contactsSyncEnabled);
+      setNotifyNearbyContacts(outcome.result.notifyNearbyContactsEffective);
+      markContactsSyncSuccess();
+    } catch (err) {
+      const reason =
+        err instanceof Error && err.message === 'contacts-timeout'
+          ? 'contacts-timeout'
+          : 'contacts-invalid-response';
+      presentContactsFailure(reason, true);
+    } finally {
+      setContactsBusy(false);
+    }
+  };
+
   const handleToggleNotifyNearbyInterests = async (enabled: boolean) => {
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) return;
@@ -564,30 +664,59 @@ export default function MoreScreen() {
   const handleToggleContactsSync = async (enabled: boolean) => {
     if (contactsBusy) return;
     const previous = contactsSyncEnabled;
+    clearContactsSuccessTimer();
     setContactsBusy(true);
     setContactsSyncEnabled(enabled);
+    setContactsSyncPhase(enabled ? 'syncing' : 'idle');
+    setContactsSyncError(null);
     try {
       const ports = await contactsPorts();
       const outcome = enabled
-        ? await enableAndSyncContacts(ports)
-        : await disableContactsSyncFlow(ports);
+        ? await withContactsTimeout(enableAndSyncContacts(ports))
+        : await withContactsTimeout(disableContactsSyncFlow(ports));
       if (outcome.ok === false) {
-        setContactsSyncEnabled(previous);
-        if (outcome.reason === 'contacts-os-denied') {
-          Alert.alert(
-            t('common.appName'),
-            t('settings.contacts.permissionDenied'),
+        if (enabled && outcome.identityEnabled) {
+          // Identity enable committed — keep toggle on; offer sync retry.
+          setContactsSyncEnabled(true);
+          if (outcome.result) {
+            setNotifyNearbyContacts(
+              outcome.result.notifyNearbyContactsEffective,
+            );
+          }
+          presentContactsFailure(
+            outcome.reason,
+            isContactsSyncRetryable(outcome.reason),
           );
-        } else {
-          Alert.alert(t('common.error'), t('settings.contacts.error'));
+          return;
         }
+        setContactsSyncEnabled(previous);
+        setContactsSyncPhase('idle');
+        presentContactsFailure(
+          outcome.reason,
+          isContactsSyncRetryable(outcome.reason),
+        );
         return;
       }
       setContactsSyncEnabled(outcome.result.contactsSyncEnabled);
       setNotifyNearbyContacts(outcome.result.notifyNearbyContactsEffective);
-    } catch {
-      setContactsSyncEnabled(previous);
-      Alert.alert(t('common.error'), t('settings.contacts.error'));
+      if (enabled) {
+        markContactsSyncSuccess();
+      } else {
+        setContactsSyncPhase('idle');
+      }
+    } catch (err) {
+      const reason =
+        err instanceof Error && err.message === 'contacts-timeout'
+          ? 'contacts-timeout'
+          : 'contacts-invalid-response';
+      if (enabled) {
+        // Timeout after optimistic on — keep on and allow retry/reconcile.
+        presentContactsFailure(reason, true);
+      } else {
+        setContactsSyncEnabled(previous);
+        setContactsSyncPhase('idle');
+        presentContactsFailure(reason, false);
+      }
     } finally {
       setContactsBusy(false);
     }
@@ -1072,7 +1201,15 @@ export default function MoreScreen() {
           <SettingsToggleRow
             icon="people-circle-outline"
             title={t('settings.contacts.title')}
-            description={t('settings.contacts.description')}
+            description={
+              contactsSyncPhase === 'syncing'
+                ? t('settings.contacts.syncing')
+                : contactsSyncPhase === 'success'
+                  ? t('settings.contacts.syncSuccess')
+                  : contactsSyncPhase === 'error' && contactsSyncError
+                    ? contactsSyncError
+                    : t('settings.contacts.description')
+            }
             value={contactsSyncEnabled}
             onValueChange={handleToggleContactsSync}
             disabled={contactsBusy}

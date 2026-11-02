@@ -49,6 +49,22 @@ export default {
     permissionDenied:
       'Contacts access is required to sync your address book. You can enable it in iPhone Settings.',
     error: 'Could not update Contacts sync. Try again later.',
+    syncing: 'Syncing contacts…',
+    syncSuccess: 'Contacts synced.',
+    syncFailedTitle: 'Contacts sync',
+    retry: 'Retry',
+    errors: {
+      generic: 'Could not sync contacts. Try again.',
+      unauthenticated: 'Sign in again to sync contacts.',
+      accountGone: 'This account is no longer available for contacts sync.',
+      notEnabled: 'Turn on Contacts nearby before syncing.',
+      stale: 'Contacts sync is out of date. Retry to reconcile.',
+      sourceRemoved: 'Contacts sync was removed. Turn it on again to continue.',
+      cap: 'Your address book is too large to sync right now.',
+      invalid: 'Some contact identifiers could not be synced. Try again.',
+      unavailable: 'Contacts sync is temporarily unavailable. Try again shortly.',
+      timeout: 'Contacts sync is taking too long. You can retry.',
+    },
   },
   visibilityAge: {
     title: 'Who can find me by age',

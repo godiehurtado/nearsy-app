@@ -20,6 +20,10 @@ type Props = {
   visible: boolean;
   title: string;
   body: string;
+  /** Optional platform glyph rendered beside the title. */
+  headerIcon?: React.ReactNode;
+  /** Numbered instructional steps (Instagram DM verify, etc.). */
+  steps?: readonly string[];
   primaryLabel: string;
   primaryA11y?: string;
   onPrimary: () => void;
@@ -35,6 +39,8 @@ export function SocialConnectionModal({
   visible,
   title,
   body,
+  headerIcon,
+  steps,
   primaryLabel,
   primaryA11y,
   onPrimary,
@@ -81,19 +87,56 @@ export function SocialConnectionModal({
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.content}
           >
-            <Text
-              style={[styles.title, { color: palette.textPrimary }]}
-              maxFontSizeMultiplier={1.6}
-              accessibilityRole="header"
-            >
-              {title}
-            </Text>
+            <View style={styles.titleRow}>
+              {headerIcon ? (
+                <View style={styles.iconSlot}>{headerIcon}</View>
+              ) : null}
+              <Text
+                style={[styles.title, { color: palette.textPrimary }]}
+                maxFontSizeMultiplier={1.5}
+                accessibilityRole="header"
+              >
+                {title}
+              </Text>
+            </View>
             <Text
               style={[styles.body, { color: palette.textSecondary }]}
-              maxFontSizeMultiplier={1.6}
+              maxFontSizeMultiplier={1.5}
             >
               {body}
             </Text>
+            {steps && steps.length > 0 ? (
+              <View style={styles.steps} accessibilityRole="summary">
+                {steps.map((step, index) => (
+                  <View key={`step-${index}`} style={styles.stepRow}>
+                    <View
+                      style={[
+                        styles.stepBadge,
+                        {
+                          backgroundColor: palette.chipBg,
+                          borderColor: palette.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.stepBadgeText,
+                          { color: palette.textPrimary },
+                        ]}
+                      >
+                        {index + 1}
+                      </Text>
+                    </View>
+                    <Text
+                      style={[styles.stepText, { color: palette.textPrimary }]}
+                      maxFontSizeMultiplier={1.5}
+                    >
+                      {step}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
             {children}
           </ScrollView>
           <View style={styles.actions}>
@@ -155,13 +198,53 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingBottom: spacing.md,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  iconSlot: {
+    flexShrink: 0,
+  },
   title: {
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
+    flex: 1,
+    minWidth: 0,
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.extrabold,
+    letterSpacing: -0.2,
+    lineHeight: 30,
   },
   body: {
-    fontSize: fontSize.sm,
+    fontSize: fontSize.md,
     lineHeight: 22,
+  },
+  steps: {
+    gap: spacing.sm,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  stepBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  stepBadgeText: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
+  },
+  stepText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: fontSize.md,
+    lineHeight: 22,
+    fontWeight: fontWeight.medium,
   },
   actions: {
     flexDirection: 'row',
@@ -187,12 +270,12 @@ const styles = StyleSheet.create({
   },
   secondaryText: {
     fontWeight: fontWeight.bold,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.base,
     textAlign: 'center',
   },
   primaryText: {
     fontWeight: fontWeight.bold,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.base,
     textAlign: 'center',
   },
   disabled: { opacity: 0.5 },

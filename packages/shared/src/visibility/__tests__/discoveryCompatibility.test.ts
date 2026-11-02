@@ -834,6 +834,7 @@ describe('Alignment visual layout contract (I3.1 / View ring)', () => {
     assert.doesNotMatch(ringSrc, /<Svg\b/);
     assert.match(ringSrc, /ProgressArc/);
     assert.match(ringSrc, /halfClip/);
+    assert.match(ringSrc, /HALF_CLIP_BLEED/);
     assert.match(ringSrc, /firstHalfDegrees - 180/);
     assert.match(ringSrc, /borderTopColor/);
     assert.match(ringSrc, /borderRightColor/);

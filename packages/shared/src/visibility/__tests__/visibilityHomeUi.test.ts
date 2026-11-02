@@ -130,6 +130,26 @@ describe('visibility preference limits', () => {
   });
 });
 
+describe('home filter persist errors', () => {
+  it('does not reuse Visibility copy when searchPreferences persist fails', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const homeSrc = readFileSync(
+      join(here, '../../screens/MainHomeScreen.tsx'),
+      'utf8',
+    );
+    const callStart = homeSrc.indexOf(
+      'await persistSearchPreferencesForMode(',
+    );
+    assert.ok(callStart > 0);
+    const catchSlice = homeSrc.slice(callStart, callStart + 1200);
+    assert.match(catchSlice, /home\.preferences\.errors\.title/);
+    assert.match(catchSlice, /home\.preferences\.errors\.saveFailed/);
+    assert.doesNotMatch(catchSlice, /home\.errors\.title/);
+    assert.doesNotMatch(catchSlice, /home\.errors\.generic/);
+    assert.doesNotMatch(catchSlice, /setVisibilityError/);
+  });
+});
+
 describe('visibility error presentation', () => {
   it('maps contractual reasons to user-safe copy while preserving diagnostics', () => {
     const err = new VisibilityDiscoveryClientError({

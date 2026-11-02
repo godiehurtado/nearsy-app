@@ -101,6 +101,7 @@ describe('iOS 2.0.9 Altercall — Alignment / Compatibilidad', () => {
     assert.doesNotMatch(nearby, /alignmentTierLabel/);
     assert.doesNotMatch(card, /alignmentTierLabel/);
     assert.match(nearby, /alignmentAccessibilityLabel/);
+    assert.match(nearby, /alignmentTitleLabel/);
   });
 });
 
@@ -264,7 +265,17 @@ describe('iOS 2.0.9 Altercall — social order, Web in CRJ, copy, immediate save
       'components/registration/OnboardingSocialMediaStep.tsx',
     );
     assert.match(step, /SocialConnectionModal/);
+    assert.match(step, /headerIcon/);
     assert.match(step, /platforms\.website/);
+    const modal = readShared('components/social/SocialConnectionModal.tsx');
+    assert.match(modal, /steps\?/);
+    assert.match(modal, /headerIcon/);
+    assert.match(modal, /fontSize\.xl/);
+    const owned = readShared(
+      'components/registration/OwnedSocialConnectSection.tsx',
+    );
+    assert.match(owned, /connectModal\.instagram\.stepCopy/);
+    assert.match(owned, /steps=\{/);
   });
 
   it('Instagram copy reuses a live challenge and does not treat close as connected', () => {

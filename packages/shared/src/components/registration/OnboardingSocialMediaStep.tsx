@@ -494,6 +494,28 @@ export function OnboardingSocialMediaStep({
             ? t(`profile.social.connectModal.${manualSheet}.body` as any)
             : ''
         }
+        headerIcon={
+          manualSheet && manualSheet !== 'website' ? (
+            <PlatformGlyph
+              platform={
+                CRJ_MANUAL_URL_SOCIAL_PLATFORMS.find((p) => p.id === manualSheet)!
+              }
+              glyphColor="#FFFFFF"
+            />
+          ) : manualSheet === 'website' ? (
+            <View
+              style={[
+                styles.glyph,
+                {
+                  backgroundColor: palette.chipBg,
+                  borderColor: palette.border,
+                },
+              ]}
+            >
+              <Ionicons name="globe-outline" size={12} color={palette.chipText} />
+            </View>
+          ) : undefined
+        }
         primaryLabel={t('profile.social.saveLink')}
         primaryA11y={
           manualSheet

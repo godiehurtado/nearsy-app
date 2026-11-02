@@ -25,6 +25,10 @@ describe('More Settings modernization', () => {
     assert.doesNotMatch(screen, /chevron-back/);
     assert.match(screen, /contactsSyncEnabled/);
     assert.match(screen, /enableAndSyncContacts/);
+    assert.match(screen, /syncGrantedAddressBook/);
+    assert.match(screen, /presentContactsSyncError/);
+    assert.match(screen, /CONTACTS_SYNC_TIMEOUT_MS/);
+    assert.match(screen, /settings\.contacts\.syncing/);
     assert.doesNotMatch(screen, /syncContactsSafe/);
     assert.doesNotMatch(screen, /expectedEpoch/);
     assert.doesNotMatch(screen, /Use phone contacts/);

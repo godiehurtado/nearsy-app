@@ -2597,6 +2597,21 @@ export default function SocialMediaScreen() {
             ? t(`profile.social.connectModal.${ownedSheet}.body` as any)
             : ''
         }
+        headerIcon={
+          ownedSheet ? (
+            <PlatformGlyph platform={getCrjSocialPlatform(ownedSheet)} />
+          ) : undefined
+        }
+        steps={
+          ownedSheet === 'instagram'
+            ? [
+                t('profile.social.connectModal.instagram.stepCopy'),
+                t('profile.social.connectModal.instagram.stepOpen'),
+                t('profile.social.connectModal.instagram.stepMessage'),
+                t('profile.social.connectModal.instagram.stepPaste'),
+              ]
+            : undefined
+        }
         primaryLabel={
           ownedSheet === 'instagram' && instagramChallenge
             ? t('profile.social.instagram.openInbox')
@@ -2634,9 +2649,6 @@ export default function SocialMediaScreen() {
       >
         {ownedSheet === 'instagram' && instagramChallenge ? (
           <View>
-            <Text style={[styles.helperText, { color: palette.textSecondary }]}>
-              {t('profile.social.connectModal.instagram.stepCopy')}
-            </Text>
             <Text
               selectable
               style={[
@@ -2672,6 +2684,20 @@ export default function SocialMediaScreen() {
           manualSheet
             ? t(`profile.social.connectModal.${manualSheet}.body` as any)
             : ''
+        }
+        headerIcon={
+          manualSheet && manualSheet !== 'website' ? (
+            <PlatformGlyph platform={getCrjSocialPlatform(manualSheet)} />
+          ) : manualSheet === 'website' ? (
+            <PlatformGlyph
+              platform={{
+                id: 'website',
+                ionicon: 'globe-outline',
+                iconSet: 'ionicons',
+                color: palette.chipBg,
+              }}
+            />
+          ) : undefined
         }
         primaryLabel={t('profile.social.saveLink')}
         primaryA11y={
