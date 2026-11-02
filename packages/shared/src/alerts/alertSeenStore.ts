@@ -12,3 +12,10 @@ export async function writeAlertSeen(
   _peerUid: string,
   _record: AlertSeenRecord,
 ): Promise<void> {}
+
+export function subscribeAlertSeenMap(
+  _viewerUid: string,
+  _onMap: (map: Record<string, AlertSeenRecord>) => void,
+): () => void {
+  return () => {};
+}

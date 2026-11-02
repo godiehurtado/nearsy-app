@@ -232,6 +232,21 @@ export default function PhoneVerificationScreen() {
     const next = await controller.checkCode();
     syncView(next);
     if (next.phase === 'verified') {
+      void (async () => {
+        try {
+          const uid = firebaseAuth.currentUser?.uid;
+          if (!uid) return;
+          const {
+            loadContactsLocalState,
+            refreshContactsActorKeys,
+          } = await import('../contactsHmac/contactsHmac');
+          const state = await loadContactsLocalState(uid);
+          if (!state) return;
+          await refreshContactsActorKeys(state);
+        } catch {
+          /* Identity key validity is still open; do not block OTP success. */
+        }
+      })();
       navigation.replace('ProfileCompletion', {
         uid: firebaseAuth.currentUser?.uid,
         email: firebaseAuth.currentUser?.email,

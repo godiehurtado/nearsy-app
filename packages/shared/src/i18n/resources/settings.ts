@@ -49,6 +49,30 @@ export default {
     description:
       'Get notified when someone nearby shares an official interest with you.',
   },
+  contactsSync: {
+    title: 'Sync contacts',
+    description:
+      'Privately match people you know nearby. Nearsy stores hashed identifiers, not names or your address book.',
+    errors: {
+      generic: 'Could not update Contacts sync. Please try again.',
+      auth: 'Your session ended. Sign in again and retry.',
+      notEnabled: 'Contacts sync is not enabled.',
+      epochMismatch: 'Contacts sync is out of date. Turn it off and on again.',
+      snapshotStale: 'This device’s contacts snapshot is out of date. Try again.',
+      snapshotConflict: 'This contacts snapshot does not match what was already saved.',
+      sourceCap: 'Too many devices are syncing contacts on this account.',
+      cap: 'Too many contacts to sync. Remove some and try again.',
+      identifierInvalid: 'Some saved contacts could not be synced. Check numbers and emails.',
+      hashRejected: 'Contacts sync rejected an invalid payload. Please try again.',
+      unavailable: 'Contacts sync is not available right now.',
+      rateLimited: 'Too many Contacts requests. Try again in a few minutes.',
+    },
+  },
+  contactNotices: {
+    title: 'Contact nearby notices',
+    description:
+      'Get notified when one of your synced contacts is nearby. Turning this off does not delete your synced contacts.',
+  },
   backgroundVisibility: {
     title: 'Stay visible in background',
     description:

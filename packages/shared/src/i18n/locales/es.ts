@@ -304,6 +304,37 @@ export const es: TranslationResources = {
       description:
         'Recibe un aviso cuando alguien cerca comparte un interés oficial contigo.',
     },
+    contactsSync: {
+      title: 'Sincronizar contactos',
+      description:
+        'Relaciona en privado a personas que conoces cuando están cerca. Nearsy guarda identificadores cifrados, no nombres ni tu agenda.',
+      errors: {
+        generic: 'No se pudo actualizar la sincronización de contactos. Inténtalo de nuevo.',
+        auth: 'Tu sesión terminó. Vuelve a iniciar sesión e inténtalo otra vez.',
+        notEnabled: 'La sincronización de contactos no está activada.',
+        epochMismatch:
+          'La sincronización de contactos está desactualizada. Apágala y vuélvela a activar.',
+        snapshotStale:
+          'La copia de contactos de este dispositivo está desactualizada. Inténtalo de nuevo.',
+        snapshotConflict:
+          'Esta copia de contactos no coincide con lo que ya estaba guardado.',
+        sourceCap:
+          'Demasiados dispositivos están sincronizando contactos en esta cuenta.',
+        cap: 'Hay demasiados contactos para sincronizar. Quita algunos e inténtalo de nuevo.',
+        identifierInvalid:
+          'Algunos contactos no se pudieron sincronizar. Revisa números y correos.',
+        hashRejected:
+          'La sincronización rechazó un envío no válido. Inténtalo de nuevo.',
+        unavailable: 'La sincronización de contactos no está disponible ahora.',
+        rateLimited:
+          'Demasiadas solicitudes de contactos. Inténtalo de nuevo en unos minutos.',
+      },
+    },
+    contactNotices: {
+      title: 'Avisos de contactos cercanos',
+      description:
+        'Recibe un aviso cuando uno de tus contactos sincronizados está cerca. Apagar esto no borra tus contactos sincronizados.',
+    },
     backgroundVisibility: {
       title: 'Permanecer visible en segundo plano',
       description:

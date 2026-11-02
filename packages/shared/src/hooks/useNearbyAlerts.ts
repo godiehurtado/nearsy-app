@@ -19,11 +19,11 @@ import {
 import {
   buildAlertSeenWrite,
   countUnseenAlerts,
-  isAlertUnseen,
   type AlertSeenRecord,
 } from '../alerts/alertAppearance';
-import { loadAlertSeenMap, writeAlertSeen } from '../alerts/alertSeenStore';
+import { subscribeAlertSeenMap, writeAlertSeen } from '../alerts/alertSeenStore';
 import {
+  applyUnseenFlags,
   collectActiveModeInterestIds,
   fingerprintActiveModeInterests,
   mapDiscoverResultsToInterestAlerts,
@@ -97,9 +97,11 @@ export function useNearbyAlertsState(): NearbyAlertsState {
   const viewerUidRef = useRef<string | null>(null);
   const meRef = useRef<UserDoc | null>(null);
   const alertsRef = useRef<AlertItem[]>([]);
+  const seenByPeerRef = useRef<Record<string, AlertSeenRecord>>({});
 
   meRef.current = me;
   alertsRef.current = alerts;
+  seenByPeerRef.current = seenByPeer;
 
   const interestFingerprint = fingerprintActiveModeInterests(me);
 
@@ -125,21 +127,31 @@ export function useNearbyAlertsState(): NearbyAlertsState {
       setMe(null);
       setAlerts([]);
       setSeenByPeer({});
+      seenByPeerRef.current = {};
       setErrorKind(null);
       initialFetchCompletedRef.current = false;
       viewerUidRef.current = null;
       return;
     }
 
-    const unsub = dbOnUserSnapshot(authUid, (doc: UserDoc | null) => {
+    const unsubUser = dbOnUserSnapshot(authUid, (doc: UserDoc | null) => {
       const data = (doc ?? null) as UserDoc | null;
       if (data?.topBarColor) setTopColor(data.topBarColor);
       setMe(data ? { ...data, uid: authUid } : null);
     });
+    const unsubSeen = subscribeAlertSeenMap(authUid, (map) => {
+      if (firebaseAuth.currentUser?.uid !== authUid) return;
+      seenByPeerRef.current = map;
+      setSeenByPeer(map);
+      setAlerts((prev) => applyUnseenFlags(prev, map));
+    });
 
     return () => {
       requestGenerationRef.current += 1;
-      unsub?.();
+      unsubUser?.();
+      unsubSeen();
+      setSeenByPeer({});
+      seenByPeerRef.current = {};
     };
   }, [authUid]);
 
@@ -180,19 +192,9 @@ export function useNearbyAlertsState(): NearbyAlertsState {
         response.serverTime || Date.now(),
         uid,
       );
-      const seen = await loadAlertSeenMap(uid);
       if (!stillCurrent()) return;
       if (firebaseAuth.currentUser?.uid !== uid) return;
-      setSeenByPeer(seen);
-      setAlerts(
-        mapped.map((item) => ({
-          ...item,
-          unseen: isAlertUnseen(
-            item.appearanceKey,
-            item.uid ? seen[item.uid] : undefined,
-          ),
-        })),
-      );
+      setAlerts(applyUnseenFlags(mapped, seenByPeerRef.current));
       setErrorKind(null);
     } catch (err) {
       if (!stillCurrent()) return;

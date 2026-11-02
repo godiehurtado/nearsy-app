@@ -1,7 +1,10 @@
 /**
  * Pure Alerts mapping — discoverNearby results → interest_nearby rows.
  * No Firebase / UI imports (safe for Node tests).
+ * appearanceKey is copied from the server result; never rebuilt here.
  */
+import type { AlertSeenRecord } from '../alerts/alertAppearance.ts';
+import { isAlertUnseen } from '../alerts/alertAppearance.ts';
 import type { DiscoverNearbyResult } from '../visibility/callables/wireTypes.ts';
 
 export type AlertKind = 'interest_nearby';
@@ -92,4 +95,17 @@ export function mapDiscoverResultsToInterestAlerts(
     });
   }
   return out;
+}
+
+export function applyUnseenFlags(
+  items: readonly AlertItem[],
+  seenByPeer: Record<string, AlertSeenRecord | undefined>,
+): AlertItem[] {
+  return items.map((item) => ({
+    ...item,
+    unseen: isAlertUnseen(
+      item.appearanceKey,
+      item.uid ? seenByPeer[item.uid] : undefined,
+    ),
+  }));
 }

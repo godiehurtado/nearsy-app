@@ -1,6 +1,7 @@
 /**
- * Alerts appearance identity (Functions #40).
- * Server appearanceKey = peerUid + ':' + appearanceSeq.
+ * Alerts appearance identity (Functions #40 @ 60d33bab).
+ * Consume `discoverNearby.results[].appearanceKey` from the server.
+ * The client must not rebuild presence or concatenate peerUid:seq.
  * Do not use confirmedAt or Expo acceptedAt.
  */
 

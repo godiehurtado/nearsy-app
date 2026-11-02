@@ -30,3 +30,10 @@ export function buildNotifyNearbyInterestsPatch(
 ): EncounterNotifyPrefsPatch {
   return { notifyNearbyInterests: enabled };
 }
+
+/** Mute contact notices without wiping Identity hashes. */
+export function buildNotifyNearbyContactsPatch(
+  enabled: boolean,
+): { notifyNearbyContacts: boolean } {
+  return { notifyNearbyContacts: enabled };
+}
