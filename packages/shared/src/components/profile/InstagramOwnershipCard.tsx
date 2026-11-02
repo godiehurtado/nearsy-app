@@ -12,8 +12,9 @@ import {
   Alert,
   Platform,
   AppState,
-  Share,
   Linking,
+  Modal,
+  AccessibilityInfo,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useTranslation } from '../../i18n';
@@ -38,6 +39,7 @@ import {
   SOCIAL_ACTION_HIT_SLOP,
   socialActionButtonStyles,
 } from './socialActionButtonStyles.ts';
+import { copyTextToClipboard } from '../../social/copyTextToClipboard.ts';
 import {
   buildInstagramOwnershipModeView,
   instagramOwnershipActionBlocked,
@@ -95,12 +97,15 @@ export function InstagramOwnershipCard({
   );
   const [hint, setHint] = useState<InstagramOwnershipHint>(null);
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  const [pendingModalOpen, setPendingModalOpen] = useState(false);
 
   const requestGenRef = useRef(0);
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const challengeRef = useRef<InstagramOwnershipPending | null>(null);
   challengeRef.current = challenge;
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
 
   const errorMessage = useCallback(
     (err: unknown) => {
@@ -142,6 +147,13 @@ export function InstagramOwnershipCard({
       setChallenge(presented.challenge);
       setHint(presented.hint);
       setPhase(presented.phase);
+      if (
+        presented.phase === 'pending' &&
+        presented.challenge &&
+        !challengeRef.current
+      ) {
+        setPendingModalOpen(true);
+      }
       return true;
     },
     [],
@@ -205,6 +217,10 @@ export function InstagramOwnershipCard({
       requestGenRef.current += 1;
       return;
     }
+    if (phaseRef.current === 'pending' && challengeRef.current) {
+      void refreshForModeRef.current(mode);
+      return;
+    }
     requestGenRef.current += 1;
     setPhase('loading');
     setVerified(null);
@@ -255,12 +271,7 @@ export function InstagramOwnershipCard({
       clearInterval(interval);
       clearTimeout(expireTimer);
     };
-  }, [api, pendingLive, challenge, mode]);
-
-  useEffect(() => {
-    if (!api || !appActive || !screenFocused || phase !== 'pending') return;
-    void refreshForModeRef.current(mode, { alertTerminal: true });
-  }, [api, appActive, screenFocused, phase, mode]);
+  }, [api, pendingLive, challenge?.challengeId, challenge?.expiresAt, mode]);
 
   const blocked = instagramOwnershipActionBlocked(phase);
   const connected = !!verified && verified.mode === mode;
@@ -285,6 +296,7 @@ export function InstagramOwnershipCard({
       setChallenge(pending);
       setHint(null);
       setPhase('pending');
+      setPendingModalOpen(true);
     } catch (err) {
       if (gen !== requestGenRef.current || forMode !== modeRef.current) {
         return;
@@ -363,13 +375,19 @@ export function InstagramOwnershipCard({
     );
   };
 
-  const onShareCode = () => {
+  const onCopyCode = () => {
     const code = challenge?.code?.trim();
     if (!code) return;
-    void Share.share({ message: code }).catch(() => {
-      Alert.alert(
-        t('common.error'),
-        t('profile.social.instagramOwnership.errors.generic'),
+    void copyTextToClipboard(code).then((result) => {
+      if (result === 'failed') {
+        Alert.alert(
+          t('common.error'),
+          t('profile.social.instagramOwnership.errors.generic'),
+        );
+        return;
+      }
+      AccessibilityInfo.announceForAccessibility(
+        t('profile.social.instagramOwnership.copied'),
       );
     });
   };
@@ -452,7 +470,13 @@ export function InstagramOwnershipCard({
               </Text>
             </View>
           ) : (
-            <Text style={[styles.notConnected, { color: palette.textMuted }]}>
+            <Text
+              style={[styles.notConnected, { color: palette.textMuted }]}
+              onPress={
+                pending ? () => setPendingModalOpen(true) : undefined
+              }
+              accessibilityRole={pending ? 'button' : undefined}
+            >
               {statusText}
             </Text>
           )}
@@ -537,78 +561,119 @@ export function InstagramOwnershipCard({
         </Text>
       ) : null}
 
-      {pending && challenge ? (
-        <View style={styles.pendingBox}>
-          <Text style={[styles.pendingTitle, { color: palette.textPrimary }]}>
-            {t('profile.social.instagramOwnership.pendingTitle')}
-          </Text>
-          <Text
-            selectable
-            style={[
-              styles.code,
-              {
-                color: palette.textPrimary,
-                borderColor: palette.border,
-                backgroundColor: palette.surface,
-              },
-            ]}
-          >
-            {challenge.code}
-          </Text>
-          <Text style={[styles.pendingBody, { color: palette.textSecondary }]}>
-            {t('profile.social.instagramOwnership.pendingBody', {
-              inbox: challenge.inboxUsername,
-            })}
-          </Text>
-          {expiresLabel ? (
-            <Text style={[styles.pendingBody, { color: palette.textMuted }]}>
-              {expiresLabel}
-            </Text>
-          ) : null}
-          <View style={styles.pendingActions}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t(
-                'profile.social.instagramOwnership.shareCodeA11y',
-              )}
-              hitSlop={SOCIAL_ACTION_HIT_SLOP}
-              onPress={onShareCode}
-              style={({ pressed }) => [
-                socialActionButtonStyles.button,
+      <Modal
+        visible={pending && !!challenge && pendingModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPendingModalOpen(false)}
+      >
+        {pending && challenge ? (
+          <View style={styles.modalBackdrop}>
+            <View
+              style={[
+                styles.pendingBox,
                 {
-                  backgroundColor: palette.surface,
+                  backgroundColor: palette.panel,
                   borderColor: palette.border,
                 },
-                pressed && styles.pressed,
               ]}
             >
-              <Text style={[socialActionButtonStyles.text, { color: palette.textPrimary }]}>
-                {t('profile.social.instagramOwnership.shareCode')}
+              <Text style={[styles.pendingTitle, { color: palette.textPrimary }]}>
+                {t('profile.social.instagramOwnership.pendingTitle')}
               </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t(
-                'profile.social.instagramOwnership.openInboxA11y',
-              )}
-              hitSlop={SOCIAL_ACTION_HIT_SLOP}
-              onPress={onOpenInbox}
-              style={({ pressed }) => [
-                socialActionButtonStyles.button,
-                {
-                  backgroundColor: palette.primary,
-                  borderColor: palette.primary,
-                },
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={[socialActionButtonStyles.text, { color: palette.surface }]}>
-                {t('profile.social.instagramOwnership.openInbox')}
+              <Text
+                selectable
+                style={[
+                  styles.code,
+                  {
+                    color: palette.textPrimary,
+                    borderColor: palette.border,
+                    backgroundColor: palette.surface,
+                  },
+                ]}
+              >
+                {challenge.code}
               </Text>
-            </Pressable>
+              <Text style={[styles.pendingBody, { color: palette.textSecondary }]}>
+                {t('profile.social.instagramOwnership.pendingBody', {
+                  inbox: challenge.inboxUsername,
+                })}
+              </Text>
+              <Text style={[styles.pendingBody, { color: palette.textSecondary }]}>
+                {t('profile.social.instagramOwnership.pendingSteps', {
+                  inbox: challenge.inboxUsername,
+                })}
+              </Text>
+              {expiresLabel ? (
+                <Text style={[styles.pendingBody, { color: palette.textMuted }]}>
+                  {expiresLabel}
+                </Text>
+              ) : null}
+              <View style={styles.pendingActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t(
+                    'profile.social.instagramOwnership.copyCodeA11y',
+                  )}
+                  hitSlop={SOCIAL_ACTION_HIT_SLOP}
+                  onPress={onCopyCode}
+                  style={({ pressed }) => [
+                    socialActionButtonStyles.button,
+                    {
+                      backgroundColor: palette.surface,
+                      borderColor: palette.border,
+                    },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      socialActionButtonStyles.text,
+                      { color: palette.textPrimary },
+                    ]}
+                  >
+                    {t('profile.social.instagramOwnership.copyCode')}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t(
+                    'profile.social.instagramOwnership.openInboxA11y',
+                  )}
+                  hitSlop={SOCIAL_ACTION_HIT_SLOP}
+                  onPress={onOpenInbox}
+                  style={({ pressed }) => [
+                    socialActionButtonStyles.button,
+                    {
+                      backgroundColor: palette.primary,
+                      borderColor: palette.primary,
+                    },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      socialActionButtonStyles.text,
+                      { color: palette.surface },
+                    ]}
+                  >
+                    {t('profile.social.instagramOwnership.openInbox')}
+                  </Text>
+                </Pressable>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setPendingModalOpen(false)}
+                style={styles.waitingHint}
+              >
+                <Text style={[styles.pendingBody, { color: palette.textMuted }]}>
+                  {t('profile.social.instagramOwnership.waiting')}
+                </Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
-      ) : null}
+        ) : null}
+      </Modal>
 
       {!view.connected && !pending && hint === 'expired' ? (
         <Text style={[styles.legacyHint, { color: palette.textMuted }]}>
@@ -669,7 +734,20 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     marginTop: spacing.xs,
   },
-  pendingBox: { gap: spacing.sm, marginTop: spacing.xs },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  pendingBox: {
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+    borderWidth: 1,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+  },
+  waitingHint: { minHeight: 44, justifyContent: 'center' },
   pendingTitle: {
     fontSize: fontSize.sm,
     fontWeight: fontWeight.semibold,

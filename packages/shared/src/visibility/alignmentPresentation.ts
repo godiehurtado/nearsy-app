@@ -13,9 +13,9 @@ import type {
 import { mapUnavailableReasonToAlignmentState } from './discoveryCompatibility';
 
 export function shouldShowNearbyTierBadge(
-  tier: AlignmentTier | undefined,
-): tier is 'strong' | 'full' {
-  return tier === 'strong' || tier === 'full';
+  _tier: AlignmentTier | undefined,
+): _tier is 'strong' | 'full' {
+  return false;
 }
 
 export function alignmentTierLabel(
@@ -63,12 +63,5 @@ export function alignmentAccessibilityLabel(
   t: TFunction,
   alignment: Extract<Alignment, { available: true }>,
 ): string {
-  const score = alignment.score;
-  if (alignment.tier) {
-    return t('alignment.a11yWithTier', {
-      score,
-      tier: alignmentTierLabel(t, alignment.tier),
-    });
-  }
-  return t('alignment.a11yScoreOnly', { score });
+  return t('alignment.a11yScoreOnly', { score: alignment.score });
 }

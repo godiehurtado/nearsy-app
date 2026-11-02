@@ -1,5 +1,9 @@
 export const authenticationTranslations = {
   en: {
+    password: {
+      show: 'Show password',
+      hide: 'Hide password',
+    },
     login: {
       welcomeTo: 'Welcome to',
       slogan: 'Be your own billboard',
@@ -329,6 +333,10 @@ export const authenticationTranslations = {
     },
   },
   es: {
+    password: {
+      show: 'Mostrar contraseña',
+      hide: 'Ocultar contraseña',
+    },
     login: {
       welcomeTo: 'Bienvenido a',
       slogan: 'Sé tu propio anuncio',

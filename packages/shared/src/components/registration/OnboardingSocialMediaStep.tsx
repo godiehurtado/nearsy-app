@@ -26,6 +26,7 @@ import {
 import {
   isDuplicateCustomNetwork,
   normalizeCustomNetworkUrl,
+  normalizeSocialInput,
   type CrjSocialFieldErrors,
   validateCustomNetworkName,
 } from '../../social/socialLinkNormalize.ts';
@@ -39,13 +40,25 @@ import { YoutubeOwnershipCard } from '../profile/YoutubeOwnershipCard.tsx';
 import { TiktokOwnershipCard } from '../profile/TiktokOwnershipCard.tsx';
 import { InstagramOwnershipCard } from '../profile/InstagramOwnershipCard.tsx';
 import { XOwnershipCard } from '../profile/XOwnershipCard.tsx';
+import { ManualSocialLinkModal } from '../profile/ManualSocialLinkModal.tsx';
+import {
+  SOCIAL_ACTION_HIT_SLOP,
+  socialActionButtonStyles,
+} from '../profile/socialActionButtonStyles.ts';
 
 type Props = {
   mode: ProfileMode;
   values: CrjSocialDraftValues;
   custom: SocialCustomLink[];
+  website?: string;
   onChangeValues: (next: CrjSocialDraftValues) => void;
   onChangeCustom: (next: SocialCustomLink[]) => void;
+  onChangeWebsite?: (next: string) => void;
+  onImmediatePersist?: (overrides?: {
+    values?: CrjSocialDraftValues;
+    custom?: SocialCustomLink[];
+    website?: string;
+  }) => void | Promise<void>;
   fieldErrors: CrjSocialFieldErrors;
   onClearFieldError: (id: CrjSocialPlatformId | 'custom') => void;
 };
@@ -91,8 +104,11 @@ export function OnboardingSocialMediaStep({
   mode,
   values,
   custom,
+  website = '',
   onChangeValues,
   onChangeCustom,
+  onChangeWebsite,
+  onImmediatePersist,
   fieldErrors,
   onClearFieldError,
 }: Props) {
@@ -105,6 +121,10 @@ export function OnboardingSocialMediaStep({
   const [ownershipVerified, setOwnershipVerified] = useState<
     Partial<Record<AndroidOwnershipCardId, boolean>>
   >({});
+  const [manualTarget, setManualTarget] = useState<
+    'facebook' | 'linkedin' | 'website' | null
+  >(null);
+  const [manualError, setManualError] = useState<string | null>(null);
 
   const onOwnershipConnectedChange = useCallback(
     (id: AndroidOwnershipCardId, connected: boolean) => {
@@ -126,7 +146,7 @@ export function OnboardingSocialMediaStep({
         }
       : values;
   const connected =
-    countConnectedSocials(urlValuesForCount, custom) +
+    countConnectedSocials(urlValuesForCount, custom, website) +
     (Platform.OS === 'android'
       ? ANDROID_OWNERSHIP_CARD_IDS.filter((id) => ownershipVerified[id]).length
       : 0);
@@ -272,6 +292,61 @@ export function OnboardingSocialMediaStep({
             );
           }
 
+          if (
+            Platform.OS === 'android' &&
+            (platform.id === 'facebook' || platform.id === 'linkedin')
+          ) {
+            const connected = !!(values[platform.id] ?? '').trim();
+            return (
+              <View key={platform.id} style={styles.row}>
+                <View style={styles.rowHeader}>
+                  {glyph}
+                  <Text style={[styles.platformName, { color: palette.textPrimary, flex: 1 }]}>
+                    {label}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    hitSlop={SOCIAL_ACTION_HIT_SLOP}
+                    onPress={() => {
+                      if (connected) {
+                        const next = { ...values, [platform.id]: '' };
+                        onChangeValues(next);
+                        void onImmediatePersist?.({ values: next });
+                        return;
+                      }
+                      setManualError(null);
+                      setManualTarget(
+                        platform.id === 'linkedin' ? 'linkedin' : 'facebook',
+                      );
+                    }}
+                    style={[
+                      socialActionButtonStyles.button,
+                      connected
+                        ? { backgroundColor: 'transparent', borderColor: palette.danger }
+                        : { backgroundColor: palette.primary, borderColor: palette.primary },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        socialActionButtonStyles.text,
+                        { color: connected ? palette.danger : '#FFFFFF' },
+                      ]}
+                    >
+                      {connected
+                        ? t('profile.social.disconnect')
+                        : t('profile.social.connect')}
+                    </Text>
+                  </Pressable>
+                </View>
+                {connected ? (
+                  <Text style={[styles.customUrl, { color: palette.textSecondary }]} numberOfLines={2}>
+                    {values[platform.id]}
+                  </Text>
+                ) : null}
+              </View>
+            );
+          }
+
           return (
             <View key={platform.id} style={styles.row}>
               <View style={styles.rowHeader}>
@@ -310,6 +385,54 @@ export function OnboardingSocialMediaStep({
             </View>
           );
         })}
+
+        {Platform.OS === 'android' ? (
+          <View style={styles.row}>
+            <View style={styles.rowHeader}>
+              <View style={[styles.glyph, { backgroundColor: '#64748B' }]}>
+                <Ionicons name="globe-outline" size={14} color="#FFFFFF" />
+              </View>
+              <Text style={[styles.platformName, { color: palette.textPrimary, flex: 1 }]}>
+                {t('onboarding.profileCompletion.socialMedia.platforms.website' as any)}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={SOCIAL_ACTION_HIT_SLOP}
+                onPress={() => {
+                  if (website.trim()) {
+                    onChangeWebsite?.('');
+                    void onImmediatePersist?.({ website: '' });
+                    return;
+                  }
+                  setManualError(null);
+                  setManualTarget('website');
+                }}
+                style={[
+                  socialActionButtonStyles.button,
+                  website.trim()
+                    ? { backgroundColor: 'transparent', borderColor: palette.danger }
+                    : { backgroundColor: palette.primary, borderColor: palette.primary },
+                ]}
+              >
+                <Text
+                  style={[
+                    socialActionButtonStyles.text,
+                    { color: website.trim() ? palette.danger : '#FFFFFF' },
+                  ]}
+                >
+                  {website.trim()
+                    ? t('profile.social.disconnect')
+                    : t('profile.social.connect')}
+                </Text>
+              </Pressable>
+            </View>
+            {website.trim() ? (
+              <Text style={[styles.customUrl, { color: palette.textSecondary }]} numberOfLines={2}>
+                {website}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
         {custom.map((row, index) => (
           <View key={`${row.name}-${index}`} style={styles.row}>
@@ -464,6 +587,58 @@ export function OnboardingSocialMediaStep({
           </View>
         ) : null}
       </View>
+      <ManualSocialLinkModal
+        visible={manualTarget != null}
+        platformLabel={
+          manualTarget === 'website'
+            ? t('onboarding.profileCompletion.socialMedia.platforms.website' as any)
+            : t(
+                `onboarding.profileCompletion.socialMedia.platforms.${manualTarget ?? 'facebook'}` as any,
+              )
+        }
+        placeholder={
+          manualTarget === 'website'
+            ? t('onboarding.profileCompletion.socialMedia.placeholders.website' as any)
+            : t(
+                `onboarding.profileCompletion.socialMedia.placeholders.${manualTarget ?? 'facebook'}` as any,
+              )
+        }
+        initialValue={
+          manualTarget === 'website'
+            ? website
+            : manualTarget
+              ? values[manualTarget]
+              : ''
+        }
+        errorText={manualError}
+        onCancel={() => {
+          setManualTarget(null);
+          setManualError(null);
+        }}
+        onSave={(value) => {
+          if (!manualTarget) return;
+          const result =
+            manualTarget === 'website'
+              ? normalizeCustomNetworkUrl(value)
+              : normalizeSocialInput(manualTarget, value);
+          if (!result.ok || !result.url) {
+            setManualError(
+              t('onboarding.profileCompletion.socialMedia.invalid' as any),
+            );
+            return;
+          }
+          if (manualTarget === 'website') {
+            onChangeWebsite?.(result.url);
+            void onImmediatePersist?.({ website: result.url });
+          } else {
+            const next = { ...values, [manualTarget]: result.url };
+            onChangeValues(next);
+            void onImmediatePersist?.({ values: next });
+          }
+          setManualTarget(null);
+          setManualError(null);
+        }}
+      />
     </View>
   );
 }

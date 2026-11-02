@@ -39,6 +39,25 @@ export function shouldShowNearbyEmptyState(input: {
   return input.errorKind !== 'none';
 }
 
+/** Visible empty-state title. Generic errors never reuse the filter-empty copy. */
+export function nearbyEmptyTitleI18nKey(
+  errorKind: NearbyListErrorKind,
+):
+  | 'nearby.inactiveTitle'
+  | 'nearby.errorTitle'
+  | 'nearby.emptyTitle' {
+  switch (errorKind) {
+    case 'inactive':
+      return 'nearby.inactiveTitle';
+    case 'retry':
+    case 'generic':
+      return 'nearby.errorTitle';
+    case 'empty':
+    default:
+      return 'nearby.emptyTitle';
+  }
+}
+
 /** Silent / pull refresh must keep prior rows while waiting. */
 export function shouldClearNearbyItemsOnOutcomeFailure(input: {
   showFullScreenLoader: boolean;
