@@ -61,6 +61,8 @@ const NEW_SPORTS = [
   'sports_rugby',
   'sports_cricket',
   'sports_field_hockey',
+  'sports_ice_hockey',
+  'sports_car_racing',
   'sports_table_tennis',
   'sports_badminton',
   'sports_fencing',
@@ -156,8 +158,8 @@ describe('iOS 2.0.9 Altercall — sports and travel manifesto', () => {
       const row = items.find((item) => item.id === id);
       assert.equal(row?.name, name);
     }
-    assert.equal(isSelectableCatalogInterestId('sports_car_racing'), false);
-    assert.equal(isSelectableCatalogInterestId('sports_ice_hockey'), false);
+    assert.equal(isSelectableCatalogInterestId('sports_car_racing'), true);
+    assert.equal(isSelectableCatalogInterestId('sports_ice_hockey'), true);
     for (const id of NEW_SPORTS) {
       assert.equal(isSelectableCatalogInterestId(id), true, id);
       assert.equal(isLegacyDisplayInterestId(id), false, id);
@@ -170,6 +172,10 @@ describe('iOS 2.0.9 Altercall — sports and travel manifesto', () => {
     assert.equal(esItems.sports_motorsports, 'Deportes de motor');
     assert.equal(enItems.sports_hockey, 'Hockey');
     assert.equal(esItems.sports_hockey, 'Hockey');
+    assert.equal(enItems.sports_car_racing, 'Car Racing');
+    assert.equal(esItems.sports_car_racing, 'Automovilismo');
+    assert.equal(enItems.sports_ice_hockey, 'Ice Hockey');
+    assert.equal(esItems.sports_ice_hockey, 'Hockey sobre hielo');
   });
 
   it('ships an accessible manifesto and does not narrow motorsports or hockey', () => {
@@ -179,13 +185,21 @@ describe('iOS 2.0.9 Altercall — sports and travel manifesto', () => {
     assert.match(manifesto, /Deportes de motor/);
     assert.match(manifesto, /sports_hockey/);
     assert.match(manifesto, /sports_field_hockey/);
+    assert.match(manifesto, /sports_car_racing/);
+    assert.match(manifesto, /sports_ice_hockey/);
     assert.match(manifesto, /travel_world_cultures/);
     assert.match(manifesto, /legacy/);
     assert.match(manifesto, /f2855a1/);
-    assert.match(manifesto, /Not created: `sports_car_racing`, `sports_ice_hockey`/);
+    assert.match(manifesto, /Not created: `travel_local_exploration`/);
+    assert.doesNotMatch(
+      manifesto,
+      /Not created: `sports_car_racing`, `sports_ice_hockey`/,
+    );
     const catalog = readShared('interests/onboardingInterestCatalog.ts');
     assert.match(catalog, /item\('sports_hockey', 'Hockey'/);
+    assert.match(catalog, /item\('sports_ice_hockey', 'Ice Hockey'/);
     assert.match(catalog, /item\('sports_motorsports', 'Motorsports'/);
+    assert.match(catalog, /item\('sports_car_racing', 'Car Racing'/);
   });
 
   it('retires Cultural Experiences and Latin Culture without converting saved rows', () => {
