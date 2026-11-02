@@ -1,7 +1,8 @@
 /**
  * Identity PR #23 Contacts HMAC client contract.
- * Writer: godiehurtado/nearsy-identity-functions @ 7ebba05632fa17fc23dd79b4d281610080a55983
+ * Writer: godiehurtado/nearsy-identity-functions @ cf6e6d9862d0005e00ae84d4dbdca6791d242fa8
  * Functions #40 consume: 60d33bab35743b39d221ec92d550129b623173f5
+ *   (exact `source.epoch === contactsEpoch`; not Identity fencing).
  *
  * Do not use Functions-draft names (enableContactSync, expectedEpoch,
  * deleteContactSource). Clients send identifiers; Identity HMACs.
@@ -44,6 +45,7 @@ export const CONTACTS_HMAC_FAIL_REASONS = [
   'contacts-not-enabled',
   'contacts-epoch-mismatch',
   'contacts-snapshot-stale',
+  'contacts-source-removed',
   'contacts-snapshot-conflict',
   'contacts-source-cap',
   'contacts-identifier-cap',

@@ -7,6 +7,7 @@ export const CONTACTS_STATE_STORAGE_PREFIX = 'nearsy.contacts.state.v1:';
 export type KvStore = {
   getItem: (key: string) => Promise<string | null>;
   setItem: (key: string, value: string) => Promise<void>;
+  removeItem?: (key: string) => Promise<void>;
 };
 
 function randomSourceId(bytes: Uint8Array): string {
@@ -29,6 +30,26 @@ export function contactsStateStorageKey(uid: string): string {
   return `${CONTACTS_STATE_STORAGE_PREFIX}${uid}`;
 }
 
+function asPositiveInt(value: unknown): number | null {
+  return typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= Number.MAX_SAFE_INTEGER
+    ? value
+    : null;
+}
+
+/**
+ * Persist only opaque fields. Reject legacy payloads that stored raw fingerprints
+ * (pre-fp1 digests containing ':' emails/phones).
+ */
+function sanitizeFingerprint(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  if (!value.startsWith('fp1:')) return null;
+  if (value.length > 80) return null;
+  return value;
+}
+
 export async function loadContactsLocalState(
   store: KvStore,
   uid: string,
@@ -41,24 +62,37 @@ export async function loadContactsLocalState(
       contactsEpoch: 0,
       lastAckedVersion: null,
       lastAckedFingerprint: null,
+      removedSnapshotFloor: null,
     };
   }
   try {
-    const parsed = JSON.parse(raw) as Partial<ContactsLocalState>;
+    const parsed = JSON.parse(raw) as Partial<ContactsLocalState> &
+      Record<string, unknown>;
+    // Never keep raw identifier material if an older build stored it.
+    if (
+      typeof parsed.lastAckedFingerprint === 'string' &&
+      !parsed.lastAckedFingerprint.startsWith('fp1:')
+    ) {
+      return {
+        sourceId,
+        contactsEpoch:
+          typeof parsed.contactsEpoch === 'number' && parsed.contactsEpoch >= 0
+            ? parsed.contactsEpoch
+            : 0,
+        lastAckedVersion: asPositiveInt(parsed.lastAckedVersion),
+        lastAckedFingerprint: null,
+        removedSnapshotFloor: asPositiveInt(parsed.removedSnapshotFloor),
+      };
+    }
     return {
       sourceId,
       contactsEpoch:
         typeof parsed.contactsEpoch === 'number' && parsed.contactsEpoch >= 0
           ? parsed.contactsEpoch
           : 0,
-      lastAckedVersion:
-        typeof parsed.lastAckedVersion === 'number' && parsed.lastAckedVersion >= 1
-          ? parsed.lastAckedVersion
-          : null,
-      lastAckedFingerprint:
-        typeof parsed.lastAckedFingerprint === 'string'
-          ? parsed.lastAckedFingerprint
-          : null,
+      lastAckedVersion: asPositiveInt(parsed.lastAckedVersion),
+      lastAckedFingerprint: sanitizeFingerprint(parsed.lastAckedFingerprint),
+      removedSnapshotFloor: asPositiveInt(parsed.removedSnapshotFloor),
     };
   } catch {
     return {
@@ -66,6 +100,7 @@ export async function loadContactsLocalState(
       contactsEpoch: 0,
       lastAckedVersion: null,
       lastAckedFingerprint: null,
+      removedSnapshotFloor: null,
     };
   }
 }
@@ -75,7 +110,14 @@ export async function persistContactsLocalState(
   uid: string,
   state: ContactsLocalState,
 ): Promise<void> {
-  await store.setItem(contactsStateStorageKey(uid), JSON.stringify(state));
+  const safe: ContactsLocalState = {
+    sourceId: state.sourceId,
+    contactsEpoch: state.contactsEpoch,
+    lastAckedVersion: state.lastAckedVersion,
+    lastAckedFingerprint: sanitizeFingerprint(state.lastAckedFingerprint),
+    removedSnapshotFloor: state.removedSnapshotFloor,
+  };
+  await store.setItem(contactsStateStorageKey(uid), JSON.stringify(safe));
 }
 
 export async function clearContactsLocalAck(
@@ -83,12 +125,14 @@ export async function clearContactsLocalAck(
   uid: string,
   sourceId: string,
   contactsEpoch: number,
+  removedSnapshotFloor: number | null = null,
 ): Promise<ContactsLocalState> {
   const next: ContactsLocalState = {
     sourceId,
     contactsEpoch,
     lastAckedVersion: null,
     lastAckedFingerprint: null,
+    removedSnapshotFloor,
   };
   await persistContactsLocalState(store, uid, next);
   return next;

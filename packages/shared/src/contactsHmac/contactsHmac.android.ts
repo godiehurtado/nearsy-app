@@ -42,6 +42,8 @@ export {
   contactsEpochFromUserDoc,
   contactsHmacErrorToI18nKey,
   identifiersFingerprint,
+  isContactsHardCapOrFenceError,
+  removedSnapshotFloorAfterRemove,
   shouldScheduleReevaluate,
   snapshotVersionForUpload,
 } from './contactsHmacCore.ts';

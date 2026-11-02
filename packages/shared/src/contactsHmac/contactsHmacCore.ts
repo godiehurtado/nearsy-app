@@ -161,29 +161,77 @@ export function collectContactIdentifiers(
   return { ok: true, identifiers };
 }
 
+/** Local ack digest only — never persist or log raw phones/emails. */
+function stableDigestHex(input: string): string {
+  let h1 = 0x811c9dc5 >>> 0;
+  let h2 = 0x811c9dc5 >>> 0;
+  for (let i = 0; i < input.length; i += 1) {
+    const code = input.charCodeAt(i);
+    h1 ^= code;
+    h1 = Math.imul(h1, 16777619) >>> 0;
+    h2 ^= code + i + 1;
+    h2 = Math.imul(h2, 16777619) >>> 0;
+  }
+  return `${h1.toString(16).padStart(8, '0')}${h2.toString(16).padStart(8, '0')}`;
+}
+
 export function identifiersFingerprint(
   identifiers: readonly ContactIdentifierInput[],
 ): string {
-  return identifiers
+  const material = identifiers
     .map((row) => `${row.kind}:${row.value}`)
     .sort()
     .join('\n');
+  return `fp1:${stableDigestHex(material)}`;
 }
 
 /**
  * Same snapshotVersion + same normalized set is Identity-idempotent.
- * Book change increments. Missing/removed source starts at 1.
+ * After removeContactSource, Identity fences `snapshotVersion <= removed`.
+ * `removedSnapshotFloor` keeps the next recreate strictly greater.
+ * Disable clears fences server-side and the floor client-side.
  */
 export function snapshotVersionForUpload(input: {
   lastAckedVersion: number | null;
   lastAckedFingerprint: string | null;
   nextFingerprint: string;
+  removedSnapshotFloor?: number | null;
 }): number {
-  if (input.lastAckedVersion == null || input.lastAckedVersion < 1) return 1;
-  if (input.lastAckedFingerprint === input.nextFingerprint) {
-    return input.lastAckedVersion;
+  const floor =
+    typeof input.removedSnapshotFloor === 'number' &&
+    input.removedSnapshotFloor >= 1
+      ? input.removedSnapshotFloor
+      : 0;
+  const acked =
+    typeof input.lastAckedVersion === 'number' && input.lastAckedVersion >= 1
+      ? input.lastAckedVersion
+      : 0;
+  if (
+    acked >= 1 &&
+    input.lastAckedFingerprint === input.nextFingerprint &&
+    acked > floor
+  ) {
+    return acked;
   }
-  return input.lastAckedVersion + 1;
+  const base = Math.max(acked, floor);
+  return base + 1;
+}
+
+/** Floor after a successful remove / absent fence for this sourceId. */
+export function removedSnapshotFloorAfterRemove(input: {
+  previousFloor: number | null;
+  removedSnapshotVersion: number | null | undefined;
+  lastAckedVersion: number | null;
+}): number | null {
+  const candidates = [
+    input.previousFloor,
+    input.removedSnapshotVersion,
+    input.lastAckedVersion,
+  ].filter(
+    (n): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1,
+  );
+  if (candidates.length === 0) return null;
+  return Math.max(...candidates);
 }
 
 export function buildEnableRequest(): Record<string, never> {
@@ -427,13 +475,16 @@ export function contactsHmacErrorToI18nKey(
       return 'epochMismatch';
     case 'contacts-snapshot-stale':
       return 'snapshotStale';
+    case 'contacts-source-removed':
+      return 'sourceRemoved';
     case 'contacts-snapshot-conflict':
       return 'snapshotConflict';
     case 'contacts-source-cap':
       return 'sourceCap';
     case 'contacts-identifier-cap':
+      return 'identifierCap';
     case 'contacts-union-cap':
-      return 'cap';
+      return 'unionCap';
     case 'contacts-identifier-invalid':
       return 'identifierInvalid';
     case 'contacts-client-hash-rejected':
@@ -446,4 +497,18 @@ export function contactsHmacErrorToI18nKey(
     default:
       return 'generic';
   }
+}
+
+/** Caps and fence errors are hard fails — never present as success. */
+export function isContactsHardCapOrFenceError(
+  reason: ContactsHmacError['reason'],
+): boolean {
+  return (
+    reason === 'contacts-identifier-cap' ||
+    reason === 'contacts-union-cap' ||
+    reason === 'contacts-source-cap' ||
+    reason === 'contacts-source-removed' ||
+    reason === 'contacts-snapshot-stale' ||
+    reason === 'contacts-snapshot-conflict'
+  );
 }

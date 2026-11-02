@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApp } from '@react-native-firebase/app';
 import { getFunctions } from '@react-native-firebase/functions';
 
@@ -7,9 +8,16 @@ import {
   getAppCheckInitStatus,
 } from '../config/appCheckBootstrap';
 import {
+  clearPendingReevaluate,
+  isPendingReevaluate,
+  markPendingReevaluate,
+} from './pendingReevaluateStore.ts';
+import {
   bindReevaluateSession,
   registerReevaluateProximityNoticesInvoker,
+  resumePendingReevaluateIfNeeded,
   scheduleReevaluateProximityNotices as scheduleDebounced,
+  setReevaluatePendingHooks,
   reevaluateProximityNoticesNow as flushNow,
 } from './reevaluateProximityNotices.ts';
 
@@ -24,7 +32,7 @@ async function invoke(): Promise<void> {
   if (!uid) return;
   const status = await ensureAppCheckInitialized();
   if (status.status !== 'ready' && getAppCheckInitStatus().status !== 'ready') {
-    return;
+    throw new Error('App Check not ready for reevaluateProximityNotices');
   }
   if (firebaseAuth.currentUser?.uid !== uid) return;
   const callable = getFunctions(getApp(), REGION).httpsCallable(NAME);
@@ -34,11 +42,22 @@ async function invoke(): Promise<void> {
 function ensureRegistered(): void {
   if (registered) return;
   registered = true;
+  setReevaluatePendingHooks({
+    mark: (uid) => markPendingReevaluate(AsyncStorage, uid),
+    clear: (uid) => clearPendingReevaluate(AsyncStorage, uid),
+    isPending: (uid) => isPendingReevaluate(AsyncStorage, uid),
+  });
   bindReevaluateSession(firebaseAuth.currentUser?.uid ?? null);
   registerReevaluateProximityNoticesInvoker(invoke);
   authUnsub = firebaseAuth.onAuthStateChanged((user) => {
     bindReevaluateSession(user?.uid ?? null);
+    if (user?.uid) {
+      void resumePendingReevaluateIfNeeded();
+    }
   });
+  if (firebaseAuth.currentUser?.uid) {
+    void resumePendingReevaluateIfNeeded();
+  }
 }
 
 export function scheduleReevaluateProximityNotices(): void {
@@ -57,4 +76,5 @@ export function resetReevaluateAndroidRegistrationForTests(): void {
   authUnsub?.();
   authUnsub = null;
   registered = false;
+  setReevaluatePendingHooks(null);
 }

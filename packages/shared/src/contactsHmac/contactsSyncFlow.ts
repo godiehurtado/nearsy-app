@@ -2,6 +2,7 @@ import type { ContactIdentifierInput, ContactsWireResult } from './contactsHmacC
 import {
   ContactsHmacError,
   identifiersFingerprint,
+  removedSnapshotFloorAfterRemove,
   shouldScheduleReevaluate,
   snapshotVersionForUpload,
   type ContactsHmacFunctionsPort,
@@ -22,11 +23,16 @@ export type ContactsBookPort = {
   readRecords: () => Promise<ContactIdentifierInput[] | { capExceeded: true }>;
 };
 
+/**
+ * Local ack only. Never stores raw identifiers — fingerprint is a digest.
+ * `removedSnapshotFloor` survives remove/reconnect so Identity fences are honored.
+ */
 export type ContactsLocalState = {
   sourceId: string;
   contactsEpoch: number;
   lastAckedVersion: number | null;
   lastAckedFingerprint: string | null;
+  removedSnapshotFloor: number | null;
 };
 
 export type ContactsFlowOutcome = {
@@ -35,6 +41,20 @@ export type ContactsFlowOutcome = {
   scheduleReevaluate: boolean;
   permission: ContactsPermissionStatus | null;
 };
+
+function emptyLocalAcks(
+  sourceId: string,
+  contactsEpoch: number,
+  removedSnapshotFloor: number | null = null,
+): ContactsLocalState {
+  return {
+    sourceId,
+    contactsEpoch,
+    lastAckedVersion: null,
+    lastAckedFingerprint: null,
+    removedSnapshotFloor,
+  };
+}
 
 async function retrySyncOnceOnEpochMismatch(
   functions: ContactsHmacFunctionsPort,
@@ -47,6 +67,7 @@ async function retrySyncOnceOnEpochMismatch(
     lastAckedVersion: state.lastAckedVersion,
     lastAckedFingerprint: state.lastAckedFingerprint,
     nextFingerprint: fingerprint,
+    removedSnapshotFloor: state.removedSnapshotFloor,
   });
   return syncContactHashes(functions, {
     sourceId: state.sourceId,
@@ -61,21 +82,62 @@ function applyAck(
   result: ContactsWireResult,
   fingerprint: string | null,
 ): ContactsLocalState {
+  const version =
+    typeof result.snapshotVersion === 'number'
+      ? result.snapshotVersion
+      : fingerprint != null
+        ? snapshotVersionForUpload({
+            lastAckedVersion: state.lastAckedVersion,
+            lastAckedFingerprint: state.lastAckedFingerprint,
+            nextFingerprint: fingerprint,
+            removedSnapshotFloor: state.removedSnapshotFloor,
+          })
+        : state.lastAckedVersion;
   return {
     sourceId: state.sourceId,
     contactsEpoch: result.contactsEpoch,
-    lastAckedVersion:
-      typeof result.snapshotVersion === 'number'
-        ? result.snapshotVersion
-        : fingerprint != null
-          ? snapshotVersionForUpload({
-              lastAckedVersion: state.lastAckedVersion,
-              lastAckedFingerprint: state.lastAckedFingerprint,
-              nextFingerprint: fingerprint,
-            })
-          : state.lastAckedVersion,
-    lastAckedFingerprint:
-      fingerprint ?? state.lastAckedFingerprint,
+    lastAckedVersion: version,
+    lastAckedFingerprint: fingerprint ?? state.lastAckedFingerprint,
+    // Successful sync above the fence clears the local floor for this source.
+    removedSnapshotFloor: null,
+  };
+}
+
+function applyRemoveFence(
+  state: ContactsLocalState,
+  removed: ContactsWireResult,
+): ContactsLocalState {
+  const floor = removedSnapshotFloorAfterRemove({
+    previousFloor: state.removedSnapshotFloor,
+    removedSnapshotVersion: removed.snapshotVersion,
+    lastAckedVersion: state.lastAckedVersion,
+  });
+  return {
+    ...emptyLocalAcks(state.sourceId, removed.contactsEpoch, floor),
+  };
+}
+
+async function syncWithCaps(input: {
+  functions: ContactsHmacFunctionsPort;
+  state: ContactsLocalState;
+  identifiers: ContactIdentifierInput[];
+  fingerprint: string;
+}): Promise<{ result: ContactsWireResult; state: ContactsLocalState }> {
+  const snapshotVersion = snapshotVersionForUpload({
+    lastAckedVersion: input.state.lastAckedVersion,
+    lastAckedFingerprint: input.state.lastAckedFingerprint,
+    nextFingerprint: input.fingerprint,
+    removedSnapshotFloor: input.state.removedSnapshotFloor,
+  });
+  const synced = await syncContactHashes(input.functions, {
+    sourceId: input.state.sourceId,
+    snapshotVersion,
+    contactsEpoch: input.state.contactsEpoch,
+    identifiers: input.identifiers,
+  });
+  return {
+    result: synced,
+    state: applyAck(input.state, synced, input.fingerprint),
   };
 }
 
@@ -98,12 +160,7 @@ export async function runEnableThenSync(input: {
     });
     return {
       result: removed,
-      state: {
-        ...state,
-        contactsEpoch: removed.contactsEpoch,
-        lastAckedVersion: null,
-        lastAckedFingerprint: null,
-      },
+      state: applyRemoveFence(state, removed),
       scheduleReevaluate:
         shouldScheduleReevaluate(enabled) || shouldScheduleReevaluate(removed),
       permission,
@@ -118,24 +175,19 @@ export async function runEnableThenSync(input: {
     );
   }
   const fingerprint = identifiersFingerprint(records);
-  const snapshotVersion = snapshotVersionForUpload({
-    lastAckedVersion: state.lastAckedVersion,
-    lastAckedFingerprint: state.lastAckedFingerprint,
-    nextFingerprint: fingerprint,
-  });
   try {
-    const synced = await syncContactHashes(input.functions, {
-      sourceId: state.sourceId,
-      snapshotVersion,
-      contactsEpoch: state.contactsEpoch,
-      identifiers: records,
-    });
-    state = applyAck(state, synced, fingerprint);
-    return {
-      result: synced,
+    const synced = await syncWithCaps({
+      functions: input.functions,
       state,
+      identifiers: records,
+      fingerprint,
+    });
+    return {
+      result: synced.result,
+      state: synced.state,
       scheduleReevaluate:
-        shouldScheduleReevaluate(enabled) || shouldScheduleReevaluate(synced),
+        shouldScheduleReevaluate(enabled) ||
+        shouldScheduleReevaluate(synced.result),
       permission,
     };
   } catch (err) {
@@ -154,12 +206,16 @@ export async function runEnableThenSync(input: {
         fingerprint,
         liveEpoch,
       );
-      state = applyAck({ ...state, contactsEpoch: liveEpoch }, retried, fingerprint);
       return {
         result: retried,
-        state,
+        state: applyAck(
+          { ...state, contactsEpoch: liveEpoch },
+          retried,
+          fingerprint,
+        ),
         scheduleReevaluate:
-          shouldScheduleReevaluate(enabled) || shouldScheduleReevaluate(retried),
+          shouldScheduleReevaluate(enabled) ||
+          shouldScheduleReevaluate(retried),
         permission,
       };
     }
@@ -181,12 +237,7 @@ export async function runResyncGrantedBook(input: {
     });
     return {
       result: removed,
-      state: {
-        ...input.state,
-        contactsEpoch: removed.contactsEpoch,
-        lastAckedVersion: null,
-        lastAckedFingerprint: null,
-      },
+      state: applyRemoveFence(input.state, removed),
       scheduleReevaluate: shouldScheduleReevaluate(removed),
       permission,
     };
@@ -199,21 +250,16 @@ export async function runResyncGrantedBook(input: {
     );
   }
   const fingerprint = identifiersFingerprint(records);
-  const snapshotVersion = snapshotVersionForUpload({
-    lastAckedVersion: input.state.lastAckedVersion,
-    lastAckedFingerprint: input.state.lastAckedFingerprint,
-    nextFingerprint: fingerprint,
-  });
-  const synced = await syncContactHashes(input.functions, {
-    sourceId: input.state.sourceId,
-    snapshotVersion,
-    contactsEpoch: input.state.contactsEpoch,
+  const synced = await syncWithCaps({
+    functions: input.functions,
+    state: input.state,
     identifiers: records,
+    fingerprint,
   });
   return {
-    result: synced,
-    state: applyAck(input.state, synced, fingerprint),
-    scheduleReevaluate: shouldScheduleReevaluate(synced),
+    result: synced.result,
+    state: synced.state,
+    scheduleReevaluate: shouldScheduleReevaluate(synced.result),
     permission,
   };
 }
@@ -226,14 +272,10 @@ export async function runDisable(input: {
     input.functions,
     input.state.contactsEpoch,
   );
+  // Disable deletes Identity fences; local floor resets with the new epoch.
   return {
     result: disabled,
-    state: {
-      sourceId: input.state.sourceId,
-      contactsEpoch: disabled.contactsEpoch,
-      lastAckedVersion: null,
-      lastAckedFingerprint: null,
-    },
+    state: emptyLocalAcks(input.state.sourceId, disabled.contactsEpoch, null),
     scheduleReevaluate: shouldScheduleReevaluate(disabled),
     permission: null,
   };

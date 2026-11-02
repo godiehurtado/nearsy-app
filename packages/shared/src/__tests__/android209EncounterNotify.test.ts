@@ -13,6 +13,11 @@ import {
 } from '../alerts/alertAppearance.ts';
 import { parseEncounterNotifyPayload } from '../alerts/encounterNotifyPayload.ts';
 import {
+  clearPendingReevaluate,
+  isPendingReevaluate,
+  markPendingReevaluate,
+} from '../alerts/pendingReevaluateStore.ts';
+import {
   createReevaluateDebouncer,
   resetReevaluateProximityNoticesForTests,
 } from '../alerts/reevaluateProximityNotices.ts';
@@ -29,6 +34,7 @@ import {
 import {
   BANNED_CONTACTS_WIRE_FIELDS,
   CONTACT_HASH_CAP,
+  CONTACT_SOURCE_CAP,
   DISABLE_CONTACTS_SYNC,
   ENABLE_CONTACTS_SYNC,
   REFRESH_VERIFIED_ACTOR_KEYS,
@@ -42,8 +48,11 @@ import {
   buildSyncRequest,
   collectContactIdentifiers,
   ContactsHmacError,
+  contactsHmacErrorToI18nKey,
   identifiersFingerprint,
+  isContactsHardCapOrFenceError,
   parseContactsWireResult,
+  removedSnapshotFloorAfterRemove,
   shouldScheduleReevaluate,
   snapshotVersionForUpload,
   syncContactHashes,
@@ -52,6 +61,10 @@ import {
   runDisable,
   runEnableThenSync,
 } from '../contactsHmac/contactsSyncFlow.ts';
+import {
+  loadContactsLocalState,
+  persistContactsLocalState,
+} from '../contactsHmac/contactsSource.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -235,6 +248,84 @@ describe('reevaluate debounce', () => {
     await Promise.resolve();
     assert.deepEqual(calls, ['b']);
   });
+
+  it('keeps durable pending per UID and retries Functions only', async () => {
+    const mem = new Map<string, string>();
+    const store = {
+      async getItem(key: string) {
+        return mem.get(key) ?? null;
+      },
+      async setItem(key: string, value: string) {
+        mem.set(key, value);
+      },
+      async removeItem(key: string) {
+        mem.delete(key);
+      },
+    };
+    await markPendingReevaluate(store, 'uid-a');
+    assert.equal(await isPendingReevaluate(store, 'uid-a'), true);
+    assert.equal(await isPendingReevaluate(store, 'uid-b'), false);
+
+    const calls: string[] = [];
+    const timers = new Map<number, () => void>();
+    let nextId = 1;
+    let failOnce = true;
+    const debouncer = createReevaluateDebouncer({
+      debounceMs: 10_000,
+      scheduleTimer: (fn) => {
+        const id = nextId;
+        nextId += 1;
+        timers.set(id, () => {
+          timers.delete(id);
+          fn();
+        });
+        return id as unknown as ReturnType<typeof setTimeout>;
+      },
+      cancelTimer: (id) => {
+        timers.delete(id as unknown as number);
+      },
+    });
+    debouncer.setPendingHooks({
+      mark: (uid) => markPendingReevaluate(store, uid),
+      clear: (uid) => clearPendingReevaluate(store, uid),
+      isPending: (uid) => isPendingReevaluate(store, uid),
+    });
+    debouncer.bindSession('uid-a');
+    debouncer.register(async () => {
+      calls.push('reeval');
+      if (failOnce) {
+        failOnce = false;
+        throw new Error('functions lease');
+      }
+    });
+    debouncer.schedule();
+    assert.equal(timers.size, 1);
+    const first = [...timers.values()][0];
+    first();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(await isPendingReevaluate(store, 'uid-a'), true);
+    assert.equal(calls.length, 1);
+    // Failure re-arms a trailing retry for the same session.
+    assert.equal(timers.size, 1);
+    timers.clear();
+
+    debouncer.bindSession('uid-b');
+    assert.equal(debouncer.isPending(), false);
+    assert.equal(await isPendingReevaluate(store, 'uid-a'), true);
+
+    debouncer.bindSession('uid-a');
+    await debouncer.resumePendingIfNeeded();
+    assert.equal(timers.size, 1);
+    const second = [...timers.values()][0];
+    second();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(calls.length, 2);
+    assert.equal(await isPendingReevaluate(store, 'uid-a'), false);
+  });
 });
 
 describe('Identity contacts HMAC wire', () => {
@@ -305,6 +396,8 @@ describe('Identity contacts HMAC wire', () => {
       { kind: 'phone', value: '+14155550100' },
     ]);
     const fingerprint = identifiersFingerprint(identifiers.identifiers);
+    assert.match(fingerprint, /^fp1:/);
+    assert.doesNotMatch(fingerprint, /ada@b\.co|\+14155550100/);
     assert.equal(
       snapshotVersionForUpload({
         lastAckedVersion: 2,
@@ -317,7 +410,10 @@ describe('Identity contacts HMAC wire', () => {
       snapshotVersionForUpload({
         lastAckedVersion: 2,
         lastAckedFingerprint: fingerprint,
-        nextFingerprint: `${fingerprint}\nemail:other@x.co`,
+        nextFingerprint: identifiersFingerprint([
+          ...identifiers.identifiers,
+          { kind: 'email', value: 'other@x.co' },
+        ]),
       }),
       3,
     );
@@ -327,9 +423,54 @@ describe('Identity contacts HMAC wire', () => {
       })),
     );
     assert.equal(tooMany.ok, false);
+    assert.equal(CONTACT_SOURCE_CAP, 8);
   });
 
-  it('does not upload empty when OS permission is denied', async () => {
+  it('keeps snapshotVersion monotonic after remove/reconnect against a fence', () => {
+    assert.equal(
+      removedSnapshotFloorAfterRemove({
+        previousFloor: null,
+        removedSnapshotVersion: 3,
+        lastAckedVersion: 3,
+      }),
+      3,
+    );
+    assert.equal(
+      snapshotVersionForUpload({
+        lastAckedVersion: null,
+        lastAckedFingerprint: null,
+        nextFingerprint: 'fp1:abc',
+        removedSnapshotFloor: 3,
+      }),
+      4,
+    );
+    assert.equal(
+      snapshotVersionForUpload({
+        lastAckedVersion: null,
+        lastAckedFingerprint: null,
+        nextFingerprint: 'fp1:abc',
+        removedSnapshotFloor: null,
+      }),
+      1,
+    );
+  });
+
+  it('surfaces hard caps/fences without treating them as success', () => {
+    assert.equal(contactsHmacErrorToI18nKey('contacts-identifier-cap'), 'identifierCap');
+    assert.equal(contactsHmacErrorToI18nKey('contacts-union-cap'), 'unionCap');
+    assert.equal(contactsHmacErrorToI18nKey('contacts-source-cap'), 'sourceCap');
+    assert.equal(contactsHmacErrorToI18nKey('contacts-source-removed'), 'sourceRemoved');
+    assert.equal(isContactsHardCapOrFenceError('contacts-union-cap'), true);
+    assert.equal(isContactsHardCapOrFenceError('contacts-rate-limited'), false);
+    const settings = readSrc('i18n/resources/settings.ts');
+    assert.match(settings, /identifierCap:/);
+    assert.match(settings, /unionCap:/);
+    assert.match(settings, /sourceCap:/);
+    assert.match(settings, /sourceRemoved:/);
+    assert.doesNotMatch(settings, /Contacts were updated/);
+  });
+
+  it('does not upload empty when OS permission is denied and keeps a fence floor', async () => {
     const calls: Array<{ name: string; data: unknown }> = [];
     const functions = {
       region: 'us-central1',
@@ -348,13 +489,15 @@ describe('Identity contacts HMAC wire', () => {
         }
         if (name === REMOVE_CONTACT_SOURCE) {
           return {
-            result: 'absent',
+            result: 'removed',
             contactsSyncEnabled: true,
             contactsEpoch: 0,
             notifyNearbyContactsEffective: true,
             sourceId: 'sourceId1',
+            snapshotVersion: 2,
+            identifierCount: 4,
             syncCommitted: true,
-            reevaluateRequired: false,
+            reevaluateRequired: true,
           };
         }
         throw new Error(`unexpected ${name}`);
@@ -372,11 +515,14 @@ describe('Identity contacts HMAC wire', () => {
       state: {
         sourceId: 'sourceId1',
         contactsEpoch: 0,
-        lastAckedVersion: null,
-        lastAckedFingerprint: null,
+        lastAckedVersion: 2,
+        lastAckedFingerprint: 'fp1:deadbeef',
+        removedSnapshotFloor: null,
       },
     });
-    assert.equal(outcome.result.result, 'absent');
+    assert.equal(outcome.result.result, 'removed');
+    assert.equal(outcome.state.removedSnapshotFloor, 2);
+    assert.equal(outcome.state.lastAckedVersion, null);
     assert.deepEqual(
       calls.map((c) => c.name),
       [ENABLE_CONTACTS_SYNC, REMOVE_CONTACT_SOURCE],
@@ -384,7 +530,7 @@ describe('Identity contacts HMAC wire', () => {
     assert.ok(!calls.some((c) => c.name === SYNC_CONTACT_HASHES));
   });
 
-  it('sends an empty granted book and does not restore snapshots after disable', async () => {
+  it('sends an empty granted book and clears fence floor after disable', async () => {
     const synced = parseContactsWireResult({
       result: 'idempotent',
       contactsSyncEnabled: true,
@@ -422,13 +568,50 @@ describe('Identity contacts HMAC wire', () => {
         sourceId: 'sourceId1',
         contactsEpoch: 4,
         lastAckedVersion: 1,
-        lastAckedFingerprint: 'email:ada@b.co',
+        lastAckedFingerprint: 'fp1:abc',
+        removedSnapshotFloor: 7,
       },
     });
     assert.equal(disabled.state.contactsEpoch, 5);
     assert.equal(disabled.state.lastAckedVersion, null);
     assert.equal(disabled.state.lastAckedFingerprint, null);
+    assert.equal(disabled.state.removedSnapshotFloor, null);
     assert.equal(disabled.scheduleReevaluate, true);
+  });
+
+  it('persists only opaque fingerprints and drops legacy raw ack material', async () => {
+    const mem = new Map<string, string>();
+    const store = {
+      async getItem(key: string) {
+        return mem.get(key) ?? null;
+      },
+      async setItem(key: string, value: string) {
+        mem.set(key, value);
+      },
+    };
+    await persistContactsLocalState(store, 'uid-a', {
+      sourceId: 'sourceId1',
+      contactsEpoch: 1,
+      lastAckedVersion: 2,
+      lastAckedFingerprint: 'fp1:abcdef01abcdef02',
+      removedSnapshotFloor: 2,
+    });
+    const loaded = await loadContactsLocalState(store, 'uid-a', 'sourceId1');
+    assert.equal(loaded.lastAckedFingerprint, 'fp1:abcdef01abcdef02');
+    assert.doesNotMatch(JSON.stringify(loaded), /@|\+\d/);
+
+    mem.set(
+      'nearsy.contacts.state.v1:uid-a',
+      JSON.stringify({
+        contactsEpoch: 1,
+        lastAckedVersion: 2,
+        lastAckedFingerprint: 'email:ada@b.co',
+        removedSnapshotFloor: 2,
+      }),
+    );
+    const scrubbed = await loadContactsLocalState(store, 'uid-a', 'sourceId1');
+    assert.equal(scrubbed.lastAckedFingerprint, null);
+    assert.equal(scrubbed.removedSnapshotFloor, 2);
   });
 
   it('never sends expectedEpoch or client hashes on the Identity port', async () => {
@@ -485,13 +668,22 @@ describe('Android wiring', () => {
     const android = readSrc('contactsHmac/contactsHmac.android.ts');
     const core = readSrc('contactsHmac/contactsHmacCore.ts');
     const otp = readSrc('screens/PhoneVerificationScreen.android.tsx');
+    const appJson = readFileSync(
+      join(ROOT, '..', '..', '..', 'apps', 'nearsy-android', 'app.json'),
+      'utf8',
+    );
+    const reevalAndroid = readSrc('alerts/reevaluateProximityNotices.android.ts');
     assert.match(more, /enableThenSyncContacts/);
     assert.match(more, /disableContactsIntegration/);
     assert.match(more, /buildNotifyNearbyContactsPatch/);
+    assert.match(more, /contactsOpGenRef/);
+    assert.match(more, /onAuthStateChanged/);
     assert.match(core, /ENABLE_CONTACTS_SYNC/);
     assert.match(core, /SYNC_CONTACT_HASHES/);
     assert.match(core, /REMOVE_CONTACT_SOURCE/);
     assert.match(core, /REFRESH_VERIFIED_ACTOR_KEYS/);
+    assert.match(core, /removedSnapshotFloor/);
+    assert.match(core, /fp1:/);
     assert.match(android, /runEnableThenSync/);
     assert.match(android, /httpsCallable/);
     assert.doesNotMatch(android, /expectedEpoch/);
@@ -500,9 +692,22 @@ describe('Android wiring', () => {
     assert.doesNotMatch(android, /deleteContactSource/);
     assert.match(otp, /refreshContactsActorKeys/);
     assert.match(readSrc('alerts/reevaluateProximityNotices.ts'), /bindSession/);
-    assert.match(
-      readSrc('alerts/reevaluateProximityNotices.android.ts'),
-      /onAuthStateChanged/,
+    assert.match(readSrc('alerts/reevaluateProximityNotices.ts'), /resumePendingIfNeeded/);
+    assert.match(reevalAndroid, /onAuthStateChanged/);
+    assert.match(reevalAndroid, /bindReevaluateSession\(user\?\.uid/);
+    assert.match(reevalAndroid, /pendingReevaluateStore/);
+    const androidCfg = JSON.parse(appJson).expo.android;
+    const plugins = (JSON.parse(appJson).expo.plugins ?? []).map(
+      (p: unknown) => (Array.isArray(p) ? p[0] : p),
+    );
+    assert.equal(plugins.includes('expo-contacts'), true);
+    assert.ok(androidCfg.permissions.includes('android.permission.READ_CONTACTS'));
+    assert.ok(
+      androidCfg.blockedPermissions.includes('android.permission.WRITE_CONTACTS'),
+    );
+    assert.equal(
+      androidCfg.permissions.includes('android.permission.WRITE_CONTACTS'),
+      false,
     );
   });
 });

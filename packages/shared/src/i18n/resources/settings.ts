@@ -59,9 +59,15 @@ export default {
       notEnabled: 'Contacts sync is not enabled.',
       epochMismatch: 'Contacts sync is out of date. Turn it off and on again.',
       snapshotStale: 'This device’s contacts snapshot is out of date. Try again.',
+      sourceRemoved:
+        'This device’s previous Contacts sync was withdrawn. Turn sync off and on again.',
       snapshotConflict: 'This contacts snapshot does not match what was already saved.',
-      sourceCap: 'Too many devices are syncing contacts on this account.',
-      cap: 'Too many contacts to sync. Remove some and try again.',
+      sourceCap:
+        'This account already has the maximum of 8 synced devices. Remove one and try again.',
+      identifierCap:
+        'This sync has more than 500 contacts. Contacts were not updated.',
+      unionCap:
+        'Synced contacts across your devices would exceed 500 unique entries. Contacts were not updated.',
       identifierInvalid: 'Some saved contacts could not be synced. Check numbers and emails.',
       hashRejected: 'Contacts sync rejected an invalid payload. Please try again.',
       unavailable: 'Contacts sync is not available right now.',

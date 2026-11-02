@@ -316,11 +316,16 @@ export const es: TranslationResources = {
           'La sincronización de contactos está desactualizada. Apágala y vuélvela a activar.',
         snapshotStale:
           'La copia de contactos de este dispositivo está desactualizada. Inténtalo de nuevo.',
+        sourceRemoved:
+          'La sincronización anterior de este dispositivo se retiró. Apaga y vuelve a activar la sincronización.',
         snapshotConflict:
           'Esta copia de contactos no coincide con lo que ya estaba guardado.',
         sourceCap:
-          'Demasiados dispositivos están sincronizando contactos en esta cuenta.',
-        cap: 'Hay demasiados contactos para sincronizar. Quita algunos e inténtalo de nuevo.',
+          'Esta cuenta ya tiene el máximo de 8 dispositivos sincronizados. Quita uno e inténtalo de nuevo.',
+        identifierCap:
+          'Esta sincronización supera 500 contactos. Los contactos no se actualizaron.',
+        unionCap:
+          'Los contactos sincronizados entre tus dispositivos superarían 500 entradas únicas. Los contactos no se actualizaron.',
         identifierInvalid:
           'Algunos contactos no se pudieron sincronizar. Revisa números y correos.',
         hashRejected:

@@ -248,6 +248,10 @@ export default function MoreScreen() {
   const [notifyNearbyContacts, setNotifyNearbyContacts] = useState(false);
   const [contactsBusy, setContactsBusy] = useState(false);
   const contactsStateRef = useRef<ContactsLocalState | null>(null);
+  const contactsUidRef = useRef<string | null>(
+    firebaseAuth.currentUser?.uid ?? null,
+  );
+  const contactsOpGenRef = useRef(0);
   const [visibilityOn, setVisibilityOn] = useState(false);
   const [bgChanging, setBgChanging] = useState(false);
   const [bgDisclosureVisible, setBgDisclosureVisible] = useState(false);
@@ -388,6 +392,20 @@ export default function MoreScreen() {
   }, [t]);
 
   useEffect(() => {
+    const unsub = firebaseAuth.onAuthStateChanged((user) => {
+      const next = user?.uid ?? null;
+      if (next === contactsUidRef.current) return;
+      contactsUidRef.current = next;
+      contactsOpGenRef.current += 1;
+      contactsStateRef.current = null;
+      setContactsBusy(false);
+      setContactsSyncEnabled(false);
+      setNotifyNearbyContacts(false);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
     reloadProfile().catch((e: any) => {
       Alert.alert(t('common.error'), e?.message || t('settings.loadError'));
       setLoading(false);
@@ -515,28 +533,45 @@ export default function MoreScreen() {
     if (!uid || Platform.OS !== 'android' || contactsBusy) return;
     const previous = contactsSyncEnabled;
     const previousNotices = notifyNearbyContacts;
+    const opGen = ++contactsOpGenRef.current;
     setContactsBusy(true);
+    // Optimistic UI only; hard-cap / fence errors revert and never claim success.
     setContactsSyncEnabled(enabled);
     try {
       let state = contactsStateRef.current;
       if (!state) state = await loadContactsLocalState(uid);
       if (!state) {
-        setContactsSyncEnabled(previous);
+        if (opGen === contactsOpGenRef.current) {
+          setContactsSyncEnabled(previous);
+        }
         return;
       }
       const liveEpoch = contactsEpochFromUserDoc(state.contactsEpoch);
       const outcome = enabled
         ? await enableThenSyncContacts(state, liveEpoch)
         : await disableContactsIntegration(state);
+      if (
+        opGen !== contactsOpGenRef.current ||
+        firebaseAuth.currentUser?.uid !== uid
+      ) {
+        return;
+      }
       contactsStateRef.current = outcome.state;
       setContactsSyncEnabled(outcome.result.contactsSyncEnabled);
       setNotifyNearbyContacts(outcome.result.notifyNearbyContactsEffective);
     } catch (err) {
-      setContactsSyncEnabled(previous);
-      setNotifyNearbyContacts(previousNotices);
-      Alert.alert(t('common.error'), contactsErrorMessage(err));
+      if (
+        opGen === contactsOpGenRef.current &&
+        firebaseAuth.currentUser?.uid === uid
+      ) {
+        setContactsSyncEnabled(previous);
+        setNotifyNearbyContacts(previousNotices);
+        Alert.alert(t('common.error'), contactsErrorMessage(err));
+      }
     } finally {
-      setContactsBusy(false);
+      if (opGen === contactsOpGenRef.current) {
+        setContactsBusy(false);
+      }
     }
   };
 
