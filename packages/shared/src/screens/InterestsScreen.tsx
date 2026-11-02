@@ -15,6 +15,7 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
 import { firebaseAuth } from '../config/firebaseConfig';
 import { getUserProfile, updateUserProfilePartial } from '../services/firestoreService';
 import { useTranslation } from '../i18n';
@@ -159,6 +160,7 @@ export default function InterestsScreen() {
       const patch = buildPostCrjInterestPersistencePatch(editorMode, selected);
       await updateUserProfilePartial(editorUid, patch);
       snapshotRef.current = selected;
+      scheduleReevaluateProximityNotices();
       Keyboard.dismiss();
       navigation.goBack();
     } catch (e: any) {

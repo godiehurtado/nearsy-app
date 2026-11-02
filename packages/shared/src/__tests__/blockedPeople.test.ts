@@ -145,7 +145,8 @@ describe('Unit 2A Settings preservation with Blocked People', () => {
     assert.match(more, /settings\.logout\.title/);
     assert.match(more, /navigate\('DeleteAccount'\)/);
     assert.match(more, /navigate\('BlockedPeople'\)/);
-    assert.doesNotMatch(more, /contactsSync/);
+    assert.match(more, /contactsSyncEnabled/);
+    assert.doesNotMatch(more, /expectedEpoch/);
     assert.doesNotMatch(more, /blockedContacts/);
   });
 });

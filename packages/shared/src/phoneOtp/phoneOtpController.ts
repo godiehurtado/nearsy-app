@@ -320,6 +320,10 @@ export function createPhoneOtpController(deps: PhoneOtpControllerDeps) {
         challengeId: state.challengeId,
         code: state.code,
       });
+      const { refreshVerifiedActorKeysNow } = await import(
+        '../contacts/refreshActorKeys'
+      );
+      await refreshVerifiedActorKeysNow().catch(() => {});
       const server = await deps.client.getPhoneVerificationState();
       return setState(applyServerState(state, server));
     } catch (err) {

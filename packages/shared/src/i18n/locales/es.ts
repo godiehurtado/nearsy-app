@@ -1572,6 +1572,12 @@ const es: TranslationResources = {
       contactNearby: 'Persona cercana',
       interestNearby: 'Interés compartido cercano',
     },
+    unseen: 'Alerta no leída',
+    push: {
+      interest: '{{name}} está cerca y comparte intereses contigo.',
+      contact: '{{name}}, uno de tus contactos, está cerca.',
+      both: '{{name}}, uno de tus contactos, está cerca y comparte intereses contigo.',
+    },
   },
   activeProfileMode: {
     errors: {
@@ -1619,6 +1625,22 @@ const es: TranslationResources = {
       tooYoung: 'Debes tener al menos {{age}} años.',
       tooOld: 'La edad debe ser {{age}} o menor.',
       saved: 'Fecha de nacimiento actualizada',
+    },
+    nearbyNotices: {
+      title: 'Avisos de intereses cercanos',
+      description:
+        'Recibe un aviso cuando alguien cerca comparte un interés oficial contigo.',
+    },
+    contacts: {
+      title: 'Contactos cercanos',
+      description:
+        'Compara de forma segura teléfonos y correos de tu libreta para avisarte cuando personas que conoces estén cerca. No se suben nombres ni fotos.',
+      nearbyTitle: 'Avisos de contactos cercanos',
+      nearbyDescription:
+        'Silencia los avisos de contactos cercanos sin quitar tus contactos sincronizados.',
+      permissionDenied:
+        'Se necesita acceso a Contactos para sincronizar tu libreta. Puedes activarlo en Ajustes de iPhone.',
+      error: 'No se pudo actualizar la sincronización de Contactos. Inténtalo más tarde.',
     },
     visibilityAge: {
       title: 'Quién puede encontrarme por edad',

@@ -32,6 +32,7 @@ import {
   type BlockedPerson,
 } from '../visibility/callables';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
+import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
 import { unblockCandidateUser } from '../visibility/unblockCandidate';
 
 const AVATAR_SIZE = 48;
@@ -122,6 +123,7 @@ export default function BlockedPeopleScreen() {
                 );
                 return;
               }
+              scheduleReevaluateProximityNotices();
               setPeople((prev) => prev.filter((p) => p.uid !== person.uid));
             })();
           },

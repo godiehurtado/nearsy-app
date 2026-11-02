@@ -964,6 +964,10 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     if (!uid || !mode) return;
     const patch = buildCrjInterestPersistencePatch(mode, selectedInterests);
     await updateUserProfilePartial(uid, patch);
+    const { scheduleReevaluateProximityNotices } = await import(
+      '../alerts/reevaluateProximityNotices'
+    );
+    scheduleReevaluateProximityNotices();
     setShellData((prev) => ({
       ...(prev ?? {}),
       mode,

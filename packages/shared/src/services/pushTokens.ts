@@ -83,7 +83,14 @@ bindPushTokenAuthReplaceHandlers({
 
 export async function registerPushToken(): Promise<RegisterPushTokenResult> {
   try {
-    return await session.register();
+    const result = await session.register();
+    if (result.ok) {
+      const { scheduleReevaluateProximityNotices } = await import(
+        '../alerts/reevaluateProximityNotices'
+      );
+      scheduleReevaluateProximityNotices();
+    }
+    return result;
   } catch (err) {
     if (__DEV__) {
       console.warn('[PushTokens] registerPushToken error:', err);

@@ -106,6 +106,22 @@ import {
 } from '../theme';
 import type { ThemeName } from '../theme/colors';
 import { AppearanceToggle } from '../components/AppearanceToggle';
+import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
+import {
+  buildNotifyNearbyContactsMutePatch,
+  buildNotifyNearbyInterestsPatch,
+  resolveContactsSyncEnabled,
+  resolveNotifyNearbyContacts,
+  resolveNotifyNearbyInterests,
+} from '../alerts/notifyPrefs';
+import {
+  disableContactsSyncFlow,
+  enableAndSyncContacts,
+} from '../contacts/controller';
+import { createContactsAddressBookPort } from '../contacts/iosAddressBook';
+import { getContactsHmacClient } from '../contacts/iosContactsFoundation';
+import { createContactsSessionStore } from '../contacts/iosContactsSession';
+import { shouldCallReevaluateAfterIdentity } from '../contacts/parse';
 
 type ProfileDoc = {
   phone?: string | null;
@@ -116,6 +132,9 @@ type ProfileDoc = {
   visibleToMaxAge?: number | null;
   bgVisible?: boolean;
   visibility?: boolean;
+  notifyNearbyInterests?: boolean;
+  contactsSyncEnabled?: boolean;
+  notifyNearbyContacts?: boolean;
 };
 
 type EditorKind = 'birthDate' | 'visibilityAge' | null;
@@ -221,6 +240,10 @@ export default function MoreScreen() {
   const [visibleToMaxAge, setVisibleToMaxAge] = useState<number | null>(null);
   const [bgVisible, setBgVisible] = useState(false);
   const [visibilityOn, setVisibilityOn] = useState(false);
+  const [notifyNearbyInterests, setNotifyNearbyInterests] = useState(true);
+  const [contactsSyncEnabled, setContactsSyncEnabled] = useState(false);
+  const [notifyNearbyContacts, setNotifyNearbyContacts] = useState(false);
+  const [contactsBusy, setContactsBusy] = useState(false);
   const [bgChanging, setBgChanging] = useState(false);
   const [bgEducationOpen, setBgEducationOpen] = useState(false);
   const [bgEducationVariant, setBgEducationVariant] =
@@ -310,6 +333,14 @@ export default function MoreScreen() {
       typeof data.visibleToMaxAge === 'number' ? data.visibleToMaxAge : null,
     );
     setVisibilityOn(!!data.visibility);
+    setNotifyNearbyInterests(resolveNotifyNearbyInterests(data.notifyNearbyInterests));
+    setContactsSyncEnabled(resolveContactsSyncEnabled(data.contactsSyncEnabled));
+    setNotifyNearbyContacts(
+      resolveNotifyNearbyContacts({
+        contactsSyncEnabled: data.contactsSyncEnabled,
+        notifyNearbyContacts: data.notifyNearbyContacts,
+      }),
+    );
 
     const preferenceBgVisible = !!data.bgVisible;
     let backgroundGranted = false;
@@ -480,6 +511,85 @@ export default function MoreScreen() {
       { merge: true },
     );
     setBgVisible(value);
+  };
+
+  const contactsPorts = async () => ({
+    client: await getContactsHmacClient(),
+    session: createContactsSessionStore(),
+    book: createContactsAddressBookPort(),
+    afterIdentity: async (result: { syncCommitted: boolean; reevaluateRequired: boolean }) => {
+      if (shouldCallReevaluateAfterIdentity(result)) {
+        scheduleReevaluateProximityNotices();
+      }
+    },
+  });
+
+  const handleToggleNotifyNearbyInterests = async (enabled: boolean) => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) return;
+    const previous = notifyNearbyInterests;
+    setNotifyNearbyInterests(enabled);
+    try {
+      await setDoc(
+        doc(firestoreDb, 'users', uid),
+        { ...buildNotifyNearbyInterestsPatch(enabled), updatedAt: Date.now() },
+        { merge: true },
+      );
+      scheduleReevaluateProximityNotices();
+    } catch (e: any) {
+      setNotifyNearbyInterests(previous);
+      Alert.alert(t('common.error'), e?.message || t('common.error'));
+    }
+  };
+
+  const handleToggleNotifyNearbyContacts = async (enabled: boolean) => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid || !contactsSyncEnabled) return;
+    const previous = notifyNearbyContacts;
+    setNotifyNearbyContacts(enabled);
+    try {
+      await setDoc(
+        doc(firestoreDb, 'users', uid),
+        { ...buildNotifyNearbyContactsMutePatch(enabled), updatedAt: Date.now() },
+        { merge: true },
+      );
+      scheduleReevaluateProximityNotices();
+    } catch (e: any) {
+      setNotifyNearbyContacts(previous);
+      Alert.alert(t('common.error'), e?.message || t('common.error'));
+    }
+  };
+
+  const handleToggleContactsSync = async (enabled: boolean) => {
+    if (contactsBusy) return;
+    const previous = contactsSyncEnabled;
+    setContactsBusy(true);
+    setContactsSyncEnabled(enabled);
+    try {
+      const ports = await contactsPorts();
+      const outcome = enabled
+        ? await enableAndSyncContacts(ports)
+        : await disableContactsSyncFlow(ports);
+      if (!outcome.ok) {
+        setContactsSyncEnabled(previous);
+        if (outcome.reason === 'contacts-os-denied') {
+          Alert.alert(
+            t('common.appName'),
+            t('settings.contacts.permissionDenied'),
+          );
+        } else {
+          Alert.alert(t('common.error'), t('settings.contacts.error'));
+        }
+        return;
+      }
+      setContactsSyncEnabled(outcome.result.contactsSyncEnabled);
+      setNotifyNearbyContacts(outcome.result.notifyNearbyContactsEffective);
+    } catch {
+      setContactsSyncEnabled(previous);
+      Alert.alert(t('common.error'), t('settings.contacts.error'));
+    } finally {
+      setContactsBusy(false);
+    }
   };
 
   const showNeedsAlwaysSettings = () => {
@@ -951,6 +1061,29 @@ export default function MoreScreen() {
         </SettingsSection>
 
         <SettingsSection title={t('settings.sections.privacy')}>
+          <SettingsToggleRow
+            icon="notifications-outline"
+            title={t('settings.nearbyNotices.title')}
+            description={t('settings.nearbyNotices.description')}
+            value={notifyNearbyInterests}
+            onValueChange={handleToggleNotifyNearbyInterests}
+          />
+          <SettingsToggleRow
+            icon="people-circle-outline"
+            title={t('settings.contacts.title')}
+            description={t('settings.contacts.description')}
+            value={contactsSyncEnabled}
+            onValueChange={handleToggleContactsSync}
+            disabled={contactsBusy}
+          />
+          <SettingsToggleRow
+            icon="notifications-outline"
+            title={t('settings.contacts.nearbyTitle')}
+            description={t('settings.contacts.nearbyDescription')}
+            value={notifyNearbyContacts}
+            onValueChange={handleToggleNotifyNearbyContacts}
+            disabled={!contactsSyncEnabled || contactsBusy}
+          />
           <SettingsRow
             icon="people-outline"
             title={t('settings.visibilityAge.title')}

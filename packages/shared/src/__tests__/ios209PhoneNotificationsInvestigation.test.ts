@@ -2,7 +2,7 @@
  * Investigation only — do not add notification infrastructure from this file.
  *
  * Phone OS notifications (this report) are not the in-app Alerts tab.
- * Contacts matching is a separate 2.0.9 debt (see iosNoContactsAccess.test.ts).
+ * Contacts matching is implemented in the independent Contacts/Alerts PR.
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -43,25 +43,24 @@ describe('iOS 2.0.9 phone notifications — current evidence (no new infra)', ()
     const tokens = readShared('services/pushTokens.ts');
     const alerts = readShared('screens/AlertsScreen.tsx');
     const nearby = readShared('hooks/useNearbyAlerts.ts');
+    const mapping = readShared('hooks/nearbyAlertsMapping.ts');
     const appJson = readIosAppJson();
     assert.doesNotMatch(tokens, /scheduleNotificationAsync/);
     assert.doesNotMatch(alerts, /scheduleNotificationAsync/);
     assert.match(alerts, /useNearbyAlerts/);
     assert.match(nearby, /discoverNearby/);
-    assert.match(nearby, /contact_nearby/);
+    assert.match(mapping, /contact_nearby/);
     assert.match(appJson, /expo-notifications/);
     assert.doesNotMatch(appJson, /remote-notification/);
     assert.match(appJson, /"location"/);
   });
 
-  it('this CRJ branch does not add notification packages or Contacts access', () => {
+  it('does not add extra local-notification packages beyond Expo push', () => {
     const pkg = readFileSync(
       join(REPO_ROOT, 'apps', 'nearsy-ios', 'package.json'),
       'utf8',
     );
-    const appJson = readIosAppJson();
     assert.match(pkg, /expo-notifications/);
-    assert.doesNotMatch(pkg, /expo-contacts/);
-    assert.doesNotMatch(appJson, /NSContactsUsageDescription/);
+    assert.doesNotMatch(pkg, /notifee/);
   });
 });

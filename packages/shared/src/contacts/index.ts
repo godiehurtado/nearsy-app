@@ -1,0 +1,14 @@
+export * from './domain';
+export * from './wireTypes';
+export * from './errors';
+export * from './identifiers';
+export * from './parse';
+export * from './port';
+export * from './fakeClient';
+export * from './adapter';
+export * from './syncPolicy';
+export * from './controller';
+export * from './refreshActorKeys';
+export { getContactsHmacClient } from './iosContactsFoundation';
+export { createContactsSessionStore } from './iosContactsSession';
+export { createContactsAddressBookPort } from './iosAddressBook';

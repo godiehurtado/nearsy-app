@@ -29,6 +29,7 @@
         "NSPhotoLibraryUsageDescription": "Nearsy needs access to your photo library so you can upload profile and gallery photos that will be visible on your profile.",
         "NSCameraUsageDescription": "Nearsy uses the camera so you can take profile or gallery photos directly within the app.",
         "NSPhotoLibraryAddUsageDescription": "Nearsy needs permission to save photos generated or edited in the app to your photo library.",
+        "NSContactsUsageDescription": "Nearsy uses your contacts to notify you when people you know are nearby. Phone numbers and emails are sent securely. Names and photos from your address book are not uploaded.",
         "UIBackgroundModes": [
           "location"
         ],
@@ -49,6 +50,12 @@
         }
       ],
       "expo-notifications",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Nearsy uses your contacts to notify you when people you know are nearby. Phone numbers and emails are sent securely. Names and photos from your address book are not uploaded."
+        }
+      ],
       "expo-asset",
       "expo-font",
       "expo-web-browser",

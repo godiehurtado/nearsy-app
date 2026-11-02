@@ -38,7 +38,7 @@ import {
 export default function AlertsScreen() {
   const navigation =
     useNavigation<BottomTabNavigationProp<RootTabsParamList>>();
-  const { loading, alerts, me, refresh } = useNearbyAlerts();
+  const { loading, alerts, me, refresh, markAlertOpened } = useNearbyAlerts();
   const [refreshing, setRefreshing] = useState(false);
   const insets = useSafeAreaInsets();
   const { palette } = useAppTheme();
@@ -78,14 +78,15 @@ export default function AlertsScreen() {
   );
 
   const openDiscoveryProfile = useCallback(
-    (uid: string | undefined) => {
-      if (!uid) return;
+    (item: AlertItem) => {
+      if (!item.uid) return;
+      void markAlertOpened(item);
       navigation.navigate('Home', {
         screen: 'DiscoveryProfile',
-        params: { uid },
+        params: { uid: item.uid },
       });
     },
-    [navigation],
+    [markAlertOpened, navigation],
   );
 
   const showInitialLoader =
@@ -116,7 +117,7 @@ export default function AlertsScreen() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={message}
-        onPress={() => openDiscoveryProfile(item.uid)}
+        onPress={() => openDiscoveryProfile(item)}
         style={({ pressed }) => [
           styles.row,
           { opacity: pressed ? 0.88 : 1 },
@@ -164,6 +165,12 @@ export default function AlertsScreen() {
         <Text style={[styles.time, { color: palette.textMuted }]}>
           {timeLabel}
         </Text>
+        {item.unseen ? (
+          <View
+            accessibilityLabel={t('notifications.unseen')}
+            style={[styles.unseenDot, { backgroundColor: palette.primary }]}
+          />
+        ) : null}
       </Pressable>
     );
   };
@@ -363,6 +370,13 @@ const styles = StyleSheet.create({
     minWidth: 28,
     textAlign: 'right',
     paddingTop: 2,
+  },
+  unseenDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginLeft: spacing.xs,
+    marginTop: 6,
   },
   separator: {
     height: StyleSheet.hairlineWidth,

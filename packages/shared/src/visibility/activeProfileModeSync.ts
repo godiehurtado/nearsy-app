@@ -5,6 +5,8 @@
 
 import type { TFunction } from 'i18next';
 
+import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
+
 import type { ProfileMode } from '../profile/profileModeFields';
 import {
   buildSetActiveProfileModeRequest,
@@ -43,6 +45,7 @@ export async function setActiveProfileModeFlow(
       mode: response.mode,
       visibility: response.visibility,
     });
+    scheduleReevaluateProximityNotices();
     return { ok: true, response };
   } catch (err) {
     return {
