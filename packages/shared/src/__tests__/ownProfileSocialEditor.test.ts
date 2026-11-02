@@ -414,6 +414,11 @@ describe('post-CRJ Social Media editor screen contract', () => {
     assert.match(screen, /\{connected \? \(/);
     assert.match(screen, /profile\.social\.connect/);
     assert.match(screen, /profile\.social\.disconnect/);
+    assert.match(screen, /profile\.social\.linkSaved/);
+    assert.doesNotMatch(
+      screen.slice(screen.indexOf('cardConfigs.map'), screen.indexOf('cardConfigs.map') + 2500),
+      /profile\.social\.connected/,
+    );
     assert.match(screen, /countValidPostCrjSocialConnections\(draft,\s*\{\s*youtubeConnected/);
     assert.match(screen, /saveConnections/);
     assert.match(screen, /saveDisabled/);

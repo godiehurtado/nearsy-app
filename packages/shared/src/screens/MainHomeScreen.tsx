@@ -1052,6 +1052,7 @@ export default function MainHomeScreen({ navigation }: Props) {
         return;
       }
 
+      const previousPrefs = prefsRef.current;
       const optimistic: VisibilitySearchPreferencesByMode = {
         ...draft,
         [mode]: prepared.prefs,
@@ -1077,6 +1078,9 @@ export default function MainHomeScreen({ navigation }: Props) {
         }
       } catch (err) {
         if (epoch === localEpochRef.current) {
+          // Do not leave unconfirmed filters painted as saved.
+          prefsRef.current = previousPrefs;
+          setPrefs(previousPrefs);
           // Filter persist is independent of Visibility — never reuse Visibility copy.
           Alert.alert(
             t('home.preferences.errors.title'),

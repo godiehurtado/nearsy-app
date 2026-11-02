@@ -207,6 +207,8 @@ export default {
     description:
       'Connect your profiles so people can find you elsewhere. All optional.',
     connected: 'Connected',
+    /** Manual URL links (FB/LI/Web) — not a verified ownership badge. */
+    linkSaved: 'Link saved',
     notConnected: 'Not connected',
     connect: 'Connect',
     disconnect: 'Disconnect',

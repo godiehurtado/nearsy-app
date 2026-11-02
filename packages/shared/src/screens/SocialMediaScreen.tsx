@@ -2410,8 +2410,8 @@ export default function SocialMediaScreen() {
                     styles.card,
                     {
                       backgroundColor: palette.panel,
-                      borderColor: connected ? palette.primary : palette.border,
-                      borderWidth: connected ? 1.5 : 1,
+                      borderColor: palette.border,
+                      borderWidth: 1,
                     },
                   ]}
                 >
@@ -2427,24 +2427,14 @@ export default function SocialMediaScreen() {
                         {card.label}
                       </Text>
                       {connected ? (
-                        <View style={styles.connectedRow}>
-                          <View
-                            style={[
-                              styles.connectedDot,
-                              { backgroundColor: palette.success },
-                            ]}
-                            accessibilityElementsHidden
-                            importantForAccessibility="no"
-                          />
-                          <Text
-                            style={[
-                              styles.connectedLabel,
-                              { color: palette.success },
-                            ]}
-                          >
-                            {t('profile.social.connected')}
-                          </Text>
-                        </View>
+                        <Text
+                          style={[
+                            styles.connectedLabel,
+                            { color: palette.textMuted },
+                          ]}
+                        >
+                          {t('profile.social.linkSaved')}
+                        </Text>
                       ) : (
                         <Text
                           style={[

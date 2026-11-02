@@ -1301,6 +1301,7 @@ const es: TranslationResources = {
       description:
         'Conecta tus perfiles para que otras personas puedan encontrarte. Todo es opcional.',
       connected: 'Conectado',
+      linkSaved: 'Enlace guardado',
       notConnected: 'Sin conectar',
       connect: 'Conectar',
       disconnect: 'Desconectar',
