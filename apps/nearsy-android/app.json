@@ -66,7 +66,7 @@
       [
         "expo-contacts",
         {
-          "contactsPermission": "Nearsy reads phone numbers and emails to match people you know nearby. They are sent over TLS to Nearsy Identity to normalize and HMAC-hash for matching. Contact names stay on this device."
+          "contactsPermission": "Nearsy reads phone numbers and emails to match people you know nearby. They are sent over TLS to Nearsy Identity, where they are normalized and HMAC-hashed for matching. Contact names and photos stay on this device and are not uploaded."
         }
       ],
       "@react-native-community/datetimepicker",

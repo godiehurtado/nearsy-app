@@ -312,10 +312,10 @@ export const es: TranslationResources = {
     contactsSync: {
       title: 'Sincronizar contactos',
       description:
-        'Relaciona a personas que conoces cuando están cerca. Tras aceptar, Nearsy lee teléfonos y correos de este dispositivo, los envía por TLS a Nearsy Identity para normalizarlos y hashearlos con HMAC para el matching, y no sube nombres de contactos.',
+        'Relaciona a personas que conoces cuando están cerca. Tras aceptar, Nearsy lee teléfonos y correos de este dispositivo, los envía por TLS a Nearsy Identity; allí se normalizan y hashean con HMAC para el matching. No se suben nombres ni fotos de contactos.',
       consentTitle: '¿Permitir sincronizar contactos?',
       consentBody:
-        'Nearsy leerá teléfonos y correos de tu agenda y los enviará por una conexión segura a Nearsy Identity para normalizarlos y hashearlos con HMAC y hacer matching privado cerca. Los nombres de contactos se quedan en este dispositivo y no se suben. Puedes apagarlo cuando quieras.',
+        'Nearsy leerá teléfonos y correos de tu agenda y los enviará por TLS a Nearsy Identity. Allí se normalizan y hashean con HMAC para el matching privado cerca. Los nombres y fotos de contactos se quedan en este dispositivo y no se suben. Puedes apagarlo cuando quieras.',
       consentContinue: 'Continuar',
       consentCancel: 'Ahora no',
       errors: {

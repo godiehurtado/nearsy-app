@@ -52,10 +52,10 @@ export default {
   contactsSync: {
     title: 'Sync contacts',
     description:
-      'Match people you know nearby. After you agree, Nearsy reads phone numbers and emails from this device, sends them over TLS to Nearsy Identity to normalize and HMAC-hash them for matching, and does not upload contact names.',
+      'Match people you know nearby. After you agree, Nearsy reads phone numbers and emails from this device, sends them over TLS to Nearsy Identity; Identity normalizes and HMAC-hashes them for matching. Contact names and photos are not uploaded.',
     consentTitle: 'Allow contacts sync?',
     consentBody:
-      'Nearsy will read phone numbers and emails from your address book and send them over a secure connection to Nearsy Identity to normalize and HMAC-hash them for private nearby matching. Contact names stay on this device and are not uploaded. You can turn this off anytime.',
+      'Nearsy will read phone numbers and emails from your address book and send them over TLS to Nearsy Identity. There they are normalized and HMAC-hashed for private nearby matching. Contact names and photos stay on this device and are not uploaded. You can turn this off anytime.',
     consentContinue: 'Continue',
     consentCancel: 'Not now',
     errors: {

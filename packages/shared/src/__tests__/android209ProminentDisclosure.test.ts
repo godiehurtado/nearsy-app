@@ -121,13 +121,16 @@ describe('Background disclosure copy + Contacts', () => {
     assert.match(crjAct, /getForegroundPermissionsAsync/);
     assert.match(crjAct, /Do not prompt here/);
     assert.match(en, /sends them over TLS to Nearsy Identity/);
-    assert.match(en, /HMAC-hash/);
-    assert.match(en, /consentBody:[\s\S]*Nearsy Identity/);
+    assert.match(en, /Identity normalizes and HMAC-hashes|normalized and HMAC-hashed/);
+    assert.match(en, /names and photos/);
+    assert.match(en, /consentBody:[\s\S]*TLS to Nearsy Identity/);
     assert.doesNotMatch(en, /not names or your address book/);
     assert.doesNotMatch(en, /only hashed identifiers/);
     assert.match(es, /TLS a Nearsy Identity/);
     assert.match(es, /HMAC/);
+    assert.match(es, /nombres y fotos/);
     assert.match(appJson, /sent over TLS to Nearsy Identity/);
+    assert.match(appJson, /names and photos/);
     assert.doesNotMatch(appJson, /stores only hashed identifiers/);
   });
 });
