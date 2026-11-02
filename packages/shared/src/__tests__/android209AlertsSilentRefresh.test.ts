@@ -37,7 +37,9 @@ describe('209 Alerts silent refresh wiring', () => {
     assert.match(hook, /shouldClearNearbyItemsOnOutcomeFailure/);
     assert.match(hook, /shouldApplyNearbyLoadOutcome/);
     assert.match(hook, /cancelledRef/);
-    assert.match(hook, /Valid empty payloads replace the list/);
+    // Successful refresh replaces the list (empty included); failures keep rows
+    // unless shouldClearNearbyItemsOnOutcomeFailure says otherwise.
+    assert.match(hook, /setAlerts\(applyUnseenFlags\(mapped/);
   });
 
   it('uid or unmount invalidates in-flight discoverNearby', () => {

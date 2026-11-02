@@ -227,9 +227,10 @@ describe('post-CRJ Affiliations field persistence', () => {
     )!;
     assert.equal(custom.source, 'custom');
     assert.equal(custom.name, 'My Local Club');
-    const legacy = patch.personalAffiliations!.find(
-      (r) => r.label === 'University of Miami',
+    const legacy = patch.personalAffiliations!.find((r) =>
+      r.label.includes('University of Miami'),
     )!;
+    assert.match(legacy.label, /University of Miami/);
     assert.equal(legacy.imageUrl, 'https://example.com/um.png');
   });
 

@@ -2,6 +2,8 @@
  * Nearby alerts from discoverNearby (no peer users queries, no peer coords).
  * Shared interests are evaluated against the viewer's active profile mode only.
  * Periodic refresh is silent once a list exists — same rules as Discovery.
+ * Valid empty payloads replace the list; failures keep valid rows unless
+ * shouldClearNearbyItemsOnOutcomeFailure clears them.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
