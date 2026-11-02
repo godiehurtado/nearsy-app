@@ -28,6 +28,18 @@ import { AppUpdateNoticeHost } from './appUpdateNotice/AppUpdateNoticeHost';
 import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 
 import * as Notifications from 'expo-notifications';
+import { parseEncounterNotifyPayload } from './alerts/encounterNotifyPayload';
+import {
+  resumePendingReevaluateProximityNotices,
+  scheduleReevaluateProximityNotices,
+} from './alerts/reevaluateProximityNotices';
+import {
+  refreshVerifiedActorKeysFlow,
+} from './contacts/controller';
+import { getContactsHmacClient } from './contacts/iosContactsFoundation';
+import { createContactsSessionStore } from './contacts/iosContactsSession';
+import { registerRefreshVerifiedActorKeysInvoker } from './contacts/refreshActorKeys';
+import { shouldCallReevaluateAfterIdentity } from './contacts/parse';
 import { syncPushTokenForAuthUser } from './services/pushTokens';
 import { stopBackgroundLocationRuntime, syncBackgroundLocationRuntime } from './visibility/backgroundLocationRuntime';
 import { clearLocationPermissionJourneySession, reconcileLocationJourneyOnColdStart } from './visibility/locationPermissionJourney';
@@ -234,10 +246,33 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
   useEffect(() => {
     const receivedSub = Notifications.addNotificationReceivedListener(() => {});
 
+    registerRefreshVerifiedActorKeysInvoker(async () => {
+      const client = await getContactsHmacClient();
+      const session = createContactsSessionStore();
+      await refreshVerifiedActorKeysFlow({
+        client,
+        session,
+        afterIdentity: async (result) => {
+          // Idempotent / reevaluateRequired:false must not clear a prior pending mark.
+          if (shouldCallReevaluateAfterIdentity(result)) {
+            scheduleReevaluateProximityNotices();
+          }
+        },
+      });
+    });
+
+    void resumePendingReevaluateProximityNotices();
+
     const responseSub = Notifications.addNotificationResponseReceivedListener(
       (response) => {
-        const data = response.notification.request.content.data as any;
-        const actorUid = data?.actorUid;
+        const data = response.notification.request.content.data as Record<
+          string,
+          unknown
+        >;
+        const parsed = parseEncounterNotifyPayload(data);
+        const actorUid =
+          parsed?.actorUid ??
+          (typeof data?.actorUid === 'string' ? data.actorUid : undefined);
 
         if (actorUid && navigationRef.isReady()) {
           (navigationRef as any).navigate('Home', {

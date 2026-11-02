@@ -34,6 +34,22 @@ export default {
     tooOld: 'Age must be {{age}} or younger.',
     saved: 'Date of birth updated',
   },
+  nearbyNotices: {
+    title: 'Interest nearby notices',
+    description:
+      'Get notified when someone nearby shares an official interest with you.',
+  },
+  contacts: {
+    title: 'Contacts nearby',
+    description:
+      'Securely match phone numbers and emails from your address book so Nearsy can tell you when people you know are nearby. Names and photos are not uploaded.',
+    nearbyTitle: 'Contact nearby notices',
+    nearbyDescription:
+      'Mute contact-nearby notices without removing your synced contacts.',
+    permissionDenied:
+      'Contacts access is required to sync your address book. You can enable it in iPhone Settings.',
+    error: 'Could not update Contacts sync. Try again later.',
+  },
   visibilityAge: {
     title: 'Who can find me by age',
     notSet: 'No age limit',

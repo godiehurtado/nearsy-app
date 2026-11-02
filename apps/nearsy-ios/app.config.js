@@ -320,6 +320,13 @@ module.exports = ({ config }) => {
       ],
       'expo-notifications',
       'expo-clipboard',
+      [
+        'expo-contacts',
+        {
+          contactsPermission:
+            'Nearsy uses your contacts to notify you when people you know are nearby. Phone numbers and emails are sent securely. Names and photos from your address book are not uploaded.',
+        },
+      ],
       'expo-asset',
       'expo-font',
       'expo-web-browser',

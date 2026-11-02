@@ -19,12 +19,14 @@ function readShared(relativeFromSharedSrc: string): string {
 }
 
 describe('More Settings modernization', () => {
-  it('removes TopHeader, tab-root back chevron, contacts toggle, and blocked contacts', () => {
+    it('removes TopHeader, tab-root back chevron, legacy contacts helpers, and blocked contacts', () => {
     const screen = readShared('screens/MoreScreen.tsx');
     assert.doesNotMatch(screen, /TopHeader/);
     assert.doesNotMatch(screen, /chevron-back/);
-    assert.doesNotMatch(screen, /contactsSync/);
+    assert.match(screen, /contactsSyncEnabled/);
+    assert.match(screen, /enableAndSyncContacts/);
     assert.doesNotMatch(screen, /syncContactsSafe/);
+    assert.doesNotMatch(screen, /expectedEpoch/);
     assert.doesNotMatch(screen, /Use phone contacts/);
     assert.doesNotMatch(screen, /blockedContacts/);
     assert.doesNotMatch(screen, /Blocked contacts/);
@@ -184,9 +186,10 @@ describe('Settings background / language / logout / delete preservation', () => 
 });
 
 describe('Settings safety freeze', () => {
-  it('does not call contacts sync or mutate blockedContacts from More', () => {
+  it('uses Identity Contacts enable/disable and does not mutate blockedContacts', () => {
     const screen = readShared('screens/MoreScreen.tsx');
-    assert.doesNotMatch(screen, /setContactsSyncEnabled/);
+    assert.match(screen, /enableAndSyncContacts/);
+    assert.match(screen, /disableContactsSyncFlow/);
     assert.doesNotMatch(screen, /disableContactsSyncAndPurge/);
     assert.doesNotMatch(screen, /blockedContacts:/);
     assert.doesNotMatch(screen, /Matching/);

@@ -63,6 +63,7 @@ import {
 } from '../visibility';
 import { resolveVisibleInterestIds } from '../visibility/interestDisplay';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
+import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
 import { blockCandidateUser } from '../visibility/blockCandidate';
 import {
   shouldShowBio,
@@ -239,6 +240,7 @@ export default function DiscoveryProfileScreen() {
       setBlockError(t('discoveryProfile.blockError'));
       return;
     }
+    scheduleReevaluateProximityNotices();
     setBlockModal(false);
     navigation.goBack();
   }, [navigation, t, uid]);

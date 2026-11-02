@@ -1,16 +1,20 @@
 /**
  * Nearby alerts from discoverNearby (no peer users queries, no peer coords).
  * Periodic refresh is silent once a list exists — same rules as Discovery.
+ * Viewed state is written on row open via alertSeen, not tab enter.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import {
+  buildAlertSeenWrite,
+  countUnseenAlerts,
+  isAlertUnseen,
+  type AlertSeenRecord,
+} from '../alerts/alertAppearance';
+import { loadAlertSeenMap, writeAlertSeen } from '../alerts/alertSeenStore';
 import { firebaseAuth } from '../config/firebaseConfig';
 import { dbOnUserSnapshot } from '../services/db';
-import {
-  buildDiscoverNearbyRequest,
-  metersToFeet,
-  type DiscoverNearbyResult,
-} from '../visibility';
+import { buildDiscoverNearbyRequest, metersToFeet } from '../visibility';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 import {
   shouldApplyNearbyLoadResult,
@@ -18,83 +22,43 @@ import {
   shouldUseNearbyFullScreenLoader,
   type NearbyLoadReason,
 } from '../visibility/nearbyLoadUi';
+import {
+  collectActiveModeInterestIds,
+  fingerprintActiveModeInterests,
+  mapDiscoverResultsToAlerts,
+  type AlertItem,
+  type AlertKind,
+  type NearbyAlertsViewerDoc,
+} from './nearbyAlertsMapping';
+
+export type { AlertItem, AlertKind };
+export {
+  collectActiveModeInterestIds,
+  fingerprintActiveModeInterests,
+  mapDiscoverResultsToAlerts,
+} from './nearbyAlertsMapping';
 
 const AUTO_REFRESH_MS = 30 * 1000;
 
-export type AlertKind = 'interest_nearby' | 'contact_nearby';
-
-export type AlertItem = {
-  id: string;
-  uid?: string;
-  name: string;
-  avatar?: string | null;
-  kind: AlertKind;
-  distanceFt?: number;
-  sharedInterests?: string[];
-  at: number;
-  fromContacts?: boolean;
-};
-
-type UserDoc = {
+type UserDoc = NearbyAlertsViewerDoc & {
   uid?: string;
   topBarColor?: string;
   visibility?: boolean;
-  searchPreferences?: {
-    personal?: { interestIds?: string[] };
-    professional?: { interestIds?: string[] };
-  };
-  personalOnboardingInterests?: Array<{ id?: string }>;
-  professionalOnboardingInterests?: Array<{ id?: string }>;
 };
-
-function collectOwnInterestIds(me: UserDoc): Set<string> {
-  const ids: string[] = [];
-  const personal = me.searchPreferences?.personal?.interestIds;
-  const professional = me.searchPreferences?.professional?.interestIds;
-  if (Array.isArray(personal)) ids.push(...personal);
-  if (Array.isArray(professional)) ids.push(...professional);
-  for (const row of me.personalOnboardingInterests ?? []) {
-    if (row?.id) ids.push(row.id);
-  }
-  for (const row of me.professionalOnboardingInterests ?? []) {
-    if (row?.id) ids.push(row.id);
-  }
-  return new Set(ids.filter(Boolean));
-}
-
-function mapDiscoverResults(
-  results: DiscoverNearbyResult[],
-  myInterestIds: Set<string>,
-  at: number,
-): AlertItem[] {
-  return results.map((r) => {
-    const shared = r.profile.interestIds.filter((id) => myInterestIds.has(id));
-    return {
-      id: r.uid,
-      uid: r.uid,
-      name: r.profile.displayName || 'Unnamed',
-      avatar: r.profile.profileImage,
-      kind: shared.length > 0 ? 'interest_nearby' : 'contact_nearby',
-      distanceFt: Math.round(metersToFeet(r.distanceMeters)),
-      sharedInterests: shared.slice(0, 3),
-      at,
-      fromContacts: false,
-    };
-  });
-}
 
 export function useNearbyAlerts() {
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [seenByPeer, setSeenByPeer] = useState<Record<string, AlertSeenRecord>>(
+    {},
+  );
   const [me, setMe] = useState<UserDoc | null>(null);
   const [topColor, setTopColor] = useState('#3B5A85');
   const alertsRef = useRef<AlertItem[]>([]);
   const meRef = useRef<UserDoc | null>(null);
   const requestIdRef = useRef(0);
   const inFlightRef = useRef(false);
-  const interestFingerprint = me
-    ? [...collectOwnInterestIds(me)].sort().join(',')
-    : '';
+  const interestFingerprint = fingerprintActiveModeInterests(me);
 
   useEffect(() => {
     alertsRef.current = alerts;
@@ -109,6 +73,8 @@ export function useNearbyAlerts() {
     if (!uid) {
       setLoading(false);
       setMe(null);
+      setAlerts([]);
+      setSeenByPeer({});
       return;
     }
 
@@ -166,12 +132,31 @@ export function useNearbyAlerts() {
         ) {
           return;
         }
+        const mapped = mapDiscoverResultsToAlerts(
+          response.results,
+          collectActiveModeInterestIds(currentMe),
+          response.serverTime || Date.now(),
+          uid,
+          metersToFeet,
+        );
+        const seen = await loadAlertSeenMap(uid);
+        if (
+          !shouldApplyNearbyLoadResult({
+            requestId,
+            latestRequestId: requestIdRef.current,
+          })
+        ) {
+          return;
+        }
+        setSeenByPeer(seen);
         setAlerts(
-          mapDiscoverResults(
-            response.results.filter((r) => r.uid !== uid),
-            collectOwnInterestIds(currentMe),
-            response.serverTime || Date.now(),
-          ),
+          mapped.map((item) => ({
+            ...item,
+            unseen: isAlertUnseen(
+              item.appearanceKey,
+              item.uid ? seen[item.uid] : undefined,
+            ),
+          })),
         );
       } catch (err) {
         if (__DEV__)
@@ -216,5 +201,33 @@ export function useNearbyAlerts() {
 
   const refresh = useCallback(() => buildAlerts('ptr'), [buildAlerts]);
 
-  return { loading, alerts, topColor, me, refresh };
+  const markAlertOpened = useCallback(async (item: AlertItem) => {
+    const uid = firebaseAuth.currentUser?.uid;
+    const peerUid = item.uid;
+    if (!uid || !peerUid) return;
+    const record = buildAlertSeenWrite(item.appearanceKey, Date.now());
+    setSeenByPeer((prev) => ({ ...prev, [peerUid]: record }));
+    setAlerts((prev) =>
+      prev.map((row) =>
+        row.uid === peerUid ? { ...row, unseen: false } : row,
+      ),
+    );
+    try {
+      await writeAlertSeen(uid, peerUid, record);
+    } catch {
+      /* Functions #40 rules may not be deployed yet. */
+    }
+  }, []);
+
+  const unseenCount = countUnseenAlerts(alerts, seenByPeer);
+
+  return {
+    loading,
+    alerts,
+    unseenCount,
+    topColor,
+    me,
+    refresh,
+    markAlertOpened,
+  };
 }

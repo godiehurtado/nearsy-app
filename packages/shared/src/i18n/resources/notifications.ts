@@ -25,4 +25,10 @@ export default {
     contactNearby: 'Nearby person',
     interestNearby: 'Shared interest nearby',
   },
+  unseen: 'Unread alert',
+  push: {
+    interest: '{{name}} is nearby and shares interests with you.',
+    contact: '{{name}}, one of your contacts, is nearby.',
+    both: '{{name}}, one of your contacts, is nearby and shares interests with you.',
+  },
 } as const;

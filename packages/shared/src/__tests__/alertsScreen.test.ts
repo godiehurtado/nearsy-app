@@ -90,8 +90,9 @@ describe('AlertsScreen preservation contract', () => {
     const screen = readShared('screens/AlertsScreen.tsx');
     assert.match(screen, /useNearbyAlerts/);
     assert.match(screen, /DiscoveryProfile/);
-    assert.match(screen, /params: \{ uid \}/);
-    assert.match(screen, /openDiscoveryProfile\(item\.uid\)/);
+    assert.match(screen, /params: \{ uid: item\.uid \}/);
+    assert.match(screen, /openDiscoveryProfile\(item\)/);
+    assert.match(screen, /markAlertOpened/);
     assert.doesNotMatch(screen, /client\.discoverNearby/);
     assert.doesNotMatch(screen, /getDiscoveryProfile/);
     assert.doesNotMatch(screen, /users\/\$\{/);
@@ -132,22 +133,25 @@ describe('AlertsScreen preservation contract', () => {
 });
 
 describe('RootTabs badge semantics', () => {
-  it('keeps nearby count badge without unread semantics', () => {
+  it('badges unseen appearanceKey count, not total nearby rows', () => {
     const rootTabs = readShared('navigation/RootTabs.tsx');
     assert.match(rootTabs, /useNearbyAlerts/);
-    assert.match(rootTabs, /alerts\.length/);
+    assert.match(rootTabs, /unseenCount/);
     assert.match(rootTabs, /tabBarBadge: alertsBadge/);
-    assert.doesNotMatch(rootTabs, /unread/i);
+    assert.doesNotMatch(rootTabs, /alerts\.length/);
   });
 });
 
 describe('useNearbyAlerts functional surface', () => {
   it('remains the discoverNearby data source with 30s refresh', () => {
     const hook = readShared('hooks/useNearbyAlerts.ts');
+    const mapping = readShared('hooks/nearbyAlertsMapping.ts');
     assert.match(hook, /discoverNearby/);
     assert.match(hook, /AUTO_REFRESH_MS = 30 \* 1000/);
-    assert.match(hook, /interest_nearby/);
-    assert.match(hook, /contact_nearby/);
+    assert.match(mapping, /interest_nearby/);
+    assert.match(mapping, /contact_nearby/);
+    assert.match(hook, /appearanceKey/);
+    assert.match(hook, /markAlertOpened/);
     assert.match(hook, /shouldUseNearbyFullScreenLoader/);
     assert.match(hook, /shouldPreserveNearbyResultsDuringLoad/);
     assert.match(hook, /shouldApplyNearbyLoadResult/);

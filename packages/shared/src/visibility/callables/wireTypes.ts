@@ -122,6 +122,8 @@ export type DiscoverNearbyResult = {
   profile: DiscoveryProfileSummary;
   /** Matching M4A alignment wire; absent on older backends → no Nearby ring. */
   compatibility?: DiscoveryCompatibility;
+  /** Functions #40 additive; absent on older backends. */
+  appearanceKey?: string;
 };
 
 export type ActivateVisibilityResponse = {
@@ -155,6 +157,9 @@ export type DiscoverNearbyResponse = {
   results: DiscoverNearbyResult[];
   nextCursor: null;
   serverTime: number;
+  /** Functions #40 additive; absent on older backends. */
+  complete?: boolean;
+  truncated?: boolean;
 };
 
 export type GetDiscoveryProfileResponse = {

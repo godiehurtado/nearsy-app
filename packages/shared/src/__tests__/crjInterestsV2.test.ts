@@ -61,7 +61,7 @@ test('CRJ-I5 catalog: Food hierarchical with 4 groups / 40 items', () => {
   assert.equal(food.name, 'Food, Dining & Dietary Lifestyle');
 });
 
-test('CRJ-I5 catalog: Sports/Outdoors hierarchical with 2 groups / 35 items', () => {
+test('CRJ-I5 catalog: Sports/Outdoors hierarchical with 2 groups / 37 items', () => {
   const cat = getOnboardingCategory('sports_outdoors');
   assert.ok(cat.groups);
   assert.equal(cat.groups.length, 2);
@@ -69,7 +69,8 @@ test('CRJ-I5 catalog: Sports/Outdoors hierarchical with 2 groups / 35 items', ()
     (n, g) => n + g.items.filter((i) => !i.isOther).length,
     0,
   );
-  assert.equal(itemCount, 35);
+  // Includes authorized sports_car_racing + sports_ice_hockey alongside existing IDs.
+  assert.equal(itemCount, 37);
 });
 
 test('CRJ-I5 catalog: all flat categories have Other', () => {
