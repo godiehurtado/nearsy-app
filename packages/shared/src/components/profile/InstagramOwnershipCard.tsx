@@ -39,7 +39,10 @@ import {
   SOCIAL_ACTION_HIT_SLOP,
   socialActionButtonStyles,
 } from './socialActionButtonStyles.ts';
-import { copyTextToClipboard } from '../../social/copyTextToClipboard.ts';
+import {
+  copyTextToClipboard,
+  shareTextViaSystemShare,
+} from '../../social/copyTextToClipboard.ts';
 import {
   buildInstagramOwnershipModeView,
   instagramOwnershipActionBlocked,
@@ -375,19 +378,48 @@ export function InstagramOwnershipCard({
     );
   };
 
-  const onCopyCode = () => {
-    const code = challenge?.code?.trim();
-    if (!code) return;
-    void copyTextToClipboard(code).then((result) => {
+  const onShareCode = (code: string) => {
+    void shareTextViaSystemShare(code).then((result) => {
       if (result === 'failed') {
         Alert.alert(
           t('common.error'),
           t('profile.social.instagramOwnership.errors.generic'),
         );
+      }
+    });
+  };
+
+  const onCopyCode = () => {
+    const code = challenge?.code?.trim();
+    if (!code) return;
+    void copyTextToClipboard(code, { sensitive: true }).then((result) => {
+      if (result === 'copied') {
+        AccessibilityInfo.announceForAccessibility(
+          t('profile.social.instagramOwnership.copied'),
+        );
         return;
       }
-      AccessibilityInfo.announceForAccessibility(
-        t('profile.social.instagramOwnership.copied'),
+      if (result === 'unavailable') {
+        // Explicit Share alternative for legacy binaries without expo-clipboard.
+        Alert.alert(
+          t('common.error'),
+          t('profile.social.instagramOwnership.clipboardUnavailable'),
+          [
+            {
+              text: t('profile.social.instagramOwnership.shareCode'),
+              onPress: () => onShareCode(code),
+            },
+            {
+              text: t('profile.social.instagramOwnership.cancel'),
+              style: 'cancel',
+            },
+          ],
+        );
+        return;
+      }
+      Alert.alert(
+        t('common.error'),
+        t('profile.social.instagramOwnership.errors.generic'),
       );
     });
   };

@@ -339,6 +339,8 @@ const en = {
       copyCode: 'Copy code',
       copyCodeA11y: 'Copy the Instagram verification code',
       copied: 'Code copied',
+      clipboardUnavailable:
+        'Clipboard copy is not available on this build. Share the code instead?',
       openInbox: 'Open Instagram',
       openInboxA11y: 'Open Instagram to send the code by DM',
       legacyPrivateHint: 'A saved link is kept privately (not published).',
@@ -740,6 +742,8 @@ const es = {
         copyCode: 'Copiar código',
         copyCodeA11y: 'Copiar el código de verificación de Instagram',
         copied: 'Código copiado',
+        clipboardUnavailable:
+          'Copiar al portapapeles no está disponible en esta compilación. ¿Compartir el código?',
         openInbox: 'Abrir Instagram',
         openInboxA11y: 'Abrir Instagram para enviar el código por DM',
         legacyPrivateHint: 'Hay un enlace guardado en privado (no publicado).',
