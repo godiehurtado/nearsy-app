@@ -301,7 +301,9 @@ describe('iOS 2.0.9 Altercall — social order, Web in CRJ, copy, immediate save
     assert.doesNotMatch(controls, /result === 'copied'/);
     assert.match(pkg, /"expo-clipboard": "~8\.0\.8"/);
     assert.match(lock, /expo-clipboard@/);
-    assert.match(appConfig, /expo-clipboard/);
+    // expo-clipboard has no app.plugin.js; dependency + autolinking is enough.
+    assert.doesNotMatch(appConfig, /['"]expo-clipboard['"]/);
+    assert.match(appConfig, /expo-contacts/);
     assert.match(owned, /live\.expiresAt > Date\.now\(\)/);
     assert.match(owned, /setConnectSheet\(null\)/);
     assert.match(owned, /InstagramChallengeCopyControls/);
