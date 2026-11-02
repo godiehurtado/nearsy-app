@@ -33,6 +33,7 @@ import {
 import { ManualSocialLinkModal } from '../components/profile/ManualSocialLinkModal';
 import {
   buildImmediateManualSocialPatch,
+  shouldApplySocialEditorResult,
   type ImmediateManualSocialField,
 } from '../social/onboardingSocialPersistence';
 import {
@@ -145,6 +146,7 @@ export default function SocialMediaScreen() {
   const lockedUidRef = useRef<string | null>(
     parsed.ok ? parsed.params.uid : null,
   );
+  const persistGenerationRef = useRef(0);
   const editorMode = lockedModeRef.current;
   const editorUid = lockedUidRef.current;
 
@@ -249,11 +251,12 @@ export default function SocialMediaScreen() {
     }
 
     let cancelled = false;
+    const loadGeneration = ++persistGenerationRef.current;
     (async () => {
       try {
         setLoadState('loading');
         const existing = await getUserProfile(editorUid);
-        if (cancelled) return;
+        if (cancelled || persistGenerationRef.current !== loadGeneration) return;
 
         if (!existing || existing.profileSetupCompleted !== true) {
           setLoadState('blocked');
@@ -283,6 +286,7 @@ export default function SocialMediaScreen() {
 
     return () => {
       cancelled = true;
+      persistGenerationRef.current += 1;
     };
   }, [editorMode, editorUid, parsed.ok]);
 
@@ -338,6 +342,9 @@ export default function SocialMediaScreen() {
       url = result.url;
     }
     setManualSaving(true);
+    const expectedUid = editorUid;
+    const expectedMode = editorMode;
+    const expectedGeneration = persistGenerationRef.current;
     try {
       const existing = {
         facebook: draft.values.facebook || undefined,
@@ -357,6 +364,18 @@ export default function SocialMediaScreen() {
         url,
       );
       await updateUserProfilePartial(editorUid, patch);
+      if (
+        !shouldApplySocialEditorResult({
+          expectedUid,
+          expectedMode,
+          liveUid: lockedUidRef.current,
+          liveMode: lockedModeRef.current,
+          expectedGeneration,
+          liveGeneration: persistGenerationRef.current,
+        })
+      ) {
+        return;
+      }
       setDraft((prev) => {
         const next =
           field === 'website'
@@ -456,6 +475,9 @@ export default function SocialMediaScreen() {
       return;
     }
 
+    const expectedUid = editorUid;
+    const expectedMode = editorMode;
+    const expectedGeneration = persistGenerationRef.current;
     try {
       setSaving(true);
       // YouTube pilot: never treat manual connect as verified; keep legacy URL in the bag.
@@ -498,6 +520,18 @@ export default function SocialMediaScreen() {
         },
       );
       await updateUserProfilePartial(editorUid, patch);
+      if (
+        !shouldApplySocialEditorResult({
+          expectedUid,
+          expectedMode,
+          liveUid: lockedUidRef.current,
+          liveMode: lockedModeRef.current,
+          expectedGeneration,
+          liveGeneration: persistGenerationRef.current,
+        })
+      ) {
+        return;
+      }
       snapshotRef.current = draft;
       Keyboard.dismiss();
       navigation.goBack();

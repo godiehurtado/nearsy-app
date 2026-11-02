@@ -169,6 +169,24 @@ export function buildCrjSocialLinksPersistencePatch(
 
 export type ImmediateManualSocialField = 'facebook' | 'linkedin' | 'website';
 
+/** Drop late persist results after UID/mode/session changes. */
+export function shouldApplySocialEditorResult(input: {
+  expectedUid: string | null;
+  expectedMode: 'personal' | 'professional' | null;
+  liveUid: string | null;
+  liveMode: 'personal' | 'professional' | null;
+  expectedGeneration: number;
+  liveGeneration: number;
+}): boolean {
+  return (
+    !!input.expectedUid &&
+    !!input.expectedMode &&
+    input.expectedUid === input.liveUid &&
+    input.expectedMode === input.liveMode &&
+    input.expectedGeneration === input.liveGeneration
+  );
+}
+
 /**
  * Read-modify-write one manual link into the active mode bag.
  * Never touches lifecycle, the opposite mode, or ownership Identity rows.

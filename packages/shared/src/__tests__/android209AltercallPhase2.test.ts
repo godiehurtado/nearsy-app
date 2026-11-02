@@ -13,6 +13,8 @@ import {
   CUSTOM_INTEREST_ICON_CATALOG,
   filterCustomInterestIcons,
   flattenCatalogInterestItems,
+  HISTORICAL_ANDROID_CUSTOM_ICONS,
+  isHistoricalCustomInterestIcon,
   ONBOARDING_CUSTOM_INTEREST_ICONS,
   validateCustomInterestInput,
 } from '../interests/onboardingInterestCatalog.ts';
@@ -34,7 +36,10 @@ import {
 import {
   buildCrjSocialLinksPersistencePatch,
   buildImmediateManualSocialPatch,
+  buildPostCrjSocialLinksPersistencePatch,
+  shouldApplySocialEditorResult,
 } from '../social/onboardingSocialPersistence.ts';
+import { readPostCrjSocialEditorDraft } from '../social/postCrjSocialEditor.ts';
 import { nearbyEmptyTitleI18nKey } from '../visibility/nearbyLoadUiState.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -90,8 +95,7 @@ describe('Nearby empty chrome', () => {
 });
 
 describe('sports and travel catalogs', () => {
-  it('keeps existing sports, adds requested coverage, and reports equivalents', () => {
-    const ids = flattenCatalogInterestItems().map((item) => item.id);
+  it('keeps existing sports, adds requested coverage, and does not narrow generics', () => {
     for (const id of [
       'sports_football',
       'sports_boxing',
@@ -109,18 +113,38 @@ describe('sports and travel catalogs', () => {
       'sports_badminton',
       'sports_fencing',
       'sports_archery',
+      'sports_car_racing',
+      'sports_ice_hockey',
     ]) {
       assert.equal(isSelectableCatalogInterestId(id), true, id);
     }
-    assert.equal(ids.includes('sports_car_racing'), false);
-    assert.equal(ids.includes('sports_ice_hockey'), false);
     assert.equal(
-      onboardingTranslations.en.profileCompletion.interests.items.sports_mma,
-      'MMA',
+      onboardingTranslations.en.profileCompletion.interests.items.sports_motorsports,
+      'Motorsports',
     );
     assert.equal(
-      onboardingTranslations.es.profileCompletion.interests.items.sports_mma,
-      'Artes marciales mixtas',
+      onboardingTranslations.es.profileCompletion.interests.items.sports_motorsports,
+      'Deportes de motor',
+    );
+    assert.equal(
+      onboardingTranslations.en.profileCompletion.interests.items.sports_hockey,
+      'Hockey',
+    );
+    assert.equal(
+      onboardingTranslations.en.profileCompletion.interests.items.sports_car_racing,
+      'Car Racing',
+    );
+    assert.equal(
+      onboardingTranslations.es.profileCompletion.interests.items.sports_ice_hockey,
+      'Hockey sobre hielo',
+    );
+    assert.equal(
+      onboardingTranslations.en.profileCompletion.interests.items.sports_boxing,
+      'Boxing',
+    );
+    assert.equal(
+      onboardingTranslations.en.profileCompletion.interests.items.sports_pickleball,
+      'Pickleball',
     );
   });
 
@@ -156,12 +180,17 @@ describe('sports and travel catalogs', () => {
 
 describe('Other icon picker', () => {
   it('expands the installed-family catalog with search and keeps legacy icons', () => {
-    assert.ok(CUSTOM_INTEREST_ICON_CATALOG.length >= 80);
+    assert.equal(CUSTOM_INTEREST_ICON_CATALOG.length, 113);
     assert.equal(
       new Set(ONBOARDING_CUSTOM_INTEREST_ICONS).size,
-      ONBOARDING_CUSTOM_INTEREST_ICONS.length,
+      113,
     );
     assert.ok(ONBOARDING_CUSTOM_INTEREST_ICONS.includes('star-outline'));
+    assert.ok(ONBOARDING_CUSTOM_INTEREST_ICONS.includes('medal-outline'));
+    assert.ok(ONBOARDING_CUSTOM_INTEREST_ICONS.includes('train-outline'));
+    assert.equal(ONBOARDING_CUSTOM_INTEREST_ICONS.includes('body-outline'), false);
+    assert.equal(isHistoricalCustomInterestIcon('body-outline'), true);
+    assert.equal(HISTORICAL_ANDROID_CUSTOM_ICONS.length, 11);
     assert.ok(filterCustomInterestIcons('fútbol', 'es').length > 0);
     assert.ok(filterCustomInterestIcons('camera', 'en').length > 0);
     const ok = validateCustomInterestInput({
@@ -228,6 +257,62 @@ describe('social order, modals, and immediate persist', () => {
       null,
     );
     assert.equal(unlinked.socialLinksProfessional?.facebook, undefined);
+
+    const laterSave = buildPostCrjSocialLinksPersistencePatch(
+      'professional',
+      {
+        ...emptyCrjSocialDraftValues(),
+        linkedin: '',
+        facebook: '',
+        x: 'https://x.com/keep',
+      },
+      [],
+      { website: '', existing: unlinked.socialLinksProfessional },
+    );
+    assert.equal(laterSave.socialLinksProfessional?.facebook, undefined);
+    assert.equal(laterSave.socialLinksProfessional?.twitter, 'https://x.com/keep');
+    assert.equal(laterSave.socialLinksPersonal, undefined);
+
+    const reopened = readPostCrjSocialEditorDraft(
+      { socialLinksProfessional: unlinked.socialLinksProfessional },
+      'professional',
+    );
+    assert.equal(reopened.values.facebook, '');
+    assert.equal(reopened.values.x, 'https://x.com/keep');
+
+    assert.equal(
+      shouldApplySocialEditorResult({
+        expectedUid: 'uid-a',
+        expectedMode: 'personal',
+        liveUid: 'uid-b',
+        liveMode: 'personal',
+        expectedGeneration: 1,
+        liveGeneration: 1,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldApplySocialEditorResult({
+        expectedUid: 'uid-a',
+        expectedMode: 'personal',
+        liveUid: 'uid-a',
+        liveMode: 'professional',
+        expectedGeneration: 1,
+        liveGeneration: 1,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldApplySocialEditorResult({
+        expectedUid: 'uid-a',
+        expectedMode: 'personal',
+        liveUid: 'uid-a',
+        liveMode: 'personal',
+        expectedGeneration: 1,
+        liveGeneration: 2,
+      }),
+      false,
+    );
   });
 
   it('wires modals, copy-code, and Android save-bar hiding', () => {
@@ -238,6 +323,7 @@ describe('social order, modals, and immediate persist', () => {
     assert.match(step, /ManualSocialLinkModal/);
     assert.match(step, /platforms.website/);
     assert.match(screen, /buildImmediateManualSocialPatch/);
+    assert.match(screen, /shouldApplySocialEditorResult/);
     assert.match(screen, /Platform\.OS !== 'android' \|\| isDirty/);
     assert.match(instagram, /copyCode/);
     assert.match(instagram, /pendingSteps/);
