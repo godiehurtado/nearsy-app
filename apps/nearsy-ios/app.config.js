@@ -319,7 +319,6 @@ module.exports = ({ config }) => {
         },
       ],
       'expo-notifications',
-      'expo-clipboard',
       [
         'expo-contacts',
         {
