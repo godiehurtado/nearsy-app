@@ -30,8 +30,12 @@ import {
   emptyCrjSocialDraftValues,
 } from '../social/onboardingSocialCatalog.ts';
 import {
+  applyOwnershipVerifiedChange,
+  buildValuesForPostCrjSocialSave,
   EXPECTED_SOCIAL_DISPLAY_ORDER,
+  isPostCrjSocialEditorDirty,
   POST_CRJ_SOCIAL_CARD_ORDER,
+  readPostCrjSocialEditorDraft,
 } from '../social/postCrjSocialEditor.ts';
 import {
   buildCrjSocialLinksPersistencePatch,
@@ -39,8 +43,16 @@ import {
   buildPostCrjSocialLinksPersistencePatch,
   shouldApplySocialEditorResult,
 } from '../social/onboardingSocialPersistence.ts';
-import { readPostCrjSocialEditorDraft } from '../social/postCrjSocialEditor.ts';
 import { nearbyEmptyTitleI18nKey } from '../visibility/nearbyLoadUiState.ts';
+import { presentInstagramGetResponse } from '../social/instagramOwnership/instagramOwnershipPresentation.ts';
+import { parseGetResponse as parseInstagramGet } from '../social/instagramOwnership/instagramOwnershipCore.ts';
+import { parseGetResponse as parseXGet } from '../social/xOwnership/xOwnershipCore.ts';
+import {
+  buildOwnProfileSocialSummary,
+  presenceFromOwnershipGetResult,
+  type OwnershipPresenceByMode,
+  type OwnershipPresenceStatus,
+} from '../social/ownProfileSocialSummary.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -331,5 +343,195 @@ describe('social order, modals, and immediate persist', () => {
     assert.match(youtube, /OwnershipExplainModal/);
     assert.doesNotMatch(youtube, /LoginManager/);
     assert.doesNotMatch(youtube, /FirebaseAuthProvider/);
+  });
+});
+
+function ownershipRow(
+  flags: Partial<Record<'youtube' | 'tiktok' | 'instagram' | 'x', boolean>>,
+): Record<'youtube' | 'tiktok' | 'instagram' | 'x', OwnershipPresenceStatus> {
+  return {
+    youtube: flags.youtube ? 'verified' : 'not_linked',
+    tiktok: flags.tiktok ? 'verified' : 'not_linked',
+    instagram: flags.instagram ? 'verified' : 'not_linked',
+    x: flags.x ? 'verified' : 'not_linked',
+  };
+}
+
+function presence(
+  personal: Partial<Record<'youtube' | 'tiktok' | 'instagram' | 'x', boolean>> = {},
+  professional: Partial<Record<'youtube' | 'tiktok' | 'instagram' | 'x', boolean>> = {},
+): OwnershipPresenceByMode {
+  return {
+    personal: ownershipRow(personal),
+    professional: ownershipRow(professional),
+  };
+}
+
+describe('Instagram/X ownership Connect and Unlink without general Save', () => {
+  it('rehydrates verified Connect from Get with an empty bag and does not mix UID/mode', () => {
+    const emptyDoc = { socialLinksPersonal: {}, socialLinksProfessional: {} };
+    const instagramVerified = parseInstagramGet({
+      result: 'verified',
+      platform: 'instagram',
+      mode: 'personal',
+      igsid: '17841478397406342',
+      canonicalUrl: 'https://www.instagram.com/nearsy',
+      usernameCache: 'nearsy',
+      verifiedAt: '2026-10-16T15:00:00.000Z',
+    });
+    const xVerified = parseXGet({
+      result: 'verified',
+      platform: 'x',
+      mode: 'personal',
+      userId: '1234567890123456789',
+      canonicalUrl: 'https://x.com/nearsy',
+      usernameCache: 'nearsy',
+      verifiedAt: '2026-10-16T15:00:00.000Z',
+    });
+    assert.equal(presentInstagramGetResponse(instagramVerified).phase, 'idle');
+    assert.equal(presentInstagramGetResponse(instagramVerified).verified?.mode, 'personal');
+    assert.equal(
+      presenceFromOwnershipGetResult(instagramVerified.result, false),
+      'verified',
+    );
+    assert.equal(presenceFromOwnershipGetResult(xVerified.result, false), 'verified');
+
+    const afterConnectNoSave = buildOwnProfileSocialSummary({
+      doc: emptyDoc,
+      presence: presence({ instagram: true, x: true }),
+      mode: 'personal',
+    });
+    assert.equal(afterConnectNoSave.personal, 2);
+    assert.equal(afterConnectNoSave.professional, 0);
+
+    const snapshot = readPostCrjSocialEditorDraft(emptyDoc, 'personal');
+    assert.equal(isPostCrjSocialEditorDirty(snapshot, snapshot), false);
+    const verifiedFlags = applyOwnershipVerifiedChange(
+      applyOwnershipVerifiedChange({}, 'instagram', true),
+      'x',
+      true,
+    );
+    assert.deepEqual(verifiedFlags, { instagram: true, x: true });
+    assert.equal(isPostCrjSocialEditorDirty(snapshot, snapshot), false);
+
+    assert.equal(
+      shouldApplySocialEditorResult({
+        expectedUid: 'uid-a',
+        expectedMode: 'personal',
+        liveUid: 'uid-b',
+        liveMode: 'personal',
+        expectedGeneration: 1,
+        liveGeneration: 1,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldApplySocialEditorResult({
+        expectedUid: 'uid-a',
+        expectedMode: 'personal',
+        liveUid: 'uid-a',
+        liveMode: 'professional',
+        expectedGeneration: 1,
+        liveGeneration: 1,
+      }),
+      false,
+    );
+  });
+
+  it('Unlink does not wait for Save and a later Save does not restore verified state', () => {
+    const legacyDoc = {
+      socialLinksPersonal: {
+        instagram: 'https://www.instagram.com/legacy',
+        twitter: 'https://x.com/legacy',
+      },
+      socialLinksProfessional: {},
+    };
+    const snapshot = readPostCrjSocialEditorDraft(legacyDoc, 'personal');
+    const linked = applyOwnershipVerifiedChange(
+      applyOwnershipVerifiedChange({}, 'instagram', true),
+      'x',
+      true,
+    );
+    const unlinked = applyOwnershipVerifiedChange(
+      applyOwnershipVerifiedChange(linked, 'instagram', false),
+      'x',
+      false,
+    );
+    assert.equal(unlinked.instagram, false);
+    assert.equal(unlinked.x, false);
+
+    const notLinked = parseInstagramGet({
+      result: 'not_linked',
+      platform: 'instagram',
+      mode: 'personal',
+      linked: false,
+    });
+    assert.equal(presentInstagramGetResponse(notLinked).verified, null);
+    assert.equal(presenceFromOwnershipGetResult(notLinked.result, false), 'not_linked');
+    assert.equal(
+      presenceFromOwnershipGetResult(
+        parseXGet({
+          result: 'not_linked',
+          platform: 'x',
+          mode: 'personal',
+          linked: false,
+        }).result,
+        false,
+      ),
+      'not_linked',
+    );
+
+    const draftForSave = {
+      ...snapshot,
+      connected: {
+        ...snapshot.connected,
+        youtube: false,
+        tiktok: false,
+        instagram: false,
+        x: false,
+      },
+    };
+    const valuesForSave = buildValuesForPostCrjSocialSave(draftForSave);
+    valuesForSave.instagram = snapshot.values.instagram;
+    valuesForSave.x = snapshot.values.x;
+    const laterSave = buildPostCrjSocialLinksPersistencePatch(
+      'personal',
+      valuesForSave,
+      [],
+      { website: '', existing: snapshot.values.snapchat ? { snapchat: snapshot.values.snapchat } : {} },
+    );
+    assert.equal(
+      laterSave.socialLinksPersonal?.instagram,
+      'https://www.instagram.com/legacy',
+    );
+    assert.equal(laterSave.socialLinksPersonal?.twitter, 'https://x.com/legacy');
+    assert.ok(!JSON.stringify(laterSave).includes('canonicalUrl'));
+    assert.equal(laterSave.socialLinksProfessional, undefined);
+
+    const afterSave = buildOwnProfileSocialSummary({
+      doc: {
+        socialLinksPersonal: laterSave.socialLinksPersonal,
+        socialLinksProfessional: {},
+      },
+      presence: presence({}, {}),
+      mode: 'personal',
+    });
+    assert.equal(afterSave.personal, 2);
+    assert.deepEqual(afterSave.presentation, { kind: 'ready', count: 2 });
+
+    const instagramCard = readSrc('components/profile/InstagramOwnershipCard.tsx');
+    const xCard = readSrc('components/profile/XOwnershipCard.tsx');
+    const screen = readSrc('screens/SocialMediaScreen.tsx');
+    assert.match(instagramCard, /getInstagramOwnershipState\(forMode\)/);
+    assert.match(instagramCard, /unlinkInstagramOwnership\(forMode\)/);
+    assert.match(xCard, /getXOwnershipState\(forMode\)/);
+    assert.match(xCard, /unlinkXOwnership\(forMode\)/);
+    assert.doesNotMatch(instagramCard, /updateUserProfilePartial/);
+    assert.doesNotMatch(xCard, /updateUserProfilePartial/);
+    assert.doesNotMatch(screen, /canonicalUrl/);
+    assert.match(screen, /preserveLegacy\('instagram'\)/);
+    assert.match(screen, /preserveLegacy\('x'\)/);
+    assert.match(instagramCard, /forMode !== modeRef\.current/);
+    assert.match(xCard, /forMode !== modeRef\.current/);
   });
 });
