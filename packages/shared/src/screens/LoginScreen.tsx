@@ -16,6 +16,8 @@ import {
   Keyboard,
   ActivityIndicator,
   StatusBar,
+  type NativeSyntheticEvent,
+  type TextInputSelectionChangeEventData,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -56,6 +58,12 @@ export default function LoginScreen({ navigation }: any) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
+  const [passwordSelection, setPasswordSelection] = useState<
+    { start: number; end: number } | undefined
+  >(undefined);
+  const passwordSelectionRef = useRef<
+    { start: number; end: number } | undefined
+  >(undefined);
   const [submitting, setSubmitting] = useState(false);
 
   const [infoModalVisible, setInfoModalVisible] = useState(false);
@@ -403,13 +411,40 @@ export default function LoginScreen({ navigation }: any) {
                   secureTextEntry={!passwordVisible}
                   value={password}
                   onChangeText={setPassword}
+                  onSelectionChange={(
+                    event: NativeSyntheticEvent<TextInputSelectionChangeEventData>,
+                  ) => {
+                    passwordSelectionRef.current = event.nativeEvent.selection;
+                    if (passwordSelection) {
+                      setPasswordSelection(undefined);
+                    }
+                  }}
+                  selection={passwordSelection}
                   editable={!submitting}
+                  autoComplete="password"
+                  textContentType="password"
+                  importantForAutofill="yes"
                 />
                 <TouchableOpacity
-                  onPress={() => setPasswordVisible((prev) => !prev)}
+                  onPress={() => {
+                    const nextSelection = passwordSelectionRef.current;
+                    setPasswordVisible((prev) => !prev);
+                    if (nextSelection) {
+                      requestAnimationFrame(() => {
+                        setPasswordSelection(nextSelection);
+                      });
+                    }
+                  }}
                   style={styles.eyeButton}
                   activeOpacity={0.7}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    passwordVisible
+                      ? t('authentication.password.hide')
+                      : t('authentication.password.show')
+                  }
+                  accessibilityState={{ selected: passwordVisible }}
                 >
                   <Ionicons
                     name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}

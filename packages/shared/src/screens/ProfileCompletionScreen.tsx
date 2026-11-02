@@ -330,6 +330,13 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     emptyCrjSocialDraftValues,
   );
   const [socialCustom, setSocialCustom] = useState<SocialCustomLink[]>([]);
+  const [socialWebsite, setSocialWebsite] = useState('');
+  const socialDraftRef = useRef(socialDraft);
+  socialDraftRef.current = socialDraft;
+  const socialCustomRef = useRef(socialCustom);
+  socialCustomRef.current = socialCustom;
+  const socialWebsiteRef = useRef(socialWebsite);
+  socialWebsiteRef.current = socialWebsite;
   const [socialFieldErrors, setSocialFieldErrors] =
     useState<CrjSocialFieldErrors>({});
   const [galleryItems, setGalleryItems] = useState<CrjGalleryItem[]>([]);
@@ -503,6 +510,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     const social = readCrjSocialDraft(data, nextMode);
     setSocialDraft(social.values);
     setSocialCustom(social.custom);
+    setSocialWebsite(readExistingSocialLinks(data, nextMode).website ?? '');
     setSocialFieldErrors({});
     const gallery = readCrjGallery(data, nextMode);
     setGalleryItems(gallery);
@@ -968,14 +976,19 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     }));
   }
 
-  async function persistSocialMedia() {
+  async function persistSocialMedia(overrides?: {
+    values?: CrjSocialDraftValues;
+    custom?: SocialCustomLink[];
+    website?: string;
+  }) {
     if (!uid || !mode) return;
     const existing = readExistingSocialLinks(shellData, mode);
     const patch = buildCrjSocialLinksPersistencePatch(
       mode,
-      socialDraft,
-      socialCustom,
+      overrides?.values ?? socialDraftRef.current,
+      overrides?.custom ?? socialCustomRef.current,
       existing,
+      { website: overrides?.website ?? socialWebsiteRef.current },
     );
     await updateUserProfilePartial(uid, patch);
     setShellData((prev) => ({
@@ -2239,8 +2252,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               mode={mode}
               values={socialDraft}
               custom={socialCustom}
+              website={socialWebsite}
               onChangeValues={setSocialDraft}
               onChangeCustom={setSocialCustom}
+              onChangeWebsite={setSocialWebsite}
+              onImmediatePersist={() => persistSocialMedia()}
               fieldErrors={socialFieldErrors}
               onClearFieldError={(id) => {
                 setSocialFieldErrors((prev) => {

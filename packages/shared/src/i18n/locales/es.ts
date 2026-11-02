@@ -185,19 +185,19 @@ export const es: TranslationResources = {
     platformWebsite: 'Sitio web',
   },
   alignment: {
-    title: 'Alineación',
+    title: 'Compatibilidad',
     insufficient:
-      'Aún no hay suficiente información para calcular la alineación.',
-    processing: 'La alineación aún se está calculando.',
-    unavailable: 'La alineación no está disponible en este momento.',
+      'Aún no hay suficiente información para calcular la compatibilidad.',
+    processing: 'La compatibilidad aún se está calculando.',
+    unavailable: 'La compatibilidad no está disponible en este momento.',
     tiers: {
       weak: 'Algo en común',
       partial: 'Puntos en común',
       strong: 'Muy alineados',
       full: 'Alineación excepcional',
     },
-    a11yScoreOnly: '{{score}} por ciento de alineación',
-    a11yWithTier: '{{score}} por ciento de alineación, {{tier}}',
+    a11yScoreOnly: '{{score}} por ciento de compatibilidad',
+    a11yWithTier: '{{score}} por ciento de compatibilidad',
   },
   activeProfileMode: {
     errors: {

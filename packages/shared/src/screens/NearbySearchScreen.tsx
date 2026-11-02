@@ -39,11 +39,7 @@ import {
   toAlignment,
   type DiscoverNearbyResult,
 } from '../visibility';
-import {
-  alignmentAccessibilityLabel,
-  alignmentTierLabel,
-  shouldShowNearbyTierBadge,
-} from '../visibility/alignmentPresentation';
+import { alignmentAccessibilityLabel } from '../visibility/alignmentPresentation';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 import {
   countSharedInterestIds,
@@ -61,6 +57,7 @@ import {
 } from '../visibility/contractualLocationRefresh';
 import {
   isNearbyViewerVisibilityConfirmedOff,
+  nearbyEmptyTitleI18nKey,
   shouldApplyNearbyLoadOutcome,
   shouldClearNearbyItemsOnOutcomeFailure,
   shouldShowNearbyEmptyState,
@@ -490,15 +487,6 @@ export default function NearbySearchScreen() {
           {showAlignmentRing && alignment ? (
             <View style={styles.alignmentColumn} pointerEvents="none">
               <AlignmentScoreRing score={alignment.score} variant="compact" />
-              {shouldShowNearbyTierBadge(alignment.tier) ? (
-                <Text
-                  style={[styles.alignmentBadge, { color: palette.primary }]}
-                  numberOfLines={2}
-                  maxFontSizeMultiplier={1.35}
-                >
-                  {alignmentTierLabel(t, alignment.tier)}
-                </Text>
-              ) : null}
             </View>
           ) : null}
         </View>
@@ -633,12 +621,11 @@ export default function NearbySearchScreen() {
                   color={palette.textMuted}
                 />
               </View>
-              <Text style={[styles.emptyTitle, { color: palette.textPrimary }]}>
-                {errorKind === 'inactive'
-                  ? t('nearby.inactiveTitle')
-                  : errorKind === 'retry'
-                    ? t('nearby.errorTitle')
-                    : t('nearby.emptyTitle')}
+              <Text
+                style={[styles.emptyTitle, { color: palette.textPrimary }]}
+                accessibilityRole="header"
+              >
+                {t(nearbyEmptyTitleI18nKey(errorKind))}
               </Text>
               <Text
                 style={[styles.emptyBody, { color: palette.textSecondary }]}

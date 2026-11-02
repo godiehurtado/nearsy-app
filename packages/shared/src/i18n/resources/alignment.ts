@@ -11,5 +11,5 @@ export default {
     full: 'Rare alignment',
   },
   a11yScoreOnly: '{{score}} percent alignment',
-  a11yWithTier: '{{score}} percent alignment, {{tier}}',
+  a11yWithTier: '{{score}} percent alignment',
 } as const;

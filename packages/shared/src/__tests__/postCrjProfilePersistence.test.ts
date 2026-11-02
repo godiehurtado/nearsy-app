@@ -341,7 +341,7 @@ describe('post-CRJ Social Links field persistence', () => {
     assert.equal(patch.socialLinksPersonal?.website, undefined);
   });
 
-  it('CRJ preserves existing Website without adding Website to CRJ catalog', () => {
+  it('CRJ Website is optional draft storage and is not a CRJ platform id', () => {
     assert.ok(!CRJ_SOCIAL_PLATFORM_IDS.includes('website' as never));
     const values = emptyCrjSocialDraftValues();
     values.instagram = '@diego';

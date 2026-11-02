@@ -30,6 +30,16 @@ import {
   type CrjSocialPlatform,
   type CrjSocialPlatformId,
 } from '../social/onboardingSocialCatalog';
+import { ManualSocialLinkModal } from '../components/profile/ManualSocialLinkModal';
+import {
+  buildImmediateManualSocialPatch,
+  shouldApplySocialEditorResult,
+  type ImmediateManualSocialField,
+} from '../social/onboardingSocialPersistence';
+import {
+  normalizeCustomNetworkUrl,
+  normalizeSocialInput,
+} from '../social/socialLinkNormalize';
 import {
   applyOwnershipVerifiedChange,
   buildPostCrjSocialLinksPersistencePatch,
@@ -136,6 +146,7 @@ export default function SocialMediaScreen() {
   const lockedUidRef = useRef<string | null>(
     parsed.ok ? parsed.params.uid : null,
   );
+  const persistGenerationRef = useRef(0);
   const editorMode = lockedModeRef.current;
   const editorUid = lockedUidRef.current;
 
@@ -159,6 +170,11 @@ export default function SocialMediaScreen() {
   const [ownershipVerified, setOwnershipVerified] = useState<
     Partial<Record<AndroidOwnershipCardId, boolean>>
   >({});
+  const [manualTarget, setManualTarget] = useState<ImmediateManualSocialField | null>(
+    null,
+  );
+  const [manualError, setManualError] = useState<string | null>(null);
+  const [manualSaving, setManualSaving] = useState(false);
 
   const onYoutubeConnectedChange = useCallback((connected: boolean) => {
     setOwnershipVerified((prev) =>
@@ -235,11 +251,12 @@ export default function SocialMediaScreen() {
     }
 
     let cancelled = false;
+    const loadGeneration = ++persistGenerationRef.current;
     (async () => {
       try {
         setLoadState('loading');
         const existing = await getUserProfile(editorUid);
-        if (cancelled) return;
+        if (cancelled || persistGenerationRef.current !== loadGeneration) return;
 
         if (!existing || existing.profileSetupCompleted !== true) {
           setLoadState('blocked');
@@ -269,6 +286,7 @@ export default function SocialMediaScreen() {
 
     return () => {
       cancelled = true;
+      persistGenerationRef.current += 1;
     };
   }, [editorMode, editorUid, parsed.ok]);
 
@@ -281,6 +299,14 @@ export default function SocialMediaScreen() {
         id === 'instagram' ||
         id === 'x')
     ) {
+      return;
+    }
+    if (
+      Platform.OS === 'android' &&
+      (id === 'facebook' || id === 'linkedin' || id === 'website')
+    ) {
+      setManualError(null);
+      setManualTarget(id);
       return;
     }
     setDraft((prev) => ({
@@ -298,6 +324,83 @@ export default function SocialMediaScreen() {
     }, 50);
   };
 
+  const persistManualField = async (
+    field: ImmediateManualSocialField,
+    raw: string | null,
+  ) => {
+    if (!editorUid || !editorMode || manualSaving) return;
+    let url: string | null = null;
+    if (raw != null) {
+      const result =
+        field === 'website'
+          ? normalizeCustomNetworkUrl(raw)
+          : normalizeSocialInput(field, raw);
+      if (!result.ok || !result.url) {
+        setManualError(t('profile.social.invalidValue'));
+        return;
+      }
+      url = result.url;
+    }
+    setManualSaving(true);
+    const expectedUid = editorUid;
+    const expectedMode = editorMode;
+    const expectedGeneration = persistGenerationRef.current;
+    try {
+      const existing = {
+        facebook: draft.values.facebook || undefined,
+        linkedin: draft.values.linkedin || undefined,
+        instagram: snapshotRef.current.values.instagram || undefined,
+        youtube: snapshotRef.current.values.youtube || undefined,
+        twitter: snapshotRef.current.values.x || undefined,
+        tiktok: snapshotRef.current.values.tiktok || undefined,
+        snapchat: snapshotRef.current.values.snapchat || undefined,
+        website: draft.website || undefined,
+        custom: draft.custom,
+      };
+      const patch = buildImmediateManualSocialPatch(
+        editorMode,
+        existing,
+        field,
+        url,
+      );
+      await updateUserProfilePartial(editorUid, patch);
+      if (
+        !shouldApplySocialEditorResult({
+          expectedUid,
+          expectedMode,
+          liveUid: lockedUidRef.current,
+          liveMode: lockedModeRef.current,
+          expectedGeneration,
+          liveGeneration: persistGenerationRef.current,
+        })
+      ) {
+        return;
+      }
+      setDraft((prev) => {
+        const next =
+          field === 'website'
+            ? {
+                ...prev,
+                website: url ?? '',
+                connected: { ...prev.connected, website: !!url },
+              }
+            : {
+                ...prev,
+                values: { ...prev.values, [field]: url ?? '' },
+                connected: { ...prev.connected, [field]: !!url },
+              };
+        snapshotRef.current = next;
+        return next;
+      });
+      setManualTarget(null);
+      setManualError(null);
+    } catch {
+      Alert.alert(t('common.error'), t('profile.social.manual.saveFailed'));
+    } finally {
+      setManualSaving(false);
+    }
+  };
+
   const disconnectPlatform = (id: PostCrjSocialCardId) => {
     // YouTube pilot: do not clear legacy bag URL via manual disconnect.
     if (
@@ -307,6 +410,13 @@ export default function SocialMediaScreen() {
         id === 'instagram' ||
         id === 'x')
     ) {
+      return;
+    }
+    if (
+      Platform.OS === 'android' &&
+      (id === 'facebook' || id === 'linkedin' || id === 'website')
+    ) {
+      void persistManualField(id, null);
       return;
     }
     setDraft((prev) => {
@@ -365,6 +475,9 @@ export default function SocialMediaScreen() {
       return;
     }
 
+    const expectedUid = editorUid;
+    const expectedMode = editorMode;
+    const expectedGeneration = persistGenerationRef.current;
     try {
       setSaving(true);
       // YouTube pilot: never treat manual connect as verified; keep legacy URL in the bag.
@@ -407,6 +520,18 @@ export default function SocialMediaScreen() {
         },
       );
       await updateUserProfilePartial(editorUid, patch);
+      if (
+        !shouldApplySocialEditorResult({
+          expectedUid,
+          expectedMode,
+          liveUid: lockedUidRef.current,
+          liveMode: lockedModeRef.current,
+          expectedGeneration,
+          liveGeneration: persistGenerationRef.current,
+        })
+      ) {
+        return;
+      }
       snapshotRef.current = draft;
       Keyboard.dismiss();
       navigation.goBack();
@@ -780,6 +905,21 @@ export default function SocialMediaScreen() {
                   </View>
 
                   {connected ? (
+                    Platform.OS === 'android' ? (
+                      <Text
+                        style={[
+                          styles.input,
+                          {
+                            color: palette.textSecondary,
+                            borderColor: palette.border,
+                            backgroundColor: palette.surface,
+                          },
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {value}
+                      </Text>
+                    ) : (
                     <>
                       <TextInput
                         ref={(ref) => {
@@ -820,6 +960,7 @@ export default function SocialMediaScreen() {
                         </Text>
                       ) : null}
                     </>
+                    )
                   ) : null}
                 </View>
               );
@@ -827,6 +968,7 @@ export default function SocialMediaScreen() {
           </View>
         </ScrollView>
 
+        {Platform.OS !== 'android' || isDirty ? (
         <View
           style={[
             styles.bottomBar,
@@ -860,7 +1002,43 @@ export default function SocialMediaScreen() {
             )}
           </Pressable>
         </View>
+        ) : null}
       </KeyboardAvoidingView>
+      <ManualSocialLinkModal
+        visible={manualTarget != null}
+        platformLabel={
+          manualTarget === 'website'
+            ? t('profile.social.platforms.website')
+            : t(
+                `onboarding.profileCompletion.socialMedia.platforms.${manualTarget ?? 'facebook'}` as any,
+              )
+        }
+        placeholder={
+          manualTarget === 'website'
+            ? t('profile.social.placeholders.website')
+            : t(
+                `onboarding.profileCompletion.socialMedia.placeholders.${manualTarget ?? 'facebook'}` as any,
+              )
+        }
+        initialValue={
+          manualTarget === 'website'
+            ? draft.website
+            : manualTarget
+              ? draft.values[manualTarget]
+              : ''
+        }
+        errorText={manualError}
+        saving={manualSaving}
+        onCancel={() => {
+          if (manualSaving) return;
+          setManualTarget(null);
+          setManualError(null);
+        }}
+        onSave={(value) => {
+          if (!manualTarget) return;
+          void persistManualField(manualTarget, value);
+        }}
+      />
 
       <View
         pointerEvents="none"

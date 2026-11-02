@@ -231,6 +231,27 @@ const en = {
     placeholders: {
       website: 'https://www.example.com',
     },
+    manual: {
+      title: 'Add {{platform}}',
+      body: 'Paste a profile URL or a unique identifier that clearly belongs to this account. A display name is not enough. This link is saved as unverified.',
+      saveLink: 'Save link',
+      cancel: 'Cancel',
+      unverifiedHint: 'Manual links are not verified.',
+      saveFailed: 'Could not save this link. Try again.',
+    },
+    ownershipExplain: {
+      youtubeTitle: 'Connect YouTube',
+      youtubeBody:
+        'Nearsy will ask Google for permission to confirm the YouTube channel you own. If you have more than one channel, you can choose which one to connect. You will return to Nearsy after you approve or cancel.',
+      tiktokTitle: 'Connect TikTok',
+      tiktokBody:
+        'Nearsy will open TikTok so you can grant permission to confirm your account. You will return to Nearsy after you approve or cancel.',
+      xTitle: 'Connect X',
+      xBody:
+        'Nearsy will open X so you can grant permission to confirm your account. You will return to Nearsy after you approve or cancel.',
+      continue: 'Continue',
+      disabled: 'This connection is not available right now.',
+    },
     discard: {
       title: 'Discard changes?',
       body: 'You have unsaved social media changes. If you leave, those changes will be lost.',
@@ -308,11 +329,16 @@ const en = {
       disconnectConfirmAction: 'Disconnect',
       pendingTitle: 'Send this code',
       pendingBody:
-        'Open Instagram and send this code by DM to @{{inbox}}. Do not share it anywhere else.',
+        'Copy the code and send it from the Instagram account you want to verify. Open @{{inbox}}, tap Message, paste the code, send it, then return to Nearsy. Closing this screen does not verify the account.',
+      pendingSteps:
+        '1. Copy the code.\n2. Open Instagram and go to @{{inbox}}.\n3. Tap Message / Send message.\n4. Paste the code and send it.\n5. Return to Nearsy and wait.',
       waiting: 'Waiting for the message…',
       expiresAt: 'Expires at {{time}}',
       shareCode: 'Share code',
       shareCodeA11y: 'Share the Instagram verification code',
+      copyCode: 'Copy code',
+      copyCodeA11y: 'Copy the Instagram verification code',
+      copied: 'Code copied',
       openInbox: 'Open Instagram',
       openInboxA11y: 'Open Instagram to send the code by DM',
       legacyPrivateHint: 'A saved link is kept privately (not published).',
@@ -603,6 +629,27 @@ const es = {
       placeholders: {
         website: 'https://www.ejemplo.com',
       },
+      manual: {
+        title: 'Agregar {{platform}}',
+        body: 'Pega una URL de perfil o un identificador único que pertenezca claramente a esta cuenta. Un nombre visible no basta. Este enlace se guarda sin verificar.',
+        saveLink: 'Guardar enlace',
+        cancel: 'Cancelar',
+        unverifiedHint: 'Los enlaces manuales no están verificados.',
+        saveFailed: 'No se pudo guardar este enlace. Inténtalo de nuevo.',
+      },
+      ownershipExplain: {
+        youtubeTitle: 'Conectar YouTube',
+        youtubeBody:
+          'Nearsy pedirá permiso a Google para confirmar el canal de YouTube que te pertenece. Si tienes más de un canal, podrás elegir cuál conectar. Volverás a Nearsy al aprobar o cancelar.',
+        tiktokTitle: 'Conectar TikTok',
+        tiktokBody:
+          'Nearsy abrirá TikTok para que concedas permiso y confirmemos tu cuenta. Volverás a Nearsy al aprobar o cancelar.',
+        xTitle: 'Conectar X',
+        xBody:
+          'Nearsy abrirá X para que concedas permiso y confirmemos tu cuenta. Volverás a Nearsy al aprobar o cancelar.',
+        continue: 'Continuar',
+        disabled: 'Esta conexión no está disponible ahora.',
+      },
       discard: {
         title: '¿Descartar cambios?',
         body: 'Tienes cambios sin guardar en tus redes sociales. Si sales, se perderán.',
@@ -683,11 +730,16 @@ const es = {
         disconnectConfirmAction: 'Desconectar',
         pendingTitle: 'Envía este código',
         pendingBody:
-          'Abre Instagram y envía este código por DM a @{{inbox}}. No lo compartas en ningún otro lugar.',
+          'Copia el código y envíalo desde la cuenta de Instagram que quieres verificar. Abre @{{inbox}}, toca Enviar mensaje, pega el código, envíalo y vuelve a Nearsy. Cerrar esta pantalla no verifica la cuenta.',
+        pendingSteps:
+          '1. Copia el código.\n2. Abre Instagram y ve a @{{inbox}}.\n3. Toca Message / Enviar mensaje.\n4. Pega el código y envíalo.\n5. Vuelve a Nearsy y espera.',
         waiting: 'Esperando el mensaje…',
         expiresAt: 'Caduca a las {{time}}',
         shareCode: 'Compartir código',
         shareCodeA11y: 'Compartir el código de verificación de Instagram',
+        copyCode: 'Copiar código',
+        copyCodeA11y: 'Copiar el código de verificación de Instagram',
+        copied: 'Código copiado',
         openInbox: 'Abrir Instagram',
         openInboxA11y: 'Abrir Instagram para enviar el código por DM',
         legacyPrivateHint: 'Hay un enlace guardado en privado (no publicado).',

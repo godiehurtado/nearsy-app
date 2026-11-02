@@ -531,7 +531,10 @@ export default function RegisterScreen({ navigation }: Props) {
                   )}
                   value={form.password}
                   onChangeText={(v) => update('password', v)}
-                  secureTextEntry
+                  passwordToggle
+                  autoComplete="password-new"
+                  textContentType="newPassword"
+                  importantForAutofill="yes"
                 />
               </View>
             </>

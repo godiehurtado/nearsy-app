@@ -37,6 +37,7 @@ import {
   SOCIAL_ACTION_HIT_SLOP,
   socialActionButtonStyles,
 } from './socialActionButtonStyles.ts';
+import { OwnershipExplainModal } from './OwnershipExplainModal.tsx';
 import {
   buildYoutubeOwnershipModeView,
   youtubeOwnershipActionBlocked,
@@ -100,6 +101,7 @@ export function YoutubeOwnershipCard({
   const { palette } = useAppTheme();
   const api = useMemo(() => loadYoutubeApi(), []);
 
+  const [explainOpen, setExplainOpen] = useState(false);
   const [phase, setPhase] = useState<YoutubeOwnershipUiPhase>('loading');
   const [connected, setConnected] = useState<ConnectedSnapshot | null>(null);
   const [channelPicker, setChannelPicker] = useState<{
@@ -534,7 +536,7 @@ export function YoutubeOwnershipCard({
           disabled={blocked || !api}
           hitSlop={SOCIAL_ACTION_HIT_SLOP}
           onPress={() =>
-            view.connected ? onDisconnect() : void onConnect()
+            view.connected ? onDisconnect() : setExplainOpen(true)
           }
           style={({ pressed }) => [
             socialActionButtonStyles.button,
@@ -650,6 +652,18 @@ export function YoutubeOwnershipCard({
           </View>
         </View>
       </Modal>
+      <OwnershipExplainModal
+        visible={explainOpen}
+        title={t('profile.social.ownershipExplain.youtubeTitle')}
+        body={t('profile.social.ownershipExplain.youtubeBody')}
+        confirmLabel={t('profile.social.ownershipExplain.continue')}
+        busy={blocked}
+        onCancel={() => setExplainOpen(false)}
+        onConfirm={() => {
+          setExplainOpen(false);
+          void onConnect();
+        }}
+      />
     </View>
   );
 }
