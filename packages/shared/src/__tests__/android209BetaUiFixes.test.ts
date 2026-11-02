@@ -12,6 +12,7 @@ import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { formatPublicAffiliationLines } from '../affiliations/affiliationPresentation.ts';
+import { formatDiscoveryAffiliationTypeLabel } from '../visibility/discoveryAffiliations.ts';
 import { appUpdateTranslations } from '../i18n/resources/appUpdate.ts';
 import enAlignment from '../i18n/resources/alignment.ts';
 import { onboardingTranslations } from '../i18n/resources/onboarding.ts';
@@ -53,9 +54,19 @@ describe('Affiliation Discovery labels EN/ES comparative', () => {
         id === 'professional_organization'
           ? es.topics.professional_organization
           : fallback,
+      (id, fallback) =>
+        id === 'professional' ? es.categories.professional : fallback,
     );
     assert.equal(lines.title, 'Nearsy Labs');
-    assert.equal(lines.subtitle, 'Organización profesional');
+    assert.equal(lines.subtitle, 'Profesional');
+    assert.equal(
+      formatDiscoveryAffiliationTypeLabel(
+        'professional_organization',
+        (key, fallback) =>
+          key === 'professional' ? es.categories.professional : fallback,
+      ),
+      'Profesional',
+    );
   });
 });
 

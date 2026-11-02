@@ -4,11 +4,11 @@
  */
 
 import { isEphemeralProviderLogoUrl } from '../affiliations/affiliationLogoDev.ts';
+import { getOnboardingAffiliationCategory } from '../affiliations/onboardingAffiliationCatalog.ts';
 import {
-  getOnboardingAffiliationCategory,
-  isOnboardingAffiliationCategoryId,
-} from '../affiliations/onboardingAffiliationCatalog.ts';
-import { publicTypeSuppressesLogoDev } from '../affiliations/affiliationPresentation.ts';
+  publicTypeSuppressesLogoDev,
+  resolvePublicAffiliationCategoryId,
+} from '../affiliations/affiliationPresentation.ts';
 
 /** Contract cap — matches backend `MAX_PUBLIC_AFFILIATIONS`. */
 export const MAX_DISCOVERY_AFFILIATIONS = 48;
@@ -129,8 +129,9 @@ export function resolveDiscoveryAffiliationGrid(
 }
 
 /**
- * Localized category label when `type` matches CRJ onboarding category id;
- * otherwise a safe humanized presentation (never raw technical dumps).
+ * Localized CRJ category label for public `type` (category id or topic id).
+ * Topic ids resolve to their parent category — never snake_case humanize to
+ * "Professional Organization" (truncates as "Professional o…").
  */
 export function formatDiscoveryAffiliationTypeLabel(
   type: string | null | undefined,
@@ -140,8 +141,9 @@ export function formatDiscoveryAffiliationTypeLabel(
   const trimmed = type.trim();
   if (!trimmed) return null;
 
-  if (isOnboardingAffiliationCategoryId(trimmed)) {
-    const cat = getOnboardingAffiliationCategory(trimmed);
+  const categoryId = resolvePublicAffiliationCategoryId(trimmed);
+  if (categoryId) {
+    const cat = getOnboardingAffiliationCategory(categoryId);
     return translateCategory(cat.nameKey, cat.name);
   }
 

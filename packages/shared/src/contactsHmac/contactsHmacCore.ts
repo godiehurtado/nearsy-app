@@ -387,6 +387,13 @@ export function mapContactsCallableError(err: unknown): ContactsHmacError {
       message || 'Too many Contacts requests. Try again later. (contacts-rate-limited)',
     );
   }
+  if (/deadline-exceeded|timeout|unavailable|network/i.test(haystack)) {
+    return new ContactsHmacError(
+      'contacts-hmac-unavailable',
+      message ||
+        'Contacts sync timed out or is unavailable. (contacts-hmac-unavailable)',
+    );
+  }
   return new ContactsHmacError(
     'generic',
     message || 'Contacts request failed.',

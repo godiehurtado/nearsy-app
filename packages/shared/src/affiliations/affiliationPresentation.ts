@@ -178,14 +178,25 @@ export type PublicAffiliationLines = {
 export function formatPublicAffiliationCaption(
   item: { name?: string | null; type?: string | null },
   localizeTopic: AffiliationTopicLocalizer,
+  localizeCategory?: AffiliationCategoryLocalizer,
 ): string {
-  return formatPublicAffiliationLines(item, localizeTopic).caption;
+  return formatPublicAffiliationLines(item, localizeTopic, localizeCategory)
+    .caption;
+}
+
+function localizeCategoryLabel(
+  categoryId: OnboardingAffiliationCategoryId,
+  localizeCategory?: AffiliationCategoryLocalizer,
+): string {
+  const category = getOnboardingAffiliationCategory(categoryId);
+  return (localizeCategory?.(categoryId, category.name) ?? category.name).trim();
 }
 
 /**
- * Split name vs category/topic so Discovery can render two adaptive lines.
- * Family stays one composed title ("Father of Sofía"). Category IDs show the
- * localized category under the org name — never invent new category ids.
+ * Split name vs parent category so Discovery can render two adaptive lines.
+ * Secondary line is always the CRJ category (Professional), never the topic
+ * humanization that truncated to "Professional o…". Family stays one composed
+ * title ("Father of Sofía"). Never invents category ids.
  */
 export function formatPublicAffiliationLines(
   item: { name?: string | null; type?: string | null },
@@ -208,55 +219,51 @@ export function formatPublicAffiliationLines(
     );
     return { title: caption, subtitle: null, caption };
   }
-  if (isOnboardingAffiliationCategoryId(type)) {
-    const category = getOnboardingAffiliationCategory(type);
-    const categoryLabel = (
-      localizeCategory?.(type, category.name) ?? category.name
-    ).trim();
-    if (!name) {
+
+  const categoryId = resolvePublicAffiliationCategoryId(type);
+  if (!categoryId) {
+    return { title: name || type, subtitle: null, caption: name || type };
+  }
+
+  const categoryLabel = localizeCategoryLabel(categoryId, localizeCategory);
+  const topicOnly =
+    !isOnboardingAffiliationCategoryId(type) &&
+    findAffiliationCategoryForTopic(type) === categoryId;
+
+  if (!name) {
+    if (topicOnly) {
+      const caption = formatAffiliationCaption(
+        { name: '', categoryId, topic: type },
+        localizeTopic,
+      );
+      const title = caption || categoryLabel;
+      if (
+        !categoryLabel ||
+        normalizeMatch(title) === normalizeMatch(categoryLabel)
+      ) {
+        return { title, subtitle: null, caption: title };
+      }
       return {
-        title: categoryLabel,
-        subtitle: null,
-        caption: categoryLabel,
+        title,
+        subtitle: categoryLabel,
+        caption: `${title} / ${categoryLabel}`,
       };
     }
-    if (normalizeMatch(name) === normalizeMatch(categoryLabel)) {
-      return { title: name, subtitle: null, caption: name };
-    }
     return {
-      title: name,
-      subtitle: categoryLabel,
-      caption: `${name} / ${categoryLabel}`,
+      title: categoryLabel,
+      subtitle: null,
+      caption: categoryLabel,
     };
   }
-  const categoryId = findAffiliationCategoryForTopic(type);
-  if (categoryId) {
-    const caption = formatAffiliationCaption(
-      { name, categoryId, topic: type },
-      localizeTopic,
-    );
-    const resolved = resolveAffiliationTopic(categoryId, type);
-    const englishLabel = resolved?.label ?? type;
-    const topicLabel = (
-      resolved ? localizeTopic(resolved.id, englishLabel) : englishLabel
-    ).trim();
-    if (!name) {
-      return { title: topicLabel || caption, subtitle: null, caption };
-    }
-    if (
-      !topicLabel ||
-      normalizeMatch(name) === normalizeMatch(topicLabel) ||
-      captionAlreadyIncludesTopic(name, [topicLabel, englishLabel])
-    ) {
-      return { title: name, subtitle: null, caption: name };
-    }
-    return {
-      title: name,
-      subtitle: topicLabel,
-      caption,
-    };
+
+  if (normalizeMatch(name) === normalizeMatch(categoryLabel)) {
+    return { title: name, subtitle: null, caption: name };
   }
-  return { title: name || type, subtitle: null, caption: name || type };
+  return {
+    title: name,
+    subtitle: categoryLabel,
+    caption: `${name} / ${categoryLabel}`,
+  };
 }
 
 export function publicTypeSuppressesLogoDev(
