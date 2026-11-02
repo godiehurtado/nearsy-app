@@ -17,8 +17,19 @@ import {
   resolveNotifyNearbyInterests,
 } from '../alerts/notifyPrefs.ts';
 import {
+  createMemoryReevaluatePendingStore,
+  registerReevaluatePendingStore,
+} from '../alerts/reevaluatePendingStore.ts';
+import {
+  registerReevaluateProximityNoticesInvoker,
+  reevaluateProximityNoticesNow,
+  resumePendingReevaluateProximityNotices,
+  scheduleReevaluateProximityNotices,
+} from '../alerts/reevaluateProximityNotices.ts';
+import {
   enableAndSyncContacts,
   syncGrantedAddressBook,
+  withdrawContactSource,
 } from '../contacts/controller.ts';
 import { ContactsHmacClientError } from '../contacts/errors.ts';
 import {
@@ -30,6 +41,7 @@ import {
   nextSnapshotVersion,
   selectUploadableIdentifiers,
 } from '../contacts/identifiers.ts';
+import { mapExpoPermission } from '../contacts/iosAddressBook.ts';
 import {
   buildSyncContactHashesRequest,
   isIdempotentSyncResult,
@@ -196,7 +208,98 @@ describe('Identity Contacts HMAC wire', () => {
     assert.equal(empty.ok, true);
     if (empty.ok) assert.equal(empty.identifiers.length, 0);
     assert.equal(decideContactsPermissionAction('granted'), 'sync');
+    assert.equal(decideContactsPermissionAction('limited'), 'sync');
     assert.equal(decideContactsPermissionAction('denied'), 'remove-source');
+    assert.equal(mapExpoPermission('granted'), 'granted');
+    assert.equal(mapExpoPermission('granted', 'limited'), 'limited');
+    assert.equal(mapExpoPermission('limited'), 'limited');
+    assert.equal(mapExpoPermission('denied'), 'denied');
+  });
+
+  it('keeps monotonic snapshotVersion after remove for a stable sourceId', async () => {
+    const session = createMemoryContactsSessionStore({
+      sourceId: 'ios_testdevice01',
+      contactsEpoch: 2,
+      snapshotVersion: 5,
+      fingerprint: 'abc:1',
+    });
+    const client = createFakeContactsHmacClient({
+      removeContactSource: async (request) =>
+        parseContactsWireResult({
+          result: 'removed',
+          contactsSyncEnabled: true,
+          contactsEpoch: request.contactsEpoch,
+          notifyNearbyContactsEffective: true,
+          sourceId: request.sourceId,
+          snapshotVersion: 5,
+          syncCommitted: true,
+          reevaluateRequired: true,
+        }),
+    });
+    const withdrawn = await withdrawContactSource({
+      client,
+      session,
+      book: {
+        getPermission: async () => 'denied',
+        requestPermission: async () => 'denied',
+        readRows: async () => [],
+      },
+    });
+    assert.equal(withdrawn.ok, true);
+    const afterRemove = session.peek();
+    assert.equal(afterRemove.sourceId, 'ios_testdevice01');
+    assert.equal(afterRemove.snapshotVersion, 5);
+    assert.equal(afterRemove.fingerprint, null);
+
+    const next = nextSnapshotVersion({
+      lastVersion: afterRemove.snapshotVersion,
+      lastFingerprint: afterRemove.fingerprint,
+      nextFingerprint: 'def:1',
+    });
+    assert.equal(next, 6);
+    assert.ok(next > 5);
+  });
+
+  it('keeps durable reevaluate pending across idempotent and isolates by uid', async () => {
+    const pending = createMemoryReevaluatePendingStore();
+    registerReevaluatePendingStore(pending);
+    const invokes: string[] = [];
+    let currentUid = 'uid-a';
+    registerReevaluateProximityNoticesInvoker(
+      async (uid) => {
+        invokes.push(uid);
+      },
+      () => currentUid,
+    );
+
+    scheduleReevaluateProximityNotices();
+    assert.equal(pending.peek(), 'uid-a');
+
+    const idempotent = parseContactsWireResult({
+      result: 'idempotent',
+      contactsSyncEnabled: true,
+      contactsEpoch: 1,
+      notifyNearbyContactsEffective: true,
+      sourceId: 'ios_testdevice01',
+      snapshotVersion: 2,
+      identifierCount: 1,
+      keyCount: 0,
+      syncCommitted: true,
+      reevaluateRequired: false,
+    });
+    assert.equal(shouldCallReevaluateAfterIdentity(idempotent), false);
+    assert.equal(isIdempotentSyncResult(idempotent), true);
+    assert.equal(pending.peek(), 'uid-a');
+
+    currentUid = 'uid-b';
+    await resumePendingReevaluateProximityNotices();
+    assert.equal(pending.peek(), 'uid-a');
+    assert.equal(invokes.length, 0);
+
+    currentUid = 'uid-a';
+    await reevaluateProximityNoticesNow();
+    assert.deepEqual(invokes, ['uid-a']);
+    assert.equal(pending.peek(), null);
   });
 
   it('does not mark the book synced on epoch mismatch or identifier cap', async () => {
@@ -270,8 +373,24 @@ describe('iOS wiring', () => {
     assert.match(alerts, /markAlertOpened/);
     assert.match(tabs, /unseenCount/);
     assert.match(app, /parseEncounterNotifyPayload/);
+    assert.match(app, /resumePendingReevaluateProximityNotices/);
     assert.match(more, /enableAndSyncContacts/);
     assert.match(more, /notifyNearbyContacts/);
     assert.doesNotMatch(more, /expectedEpoch/);
+  });
+
+  it('ships expo-contacts plugin, dependency, and NSContactsUsageDescription', () => {
+    const root = join(ROOT, '../../..');
+    const appJson = readFileSync(join(root, 'apps/nearsy-ios/app.json'), 'utf8');
+    const appConfig = readFileSync(join(root, 'apps/nearsy-ios/app.config.js'), 'utf8');
+    const pkg = readFileSync(join(root, 'apps/nearsy-ios/package.json'), 'utf8');
+    assert.match(pkg, /"expo-contacts":\s*"~15\.0\.11"/);
+    assert.match(appJson, /NSContactsUsageDescription/);
+    assert.match(appJson, /expo-contacts/);
+    assert.match(appConfig, /expo-contacts/);
+    assert.doesNotMatch(readSrc('contacts/controller.ts'), /clearSnapshotVersion/);
+    assert.match(readSrc('contacts/controller.ts'), /clearFingerprint/);
+    assert.doesNotMatch(readSrc('contacts/wireTypes.ts'), /expectedEpoch/);
+    assert.doesNotMatch(readSrc('contacts/parse.ts'), /expectedEpoch/);
   });
 });

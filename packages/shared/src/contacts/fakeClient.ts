@@ -64,6 +64,7 @@ export function createFakeContactsHmacClient(
         contactsEpoch: request.contactsEpoch,
         notifyNearbyContactsEffective: true,
         sourceId: request.sourceId,
+        snapshotVersion: 1,
         syncCommitted: true,
         reevaluateRequired: true,
       });
@@ -105,8 +106,8 @@ export function createMemoryContactsSessionStore(seed?: {
     async save(next: typeof current) {
       current = { ...next };
     },
-    async clearSnapshotVersion() {
-      current = { ...current, snapshotVersion: null, fingerprint: null };
+    async clearFingerprint() {
+      current = { ...current, fingerprint: null };
     },
     peek() {
       return { ...current };

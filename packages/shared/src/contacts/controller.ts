@@ -66,7 +66,7 @@ async function persistSession(
 }
 
 async function notifyAfterIdentity(
-  ports: ContactsControllerPorts,
+  ports: Pick<ContactsControllerPorts, 'afterIdentity'>,
   result: ContactsWireResult,
 ): Promise<void> {
   if (!shouldCallReevaluateAfterIdentity(result)) return;
@@ -180,11 +180,13 @@ export async function disableContactsSyncFlow(
     const result = await ports.client.disableContactsSync(
       buildDisableContactsSyncRequest(contactsEpoch),
     );
+    // Keep sourceId + monotonic snapshotVersion. Disable purges fences, but
+    // the same install must not mint a fresh sourceId per sync to dodge them.
     await persistSession(ports, result, {
-      snapshotVersion: null,
+      snapshotVersion: session?.snapshotVersion ?? null,
       fingerprint: null,
     });
-    await ports.session.clearSnapshotVersion();
+    await ports.session.clearFingerprint();
     await notifyAfterIdentity(ports, result);
     return { ok: true, result, bookSynced: false };
   } catch (err) {
@@ -214,11 +216,16 @@ export async function withdrawContactSource(
         contactsEpoch: session.contactsEpoch,
       }),
     );
+    // Identity sets removedSnapshotVersion to the withdrawn version. Keep the
+    // local counter (prefer wire snapshotVersion) so the next sync after
+    // re-consent is strictly greater. Clear fingerprint only — never raw book.
+    const keptVersion =
+      result.snapshotVersion ?? session.snapshotVersion ?? null;
     await persistSession(ports, result, {
-      snapshotVersion: null,
+      snapshotVersion: keptVersion,
       fingerprint: null,
     });
-    await ports.session.clearSnapshotVersion();
+    await ports.session.clearFingerprint();
     await notifyAfterIdentity(ports, result);
     return { ok: true, result, bookSynced: false };
   } catch (err) {

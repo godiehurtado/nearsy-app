@@ -29,7 +29,10 @@ import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 
 import * as Notifications from 'expo-notifications';
 import { parseEncounterNotifyPayload } from './alerts/encounterNotifyPayload';
-import { scheduleReevaluateProximityNotices } from './alerts/reevaluateProximityNotices';
+import {
+  resumePendingReevaluateProximityNotices,
+  scheduleReevaluateProximityNotices,
+} from './alerts/reevaluateProximityNotices';
 import {
   refreshVerifiedActorKeysFlow,
 } from './contacts/controller';
@@ -250,12 +253,15 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
         client,
         session,
         afterIdentity: async (result) => {
+          // Idempotent / reevaluateRequired:false must not clear a prior pending mark.
           if (shouldCallReevaluateAfterIdentity(result)) {
             scheduleReevaluateProximityNotices();
           }
         },
       });
     });
+
+    void resumePendingReevaluateProximityNotices();
 
     const responseSub = Notifications.addNotificationResponseReceivedListener(
       (response) => {

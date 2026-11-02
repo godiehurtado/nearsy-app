@@ -122,6 +122,7 @@ import { createContactsAddressBookPort } from '../contacts/iosAddressBook';
 import { getContactsHmacClient } from '../contacts/iosContactsFoundation';
 import { createContactsSessionStore } from '../contacts/iosContactsSession';
 import { shouldCallReevaluateAfterIdentity } from '../contacts/parse';
+import type { ContactsWireResult } from '../contacts/wireTypes';
 
 type ProfileDoc = {
   phone?: string | null;
@@ -517,7 +518,7 @@ export default function MoreScreen() {
     client: await getContactsHmacClient(),
     session: createContactsSessionStore(),
     book: createContactsAddressBookPort(),
-    afterIdentity: async (result: { syncCommitted: boolean; reevaluateRequired: boolean }) => {
+    afterIdentity: async (result: ContactsWireResult) => {
       if (shouldCallReevaluateAfterIdentity(result)) {
         scheduleReevaluateProximityNotices();
       }
@@ -570,7 +571,7 @@ export default function MoreScreen() {
       const outcome = enabled
         ? await enableAndSyncContacts(ports)
         : await disableContactsSyncFlow(ports);
-      if (!outcome.ok) {
+      if (outcome.ok === false) {
         setContactsSyncEnabled(previous);
         if (outcome.reason === 'contacts-os-denied') {
           Alert.alert(

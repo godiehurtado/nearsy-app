@@ -18,8 +18,7 @@ export function createContactsSessionStore(): ContactsSessionStore {
       memory.snapshotVersion = snapshot.snapshotVersion;
       memory.fingerprint = snapshot.fingerprint;
     },
-    async clearSnapshotVersion() {
-      memory.snapshotVersion = null;
+    async clearFingerprint() {
       memory.fingerprint = null;
     },
   };

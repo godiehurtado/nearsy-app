@@ -35,10 +35,19 @@ export type ContactsSessionSnapshot = {
 export type ContactsSessionStore = {
   load(): Promise<ContactsSessionSnapshot | null>;
   save(snapshot: ContactsSessionSnapshot): Promise<void>;
-  clearSnapshotVersion(): Promise<void>;
+  /**
+   * Clears the local fingerprint after remove/disable so the next sync
+   * bumps. Keeps snapshotVersion so a stable sourceId cannot restart at 1
+   * and collide with Identity removedSnapshotVersion.
+   */
+  clearFingerprint(): Promise<void>;
 };
 
-export type ContactsPermissionStatus = 'granted' | 'denied' | 'undetermined';
+export type ContactsPermissionStatus =
+  | 'granted'
+  | 'limited'
+  | 'denied'
+  | 'undetermined';
 
 export type ContactsAddressBookPort = {
   getPermission(): Promise<ContactsPermissionStatus>;

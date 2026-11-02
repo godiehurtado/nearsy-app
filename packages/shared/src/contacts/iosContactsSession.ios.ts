@@ -97,8 +97,9 @@ export function createContactsSessionStore(): ContactsSessionStore {
         await remove(FINGERPRINT_KEY);
       }
     },
-    async clearSnapshotVersion() {
-      await remove(VERSION_KEY);
+    async clearFingerprint() {
+      // Keep snapshotVersion: Identity fences removedSnapshotVersion for this
+      // stable sourceId. Restarting at 1 would throw contacts-source-removed.
       await remove(FINGERPRINT_KEY);
     },
   };

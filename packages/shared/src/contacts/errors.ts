@@ -10,6 +10,7 @@ export type ContactsHmacFailReason =
   | 'contacts-epoch-mismatch'
   | 'contacts-snapshot-stale'
   | 'contacts-snapshot-conflict'
+  | 'contacts-source-removed'
   | 'contacts-source-cap'
   | 'contacts-identifier-cap'
   | 'contacts-union-cap'
@@ -27,6 +28,7 @@ const IDENTITY_REASONS = new Set<string>([
   'contacts-epoch-mismatch',
   'contacts-snapshot-stale',
   'contacts-snapshot-conflict',
+  'contacts-source-removed',
   'contacts-source-cap',
   'contacts-identifier-cap',
   'contacts-union-cap',
@@ -94,6 +96,7 @@ export function shouldMarkBookSynced(reason: ContactsHmacFailReason | null): boo
     reason !== 'contacts-identifier-cap' &&
     reason !== 'contacts-snapshot-stale' &&
     reason !== 'contacts-snapshot-conflict' &&
+    reason !== 'contacts-source-removed' &&
     reason !== 'contacts-not-enabled' &&
     reason !== 'contacts-os-denied'
   );

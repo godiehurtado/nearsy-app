@@ -1,20 +1,34 @@
 /**
- * Reads phones/emails from the granted address book. Names and photos are
- * never sent on the Identity wire.
+ * Reads phones/emails from the granted (or limited) address book. Names and
+ * photos are never sent on the Identity wire. Never persists the raw book.
  */
 
 import type { ContactsAddressBookPort, ContactsPermissionStatus } from './port';
 
-function mapExpoPermission(status: string | undefined): ContactsPermissionStatus {
-  if (status === 'granted') return 'granted';
+type ExpoPermissionResponse = {
+  status?: string;
+  accessPrivileges?: string;
+};
+
+function mapExpoPermission(
+  response: ExpoPermissionResponse | null | undefined,
+): ContactsPermissionStatus {
+  const status = response?.status;
   if (status === 'undetermined') return 'undetermined';
+  if (status === 'denied') return 'denied';
+  // expo-contacts may surface limited as status or as accessPrivileges.
+  if (status === 'limited') return 'limited';
+  if (status === 'granted') {
+    if (response?.accessPrivileges === 'limited') return 'limited';
+    return 'granted';
+  }
   return 'denied';
 }
 
 type ExpoContactsModule = {
   Fields: { PhoneNumbers: string; Emails: string };
-  getPermissionsAsync(): Promise<{ status?: string }>;
-  requestPermissionsAsync(): Promise<{ status?: string }>;
+  getPermissionsAsync(): Promise<ExpoPermissionResponse>;
+  requestPermissionsAsync(): Promise<ExpoPermissionResponse>;
   getContactsAsync(options: {
     fields: string[];
     pageSize?: number;
@@ -41,14 +55,12 @@ export function createContactsAddressBookPort(): ContactsAddressBookPort {
     async getPermission() {
       const Contacts = await loadModule();
       if (!Contacts) return 'denied';
-      const current = await Contacts.getPermissionsAsync();
-      return mapExpoPermission(current.status);
+      return mapExpoPermission(await Contacts.getPermissionsAsync());
     },
     async requestPermission() {
       const Contacts = await loadModule();
       if (!Contacts) return 'denied';
-      const current = await Contacts.requestPermissionsAsync();
-      return mapExpoPermission(current.status);
+      return mapExpoPermission(await Contacts.requestPermissionsAsync());
     },
     async readRows() {
       const Contacts = await loadModule();

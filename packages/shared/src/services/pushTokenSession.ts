@@ -238,7 +238,7 @@ export function createPushTokenSession(io: PushTokenSessionIO) {
       };
     }
     const result = await register();
-    if (!result.ok) {
+    if (result.ok === false) {
       return { ok: false, reason: result.reason, registered: false };
     }
     return { ok: true, registered: true };

@@ -13,9 +13,11 @@ import {
   buildCloudFunctionsCallableUrl,
   invokeFirebaseCallableHttp,
 } from '../firebase/callableHttp';
+import { ensureReevaluatePendingStoreRegistered } from './reevaluatePendingStore.ios';
 import {
   registerReevaluateProximityNoticesInvoker,
   reevaluateProximityNoticesNow as flushNow,
+  resumePendingReevaluateProximityNotices as resumePending,
   scheduleReevaluateProximityNotices as scheduleDebounced,
 } from './reevaluateProximityNotices.ts';
 
@@ -52,11 +54,16 @@ function readJsProjectId(): string | null {
   return null;
 }
 
+function currentUid(): string | null {
+  const uid = firebaseAuth.currentUser?.uid;
+  return typeof uid === 'string' && uid.trim() ? uid.trim() : null;
+}
+
 let registered = false;
 
-async function invoke(): Promise<void> {
+async function invoke(forUid: string): Promise<void> {
   const user = firebaseAuth.currentUser;
-  if (!user) return;
+  if (!user || user.uid !== forUid) return;
   const environment = resolveNearsyFirebaseEnvironment(
     pick('EXPO_PUBLIC_NEARSY_FIREBASE_ENV'),
   );
@@ -85,7 +92,11 @@ async function invoke(): Promise<void> {
 function ensureRegistered(): void {
   if (registered) return;
   registered = true;
-  registerReevaluateProximityNoticesInvoker(() => invoke().catch(() => {}));
+  ensureReevaluatePendingStoreRegistered();
+  registerReevaluateProximityNoticesInvoker(
+    (uid) => invoke(uid),
+    () => currentUid(),
+  );
 }
 
 export function scheduleReevaluateProximityNotices(): void {
@@ -96,4 +107,9 @@ export function scheduleReevaluateProximityNotices(): void {
 export async function reevaluateProximityNoticesNow(): Promise<void> {
   ensureRegistered();
   await flushNow();
+}
+
+export async function resumePendingReevaluateProximityNotices(): Promise<void> {
+  ensureRegistered();
+  await resumePending();
 }
