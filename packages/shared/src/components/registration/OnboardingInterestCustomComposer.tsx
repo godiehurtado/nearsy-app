@@ -1,5 +1,12 @@
-import React from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  FlatList,
+  TextInput,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { fontSize, fontWeight } from '../../theme/typography';
@@ -9,9 +16,14 @@ import { FormInput } from './FormInput';
 import { useTranslation } from '../../i18n';
 import {
   CUSTOM_INTEREST_MAX_LENGTH,
-  ONBOARDING_CUSTOM_INTEREST_ICON_OPTIONS,
   resolveCustomInterestIconColor,
 } from '../../interests/onboardingInterestCatalog';
+import {
+  CUSTOM_INTEREST_ICON_GROUP_ORDER,
+  customInterestIconA11yLabel,
+  filterCustomInterestIcons,
+  type CustomInterestIconEntry,
+} from '../../interests/customInterestIconCatalog';
 
 type Props = {
   customName: string;
@@ -33,10 +45,17 @@ export function OnboardingInterestCustomComposer({
   onCancel,
 }: Props) {
   const { palette } = useAppTheme();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const [query, setQuery] = useState('');
+  const locale = i18n.language?.startsWith('es') ? 'es' : 'en';
   const previewColor = customIcon
     ? resolveCustomInterestIconColor(customIcon)
     : palette.textMuted;
+
+  const filtered = useMemo(
+    () => filterCustomInterestIcons(query),
+    [query],
+  );
 
   return (
     <View
@@ -97,16 +116,48 @@ export function OnboardingInterestCustomComposer({
       <Text style={[styles.iconLabel, { color: palette.textMuted }]}>
         {t('onboarding.profileCompletion.interests.custom.iconLabel')}
       </Text>
-      <View style={styles.iconGrid}>
-        {ONBOARDING_CUSTOM_INTEREST_ICON_OPTIONS.map(({ icon, iconColor }) => {
-          const active = customIcon === icon;
+      <TextInput
+        value={query}
+        onChangeText={setQuery}
+        placeholder={t(
+          'onboarding.profileCompletion.interests.custom.iconSearchPlaceholder',
+        )}
+        placeholderTextColor={palette.placeholder}
+        autoCapitalize="none"
+        autoCorrect={false}
+        accessibilityLabel={t(
+          'onboarding.profileCompletion.interests.custom.iconSearchA11y',
+        )}
+        style={[
+          styles.search,
+          {
+            color: palette.textPrimary,
+            borderColor: palette.border,
+            backgroundColor: palette.surface,
+          },
+        ]}
+      />
+      <FlatList
+        data={filtered as CustomInterestIconEntry[]}
+        keyExtractor={(item, index) => `${item.icon}-${index}`}
+        numColumns={6}
+        style={styles.iconList}
+        contentContainerStyle={styles.iconListContent}
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
+        ListEmptyComponent={
+          <Text style={[styles.empty, { color: palette.textMuted }]}>
+            {t('onboarding.profileCompletion.interests.custom.iconEmpty')}
+          </Text>
+        }
+        renderItem={({ item }) => {
+          const active = customIcon === item.icon;
           return (
             <Pressable
-              key={icon}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
-              accessibilityLabel={icon}
-              onPress={() => onSelectIcon(icon, iconColor)}
+              accessibilityLabel={customInterestIconA11yLabel(item.icon, locale)}
+              onPress={() => onSelectIcon(item.icon, item.iconColor)}
               style={[
                 styles.iconCell,
                 {
@@ -115,11 +166,16 @@ export function OnboardingInterestCustomComposer({
                 },
               ]}
             >
-              <Ionicons name={icon as any} size={22} color={iconColor} />
+              <Ionicons name={item.icon as any} size={22} color={item.iconColor} />
             </Pressable>
           );
-        })}
-      </View>
+        }}
+      />
+      <Text style={[styles.groupHint, { color: palette.textMuted }]}>
+        {CUSTOM_INTEREST_ICON_GROUP_ORDER.map((id) =>
+          t(`onboarding.profileCompletion.interests.custom.groups.${id}` as any),
+        ).join(' · ')}
+      </Text>
       {customError ? (
         <Text style={{ color: palette.danger, marginTop: spacing.sm }}>
           {customError}
@@ -185,11 +241,20 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     textTransform: 'uppercase',
   },
-  iconGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  search: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: fontSize.sm,
+    minHeight: 44,
+  },
+  iconList: {
+    maxHeight: 264,
+  },
+  iconListContent: {
     gap: spacing.sm,
-    justifyContent: 'center',
+    paddingBottom: spacing.sm,
   },
   iconCell: {
     width: 44,
@@ -198,6 +263,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    margin: 3,
+  },
+  empty: {
+    fontSize: fontSize.sm,
+    textAlign: 'center',
+    paddingVertical: spacing.md,
+  },
+  groupHint: {
+    fontSize: fontSize.xs,
+    lineHeight: 16,
   },
   addBtn: {
     marginTop: spacing.sm,

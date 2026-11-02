@@ -4,6 +4,7 @@ export default {
     "There isn't enough information yet to calculate alignment.",
   processing: 'Alignment is still being calculated.',
   unavailable: 'Alignment is currently unavailable.',
+  /** Internal DTO labels — not shown on Nearby/Discovery surfaces. */
   tiers: {
     weak: 'Some overlap',
     partial: 'Shared ground',
@@ -11,5 +12,5 @@ export default {
     full: 'Rare alignment',
   },
   a11yScoreOnly: '{{score}} percent alignment',
-  a11yWithTier: '{{score}} percent alignment, {{tier}}',
+  a11yWithTier: '{{score}} percent alignment',
 } as const;

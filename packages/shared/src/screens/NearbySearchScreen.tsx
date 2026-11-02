@@ -39,11 +39,7 @@ import {
   toAlignment,
   type DiscoverNearbyResult,
 } from '../visibility';
-import {
-  alignmentAccessibilityLabel,
-  alignmentTierLabel,
-  shouldShowNearbyTierBadge,
-} from '../visibility/alignmentPresentation';
+import { alignmentAccessibilityLabel } from '../visibility/alignmentPresentation';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 import {
   countSharedInterestIds,
@@ -571,15 +567,6 @@ export default function NearbySearchScreen() {
           {showAlignmentRing && alignment ? (
             <View style={styles.alignmentColumn} pointerEvents="none">
               <AlignmentScoreRing score={alignment.score} variant="compact" />
-              {shouldShowNearbyTierBadge(alignment.tier) ? (
-                <Text
-                  style={[styles.alignmentBadge, { color: palette.primary }]}
-                  numberOfLines={2}
-                  maxFontSizeMultiplier={1.35}
-                >
-                  {alignmentTierLabel(t, alignment.tier)}
-                </Text>
-              ) : null}
             </View>
           ) : null}
         </View>

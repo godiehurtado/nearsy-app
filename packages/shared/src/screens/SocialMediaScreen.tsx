@@ -47,7 +47,12 @@ import {
 } from '../social/postCrjSocialEditor';
 import { readExistingSocialLinks } from '../social/onboardingSocialPersistence';
 import type { ProfileMode } from '../profile/profileModeFields';
-import type { CrjSocialFieldErrors } from '../social/socialLinkNormalize';
+import {
+  normalizeCustomNetworkUrl,
+  normalizeSocialInput,
+  type CrjSocialFieldErrors,
+} from '../social/socialLinkNormalize';
+import { SocialConnectionModal } from '../components/social/SocialConnectionModal';
 import {
   getYoutubeOwnershipClient,
   getYoutubeOwnershipController,
@@ -89,7 +94,7 @@ import {
   preserveLegacyInstagramInSocialPatch,
   resolveInstagramOwnershipClientPlatform,
   presentInstagramGetResponse,
-  shareInstagramChallengeCode,
+  InstagramChallengeCopyControls,
   shouldPollInstagramOwnership,
   INSTAGRAM_OWNERSHIP_POLL_INTERVAL_MS,
   InstagramOwnershipClientError,
@@ -255,6 +260,14 @@ export default function SocialMediaScreen() {
   const instagramEditorModeRef = useRef<ProfileMode | null>(editorMode);
   const instagramChallengeRef = useRef<InstagramOwnershipPending | null>(null);
   const screenFocused = useIsFocused();
+  const [ownedSheet, setOwnedSheet] = useState<
+    'youtube' | 'tiktok' | 'instagram' | 'x' | null
+  >(null);
+  const [manualSheet, setManualSheet] = useState<
+    'facebook' | 'linkedin' | 'website' | null
+  >(null);
+  const [manualDraft, setManualDraft] = useState('');
+  const [manualError, setManualError] = useState<string | null>(null);
 
   const [xVerified, setXVerified] = useState<XOwnershipVerified | null>(null);
   const [xLegacyUrl, setXLegacyUrl] = useState<string | null>(null);
@@ -908,6 +921,13 @@ export default function SocialMediaScreen() {
 
   const handleInstagramConnect = useCallback(async () => {
     if (instagramActionLocked || !editorMode) return;
+    const live = instagramChallengeRef.current;
+    if (live && live.expiresAt > Date.now()) {
+      setInstagramChallenge(live);
+      setInstagramBusyPhase('pending');
+      setOwnedSheet('instagram');
+      return;
+    }
     const requestGen = instagramRequestGenRef.current;
     const modeForRequest = editorMode;
     try {
@@ -1082,20 +1102,6 @@ export default function SocialMediaScreen() {
     isInstagramResultCurrent,
     screenFocused,
   ]);
-
-  const handleInstagramShare = useCallback(() => {
-    const code = instagramChallenge?.code;
-    if (!code) return;
-    void shareInstagramChallengeCode(code).catch(() => {
-      presentInstagramError(
-        new InstagramOwnershipClientError(
-          'UNKNOWN',
-          'Could not share Instagram code.',
-          { stage: 'unknown' },
-        ),
-      );
-    });
-  }, [instagramChallenge, presentInstagramError]);
 
   const handleInstagramOpen = useCallback(() => {
     const url = instagramChallenge?.inboxProfileUrl;
@@ -1340,22 +1346,13 @@ export default function SocialMediaScreen() {
       id === 'youtube' ||
       id === 'tiktok' ||
       id === 'instagram' ||
-      id === 'x'
+      id === 'x' ||
+      id === 'snapchat'
     )
       return;
-    setDraft((prev) => ({
-      ...prev,
-      connected: { ...prev.connected, [id]: true },
-    }));
-    setFieldErrors((prev) => {
-      const next = { ...prev };
-      delete next[id as CrjSocialPlatformId];
-      if (id === 'website') delete next.website;
-      return next;
-    });
-    setTimeout(() => {
-      inputRefs.current[id]?.focus();
-    }, 50);
+    setManualSheet(id);
+    setManualDraft(id === 'website' ? draft.website : draft.values[id]);
+    setManualError(null);
   };
 
   const disconnectPlatform = (id: PostCrjSocialCardId) => {
@@ -1366,27 +1363,22 @@ export default function SocialMediaScreen() {
       id === 'x'
     )
       return;
-    setDraft((prev) => {
-      const nextConnected = { ...prev.connected, [id]: false };
-      if (id === 'website') {
-        return {
-          ...prev,
-          connected: nextConnected,
-          website: '',
-        };
-      }
-      return {
-        ...prev,
-        connected: nextConnected,
-        values: { ...prev.values, [id]: '' },
-      };
-    });
+    const nextConnected = { ...draft.connected, [id]: false };
+    const nextDraft: PostCrjSocialEditorDraft =
+      id === 'website'
+        ? { ...draft, connected: nextConnected, website: '' }
+        : {
+            ...draft,
+            connected: nextConnected,
+            values: { ...draft.values, [id]: '' },
+          };
     setFieldErrors((prev) => {
       const next = { ...prev };
       delete next[id as CrjSocialPlatformId];
       if (id === 'website') delete next.website;
       return next;
     });
+    void persistDraftBag(nextDraft);
   };
 
   const updatePlatformValue = (id: CrjSocialPlatformId, text: string) => {
@@ -1410,6 +1402,77 @@ export default function SocialMediaScreen() {
     });
   };
 
+  const persistDraftBag = async (
+    nextDraft: PostCrjSocialEditorDraft,
+    options?: { goBack?: boolean },
+  ) => {
+    if (!editorUid || !editorMode) return false;
+    const uidForWrite = editorUid;
+    const modeForWrite = editorMode;
+    const validation = validatePostCrjSocialDraftForSave(nextDraft, {
+      requiredWhenConnected: t('profile.social.requiredWhenConnected'),
+      invalidValue: t('profile.social.invalidValue'),
+    });
+    if (validation.ok === false) {
+      setFieldErrors(validation.errors);
+      return false;
+    }
+    const valuesForSave = omitXFromDraftValues(
+      omitInstagramFromDraftValues(
+        omitTiktokFromDraftValues(
+          omitYoutubeFromDraftValues(buildValuesForPostCrjSocialSave(nextDraft)),
+        ),
+      ),
+    );
+    const patch = preserveLegacyXInSocialPatch(
+      editorMode,
+      preserveLegacyInstagramInSocialPatch(
+        editorMode,
+        preserveLegacyTiktokInSocialPatch(
+          editorMode,
+          preserveLegacyYoutubeInSocialPatch(
+            editorMode,
+            buildPostCrjSocialLinksPersistencePatch(
+              editorMode,
+              valuesForSave,
+              nextDraft.custom,
+              {
+                website: nextDraft.connected.website ? nextDraft.website : '',
+                existing: existingLinksRef.current,
+              },
+            ),
+            existingLinksRef.current,
+          ),
+          existingLinksRef.current,
+        ),
+        existingLinksRef.current,
+      ),
+      existingLinksRef.current,
+    );
+    await updateUserProfilePartial(uidForWrite, patch);
+    if (
+      lockedUidRef.current !== uidForWrite ||
+      lockedModeRef.current !== modeForWrite
+    ) {
+      return false;
+    }
+    snapshotRef.current = nextDraft;
+    setDraft(nextDraft);
+    existingLinksRef.current = readExistingSocialLinks(
+      {
+        ...(modeForWrite === 'personal'
+          ? { socialLinksPersonal: patch.socialLinksPersonal }
+          : { socialLinksProfessional: patch.socialLinksProfessional }),
+      },
+      modeForWrite,
+    );
+    if (options?.goBack) {
+      Keyboard.dismiss();
+      navigation.goBack();
+    }
+    return true;
+  };
+
   const handleSave = async () => {
     if (!editorUid || !editorMode || saving || !isDirty) return;
 
@@ -1424,42 +1487,8 @@ export default function SocialMediaScreen() {
 
     try {
       setSaving(true);
-      const valuesForSave = omitXFromDraftValues(
-        omitInstagramFromDraftValues(
-          omitTiktokFromDraftValues(
-            omitYoutubeFromDraftValues(buildValuesForPostCrjSocialSave(draft)),
-          ),
-        ),
-      );
-      const patch = preserveLegacyXInSocialPatch(
-        editorMode,
-        preserveLegacyInstagramInSocialPatch(
-          editorMode,
-          preserveLegacyTiktokInSocialPatch(
-            editorMode,
-            preserveLegacyYoutubeInSocialPatch(
-              editorMode,
-              buildPostCrjSocialLinksPersistencePatch(
-                editorMode,
-                valuesForSave,
-                draft.custom,
-                {
-                  website: draft.connected.website ? draft.website : '',
-                  existing: existingLinksRef.current,
-                },
-              ),
-              existingLinksRef.current,
-            ),
-            existingLinksRef.current,
-          ),
-          existingLinksRef.current,
-        ),
-        existingLinksRef.current,
-      );
-      await updateUserProfilePartial(editorUid, patch);
-      snapshotRef.current = draft;
-      Keyboard.dismiss();
-      navigation.goBack();
+      const ok = await persistDraftBag(draft, { goBack: true });
+      if (!ok) return;
     } catch (e: any) {
       Alert.alert(
         t('common.error'),
@@ -1762,7 +1791,7 @@ export default function SocialMediaScreen() {
                     accessibilityLabel={t('profile.social.youtube.connectA11y')}
                     disabled={youtubeActionLocked}
                     onPress={() => {
-                      void handleYoutubeConnect();
+                      setOwnedSheet('youtube');
                     }}
                     style={({ pressed }) => [
                       styles.toggleBtn,
@@ -1948,7 +1977,7 @@ export default function SocialMediaScreen() {
                     accessibilityLabel={t('profile.social.tiktok.connectA11y')}
                     disabled={tiktokActionLocked}
                     onPress={() => {
-                      void handleTiktokConnect();
+                      setOwnedSheet('tiktok');
                     }}
                     style={({ pressed }) => [
                       styles.toggleBtn,
@@ -2093,7 +2122,12 @@ export default function SocialMediaScreen() {
                     )}
                     disabled={instagramActionLocked}
                     onPress={() => {
-                      void handleInstagramConnect();
+                      const live = instagramChallengeRef.current;
+                      if (live && live.expiresAt > Date.now()) {
+                        setInstagramChallenge(live);
+                        setInstagramBusyPhase('pending');
+                      }
+                      setOwnedSheet('instagram');
                     }}
                     style={({ pressed }) => [
                       styles.toggleBtn,
@@ -2167,30 +2201,13 @@ export default function SocialMediaScreen() {
                     })}
                   </Text>
                   <View style={styles.instagramActions}>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={t(
-                        'profile.social.instagram.shareCodeA11y',
-                      )}
-                      onPress={handleInstagramShare}
-                      style={({ pressed }) => [
-                        styles.toggleBtn,
-                        {
-                          backgroundColor: palette.surface,
-                          borderColor: palette.border,
-                        },
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.toggleText,
-                          { color: palette.textPrimary },
-                        ]}
-                      >
-                        {t('profile.social.instagram.shareCode')}
-                      </Text>
-                    </Pressable>
+                    <InstagramChallengeCopyControls
+                      code={instagramChallenge.code}
+                      textColor={palette.textPrimary}
+                      mutedColor={palette.textMuted}
+                      borderColor={palette.border}
+                      surfaceColor={palette.surface}
+                    />
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={t(
@@ -2332,7 +2349,7 @@ export default function SocialMediaScreen() {
                     accessibilityLabel={t('profile.social.x.connectA11y')}
                     disabled={xActionLocked}
                     onPress={() => {
-                      void handleXConnect();
+                      setOwnedSheet('x');
                     }}
                     style={({ pressed }) => [
                       styles.toggleBtn,
@@ -2567,6 +2584,179 @@ export default function SocialMediaScreen() {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      <SocialConnectionModal
+        visible={ownedSheet !== null}
+        title={
+          ownedSheet
+            ? t(`profile.social.connectModal.${ownedSheet}.title` as any)
+            : ''
+        }
+        body={
+          ownedSheet
+            ? t(`profile.social.connectModal.${ownedSheet}.body` as any)
+            : ''
+        }
+        primaryLabel={
+          ownedSheet === 'instagram' && instagramChallenge
+            ? t('profile.social.instagram.openInbox')
+            : ownedSheet
+              ? t(`profile.social.connectModal.${ownedSheet}.action` as any)
+              : ''
+        }
+        onPrimary={() => {
+          if (ownedSheet === 'youtube') {
+            setOwnedSheet(null);
+            void handleYoutubeConnect();
+            return;
+          }
+          if (ownedSheet === 'tiktok') {
+            setOwnedSheet(null);
+            void handleTiktokConnect();
+            return;
+          }
+          if (ownedSheet === 'x') {
+            setOwnedSheet(null);
+            void handleXConnect();
+            return;
+          }
+          if (ownedSheet === 'instagram') {
+            if (instagramChallenge) {
+              handleInstagramOpen();
+              return;
+            }
+            void handleInstagramConnect();
+          }
+        }}
+        onRequestClose={() => {
+          setOwnedSheet(null);
+        }}
+      >
+        {ownedSheet === 'instagram' && instagramChallenge ? (
+          <View>
+            <Text style={[styles.helperText, { color: palette.textSecondary }]}>
+              {t('profile.social.connectModal.instagram.stepCopy')}
+            </Text>
+            <Text
+              selectable
+              style={[
+                styles.instagramCode,
+                {
+                  color: palette.textPrimary,
+                  borderColor: palette.border,
+                  backgroundColor: palette.surface,
+                },
+              ]}
+            >
+              {instagramChallenge.code}
+            </Text>
+            <InstagramChallengeCopyControls
+              code={instagramChallenge.code}
+              textColor={palette.textPrimary}
+              mutedColor={palette.textMuted}
+              borderColor={palette.border}
+              surfaceColor={palette.surface}
+            />
+          </View>
+        ) : null}
+      </SocialConnectionModal>
+
+      <SocialConnectionModal
+        visible={manualSheet !== null}
+        title={
+          manualSheet
+            ? t(`profile.social.connectModal.${manualSheet}.title` as any)
+            : ''
+        }
+        body={
+          manualSheet
+            ? t(`profile.social.connectModal.${manualSheet}.body` as any)
+            : ''
+        }
+        primaryLabel={t('profile.social.saveLink')}
+        primaryA11y={
+          manualSheet
+            ? t('profile.social.saveLinkA11y', {
+                platform:
+                  manualSheet === 'website'
+                    ? t('profile.social.platforms.website')
+                    : t(
+                        `onboarding.profileCompletion.socialMedia.platforms.${manualSheet}` as any,
+                      ),
+              })
+            : undefined
+        }
+        onPrimary={() => {
+          if (!manualSheet) return;
+          const raw = manualDraft.trim();
+          const result =
+            manualSheet === 'website'
+              ? normalizeCustomNetworkUrl(raw)
+              : normalizeSocialInput(manualSheet, raw);
+          if (!raw || !result.ok || !result.url) {
+            setManualError(t('profile.social.invalidValue'));
+            return;
+          }
+          const nextDraft: PostCrjSocialEditorDraft =
+            manualSheet === 'website'
+              ? {
+                  ...draft,
+                  website: result.url,
+                  connected: { ...draft.connected, website: true },
+                }
+              : {
+                  ...draft,
+                  values: { ...draft.values, [manualSheet]: result.url },
+                  connected: { ...draft.connected, [manualSheet]: true },
+                };
+          void persistDraftBag(nextDraft).then((ok) => {
+            if (ok) {
+              setManualSheet(null);
+              setManualError(null);
+            }
+          });
+        }}
+        onRequestClose={() => {
+          setManualSheet(null);
+          setManualError(null);
+        }}
+      >
+        {manualSheet ? (
+          <>
+            <TextInput
+              value={manualDraft}
+              onChangeText={(text) => {
+                setManualDraft(text);
+                setManualError(null);
+              }}
+              placeholder={
+                manualSheet === 'website'
+                  ? t('profile.social.placeholders.website')
+                  : t(
+                      `onboarding.profileCompletion.socialMedia.placeholders.${manualSheet}` as any,
+                    )
+              }
+              placeholderTextColor={palette.placeholder}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              style={[
+                styles.input,
+                {
+                  color: palette.textPrimary,
+                  borderColor: manualError ? palette.danger : palette.border,
+                  backgroundColor: palette.surface,
+                },
+              ]}
+            />
+            {manualError ? (
+              <Text style={[styles.fieldError, { color: palette.danger }]}>
+                {manualError}
+              </Text>
+            ) : null}
+          </>
+        ) : null}
+      </SocialConnectionModal>
 
       <View
         pointerEvents="none"

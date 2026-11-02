@@ -319,6 +319,7 @@ module.exports = ({ config }) => {
         },
       ],
       'expo-notifications',
+      'expo-clipboard',
       'expo-asset',
       'expo-font',
       'expo-web-browser',

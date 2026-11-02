@@ -27,8 +27,8 @@ export type BuildSocialLinksFieldInput = {
   values: CrjSocialDraftValues;
   custom: SocialCustomLink[];
   /**
-   * `preserve-existing` — CRJ: keep `existing.website` (Website not in wizard).
-   * `draft` — post-CRJ: normalize `websiteDraft` as editable Website.
+   * `preserve-existing` — keep `existing.website` when the caller omitted a draft.
+   * `draft` — normalize `websiteDraft` as editable Website (CRJ and post-CRJ).
    */
   websiteMode: SocialLinksFieldWebsiteMode;
   websiteDraft?: string;
@@ -134,7 +134,8 @@ export function buildSocialLinksFieldPersistencePatch(
 
 /**
  * CRJ write — field bag + explicit mid-wizard lifecycle.
- * Preserves `existing.website` (Website not shown in CRJ).
+ * Pass `websiteDraft` when Website is shown; omit it to keep `existing.website`.
+ * Never sets `profileSetupCompleted` true.
  * Callers: ProfileCompletionScreen only.
  */
 export function buildCrjSocialLinksPersistencePatch(
@@ -142,12 +143,14 @@ export function buildCrjSocialLinksPersistencePatch(
   values: CrjSocialDraftValues,
   custom: SocialCustomLink[],
   existing?: SocialLinks | null,
+  websiteDraft?: string,
 ): CrjSocialPersistencePatch {
   return {
     ...buildSocialLinksFieldPersistencePatch(mode, {
       values,
       custom,
-      websiteMode: 'preserve-existing',
+      websiteMode: websiteDraft === undefined ? 'preserve-existing' : 'draft',
+      websiteDraft,
       existing,
     }),
     profileSetupCompleted: false,

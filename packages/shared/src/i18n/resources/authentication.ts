@@ -6,6 +6,8 @@ export default {
     tagline: 'Discover interesting people around you',
     email: 'Email',
     password: 'Password',
+    showPassword: 'Show password',
+    hidePassword: 'Hide password',
     submit: 'Log In',
     forgotPassword: 'Forgot Password',
     noAccount: "Don't Have an Account?",

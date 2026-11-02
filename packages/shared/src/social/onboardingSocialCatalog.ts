@@ -3,9 +3,9 @@ import type { SocialCustomLink, SocialLinks } from '../types/profile';
 /**
  * CRJ-I7 Social Media catalog.
  *
- * Claude wizard order is visual truth. Production `SocialLinks` keys are
- * storage truth (`twitter` not `x`; `website` remains in the model but is
- * not shown in CRJ — it is preserved on persist).
+ * Visual order (CRJ + post-CRJ): YouTube → TikTok → Instagram → X →
+ * Facebook → LinkedIn → Web. Storage keys stay production truth
+ * (`twitter` not `x`). Snapchat stays hidden. Website is optional in CRJ.
  */
 export type CrjSocialPlatformId =
   | 'linkedin'
@@ -133,8 +133,22 @@ export const CRJ_OWNED_SOCIAL_PLATFORM_IDS: readonly CrjSocialPlatformId[] = [
 
 /** Manual URL fields on CRJ. Snapchat stays hidden; owned platforms are not URLs. */
 export const CRJ_MANUAL_URL_PLATFORM_IDS: readonly CrjSocialPlatformId[] = [
-  'linkedin',
   'facebook',
+  'linkedin',
+];
+
+/** Visible social surface order shared by CRJ and post-CRJ (Snapchat omitted). */
+export const VISIBLE_SOCIAL_SURFACE_ORDER: readonly (
+  | CrjSocialPlatformId
+  | 'website'
+)[] = [
+  'youtube',
+  'tiktok',
+  'instagram',
+  'x',
+  'facebook',
+  'linkedin',
+  'website',
 ];
 
 export function isCrjOwnedSocialPlatform(id: CrjSocialPlatformId): boolean {

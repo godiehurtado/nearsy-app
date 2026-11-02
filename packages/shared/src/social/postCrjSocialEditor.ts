@@ -32,7 +32,13 @@ export type PostCrjSocialCardId = CrjSocialPlatformId | 'website';
  * cannot adopt without breaking the eight-platform contract.
  */
 export const POST_CRJ_SOCIAL_CARD_ORDER: readonly PostCrjSocialCardId[] = [
-  ...CRJ_SOCIAL_PLATFORMS.map((p) => p.id),
+  'youtube',
+  'tiktok',
+  'instagram',
+  'x',
+  'facebook',
+  'linkedin',
+  'snapchat',
   'website',
 ];
 

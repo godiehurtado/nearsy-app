@@ -223,6 +223,47 @@ export default {
     retry: 'Retry',
     invalidValue: 'Check this link or username and try again',
     requiredWhenConnected: 'Enter a profile link or handle',
+    saveLink: 'Save link',
+    saveLinkA11y: 'Save {{platform}} link',
+    copied: 'Copied',
+    connectModal: {
+      youtube: {
+        title: 'Connect YouTube',
+        body: 'You will authorize Nearsy in Google, choose a YouTube channel if asked, then return here. Connection is saved to this profile without using Save.',
+        action: 'Continue to YouTube',
+      },
+      tiktok: {
+        title: 'Connect TikTok',
+        body: 'You will authorize Nearsy on TikTok and then return here. Connection is saved to this profile without using Save.',
+        action: 'Continue to TikTok',
+      },
+      instagram: {
+        title: 'Connect Instagram',
+        body: 'Nearsy verifies the Instagram account that sends a direct message to @nearsy.app. Copy the code, open that profile, tap Message, paste, send, then return here. Returning or closing this sheet does not connect the account.',
+        action: 'Get code',
+        stepCopy: 'Copy the code.',
+        stepOpen: 'Open Instagram and go to @nearsy.app.',
+        stepMessage: 'Tap Message.',
+        stepPaste: 'Paste the code, send it, then return to Nearsy.',
+      },
+      x: {
+        title: 'Connect X',
+        body: 'You will authorize Nearsy on X and then return here. Connection is saved to this profile without using Save.',
+        action: 'Continue to X',
+      },
+      facebook: {
+        title: 'Add Facebook',
+        body: 'Paste a Facebook profile URL or username. This is a manual link, not a verified connection. Cancel leaves your profile unchanged.',
+      },
+      linkedin: {
+        title: 'Add LinkedIn',
+        body: 'Paste a LinkedIn profile URL or the in/company path. This is a manual link, not a verified connection. Cancel leaves your profile unchanged.',
+      },
+      website: {
+        title: 'Add website',
+        body: 'Paste a public https website URL. This is a manual link, not a verified connection. Cancel leaves your profile unchanged.',
+      },
+    },
     backA11y: 'Go back',
     inputA11y: '{{platform}} profile',
     platforms: {
@@ -313,8 +354,12 @@ export default {
       connected: 'Connected',
       notConnected: 'Not connected',
       retry: 'Try again',
-      shareCode: 'Share code',
-      shareCodeA11y: 'Share the Instagram verification code',
+      shareCode: 'Copy code',
+      shareCodeA11y: 'Copy the Instagram verification code',
+      shareSheet: 'Share',
+      shareSheetA11y: 'Share the Instagram verification code',
+      clipboardUnavailable:
+        'Clipboard is not available in this app build. Use Share.',
       openInbox: 'Open Instagram',
       openInboxA11y: 'Open Instagram to send the code by DM',
       pendingTitle: 'Send this code',
