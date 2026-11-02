@@ -961,7 +961,11 @@ export default function MainHomeScreen({ navigation }: Props) {
         }
       } catch (err) {
         if (epoch === localEpochRef.current) {
-          Alert.alert(t('home.errors.title'), t('home.errors.generic'));
+          // Prefs slider/filter writes must not claim a Visibility activation failure.
+          Alert.alert(
+            t('home.errors.preferencesTitle'),
+            t('home.errors.preferencesSave'),
+          );
         }
         const text = err instanceof Error ? err.message : '';
         if (text.includes(INTEREST_IDS_OVER_MAX_REASON)) {

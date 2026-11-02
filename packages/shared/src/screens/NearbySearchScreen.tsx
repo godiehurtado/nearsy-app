@@ -33,6 +33,7 @@ import {
 import { subtleShadow } from '../theme/shadows';
 import { NearbyInterestIconRow } from '../components/visibility/NearbyInterestIconRow';
 import { AlignmentScoreRing } from '../components/alignment/AlignmentScoreRing';
+import { alignmentTitleLabel } from '../visibility/alignmentPresentation';
 import { ProfileAvatarImage } from '../components/ProfileAvatarImage';
 import {
   isVisibilityDiscoveryClientError,
@@ -487,6 +488,14 @@ export default function NearbySearchScreen() {
           {showAlignmentRing && alignment ? (
             <View style={styles.alignmentColumn} pointerEvents="none">
               <AlignmentScoreRing score={alignment.score} variant="compact" />
+              <Text
+                style={[styles.alignmentBadge, { color: palette.textMuted }]}
+                maxFontSizeMultiplier={1.4}
+                accessibilityElementsHidden
+                importantForAccessibility="no"
+              >
+                {alignmentTitleLabel(t)}
+              </Text>
             </View>
           ) : null}
         </View>
@@ -737,16 +746,16 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   alignmentColumn: {
-    width: 78,
+    width: 88,
     flexShrink: 0,
     alignItems: 'center',
-    gap: 4,
+    gap: 2,
   },
   alignmentBadge: {
-    fontSize: fontSize.xs,
+    fontSize: 11,
     fontWeight: fontWeight.semibold,
     textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: 13,
     flexShrink: 1,
     alignSelf: 'stretch',
   },

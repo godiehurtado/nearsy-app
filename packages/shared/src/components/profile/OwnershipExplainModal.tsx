@@ -1,5 +1,12 @@
 import React from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useTranslation } from '../../i18n';
 import { useAppTheme } from '../../theme/ThemeContext';
 import { fontSize, fontWeight } from '../../theme/typography';
@@ -12,6 +19,7 @@ type Props = {
   body: string;
   confirmLabel: string;
   busy?: boolean;
+  glyph?: React.ReactNode;
   onCancel: () => void;
   onConfirm: () => void;
 };
@@ -22,6 +30,7 @@ export function OwnershipExplainModal({
   body,
   confirmLabel,
   busy = false,
+  glyph,
   onCancel,
   onConfirm,
 }: Props) {
@@ -42,37 +51,67 @@ export function OwnershipExplainModal({
             { backgroundColor: palette.panel, borderColor: palette.border },
           ]}
         >
-          <Text style={[styles.title, { color: palette.textPrimary }]}>
-            {title}
-          </Text>
-          <Text style={[styles.body, { color: palette.textSecondary }]}>
-            {body}
-          </Text>
-          <View style={styles.actions}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={onCancel}
-              disabled={busy}
-              style={[styles.action, { borderColor: palette.border }]}
-            >
-              <Text style={{ color: palette.textPrimary, fontWeight: fontWeight.bold }}>
-                {t('profile.social.manual.cancel')}
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            bounces={false}
+            contentContainerStyle={styles.scroll}
+          >
+            <View style={styles.header}>
+              {glyph}
+              <Text
+                style={[styles.title, { color: palette.textPrimary }]}
+                maxFontSizeMultiplier={1.5}
+              >
+                {title}
               </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={onConfirm}
-              disabled={busy}
-              style={[
-                styles.action,
-                { backgroundColor: palette.primary, borderColor: palette.primary },
-              ]}
+            </View>
+            <Text
+              style={[styles.body, { color: palette.textSecondary }]}
+              maxFontSizeMultiplier={1.5}
             >
-              <Text style={{ color: '#FFFFFF', fontWeight: fontWeight.bold }}>
-                {confirmLabel}
-              </Text>
-            </Pressable>
-          </View>
+              {body}
+            </Text>
+            <View style={styles.actions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={onCancel}
+                disabled={busy}
+                style={[styles.action, { borderColor: palette.border }]}
+              >
+                <Text
+                  style={{
+                    color: palette.textPrimary,
+                    fontWeight: fontWeight.bold,
+                    fontSize: fontSize.md,
+                  }}
+                >
+                  {t('profile.social.manual.cancel')}
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={onConfirm}
+                disabled={busy}
+                style={[
+                  styles.action,
+                  {
+                    backgroundColor: palette.primary,
+                    borderColor: palette.primary,
+                  },
+                ]}
+              >
+                <Text
+                  style={{
+                    color: '#FFFFFF',
+                    fontWeight: fontWeight.bold,
+                    fontSize: fontSize.md,
+                  }}
+                >
+                  {confirmLabel}
+                </Text>
+              </Pressable>
+            </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -87,26 +126,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   card: {
+    maxHeight: '88%',
     borderWidth: 1,
     borderRadius: radius.xl,
+    overflow: 'hidden',
+  },
+  scroll: {
     padding: spacing.lg,
+    gap: spacing.md,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
   },
   title: {
+    flex: 1,
     fontSize: fontSize.lg,
     fontWeight: fontWeight.extrabold,
   },
   body: {
-    fontSize: fontSize.sm,
-    lineHeight: 20,
+    fontSize: fontSize.md,
+    lineHeight: 22,
   },
   actions: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
   action: {
-    flex: 1,
     minHeight: 48,
     borderRadius: radius.lg,
     borderWidth: 1,

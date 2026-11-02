@@ -777,7 +777,7 @@ export const onboardingTranslations = {
         },
         topics: {
           high_school: 'Secundaria',
-          college_or_university: 'Universidad',
+          college_or_university: 'Universidad o colegio',
           alumni_association: 'Asociación de alumni',
           major_or_field_of_study: 'Carrera o campo de estudio',
           fraternity_or_sorority: 'Fraternidad o sororidad',

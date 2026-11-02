@@ -54,6 +54,7 @@ import {
   disableContactsIntegration,
   enableThenSyncContacts,
   loadContactsLocalState,
+  resyncGrantedContacts,
 } from '../contactsHmac/contactsHmac';
 import type { ContactsLocalState } from '../contactsHmac/contactsSyncFlow';
 import {
@@ -247,6 +248,9 @@ export default function MoreScreen() {
   const [contactsSyncEnabled, setContactsSyncEnabled] = useState(false);
   const [notifyNearbyContacts, setNotifyNearbyContacts] = useState(false);
   const [contactsBusy, setContactsBusy] = useState(false);
+  const [contactsStatusMessage, setContactsStatusMessage] = useState<
+    string | null
+  >(null);
   const contactsStateRef = useRef<ContactsLocalState | null>(null);
   const contactsUidRef = useRef<string | null>(
     firebaseAuth.currentUser?.uid ?? null,
@@ -535,6 +539,7 @@ export default function MoreScreen() {
     const previousNotices = notifyNearbyContacts;
     const opGen = ++contactsOpGenRef.current;
     setContactsBusy(true);
+    setContactsStatusMessage(t('settings.contactsSync.syncing'));
     // Optimistic UI only; hard-cap / fence errors revert and never claim success.
     setContactsSyncEnabled(enabled);
     try {
@@ -543,6 +548,7 @@ export default function MoreScreen() {
       if (!state) {
         if (opGen === contactsOpGenRef.current) {
           setContactsSyncEnabled(previous);
+          setContactsStatusMessage(null);
         }
         return;
       }
@@ -559,15 +565,50 @@ export default function MoreScreen() {
       contactsStateRef.current = outcome.state;
       setContactsSyncEnabled(outcome.result.contactsSyncEnabled);
       setNotifyNearbyContacts(outcome.result.notifyNearbyContactsEffective);
+      setContactsStatusMessage(null);
     } catch (err) {
       if (
-        opGen === contactsOpGenRef.current &&
-        firebaseAuth.currentUser?.uid === uid
+        opGen !== contactsOpGenRef.current ||
+        firebaseAuth.currentUser?.uid !== uid
       ) {
-        setContactsSyncEnabled(previous);
-        setNotifyNearbyContacts(previousNotices);
-        Alert.alert(t('common.error'), contactsErrorMessage(err));
+        return;
       }
+      const timedOut =
+        err instanceof ContactsHmacError &&
+        (err.reason === 'contacts-hmac-unavailable' ||
+          /contacts-timeout/i.test(err.message));
+      if (timedOut && enabled) {
+        // Possible server commit after client timeout — reconcile without claiming success.
+        setContactsStatusMessage(t('settings.contactsSync.syncTimedOut'));
+        try {
+          let state = contactsStateRef.current;
+          if (!state) state = await loadContactsLocalState(uid);
+          if (state) {
+            const reconciled = await resyncGrantedContacts(
+              state,
+              contactsEpochFromUserDoc(state.contactsEpoch),
+            );
+            if (
+              opGen === contactsOpGenRef.current &&
+              firebaseAuth.currentUser?.uid === uid
+            ) {
+              contactsStateRef.current = reconciled.state;
+              setContactsSyncEnabled(reconciled.result.contactsSyncEnabled);
+              setNotifyNearbyContacts(
+                reconciled.result.notifyNearbyContactsEffective,
+              );
+              setContactsStatusMessage(null);
+              return;
+            }
+          }
+        } catch {
+          // Fall through to concrete timeout/unavailable copy.
+        }
+      }
+      setContactsSyncEnabled(previous);
+      setNotifyNearbyContacts(previousNotices);
+      setContactsStatusMessage(null);
+      Alert.alert(t('common.error'), contactsErrorMessage(err));
     } finally {
       if (opGen === contactsOpGenRef.current) {
         setContactsBusy(false);
@@ -1130,7 +1171,10 @@ export default function MoreScreen() {
               <SettingsToggleRow
                 icon="people-circle-outline"
                 title={t('settings.contactsSync.title')}
-                description={t('settings.contactsSync.description')}
+                description={
+                  contactsStatusMessage ??
+                  t('settings.contactsSync.description')
+                }
                 value={contactsSyncEnabled}
                 onValueChange={handleToggleContactsSync}
                 disabled={contactsBusy}

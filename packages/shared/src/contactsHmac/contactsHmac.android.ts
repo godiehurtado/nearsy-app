@@ -49,17 +49,36 @@ export {
 } from './contactsHmacCore.ts';
 export type { ContactsLocalState, ContactsFlowOutcome } from './contactsSyncFlow.ts';
 
+/** Bound Identity round-trips so More stays navigable and errors stay concrete. */
+export const CONTACTS_CALLABLE_TIMEOUT_MS = 45_000;
+
 function createFunctionsPort(): ContactsHmacFunctionsPort {
   const functions = getIdentityFunctions();
   return {
     region: getIdentityFunctionsRegion(),
     async call(name, data) {
       const callable = functions.httpsCallable(name);
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        const result = await callable(data ?? {});
+        const result = await Promise.race([
+          callable(data ?? {}),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+              reject(
+                new ContactsHmacError(
+                  'contacts-hmac-unavailable',
+                  'Contacts sync timed out. Check the section status and retry. (contacts-timeout)',
+                ),
+              );
+            }, CONTACTS_CALLABLE_TIMEOUT_MS);
+          }),
+        ]);
         return result.data;
       } catch (err) {
+        if (err instanceof ContactsHmacError) throw err;
         throw mapContactsCallableError(err);
+      } finally {
+        if (timer) clearTimeout(timer);
       }
     },
   };

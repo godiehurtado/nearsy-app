@@ -327,11 +327,11 @@ const en = {
       disconnectConfirmBody:
         'Instagram will be removed from this profile mode. A pending code is cancelled. Your previously saved link stays private so you can connect again later.',
       disconnectConfirmAction: 'Disconnect',
-      pendingTitle: 'Send this code',
+      pendingTitle: 'Verify Instagram',
       pendingBody:
-        'Copy the code and send it from the Instagram account you want to verify. Open @{{inbox}}, tap Message, paste the code, send it, then return to Nearsy. Closing this screen does not verify the account.',
+        'Use the code below from the Instagram account you want to verify. Closing this screen does not finish verification.',
       pendingSteps:
-        '1. Copy the code.\n2. Open Instagram and go to @{{inbox}}.\n3. Tap Message / Send message.\n4. Paste the code and send it.\n5. Return to Nearsy and wait.',
+        '1. Copy the code.\n2. Open @{{inbox}} in Instagram.\n3. Tap Message / DM.\n4. Paste the code and send it.\n5. Return to Nearsy to verify.',
       waiting: 'Waiting for the message…',
       expiresAt: 'Expires at {{time}}',
       shareCode: 'Share code',
@@ -730,11 +730,11 @@ const es = {
         disconnectConfirmBody:
           'Instagram se quitará de este modo de perfil. Un código pendiente se cancela. El enlace que tenías guardado permanece en privado para que puedas conectarlo de nuevo después.',
         disconnectConfirmAction: 'Desconectar',
-        pendingTitle: 'Envía este código',
+        pendingTitle: 'Verificar Instagram',
         pendingBody:
-          'Copia el código y envíalo desde la cuenta de Instagram que quieres verificar. Abre @{{inbox}}, toca Enviar mensaje, pega el código, envíalo y vuelve a Nearsy. Cerrar esta pantalla no verifica la cuenta.',
+          'Usa el código de abajo desde la cuenta de Instagram que quieres verificar. Cerrar esta pantalla no completa la verificación.',
         pendingSteps:
-          '1. Copia el código.\n2. Abre Instagram y ve a @{{inbox}}.\n3. Toca Message / Enviar mensaje.\n4. Pega el código y envíalo.\n5. Vuelve a Nearsy y espera.',
+          '1. Copia el código.\n2. Abre @{{inbox}} en Instagram.\n3. Toca Message / DM.\n4. Pega el código y envíalo.\n5. Vuelve a Nearsy para verificar.',
         waiting: 'Esperando el mensaje…',
         expiresAt: 'Caduca a las {{time}}',
         shareCode: 'Compartir código',

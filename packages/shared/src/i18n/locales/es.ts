@@ -54,6 +54,9 @@ export const es: TranslationResources = {
     errors: {
       title: 'Visibilidad',
       generic: 'No se pudo actualizar Visibilidad. Inténtalo de nuevo.',
+      preferencesTitle: 'Preferencias',
+      preferencesSave:
+        'No se pudieron guardar tus preferencias de descubrimiento. Inténtalo de nuevo.',
       retry: 'La activación falló. Actualiza e inténtalo de nuevo.',
       profileIncomplete:
         'Completa tu perfil antes de activar Visibilidad.',
@@ -191,10 +194,10 @@ export const es: TranslationResources = {
     processing: 'La compatibilidad aún se está calculando.',
     unavailable: 'La compatibilidad no está disponible en este momento.',
     tiers: {
-      weak: 'Algo en común',
-      partial: 'Puntos en común',
-      strong: 'Muy alineados',
-      full: 'Alineación excepcional',
+      weak: '',
+      partial: '',
+      strong: '',
+      full: '',
     },
     a11yScoreOnly: '{{score}} por ciento de compatibilidad',
     a11yWithTier: '{{score}} por ciento de compatibilidad',
@@ -330,10 +333,14 @@ export const es: TranslationResources = {
           'Algunos contactos no se pudieron sincronizar. Revisa números y correos.',
         hashRejected:
           'La sincronización rechazó un envío no válido. Inténtalo de nuevo.',
-        unavailable: 'La sincronización de contactos no está disponible ahora.',
+        unavailable:
+          'La sincronización de contactos agotó el tiempo o no está disponible. Revisa esta sección e inténtalo de nuevo: un intento anterior puede haberse guardado.',
         rateLimited:
           'Demasiadas solicitudes de contactos. Inténtalo de nuevo en unos minutos.',
       },
+      syncing: 'Sincronizando contactos…',
+      syncTimedOut:
+        'La sincronización tardó demasiado. Comprobando si el servidor ya guardó…',
     },
     contactNotices: {
       title: 'Avisos de contactos cercanos',

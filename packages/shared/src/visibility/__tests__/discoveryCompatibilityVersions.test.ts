@@ -78,7 +78,7 @@ describe('supported formula versions', () => {
       }),
     );
     assert.deepEqual(alignment, { available: true, score: 66, tier: 'strong' });
-    assert.equal(enAlignment.tiers.strong, 'Closely aligned');
+    assert.equal(enAlignment.tiers.strong, '');
     const card = read('components/profileExploration/DiscoveryCompatibilityCard.tsx');
     assert.match(card, /<AlignmentScoreRing score=\{alignment\.score\} variant="detail" \/>/);
     assert.doesNotMatch(card, /alignmentTierLabel\(t, alignment\.tier\)/);

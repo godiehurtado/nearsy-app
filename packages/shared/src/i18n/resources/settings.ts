@@ -70,9 +70,13 @@ export default {
         'Synced contacts across your devices would exceed 500 unique entries. Contacts were not updated.',
       identifierInvalid: 'Some saved contacts could not be synced. Check numbers and emails.',
       hashRejected: 'Contacts sync rejected an invalid payload. Please try again.',
-      unavailable: 'Contacts sync is not available right now.',
+      unavailable:
+        'Contacts sync timed out or is unavailable. Check this section and retry — a prior attempt may still have saved.',
       rateLimited: 'Too many Contacts requests. Try again in a few minutes.',
     },
+    syncing: 'Syncing contacts…',
+    syncTimedOut:
+      'Contacts sync took too long. Checking whether the server already saved…',
   },
   contactNotices: {
     title: 'Contact nearby notices',

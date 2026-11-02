@@ -495,7 +495,7 @@ describe('Alignment i18n EN/ES', () => {
       es.alignment.unavailable,
       'La compatibilidad no está disponible en este momento.',
     );
-    assert.equal(es.alignment.tiers.full, 'Alineación excepcional');
+    assert.equal(es.alignment.tiers.full, '');
     const bundle = JSON.stringify({ en: enAlignment, es: es.alignment });
     for (const banned of [
       'Compatibility',
@@ -526,8 +526,10 @@ describe('Alignment UI contract (static)', () => {
     assert.match(nearbySrc, /AlignmentScoreRing/);
     assert.match(nearbySrc, /variant="compact"/);
     assert.match(nearbySrc, /toAlignment\(item\.compatibility\)/);
+    assert.match(nearbySrc, /alignmentTitleLabel\(t\)/);
     assert.doesNotMatch(nearbySrc, /shouldShowNearbyTierBadge/);
     assert.doesNotMatch(nearbySrc, /alignmentTierLabel/);
+    assert.doesNotMatch(nearbySrc, /Closely aligned|Rare alignment/);
     assert.doesNotMatch(nearbySrc, /getDiscoveryProfile/);
   });
 
