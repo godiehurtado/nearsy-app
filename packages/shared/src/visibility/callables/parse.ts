@@ -309,6 +309,10 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
   const compatibility = Object.prototype.hasOwnProperty.call(value, 'compatibility')
     ? parseDiscoveryCompatibility(value.compatibility)
     : undefined;
+  const appearanceKey =
+    typeof value.appearanceKey === 'string' && value.appearanceKey.trim()
+      ? value.appearanceKey.trim()
+      : undefined;
   return {
     uid: requireNonEmptyString(value.uid, 'result.uid'),
     distanceMeters: requireNonNegativeNumber(
@@ -317,6 +321,7 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
     ),
     profile: parseDiscoveryProfileSummary(value.profile),
     ...(compatibility !== undefined ? { compatibility } : {}),
+    ...(appearanceKey ? { appearanceKey } : {}),
   };
 }
 
@@ -449,6 +454,8 @@ export function parseDiscoverNearbyResponse(
     results,
     nextCursor: null,
     serverTime: requireFiniteNumber(data.serverTime, 'serverTime'),
+    ...(typeof data.complete === 'boolean' ? { complete: data.complete } : {}),
+    ...(typeof data.truncated === 'boolean' ? { truncated: data.truncated } : {}),
   };
 }
 

@@ -91,7 +91,7 @@ export async function registerPushToken(): Promise<RegisterResult> {
   try {
     const granted = await permissionGranted();
     if (!granted) return { ok: false, reason: 'permission-not-granted' };
-    return await registerDevicePushToken({
+    const result = await registerDevicePushToken({
       store: session,
       getUid: currentUid,
       permissionGranted: granted,
@@ -99,6 +99,13 @@ export async function registerPushToken(): Promise<RegisterResult> {
       persistToken,
       deleteToken,
     });
+    if (result.ok) {
+      const { scheduleReevaluateProximityNotices } = await import(
+        '../alerts/reevaluateProximityNotices'
+      );
+      scheduleReevaluateProximityNotices();
+    }
+    return result;
   } catch (err) {
     if (__DEV__) {
       console.warn('[PushTokens] registerPushToken error:', err);

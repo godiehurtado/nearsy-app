@@ -246,6 +246,12 @@ export const es: TranslationResources = {
     kinds: {
       interestNearby: 'Interés compartido cercano',
     },
+    unseen: 'Alerta no leída',
+    push: {
+      interest: '{{name}} está cerca y comparte intereses contigo.',
+      contact: '{{name}}, uno de tus contactos, está cerca.',
+      both: '{{name}}, uno de tus contactos, está cerca y comparte intereses contigo.',
+    },
   },
   settings: {
     title: 'Ajustes',
@@ -292,6 +298,47 @@ export const es: TranslationResources = {
       maxBounds: 'La edad máxima debe estar entre {{min}} y {{max}}.',
       order: 'La edad mínima no puede ser mayor que la máxima.',
       saved: 'Rango de edad de visibilidad actualizado',
+    },
+    nearbyNotices: {
+      title: 'Avisos de intereses cercanos',
+      description:
+        'Recibe un aviso cuando alguien cerca comparte un interés oficial contigo.',
+    },
+    contactsSync: {
+      title: 'Sincronizar contactos',
+      description:
+        'Relaciona en privado a personas que conoces cuando están cerca. Nearsy guarda identificadores cifrados, no nombres ni tu agenda.',
+      errors: {
+        generic: 'No se pudo actualizar la sincronización de contactos. Inténtalo de nuevo.',
+        auth: 'Tu sesión terminó. Vuelve a iniciar sesión e inténtalo otra vez.',
+        notEnabled: 'La sincronización de contactos no está activada.',
+        epochMismatch:
+          'La sincronización de contactos está desactualizada. Apágala y vuélvela a activar.',
+        snapshotStale:
+          'La copia de contactos de este dispositivo está desactualizada. Inténtalo de nuevo.',
+        sourceRemoved:
+          'La sincronización anterior de este dispositivo se retiró. Apaga y vuelve a activar la sincronización.',
+        snapshotConflict:
+          'Esta copia de contactos no coincide con lo que ya estaba guardado.',
+        sourceCap:
+          'Esta cuenta ya tiene el máximo de 8 dispositivos sincronizados. Quita uno e inténtalo de nuevo.',
+        identifierCap:
+          'Esta sincronización supera 500 contactos. Los contactos no se actualizaron.',
+        unionCap:
+          'Los contactos sincronizados entre tus dispositivos superarían 500 entradas únicas. Los contactos no se actualizaron.',
+        identifierInvalid:
+          'Algunos contactos no se pudieron sincronizar. Revisa números y correos.',
+        hashRejected:
+          'La sincronización rechazó un envío no válido. Inténtalo de nuevo.',
+        unavailable: 'La sincronización de contactos no está disponible ahora.',
+        rateLimited:
+          'Demasiadas solicitudes de contactos. Inténtalo de nuevo en unos minutos.',
+      },
+    },
+    contactNotices: {
+      title: 'Avisos de contactos cercanos',
+      description:
+        'Recibe un aviso cuando uno de tus contactos sincronizados está cerca. Apagar esto no borra tus contactos sincronizados.',
     },
     backgroundVisibility: {
       title: 'Permanecer visible en segundo plano',

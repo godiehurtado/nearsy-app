@@ -147,6 +147,7 @@ import {
   type OnboardingSelectedInterest,
 } from '../interests/onboardingInterestCatalog';
 import { preserveOnboardingInterestsForEditor } from '../interests/onboardingInterestLegacyCatalog';
+import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
 import { isHierarchicalInterestCategory } from '../interests/interestHierarchy';
 import {
   enterCrjInterestSubcategory,
@@ -942,6 +943,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     if (!uid || !mode) return;
     const patch = buildCrjInterestPersistencePatch(mode, selectedInterests);
     await updateUserProfilePartial(uid, patch);
+    scheduleReevaluateProximityNotices();
     setShellData((prev) => ({
       ...(prev ?? {}),
       mode,

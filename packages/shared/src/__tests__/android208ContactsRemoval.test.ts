@@ -1,7 +1,7 @@
 /**
- * ANDROID-208 — Nearsy 2.0.8 ships without contact recognition on Android.
- * Guards: no expo-contacts, no contacts permissions, no runtime contact access,
- * no contactHashes writes, no UI promising contacts; Alerts keep working.
+ * ANDROID-208 leftovers + 2.0.9 Identity Contacts.
+ * Still forbids unsalted contactHashes, expectedEpoch, WRITE_CONTACTS, and
+ * Functions-draft names. Identity #23 owns enable/sync/disable/remove/refresh.
  *
  * Run:
  *   node --experimental-strip-types --test packages/shared/src/__tests__/android208ContactsRemoval.test.ts
@@ -79,12 +79,9 @@ function lockImporter(name: string): Set<string> {
 }
 
 describe('Dependency and lockfile', () => {
-  it('Android no longer depends on expo-contacts', () => {
-    assert.equal(androidPkg.dependencies?.['expo-contacts'], undefined);
-    assert.equal(androidPkg.devDependencies?.['expo-contacts'], undefined);
-    const android = lockImporter('apps/nearsy-android');
-    assert.equal(android.has('expo-contacts'), false);
-    assert.ok(android.has('expo-crypto'));
+  it('Android 2.0.9 depends on expo-contacts for Identity sync', () => {
+    assert.equal(androidPkg.dependencies?.['expo-contacts'], '~15.0.11');
+    assert.ok(androidPkg.dependencies?.['expo-crypto']);
   });
 
   it('iOS history keeps its own entry untouched', () => {
@@ -97,64 +94,43 @@ describe('Dependency and lockfile', () => {
 });
 
 describe('Permissions', () => {
-  it('READ_CONTACTS and WRITE_CONTACTS are blocked and never requested', () => {
+  it('READ_CONTACTS is allowed; WRITE_CONTACTS stays blocked', () => {
     const android = appJson.expo.android;
-    assert.deepEqual(
-      [...android.blockedPermissions].sort(),
-      ['android.permission.READ_CONTACTS', 'android.permission.WRITE_CONTACTS'],
-    );
-    for (const permission of android.permissions) {
-      assert.doesNotMatch(permission, /CONTACTS/);
-    }
+    assert.deepEqual([...android.blockedPermissions].sort(), [
+      'android.permission.WRITE_CONTACTS',
+    ]);
+    assert.ok(android.permissions.includes('android.permission.READ_CONTACTS'));
   });
 
-  it('no contacts config plugin', () => {
+  it('registers the expo-contacts plugin on Android', () => {
     const plugins = (appJson.expo.plugins ?? []).map((p: unknown) =>
       Array.isArray(p) ? p[0] : p,
     );
-    assert.equal(plugins.some((p: unknown) => /contacts/i.test(String(p))), false);
+    assert.equal(plugins.includes('expo-contacts'), true);
   });
 });
 
-describe('No contact access at runtime', () => {
-  it('no Android-reachable file imports expo-contacts', () => {
-    for (const { rel, src } of sources) {
-      assert.doesNotMatch(src, /['"]expo-contacts['"]/, rel);
-    }
-  });
-
-  it('no runtime contacts permission request', () => {
-    for (const { rel, src } of sources) {
-      assert.doesNotMatch(src, /PERMISSIONS\.(READ|WRITE)_CONTACTS|Contacts\.(requestPermissionsAsync|getContactsAsync)/, rel);
-    }
-  });
-
+describe('No leftover unsalted or Functions-draft contacts', () => {
   it('no client reads or writes of contactHashes', () => {
     for (const { rel, src } of sources) {
       assert.doesNotMatch(src, /contactHashes/, rel);
     }
   });
 
-  it('contacts sync module and residual Home flags are gone', () => {
+  it('does not use Functions-draft names or Home residual flags', () => {
     assert.equal(existsSync(join(SRC, 'services/contactsSync.ts')), false);
     assert.equal(existsSync(join(SRC, 'services/contactsSync.android.ts')), false);
     for (const { rel, src } of sources) {
-      assert.doesNotMatch(src, /contactsSync|ContactsSync|NEARSY_CONTACTS_ASKED|dbGetContactHashes/, rel);
+      if (rel.startsWith('alerts/') || rel.startsWith('contactsHmac/')) continue;
+      assert.doesNotMatch(src, /expectedEpoch|enableContactSync|deleteContactSource|NEARSY_CONTACTS_ASKED|dbGetContactHashes/, rel);
     }
   });
 });
 
-describe('No UI promising contacts in 2.0.8', () => {
-  it('EN/ES copy has no contacts feature text', () => {
-    for (const rel of [
-      'i18n/resources/settings.ts',
-      'i18n/resources/notifications.ts',
-      'i18n/resources/home.ts',
-      'i18n/locales/es.ts',
-    ]) {
-      const src = read(rel);
-      assert.doesNotMatch(src, /\bcontacts\b|\bcontactos\b|contactNearby/i, rel);
-    }
+describe('Contacts copy stays off Home and uses Identity Settings', () => {
+  it('Home copy has no contacts feature text', () => {
+    assert.doesNotMatch(read('i18n/resources/home.ts'), /\bcontacts\b|\bcontactos\b|contactNearby/i);
+    assert.match(read('i18n/resources/settings.ts'), /contactsSync/);
   });
 
   it('alerts never carry a contact kind', () => {
@@ -179,7 +155,7 @@ describe('Alerts and badge keep working', () => {
   it('tab badge still counts alerts from shared provider', () => {
     const tabs = read('navigation/RootTabs.tsx');
     assert.match(tabs, /NearbyAlertsProvider/);
-    assert.match(tabs, /const \{ alerts \} = useNearbyAlerts\(\);/);
+    assert.match(tabs, /const \{ unseenCount \} = useNearbyAlerts\(\);/);
     assert.match(tabs, /alertsCount > 9 \? '9\+' : alertsCount/);
   });
 

@@ -17,6 +17,7 @@ import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
+import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
 import { Ionicons } from '@expo/vector-icons';
 import { useOpenSocialLink } from '../components/profileExploration/useOpenSocialLink';
 import {
@@ -404,6 +405,7 @@ export default function ProfileDetailScreen() {
                 status: 'new',
               });
 
+              scheduleReevaluateProximityNotices();
               Alert.alert(
                 'User blocked',
                 'This user has been blocked and removed from your experience.',

@@ -28,6 +28,7 @@ import {
   parsePostCrjInterestEditorParams,
   readOnboardingInterestsFromDoc,
 } from '../interests/postCrjInterestEditor';
+import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
 import {
   isHierarchicalInterestCategory,
   resolveActiveGroupId,
@@ -120,6 +121,7 @@ export default function InterestsScreen() {
         .collection('users')
         .doc(uid)
         .set({ ...patch, updatedAt: Date.now() }, { merge: true });
+      scheduleReevaluateProximityNotices();
       setSnapshot(draft);
       navigation.goBack();
     } catch (e: any) {

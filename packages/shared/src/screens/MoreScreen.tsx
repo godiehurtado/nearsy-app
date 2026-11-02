@@ -40,6 +40,23 @@ import {
   updateUserProfilePartial,
 } from '../services/firestoreService';
 import {
+  buildNotifyNearbyContactsPatch,
+  buildNotifyNearbyInterestsPatch,
+  resolveContactsSyncEnabled,
+  resolveNotifyNearbyContacts,
+} from '../alerts/notifyPrefs';
+import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
+import {
+  ContactsHmacError,
+  contactsEpochFromUserDoc,
+  contactsHmacAvailable,
+  contactsHmacErrorToI18nKey,
+  disableContactsIntegration,
+  enableThenSyncContacts,
+  loadContactsLocalState,
+} from '../contactsHmac/contactsHmac';
+import type { ContactsLocalState } from '../contactsHmac/contactsSyncFlow';
+import {
   changeAppLanguage,
   isSupportedLanguage,
   useTranslation,
@@ -118,6 +135,10 @@ type ProfileDoc = {
   visibleToMaxAge?: number | null;
   bgVisible?: boolean;
   visibility?: boolean;
+  notifyNearbyInterests?: boolean;
+  contactsSyncEnabled?: boolean;
+  contactsEpoch?: number;
+  notifyNearbyContacts?: boolean;
 };
 
 type EditorKind = 'birthDate' | 'visibilityAge' | null;
@@ -222,6 +243,15 @@ export default function MoreScreen() {
   const [visibleToMinAge, setVisibleToMinAge] = useState<number | null>(null);
   const [visibleToMaxAge, setVisibleToMaxAge] = useState<number | null>(null);
   const [bgVisible, setBgVisible] = useState(false);
+  const [notifyNearbyInterests, setNotifyNearbyInterests] = useState(true);
+  const [contactsSyncEnabled, setContactsSyncEnabled] = useState(false);
+  const [notifyNearbyContacts, setNotifyNearbyContacts] = useState(false);
+  const [contactsBusy, setContactsBusy] = useState(false);
+  const contactsStateRef = useRef<ContactsLocalState | null>(null);
+  const contactsUidRef = useRef<string | null>(
+    firebaseAuth.currentUser?.uid ?? null,
+  );
+  const contactsOpGenRef = useRef(0);
   const [visibilityOn, setVisibilityOn] = useState(false);
   const [bgChanging, setBgChanging] = useState(false);
   const [bgDisclosureVisible, setBgDisclosureVisible] = useState(false);
@@ -304,6 +334,26 @@ export default function MoreScreen() {
     setVisibleToMaxAge(
       typeof data.visibleToMaxAge === 'number' ? data.visibleToMaxAge : null,
     );
+    setNotifyNearbyInterests(data.notifyNearbyInterests !== false);
+    const syncOn = resolveContactsSyncEnabled(data.contactsSyncEnabled);
+    setContactsSyncEnabled(syncOn);
+    setNotifyNearbyContacts(
+      resolveNotifyNearbyContacts({
+        contactsSyncEnabled: data.contactsSyncEnabled,
+        notifyNearbyContacts: data.notifyNearbyContacts,
+      }),
+    );
+    if (Platform.OS === 'android' && contactsHmacAvailable()) {
+      try {
+        const local = await loadContactsLocalState(uid);
+        if (local) {
+          local.contactsEpoch = contactsEpochFromUserDoc(data.contactsEpoch);
+          contactsStateRef.current = local;
+        }
+      } catch {
+        contactsStateRef.current = null;
+      }
+    }
     let bgPref = !!data.bgVisible;
     setVisibilityOn(!!data.visibility);
     try {
@@ -340,6 +390,20 @@ export default function MoreScreen() {
     setBgVisible(bgPref);
     setLoading(false);
   }, [t]);
+
+  useEffect(() => {
+    const unsub = firebaseAuth.onAuthStateChanged((user) => {
+      const next = user?.uid ?? null;
+      if (next === contactsUidRef.current) return;
+      contactsUidRef.current = next;
+      contactsOpGenRef.current += 1;
+      contactsStateRef.current = null;
+      setContactsBusy(false);
+      setContactsSyncEnabled(false);
+      setNotifyNearbyContacts(false);
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     reloadProfile().catch((e: any) => {
@@ -452,6 +516,97 @@ export default function MoreScreen() {
       updatedAt: Date.now(),
     });
     setBgVisible(enabled);
+  };
+
+  const contactsErrorMessage = (err: unknown) => {
+    if (err instanceof ContactsHmacError) {
+      const key = contactsHmacErrorToI18nKey(err.reason);
+      return t(
+        `settings.contactsSync.errors.${key}` as 'settings.contactsSync.errors.generic',
+      );
+    }
+    return (err as { message?: string })?.message || t('settings.saveError');
+  };
+
+  const handleToggleContactsSync = async (enabled: boolean) => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid || Platform.OS !== 'android' || contactsBusy) return;
+    const previous = contactsSyncEnabled;
+    const previousNotices = notifyNearbyContacts;
+    const opGen = ++contactsOpGenRef.current;
+    setContactsBusy(true);
+    // Optimistic UI only; hard-cap / fence errors revert and never claim success.
+    setContactsSyncEnabled(enabled);
+    try {
+      let state = contactsStateRef.current;
+      if (!state) state = await loadContactsLocalState(uid);
+      if (!state) {
+        if (opGen === contactsOpGenRef.current) {
+          setContactsSyncEnabled(previous);
+        }
+        return;
+      }
+      const liveEpoch = contactsEpochFromUserDoc(state.contactsEpoch);
+      const outcome = enabled
+        ? await enableThenSyncContacts(state, liveEpoch)
+        : await disableContactsIntegration(state);
+      if (
+        opGen !== contactsOpGenRef.current ||
+        firebaseAuth.currentUser?.uid !== uid
+      ) {
+        return;
+      }
+      contactsStateRef.current = outcome.state;
+      setContactsSyncEnabled(outcome.result.contactsSyncEnabled);
+      setNotifyNearbyContacts(outcome.result.notifyNearbyContactsEffective);
+    } catch (err) {
+      if (
+        opGen === contactsOpGenRef.current &&
+        firebaseAuth.currentUser?.uid === uid
+      ) {
+        setContactsSyncEnabled(previous);
+        setNotifyNearbyContacts(previousNotices);
+        Alert.alert(t('common.error'), contactsErrorMessage(err));
+      }
+    } finally {
+      if (opGen === contactsOpGenRef.current) {
+        setContactsBusy(false);
+      }
+    }
+  };
+
+  const handleToggleNotifyNearbyContacts = async (enabled: boolean) => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid || !contactsSyncEnabled) return;
+    const previous = notifyNearbyContacts;
+    setNotifyNearbyContacts(enabled);
+    try {
+      await updateUserProfilePartial(uid, {
+        ...buildNotifyNearbyContactsPatch(enabled),
+        updatedAt: Date.now(),
+      });
+      scheduleReevaluateProximityNotices();
+    } catch (e: any) {
+      setNotifyNearbyContacts(previous);
+      Alert.alert(t('common.error'), e?.message || t('settings.saveError'));
+    }
+  };
+
+  const handleToggleNotifyNearbyInterests = async (enabled: boolean) => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) return;
+    const previous = notifyNearbyInterests;
+    setNotifyNearbyInterests(enabled);
+    try {
+      await updateUserProfilePartial(uid, {
+        ...buildNotifyNearbyInterestsPatch(enabled),
+        updatedAt: Date.now(),
+      });
+      scheduleReevaluateProximityNotices();
+    } catch (e: any) {
+      setNotifyNearbyInterests(previous);
+      Alert.alert(t('common.error'), e?.message || t('settings.saveError'));
+    }
   };
 
   const runBackgroundEnableAfterDisclosure = async () => {
@@ -963,6 +1118,33 @@ export default function MoreScreen() {
         </SettingsSection>
 
         <SettingsSection title={t('settings.sections.privacy')}>
+          <SettingsToggleRow
+            icon="notifications-outline"
+            title={t('settings.nearbyNotices.title')}
+            description={t('settings.nearbyNotices.description')}
+            value={notifyNearbyInterests}
+            onValueChange={handleToggleNotifyNearbyInterests}
+          />
+          {Platform.OS === 'android' ? (
+            <>
+              <SettingsToggleRow
+                icon="people-circle-outline"
+                title={t('settings.contactsSync.title')}
+                description={t('settings.contactsSync.description')}
+                value={contactsSyncEnabled}
+                onValueChange={handleToggleContactsSync}
+                disabled={contactsBusy}
+              />
+              <SettingsToggleRow
+                icon="notifications-circle-outline"
+                title={t('settings.contactNotices.title')}
+                description={t('settings.contactNotices.description')}
+                value={notifyNearbyContacts}
+                onValueChange={handleToggleNotifyNearbyContacts}
+                disabled={!contactsSyncEnabled || contactsBusy}
+              />
+            </>
+          ) : null}
           <SettingsRow
             icon="people-outline"
             title={t('settings.visibilityAge.title')}

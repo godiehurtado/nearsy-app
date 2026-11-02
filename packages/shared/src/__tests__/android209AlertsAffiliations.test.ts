@@ -78,7 +78,9 @@ describe('209 Alerts discoverNearby + shared provider', () => {
     const screen = read('screens/AlertsScreen.tsx');
     const app = read('App.tsx');
     assert.match(screen, /DiscoveryProfile/);
-    assert.match(screen, /openDiscoveryProfile\(item\.uid\)/);
+    // Pass the AlertItem so markAlertOpened can persist appearanceKey.
+    assert.match(screen, /openDiscoveryProfile\(item\)/);
+    assert.match(screen, /void markAlertOpened\(item\)/);
     assert.match(app, /screen: 'DiscoveryProfile'/);
     assert.doesNotMatch(app, /screen: 'ProfileDetail'/);
   });
