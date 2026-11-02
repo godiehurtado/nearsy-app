@@ -53,14 +53,11 @@ export function useLiveLocation({
         // ✅ evita duplicados
         stopWatcher();
 
-        // ✅ permisos foreground
-        let perm = await Location.getForegroundPermissionsAsync();
+        // Never prompt from this effect — disclosure/consent owns runtime requests.
+        const perm = await Location.getForegroundPermissionsAsync();
         if (perm.status !== 'granted') {
-          const req = await Location.requestForegroundPermissionsAsync();
-          if (req.status !== 'granted') {
-            if (!cancelled) setHasPermission(false);
-            return;
-          }
+          if (!cancelled) setHasPermission(false);
+          return;
         }
         if (!cancelled) setHasPermission(true);
 

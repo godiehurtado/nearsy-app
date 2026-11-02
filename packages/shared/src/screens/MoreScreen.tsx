@@ -553,6 +553,12 @@ export default function MoreScreen() {
         return;
       }
       contactsStateRef.current = outcome.state;
+      // Deny/cancel OS permission must leave the toggle off.
+      if (outcome.permission !== 'granted') {
+        setContactsSyncEnabled(false);
+        setNotifyNearbyContacts(previousNotices);
+        return;
+      }
       setContactsSyncEnabled(outcome.result.contactsSyncEnabled);
       setNotifyNearbyContacts(outcome.result.notifyNearbyContactsEffective);
     } catch (err) {

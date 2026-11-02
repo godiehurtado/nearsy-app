@@ -101,6 +101,9 @@ describe('Background disclosure copy + Contacts', () => {
 
   it('Contacts consent precedes sync and describes TLS + HMAC', () => {
     const more = readSrc('screens/MoreScreen.tsx');
+    const flow = readSrc('contactsHmac/contactsSyncFlow.ts');
+    const live = readSrc('hooks/useLiveLocation.ts');
+    const crjAct = readSrc('visibility/initialCrjVisibilityActivation.ts');
     const en = readSrc('i18n/resources/settings.ts');
     const es = readSrc('i18n/locales/es.ts');
     const appJson = readFileSync(
@@ -109,6 +112,14 @@ describe('Background disclosure copy + Contacts', () => {
     );
     assert.match(more, /contactsSync\.consentTitle/);
     assert.match(more, /consentContinue[\s\S]*runContactsSyncEnable/);
+    assert.match(more, /outcome\.permission !== 'granted'/);
+    // OS READ_CONTACTS before Identity enable; LiveLocation never prompts.
+    const permIdx = flow.indexOf('input.book.requestPermission()');
+    const enableIdx = flow.indexOf('enableContactsSync(input.functions)');
+    assert.ok(permIdx >= 0 && enableIdx > permIdx);
+    assert.doesNotMatch(live, /requestForegroundPermissionsAsync/);
+    assert.match(crjAct, /getForegroundPermissionsAsync/);
+    assert.match(crjAct, /Do not prompt here/);
     assert.match(en, /sends them over TLS to Nearsy Identity/);
     assert.match(en, /HMAC-hash/);
     assert.match(en, /consentBody:[\s\S]*Nearsy Identity/);

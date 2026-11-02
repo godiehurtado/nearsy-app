@@ -147,25 +147,34 @@ export async function runEnableThenSync(input: {
   state: ContactsLocalState;
   liveEpochHint?: number;
 }): Promise<ContactsFlowOutcome> {
+  // OS READ_CONTACTS must follow in-app consent and precede Identity enable/sync.
+  const permission = await input.book.requestPermission();
+  if (permission !== 'granted') {
+    return {
+      result: {
+        result: 'absent',
+        contactsSyncEnabled: false,
+        contactsEpoch: input.state.contactsEpoch,
+        notifyNearbyContactsEffective: false,
+        sourceId: input.state.sourceId,
+        syncCommitted: false,
+        reevaluateRequired: false,
+      },
+      state: {
+        ...input.state,
+        lastAckedVersion: null,
+        lastAckedFingerprint: null,
+      },
+      scheduleReevaluate: false,
+      permission,
+    };
+  }
+
   const enabled = await enableContactsSync(input.functions);
   let state: ContactsLocalState = {
     ...input.state,
     contactsEpoch: enabled.contactsEpoch,
   };
-  const permission = await input.book.requestPermission();
-  if (permission !== 'granted') {
-    const removed = await removeContactSource(input.functions, {
-      sourceId: state.sourceId,
-      contactsEpoch: state.contactsEpoch,
-    });
-    return {
-      result: removed,
-      state: applyRemoveFence(state, removed),
-      scheduleReevaluate:
-        shouldScheduleReevaluate(enabled) || shouldScheduleReevaluate(removed),
-      permission,
-    };
-  }
 
   const records = await input.book.readRecords();
   if ('capExceeded' in records) {
