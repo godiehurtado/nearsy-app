@@ -334,13 +334,40 @@ export const es: TranslationResources = {
         hashRejected:
           'La sincronización rechazó un envío no válido. Inténtalo de nuevo.',
         unavailable:
-          'La sincronización de contactos agotó el tiempo o no está disponible. Revisa esta sección e inténtalo de nuevo: un intento anterior puede haberse guardado.',
+          'La sincronización de contactos no está disponible por ahora. Inténtalo más tarde.',
+        authLookup:
+          'Nearsy no pudo verificar tu cuenta para sincronizar contactos en este momento. No es un problema del permiso de Contactos. Inténtalo más tarde.',
+        appCheck:
+          'Nearsy no pudo verificar esta app en este momento. No es un problema del permiso de Contactos. Inténtalo más tarde.',
+        transportUncertain:
+          'No pudimos confirmar el resultado por un tiempo de espera agotado o un problema de conexión. Es posible que se haya guardado. Puedes reintentar sin riesgo.',
+        serverError:
+          'No pudimos confirmar el resultado por un error del servidor o de conexión. No es un problema del permiso de Contactos. Puedes reintentar sin riesgo.',
         rateLimited:
           'Demasiadas solicitudes de contactos. Inténtalo de nuevo en unos minutos.',
       },
-      syncing: 'Sincronizando contactos…',
-      syncTimedOut:
-        'La sincronización tardó demasiado. Comprobando si el servidor ya guardó…',
+      retry: 'Reintentar',
+      status: {
+        enabling: 'Activando la sincronización de contactos…',
+        permission: 'Esperando tu permiso de Contactos…',
+        reading: 'Leyendo los contactos de este dispositivo…',
+        syncing: 'Sincronizando contactos…',
+        disabling: 'Desactivando la sincronización de contactos…',
+        awaitingResult:
+          'Seguimos esperando al servidor. Puedes salir de esta pantalla; actualizaremos este estado.',
+        enableUncertain:
+          'No pudimos confirmar si la sincronización de contactos se activó. Puedes reintentar sin riesgo.',
+        disableUncertain:
+          'No pudimos confirmar si la sincronización de contactos se desactivó. Puedes reintentar sin riesgo.',
+        synced: 'Activada. Tus contactos están sincronizados.',
+        syncUncertain:
+          'Activada. No pudimos confirmar la última sincronización. Puedes reintentar sin riesgo.',
+        enabledPendingSync: 'Activada, pendiente de sincronizar tus contactos.',
+        enabledPermissionNeeded:
+          'Activada, pendiente de sincronizar. Reintenta para permitir el acceso a tus contactos.',
+        enabledPermissionDenied:
+          'Activada, sin sincronizar: el permiso de Contactos está denegado. Permítelo en los ajustes del sistema y reintenta.',
+      },
     },
     contactNotices: {
       title: 'Avisos de contactos cercanos',

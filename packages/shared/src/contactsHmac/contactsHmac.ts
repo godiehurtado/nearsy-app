@@ -3,63 +3,83 @@
  */
 import { ContactsHmacError } from './contactsHmacCore.ts';
 import type { ContactsWireResult } from './contactsHmacContract.ts';
-import type { ContactsFlowOutcome, ContactsLocalState } from './contactsSyncFlow.ts';
+import type { ContactsOpResult, ContactsUserDocFacts } from './contactsSyncSession.ts';
+import {
+  CONTACTS_STATUS_SIGNED_OUT,
+  type ContactsSyncStatus,
+} from './contactsSyncStatus.ts';
 
 export {
+  ContactsFlowStateError,
   ContactsHmacError,
+  ContactsSyncAfterEnableError,
   collectContactIdentifiers,
   contactsEpochFromUserDoc,
   contactsHmacErrorToI18nKey,
   identifiersFingerprint,
   isContactsHardCapOrFenceError,
+  isContactsOutcomeUncertain,
   removedSnapshotFloorAfterRemove,
   shouldScheduleReevaluate,
   snapshotVersionForUpload,
 } from './contactsHmacCore.ts';
-export type { ContactsLocalState, ContactsFlowOutcome } from './contactsSyncFlow.ts';
+export {
+  contactsCanRetry,
+  contactsOperationInFlight,
+  contactsStatusCopyKey,
+  contactsToggleValue,
+} from './contactsSyncStatus.ts';
+export type { ContactsSyncStatus } from './contactsSyncStatus.ts';
+export type {
+  ContactsLocalState,
+  ContactsFlowOutcome,
+  ContactsEnableStage,
+} from './contactsSyncFlow.ts';
+export type {
+  ContactsOpResult,
+  ContactsUserDocFacts,
+} from './contactsSyncSession.ts';
 
-function unavailable(): never {
-  throw new ContactsHmacError(
-    'contacts-hmac-unavailable',
-    'Contacts hashing is not configured. (contacts-hmac-unavailable)',
-  );
+async function unavailable(): Promise<ContactsOpResult> {
+  return {
+    status: 'failed',
+    error: new ContactsHmacError(
+      'contacts-hmac-unavailable',
+      'Contacts hashing is not configured. (contacts-hmac-unavailable)',
+    ),
+  };
 }
 
-export async function enableThenSyncContacts(
-  _state: ContactsLocalState,
-  _liveEpochHint?: number,
-): Promise<ContactsFlowOutcome> {
-  return unavailable();
+export function getContactsSyncStatus(): ContactsSyncStatus {
+  return CONTACTS_STATUS_SIGNED_OUT;
 }
 
-export async function resyncGrantedContacts(
-  _state: ContactsLocalState,
-): Promise<ContactsFlowOutcome> {
-  return unavailable();
+export function subscribeContactsSyncStatus(
+  _listener: (status: ContactsSyncStatus) => void,
+): () => void {
+  return () => {};
 }
 
-export async function disableContactsIntegration(
-  _state: ContactsLocalState,
-): Promise<ContactsFlowOutcome> {
-  return unavailable();
-}
-
-export async function refreshContactsActorKeys(
-  _state: ContactsLocalState,
-): Promise<ContactsFlowOutcome> {
-  return unavailable();
-}
-
-export async function loadContactsLocalState(
+export async function bindContactsUserDoc(
   _uid: string,
-): Promise<ContactsLocalState | null> {
-  return null;
-}
-
-export async function persistContactsLocalState(
-  _uid: string,
-  _state: ContactsLocalState,
+  _doc: ContactsUserDocFacts,
 ): Promise<void> {}
+
+export function enableThenSyncContacts(): Promise<ContactsOpResult> {
+  return unavailable();
+}
+
+export function retryContactsSync(): Promise<ContactsOpResult> {
+  return unavailable();
+}
+
+export function disableContactsIntegration(): Promise<ContactsOpResult> {
+  return unavailable();
+}
+
+export function refreshContactsActorKeys(): Promise<ContactsOpResult> {
+  return unavailable();
+}
 
 export function contactsHmacAvailable(): boolean {
   return false;

@@ -70,13 +70,39 @@ export default {
         'Synced contacts across your devices would exceed 500 unique entries. Contacts were not updated.',
       identifierInvalid: 'Some saved contacts could not be synced. Check numbers and emails.',
       hashRejected: 'Contacts sync rejected an invalid payload. Please try again.',
-      unavailable:
-        'Contacts sync timed out or is unavailable. Check this section and retry — a prior attempt may still have saved.',
+      unavailable: 'Contacts sync is temporarily unavailable. Try again later.',
+      authLookup:
+        'Nearsy could not verify your account for Contacts sync right now. This is not a problem with your Contacts permission. Try again later.',
+      appCheck:
+        'Nearsy could not verify this app right now. This is not a problem with your Contacts permission. Try again later.',
+      transportUncertain:
+        'We could not confirm the result because of a timeout or connection problem. It may still have been saved. You can retry safely.',
+      serverError:
+        'We could not confirm the result because of a server or connection error. This is not a problem with your Contacts permission. You can retry safely.',
       rateLimited: 'Too many Contacts requests. Try again in a few minutes.',
     },
-    syncing: 'Syncing contacts…',
-    syncTimedOut:
-      'Contacts sync took too long. Checking whether the server already saved…',
+    retry: 'Retry',
+    status: {
+      enabling: 'Turning on Contacts sync…',
+      permission: 'Waiting for your Contacts permission…',
+      reading: 'Reading contacts on this device…',
+      syncing: 'Syncing contacts…',
+      disabling: 'Turning off Contacts sync…',
+      awaitingResult:
+        'Still waiting for the server. You can leave this screen; we will update this status.',
+      enableUncertain:
+        'We could not confirm whether Contacts sync turned on. You can retry safely.',
+      disableUncertain:
+        'We could not confirm whether Contacts sync turned off. You can retry safely.',
+      synced: 'On. Your contacts are synced.',
+      syncUncertain:
+        'On. We could not confirm the last sync. You can retry safely.',
+      enabledPendingSync: 'On, waiting to sync your contacts.',
+      enabledPermissionNeeded:
+        'On, waiting to sync. Retry to allow access to your contacts.',
+      enabledPermissionDenied:
+        'On, but not synced: Contacts permission is denied. Allow it in system settings, then retry.',
+    },
   },
   contactNotices: {
     title: 'Contact nearby notices',

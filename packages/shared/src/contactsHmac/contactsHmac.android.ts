@@ -17,72 +17,49 @@ import {
 } from '../config/identityFunctions';
 import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
 import { createAndroidContactsBook } from './contactsBook.android.ts';
+import { ContactsHmacError } from './contactsHmacCore.ts';
 import {
-  ContactsHmacError,
-  mapContactsCallableError,
-  type ContactsHmacFunctionsPort,
-} from './contactsHmacCore.ts';
-import {
-  loadContactsLocalState as loadState,
-  loadOrCreateSourceId,
-  persistContactsLocalState as persistState,
-} from './contactsSource.ts';
-import type { ContactsLocalState } from './contactsSyncFlow.ts';
-import {
-  runDisable,
-  runEnableThenSync,
-  runRefreshKeys,
-  runResyncGrantedBook,
-  type ContactsFlowOutcome,
-} from './contactsSyncFlow.ts';
+  createContactsSyncSession,
+  type ContactsOpResult,
+  type ContactsUserDocFacts,
+} from './contactsSyncSession.ts';
+import type { ContactsSyncStatus } from './contactsSyncStatus.ts';
 
 export {
+  ContactsFlowStateError,
   ContactsHmacError,
+  ContactsSyncAfterEnableError,
   collectContactIdentifiers,
   contactsEpochFromUserDoc,
   contactsHmacErrorToI18nKey,
   identifiersFingerprint,
   isContactsHardCapOrFenceError,
+  isContactsOutcomeUncertain,
   removedSnapshotFloorAfterRemove,
   shouldScheduleReevaluate,
   snapshotVersionForUpload,
 } from './contactsHmacCore.ts';
-export type { ContactsLocalState, ContactsFlowOutcome } from './contactsSyncFlow.ts';
+export {
+  contactsCanRetry,
+  contactsOperationInFlight,
+  contactsStatusCopyKey,
+  contactsToggleValue,
+} from './contactsSyncStatus.ts';
+export type { ContactsSyncStatus } from './contactsSyncStatus.ts';
+export type {
+  ContactsLocalState,
+  ContactsFlowOutcome,
+  ContactsEnableStage,
+} from './contactsSyncFlow.ts';
+export type {
+  ContactsOpResult,
+  ContactsUserDocFacts,
+} from './contactsSyncSession.ts';
 
 /** Bound Identity round-trips so More stays navigable and errors stay concrete. */
 export const CONTACTS_CALLABLE_TIMEOUT_MS = 45_000;
-
-function createFunctionsPort(): ContactsHmacFunctionsPort {
-  const functions = getIdentityFunctions();
-  return {
-    region: getIdentityFunctionsRegion(),
-    async call(name, data) {
-      const callable = functions.httpsCallable(name);
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        const result = await Promise.race([
-          callable(data ?? {}),
-          new Promise<never>((_, reject) => {
-            timer = setTimeout(() => {
-              reject(
-                new ContactsHmacError(
-                  'contacts-hmac-unavailable',
-                  'Contacts sync timed out. Check the section status and retry. (contacts-timeout)',
-                ),
-              );
-            }, CONTACTS_CALLABLE_TIMEOUT_MS);
-          }),
-        ]);
-        return result.data;
-      } catch (err) {
-        if (err instanceof ContactsHmacError) throw err;
-        throw mapContactsCallableError(err);
-      } finally {
-        if (timer) clearTimeout(timer);
-      }
-    },
-  };
-}
+/** Past the native callable deadline, so it only frees a request that never settles. */
+export const CONTACTS_LATE_RESULT_GRACE_MS = 60_000;
 
 async function ensureAppCheckReady(): Promise<void> {
   const status = await ensureAppCheckInitialized();
@@ -102,103 +79,65 @@ async function ensureAppCheckReady(): Promise<void> {
   }
 }
 
-function requireUid(): string {
-  const uid = firebaseAuth.currentUser?.uid;
-  if (!uid) {
-    throw new ContactsHmacError(
-      'contacts-unauthenticated',
-      'Authentication is required. (contacts-unauthenticated)',
-    );
+const session = createContactsSyncSession({
+  currentUid: () => firebaseAuth.currentUser?.uid ?? null,
+  store: AsyncStorage,
+  randomBytes: () => Crypto.getRandomBytesAsync(16),
+  region: getIdentityFunctionsRegion(),
+  async callIdentity(name, data) {
+    const result = await getIdentityFunctions().httpsCallable(name)(data ?? {});
+    return result.data;
+  },
+  createBook: createAndroidContactsBook,
+  ensureAppCheck: ensureAppCheckReady,
+  scheduleReevaluate: scheduleReevaluateProximityNotices,
+  timeoutMs: CONTACTS_CALLABLE_TIMEOUT_MS,
+  lateResultGraceMs: CONTACTS_LATE_RESULT_GRACE_MS,
+});
+
+let authBound = false;
+
+function bound() {
+  if (!authBound) {
+    authBound = true;
+    firebaseAuth.onAuthStateChanged((user) => {
+      session.handleAuthChanged(user?.uid ?? null);
+    });
   }
-  return uid;
+  return session;
 }
 
-async function randomSourceBytes(): Promise<Uint8Array> {
-  const bytes = await Crypto.getRandomBytesAsync(16);
-  return bytes;
+export function getContactsSyncStatus(): ContactsSyncStatus {
+  return bound().getStatus();
 }
 
-export async function loadContactsLocalState(
+export function subscribeContactsSyncStatus(
+  listener: (status: ContactsSyncStatus) => void,
+): () => void {
+  return bound().subscribe(listener);
+}
+
+export function bindContactsUserDoc(
   uid: string,
-): Promise<ContactsLocalState> {
-  const sourceId = await loadOrCreateSourceId(AsyncStorage, randomSourceBytes);
-  return loadState(AsyncStorage, uid, sourceId);
-}
-
-export async function persistContactsLocalState(
-  uid: string,
-  state: ContactsLocalState,
+  doc: ContactsUserDocFacts,
 ): Promise<void> {
-  await persistState(AsyncStorage, uid, state);
+  return bound().bindUserDoc(uid, doc);
 }
 
-function maybeReevaluate(outcome: ContactsFlowOutcome): ContactsFlowOutcome {
-  if (outcome.scheduleReevaluate) {
-    scheduleReevaluateProximityNotices();
-  }
-  return outcome;
+export function enableThenSyncContacts(): Promise<ContactsOpResult> {
+  return bound().enableThenSync();
 }
 
-export async function enableThenSyncContacts(
-  state: ContactsLocalState,
-  liveEpochHint?: number,
-): Promise<ContactsFlowOutcome> {
-  requireUid();
-  await ensureAppCheckReady();
-  const outcome = await runEnableThenSync({
-    functions: createFunctionsPort(),
-    book: createAndroidContactsBook(),
-    state,
-    liveEpochHint,
-  });
-  const uid = requireUid();
-  await persistContactsLocalState(uid, outcome.state);
-  return maybeReevaluate(outcome);
+export function retryContactsSync(): Promise<ContactsOpResult> {
+  return bound().retry();
 }
 
-export async function resyncGrantedContacts(
-  state: ContactsLocalState,
-  liveEpochHint?: number,
-): Promise<ContactsFlowOutcome> {
-  requireUid();
-  await ensureAppCheckReady();
-  const outcome = await runResyncGrantedBook({
-    functions: createFunctionsPort(),
-    book: createAndroidContactsBook(),
-    state,
-    liveEpochHint,
-  });
-  const uid = requireUid();
-  await persistContactsLocalState(uid, outcome.state);
-  return maybeReevaluate(outcome);
+export function disableContactsIntegration(): Promise<ContactsOpResult> {
+  return bound().disable();
 }
 
-export async function disableContactsIntegration(
-  state: ContactsLocalState,
-): Promise<ContactsFlowOutcome> {
-  requireUid();
-  await ensureAppCheckReady();
-  const outcome = await runDisable({
-    functions: createFunctionsPort(),
-    state,
-  });
-  const uid = requireUid();
-  await persistContactsLocalState(uid, outcome.state);
-  return maybeReevaluate(outcome);
-}
-
-export async function refreshContactsActorKeys(
-  state: ContactsLocalState,
-): Promise<ContactsFlowOutcome> {
-  requireUid();
-  await ensureAppCheckReady();
-  const outcome = await runRefreshKeys({
-    functions: createFunctionsPort(),
-    state,
-  });
-  const uid = requireUid();
-  await persistContactsLocalState(uid, outcome.state);
-  return maybeReevaluate(outcome);
+export function refreshContactsActorKeys(): Promise<ContactsOpResult> {
+  return bound().refreshKeys();
 }
 
 export function contactsHmacAvailable(): boolean {

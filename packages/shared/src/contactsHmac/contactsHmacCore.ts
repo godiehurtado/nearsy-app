@@ -19,23 +19,120 @@ import {
   type RemoveContactSourceRequest,
   type SyncContactHashesRequest,
 } from './contactsHmacContract.ts';
+import type {
+  ContactsLocalState,
+  ContactsPermissionStatus,
+} from './contactsSyncFlow.ts';
 
 export type ContactsHmacFunctionsPort = {
   region: string;
   call: (name: string, data?: unknown) => Promise<unknown>;
 };
 
-export class ContactsHmacError extends Error {
-  readonly reason: ContactsHmacFailReason | 'generic' | 'APP_CHECK_NOT_READY';
+/**
+ * Client-only reasons, never sent by Identity:
+ * - `contacts-transport-uncertain`: UI timeout or transport failure. The server
+ *   may still have committed, so this is never a definitive failure.
+ * - `contacts-server-internal`: bare INTERNAL with no `details.reason`. Identity
+ *   before #25 answers an Auth lookup failure this way, and the Android Functions
+ *   SDK also reports some I/O failures as INTERNAL, so it stays uncertain too.
+ */
+export type ContactsClientFailReason =
+  | 'contacts-transport-uncertain'
+  | 'contacts-server-internal';
 
-  constructor(
-    reason: ContactsHmacFailReason | 'generic' | 'APP_CHECK_NOT_READY',
-    message: string,
-  ) {
+export type ContactsErrorReason =
+  | ContactsHmacFailReason
+  | ContactsClientFailReason
+  | 'generic'
+  | 'APP_CHECK_NOT_READY';
+
+export class ContactsHmacError extends Error {
+  readonly reason: ContactsErrorReason;
+
+  constructor(reason: ContactsErrorReason, message: string) {
     super(message);
     this.name = 'ContactsHmacError';
     this.reason = reason;
   }
+}
+
+/** A flow failed part-way: `state` is what the caller must keep from now on. */
+export class ContactsFlowStateError extends ContactsHmacError {
+  readonly state: ContactsLocalState;
+  readonly permission: ContactsPermissionStatus | null;
+  readonly scheduleReevaluate: boolean;
+
+  constructor(
+    cause: ContactsHmacError,
+    state: ContactsLocalState,
+    extra?: {
+      permission?: ContactsPermissionStatus | null;
+      scheduleReevaluate?: boolean;
+    },
+  ) {
+    super(cause.reason, cause.message);
+    this.name = 'ContactsFlowStateError';
+    this.state = state;
+    this.permission = extra?.permission ?? null;
+    this.scheduleReevaluate = extra?.scheduleReevaluate ?? false;
+  }
+}
+
+/**
+ * Identity confirmed enable; a later stage (permission, read, sync, remove)
+ * failed. The integration stays enabled with `enableResult.contactsEpoch`.
+ */
+export class ContactsSyncAfterEnableError extends ContactsFlowStateError {
+  readonly enableResult: ContactsWireResult;
+  readonly stateAfterEnable: ContactsLocalState;
+
+  constructor(
+    cause: ContactsHmacError,
+    enableResult: ContactsWireResult,
+    stateAfterEnable: ContactsLocalState,
+    extra?: {
+      permission?: ContactsPermissionStatus | null;
+      scheduleReevaluate?: boolean;
+    },
+  ) {
+    super(cause, stateAfterEnable, extra);
+    this.name = 'ContactsSyncAfterEnableError';
+    this.enableResult = enableResult;
+    this.stateAfterEnable = stateAfterEnable;
+  }
+}
+
+/** The server may have written despite the error: keep pending, never revert. */
+export function isContactsOutcomeUncertain(
+  reason: ContactsErrorReason,
+): boolean {
+  return (
+    reason === 'contacts-transport-uncertain' ||
+    reason === 'contacts-server-internal'
+  );
+}
+
+/**
+ * The only proof that a snapshot is stored: syncCommitted with a sync result,
+ * for the source and version that were actually sent.
+ */
+export function isConfirmedSnapshotResult(
+  result: ContactsWireResult,
+  sent: { sourceId: string; snapshotVersion: number },
+): boolean {
+  if (result.syncCommitted !== true) return false;
+  if (result.result !== 'synced' && result.result !== 'idempotent') return false;
+  if (result.sourceId !== undefined && result.sourceId !== sent.sourceId) {
+    return false;
+  }
+  if (
+    result.snapshotVersion !== undefined &&
+    result.snapshotVersion !== sent.snapshotVersion
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -186,7 +283,10 @@ export function identifiersFingerprint(
 }
 
 /**
- * Same snapshotVersion + same normalized set is Identity-idempotent.
+ * Same snapshotVersion + same normalized set is Identity-idempotent; the same
+ * version with different content is a conflict. So a version is reused only for
+ * the fingerprint it was last attempted with, and never below a higher attempt
+ * whose outcome is unknown.
  * After removeContactSource, Identity fences `snapshotVersion <= removed`.
  * `removedSnapshotFloor` keeps the next recreate strictly greater.
  * Disable clears fences server-side and the floor client-side.
@@ -196,25 +296,34 @@ export function snapshotVersionForUpload(input: {
   lastAckedFingerprint: string | null;
   nextFingerprint: string;
   removedSnapshotFloor?: number | null;
+  pendingUpload?: { version: number; fingerprint: string } | null;
+  highestAttemptedVersion?: number | null;
 }): number {
-  const floor =
-    typeof input.removedSnapshotFloor === 'number' &&
-    input.removedSnapshotFloor >= 1
-      ? input.removedSnapshotFloor
-      : 0;
-  const acked =
-    typeof input.lastAckedVersion === 'number' && input.lastAckedVersion >= 1
-      ? input.lastAckedVersion
-      : 0;
+  const positive = (n: number | null | undefined) =>
+    typeof n === 'number' && n >= 1 ? n : 0;
+  const floor = positive(input.removedSnapshotFloor);
+  const acked = positive(input.lastAckedVersion);
+  const highest = positive(input.highestAttemptedVersion);
+  const pending = input.pendingUpload;
   if (
+    pending &&
+    pending.fingerprint === input.nextFingerprint &&
+    pending.version > floor &&
+    pending.version >= highest &&
+    pending.version >= acked
+  ) {
+    return pending.version;
+  }
+  if (
+    !pending &&
     acked >= 1 &&
     input.lastAckedFingerprint === input.nextFingerprint &&
-    acked > floor
+    acked > floor &&
+    acked >= highest
   ) {
     return acked;
   }
-  const base = Math.max(acked, floor);
-  return base + 1;
+  return Math.max(acked, floor, highest, positive(pending?.version)) + 1;
 }
 
 /** Floor after a successful remove / absent fence for this sourceId. */
@@ -375,6 +484,13 @@ export function mapContactsCallableError(err: unknown): ContactsHmacError {
       );
     }
   }
+  // App Check rejections may surface as `unauthenticated`: not a signed-out user.
+  if (/app.?check/i.test(haystack)) {
+    return new ContactsHmacError(
+      'APP_CHECK_NOT_READY',
+      message || 'App Check is not ready.',
+    );
+  }
   if (/unauthenticated/i.test(haystack)) {
     return new ContactsHmacError(
       'contacts-unauthenticated',
@@ -387,13 +503,22 @@ export function mapContactsCallableError(err: unknown): ContactsHmacError {
       message || 'Too many Contacts requests. Try again later. (contacts-rate-limited)',
     );
   }
-  if (/deadline-exceeded|timeout|unavailable|network/i.test(haystack)) {
+  // Timeout / transport: the server may have committed, and the secret is not
+  // the problem. `contacts-hmac-unavailable` is only the explicit Identity reason.
+  if (/deadline-exceeded|timeout|unavailable|cancelled|network/i.test(haystack)) {
     return new ContactsHmacError(
-      'contacts-hmac-unavailable',
+      'contacts-transport-uncertain',
       message ||
-        'Contacts sync timed out or is unavailable. (contacts-hmac-unavailable)',
+        'Contacts could not confirm the result. (contacts-transport-uncertain)',
     );
   }
+  if (/(^|\/)internal$/i.test(httpsCode) || /^internal$/i.test(message.trim())) {
+    return new ContactsHmacError(
+      'contacts-server-internal',
+      message || 'Contacts request failed on the server. (contacts-server-internal)',
+    );
+  }
+  // permission-denied / other stay generic: never "missing HMAC secret".
   return new ContactsHmacError(
     'generic',
     message || 'Contacts request failed.',
@@ -469,13 +594,35 @@ export async function refreshVerifiedActorKeys(
   }
 }
 
+export type ContactsErrorI18nKey =
+  | 'auth'
+  | 'authLookup'
+  | 'notEnabled'
+  | 'epochMismatch'
+  | 'snapshotStale'
+  | 'sourceRemoved'
+  | 'snapshotConflict'
+  | 'sourceCap'
+  | 'identifierCap'
+  | 'unionCap'
+  | 'identifierInvalid'
+  | 'hashRejected'
+  | 'unavailable'
+  | 'transportUncertain'
+  | 'serverError'
+  | 'appCheck'
+  | 'rateLimited'
+  | 'generic';
+
 export function contactsHmacErrorToI18nKey(
   reason: ContactsHmacError['reason'],
-): string {
+): ContactsErrorI18nKey {
   switch (reason) {
     case 'contacts-unauthenticated':
     case 'contacts-account-gone':
       return 'auth';
+    case 'contacts-auth-lookup-failed':
+      return 'authLookup';
     case 'contacts-not-enabled':
       return 'notEnabled';
     case 'contacts-epoch-mismatch':
@@ -497,8 +644,13 @@ export function contactsHmacErrorToI18nKey(
     case 'contacts-client-hash-rejected':
       return 'hashRejected';
     case 'contacts-hmac-unavailable':
-    case 'APP_CHECK_NOT_READY':
       return 'unavailable';
+    case 'contacts-transport-uncertain':
+      return 'transportUncertain';
+    case 'contacts-server-internal':
+      return 'serverError';
+    case 'APP_CHECK_NOT_READY':
+      return 'appCheck';
     case 'contacts-rate-limited':
       return 'rateLimited';
     default:

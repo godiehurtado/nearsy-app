@@ -54,6 +54,8 @@ export const CONTACTS_HMAC_FAIL_REASONS = [
   'contacts-client-hash-rejected',
   'contacts-hmac-unavailable',
   'contacts-rate-limited',
+  /** Identity Admin Auth / actor lookup — not a missing HMAC secret. */
+  'contacts-auth-lookup-failed',
 ] as const;
 
 export type ContactsHmacFailReason = (typeof CONTACTS_HMAC_FAIL_REASONS)[number];

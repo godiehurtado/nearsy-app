@@ -113,13 +113,14 @@ describe('Social modals + Instagram steps', () => {
 });
 
 describe('Contacts timeout bound', () => {
-  it('Android Identity calls race a concrete timeout then reconcile path', () => {
+  it('Android Identity calls are time-bounded and More offers a retry', () => {
     const android = readSrc('contactsHmac/contactsHmac.android.ts');
+    const session = readSrc('contactsHmac/contactsSyncSession.ts');
     const more = readSrc('screens/MoreScreen.tsx');
     assert.match(android, /CONTACTS_CALLABLE_TIMEOUT_MS = 45_000/);
-    assert.match(android, /contacts-timeout/);
-    assert.match(more, /resyncGrantedContacts/);
-    assert.match(more, /contactsSync\.syncTimedOut/);
+    assert.match(session, /contacts-timeout/);
+    assert.match(more, /retryContactsSync/);
+    assert.match(more, /contactsSync\.retry/);
   });
 });
 
