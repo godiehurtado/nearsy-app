@@ -228,23 +228,28 @@ describe('Home filters nested write vs real rules (emulator)', { skip: !enabled 
   });
 
   /**
-   * KNOWN BACKEND DEFECT (Functions firestore.rules, not fixed here): the
-   * post-merge bag check (validInterestIdAt x12 per mode) exhausts the rules
-   * 1000-expression budget once both modes hold > ~10 interests in total, so
-   * a VALID filters write is PERMISSION_DENIED with ONLY budget messages.
-   * When Functions fixes the rules: replace this test's assertFails/denialKind
-   * with assertSucceeds for the same fixtures (6+6, 0+12, 11+0) and rename it.
+   * Regression for the rules expression-budget defect fixed in
+   * nearsy-functions #44: before the fix these valid writes were denied with
+   * only "maximum of 1000 expressions" reasons.
    */
-  it('KNOWN DEFECT: valid write denied with 6+6, 0+12, 11+0 interests (expression budget only)', async () => {
+  it('accepts valid writes with 6+6, 0+12, 11+0 and 12+12 interests (expression budget)', async () => {
     for (const [active, inactive] of [
       [6, 6],
       [0, 12],
       [11, 0],
+      [12, 12],
     ] as const) {
+      await assertSucceeds((await seedWithInterests(active, inactive))());
+    }
+  });
+
+  it('still rejects invalid interest ids functionally (empty, > 128 chars)', async () => {
+    for (const bad of ['', 'x'.repeat(129)]) {
+      await seed(ownerDoc({ personal: validPrefs(), professional: validPrefs() }));
       const err = await assertFails(
-        (await seedWithInterests(active, inactive))(),
+        writeMode(UID, 'personal', validPrefs({ interestIds: [bad] })),
       );
-      assert.equal(denialKind(err), 'budget-only', `${active}+${inactive}`);
+      assert.equal(denialKind(err), 'functional', `length ${bad.length}`);
     }
   });
 
