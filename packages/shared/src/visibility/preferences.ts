@@ -250,3 +250,19 @@ export function withDedupedInterestIds(
     interestIds: dedupeInterestIds(prefs.interestIds),
   };
 }
+
+/**
+ * Firestore update payload for one mode: nested field path + top-level
+ * updatedAt. `timestamp` is the caller's serverTimestamp() sentinel (kept as a
+ * parameter so the exact shape can be exercised against the rules emulator).
+ */
+export function buildSearchPreferencesModeUpdate<T>(
+  mode: ProfileMode,
+  prepared: VisibilitySearchPreferences,
+  timestamp: T,
+): Record<string, VisibilitySearchPreferences | T> {
+  return {
+    [`searchPreferences.${mode}`]: { ...prepared },
+    updatedAt: timestamp,
+  };
+}

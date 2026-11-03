@@ -21,13 +21,15 @@ describe('Home filters persist (beta)', () => {
   it('writes nested active-mode fields and epoch-guards rollback', () => {
     const store = readShared('visibility/searchPreferencesStore.ts');
     assert.match(store, /persistSearchPreferencesForMode/);
-    assert.match(store, /searchPreferences\.\$\{mode\}/);
+    assert.match(store, /buildSearchPreferencesModeUpdate\(/);
     assert.match(store, /updateDoc/);
     assert.doesNotMatch(store, /visibility:/);
 
     const home = readShared('screens/MainHomeScreen.tsx');
     assert.match(home, /localEpochRef/);
-    assert.match(home, /epoch === localEpochRef\.current/);
+    // Rollback policy lives in the ledger (behaviour: ios209BetaHardening).
+    assert.match(home, /ledger\.fail\(writeEpoch\)/);
+    assert.match(home, /ledger\.succeed\(writeEpoch\)/);
     assert.match(home, /home\.preferences\.errors\.title/);
     assert.doesNotMatch(home, /home\.errors\.title/);
   });
@@ -87,8 +89,9 @@ describe('Contacts caps and UID session (beta)', () => {
 describe('Alignment ring + social modal polish (beta)', () => {
   it('keeps View half-clip technique with bleed and dual labels', () => {
     const ring = readShared('components/alignment/AlignmentScoreRing.tsx');
-    assert.match(ring, /HALF_CLIP_BLEED/);
-    assert.match(ring, /leading hypothesis/);
+    assert.match(ring, /computeAlignmentHalfClipLayout/);
+    const geometry = readShared('components/alignment/alignmentRingGeometry.ts');
+    assert.match(geometry, /leading hypothesis/);
     assert.equal(ring.includes("from 'react-native-svg'"), false);
     assert.equal(ring.includes('from "react-native-svg"'), false);
     const nearby = readShared('screens/NearbySearchScreen.tsx');
@@ -107,7 +110,15 @@ describe('Alignment ring + social modal polish (beta)', () => {
       assert.match(src, /instagram\.stepOpen/);
       assert.match(src, /instagram\.stepMessage/);
       assert.match(src, /instagram\.stepPaste/);
+      assert.match(src, /instagram\.stepReturn/);
     }
+    // CRJ manual URLs: Add / Edit / Remove + "Link saved", never Connect/Disconnect.
+    const crj = readShared('components/registration/OnboardingSocialMediaStep.tsx');
+    assert.match(crj, /profile\.social\.linkSaved/);
+    for (const key of ['addLink', 'editLink', 'removeLink']) {
+      assert.match(crj, new RegExp(`profile\\.social\\.${key}'`));
+    }
+    assert.doesNotMatch(crj, /profile\.social\.(connect|disconnect)'/);
     assert.match(editor, /profile\.social\.linkSaved/);
     assert.match(editor, /openInboxA11y/);
   });

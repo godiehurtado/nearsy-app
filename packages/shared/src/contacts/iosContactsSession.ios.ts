@@ -2,19 +2,30 @@
  * Persists Contacts sourceId / contactsEpoch / snapshotVersion / fingerprint
  * per Firebase UID. Never stores raw phone numbers or emails.
  *
- * Migration: legacy global keys (`nearsy.contacts.v1.*` without uid) are
- * claimed once by the first authenticated UID that loads an empty uid-scoped
- * session. Other accounts never reuse that epoch/version (fresh sourceId).
+ * Legacy global keys (`nearsy.contacts.v1.{sourceId,contactsEpoch,...}`,
+ * written by builds before UID scoping) carry no UID, so nothing proves which
+ * account created them. They are therefore NOT migrated to any UID:
+ *  - every UID starts its own scoped session and mints a fresh sourceId on its
+ *    first sync, never reusing the legacy sourceId / epoch / version fences;
+ *  - legacy keys are left in place, untouched (not read for identity, not
+ *    deleted). Server-side, a legacy source stays attached to whichever account
+ *    uploaded it until that account disables Contacts sync or Identity
+ *    retires it; this client never sends it again.
+ * A sourceId already stored under the same UID keeps its monotonic
+ * snapshotVersion and fences (see clearFingerprint).
  */
 
 import type { ContactsSessionSnapshot, ContactsSessionStore } from './port';
 
-const LEGACY_SOURCE_KEY = 'nearsy.contacts.v1.sourceId';
-const LEGACY_EPOCH_KEY = 'nearsy.contacts.v1.contactsEpoch';
-const LEGACY_VERSION_KEY = 'nearsy.contacts.v1.snapshotVersion';
-const LEGACY_FINGERPRINT_KEY = 'nearsy.contacts.v1.fingerprint';
+/** Pre-UID keys. Kept for documentation/tests; never read for identity. */
+export const LEGACY_CONTACTS_SESSION_KEYS = [
+  'nearsy.contacts.v1.sourceId',
+  'nearsy.contacts.v1.contactsEpoch',
+  'nearsy.contacts.v1.snapshotVersion',
+  'nearsy.contacts.v1.fingerprint',
+] as const;
 
-type ExpoSecureStoreLike = {
+export type ExpoSecureStoreLike = {
   getItemAsync(key: string): Promise<string | null>;
   setItemAsync(key: string, value: string): Promise<void>;
   deleteItemAsync(key: string): Promise<void>;
@@ -31,45 +42,27 @@ async function loadSecureStore(): Promise<ExpoSecureStoreLike | null> {
   }
 }
 
-function secureStore(): Promise<ExpoSecureStoreLike | null> {
+function defaultSecureStore(): Promise<ExpoSecureStoreLike | null> {
   storePromise ??= loadSecureStore();
   return storePromise;
 }
 
-function keysForUid(uid: string) {
-  const prefix = `nearsy.contacts.v1.uid.${uid}`;
+/** SecureStore keys allow only [A-Za-z0-9._-]; escape anything else. */
+export function encodeUidForKey(uid: string): string {
+  return uid.replace(
+    /[^A-Za-z0-9]/g,
+    (ch) => `_${ch.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+}
+
+export function contactsSessionKeysForUid(uid: string) {
+  const prefix = `nearsy.contacts.v1.uid.${encodeUidForKey(uid)}`;
   return {
     sourceId: `${prefix}.sourceId`,
     contactsEpoch: `${prefix}.contactsEpoch`,
     snapshotVersion: `${prefix}.snapshotVersion`,
     fingerprint: `${prefix}.fingerprint`,
   };
-}
-
-async function read(key: string): Promise<string | null> {
-  const store = await secureStore();
-  if (!store) return null;
-  try {
-    return await store.getItemAsync(key);
-  } catch {
-    return null;
-  }
-}
-
-async function write(key: string, value: string): Promise<void> {
-  const store = await secureStore();
-  if (!store) return;
-  await store.setItemAsync(key, value);
-}
-
-async function remove(key: string): Promise<void> {
-  const store = await secureStore();
-  if (!store) return;
-  try {
-    await store.deleteItemAsync(key);
-  } catch {
-    /* ignore */
-  }
 }
 
 function parseEpoch(raw: string | null): number {
@@ -83,83 +76,92 @@ function parseVersion(raw: string | null): number | null {
   return Number.isInteger(n) && n >= 1 ? n : null;
 }
 
-async function clearLegacyGlobalKeys(): Promise<void> {
-  await remove(LEGACY_SOURCE_KEY);
-  await remove(LEGACY_EPOCH_KEY);
-  await remove(LEGACY_VERSION_KEY);
-  await remove(LEGACY_FINGERPRINT_KEY);
-}
-
 /**
- * Claim legacy global session into uid-scoped keys once, then delete globals
- * so a later account cannot inherit another UID's epoch/version fence.
+ * Testable adapter. `getStore` resolves the SecureStore module (or null when
+ * unavailable, in which case nothing is persisted). A failing read throws so
+ * callers never mistake an unreadable session for "no session" and mint a new
+ * sourceId over an existing one.
  */
-async function migrateLegacyIfNeeded(
+export function createSecureStoreContactsSessionStore(
   uid: string,
-  scoped: ReturnType<typeof keysForUid>,
-): Promise<ContactsSessionSnapshot | null> {
-  const existing = await read(scoped.sourceId);
-  if (existing) return null;
-
-  const legacySource = await read(LEGACY_SOURCE_KEY);
-  if (!legacySource) return null;
-
-  const snapshot: ContactsSessionSnapshot = {
-    sourceId: legacySource,
-    contactsEpoch: parseEpoch(await read(LEGACY_EPOCH_KEY)),
-    snapshotVersion: parseVersion(await read(LEGACY_VERSION_KEY)),
-    fingerprint: await read(LEGACY_FINGERPRINT_KEY),
-  };
-  await write(scoped.sourceId, snapshot.sourceId);
-  await write(scoped.contactsEpoch, String(snapshot.contactsEpoch));
-  if (snapshot.snapshotVersion != null) {
-    await write(scoped.snapshotVersion, String(snapshot.snapshotVersion));
-  }
-  if (snapshot.fingerprint) {
-    await write(scoped.fingerprint, snapshot.fingerprint);
-  }
-  await clearLegacyGlobalKeys();
-  return snapshot;
-}
-
-export function createContactsSessionStore(uid: string): ContactsSessionStore {
-  if (!uid.trim()) {
+  getStore: () => Promise<ExpoSecureStoreLike | null> = defaultSecureStore,
+): ContactsSessionStore {
+  const trimmed = uid.trim();
+  if (!trimmed) {
     throw new Error('contacts-session-uid-required');
   }
-  const scoped = keysForUid(uid.trim());
+  const keys = contactsSessionKeysForUid(trimmed);
+
+  const read = async (key: string): Promise<string | null> => {
+    const store = await getStore();
+    if (!store) return null;
+    try {
+      return await store.getItemAsync(key);
+    } catch {
+      throw new Error('contacts-session-unavailable');
+    }
+  };
+  const write = async (key: string, value: string): Promise<void> => {
+    const store = await getStore();
+    if (!store) return;
+    await store.setItemAsync(key, value);
+  };
+  const remove = async (key: string): Promise<void> => {
+    const store = await getStore();
+    if (!store) return;
+    try {
+      await store.deleteItemAsync(key);
+    } catch {
+      /* ignore */
+    }
+  };
 
   return {
     async load(): Promise<ContactsSessionSnapshot | null> {
-      const migrated = await migrateLegacyIfNeeded(uid.trim(), scoped);
-      if (migrated) return migrated;
-
-      const sourceId = await read(scoped.sourceId);
+      const sourceId = await read(keys.sourceId);
       if (!sourceId) return null;
       return {
         sourceId,
-        contactsEpoch: parseEpoch(await read(scoped.contactsEpoch)),
-        snapshotVersion: parseVersion(await read(scoped.snapshotVersion)),
-        fingerprint: await read(scoped.fingerprint),
+        contactsEpoch: parseEpoch(await read(keys.contactsEpoch)),
+        snapshotVersion: parseVersion(await read(keys.snapshotVersion)),
+        fingerprint: await read(keys.fingerprint),
       };
     },
     async save(snapshot) {
-      await write(scoped.sourceId, snapshot.sourceId);
-      await write(scoped.contactsEpoch, String(snapshot.contactsEpoch));
-      if (snapshot.snapshotVersion != null) {
-        await write(scoped.snapshotVersion, String(snapshot.snapshotVersion));
+      // Same sourceId: snapshotVersion never goes backwards (a late persist
+      // from an older operation must not reopen a fenced version).
+      const storedSource = await read(keys.sourceId);
+      const storedVersion =
+        storedSource === snapshot.sourceId
+          ? parseVersion(await read(keys.snapshotVersion))
+          : null;
+      const nextVersion =
+        storedVersion != null &&
+        (snapshot.snapshotVersion == null ||
+          snapshot.snapshotVersion < storedVersion)
+          ? storedVersion
+          : snapshot.snapshotVersion;
+      await write(keys.sourceId, snapshot.sourceId);
+      await write(keys.contactsEpoch, String(snapshot.contactsEpoch));
+      if (nextVersion != null) {
+        await write(keys.snapshotVersion, String(nextVersion));
       } else {
-        await remove(scoped.snapshotVersion);
+        await remove(keys.snapshotVersion);
       }
       if (snapshot.fingerprint) {
-        await write(scoped.fingerprint, snapshot.fingerprint);
+        await write(keys.fingerprint, snapshot.fingerprint);
       } else {
-        await remove(scoped.fingerprint);
+        await remove(keys.fingerprint);
       }
     },
     async clearFingerprint() {
       // Keep snapshotVersion: Identity fences removedSnapshotVersion for this
       // stable sourceId. Restarting at 1 would throw contacts-source-removed.
-      await remove(scoped.fingerprint);
+      await remove(keys.fingerprint);
     },
   };
+}
+
+export function createContactsSessionStore(uid: string): ContactsSessionStore {
+  return createSecureStoreContactsSessionStore(uid);
 }

@@ -190,6 +190,54 @@ export function OnboardingSocialMediaStep({
     await onPersistManual(nextValues, nextWebsite);
   }
 
+  /** Manual URL rows are saved links, never verified accounts: Add / Edit / Remove. */
+  function renderManualLinkActions(
+    id: ManualSheetId,
+    label: string,
+    filled: boolean,
+  ) {
+    if (!filled) {
+      return (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('profile.social.addLinkA11y', { platform: label })}
+          onPress={() => openManualSheet(id)}
+          style={styles.manualAction}
+        >
+          <Text style={{ color: palette.primary }}>
+            {t('profile.social.addLink')}
+          </Text>
+        </Pressable>
+      );
+    }
+    return (
+      <>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('profile.social.editLinkA11y', { platform: label })}
+          onPress={() => openManualSheet(id)}
+          style={styles.manualAction}
+        >
+          <Text style={{ color: palette.primary }}>
+            {t('profile.social.editLink')}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('profile.social.removeLinkA11y', {
+            platform: label,
+          })}
+          onPress={() => void clearManual(id)}
+          style={styles.manualAction}
+        >
+          <Text style={{ color: palette.danger }}>
+            {t('profile.social.removeLink')}
+          </Text>
+        </Pressable>
+      </>
+    );
+  }
+
   function addOther() {
     const nameCheck = validateCustomNetworkName(otherName);
     if (!nameCheck.ok) {
@@ -262,25 +310,15 @@ export function OnboardingSocialMediaStep({
                 <Text style={[styles.platformName, { color: palette.textPrimary }]}>
                   {label}
                 </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() =>
-                    filled
-                      ? void clearManual(platform.id as ManualSheetId)
-                      : openManualSheet(platform.id as ManualSheetId)
-                  }
-                  style={styles.manualAction}
-                >
-                  <Text style={{ color: filled ? palette.danger : palette.primary }}>
-                    {filled
-                      ? t('profile.social.disconnect')
-                      : t('profile.social.connect')}
-                  </Text>
-                </Pressable>
+                {renderManualLinkActions(
+                  platform.id as ManualSheetId,
+                  label,
+                  filled,
+                )}
               </View>
               {filled ? (
                 <Text style={[styles.helper, { color: palette.textSecondary }]}>
-                  {values[platform.id]}
+                  {t('profile.social.linkSaved')} · {values[platform.id]}
                 </Text>
               ) : null}
               {error ? (
@@ -306,23 +344,11 @@ export function OnboardingSocialMediaStep({
                 <Text style={[styles.platformName, { color: palette.textPrimary }]}>
                   {label}
                 </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() =>
-                    filled ? void clearManual('website') : openManualSheet('website')
-                  }
-                  style={styles.manualAction}
-                >
-                  <Text style={{ color: filled ? palette.danger : palette.primary }}>
-                    {filled
-                      ? t('profile.social.disconnect')
-                      : t('profile.social.connect')}
-                  </Text>
-                </Pressable>
+                {renderManualLinkActions('website', label, filled)}
               </View>
               {filled ? (
                 <Text style={[styles.helper, { color: palette.textSecondary }]}>
-                  {website}
+                  {t('profile.social.linkSaved')} · {website}
                 </Text>
               ) : null}
             </View>

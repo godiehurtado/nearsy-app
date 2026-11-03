@@ -409,16 +409,20 @@ describe('post-CRJ Social Media editor screen contract', () => {
     assert.match(screen, /parsePostCrjSocialEditorParams/);
   });
 
-  it('SocialMediaScreen implements Connect/Disconnect draft semantics', () => {
+  it('SocialMediaScreen manual links use Add link / Remove draft semantics', () => {
     const screen = readShared('screens/SocialMediaScreen.tsx');
     assert.match(screen, /\{connected \? \(/);
-    assert.match(screen, /profile\.social\.connect/);
-    assert.match(screen, /profile\.social\.disconnect/);
-    assert.match(screen, /profile\.social\.linkSaved/);
-    assert.doesNotMatch(
-      screen.slice(screen.indexOf('cardConfigs.map'), screen.indexOf('cardConfigs.map') + 2500),
-      /profile\.social\.connected/,
+    const manualCards = screen.slice(
+      screen.indexOf('cardConfigs.map'),
+      screen.indexOf('cardConfigs.map') + 4000,
     );
+    // Saved manual URLs are links, never presented as connected/verified accounts.
+    assert.match(manualCards, /profile\.social\.linkSaved/);
+    assert.match(manualCards, /profile\.social\.noLinkSaved/);
+    assert.match(manualCards, /profile\.social\.addLink'/);
+    assert.match(manualCards, /profile\.social\.removeLink'/);
+    assert.doesNotMatch(manualCards, /profile\.social\.connected/);
+    assert.doesNotMatch(manualCards, /profile\.social\.(connect|disconnect)'/);
     assert.match(screen, /countValidPostCrjSocialConnections\(draft,\s*\{\s*youtubeConnected/);
     assert.match(screen, /saveConnections/);
     assert.match(screen, /saveDisabled/);

@@ -14,6 +14,7 @@ import {
   ALIGNMENT_RING_COMPACT_STROKE,
   ALIGNMENT_RING_DETAIL_SIZE,
   ALIGNMENT_RING_DETAIL_STROKE,
+  computeAlignmentHalfClipLayout,
   computeAlignmentRingGeometry,
   type AlignmentRingGeometry,
 } from './alignmentRingGeometry';
@@ -39,14 +40,6 @@ type Props = {
 };
 
 /**
- * Extra clip room past the ring square. Owner reported bottom flattening on
- * compact ~83% rings; halfClip overflow:hidden flush to the stroke edge is the
- * leading hypothesis (not device-confirmed). Bleed keeps the View technique
- * without introducing a native SVG dependency. Physical QA still required.
- */
-const HALF_CLIP_BLEED = 1;
-
-/**
  * Two half-clips + 180° semicircle borders (not a full colored ring).
  * Outer -90deg starts the arc at 12 o'clock; positive rotation is clockwise.
  */
@@ -67,7 +60,9 @@ function ProgressArc({
 
   const half = size / 2;
   const { firstHalfDegrees, secondHalfDegrees, isFull } = geometry;
-  const clipHeight = size + HALF_CLIP_BLEED * 2;
+  // Bleed keeps the View technique (no native SVG) without clipping the
+  // anti-aliased outer edge; see computeAlignmentHalfClipLayout.
+  const layout = computeAlignmentHalfClipLayout(size);
 
   const semiBase = {
     width: size,
@@ -76,7 +71,6 @@ function ProgressArc({
     borderWidth: stroke,
     borderColor: 'transparent' as const,
     position: 'absolute' as const,
-    top: HALF_CLIP_BLEED,
   };
 
   return (
@@ -89,12 +83,7 @@ function ProgressArc({
       <View
         style={[
           styles.halfClip,
-          {
-            width: half + HALF_CLIP_BLEED,
-            height: clipHeight,
-            left: half,
-            top: -HALF_CLIP_BLEED,
-          },
+          layout.first.clip,
         ]}
         collapsable={false}
       >
@@ -102,7 +91,7 @@ function ProgressArc({
           style={[
             semiBase,
             {
-              left: -half,
+              ...layout.first.inner,
               borderTopColor: color,
               borderRightColor: color,
               transform: [{ rotate: `${firstHalfDegrees - 180}deg` }],
@@ -116,12 +105,7 @@ function ProgressArc({
         <View
           style={[
             styles.halfClip,
-            {
-              width: half + HALF_CLIP_BLEED,
-              height: clipHeight,
-              left: -HALF_CLIP_BLEED,
-              top: -HALF_CLIP_BLEED,
-            },
+            layout.second.clip,
           ]}
           collapsable={false}
         >
@@ -129,7 +113,7 @@ function ProgressArc({
             style={[
               semiBase,
               {
-                left: HALF_CLIP_BLEED,
+                ...layout.second.inner,
                 borderBottomColor: color,
                 borderLeftColor: color,
                 transform: [{ rotate: `${secondHalfDegrees - 180}deg` }],

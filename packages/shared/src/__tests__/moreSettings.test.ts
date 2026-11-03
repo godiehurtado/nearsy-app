@@ -201,17 +201,18 @@ describe('Settings safety freeze', () => {
     assert.doesNotMatch(screen, /discoverNearby/);
   });
 
-  it('keeps enable when sync fails, scopes session by UID, and fences late ops', () => {
+  // Behaviour is covered in ios209BetaHardening.test.ts; this pins the wiring.
+  it('routes Contacts ops through the UID runner and scopes session by UID', () => {
     const screen = readShared('screens/MoreScreen.tsx');
-    assert.match(screen, /identityEnabled/);
     assert.match(screen, /createContactsSessionStore\(uid\)/);
-    assert.match(screen, /bumpContactsOpGeneration/);
-    assert.match(screen, /contactsOpGenRef/);
-    assert.match(screen, /isContactsSyncRetryable/);
+    assert.match(screen, /driveContactsOperation\(/);
+    assert.match(screen, /contactsOperationRunner\.invalidate\(/);
+    assert.match(screen, /readContactsServerState/);
+    const app = readShared('App.tsx');
+    assert.match(app, /contactsOperationRunner\.run\(uid, 'refresh'/);
     const session = readShared('contacts/iosContactsSession.ios.ts');
     assert.match(session, /nearsy\.contacts\.v1\.uid\./);
-    assert.match(session, /migrateLegacyIfNeeded/);
-    assert.match(session, /clearLegacyGlobalKeys/);
+    assert.doesNotMatch(session, /migrateLegacyIfNeeded/);
     assert.match(session, /Keep snapshotVersion/);
     const errors = readShared('contacts/contactsErrorPresentation.ts');
     assert.match(errors, /CAP_REASONS/);

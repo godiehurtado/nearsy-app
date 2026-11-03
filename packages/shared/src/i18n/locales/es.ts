@@ -587,8 +587,8 @@ const es: TranslationResources = {
         title: 'Redes sociales',
         subtitle:
           'Conecta tus perfiles para que las personas puedan encontrarte en otros lugares. Todo es opcional.',
-        connected: '{{count}} conectadas',
-        connectedOne: '1 conectada',
+        connected: '{{count}} añadidas',
+        connectedOne: '1 añadida',
         next: 'Siguiente',
         skip: 'Omitir',
         other: 'Otra red',
@@ -1302,6 +1302,13 @@ const es: TranslationResources = {
         'Conecta tus perfiles para que otras personas puedan encontrarte. Todo es opcional.',
       connected: 'Conectado',
       linkSaved: 'Enlace guardado',
+      noLinkSaved: 'Sin enlace',
+      addLink: 'Añadir enlace',
+      editLink: 'Editar',
+      removeLink: 'Quitar',
+      addLinkA11y: 'Añadir enlace de {{platform}}',
+      editLinkA11y: 'Editar enlace de {{platform}}',
+      removeLinkA11y: 'Quitar enlace de {{platform}}',
       notConnected: 'Sin conectar',
       connect: 'Conectar',
       disconnect: 'Desconectar',
@@ -1339,7 +1346,9 @@ const es: TranslationResources = {
           stepCopy: 'Copia el código.',
           stepOpen: 'Abre Instagram y ve a @nearsy.app.',
           stepMessage: 'Toca Enviar mensaje.',
-          stepPaste: 'Pega el código, envíalo y vuelve a Nearsy.',
+          stepPaste: 'Pega el código y envíalo.',
+          stepReturn:
+            'Vuelve a Nearsy: comprobamos la conexión automáticamente.',
         },
         x: {
           title: 'Conectar X',
@@ -1726,6 +1735,11 @@ const es: TranslationResources = {
       error: 'No se pudo actualizar la sincronización de Contactos. Inténtalo más tarde.',
       syncing: 'Sincronizando contactos…',
       syncSuccess: 'Contactos sincronizados.',
+      confirming:
+        'Seguimos confirmando con el servidor. Puedes seguir usando Nearsy.',
+      enabledNotSynced:
+        'Contactos cercanos está activado, pero tu libreta aún no está sincronizada.',
+      stateUnconfirmed: 'No pudimos confirmar si está activado o desactivado.',
       syncFailedTitle: 'Sincronización de contactos',
       retry: 'Reintentar',
       errors: {

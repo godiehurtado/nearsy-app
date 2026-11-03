@@ -121,16 +121,27 @@ import {
 } from '../contacts/controller';
 import {
   CONTACTS_SYNC_TIMEOUT_MS,
-  isContactsSyncRetryable,
   presentContactsSyncError,
 } from '../contacts/contactsErrorPresentation';
+import {
+  contactsOperationRunner,
+  driveContactsOperation,
+  type ContactsOutcomeView,
+  type ContactsServerState,
+} from '../contacts/contactsOperationCoordinator';
 import { createContactsAddressBookPort } from '../contacts/iosAddressBook';
 import { getContactsHmacClient } from '../contacts/iosContactsFoundation';
 import { createContactsSessionStore } from '../contacts/iosContactsSession';
 import { shouldCallReevaluateAfterIdentity } from '../contacts/parse';
 import type { ContactsWireResult } from '../contacts/wireTypes';
 
-type ContactsSyncPhase = 'idle' | 'syncing' | 'success' | 'error';
+type ContactsSyncPhase =
+  | 'idle'
+  | 'syncing'
+  | 'confirming'
+  | 'synced'
+  | 'pending'
+  | 'error';
 
 type ProfileDoc = {
   phone?: string | null;
@@ -261,6 +272,8 @@ export default function MoreScreen() {
   const contactsSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  /** Last server-confirmed Contacts enabled value (hydration or Identity). */
+  const contactsConfirmedEnabledRef = useRef(false);
   const [bgChanging, setBgChanging] = useState(false);
   const [bgEducationOpen, setBgEducationOpen] = useState(false);
   const [bgEducationVariant, setBgEducationVariant] =
@@ -351,7 +364,14 @@ export default function MoreScreen() {
     );
     setVisibilityOn(!!data.visibility);
     setNotifyNearbyInterests(resolveNotifyNearbyInterests(data.notifyNearbyInterests));
-    setContactsSyncEnabled(resolveContactsSyncEnabled(data.contactsSyncEnabled));
+    const serverContactsEnabled = resolveContactsSyncEnabled(
+      data.contactsSyncEnabled,
+    );
+    // An in-flight operation owns the toggle until it settles.
+    if (contactsOperationRunner.inFlight(uid) === null) {
+      contactsConfirmedEnabledRef.current = serverContactsEnabled;
+      setContactsSyncEnabled(serverContactsEnabled);
+    }
     setNotifyNearbyContacts(
       resolveNotifyNearbyContacts({
         contactsSyncEnabled: data.contactsSyncEnabled,
@@ -530,12 +550,16 @@ export default function MoreScreen() {
     setBgVisible(value);
   };
 
-  const contactsOpGenRef = useRef(0);
-
-  const bumpContactsOpGeneration = () => {
-    contactsOpGenRef.current += 1;
-    return contactsOpGenRef.current;
-  };
+  const contactsMountedRef = useRef(true);
+  useEffect(() => {
+    contactsMountedRef.current = true;
+    return () => {
+      contactsMountedRef.current = false;
+      if (contactsSuccessTimerRef.current) {
+        clearTimeout(contactsSuccessTimerRef.current);
+      }
+    };
+  }, []);
 
   const contactsPorts = async (uid: string) => ({
     client: await getContactsHmacClient(),
@@ -556,27 +580,23 @@ export default function MoreScreen() {
     }
   };
 
-  const withContactsTimeout = async <T,>(promise: Promise<T>): Promise<T> => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        promise,
-        new Promise<T>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error('contacts-timeout')),
-            CONTACTS_SYNC_TIMEOUT_MS,
-          );
-        }),
-      ]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
+  /** Identity-owned fields only; used when an outcome does not prove state. */
+  const readContactsServerState = async (
+    uid: string,
+  ): Promise<ContactsServerState | null> => {
+    const snap = await getDoc(doc(firestoreDb, 'users', uid));
+    if (!snap.exists()) return null;
+    const data = snap.data() as ProfileDoc;
+    return {
+      enabled: resolveContactsSyncEnabled(data.contactsSyncEnabled),
+      notifyNearbyContacts: resolveNotifyNearbyContacts({
+        contactsSyncEnabled: data.contactsSyncEnabled,
+        notifyNearbyContacts: data.notifyNearbyContacts,
+      }),
+    };
   };
 
-  const presentContactsFailure = (reason: string, offerRetry: boolean) => {
-    const message = presentContactsSyncError(reason, t);
-    setContactsSyncPhase('error');
-    setContactsSyncError(message);
+  const offerContactsRetry = (message: string, offerRetry: boolean) => {
     const buttons = offerRetry
       ? [
           { text: t('common.cancel'), style: 'cancel' as const },
@@ -591,55 +611,88 @@ export default function MoreScreen() {
     Alert.alert(t('settings.contacts.syncFailedTitle'), message, buttons);
   };
 
-  const markContactsSyncSuccess = () => {
+  const applyContactsView = (view: ContactsOutcomeView) => {
+    if (view.enabled !== null) {
+      contactsConfirmedEnabledRef.current = view.enabled;
+      setContactsSyncEnabled(view.enabled);
+    }
+    if (view.notifyNearbyContacts !== null) {
+      setNotifyNearbyContacts(view.notifyNearbyContacts);
+    }
     clearContactsSuccessTimer();
-    setContactsSyncPhase('success');
-    setContactsSyncError(null);
-    contactsSuccessTimerRef.current = setTimeout(() => {
-      setContactsSyncPhase('idle');
-      contactsSuccessTimerRef.current = null;
-    }, 2500);
+    switch (view.view) {
+      case 'syncing':
+      case 'confirming':
+      case 'idle':
+        setContactsSyncPhase(view.view);
+        setContactsSyncError(null);
+        return;
+      case 'synced':
+        setContactsSyncPhase('synced');
+        setContactsSyncError(null);
+        contactsSuccessTimerRef.current = setTimeout(() => {
+          setContactsSyncPhase('idle');
+          contactsSuccessTimerRef.current = null;
+        }, 2500);
+        return;
+      case 'enabledNotSynced': {
+        // Enable confirmed ≠ address book synced.
+        const message = t('settings.contacts.enabledNotSynced');
+        setContactsSyncPhase('pending');
+        setContactsSyncError(message);
+        offerContactsRetry(message, true);
+        return;
+      }
+      case 'error': {
+        const base = presentContactsSyncError(view.reason ?? '', t);
+        // Server state unreadable → say so instead of implying ON/OFF.
+        const message =
+          view.enabled === null
+            ? `${base} ${t('settings.contacts.stateUnconfirmed')}`
+            : base;
+        setContactsSyncPhase('error');
+        setContactsSyncError(message);
+        offerContactsRetry(message, view.retryable);
+        return;
+      }
+    }
+  };
+
+  const runContactsOperation = async (kind: 'enable' | 'sync' | 'disable') => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) return;
+    setContactsBusy(true);
+    try {
+      await driveContactsOperation({
+        runner: contactsOperationRunner,
+        uid,
+        kind,
+        previousEnabled: contactsConfirmedEnabledRef.current,
+        waitMs: CONTACTS_SYNC_TIMEOUT_MS,
+        task: async () => {
+          const ports = await contactsPorts(uid);
+          if (kind === 'enable') return enableAndSyncContacts(ports);
+          if (kind === 'disable') return disableContactsSyncFlow(ports);
+          return syncGrantedAddressBook(ports);
+        },
+        isActive: () =>
+          contactsMountedRef.current && firebaseAuth.currentUser?.uid === uid,
+        readServerState: () => readContactsServerState(uid),
+        onView: applyContactsView,
+      });
+    } finally {
+      if (
+        contactsMountedRef.current &&
+        contactsOperationRunner.inFlight(uid) === null
+      ) {
+        setContactsBusy(false);
+      }
+    }
   };
 
   const handleRetryContactsSync = async () => {
     if (contactsBusy) return;
-    const uid = firebaseAuth.currentUser?.uid;
-    if (!uid) return;
-    const opGen = bumpContactsOpGeneration();
-    clearContactsSuccessTimer();
-    setContactsBusy(true);
-    setContactsSyncPhase('syncing');
-    setContactsSyncError(null);
-    try {
-      const ports = await contactsPorts(uid);
-      // Reconcile session/fingerprint before retrying Identity sync.
-      await ports.session.load();
-      const outcome = await withContactsTimeout(syncGrantedAddressBook(ports));
-      if (opGen !== contactsOpGenRef.current) return;
-      if (firebaseAuth.currentUser?.uid !== uid) return;
-      if (outcome.ok === false) {
-        presentContactsFailure(
-          outcome.reason,
-          isContactsSyncRetryable(outcome.reason),
-        );
-        return;
-      }
-      setContactsSyncEnabled(outcome.result.contactsSyncEnabled);
-      setNotifyNearbyContacts(outcome.result.notifyNearbyContactsEffective);
-      markContactsSyncSuccess();
-    } catch (err) {
-      if (opGen !== contactsOpGenRef.current) return;
-      if (firebaseAuth.currentUser?.uid !== uid) return;
-      const reason =
-        err instanceof Error && err.message === 'contacts-timeout'
-          ? 'contacts-timeout'
-          : 'contacts-invalid-response';
-      presentContactsFailure(reason, true);
-    } finally {
-      if (opGen === contactsOpGenRef.current) {
-        setContactsBusy(false);
-      }
-    }
+    await runContactsOperation('sync');
   };
 
   const handleToggleNotifyNearbyInterests = async (enabled: boolean) => {
@@ -680,72 +733,10 @@ export default function MoreScreen() {
 
   const handleToggleContactsSync = async (enabled: boolean) => {
     if (contactsBusy) return;
-    const uid = firebaseAuth.currentUser?.uid;
-    if (!uid) return;
-    const previous = contactsSyncEnabled;
-    const opGen = bumpContactsOpGeneration();
-    clearContactsSuccessTimer();
-    setContactsBusy(true);
+    // Requested position while the operation runs; the final value comes from
+    // the Identity outcome or a server read, never from an assumed rollback.
     setContactsSyncEnabled(enabled);
-    setContactsSyncPhase(enabled ? 'syncing' : 'idle');
-    setContactsSyncError(null);
-    try {
-      const ports = await contactsPorts(uid);
-      const outcome = enabled
-        ? await withContactsTimeout(enableAndSyncContacts(ports))
-        : await withContactsTimeout(disableContactsSyncFlow(ports));
-      if (opGen !== contactsOpGenRef.current) return;
-      if (firebaseAuth.currentUser?.uid !== uid) return;
-      if (outcome.ok === false) {
-        if (enabled && outcome.identityEnabled) {
-          // Identity enable committed — keep toggle on; offer sync retry.
-          setContactsSyncEnabled(true);
-          if (outcome.result) {
-            setNotifyNearbyContacts(
-              outcome.result.notifyNearbyContactsEffective,
-            );
-          }
-          presentContactsFailure(
-            outcome.reason,
-            isContactsSyncRetryable(outcome.reason),
-          );
-          return;
-        }
-        setContactsSyncEnabled(previous);
-        setContactsSyncPhase('idle');
-        presentContactsFailure(
-          outcome.reason,
-          isContactsSyncRetryable(outcome.reason),
-        );
-        return;
-      }
-      setContactsSyncEnabled(outcome.result.contactsSyncEnabled);
-      setNotifyNearbyContacts(outcome.result.notifyNearbyContactsEffective);
-      if (enabled) {
-        markContactsSyncSuccess();
-      } else {
-        setContactsSyncPhase('idle');
-      }
-    } catch (err) {
-      if (opGen !== contactsOpGenRef.current) return;
-      if (firebaseAuth.currentUser?.uid !== uid) return;
-      const reason =
-        err instanceof Error && err.message === 'contacts-timeout'
-          ? 'contacts-timeout'
-          : 'contacts-invalid-response';
-      if (enabled) {
-        // Timeout ≠ proof that Identity did not write — keep on + reconcile.
-        presentContactsFailure(reason, true);
-      } else {
-        setContactsSyncEnabled(previous);
-        setContactsSyncPhase('idle');
-        presentContactsFailure(reason, false);
-      }
-    } finally {
-      if (opGen === contactsOpGenRef.current) {
-        setContactsBusy(false);
-      }
-    }
+    await runContactsOperation(enabled ? 'enable' : 'disable');
   };
 
   const showNeedsAlwaysSettings = () => {
@@ -1101,7 +1092,8 @@ export default function MoreScreen() {
       }
       // Invalidate in-flight Contacts ops so late results cannot update UI /
       // consent after this UID session ends.
-      bumpContactsOpGeneration();
+      const signingOutUid = firebaseAuth.currentUser?.uid;
+      if (signingOutUid) contactsOperationRunner.invalidate(signingOutUid);
       await firebaseAuth.signOut();
       // Idempotent Facebook SDK logout; never blocks guest navigation.
       await clearFacebookProviderSession();
@@ -1233,11 +1225,15 @@ export default function MoreScreen() {
             description={
               contactsSyncPhase === 'syncing'
                 ? t('settings.contacts.syncing')
-                : contactsSyncPhase === 'success'
-                  ? t('settings.contacts.syncSuccess')
-                  : contactsSyncPhase === 'error' && contactsSyncError
-                    ? contactsSyncError
-                    : t('settings.contacts.description')
+                : contactsSyncPhase === 'confirming'
+                  ? t('settings.contacts.confirming')
+                  : contactsSyncPhase === 'synced'
+                    ? t('settings.contacts.syncSuccess')
+                    : (contactsSyncPhase === 'error' ||
+                          contactsSyncPhase === 'pending') &&
+                        contactsSyncError
+                      ? contactsSyncError
+                      : t('settings.contacts.description')
             }
             value={contactsSyncEnabled}
             onValueChange={handleToggleContactsSync}

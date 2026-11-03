@@ -1518,6 +1518,7 @@ export function OwnedSocialConnectSection({
                 t('profile.social.connectModal.instagram.stepOpen'),
                 t('profile.social.connectModal.instagram.stepMessage'),
                 t('profile.social.connectModal.instagram.stepPaste'),
+                t('profile.social.connectModal.instagram.stepReturn'),
               ]
             : undefined
         }

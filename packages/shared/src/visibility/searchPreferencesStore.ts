@@ -1,9 +1,12 @@
 /**
  * Persist searchPreferences on users/{uid} (owner-writable).
  *
- * Active-mode updates use a nested field path so an invalid inactive-mode bag
- * cannot reject the write (Firestore merge of the whole `searchPreferences`
- * map would otherwise replace both faces). Visibility is never written here.
+ * Active-mode updates use a nested field path so the client's local copy of the
+ * inactive mode is never sent. Rules still validate the post-merge
+ * `searchPreferences` bag, so an invalid inactive bag already STORED on the
+ * server rejects the write (verified against the real rules in the emulator —
+ * see __tests__/searchPreferencesRules.emulator.test.ts). Visibility is never
+ * written here.
  */
 
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
@@ -12,7 +15,10 @@ import { firestoreDb } from '../config/firebaseConfig';
 import { flattenCatalogInterestItems } from '../interests/onboardingInterestCatalog';
 import type { ProfileMode } from '../profile/profileModeFields';
 import { updateUserProfilePartial } from '../services/firestoreService';
-import { prepareSearchPreferencesForPersist } from './preferences';
+import {
+  buildSearchPreferencesModeUpdate,
+  prepareSearchPreferencesForPersist,
+} from './preferences';
 import type {
   VisibilitySearchPreferences,
   VisibilitySearchPreferencesByMode,
@@ -79,9 +85,9 @@ export async function persistSearchPreferencesForMode(
   );
   const updated = { ...byMode, [mode]: prepared };
   const ref = doc(firestoreDb, 'users', uid);
-  await updateDoc(ref, {
-    [`searchPreferences.${mode}`]: { ...prepared },
-    updatedAt: serverTimestamp(),
-  });
+  await updateDoc(
+    ref,
+    buildSearchPreferencesModeUpdate(mode, prepared, serverTimestamp()),
+  );
   return updated;
 }

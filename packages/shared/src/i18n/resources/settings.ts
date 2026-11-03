@@ -51,6 +51,11 @@ export default {
     error: 'Could not update Contacts sync. Try again later.',
     syncing: 'Syncing contacts…',
     syncSuccess: 'Contacts synced.',
+    confirming:
+      'Still confirming with the server. You can keep using Nearsy.',
+    enabledNotSynced:
+      'Contacts nearby is on, but your address book is not synced yet.',
+    stateUnconfirmed: 'We could not confirm whether it is on or off.',
     syncFailedTitle: 'Contacts sync',
     retry: 'Retry',
     errors: {

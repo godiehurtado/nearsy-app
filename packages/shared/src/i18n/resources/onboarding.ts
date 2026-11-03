@@ -207,8 +207,9 @@ export default {
       title: 'Social media',
       subtitle:
         'Connect your profiles so people can find you elsewhere. All optional.',
-      connected: '{{count}} connected',
-      connectedOne: '1 connected',
+      // Counts verified accounts and saved links alike — not 'verified'.
+      connected: '{{count}} added',
+      connectedOne: '1 added',
       next: 'Next',
       skip: 'Skip',
       other: 'Other network',

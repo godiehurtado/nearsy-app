@@ -53,6 +53,12 @@ export type ContactsControllerOutcome =
       result?: ContactsWireResult;
     };
 
+function failReason(err: unknown): string {
+  return err instanceof ContactsHmacClientError
+    ? err.reason
+    : parseContactsHmacFailReason(err) ?? 'contacts-invalid-response';
+}
+
 async function persistSession(
   ports: ContactsControllerPorts,
   result: ContactsWireResult,
@@ -119,9 +125,14 @@ export async function enableAndSyncContacts(
     };
   }
 
-  const enabled = await ports.client.enableContactsSync(
-    buildEnableContactsSyncRequest(),
-  );
+  let enabled: ContactsWireResult;
+  try {
+    enabled = await ports.client.enableContactsSync(
+      buildEnableContactsSyncRequest(),
+    );
+  } catch (err) {
+    return { ok: false, reason: failReason(err), bookSynced: false };
+  }
   await persistSession(ports, enabled);
   await notifyAfterIdentity(ports, enabled);
 

@@ -2442,7 +2442,7 @@ export default function SocialMediaScreen() {
                             { color: palette.textMuted },
                           ]}
                         >
-                          {t('profile.social.notConnected')}
+                          {t('profile.social.noLinkSaved')}
                         </Text>
                       )}
                     </View>
@@ -2450,10 +2450,10 @@ export default function SocialMediaScreen() {
                       accessibilityRole="button"
                       accessibilityLabel={
                         connected
-                          ? t('profile.social.disconnectA11y', {
+                          ? t('profile.social.removeLinkA11y', {
                               platform: card.label,
                             })
-                          : t('profile.social.connectA11y', {
+                          : t('profile.social.addLinkA11y', {
                               platform: card.label,
                             })
                       }
@@ -2486,8 +2486,8 @@ export default function SocialMediaScreen() {
                         ]}
                       >
                         {connected
-                          ? t('profile.social.disconnect')
-                          : t('profile.social.connect')}
+                          ? t('profile.social.removeLink')
+                          : t('profile.social.addLink')}
                       </Text>
                     </Pressable>
                   </View>
@@ -2599,6 +2599,7 @@ export default function SocialMediaScreen() {
                 t('profile.social.connectModal.instagram.stepOpen'),
                 t('profile.social.connectModal.instagram.stepMessage'),
                 t('profile.social.connectModal.instagram.stepPaste'),
+                t('profile.social.connectModal.instagram.stepReturn'),
               ]
             : undefined
         }

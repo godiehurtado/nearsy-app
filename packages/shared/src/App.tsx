@@ -36,6 +36,7 @@ import {
 import {
   refreshVerifiedActorKeysFlow,
 } from './contacts/controller';
+import { contactsOperationRunner } from './contacts/contactsOperationCoordinator';
 import { getContactsHmacClient } from './contacts/iosContactsFoundation';
 import { createContactsSessionStore } from './contacts/iosContactsSession';
 import { registerRefreshVerifiedActorKeysInvoker } from './contacts/refreshActorKeys';
@@ -249,19 +250,23 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
     registerRefreshVerifiedActorKeysInvoker(async () => {
       const uid = firebaseAuth.currentUser?.uid;
       if (!uid) return;
-      const client = await getContactsHmacClient();
-      const session = createContactsSessionStore(uid);
-      await refreshVerifiedActorKeysFlow({
-        client,
-        session,
-        afterIdentity: async (result) => {
-          // Idempotent / reevaluateRequired:false must not clear a prior pending mark.
-          // Reevaluate failure must not invalidate a confirmed Identity sync.
-          if (shouldCallReevaluateAfterIdentity(result)) {
-            scheduleReevaluateProximityNotices();
-          }
-        },
-      });
+      // Serialized with More Settings enable/sync/disable for this UID so the
+      // session epoch is never written by two Identity calls at once.
+      await contactsOperationRunner.run(uid, 'refresh', async () => {
+        const client = await getContactsHmacClient();
+        const session = createContactsSessionStore(uid);
+        return refreshVerifiedActorKeysFlow({
+          client,
+          session,
+          afterIdentity: async (result) => {
+            // Idempotent / reevaluateRequired:false must not clear a prior pending mark.
+            // Reevaluate failure must not invalidate a confirmed Identity sync.
+            if (shouldCallReevaluateAfterIdentity(result)) {
+              scheduleReevaluateProximityNotices();
+            }
+          },
+        });
+      }).promise;
     });
 
     void resumePendingReevaluateProximityNotices();

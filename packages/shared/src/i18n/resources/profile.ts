@@ -209,6 +209,13 @@ export default {
     connected: 'Connected',
     /** Manual URL links (FB/LI/Web) — not a verified ownership badge. */
     linkSaved: 'Link saved',
+    noLinkSaved: 'No link saved',
+    addLink: 'Add link',
+    editLink: 'Edit',
+    removeLink: 'Remove',
+    addLinkA11y: 'Add {{platform}} link',
+    editLinkA11y: 'Edit {{platform}} link',
+    removeLinkA11y: 'Remove {{platform}} link',
     notConnected: 'Not connected',
     connect: 'Connect',
     disconnect: 'Disconnect',
@@ -246,7 +253,8 @@ export default {
         stepCopy: 'Copy the code.',
         stepOpen: 'Open Instagram and go to @nearsy.app.',
         stepMessage: 'Tap Message.',
-        stepPaste: 'Paste the code, send it, then return to Nearsy.',
+        stepPaste: 'Paste the code and send it.',
+        stepReturn: 'Come back to Nearsy: we check the connection automatically.',
       },
       x: {
         title: 'Connect X',
