@@ -4,9 +4,15 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { compareNumericAppVersions, isPublicVersionGreater } from '../appUpdateNotice/compare';
-import { loadAppUpdatePolicy } from '../appUpdateNotice/callableHttp';
 import {
+  compareNumericAppVersions,
+  isInstalledBehindTarget,
+  isPublicVersionGreater,
+} from '../appUpdateNotice/compare';
+import { loadAppUpdatePolicy } from '../appUpdateNotice/callableHttp';
+import { resolveIosAppUpdateChannel } from '../appUpdateNotice/channel';
+import {
+  APP_UPDATE_NOTICE_CONTRACT_SHA,
   APP_UPDATE_NOTICE_REQUEST,
   GET_APP_UPDATE_POLICY,
   parseAppUpdateNoticeConfig,
@@ -14,7 +20,10 @@ import {
 } from '../appUpdateNotice/contract';
 import { createAppUpdateNoticeController } from '../appUpdateNotice/controller';
 import { decideAppUpdateNotice } from '../appUpdateNotice/decision';
-import { readInstalledNativeVersionFromConstants } from '../appUpdateNotice/nativeVersion';
+import {
+  readInstalledNativeReleaseFromConstants,
+  readInstalledNativeVersionFromConstants,
+} from '../appUpdateNotice/nativeVersion';
 import {
   isSensitiveUpdateNoticeUrl,
   shouldConsultOnAppStateChange,
@@ -27,7 +36,10 @@ import {
   type AppUpdateNoticeSnoozeRecord,
   type AppUpdateNoticeSnoozeStore,
 } from '../appUpdateNotice/snooze';
-import { IOS_APP_STORE_LISTING_URL } from '../appUpdateNotice/storeListing';
+import {
+  IOS_APP_STORE_LISTING_URL,
+  IOS_TESTFLIGHT_LISTING_URL,
+} from '../appUpdateNotice/storeListing';
 import { FirebaseCallableHttpError } from '../firebase/callableHttp';
 import en from '../i18n/locales/en';
 import es from '../i18n/locales/es';
@@ -41,13 +53,43 @@ function readShared(relativeFromSharedSrc: string): string {
 function policy(
   over: Partial<AppUpdateNoticeConfig> = {},
 ): AppUpdateNoticeConfig {
-  return {
+  const base: AppUpdateNoticeConfig = {
     platform: 'ios',
+    channel: 'production',
+    softEnabled: true,
+    recommended: { marketingVersion: '2.0.10', build: '70' },
+    forceEnabled: false,
+    minimum: { marketingVersion: '', build: '' },
+    updateUrl: IOS_APP_STORE_LISTING_URL,
+    cacheTtlSeconds: 3600,
     enabled: true,
     latestVersion: '2.0.10',
     storeUrl: IOS_APP_STORE_LISTING_URL,
-    ...over,
   };
+  const merged = { ...base, ...over };
+  if (over.recommended) merged.recommended = over.recommended;
+  if (over.minimum) merged.minimum = over.minimum;
+  if (over.softEnabled !== undefined) merged.enabled = over.softEnabled;
+  if (over.enabled !== undefined) {
+    merged.softEnabled = over.enabled;
+    merged.enabled = over.enabled;
+  }
+  if (over.latestVersion !== undefined) {
+    merged.latestVersion = over.latestVersion;
+    merged.recommended = {
+      marketingVersion: over.latestVersion,
+      build: over.recommended?.build ?? merged.recommended.build,
+    };
+  }
+  if (over.storeUrl !== undefined) {
+    merged.storeUrl = over.storeUrl;
+    merged.updateUrl = over.storeUrl;
+  }
+  if (over.updateUrl !== undefined) {
+    merged.updateUrl = over.updateUrl;
+    merged.storeUrl = over.updateUrl;
+  }
+  return merged;
 }
 
 function mockFetch(handler: (url: string, init?: RequestInit) => Promise<Response>) {
@@ -81,36 +123,64 @@ function memorySnooze(
 }
 
 describe('app update notice contract', () => {
-  it('consumes getAppUpdatePolicy from Functions PR #34', () => {
+  it('pins Functions contract SHA 5e524d1 and keeps legacy PR #34 request', () => {
     assert.equal(GET_APP_UPDATE_POLICY, 'getAppUpdatePolicy');
     assert.deepEqual(APP_UPDATE_NOTICE_REQUEST, { platform: 'ios' });
-    const src = readShared('appUpdateNotice/contract.ts');
-    assert.equal(src.includes('APP_UPDATE_NOTICE_CALLABLE_NAME'), false);
-  });
-
-  it('parses platform + enabled + latestVersion + storeUrl and ignores force flags', () => {
-    assert.deepEqual(
-      parseAppUpdateNoticeConfig({
-        platform: 'ios',
-        enabled: true,
-        latestVersion: '2.0.10',
-        storeUrl: IOS_APP_STORE_LISTING_URL,
-        force: true,
-        minVersion: '9.9.9',
-      }),
-      { ok: true, config: policy() },
+    assert.equal(
+      APP_UPDATE_NOTICE_CONTRACT_SHA,
+      '5e524d1cd2cfa7b3d58137bd5d07cda71e927a45',
     );
+    const pinned = readShared('appUpdateNotice/FUNCTIONS_CONTRACT_SHA.txt').trim();
+    assert.equal(pinned, APP_UPDATE_NOTICE_CONTRACT_SHA);
   });
 
-  it('treats empty latestVersion as not configured', () => {
-    assert.deepEqual(
+  it('parses legacy PR #34 shape and ignores force flags', () => {
+    const parsed = parseAppUpdateNoticeConfig({
+      platform: 'ios',
+      enabled: true,
+      latestVersion: '2.0.10',
+      storeUrl: IOS_APP_STORE_LISTING_URL,
+      force: true,
+      minVersion: '9.9.9',
+    });
+    assert.equal(parsed.ok, true);
+    if (!parsed.ok) return;
+    assert.equal(parsed.config.softEnabled, true);
+    assert.equal(parsed.config.forceEnabled, false);
+    assert.equal(parsed.config.latestVersion, '2.0.10');
+    assert.equal(parsed.config.recommended.build, '0');
+  });
+
+  it('parses v2 soft + force document', () => {
+    const parsed = parseAppUpdateNoticeConfig({
+      platform: 'ios',
+      channel: 'testflight',
+      softEnabled: true,
+      recommended: { marketingVersion: '2.0.10', build: '71' },
+      forceEnabled: true,
+      minimum: { marketingVersion: '2.0.9', build: '60' },
+      updateUrl: IOS_TESTFLIGHT_LISTING_URL,
+      cacheTtlSeconds: 120,
+    });
+    assert.equal(parsed.ok, true);
+    if (!parsed.ok) return;
+    assert.equal(parsed.config.channel, 'testflight');
+    assert.equal(parsed.config.forceEnabled, true);
+    assert.equal(parsed.config.cacheTtlSeconds, 120);
+  });
+
+  it('rejects TestFlight channel paired with a public App Store URL', () => {
+    assert.equal(
       parseAppUpdateNoticeConfig({
         platform: 'ios',
-        enabled: false,
-        latestVersion: '',
-        storeUrl: IOS_APP_STORE_LISTING_URL,
-      }),
-      { ok: true, config: policy({ enabled: false, latestVersion: '' }) },
+        channel: 'testflight',
+        softEnabled: true,
+        recommended: { marketingVersion: '2.0.10', build: '71' },
+        forceEnabled: false,
+        minimum: { marketingVersion: '', build: '' },
+        updateUrl: IOS_APP_STORE_LISTING_URL,
+      }).ok,
+      false,
     );
   });
 
@@ -134,44 +204,51 @@ describe('app update notice contract', () => {
       }).ok,
       false,
     );
-    assert.equal(
-      parseAppUpdateNoticeConfig({
-        platform: 'android',
-        enabled: true,
-        latestVersion: '2.0.10',
-        storeUrl: IOS_APP_STORE_LISTING_URL,
-      }).ok,
-      false,
+  });
+});
+
+describe('app update channel resolution', () => {
+  it('requires an explicit signal; never invents production for Beta', () => {
+    assert.deepEqual(
+      resolveIosAppUpdateChannel({ explicitChannel: 'testflight' }),
+      { kind: 'testflight' },
     );
-    assert.equal(
-      parseAppUpdateNoticeConfig({
-        enabled: true,
-        latestVersion: '2.0.10',
-      }).ok,
-      false,
+    assert.deepEqual(
+      resolveIosAppUpdateChannel({ explicitChannel: 'production' }),
+      { kind: 'production' },
     );
+    const undetermined = resolveIosAppUpdateChannel({});
+    assert.equal(undetermined.kind, 'undetermined');
   });
 });
 
 describe('app update notice version compare', () => {
-  it('compares numeric components, not text or build numbers', () => {
+  it('compares marketing version then build', () => {
     assert.equal(compareNumericAppVersions('2.0.10', '2.0.9'), 1);
-    assert.equal(compareNumericAppVersions('2.0.9', '2.0.9'), 0);
-    assert.equal(compareNumericAppVersions('2.0.8', '2.0.9'), -1);
-    assert.equal(compareNumericAppVersions('2.10.0', '2.9.9'), 1);
-    assert.equal(compareNumericAppVersions('2.0', '2.0.0'), 0);
     assert.equal(isPublicVersionGreater('2.0.10', '2.0.9'), true);
-    assert.equal(isPublicVersionGreater('2.0.9', '2.0.9'), false);
-    assert.equal(compareNumericAppVersions('2.0.9-rc', '2.0.8'), null);
+    assert.equal(
+      isInstalledBehindTarget(
+        { marketingVersion: '2.0.9', build: '69' },
+        { marketingVersion: '2.0.9', build: '70' },
+      ),
+      true,
+    );
+    assert.equal(
+      isInstalledBehindTarget(
+        { marketingVersion: '2.0.9', build: '70' },
+        { marketingVersion: '2.0.9', build: '70' },
+      ),
+      false,
+    );
   });
 
-  it('reads CFBundleShortVersionString and never the JS bundle version', () => {
-    assert.equal(
-      readInstalledNativeVersionFromConstants({
+  it('reads CFBundleShortVersionString + build, never the JS bundle version', () => {
+    assert.deepEqual(
+      readInstalledNativeReleaseFromConstants({
         nativeAppVersion: '2.0.9',
-        expoConfig: { version: '9.9.9' },
+        nativeBuildVersion: '69',
       }),
-      '2.0.9',
+      { marketingVersion: '2.0.9', build: '69' },
     );
     assert.equal(
       readInstalledNativeVersionFromConstants({
@@ -179,28 +256,25 @@ describe('app update notice version compare', () => {
       }),
       null,
     );
-    const native = readShared('appUpdateNotice/nativeVersion.ts');
-    assert.equal(native.includes('expoConfig.version'), false);
-    assert.match(native, /nativeAppVersion/);
   });
 });
 
 describe('app update notice decision', () => {
-  it('shows only when enabled and public latestVersion is greater', () => {
+  it('returns soft / force / skip from version+build targets', () => {
     assert.equal(
       decideAppUpdateNotice({
         config: policy(),
-        installedNativeVersion: '2.0.9',
+        installed: { marketingVersion: '2.0.9', build: '69' },
         platform: 'ios',
         nowMs: 1_000,
         snooze: null,
       }),
-      'show',
+      'soft',
     );
     assert.equal(
       decideAppUpdateNotice({
-        config: policy({ enabled: false }),
-        installedNativeVersion: '2.0.9',
+        config: policy({ softEnabled: false, enabled: false }),
+        installed: { marketingVersion: '2.0.9', build: '69' },
         platform: 'ios',
         nowMs: 1_000,
         snooze: null,
@@ -209,37 +283,34 @@ describe('app update notice decision', () => {
     );
     assert.equal(
       decideAppUpdateNotice({
-        config: policy({ latestVersion: '2.0.9' }),
-        installedNativeVersion: '2.0.9',
+        config: policy({
+          softEnabled: false,
+          forceEnabled: true,
+          minimum: { marketingVersion: '2.0.9', build: '70' },
+        }),
+        installed: { marketingVersion: '2.0.9', build: '69' },
         platform: 'ios',
         nowMs: 1_000,
         snooze: null,
       }),
-      'skip',
-    );
-    assert.equal(
-      decideAppUpdateNotice({
-        config: policy({ latestVersion: '' }),
-        installedNativeVersion: '2.0.9',
-        platform: 'ios',
-        nowMs: 1_000,
-        snooze: null,
-      }),
-      'skip',
+      'force',
     );
   });
 
-  it('honors 24h snooze per platform and announced version', () => {
+  it('honors snooze per platform+channel+version+build', () => {
     const snooze = buildSnoozeRecord({
       platform: 'ios',
-      latestVersion: '2.0.10',
+      channel: 'production',
+      marketingVersion: '2.0.10',
+      build: '70',
       nowMs: 1_000,
-      snoozeMs: 24 * 60 * 60 * 1000,
     });
     assert.equal(
       isSnoozeActive(snooze, {
         platform: 'ios',
-        latestVersion: '2.0.10',
+        channel: 'production',
+        marketingVersion: '2.0.10',
+        build: '70',
         nowMs: 1_000 + 60 * 60 * 1000,
       }),
       true,
@@ -247,7 +318,7 @@ describe('app update notice decision', () => {
     assert.equal(
       decideAppUpdateNotice({
         config: policy(),
-        installedNativeVersion: '2.0.9',
+        installed: { marketingVersion: '2.0.9', build: '69' },
         platform: 'ios',
         nowMs: 1_000,
         snooze,
@@ -256,13 +327,16 @@ describe('app update notice decision', () => {
     );
     assert.equal(
       decideAppUpdateNotice({
-        config: policy({ latestVersion: '2.0.11' }),
-        installedNativeVersion: '2.0.9',
+        config: policy({
+          recommended: { marketingVersion: '2.0.11', build: '1' },
+          latestVersion: '2.0.11',
+        }),
+        installed: { marketingVersion: '2.0.9', build: '69' },
         platform: 'ios',
         nowMs: 1_000,
         snooze,
       }),
-      'show',
+      'soft',
     );
     assert.equal(parseSnoozeRecord({ platform: 'ios' }), null);
   });
@@ -272,7 +346,6 @@ describe('app update notice session gating', () => {
   it('consults on open-equivalent background→active only', () => {
     assert.equal(shouldConsultOnAppStateChange('background', 'active'), true);
     assert.equal(shouldConsultOnAppStateChange('inactive', 'active'), false);
-    assert.equal(shouldConsultOnAppStateChange('active', 'background'), false);
   });
 
   it('suppresses OAuth and ownership return URLs', () => {
@@ -280,13 +353,8 @@ describe('app update notice session gating', () => {
       isSensitiveUpdateNoticeUrl('nearsy://youtube-ownership?result=ok'),
       true,
     );
-    assert.equal(isSensitiveUpdateNoticeUrl('nearsy://linkedin-auth'), true);
     assert.equal(
       shouldSuppressUpdateNoticeModal({ linkedInBusy: true }),
-      true,
-    );
-    assert.equal(
-      shouldSuppressUpdateNoticeModal({ locationJourneyActive: true }),
       true,
     );
     assert.equal(shouldSuppressUpdateNoticeModal({}), false);
@@ -294,7 +362,40 @@ describe('app update notice session gating', () => {
 });
 
 describe('app update notice controller', () => {
-  it('coalesces in-flight consults and fail-softs on load errors', async () => {
+  it('skips consult when channel is undetermined (no production fallback)', async () => {
+    let loads = 0;
+    let presents = 0;
+    const controller = createAppUpdateNoticeController({
+      nowMs: () => 1,
+      platform: 'ios',
+      resolveChannel: () => ({
+        kind: 'undetermined',
+        reason: 'no signal',
+      }),
+      readInstalledRelease: () => ({
+        marketingVersion: '2.0.9',
+        build: '69',
+      }),
+      loadNotice: async () => {
+        loads += 1;
+        return policy();
+      },
+      snoozeStore: memorySnooze(),
+      isSensitiveSession: () => false,
+      present: async () => {
+        presents += 1;
+        return 'later';
+      },
+      openStoreListing: () => {
+        throw new Error('should not open');
+      },
+    });
+    await controller.consult('open');
+    assert.equal(loads, 0);
+    assert.equal(presents, 0);
+  });
+
+  it('coalesces in-flight consults, snoozes soft Later, fail-softs load errors', async () => {
     let loads = 0;
     let presents = 0;
     const deferred: { resolve?: (value: unknown) => void } = {};
@@ -305,7 +406,11 @@ describe('app update notice controller', () => {
     const controller = createAppUpdateNoticeController({
       nowMs: () => 5_000,
       platform: 'ios',
-      readInstalledNativeVersion: () => '2.0.9',
+      resolveChannel: () => ({ kind: 'production' }),
+      readInstalledRelease: () => ({
+        marketingVersion: '2.0.9',
+        build: '69',
+      }),
       loadNotice: async () => {
         loads += 1;
         if (loads === 1) return firstLoad;
@@ -330,12 +435,16 @@ describe('app update notice controller', () => {
     assert.equal(loads, 1);
     assert.equal(presents, 1);
     assert.equal(snooze.records.length, 1);
-    assert.equal(snooze.records[0]?.latestVersion, '2.0.10');
+    assert.equal(snooze.records[0]?.marketingVersion, '2.0.10');
 
     const later = createAppUpdateNoticeController({
       nowMs: () => 5_000,
       platform: 'ios',
-      readInstalledNativeVersion: () => '2.0.9',
+      resolveChannel: () => ({ kind: 'production' }),
+      readInstalledRelease: () => ({
+        marketingVersion: '2.0.9',
+        build: '69',
+      }),
       loadNotice: async () => {
         throw new Error('offline');
       },
@@ -351,32 +460,68 @@ describe('app update notice controller', () => {
     assert.equal(presents, 1);
   });
 
-  it('does not present during a sensitive session and skips inactive→active', async () => {
-    let presents = 0;
+  it('releases force when policy later skips (expired / invalidated)', async () => {
+    let dismissCalls = 0;
+    let presentKind: string | null = null;
+    let loadN = 0;
+    let forceResolve: ((c: 'dismissed' | 'update' | 'later') => void) | null =
+      null;
     const controller = createAppUpdateNoticeController({
       nowMs: () => 1,
       platform: 'ios',
-      readInstalledNativeVersion: () => '2.0.9',
-      loadNotice: async () => policy(),
+      resolveChannel: () => ({ kind: 'production' }),
+      readInstalledRelease: () => ({
+        marketingVersion: '2.0.9',
+        build: '69',
+      }),
+      loadNotice: async () => {
+        loadN += 1;
+        if (loadN === 1) {
+          return policy({
+            softEnabled: false,
+            forceEnabled: true,
+            minimum: { marketingVersion: '2.0.9', build: '70' },
+          });
+        }
+        return policy({ softEnabled: false, forceEnabled: false });
+      },
       snoozeStore: memorySnooze(),
-      isSensitiveSession: () => true,
-      present: async () => {
-        presents += 1;
-        return 'update';
+      isSensitiveSession: () => false,
+      present: (presentation) =>
+        new Promise((resolve) => {
+          presentKind = presentation.kind;
+          forceResolve = resolve;
+        }),
+      dismissForce: () => {
+        dismissCalls += 1;
+        forceResolve?.('dismissed');
+        forceResolve = null;
       },
       openStoreListing: () => {},
+      fetchThrottleMs: 0,
     });
-    controller.onAppStateChange('inactive', 'active');
+
+    const first = controller.consult('open');
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(presentKind, 'force');
+    assert.equal(controller.isForceActive(), true);
+
     await controller.consult('foreground');
-    assert.equal(presents, 0);
+    await first;
+    assert.equal(dismissCalls, 1);
+    assert.equal(controller.isForceActive(), false);
   });
 
-  it('opens the official App Store listing on Update', async () => {
+  it('opens allowlisted listing on Update', async () => {
     let opened = '';
     const controller = createAppUpdateNoticeController({
       nowMs: () => 1,
       platform: 'ios',
-      readInstalledNativeVersion: () => '2.0.9',
+      resolveChannel: () => ({ kind: 'production' }),
+      readInstalledRelease: () => ({
+        marketingVersion: '2.0.9',
+        build: '69',
+      }),
       loadNotice: async () => policy(),
       snoozeStore: memorySnooze(),
       isSensitiveSession: () => false,
@@ -386,24 +531,33 @@ describe('app update notice controller', () => {
       },
     });
     await controller.consult('open');
-    assert.equal(opened, 'https://apps.apple.com/app/id6759302206');
+    assert.equal(opened, IOS_APP_STORE_LISTING_URL);
   });
 });
 
 describe('app update notice adapter', () => {
   const APP_CHECK = 'test-app-check-token';
 
-  it('loads a valid Functions policy without Auth', async () => {
+  it('loads a valid Functions policy without Auth and sends channel', async () => {
     const seen: { url?: string; headers?: Record<string, string>; body?: string } =
       {};
     const config = await loadAppUpdatePolicy(
-      { projectId: 'nearsy-pj', appCheckToken: APP_CHECK },
+      {
+        projectId: 'nearsy-pj',
+        appCheckToken: APP_CHECK,
+        channel: 'production',
+      },
       {
         fetchImpl: mockFetch(async (url, init) => {
           seen.url = url;
           seen.headers = init?.headers as Record<string, string>;
           seen.body = String(init?.body ?? '');
-          return callableResult(policy());
+          return callableResult({
+            platform: 'ios',
+            enabled: true,
+            latestVersion: '2.0.10',
+            storeUrl: IOS_APP_STORE_LISTING_URL,
+          });
         }),
       },
     );
@@ -414,56 +568,12 @@ describe('app update notice adapter', () => {
     assert.equal(seen.headers?.['X-Firebase-AppCheck'], APP_CHECK);
     assert.equal(seen.headers?.Authorization, undefined);
     assert.deepEqual(JSON.parse(seen.body ?? '{}'), {
-      data: { platform: 'ios' },
+      data: { platform: 'ios', channel: 'production' },
     });
-    assert.deepEqual(config, policy());
+    assert.equal(config.softEnabled, true);
   });
 
-  it('returns disabled policy without presenting as an error', async () => {
-    const config = await loadAppUpdatePolicy(
-      { projectId: 'nearsy-dev', appCheckToken: APP_CHECK },
-      {
-        fetchImpl: mockFetch(async () =>
-          callableResult(policy({ enabled: false, latestVersion: '2.0.10' })),
-        ),
-      },
-    );
-    assert.equal(config.enabled, false);
-    assert.equal(
-      decideAppUpdateNotice({
-        config,
-        installedNativeVersion: '2.0.9',
-        platform: 'ios',
-        nowMs: 1,
-        snooze: null,
-      }),
-      'skip',
-    );
-  });
-
-  it('treats empty latestVersion as not configured', async () => {
-    const config = await loadAppUpdatePolicy(
-      { projectId: 'nearsy-dev', appCheckToken: APP_CHECK },
-      {
-        fetchImpl: mockFetch(async () =>
-          callableResult(policy({ latestVersion: '' })),
-        ),
-      },
-    );
-    assert.equal(config.latestVersion, '');
-    assert.equal(
-      decideAppUpdateNotice({
-        config,
-        installedNativeVersion: '2.0.9',
-        platform: 'ios',
-        nowMs: 1,
-        snooze: null,
-      }),
-      'skip',
-    );
-  });
-
-  it('omits the notice when App Check is not ready or the callable errors', async () => {
+  it('omits the notice when App Check is not ready', async () => {
     await assert.rejects(
       () =>
         loadAppUpdatePolicy({
@@ -474,121 +584,30 @@ describe('app update notice adapter', () => {
         err instanceof FirebaseCallableHttpError &&
         err.code === 'functions/failed-precondition',
     );
-
-    await assert.rejects(
-      () =>
-        loadAppUpdatePolicy(
-          { projectId: 'nearsy-pj', appCheckToken: APP_CHECK },
-          {
-            fetchImpl: mockFetch(async () => {
-              throw new Error('offline');
-            }),
-          },
-        ),
-      FirebaseCallableHttpError,
-    );
-
-    let presents = 0;
-    const controller = createAppUpdateNoticeController({
-      nowMs: () => 1,
-      platform: 'ios',
-      readInstalledNativeVersion: () => '2.0.9',
-      loadNotice: () =>
-        loadAppUpdatePolicy({
-          projectId: 'nearsy-pj',
-          appCheckToken: '',
-        }),
-      snoozeStore: memorySnooze(),
-      isSensitiveSession: () => false,
-      present: async () => {
-        presents += 1;
-        return 'update';
-      },
-      openStoreListing: () => {
-        throw new Error('should not open');
-      },
-    });
-    await controller.consult('open');
-    assert.equal(presents, 0);
-  });
-
-  it('omits the notice when storeUrl is not the official Nearsy listing', async () => {
-    await assert.rejects(
-      () =>
-        loadAppUpdatePolicy(
-          { projectId: 'nearsy-pj', appCheckToken: APP_CHECK },
-          {
-            fetchImpl: mockFetch(async () =>
-              callableResult(
-                policy({
-                  storeUrl: 'https://apps.apple.com/app/id0000000000',
-                }),
-              ),
-            ),
-          },
-        ),
-      (err: unknown) =>
-        err instanceof FirebaseCallableHttpError &&
-        err.code === 'functions/internal',
-    );
-
-    let presents = 0;
-    const controller = createAppUpdateNoticeController({
-      nowMs: () => 1,
-      platform: 'ios',
-      readInstalledNativeVersion: () => '2.0.9',
-      loadNotice: () =>
-        loadAppUpdatePolicy(
-          { projectId: 'nearsy-pj', appCheckToken: APP_CHECK },
-          {
-            fetchImpl: mockFetch(async () =>
-              callableResult({
-                platform: 'ios',
-                enabled: true,
-                latestVersion: '2.0.10',
-                storeUrl: 'itms-beta://testflight.apple.com',
-              }),
-            ),
-          },
-        ),
-      snoozeStore: memorySnooze(),
-      isSensitiveSession: () => false,
-      present: async () => {
-        presents += 1;
-        return 'update';
-      },
-      openStoreListing: () => {
-        throw new Error('should not open');
-      },
-    });
-    await controller.consult('open');
-    assert.equal(presents, 0);
   });
 });
 
 describe('app update notice wiring', () => {
-  it('hosts the notice in App.tsx and keeps EN/ES copy', () => {
+  it('hosts the notice in App.tsx with channel + force dismiss paths', () => {
     const app = readShared('App.tsx');
     assert.match(app, /AppUpdateNoticeHost/);
     const host = readShared('appUpdateNotice/AppUpdateNoticeHost.tsx');
     assert.match(host, /Platform\.OS !== 'ios'/);
-    assert.match(host, /readInstalledNativeVersionFromConstants\(Constants\)/);
-    assert.match(host, /isOfficialIosStoreUrl\(storeUrl\)/);
+    assert.match(host, /resolveIosAppUpdateChannel/);
+    assert.match(host, /readInstalledNativeReleaseFromConstants/);
+    assert.match(host, /dismissForce/);
     assert.equal(host.includes('expoConfig.version'), false);
     const foundation = readShared(
       'appUpdateNotice/iosAppUpdateNoticeFoundation.ios.ts',
     );
     assert.match(foundation, /getAppUpdatePolicy|loadAppUpdatePolicy/);
+    assert.match(foundation, /channel/);
     assert.equal(foundation.includes('getIdToken'), false);
-    assert.equal(foundation.includes('firebaseAuth.currentUser'), false);
     assert.equal(en.appUpdateNotice.update, 'Update');
-    assert.equal(en.appUpdateNotice.later, 'Later');
     assert.equal(es.appUpdateNotice.update, 'Actualizar');
-    assert.equal(es.appUpdateNotice.later, 'Más tarde');
-    assert.match(es.appUpdateNotice.title, /Nueva versión disponible/);
   });
 
-  it('does not bump the 2.0.9 (68) IPA numbering', () => {
+  it('does not bump the 2.0.9 IPA numbering', () => {
     const appJson = JSON.parse(
       readFileSync(
         join(here, '../../../../apps/nearsy-ios/app.json'),

@@ -1,3 +1,7 @@
-export async function loadAppUpdateNoticeFromFunctions(): Promise<unknown> {
+import type { AppUpdateChannel } from './contract';
+
+export async function loadAppUpdateNoticeFromFunctions(
+  _channel: AppUpdateChannel,
+): Promise<unknown> {
   return undefined;
 }

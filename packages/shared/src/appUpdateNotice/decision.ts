@@ -1,31 +1,42 @@
-import { isPublicVersionGreater } from './compare';
+import { isInstalledBehindTarget } from './compare';
 import type { AppUpdateNoticeConfig } from './contract';
 import { isSnoozeActive, type AppUpdateNoticeSnoozeRecord } from './snooze';
 
-export type AppUpdateNoticeDecision = 'show' | 'skip';
+export type AppUpdateNoticeDecision = 'soft' | 'force' | 'skip';
 
 export function decideAppUpdateNotice(input: {
   config: AppUpdateNoticeConfig | null;
-  installedNativeVersion: string | null;
+  installed: { marketingVersion: string; build: string } | null;
   platform: string;
   nowMs: number;
   snooze: AppUpdateNoticeSnoozeRecord | null;
 }): AppUpdateNoticeDecision {
   const config = input.config;
-  if (!config || !config.enabled) return 'skip';
-  if (!config.latestVersion) return 'skip';
-  if (!input.installedNativeVersion) return 'skip';
-  if (!isPublicVersionGreater(config.latestVersion, input.installedNativeVersion)) {
+  if (!config) return 'skip';
+  if (!input.installed) return 'skip';
+
+  if (
+    config.forceEnabled &&
+    isInstalledBehindTarget(input.installed, config.minimum)
+  ) {
+    return 'force';
+  }
+
+  if (!config.softEnabled) return 'skip';
+  if (!config.recommended.marketingVersion) return 'skip';
+  if (!isInstalledBehindTarget(input.installed, config.recommended)) {
     return 'skip';
   }
   if (
     isSnoozeActive(input.snooze, {
       platform: input.platform,
-      latestVersion: config.latestVersion,
+      channel: config.channel,
+      marketingVersion: config.recommended.marketingVersion,
+      build: config.recommended.build,
       nowMs: input.nowMs,
     })
   ) {
     return 'skip';
   }
-  return 'show';
+  return 'soft';
 }

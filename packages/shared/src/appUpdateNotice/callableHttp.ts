@@ -2,7 +2,8 @@
  * HTTP adapter for `getAppUpdatePolicy`.
  *
  * App Check is required. Auth is not sent (callable works on the login
- * screen). Request body is exactly `{ platform: "ios" }`.
+ * screen). Request body is `{ platform: "ios", channel? }` per contract SHA
+ * 5e524d1; legacy servers that ignore `channel` still return PR #34 shapes.
  */
 
 import {
@@ -17,7 +18,9 @@ import {
   APP_UPDATE_NOTICE_REGION,
   APP_UPDATE_NOTICE_REQUEST,
   GET_APP_UPDATE_POLICY,
+  buildAppUpdatePolicyRequest,
   parseAppUpdateNoticeConfig,
+  type AppUpdateChannel,
   type AppUpdateNoticeConfig,
 } from './contract';
 
@@ -27,6 +30,8 @@ export type InvokeGetAppUpdatePolicyInput = {
   projectId: string;
   region?: string;
   appCheckToken: string;
+  /** When omitted, legacy `{ platform: "ios" }` is sent (production implied). */
+  channel?: AppUpdateChannel;
 };
 
 function isAllowedProject(
@@ -83,6 +88,11 @@ export async function invokeGetAppUpdatePolicyHttp(
       controller.abort();
     }, timeoutMs);
 
+  const requestData =
+    input.channel != null
+      ? buildAppUpdatePolicyRequest(input.channel)
+      : { ...APP_UPDATE_NOTICE_REQUEST };
+
   let response: Response;
   try {
     response = await fetchImpl(url, {
@@ -91,7 +101,7 @@ export async function invokeGetAppUpdatePolicyHttp(
         'Content-Type': 'application/json',
         'X-Firebase-AppCheck': input.appCheckToken,
       },
-      body: JSON.stringify({ data: { ...APP_UPDATE_NOTICE_REQUEST } }),
+      body: JSON.stringify({ data: requestData }),
       signal: controller?.signal,
     });
   } catch (err) {
