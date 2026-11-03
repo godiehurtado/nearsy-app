@@ -55,6 +55,19 @@ function ownerDoc(searchPreferences: Record<string, unknown>, extra = {}) {
   };
 }
 
+/**
+ * The emulator lists one reason per evaluated rule branch. A functional
+ * rejection includes at least one `false for 'update'` (it may ALSO list
+ * budget messages for other branches). A pure budget denial lists only
+ * "maximum of 1000 expressions" reasons.
+ */
+function denialKind(err: unknown): 'budget-only' | 'functional' | 'other' {
+  const text = String((err as Error)?.message ?? err);
+  if (/false for 'update'/.test(text)) return 'functional';
+  if (/maximum of 1000 expressions/.test(text)) return 'budget-only';
+  return 'other';
+}
+
 function prepared(
   prefs: VisibilitySearchPreferences,
   knownIds: ReadonlySet<string> = new Set<string>(),
@@ -172,9 +185,11 @@ describe('Home filters nested write vs real rules (emulator)', { skip: !enabled 
         professional: validPrefs({ ageMin: 17 }),
       }),
     );
-    await assertFails(
+    const err = await assertFails(
       writeMode(UID, 'personal', prepared(validPrefs({ maxDistanceMeters: 40 }))),
     );
+    // Functional rejection (`false for 'update'`), not budget exhaustion.
+    assert.equal(denialKind(err), 'functional');
   });
 
   const ids = (n: number) =>
@@ -199,20 +214,28 @@ describe('Home filters nested write vs real rules (emulator)', { skip: !enabled 
     );
   };
 
-  it('accepts a distance change with 5 interests in each mode', async () => {
+  it('accepts a distance change with 5+5 and 10+0 interests', async () => {
     await assertSucceeds((await seedWithInterests(5, 5))());
+    await assertSucceeds((await seedWithInterests(10, 0))());
+  });
+
+  it('a functional rejection reports `false for` (not budget-only)', async () => {
+    await seed(ownerDoc({ personal: validPrefs(), professional: validPrefs() }));
+    const err = await assertFails(
+      writeMode(UID, 'personal', validPrefs({ maxDistanceMeters: 60.97 })),
+    );
+    assert.equal(denialKind(err), 'functional');
   });
 
   /**
    * KNOWN BACKEND DEFECT (Functions firestore.rules, not fixed here): the
    * post-merge bag check (validInterestIdAt x12 per mode) exhausts the rules
    * 1000-expression budget once both modes hold > ~10 interests in total, so
-   * a VALID filters write is PERMISSION_DENIED. Flip to assertSucceeds when
-   * the rules are fixed.
+   * a VALID filters write is PERMISSION_DENIED with ONLY budget messages.
+   * When Functions fixes the rules: replace this test's assertFails/denialKind
+   * with assertSucceeds for the same fixtures (6+6, 0+12, 11+0) and rename it.
    */
-  it('KNOWN DEFECT: valid write denied with 6+6 or 0+12 interests (expression budget)', async () => {
-    const isBudgetDenial = (err: unknown) =>
-      /maximum of 1000 expressions/.test(String((err as Error)?.message ?? err));
+  it('KNOWN DEFECT: valid write denied with 6+6, 0+12, 11+0 interests (expression budget only)', async () => {
     for (const [active, inactive] of [
       [6, 6],
       [0, 12],
@@ -221,7 +244,7 @@ describe('Home filters nested write vs real rules (emulator)', { skip: !enabled 
       const err = await assertFails(
         (await seedWithInterests(active, inactive))(),
       );
-      assert.equal(isBudgetDenial(err), true, `${active}+${inactive}`);
+      assert.equal(denialKind(err), 'budget-only', `${active}+${inactive}`);
     }
   });
 
