@@ -174,7 +174,13 @@ describe('iOS 2.0.9 CRJ social — ownership Connect/Get/Unlink, no inbox admin'
     );
     const crj = readShared('screens/ProfileCompletionScreen.tsx');
     assert.match(step, /OwnedSocialConnectSection/);
-    assert.match(step, /CRJ_MANUAL_URL_SOCIAL_PLATFORMS\.map/);
+    // Owned cards (YouTube → TikTok → Instagram → X) render first, then the
+    // shared manual-link cards (Facebook → LinkedIn → Website).
+    assert.match(step, /MANUAL_SOCIAL_LINK_ORDER\.map/);
+    assert.ok(
+      step.indexOf('<OwnedSocialConnectSection') <
+        step.indexOf('MANUAL_SOCIAL_LINK_ORDER.map'),
+    );
     assert.equal(CRJ_MANUAL_URL_PLATFORM_IDS.includes('snapchat' as never), false);
     assert.equal(CRJ_OWNED_SOCIAL_PLATFORM_IDS.includes('snapchat' as never), false);
     assert.deepEqual(CRJ_OWNED_SOCIAL_PLATFORM_IDS, [

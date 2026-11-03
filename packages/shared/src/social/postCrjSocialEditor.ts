@@ -286,3 +286,32 @@ export function extractOwnProfileSocialSummaryCounts(
 }
 
 export { buildPostCrjSocialLinksPersistencePatch };
+
+/**
+ * Manual link (Facebook / LinkedIn / Website) draft after "Save link" in the
+ * sheet. The editor persists the result immediately — no Save/Back needed.
+ */
+export function applyManualLinkSave(
+  draft: PostCrjSocialEditorDraft,
+  id: 'facebook' | 'linkedin' | 'website',
+  url: string,
+): PostCrjSocialEditorDraft {
+  return id === 'website'
+    ? { ...draft, website: url, connected: { ...draft.connected, website: true } }
+    : {
+        ...draft,
+        values: { ...draft.values, [id]: url },
+        connected: { ...draft.connected, [id]: true },
+      };
+}
+
+/** Manual link draft after "Remove" (also persisted immediately). */
+export function applyManualLinkRemove(
+  draft: PostCrjSocialEditorDraft,
+  id: 'facebook' | 'linkedin' | 'website',
+): PostCrjSocialEditorDraft {
+  const connected = { ...draft.connected, [id]: false };
+  return id === 'website'
+    ? { ...draft, connected, website: '' }
+    : { ...draft, connected, values: { ...draft.values, [id]: '' } };
+}

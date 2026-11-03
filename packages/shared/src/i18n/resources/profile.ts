@@ -209,6 +209,8 @@ export default {
     connected: 'Connected',
     /** Manual URL links (FB/LI/Web) — not a verified ownership badge. */
     linkSaved: 'Link saved',
+    back: 'Back',
+    backToProfileA11y: 'Back to profile',
     noLinkSaved: 'No link saved',
     addLink: 'Add link',
     editLink: 'Edit',

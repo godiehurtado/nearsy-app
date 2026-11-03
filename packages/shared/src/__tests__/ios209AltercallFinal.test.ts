@@ -266,7 +266,12 @@ describe('iOS 2.0.9 Altercall — social order, Web in CRJ, copy, immediate save
     );
     assert.match(step, /SocialConnectionModal/);
     assert.match(step, /headerIcon/);
-    assert.match(step, /platforms\.website/);
+    // Website is one of the shared manual-link cards (FB → LinkedIn → Website).
+    assert.match(step, /MANUAL_SOCIAL_LINK_ORDER\.map/);
+    assert.match(
+      readShared('social/manualSocialLinkCard.ts'),
+      /'facebook',\s*'linkedin',\s*'website'/,
+    );
     const modal = readShared('components/social/SocialConnectionModal.tsx');
     assert.match(modal, /steps\?/);
     assert.match(modal, /headerIcon/);
