@@ -1,5 +1,5 @@
 /**
- * iOS transport for `getAppUpdatePolicy` (Functions PR #34).
+ * iOS transport for `getAppUpdatePolicy` (Functions PR #34 + contract v2).
  * App Check required; Auth is not sent. Any error fail-softs.
  */
 
@@ -9,7 +9,10 @@ import { createAppCheckBootstrap } from '../authentication/linkedinA3/appCheck/a
 import { createNativeAppCheckPort } from '../authentication/linkedinA3/appCheck/nativeAppCheckPort';
 import { resolveNearsyFirebaseEnvironment } from '../authentication/linkedinA3/environment/nearsyFirebaseEnvironment';
 import { loadAppUpdatePolicy } from './callableHttp';
-import { APP_UPDATE_NOTICE_REGION } from './contract';
+import {
+  APP_UPDATE_NOTICE_REGION,
+  type AppUpdateChannel,
+} from './contract';
 
 type Extra = Record<string, unknown>;
 
@@ -58,7 +61,9 @@ async function getTransport() {
   return transportPromise;
 }
 
-export async function loadAppUpdateNoticeFromFunctions(): Promise<unknown> {
+export async function loadAppUpdateNoticeFromFunctions(
+  channel: AppUpdateChannel,
+): Promise<unknown> {
   try {
     const { projectId, port, appCheck } = await getTransport();
     appCheck.ensureReady();
@@ -70,6 +75,7 @@ export async function loadAppUpdateNoticeFromFunctions(): Promise<unknown> {
         projectId,
         region: APP_UPDATE_NOTICE_REGION,
         appCheckToken,
+        channel,
       }),
     );
   } catch {
