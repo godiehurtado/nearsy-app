@@ -1,7 +1,8 @@
 /**
- * Android `getAppUpdatePolicy` client.
+ * Android `getAppUpdatePolicy` client (contract v2, Functions PR #43 @
+ * 5e524d1cd2cfa7b3d58137bd5d07cda71e927a45).
  * Visibility-discovery Functions, us-central1, App Check on, Auth not required.
- * Errors fail closed (caller skips the notice). Does not enable the server policy.
+ * Errors fail open (caller skips the notice). Does not enable the server policy.
  */
 
 import { getApp } from '@react-native-firebase/app';
@@ -12,14 +13,25 @@ import {
   getAppCheckInitStatus,
 } from '../config/appCheckBootstrap';
 import {
+  resolveAndroidAppUpdateChannel,
+  type AppUpdateChannelExtras,
+} from './channel.ts';
+import { parseBuild, parseMarketingVersion } from './compareVersions.ts';
+import {
   APP_UPDATE_CALLABLE_NAME,
   APP_UPDATE_FUNCTIONS_REGION,
-  type AppUpdatePlatform,
+  type AndroidAppUpdateChannel,
+  type AppUpdateReleaseTarget,
 } from './contract.ts';
-import {
-  ANDROID_APP_UPDATE_POLICY_REQUEST,
-  parseStoreVersion,
-} from './parsePolicy.ts';
+import type { AppUpdateFetchRequest } from './noticeSession.ts';
+
+function expoConstants(): any {
+  try {
+    return require('expo-constants').default ?? require('expo-constants');
+  } catch {
+    return null;
+  }
+}
 
 async function ensureAppCheckReady(): Promise<void> {
   const status = await ensureAppCheckInitialized();
@@ -29,28 +41,56 @@ async function ensureAppCheckReady(): Promise<void> {
   throw new Error('App Check is not ready.');
 }
 
-export async function fetchAppUpdatePolicy(_request?: {
-  platform: AppUpdatePlatform;
-}): Promise<unknown> {
+/**
+ * Forwards the exact request JSON built by the session (v2 `{ platform,
+ * channel }`, or the pre-v2 `{ platform }` fallback). No uid, no Auth, no
+ * extra keys.
+ */
+export async function fetchAppUpdatePolicy(
+  request: AppUpdateFetchRequest,
+): Promise<unknown> {
   await ensureAppCheckReady();
   const callable = getFunctions(
     getApp(),
     APP_UPDATE_FUNCTIONS_REGION,
   ).httpsCallable(APP_UPDATE_CALLABLE_NAME);
-  // Exact contract JSON. Do not forward extra keys, uid, or Auth.
-  const result = await callable(ANDROID_APP_UPDATE_POLICY_REQUEST);
+  const result = await callable(request);
   return result.data;
 }
 
-export function readNativeStoreVersion(): string | null {
+/**
+ * Distribution channel baked into this install. See `channel.ts` for why this
+ * is an explicit build-time extra and not inferred from Firebase / EAS profile.
+ */
+export function readNativeAppUpdateChannel(): AndroidAppUpdateChannel | null {
   try {
-    const Constants =
-      require('expo-constants').default ?? require('expo-constants');
-    const raw =
+    const Constants = expoConstants();
+    const extras = (Constants?.expoConfig?.extra ??
+      null) as AppUpdateChannelExtras;
+    return resolveAndroidAppUpdateChannel(extras);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Installed release identity: Android `versionName` (`nativeAppVersion`) and
+ * `versionCode` (`nativeBuildVersion`). `null` if either is unreadable.
+ */
+export function readNativeInstalledRelease(): AppUpdateReleaseTarget | null {
+  try {
+    const Constants = expoConstants();
+    const marketingVersion = parseMarketingVersion(
       typeof Constants?.nativeAppVersion === 'string'
         ? Constants.nativeAppVersion
-        : '';
-    return parseStoreVersion(raw);
+        : '',
+    );
+    const build = parseBuild(
+      typeof Constants?.nativeBuildVersion === 'string'
+        ? Constants.nativeBuildVersion
+        : '',
+    );
+    return marketingVersion && build ? { marketingVersion, build } : null;
   } catch {
     return null;
   }

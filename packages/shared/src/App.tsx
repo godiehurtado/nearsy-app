@@ -9,6 +9,7 @@ import { ensureAppCheckInitialized } from './config/appCheckBootstrap';
 import { startAffiliationEntitySearchBootstrap } from './affiliations/iosAffiliationEntitySearchBootstrap';
 import { initI18n } from './i18n';
 import { useAppUpdateNotice } from './appUpdate/useAppUpdateNotice';
+import { AppUpdateMandatoryModal } from './appUpdate/AppUpdateMandatoryModal';
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -77,8 +78,8 @@ export const navigationRef = createNavigationContainerRef();
  * so the app never flashes the wrong theme before Theme Selection / Welcome.
  */
 function AppUpdateNoticeHost() {
-  useAppUpdateNotice();
-  return null;
+  const { mandatory } = useAppUpdateNotice();
+  return <AppUpdateMandatoryModal state={mandatory} />;
 }
 
 function ThemedShell({ i18nReady }: { i18nReady: boolean }) {

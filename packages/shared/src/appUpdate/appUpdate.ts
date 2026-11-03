@@ -1,15 +1,20 @@
 /**
- * Non-Android stub. The optional Play notice is Android-only.
+ * Non-Android stub. The Play update notice is Android-only.
  */
 
-import type { AppUpdatePlatform } from './contract.ts';
+import type { AndroidAppUpdateChannel, AppUpdateReleaseTarget } from './contract.ts';
+import type { AppUpdateFetchRequest } from './noticeSession.ts';
 
-export async function fetchAppUpdatePolicy(_request: {
-  platform: AppUpdatePlatform;
-}): Promise<unknown> {
+export async function fetchAppUpdatePolicy(
+  _request: AppUpdateFetchRequest,
+): Promise<unknown> {
   return null;
 }
 
-export function readNativeStoreVersion(): string | null {
+export function readNativeAppUpdateChannel(): AndroidAppUpdateChannel | null {
+  return null;
+}
+
+export function readNativeInstalledRelease(): AppUpdateReleaseTarget | null {
   return null;
 }
