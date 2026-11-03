@@ -177,8 +177,13 @@ export function prepareSearchPreferencesForPersist(
   if (official.length > MAX_SEARCH_INTEREST_IDS) {
     return { ok: false, reasons: [INTEREST_IDS_OVER_MAX_REASON] };
   }
+  // Firestore rules require ageMin/ageMax to be ints; coerce before validate.
+  const ageMin = Math.round(prefs.ageMin);
+  const ageMax = Math.round(prefs.ageMax);
   const next: VisibilitySearchPreferences = {
     ...prefs,
+    ageMin,
+    ageMax,
     interestIds: official,
   };
   const check = validateSearchPreferences(next, knownIds);

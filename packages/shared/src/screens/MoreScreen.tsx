@@ -530,11 +530,19 @@ export default function MoreScreen() {
     setBgVisible(value);
   };
 
-  const contactsPorts = async () => ({
+  const contactsOpGenRef = useRef(0);
+
+  const bumpContactsOpGeneration = () => {
+    contactsOpGenRef.current += 1;
+    return contactsOpGenRef.current;
+  };
+
+  const contactsPorts = async (uid: string) => ({
     client: await getContactsHmacClient(),
-    session: createContactsSessionStore(),
+    session: createContactsSessionStore(uid),
     book: createContactsAddressBookPort(),
     afterIdentity: async (result: ContactsWireResult) => {
+      // Reevaluate is best-effort and separate from Identity sync success.
       if (shouldCallReevaluateAfterIdentity(result)) {
         scheduleReevaluateProximityNotices();
       }
@@ -595,15 +603,20 @@ export default function MoreScreen() {
 
   const handleRetryContactsSync = async () => {
     if (contactsBusy) return;
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) return;
+    const opGen = bumpContactsOpGeneration();
     clearContactsSuccessTimer();
     setContactsBusy(true);
     setContactsSyncPhase('syncing');
     setContactsSyncError(null);
     try {
-      const ports = await contactsPorts();
+      const ports = await contactsPorts(uid);
       // Reconcile session/fingerprint before retrying Identity sync.
       await ports.session.load();
       const outcome = await withContactsTimeout(syncGrantedAddressBook(ports));
+      if (opGen !== contactsOpGenRef.current) return;
+      if (firebaseAuth.currentUser?.uid !== uid) return;
       if (outcome.ok === false) {
         presentContactsFailure(
           outcome.reason,
@@ -615,13 +628,17 @@ export default function MoreScreen() {
       setNotifyNearbyContacts(outcome.result.notifyNearbyContactsEffective);
       markContactsSyncSuccess();
     } catch (err) {
+      if (opGen !== contactsOpGenRef.current) return;
+      if (firebaseAuth.currentUser?.uid !== uid) return;
       const reason =
         err instanceof Error && err.message === 'contacts-timeout'
           ? 'contacts-timeout'
           : 'contacts-invalid-response';
       presentContactsFailure(reason, true);
     } finally {
-      setContactsBusy(false);
+      if (opGen === contactsOpGenRef.current) {
+        setContactsBusy(false);
+      }
     }
   };
 
@@ -663,17 +680,22 @@ export default function MoreScreen() {
 
   const handleToggleContactsSync = async (enabled: boolean) => {
     if (contactsBusy) return;
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) return;
     const previous = contactsSyncEnabled;
+    const opGen = bumpContactsOpGeneration();
     clearContactsSuccessTimer();
     setContactsBusy(true);
     setContactsSyncEnabled(enabled);
     setContactsSyncPhase(enabled ? 'syncing' : 'idle');
     setContactsSyncError(null);
     try {
-      const ports = await contactsPorts();
+      const ports = await contactsPorts(uid);
       const outcome = enabled
         ? await withContactsTimeout(enableAndSyncContacts(ports))
         : await withContactsTimeout(disableContactsSyncFlow(ports));
+      if (opGen !== contactsOpGenRef.current) return;
+      if (firebaseAuth.currentUser?.uid !== uid) return;
       if (outcome.ok === false) {
         if (enabled && outcome.identityEnabled) {
           // Identity enable committed — keep toggle on; offer sync retry.
@@ -705,12 +727,14 @@ export default function MoreScreen() {
         setContactsSyncPhase('idle');
       }
     } catch (err) {
+      if (opGen !== contactsOpGenRef.current) return;
+      if (firebaseAuth.currentUser?.uid !== uid) return;
       const reason =
         err instanceof Error && err.message === 'contacts-timeout'
           ? 'contacts-timeout'
           : 'contacts-invalid-response';
       if (enabled) {
-        // Timeout after optimistic on — keep on and allow retry/reconcile.
+        // Timeout ≠ proof that Identity did not write — keep on + reconcile.
         presentContactsFailure(reason, true);
       } else {
         setContactsSyncEnabled(previous);
@@ -718,7 +742,9 @@ export default function MoreScreen() {
         presentContactsFailure(reason, false);
       }
     } finally {
-      setContactsBusy(false);
+      if (opGen === contactsOpGenRef.current) {
+        setContactsBusy(false);
+      }
     }
   };
 
@@ -1073,6 +1099,9 @@ export default function MoreScreen() {
       } catch {
         // Keep going; leftover association is recovered on the next login as A.
       }
+      // Invalidate in-flight Contacts ops so late results cannot update UI /
+      // consent after this UID session ends.
+      bumpContactsOpGeneration();
       await firebaseAuth.signOut();
       // Idempotent Facebook SDK logout; never blocks guest navigation.
       await clearFacebookProviderSession();

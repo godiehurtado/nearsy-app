@@ -2609,6 +2609,11 @@ export default function SocialMediaScreen() {
               ? t(`profile.social.connectModal.${ownedSheet}.action` as any)
               : ''
         }
+        primaryA11y={
+          ownedSheet === 'instagram' && instagramChallenge
+            ? t('profile.social.instagram.openInboxA11y')
+            : undefined
+        }
         onPrimary={() => {
           if (ownedSheet === 'youtube') {
             setOwnedSheet(null);

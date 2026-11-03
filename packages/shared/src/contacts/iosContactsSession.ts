@@ -1,25 +1,26 @@
 import type { ContactsSessionSnapshot, ContactsSessionStore } from './port';
 
-const memory: ContactsSessionSnapshot = {
-  sourceId: '',
-  contactsEpoch: 0,
-  snapshotVersion: null,
-  fingerprint: null,
-};
+/** In-memory stub (non-iOS). UID-scoped to mirror SecureStore isolation. */
+const memoryByUid = new Map<string, ContactsSessionSnapshot>();
 
-export function createContactsSessionStore(): ContactsSessionStore {
+export function createContactsSessionStore(uid: string): ContactsSessionStore {
+  if (!uid.trim()) {
+    throw new Error('contacts-session-uid-required');
+  }
+  const key = uid.trim();
+
   return {
     async load() {
-      return memory.sourceId ? { ...memory } : null;
+      const memory = memoryByUid.get(key);
+      return memory?.sourceId ? { ...memory } : null;
     },
     async save(snapshot) {
-      memory.sourceId = snapshot.sourceId;
-      memory.contactsEpoch = snapshot.contactsEpoch;
-      memory.snapshotVersion = snapshot.snapshotVersion;
-      memory.fingerprint = snapshot.fingerprint;
+      memoryByUid.set(key, { ...snapshot });
     },
     async clearFingerprint() {
-      memory.fingerprint = null;
+      const memory = memoryByUid.get(key);
+      if (!memory) return;
+      memoryByUid.set(key, { ...memory, fingerprint: null });
     },
   };
 }

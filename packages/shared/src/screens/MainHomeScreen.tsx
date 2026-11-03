@@ -1077,8 +1077,9 @@ export default function MainHomeScreen({ navigation }: Props) {
           appliedEpochRef.current = epoch;
         }
       } catch (err) {
+        // Only roll back when this write is still the latest local epoch —
+        // a newer successful edit must not be overwritten by a stale failure.
         if (epoch === localEpochRef.current) {
-          // Do not leave unconfirmed filters painted as saved.
           prefsRef.current = previousPrefs;
           setPrefs(previousPrefs);
           // Filter persist is independent of Visibility — never reuse Visibility copy.
@@ -1086,6 +1087,19 @@ export default function MainHomeScreen({ navigation }: Props) {
             t('home.preferences.errors.title'),
             t('home.preferences.errors.saveFailed'),
           );
+        }
+        if (__DEV__) {
+          const code =
+            err && typeof err === 'object' && 'code' in err
+              ? String((err as { code?: unknown }).code ?? '')
+              : '';
+          console.warn('[Home.filters] persist failed', {
+            code: code || 'none',
+            mode,
+            epoch,
+            latestEpoch: localEpochRef.current,
+            rolledBack: epoch === localEpochRef.current,
+          });
         }
         const text = err instanceof Error ? err.message : '';
         if (text.includes(INTEREST_IDS_OVER_MAX_REASON)) {

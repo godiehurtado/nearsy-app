@@ -19,8 +19,20 @@ const RETRYABLE_REASONS = new Set<string>([
   'contacts-timeout',
 ]);
 
+const CAP_REASONS = new Set<string>([
+  'contacts-source-cap',
+  'contacts-identifier-cap',
+  'contacts-union-cap',
+]);
+
 export function isContactsSyncRetryable(reason: string): boolean {
+  // Caps need a user action (trim address book) — identical auto-retry is wrong.
+  if (CAP_REASONS.has(reason)) return false;
   return RETRYABLE_REASONS.has(reason);
+}
+
+export function isContactsCapExceeded(reason: string): boolean {
+  return CAP_REASONS.has(reason);
 }
 
 export function presentContactsSyncError(
@@ -46,7 +58,7 @@ export function presentContactsSyncError(
     case 'contacts-source-cap':
     case 'contacts-identifier-cap':
     case 'contacts-union-cap':
-      return t('settings.contacts.errors.cap');
+      return t('settings.contacts.errors.capAction');
     case 'contacts-identifier-invalid':
     case 'contacts-client-hash-rejected':
       return t('settings.contacts.errors.invalid');

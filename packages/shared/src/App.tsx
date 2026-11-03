@@ -247,13 +247,16 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
     const receivedSub = Notifications.addNotificationReceivedListener(() => {});
 
     registerRefreshVerifiedActorKeysInvoker(async () => {
+      const uid = firebaseAuth.currentUser?.uid;
+      if (!uid) return;
       const client = await getContactsHmacClient();
-      const session = createContactsSessionStore();
+      const session = createContactsSessionStore(uid);
       await refreshVerifiedActorKeysFlow({
         client,
         session,
         afterIdentity: async (result) => {
           // Idempotent / reevaluateRequired:false must not clear a prior pending mark.
+          // Reevaluate failure must not invalidate a confirmed Identity sync.
           if (shouldCallReevaluateAfterIdentity(result)) {
             scheduleReevaluateProximityNotices();
           }

@@ -1744,7 +1744,9 @@ const es: TranslationResources = {
         unavailable:
           'La sincronización de contactos no está disponible temporalmente. Inténtalo en breve.',
         timeout:
-          'La sincronización de contactos está tardando demasiado. Puedes reintentar.',
+          'La sincronización de contactos está tardando demasiado. El servidor puede haber escrito igual — reintenta para reconciliar.',
+        capAction:
+          'Tu libreta supera el límite de sincronización. Quita contactos en la app Teléfono y luego reintenta.',
       },
     },
     visibilityAge: {

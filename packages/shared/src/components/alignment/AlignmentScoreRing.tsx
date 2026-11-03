@@ -39,8 +39,10 @@ type Props = {
 };
 
 /**
- * Half-clip bleed past the square so iOS overflow:hidden does not flatten the
- * stroke at 6 o'clock (visible on compact rings once progress paints the bottom).
+ * Extra clip room past the ring square. Owner reported bottom flattening on
+ * compact ~83% rings; halfClip overflow:hidden flush to the stroke edge is the
+ * leading hypothesis (not device-confirmed). Bleed keeps the View technique
+ * without introducing a native SVG dependency. Physical QA still required.
  */
 const HALF_CLIP_BLEED = 1;
 

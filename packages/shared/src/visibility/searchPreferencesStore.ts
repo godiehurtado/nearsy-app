@@ -1,7 +1,14 @@
 /**
  * Persist searchPreferences on users/{uid} (owner-writable).
+ *
+ * Active-mode updates use a nested field path so an invalid inactive-mode bag
+ * cannot reject the write (Firestore merge of the whole `searchPreferences`
+ * map would otherwise replace both faces). Visibility is never written here.
  */
 
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+
+import { firestoreDb } from '../config/firebaseConfig';
 import { flattenCatalogInterestItems } from '../interests/onboardingInterestCatalog';
 import type { ProfileMode } from '../profile/profileModeFields';
 import { updateUserProfilePartial } from '../services/firestoreService';
@@ -35,6 +42,11 @@ function requirePersistable(
   return prepared.prefs;
 }
 
+/**
+ * Full dual-mode write — used when both faces must be replaced together
+ * (e.g. first hydration repair). Prefer {@link persistSearchPreferencesForMode}
+ * for Home slider patches.
+ */
 export async function persistSearchPreferences(
   uid: string,
   byMode: VisibilitySearchPreferencesByMode,
@@ -50,6 +62,10 @@ export async function persistSearchPreferences(
   });
 }
 
+/**
+ * Persist only the active mode via nested update. Does not touch visibility
+ * or the sibling mode document fields.
+ */
 export async function persistSearchPreferencesForMode(
   uid: string,
   byMode: VisibilitySearchPreferencesByMode,
@@ -62,6 +78,10 @@ export async function persistSearchPreferencesForMode(
     knownIds,
   );
   const updated = { ...byMode, [mode]: prepared };
-  await persistSearchPreferences(uid, updated);
+  const ref = doc(firestoreDb, 'users', uid);
+  await updateDoc(ref, {
+    [`searchPreferences.${mode}`]: { ...prepared },
+    updatedAt: serverTimestamp(),
+  });
   return updated;
 }

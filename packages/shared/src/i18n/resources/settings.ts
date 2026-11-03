@@ -63,7 +63,10 @@ export default {
       cap: 'Your address book is too large to sync right now.',
       invalid: 'Some contact identifiers could not be synced. Try again.',
       unavailable: 'Contacts sync is temporarily unavailable. Try again shortly.',
-      timeout: 'Contacts sync is taking too long. You can retry.',
+      timeout:
+        'Contacts sync is taking too long. The server may still have written — retry to reconcile.',
+      capAction:
+        'Your address book exceeds the sync limit. Remove contacts in the Phone app, then retry.',
     },
   },
   visibilityAge: {

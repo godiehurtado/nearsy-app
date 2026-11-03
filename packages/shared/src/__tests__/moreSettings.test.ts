@@ -200,4 +200,25 @@ describe('Settings safety freeze', () => {
     assert.doesNotMatch(screen, /Vertex/);
     assert.doesNotMatch(screen, /discoverNearby/);
   });
+
+  it('keeps enable when sync fails, scopes session by UID, and fences late ops', () => {
+    const screen = readShared('screens/MoreScreen.tsx');
+    assert.match(screen, /identityEnabled/);
+    assert.match(screen, /createContactsSessionStore\(uid\)/);
+    assert.match(screen, /bumpContactsOpGeneration/);
+    assert.match(screen, /contactsOpGenRef/);
+    assert.match(screen, /isContactsSyncRetryable/);
+    const session = readShared('contacts/iosContactsSession.ios.ts');
+    assert.match(session, /nearsy\.contacts\.v1\.uid\./);
+    assert.match(session, /migrateLegacyIfNeeded/);
+    assert.match(session, /clearLegacyGlobalKeys/);
+    assert.match(session, /Keep snapshotVersion/);
+    const errors = readShared('contacts/contactsErrorPresentation.ts');
+    assert.match(errors, /CAP_REASONS/);
+    assert.match(errors, /isContactsCapExceeded/);
+    assert.equal(
+      readShared('i18n/resources/settings.ts').includes('capAction:'),
+      true,
+    );
+  });
 });
