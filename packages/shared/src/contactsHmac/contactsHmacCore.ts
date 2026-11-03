@@ -33,13 +33,13 @@ export type ContactsHmacFunctionsPort = {
  * Client-only reasons, never sent by Identity:
  * - `contacts-transport-uncertain`: UI timeout or transport failure. The server
  *   may still have committed, so this is never a definitive failure.
- * - `contacts-server-internal`: bare INTERNAL with no `details.reason`. Identity
- *   before #25 answers an Auth lookup failure this way, and the Android Functions
- *   SDK also reports some I/O failures as INTERNAL, so it stays uncertain too.
+ * - `contacts-result-unknown`: INTERNAL/UNKNOWN with no `details.reason`, or a
+ *   reply that cannot be read. Identity before #25 answers an Auth lookup failure
+ *   this way. Its cause cannot be told from here, so none is assumed.
  */
 export type ContactsClientFailReason =
   | 'contacts-transport-uncertain'
-  | 'contacts-server-internal';
+  | 'contacts-result-unknown';
 
 export type ContactsErrorReason =
   | ContactsHmacFailReason
@@ -109,7 +109,7 @@ export function isContactsOutcomeUncertain(
 ): boolean {
   return (
     reason === 'contacts-transport-uncertain' ||
-    reason === 'contacts-server-internal'
+    reason === 'contacts-result-unknown'
   );
 }
 
@@ -388,26 +388,26 @@ export function buildRemoveSourceRequest(
 
 export function parseContactsWireResult(raw: unknown): ContactsWireResult {
   if (!isRecord(raw)) {
-    throw new ContactsHmacError('generic', 'Invalid Contacts response.');
+    throw new ContactsHmacError('contacts-result-unknown', 'Invalid Contacts response.');
   }
   rejectBanned(raw);
   if ('expectedEpoch' in raw) {
-    throw new ContactsHmacError('generic', 'Invalid Contacts response.');
+    throw new ContactsHmacError('contacts-result-unknown', 'Invalid Contacts response.');
   }
   if (typeof raw.result !== 'string' || !raw.result) {
-    throw new ContactsHmacError('generic', 'Invalid Contacts response.');
+    throw new ContactsHmacError('contacts-result-unknown', 'Invalid Contacts response.');
   }
   if (typeof raw.contactsSyncEnabled !== 'boolean') {
-    throw new ContactsHmacError('generic', 'Invalid Contacts response.');
+    throw new ContactsHmacError('contacts-result-unknown', 'Invalid Contacts response.');
   }
   if (typeof raw.notifyNearbyContactsEffective !== 'boolean') {
-    throw new ContactsHmacError('generic', 'Invalid Contacts response.');
+    throw new ContactsHmacError('contacts-result-unknown', 'Invalid Contacts response.');
   }
   if (typeof raw.syncCommitted !== 'boolean') {
-    throw new ContactsHmacError('generic', 'Invalid Contacts response.');
+    throw new ContactsHmacError('contacts-result-unknown', 'Invalid Contacts response.');
   }
   if (typeof raw.reevaluateRequired !== 'boolean') {
-    throw new ContactsHmacError('generic', 'Invalid Contacts response.');
+    throw new ContactsHmacError('contacts-result-unknown', 'Invalid Contacts response.');
   }
   const contactsEpoch = assertContactsEpoch(raw.contactsEpoch);
   const out: ContactsWireResult = {
@@ -428,7 +428,7 @@ export function parseContactsWireResult(raw: unknown): ContactsWireResult {
       !Number.isInteger(raw.identifierCount) ||
       raw.identifierCount < 0
     ) {
-      throw new ContactsHmacError('generic', 'Invalid Contacts response.');
+      throw new ContactsHmacError('contacts-result-unknown', 'Invalid Contacts response.');
     }
     out.identifierCount = raw.identifierCount;
   }
@@ -438,7 +438,7 @@ export function parseContactsWireResult(raw: unknown): ContactsWireResult {
       !Number.isInteger(raw.keyCount) ||
       raw.keyCount < 0
     ) {
-      throw new ContactsHmacError('generic', 'Invalid Contacts response.');
+      throw new ContactsHmacError('contacts-result-unknown', 'Invalid Contacts response.');
     }
     out.keyCount = raw.keyCount;
   }
@@ -503,6 +503,16 @@ export function mapContactsCallableError(err: unknown): ContactsHmacError {
       message || 'Too many Contacts requests. Try again later. (contacts-rate-limited)',
     );
   }
+  // Checked by code before any message text: the cause of these is not knowable.
+  if (
+    /(^|\/)(internal|unknown)$/i.test(httpsCode) ||
+    /^internal$/i.test(message.trim())
+  ) {
+    return new ContactsHmacError(
+      'contacts-result-unknown',
+      message || 'Contacts could not confirm the result. (contacts-result-unknown)',
+    );
+  }
   // Timeout / transport: the server may have committed, and the secret is not
   // the problem. `contacts-hmac-unavailable` is only the explicit Identity reason.
   if (/deadline-exceeded|timeout|unavailable|cancelled|network/i.test(haystack)) {
@@ -510,12 +520,6 @@ export function mapContactsCallableError(err: unknown): ContactsHmacError {
       'contacts-transport-uncertain',
       message ||
         'Contacts could not confirm the result. (contacts-transport-uncertain)',
-    );
-  }
-  if (/(^|\/)internal$/i.test(httpsCode) || /^internal$/i.test(message.trim())) {
-    return new ContactsHmacError(
-      'contacts-server-internal',
-      message || 'Contacts request failed on the server. (contacts-server-internal)',
     );
   }
   // permission-denied / other stay generic: never "missing HMAC secret".
@@ -609,7 +613,7 @@ export type ContactsErrorI18nKey =
   | 'hashRejected'
   | 'unavailable'
   | 'transportUncertain'
-  | 'serverError'
+  | 'resultUnknown'
   | 'appCheck'
   | 'rateLimited'
   | 'generic';
@@ -647,8 +651,8 @@ export function contactsHmacErrorToI18nKey(
       return 'unavailable';
     case 'contacts-transport-uncertain':
       return 'transportUncertain';
-    case 'contacts-server-internal':
-      return 'serverError';
+    case 'contacts-result-unknown':
+      return 'resultUnknown';
     case 'APP_CHECK_NOT_READY':
       return 'appCheck';
     case 'contacts-rate-limited':

@@ -58,8 +58,6 @@ export type {
 
 /** Bound Identity round-trips so More stays navigable and errors stay concrete. */
 export const CONTACTS_CALLABLE_TIMEOUT_MS = 45_000;
-/** Past the native callable deadline, so it only frees a request that never settles. */
-export const CONTACTS_LATE_RESULT_GRACE_MS = 60_000;
 
 async function ensureAppCheckReady(): Promise<void> {
   const status = await ensureAppCheckInitialized();
@@ -92,7 +90,6 @@ const session = createContactsSyncSession({
   ensureAppCheck: ensureAppCheckReady,
   scheduleReevaluate: scheduleReevaluateProximityNotices,
   timeoutMs: CONTACTS_CALLABLE_TIMEOUT_MS,
-  lateResultGraceMs: CONTACTS_LATE_RESULT_GRACE_MS,
 });
 
 let authBound = false;

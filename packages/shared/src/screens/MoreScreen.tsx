@@ -521,9 +521,11 @@ export default function MoreScreen() {
     setBgVisible(enabled);
   };
 
-  /** Uncertain results are shown in the section itself and offer a retry. */
+  /** Uncertain and rate-limited results stay in the section, with a retry. */
   const alertContactsFailure = (op: ContactsOpResult) => {
-    if (op.status !== 'failed') return;
+    if (op.status !== 'failed' || op.error.reason === 'contacts-rate-limited') {
+      return;
+    }
     const key = contactsHmacErrorToI18nKey(op.error.reason);
     Alert.alert(
       t('common.error'),

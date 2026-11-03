@@ -341,8 +341,8 @@ export const es: TranslationResources = {
           'Nearsy no pudo verificar esta app en este momento. No es un problema del permiso de Contactos. Inténtalo más tarde.',
         transportUncertain:
           'No pudimos confirmar el resultado por un tiempo de espera agotado o un problema de conexión. Es posible que se haya guardado. Puedes reintentar sin riesgo.',
-        serverError:
-          'No pudimos confirmar el resultado por un error del servidor o de conexión. No es un problema del permiso de Contactos. Puedes reintentar sin riesgo.',
+        resultUnknown:
+          'No pudimos confirmar el resultado, y puede haberse guardado o no. No es un problema del permiso de Contactos. Puedes reintentar sin riesgo.',
         rateLimited:
           'Demasiadas solicitudes de contactos. Inténtalo de nuevo en unos minutos.',
       },
@@ -363,6 +363,8 @@ export const es: TranslationResources = {
         syncUncertain:
           'Activada. No pudimos confirmar la última sincronización. Puedes reintentar sin riesgo.',
         enabledPendingSync: 'Activada, pendiente de sincronizar tus contactos.',
+        enabledRateLimited:
+          'Activada, pendiente de sincronizar: demasiadas solicitudes en este momento. Reintenta en un momento.',
         enabledPermissionNeeded:
           'Activada, pendiente de sincronizar. Reintenta para permitir el acceso a tus contactos.',
         enabledPermissionDenied:

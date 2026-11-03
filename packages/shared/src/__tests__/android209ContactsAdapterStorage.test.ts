@@ -275,10 +275,7 @@ describe('Adapter and stub stay aligned', () => {
   it('export the same runtime API', async () => {
     const android = await import('../contactsHmac/contactsHmac.android.ts');
     const stub = await import('../contactsHmac/contactsHmac.ts');
-    const onlyAndroid = new Set([
-      'CONTACTS_CALLABLE_TIMEOUT_MS',
-      'CONTACTS_LATE_RESULT_GRACE_MS',
-    ]);
+    const onlyAndroid = new Set(['CONTACTS_CALLABLE_TIMEOUT_MS']);
     const androidKeys = Object.keys(android).filter((k) => !onlyAndroid.has(k)).sort();
     assert.deepEqual(androidKeys, Object.keys(stub).sort());
   });

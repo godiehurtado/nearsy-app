@@ -5,7 +5,7 @@
  * Run: node --experimental-strip-types --test packages/shared/src/__tests__/android209ContactsReliability.test.ts
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -35,12 +35,15 @@ import {
 } from '../contactsHmac/contactsSource.ts';
 import {
   contactsCanRetry,
+  contactsOperationInFlight,
   contactsStatusCopyKey,
   contactsToggleValue,
   mergeUserDocIntoState,
 } from '../contactsHmac/contactsSyncStatus.ts';
 import { createContactsSyncSession } from '../contactsHmac/contactsSyncSession.ts';
 import {
+  applyLateIdentityResult,
+  runDisable,
   runEnableThenSync,
   runResyncGrantedBook,
   type ContactsBookPort,
@@ -79,6 +82,9 @@ class FakeIdentity {
   /** Rule applied to the next calls: return a promise to hold, throw to fail. */
   intercept: ((name: string, data: any) => unknown) | null = null;
   uid = 'uid-a';
+  /** Identity's minimum gap between writes; 0 keeps it out of the way. */
+  minWriteGapMs = 0;
+  lastWriteAt = 0;
 
   wire(extra: Record<string, unknown>) {
     return {
@@ -176,6 +182,12 @@ class FakeIdentity {
       const held = this.intercept(name, data);
       if (held !== undefined) return held;
     }
+    if (this.minWriteGapMs > 0) {
+      if (Date.now() - this.lastWriteAt < this.minWriteGapMs) {
+        throw reason('contacts-rate-limited');
+      }
+      this.lastWriteAt = Date.now();
+    }
     return this.commit(name, data);
   }
 
@@ -249,7 +261,6 @@ function harness(opts?: {
   book?: ReturnType<typeof fakeBook>;
   store?: ReturnType<typeof memoryStore>;
   timeoutMs?: number;
-  lateResultGraceMs?: number;
   scheduleReevaluate?: () => void;
 }) {
   const env = {
@@ -280,10 +291,58 @@ function harness(opts?: {
         env.reevaluations += 1;
       }),
     timeoutMs: opts?.timeoutMs ?? 40,
-    lateResultGraceMs: opts?.lateResultGraceMs ?? 400,
-    writeSpacingMs: 0,
   });
   return { env, session };
+}
+
+type Env = ReturnType<typeof harness>['env'];
+
+/** Identity already wrote; the reply is still in the air. Applies to one call. */
+function replyHeldAfterCommit(env: Env, target: string) {
+  const held = { fail: () => {}, reply: () => {} };
+  env.identity.intercept = (name, data) => {
+    if (name !== target) return undefined;
+    env.identity.intercept = null;
+    const value = env.identity.commit(name, data);
+    return new Promise((resolve, reject) => {
+      held.fail = () => reject(networkDown());
+      held.reply = () => resolve(value);
+    });
+  };
+  return held;
+}
+
+/** The request has not reached Identity yet. Applies to one call. */
+function requestHeldInTransit(env: Env, target: string) {
+  const held = { land: (): 'landed' | 'rejected' => 'rejected' };
+  env.identity.intercept = (name, data) => {
+    if (name !== target) return undefined;
+    env.identity.intercept = null;
+    return new Promise((resolve, reject) => {
+      held.land = () => {
+        try {
+          resolve(env.identity.commit(name, data));
+          return 'landed';
+        } catch (err) {
+          reject(err);
+          return 'rejected';
+        }
+      };
+    });
+  };
+  return held;
+}
+
+/** Same account, new session: what a sign-out or an app restart leaves behind. */
+function newSessionSameAccount(
+  env: Env,
+  session: ReturnType<typeof harness>['session'],
+): void {
+  const uid = env.uid;
+  env.uid = null;
+  session.handleAuthChanged(null);
+  env.uid = uid;
+  session.handleAuthChanged(uid);
 }
 
 function savedState(
@@ -382,7 +441,7 @@ describe('Enable confirmed, then a later stage fails', () => {
     assert.equal(status.enablement, 'enabled');
     assert.equal(status.snapshot, 'pending');
     assert.equal(contactsToggleValue(status), true);
-    assert.equal(contactsStatusCopyKey(status), 'status.enabledPendingSync');
+    assert.equal(contactsStatusCopyKey(status), 'status.enabledRateLimited');
     assert.equal(contactsCanRetry(status), true);
     await until(() => savedState(env.store)?.contactsEpoch === 5, 'epoch saved');
     assert.equal(env.reevaluations, 1, 'enable asked for reevaluate');
@@ -406,7 +465,7 @@ describe('Enable confirmed, then a later stage fails', () => {
     const book = fakeBook({ permission: 'undetermined', requested: 'denied' });
     const { env, session } = harness({ book });
     env.identity.intercept = (name) => {
-      if (name === REMOVE_CONTACT_SOURCE) throw reason('contacts-rate-limited');
+      if (name === REMOVE_CONTACT_SOURCE) throw reason('contacts-hmac-unavailable');
       return undefined;
     };
     const op = await session.enableThenSync();
@@ -421,15 +480,14 @@ describe('Enable confirmed, then a later stage fails', () => {
 
   it('keeps enabled and a retryable state when remove times out', async () => {
     const book = fakeBook({ permission: 'undetermined', requested: 'denied' });
-    const { env, session } = harness({ book, timeoutMs: 15, lateResultGraceMs: 15 });
-    env.identity.intercept = (name) =>
-      name === REMOVE_CONTACT_SOURCE ? new Promise(() => {}) : undefined;
+    const { env, session } = harness({ book, timeoutMs: 15 });
+    const held = replyHeldAfterCommit(env, REMOVE_CONTACT_SOURCE);
     const op = await session.enableThenSync();
     assert.equal(op.status, 'uncertain');
     assert.equal(session.getStatus().enablement, 'enabled');
     assert.equal(savedState(env.store).uncertainOp, 'remove');
-    await until(() => !session.getStatus().awaitingLateResult, 'request released');
-    env.identity.intercept = null;
+    held.fail();
+    await until(() => !session.getStatus().awaitingLateResult, 'request settled');
     book.requested = 'granted';
     const retried = await session.retry();
     assert.equal(retried.status, 'ok');
@@ -493,7 +551,7 @@ describe('Timeout means unknown', () => {
     let status = session.getStatus();
     assert.equal(status.enablement, 'enable_uncertain');
     assert.equal(status.awaitingLateResult, true);
-    assert.equal(contactsToggleValue(status), true);
+    assert.equal(contactsToggleValue(status), false, 'not drawn as enabled');
     assert.equal(contactsCanRetry(status), false);
     assert.equal(contactsStatusCopyKey(status), 'status.awaitingResult');
 
@@ -507,25 +565,21 @@ describe('Timeout means unknown', () => {
   });
 
   it('uncertain disable stays pending and a retry after it landed reads as done', async () => {
-    const { env, session } = harness({ timeoutMs: 15, lateResultGraceMs: 15 });
+    const { env, session } = harness({ timeoutMs: 15 });
     await session.enableThenSync();
     env.reevaluations = 0;
-    env.identity.intercept = (name, data) => {
-      if (name !== DISABLE_CONTACTS_SYNC) return undefined;
-      env.identity.commit(name, data);
-      return new Promise(() => {});
-    };
+    const held = replyHeldAfterCommit(env, DISABLE_CONTACTS_SYNC);
     const op = await session.disable();
     assert.equal(op.status, 'uncertain');
     let status = session.getStatus();
     assert.equal(status.enablement, 'disable_uncertain');
-    assert.equal(contactsToggleValue(status), false);
-    await until(() => !session.getStatus().awaitingLateResult, 'grace over');
+    assert.equal(contactsToggleValue(status), true, 'not drawn as off');
+    held.fail();
+    await until(() => !session.getStatus().awaitingLateResult, 'request settled');
     status = session.getStatus();
     assert.equal(contactsStatusCopyKey(status), 'status.disableUncertain');
     assert.equal(contactsCanRetry(status), true);
 
-    env.identity.intercept = null;
     const retried = await session.retry();
     assert.equal(retried.status, 'ok');
     status = session.getStatus();
@@ -587,15 +641,21 @@ describe('Timeout means unknown', () => {
     await until(() => savedState(env.store)?.lastAckedVersion === 1, 'ack saved');
   });
 
-  it('allows retry again if a timed-out request never settles', async () => {
-    const { env, session } = harness({ timeoutMs: 10, lateResultGraceMs: 10 });
+  it('time passing unlocks nothing and declares nothing', async () => {
+    const { env, session } = harness({ timeoutMs: 5 });
     env.identity.intercept = (name) =>
       name === ENABLE_CONTACTS_SYNC ? new Promise(() => {}) : undefined;
     await session.enableThenSync();
+    await delay(60);
+    const status = session.getStatus();
+    assert.equal(status.awaitingLateResult, true);
+    assert.equal(status.enablement, 'enable_uncertain');
+    assert.equal(contactsOperationInFlight(status), true);
+    assert.equal(contactsCanRetry(status), false);
     assert.equal((await session.enableThenSync()).status, 'in_flight');
-    await until(() => contactsCanRetry(session.getStatus()), 'grace over');
-    env.identity.intercept = null;
-    assert.equal((await session.retry()).status, 'ok');
+    assert.equal((await session.disable()).status, 'in_flight');
+    assert.equal(env.identity.calls.length, 1);
+    assert.equal(savedState(env.store).uncertainOp, 'enable');
   });
 });
 
@@ -641,44 +701,134 @@ describe('Single flight', () => {
     assert.equal(session.getStatus().snapshot, 'synced');
   });
 
-  it('spaces Identity writes so enable does not trip the 2 s rate limit', async () => {
-    const times: number[] = [];
-    const session = createContactsSyncSession({
-      currentUid: () => 'uid-a',
-      store: memoryStore(),
-      randomBytes: () => new Uint8Array(16).fill(1),
-      region: 'r',
-      callIdentity: async (name) => {
-        times.push(Date.now());
-        return new FakeIdentity().wire({
-          result: name === ENABLE_CONTACTS_SYNC ? 'enabled' : 'synced',
-          contactsSyncEnabled: true,
-        });
-      },
-      createBook: () => fakeBook().port(),
-      ensureAppCheck: async () => {},
-      scheduleReevaluate: () => {},
-      timeoutMs: 500,
-      lateResultGraceMs: 10,
-      writeSpacingMs: 40,
-    });
+});
+
+describe('Rate limit is an explicit result', () => {
+  const GAP_MS = 60;
+
+  it('enable then sync sends both immediately and keeps what enable confirmed', async () => {
+    const { env, session } = harness();
+    env.identity.epoch = 4;
+    env.identity.minWriteGapMs = GAP_MS;
+    const op = await session.enableThenSync();
+    assert.equal(op.status, 'failed');
+    assert.equal(
+      (op as { error: ContactsHmacError }).error.reason,
+      'contacts-rate-limited',
+    );
+    const status = session.getStatus();
+    assert.equal(status.enablement, 'enabled');
+    assert.equal(status.snapshot, 'pending');
+    assert.equal(status.consent, true);
+    assert.equal(status.errorKey, 'rateLimited');
+    assert.equal(contactsStatusCopyKey(status), 'status.enabledRateLimited');
+    assert.equal(contactsCanRetry(status), true);
+    await until(() => savedState(env.store)?.contactsEpoch === 4, 'epoch saved');
+    assert.equal(savedState(env.store).lastAckedVersion, null);
+  });
+
+  it('never retries by itself', async () => {
+    const { env, session } = harness();
+    env.identity.minWriteGapMs = GAP_MS;
     await session.enableThenSync();
-    assert.equal(times.length, 2);
-    assert.ok(times[1] - times[0] >= 35, `gap ${times[1] - times[0]}`);
+    const calls = env.identity.calls.length;
+    await delay(GAP_MS * 2);
+    assert.equal(env.identity.calls.length, calls);
+    assert.equal(session.getStatus().snapshot, 'pending');
+  });
+
+  it('a manual retry sends only the sync, reuses the version and completes', async () => {
+    const { env, session } = harness();
+    env.identity.minWriteGapMs = GAP_MS;
+    await session.enableThenSync();
+    const version = savedState(env.store).pendingUpload?.version;
+    // Tapping too soon is harmless: same answer, same version, nothing lost.
+    await delay(GAP_MS + 10);
+    env.identity.lastWriteAt = Date.now();
+    assert.equal((await session.retry()).status, 'failed');
+    assert.equal(session.getStatus().enablement, 'enabled');
+    await delay(GAP_MS + 10);
+    assert.equal((await session.retry()).status, 'ok');
+    assert.equal(session.getStatus().snapshot, 'synced');
+    assert.equal(env.identity.count(ENABLE_CONTACTS_SYNC), 1, 'enable not repeated');
+    assert.equal(env.identity.last(SYNC_CONTACT_HASHES).snapshotVersion, version);
+  });
+
+  it('a refused retry leaves an earlier unknown upload unknown', async () => {
+    const { env, session } = harness({ timeoutMs: 10 });
+    const held = replyHeldAfterCommit(env, SYNC_CONTACT_HASHES);
+    await session.enableThenSync();
+    held.fail();
+    await until(() => contactsCanRetry(session.getStatus()), 'retryable');
+    env.identity.intercept = (name) => {
+      if (name === SYNC_CONTACT_HASHES) throw reason('contacts-rate-limited');
+      return undefined;
+    };
+    assert.equal((await session.retry()).status, 'failed');
+    assert.equal(session.getStatus().snapshot, 'uncertain');
+  });
+
+  it('a limited disable changes nothing locally and can be retried', async () => {
+    const { env, session } = harness();
+    await session.enableThenSync();
+    env.identity.intercept = (name) => {
+      if (name === DISABLE_CONTACTS_SYNC) throw reason('contacts-rate-limited');
+      return undefined;
+    };
+    assert.equal((await session.disable()).status, 'failed');
+    const status = session.getStatus();
+    assert.equal(status.enablement, 'enabled');
+    assert.equal(status.snapshot, 'synced');
+    assert.equal(contactsStatusCopyKey(status), 'errors.rateLimited');
+    env.identity.intercept = null;
+    assert.equal((await session.disable()).status, 'ok');
+  });
+
+  it('a limited disable keeps the live epoch it just learned', async () => {
+    const identity = new FakeIdentity();
+    identity.enabled = true;
+    identity.epoch = 7;
+    let disables = 0;
+    identity.intercept = (name) => {
+      if (name !== DISABLE_CONTACTS_SYNC) return undefined;
+      disables += 1;
+      if (disables === 2) throw reason('contacts-rate-limited');
+      return undefined;
+    };
+    await assert.rejects(
+      runDisable({
+        functions: { region: 'r', call: (n, d) => identity.call(n, d) },
+        state: {
+          sourceId: 'sourceId1',
+          contactsEpoch: 2,
+          lastAckedVersion: null,
+          lastAckedFingerprint: null,
+          removedSnapshotFloor: null,
+        },
+      }),
+      (err: any) => {
+        assert.equal(err.reason, 'contacts-rate-limited');
+        assert.equal(err.state.contactsEpoch, 7);
+        return true;
+      },
+    );
+  });
+
+  it('does not depend on a wait hint the contract does not provide', () => {
+    for (const file of ['contactsSyncFlow.ts', 'contactsSyncSession.ts', 'contactsHmacCore.ts']) {
+      const source = readFileSync(join(SRC, 'contactsHmac', file), 'utf8');
+      assert.doesNotMatch(source, /retry.?after/i, file);
+    }
   });
 });
 
 describe('Idempotent retries', () => {
   it('same snapshot reuses the version and is idempotent on Identity', async () => {
-    const { env, session } = harness({ timeoutMs: 10, lateResultGraceMs: 10 });
-    env.identity.intercept = (name, data) => {
-      if (name !== SYNC_CONTACT_HASHES) return undefined;
-      env.identity.commit(name, data);
-      return new Promise(() => {});
-    };
+    const { env, session } = harness({ timeoutMs: 10 });
+    const held = replyHeldAfterCommit(env, SYNC_CONTACT_HASHES);
     await session.enableThenSync();
+    held.fail();
     await until(() => contactsCanRetry(session.getStatus()), 'retryable');
-    env.identity.intercept = null;
     env.reevaluations = 0;
     const op = await session.retry();
     assert.equal(op.status, 'ok');
@@ -693,15 +843,11 @@ describe('Idempotent retries', () => {
 
   it('changed content after an unknown result uses a higher version', async () => {
     const book = fakeBook();
-    const { env, session } = harness({ book, timeoutMs: 10, lateResultGraceMs: 10 });
-    env.identity.intercept = (name, data) => {
-      if (name !== SYNC_CONTACT_HASHES) return undefined;
-      env.identity.commit(name, data);
-      return new Promise(() => {});
-    };
+    const { env, session } = harness({ book, timeoutMs: 10 });
+    const held = replyHeldAfterCommit(env, SYNC_CONTACT_HASHES);
     await session.enableThenSync();
+    held.fail();
     await until(() => contactsCanRetry(session.getStatus()), 'retryable');
-    env.identity.intercept = null;
     book.identifiers = BOOK_B;
     const op = await session.retry();
     assert.equal(op.status, 'ok', 'no snapshot conflict');
@@ -929,6 +1075,269 @@ describe('Reconciliation', () => {
   });
 });
 
+describe('An unreadable reply is unknown, not a refusal', () => {
+  it('keeps enable pending and retryable', async () => {
+    const { env, session } = harness();
+    env.identity.intercept = (name) =>
+      name === ENABLE_CONTACTS_SYNC ? { result: 'enabled' } : undefined;
+    assert.equal((await session.enableThenSync()).status, 'uncertain');
+    assert.equal(session.getStatus().enablement, 'enable_uncertain');
+    assert.equal(contactsCanRetry(session.getStatus()), true);
+  });
+
+  it('never shows server text to the user', () => {
+    const more = readFileSync(join(SRC, 'screens/MoreScreen.tsx'), 'utf8');
+    const start = more.indexOf('const alertContactsFailure');
+    const handler = more.slice(start, more.indexOf('const handleToggleContactsSync', start));
+    assert.ok(start > 0);
+    assert.doesNotMatch(handler, /\.message/);
+    assert.match(handler, /settings\.contactsSync\.errors\./);
+  });
+});
+
+describe('Older operation, newer operation', () => {
+  it('retry right after a restart acts on the saved state, not on a blank one', async () => {
+    const { env, session } = harness({ timeoutMs: 5 });
+    await session.enableThenSync();
+    const held = replyHeldAfterCommit(env, DISABLE_CONTACTS_SYNC);
+    await session.disable();
+    newSessionSameAccount(env, session);
+    assert.equal((await session.retry()).status, 'ok');
+    assert.equal(session.getStatus().enablement, 'off', 'it stays a disable');
+    assert.equal(env.identity.enabled, false);
+    held.fail();
+  });
+
+  it('within a session the newer one waits: nothing can overlap', async () => {
+    const { env, session } = harness({ timeoutMs: 5 });
+    const held = requestHeldInTransit(env, SYNC_CONTACT_HASHES);
+    await session.enableThenSync();
+    assert.equal((await session.disable()).status, 'in_flight');
+    assert.equal(env.identity.count(DISABLE_CONTACTS_SYNC), 0);
+    assert.equal(held.land(), 'landed');
+    await until(() => session.getStatus().snapshot === 'synced', 'late ack');
+    assert.equal((await session.disable()).status, 'ok');
+    assert.equal(session.getStatus().enablement, 'off');
+  });
+
+  it('old sync landing after a new disable: the epoch refuses it on the server', async () => {
+    const { env, session } = harness({ timeoutMs: 5 });
+    const held = requestHeldInTransit(env, SYNC_CONTACT_HASHES);
+    await session.enableThenSync();
+    newSessionSameAccount(env, session);
+    assert.equal((await session.disable()).status, 'ok');
+    assert.equal(env.identity.epoch, 1);
+
+    assert.equal(held.land(), 'rejected', 'cannot write or re-enable');
+    assert.equal(env.identity.enabled, false);
+    assert.equal(env.identity.sources.size, 0);
+    await delay(5);
+    assert.equal(session.getStatus().enablement, 'off');
+    assert.equal(session.getStatus().snapshot, 'none');
+    assert.equal(savedState(env.store).contactsEpoch, 1);
+  });
+
+  it('old sync that did land, with its reply after a new disable: the reply changes nothing', async () => {
+    const { env, session } = harness({ timeoutMs: 5 });
+    const held = replyHeldAfterCommit(env, SYNC_CONTACT_HASHES);
+    await session.enableThenSync();
+    newSessionSameAccount(env, session);
+    assert.equal((await session.disable()).status, 'ok');
+    assert.equal(env.identity.sources.size, 0, 'the disable purged what it wrote');
+    held.reply();
+    await delay(5);
+    assert.equal(session.getStatus().enablement, 'off');
+    assert.equal(savedState(env.store).lastAckedVersion, null);
+  });
+
+  it('old disable landing after a new enable: repeating it first fences it out', async () => {
+    const { env, session } = harness({ timeoutMs: 5 });
+    await session.enableThenSync();
+    const held = requestHeldInTransit(env, DISABLE_CONTACTS_SYNC);
+    assert.equal((await session.disable()).status, 'uncertain');
+    assert.equal(savedState(env.store).uncertainOp, 'disable');
+    newSessionSameAccount(env, session);
+
+    assert.equal((await session.enableThenSync()).status, 'ok');
+    assert.equal(env.identity.epoch, 1, 'moved past the epoch the old one carries');
+    assert.equal(env.identity.last(SYNC_CONTACT_HASHES).contactsEpoch, 1);
+
+    assert.equal(held.land(), 'rejected', 'cannot switch it off');
+    assert.equal(env.identity.enabled, true);
+    assert.equal(env.identity.sources.size, 1);
+    await delay(5);
+    assert.equal(session.getStatus().enablement, 'enabled');
+    assert.equal(session.getStatus().snapshot, 'synced');
+    assert.equal(savedState(env.store).contactsEpoch, 1);
+  });
+
+  it('old disable that already landed: enable does not bump the epoch again', async () => {
+    const { env, session } = harness({ timeoutMs: 5 });
+    await session.enableThenSync();
+    const held = replyHeldAfterCommit(env, DISABLE_CONTACTS_SYNC);
+    await session.disable();
+    newSessionSameAccount(env, session);
+    assert.equal((await session.enableThenSync()).status, 'ok');
+    assert.equal(env.identity.epoch, 1);
+    assert.equal(env.identity.enabled, true);
+    held.reply();
+    await delay(5);
+    assert.equal(session.getStatus().enablement, 'enabled');
+    assert.equal(session.getStatus().snapshot, 'synced');
+  });
+
+  it('old sync landing after a newer version: the version refuses it', async () => {
+    const book = fakeBook();
+    const { env, session } = harness({ book, timeoutMs: 5 });
+    const held = requestHeldInTransit(env, SYNC_CONTACT_HASHES);
+    await session.enableThenSync();
+    newSessionSameAccount(env, session);
+    // Same version would be a conflict if the old one had landed: goes higher.
+    book.identifiers = BOOK_B;
+    assert.equal((await session.retry()).status, 'ok');
+    assert.equal(env.identity.last(SYNC_CONTACT_HASHES).snapshotVersion, 2);
+    assert.equal(held.land(), 'rejected');
+    const stored = [...env.identity.sources.values()][0];
+    assert.equal(stored.fingerprint, identifiersFingerprint(BOOK_B));
+  });
+
+  it('contract limit: an old enable has no epoch, so it can land after a disable', async () => {
+    const { env, session } = harness({ timeoutMs: 5 });
+    const held = requestHeldInTransit(env, ENABLE_CONTACTS_SYNC);
+    assert.equal((await session.enableThenSync()).status, 'uncertain');
+    newSessionSameAccount(env, session);
+    assert.equal((await session.disable()).status, 'ok');
+    assert.equal(session.getStatus().enablement, 'off');
+
+    assert.equal(held.land(), 'landed', 'the server has no way to refuse it');
+    assert.equal(env.identity.enabled, true);
+    // The client cannot see this until it reads again. Then it says what is true,
+    // without claiming a snapshot, consent, or touching the book.
+    assert.equal(session.getStatus().enablement, 'off');
+    await session.bindUserDoc('uid-a', {
+      contactsSyncEnabled: env.identity.enabled,
+      contactsEpoch: env.identity.epoch,
+    });
+    const status = session.getStatus();
+    assert.equal(status.enablement, 'enabled');
+    assert.equal(status.snapshot, 'pending');
+    assert.equal(status.consent, false);
+    assert.equal(env.book.reads, 0, 'the book was never read');
+  });
+
+  describe('a reply can never undo a newer state', () => {
+    const base: ContactsLocalState = {
+      sourceId: 'sourceId1',
+      contactsEpoch: 3,
+      lastAckedVersion: null,
+      lastAckedFingerprint: null,
+      removedSnapshotFloor: null,
+      enablementConfirmed: true,
+    };
+    const wire = (extra: Record<string, unknown>) => ({
+      result: 'synced',
+      contactsSyncEnabled: true,
+      contactsEpoch: 3,
+      notifyNearbyContactsEffective: true,
+      syncCommitted: true,
+      reevaluateRequired: false,
+      ...extra,
+    });
+
+    it('sync of an older epoch after disable', () => {
+      const off: ContactsLocalState = {
+        ...base,
+        contactsEpoch: 4,
+        enablementConfirmed: false,
+        pendingUpload: { version: 2, fingerprint: 'fp1:a', epoch: 3 },
+      };
+      assert.equal(
+        applyLateIdentityResult(off, 'sync', wire({ snapshotVersion: 2, sourceId: 'sourceId1' }), 2),
+        off,
+      );
+    });
+
+    it('sync while a disable is unresolved', () => {
+      const disabling: ContactsLocalState = {
+        ...base,
+        uncertainOp: 'disable',
+        pendingUpload: { version: 2, fingerprint: 'fp1:a', epoch: 3 },
+      };
+      assert.equal(
+        applyLateIdentityResult(disabling, 'sync', wire({ snapshotVersion: 2 }), 2),
+        disabling,
+      );
+    });
+
+    it('disable at the epoch a newer enable already returned', () => {
+      assert.equal(
+        applyLateIdentityResult(
+          base,
+          'disable',
+          wire({ result: 'disabled', contactsSyncEnabled: false, contactsEpoch: 3 }),
+        ),
+        base,
+      );
+    });
+
+    it('disable at a higher epoch is news: Identity is past what we hold', () => {
+      const next = applyLateIdentityResult(
+        base,
+        'disable',
+        wire({ result: 'disabled', contactsSyncEnabled: false, contactsEpoch: 4 }),
+      );
+      assert.equal(next.enablementConfirmed, false);
+      assert.equal(next.contactsEpoch, 4);
+    });
+
+    it('enable of an older epoch', () => {
+      const off = { ...base, contactsEpoch: 4, enablementConfirmed: false };
+      assert.equal(
+        applyLateIdentityResult(off, 'enable', wire({ result: 'enabled', contactsEpoch: 3 })),
+        off,
+      );
+    });
+  });
+});
+
+describe('Phone verification keeps its contract', () => {
+  it('refresh after OTP cannot fail or block anything', async () => {
+    const { env, session } = harness();
+    env.identity.intercept = (name) => {
+      if (name === REFRESH_VERIFIED_ACTOR_KEYS) throw reason('contacts-rate-limited');
+      return undefined;
+    };
+    const op = await session.refreshKeys();
+    assert.equal(op.status, 'failed');
+    assert.equal(session.getStatus().errorKey, null, 'nothing shown in Contacts');
+    assert.equal(env.book.reads + env.book.requests, 0);
+  });
+
+  it('it stays fire-and-forget, sends no OTP data and is the only other caller', () => {
+    const otp = readFileSync(join(SRC, 'screens/PhoneVerificationScreen.android.tsx'), 'utf8').replace(/\r\n/g, '\n');
+    const start = otp.indexOf('void (async () => {');
+    const block = otp.slice(start, otp.indexOf("navigation.replace('ProfileCompletion'", start));
+    assert.ok(start > 0);
+    // Exact call: no arguments, so nothing from the OTP flow can reach it.
+    assert.match(block, /await refreshContactsActorKeys\(\);/);
+    assert.match(block, /catch \{/);
+
+    const importers: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const full = join(dir, name);
+        if (statSync(full).isDirectory()) {
+          if (name !== '__tests__' && name !== 'contactsHmac') walk(full);
+        } else if (/\.tsx?$/.test(name) && /contactsHmac\/contactsHmac'/.test(readFileSync(full, 'utf8'))) {
+          importers.push(name);
+        }
+      }
+    };
+    walk(SRC);
+    assert.deepEqual(importers.sort(), ['MoreScreen.tsx', 'PhoneVerificationScreen.android.tsx']);
+  });
+});
+
 describe('Account changes', () => {
   it('a result from the previous account changes neither the new status nor its storage', async () => {
     const { env, session } = harness();
@@ -972,8 +1381,6 @@ describe('Account changes', () => {
       ensureAppCheck: async () => {},
       scheduleReevaluate: () => {},
       timeoutMs: 100,
-      lateResultGraceMs: 10,
-      writeSpacingMs: 0,
     });
     assert.equal((await session.enableThenSync()).status, 'stale');
     assert.equal(identity.count(SYNC_CONTACT_HASHES), 0);
@@ -1099,18 +1506,22 @@ describe('Errors do not get confused', () => {
     );
     assert.equal(map('functions/deadline-exceeded'), 'contacts-transport-uncertain');
     assert.equal(map('functions/unavailable'), 'contacts-transport-uncertain');
-    assert.equal(map('functions/internal', 'INTERNAL'), 'contacts-server-internal');
-    assert.equal(map('internal'), 'contacts-server-internal');
+    assert.equal(map('functions/internal', 'INTERNAL'), 'contacts-result-unknown');
+    assert.equal(map('internal'), 'contacts-result-unknown');
+    assert.equal(map('functions/unknown'), 'contacts-result-unknown');
+    // Message text cannot turn an unknown result into a network claim.
+    assert.equal(map('functions/internal', 'network timeout'), 'contacts-result-unknown');
     assert.equal(map('functions/unauthenticated', 'App Check token invalid'), 'APP_CHECK_NOT_READY');
     assert.equal(map('functions/unauthenticated', 'no user'), 'contacts-unauthenticated');
     assert.equal(map('functions/permission-denied', 'IAM denied'), 'generic');
   });
 
-  it('old server INTERNAL on enable stays unknown, not "permission" and not reverted silently', async () => {
+  it('old server INTERNAL on enable stays unknown and recoverable', async () => {
     const { env, session } = harness();
+    await session.bindUserDoc('uid-a', { contactsSyncEnabled: false, contactsEpoch: 0 });
     env.identity.intercept = (name) => {
       if (name === ENABLE_CONTACTS_SYNC) {
-        throw Object.assign(new Error('INTERNAL'), { code: 'functions/internal' });
+        throw Object.assign(new Error('secret stack detail'), { code: 'functions/internal' });
       }
       return undefined;
     };
@@ -1118,9 +1529,16 @@ describe('Errors do not get confused', () => {
     assert.equal(op.status, 'uncertain');
     const status = session.getStatus();
     assert.equal(status.enablement, 'enable_uncertain');
-    assert.equal(status.errorKey, 'serverError');
-    assert.equal(contactsStatusCopyKey(status), 'errors.serverError');
+    assert.equal(status.errorKey, 'resultUnknown');
+    assert.equal(contactsStatusCopyKey(status), 'errors.resultUnknown');
+    assert.equal(status.snapshot, 'none');
+    assert.equal(status.osPermission, 'granted', 'not reported as a denial');
+    assert.equal(contactsToggleValue(status), false, 'not drawn as enabled');
+    assert.equal(contactsCanRetry(status), true);
     assert.equal(env.book.requests, 0, 'never reaches the OS permission');
+    env.identity.intercept = null;
+    assert.equal((await session.retry()).status, 'ok');
+    assert.equal(session.getStatus().snapshot, 'synced');
   });
 
   it('auth lookup refusal leaves it off without consent', async () => {
@@ -1140,7 +1558,7 @@ describe('Errors do not get confused', () => {
 
   it('only uncertain reasons are uncertain', () => {
     assert.equal(isContactsOutcomeUncertain('contacts-transport-uncertain'), true);
-    assert.equal(isContactsOutcomeUncertain('contacts-server-internal'), true);
+    assert.equal(isContactsOutcomeUncertain('contacts-result-unknown'), true);
     for (const definite of [
       'contacts-hmac-unavailable',
       'contacts-auth-lookup-failed',
@@ -1171,7 +1589,7 @@ describe('Errors do not get confused', () => {
       'contacts-client-hash-rejected',
       'contacts-hmac-unavailable',
       'contacts-transport-uncertain',
-      'contacts-server-internal',
+      'contacts-result-unknown',
       'APP_CHECK_NOT_READY',
       'contacts-rate-limited',
       'generic',

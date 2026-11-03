@@ -77,8 +77,8 @@ export default {
         'Nearsy could not verify this app right now. This is not a problem with your Contacts permission. Try again later.',
       transportUncertain:
         'We could not confirm the result because of a timeout or connection problem. It may still have been saved. You can retry safely.',
-      serverError:
-        'We could not confirm the result because of a server or connection error. This is not a problem with your Contacts permission. You can retry safely.',
+      resultUnknown:
+        'We could not confirm the result, and it may or may not have been saved. This is not a problem with your Contacts permission. You can retry safely.',
       rateLimited: 'Too many Contacts requests. Try again in a few minutes.',
     },
     retry: 'Retry',
@@ -98,6 +98,8 @@ export default {
       syncUncertain:
         'On. We could not confirm the last sync. You can retry safely.',
       enabledPendingSync: 'On, waiting to sync your contacts.',
+      enabledRateLimited:
+        'On, waiting to sync: too many requests just now. Retry in a moment.',
       enabledPermissionNeeded:
         'On, waiting to sync. Retry to allow access to your contacts.',
       enabledPermissionDenied:

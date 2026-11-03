@@ -115,12 +115,16 @@ export function mergeUserDocIntoState(
   return next;
 }
 
-/** Toggle position: what was asked for while unconfirmed, without claiming it. */
+/**
+ * Toggle position: what is being asked for while a flow runs, otherwise the last
+ * state Identity confirmed. An unknown result is never drawn as its hoped-for
+ * outcome; the description says it is unknown, and tapping asks for it again.
+ */
 export function contactsToggleValue(status: ContactsSyncStatus): boolean {
   if (status.operation === 'enable') return true;
   if (status.operation === 'disable') return false;
   return (
-    status.enablement === 'enabled' || status.enablement === 'enable_uncertain'
+    status.enablement === 'enabled' || status.enablement === 'disable_uncertain'
   );
 }
 
@@ -148,13 +152,18 @@ export function contactsStatusCopyKey(
     case 'off':
       return status.errorKey ? `errors.${status.errorKey}` : null;
     case 'enable_uncertain':
-      return status.errorKey === 'serverError'
-        ? 'errors.serverError'
+      return status.errorKey === 'resultUnknown'
+        ? 'errors.resultUnknown'
         : 'status.enableUncertain';
     case 'disable_uncertain':
       return 'status.disableUncertain';
     case 'enabled':
       break;
+  }
+  if (status.errorKey === 'rateLimited') {
+    return status.snapshot === 'synced'
+      ? 'errors.rateLimited'
+      : 'status.enabledRateLimited';
   }
   if (status.snapshot === 'synced') return 'status.synced';
   if (status.snapshot === 'uncertain') return 'status.syncUncertain';

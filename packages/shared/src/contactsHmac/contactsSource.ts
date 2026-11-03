@@ -165,6 +165,7 @@ export async function loadContactsLocalState(
         ? (parsed.uncertainOp as ContactsUncertainOp)
         : null,
       reevaluateOwed: parsed.reevaluateOwed === true,
+      epochStale: parsed.epochStale === true,
       userConsent: parsed.userConsent === true,
     };
     if (typeof parsed.enablementConfirmed === 'boolean') {
@@ -193,6 +194,7 @@ export async function persistContactsLocalState(
     highestAttemptedVersion: state.highestAttemptedVersion ?? null,
     uncertainOp: state.uncertainOp ?? null,
     reevaluateOwed: state.reevaluateOwed === true,
+    epochStale: state.epochStale === true,
     userConsent: state.userConsent === true,
   };
   if (typeof state.enablementConfirmed === 'boolean') {

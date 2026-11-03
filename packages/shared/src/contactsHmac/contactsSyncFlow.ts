@@ -64,6 +64,8 @@ export type ContactsLocalState = {
   reevaluateOwed?: boolean;
   /** Last enabled value confirmed by Identity. */
   enablementConfirmed?: boolean;
+  /** Identity rejected our epoch: enable must return the live one before a sync. */
+  epochStale?: boolean;
   /** Set only by the user's own action on this device, never inferred. */
   userConsent?: boolean;
 };
@@ -104,7 +106,11 @@ export function withConfirmedEpoch(
   state: ContactsLocalState,
   contactsEpoch: number,
 ): ContactsLocalState {
-  const next: ContactsLocalState = { ...state, contactsEpoch };
+  const next: ContactsLocalState = {
+    ...state,
+    contactsEpoch,
+    epochStale: false,
+  };
   if (
     typeof state.lastAckedEpoch === 'number' &&
     state.lastAckedEpoch !== contactsEpoch
@@ -214,8 +220,10 @@ function applyDisabled(
 }
 
 /**
- * Late or reconciled results land here, so a reply that arrives after its
- * timeout has exactly the same effect as one that arrived in time.
+ * A reply that arrives after its timeout. The epoch only grows and only disable
+ * grows it, so it orders replies against what is already known: a reply cannot
+ * undo a newer state. This protects local state only; the write it describes has
+ * already happened on the server, whatever is decided here.
  */
 export function applyLateIdentityResult(
   state: ContactsLocalState,
@@ -223,9 +231,11 @@ export function applyLateIdentityResult(
   result: ContactsWireResult,
   sentVersion?: number,
 ): ContactsLocalState {
+  if (result.contactsEpoch < state.contactsEpoch) return state;
   switch (op) {
     case 'enable':
       if (!result.syncCommitted || !result.contactsSyncEnabled) return state;
+      if (state.uncertainOp === 'disable') return state;
       return {
         ...withConfirmedEpoch(state, result.contactsEpoch),
         enablementConfirmed: true,
@@ -234,6 +244,7 @@ export function applyLateIdentityResult(
     case 'sync': {
       const pending = state.pendingUpload;
       if (
+        state.uncertainOp === 'disable' ||
         !pending ||
         pending.version !== sentVersion ||
         !isConfirmedSnapshotResult(result, {
@@ -246,11 +257,18 @@ export function applyLateIdentityResult(
       return applySnapshotAck(state, result, pending.version, pending.fingerprint);
     }
     case 'remove':
+      if (state.uncertainOp === 'disable') return state;
       return result.syncCommitted ? applyRemoveFence(state, result) : state;
     case 'disable':
-      return result.syncCommitted && !result.contactsSyncEnabled
-        ? applyDisabled(state, result.contactsEpoch)
-        : state;
+      if (!result.syncCommitted || result.contactsSyncEnabled) return state;
+      // At the same epoch, what we hold came after this disable landed.
+      if (
+        state.uncertainOp !== 'disable' &&
+        result.contactsEpoch <= state.contactsEpoch
+      ) {
+        return state;
+      }
+      return applyDisabled(state, result.contactsEpoch);
     case 'refresh':
       return {
         ...withConfirmedEpoch(state, result.contactsEpoch),
@@ -311,11 +329,25 @@ async function uploadSnapshot(input: {
     if (isContactsOutcomeUncertain(cause.reason)) {
       throw new ContactsFlowStateError(cause, intent);
     }
+    const spent = versionIsSpent(cause.reason);
     throw new ContactsFlowStateError(cause, {
       ...intent,
-      uncertainOp: null,
+      // This request wrote nothing, which says nothing about an earlier unknown
+      // attempt: that one stays unknown unless Identity's answer settles it.
+      uncertainOp:
+        state.uncertainOp === 'sync' &&
+        !spent &&
+        cause.reason !== 'contacts-epoch-mismatch' &&
+        cause.reason !== 'contacts-not-enabled'
+          ? 'sync'
+          : null,
       reevaluateOwed: priorOwed,
-      pendingUpload: versionIsSpent(cause.reason) ? null : intent.pendingUpload,
+      pendingUpload: spent ? null : intent.pendingUpload,
+      epochStale: cause.reason === 'contacts-epoch-mismatch',
+      enablementConfirmed:
+        cause.reason === 'contacts-not-enabled'
+          ? false
+          : intent.enablementConfirmed,
     });
   }
 
@@ -342,60 +374,25 @@ async function uploadSnapshot(input: {
   };
 }
 
-export async function runEnableThenSync(input: {
+/**
+ * Everything after a confirmed enable. Permission here is the user's own action;
+ * reconciliation goes through runResyncGrantedBook and never reaches this.
+ */
+async function syncAfterConfirmedEnable(input: {
   functions: ContactsHmacFunctionsPort;
   book: ContactsBookPort;
   state: ContactsLocalState;
+  save: ContactsStateSaver;
   onStage?: (stage: ContactsEnableStage) => void;
-  saveState?: ContactsStateSaver;
-}): Promise<ContactsFlowOutcome> {
-  const save = input.saveState ?? noSave;
-  const priorOwed = input.state.reevaluateOwed === true;
-  input.onStage?.('enabling');
-  const enableIntent: ContactsLocalState = {
-    ...input.state,
-    uncertainOp: 'enable',
-    reevaluateOwed: true,
-  };
-  await save(enableIntent);
-
-  let enabled: ContactsWireResult;
-  try {
-    enabled = await enableContactsSync(input.functions);
-    if (!enabled.syncCommitted || !enabled.contactsSyncEnabled) {
-      throw new ContactsHmacError('generic', 'Contacts sync was not enabled.');
-    }
-  } catch (err) {
-    const cause = asHmacError(err);
-    throw new ContactsFlowStateError(
-      cause,
-      isContactsOutcomeUncertain(cause.reason) ? enableIntent : input.state,
-    );
-  }
-
-  // Confirmed from here on: the epoch comes from this response, nothing older.
-  const owedFromEnable = shouldScheduleReevaluate(enabled) || priorOwed;
-  const state: ContactsLocalState = {
-    ...withConfirmedEpoch(enableIntent, enabled.contactsEpoch),
-    enablementConfirmed: true,
-    uncertainOp: null,
-    reevaluateOwed: owedFromEnable,
-  };
-  const afterEnableError = (
+  enableResult: ContactsWireResult | null;
+  failure: (
     cause: ContactsHmacError,
     after: ContactsLocalState,
     permission: ContactsPermissionStatus | null,
-  ) =>
-    new ContactsSyncAfterEnableError(
-      cause,
-      enabled,
-      {
-        ...after,
-        // Only a write that may still have landed keeps it owed.
-        reevaluateOwed: isContactsOutcomeUncertain(cause.reason),
-      },
-      { permission, scheduleReevaluate: owedFromEnable },
-    );
+  ) => ContactsHmacError;
+}): Promise<ContactsFlowOutcome> {
+  const { state, save, failure } = input;
+  const owed = state.reevaluateOwed === true;
 
   let permission: ContactsPermissionStatus | null = null;
   try {
@@ -403,15 +400,16 @@ export async function runEnableThenSync(input: {
     input.onStage?.('permission');
     permission = await input.book.requestPermission();
   } catch (err) {
-    throw afterEnableError(asHmacError(err), state, permission);
+    throw failure(asHmacError(err), state, permission);
   }
 
   if (permission === 'undetermined') {
     // No decision from the user: nothing to withdraw, nothing synced.
+    const fireNow = owed && !state.uncertainOp;
     return {
-      result: enabled,
-      state: { ...state, reevaluateOwed: false },
-      scheduleReevaluate: owedFromEnable,
+      result: input.enableResult,
+      state: fireNow ? { ...state, reevaluateOwed: false } : state,
+      scheduleReevaluate: fireNow,
       permission,
     };
   }
@@ -427,17 +425,16 @@ export async function runEnableThenSync(input: {
       return {
         result: removed,
         state: applyRemoveFence(removeIntent, removed),
-        scheduleReevaluate:
-          owedFromEnable || shouldScheduleReevaluate(removed),
+        scheduleReevaluate: owed || shouldScheduleReevaluate(removed),
         permission,
       };
     } catch (err) {
       const cause = asHmacError(err);
-      throw afterEnableError(
+      throw failure(
         cause,
         isContactsOutcomeUncertain(cause.reason)
           ? removeIntent
-          : { ...removeIntent, uncertainOp: null },
+          : { ...removeIntent, uncertainOp: null, reevaluateOwed: owed },
         permission,
       );
     }
@@ -448,10 +445,10 @@ export async function runEnableThenSync(input: {
     input.onStage?.('reading');
     records = await input.book.readRecords();
   } catch (err) {
-    throw afterEnableError(asHmacError(err), state, permission);
+    throw failure(asHmacError(err), state, permission);
   }
   if ('capExceeded' in records) {
-    throw afterEnableError(
+    throw failure(
       new ContactsHmacError(
         'contacts-identifier-cap',
         'Too many identifiers in this snapshot. (contacts-identifier-cap)',
@@ -473,17 +470,102 @@ export async function runEnableThenSync(input: {
     return {
       result: synced.result,
       state: synced.state,
-      scheduleReevaluate: synced.scheduleReevaluate || owedFromEnable,
+      scheduleReevaluate: synced.scheduleReevaluate || (owed && !state.uncertainOp),
       permission,
     };
   } catch (err) {
-    const cause = asHmacError(err);
-    throw afterEnableError(
-      cause,
+    throw failure(
+      asHmacError(err),
       err instanceof ContactsFlowStateError ? err.state : state,
       permission,
     );
   }
+}
+
+export async function runEnableThenSync(input: {
+  functions: ContactsHmacFunctionsPort;
+  book: ContactsBookPort;
+  state: ContactsLocalState;
+  onStage?: (stage: ContactsEnableStage) => void;
+  saveState?: ContactsStateSaver;
+}): Promise<ContactsFlowOutcome> {
+  const save = input.saveState ?? noSave;
+  const priorOwed = input.state.reevaluateOwed === true;
+  input.onStage?.('enabling');
+  const enableIntent: ContactsLocalState = {
+    ...input.state,
+    uncertainOp: 'enable',
+    reevaluateOwed: true,
+  };
+  await save(enableIntent);
+
+  let enabled: ContactsWireResult;
+  try {
+    enabled = await enableContactsSync(input.functions);
+    if (!enabled.syncCommitted || !enabled.contactsSyncEnabled) {
+      throw new ContactsHmacError(
+        'contacts-result-unknown',
+        'Contacts sync was not confirmed.',
+      );
+    }
+  } catch (err) {
+    const cause = asHmacError(err);
+    throw new ContactsFlowStateError(
+      cause,
+      isContactsOutcomeUncertain(cause.reason) ? enableIntent : input.state,
+    );
+  }
+
+  // Confirmed from here on: the epoch comes from this response, nothing older.
+  const owedFromEnable = shouldScheduleReevaluate(enabled) || priorOwed;
+  return syncAfterConfirmedEnable({
+    functions: input.functions,
+    book: input.book,
+    save,
+    onStage: input.onStage,
+    enableResult: enabled,
+    state: {
+      ...withConfirmedEpoch(enableIntent, enabled.contactsEpoch),
+      enablementConfirmed: true,
+      uncertainOp: input.state.uncertainOp === 'sync' ? 'sync' : null,
+      reevaluateOwed: owedFromEnable,
+    },
+    failure: (cause, after, permission) =>
+      new ContactsSyncAfterEnableError(
+        cause,
+        enabled,
+        {
+          ...after,
+          // Fired below; only a write still in doubt stays owed.
+          reevaluateOwed:
+            isContactsOutcomeUncertain(cause.reason) || after.uncertainOp != null,
+        },
+        { permission, scheduleReevaluate: owedFromEnable },
+      ),
+  });
+}
+
+/**
+ * The user's retry once enable is already confirmed. It does not repeat the enable:
+ * that would be one more write, and Identity limits how close writes may be.
+ */
+export async function runSyncRetry(input: {
+  functions: ContactsHmacFunctionsPort;
+  book: ContactsBookPort;
+  state: ContactsLocalState;
+  onStage?: (stage: ContactsEnableStage) => void;
+  saveState?: ContactsStateSaver;
+}): Promise<ContactsFlowOutcome> {
+  return syncAfterConfirmedEnable({
+    functions: input.functions,
+    book: input.book,
+    save: input.saveState ?? noSave,
+    onStage: input.onStage,
+    enableResult: null,
+    state: input.state,
+    failure: (cause, after, permission) =>
+      new ContactsFlowStateError(cause, after, { permission }),
+  });
 }
 
 /**
@@ -551,11 +633,13 @@ export async function runDisable(input: {
   };
   await (input.saveState ?? noSave)(intent);
 
-  const failure = (err: unknown) => {
+  const failure = (err: unknown, known: ContactsLocalState) => {
     const cause = asHmacError(err);
     return new ContactsFlowStateError(
       cause,
-      isContactsOutcomeUncertain(cause.reason) ? intent : input.state,
+      isContactsOutcomeUncertain(cause.reason)
+        ? { ...intent, contactsEpoch: known.contactsEpoch }
+        : known,
     );
   };
   const finished = (result: ContactsWireResult): ContactsFlowOutcome => ({
@@ -578,18 +662,21 @@ export async function runDisable(input: {
     !(firstError instanceof ContactsHmacError) ||
     firstError.reason !== 'contacts-epoch-mismatch'
   ) {
-    throw failure(firstError);
+    throw failure(firstError, input.state);
   }
 
   // Our epoch is old, e.g. an earlier uncertain disable did land. Ask Identity.
+  let known = input.state;
   try {
     const live = await refreshVerifiedActorKeys(input.functions);
+    known = withConfirmedEpoch(input.state, live.contactsEpoch);
     if (!live.contactsSyncEnabled) return finished(live);
     return finished(
       await disableContactsSync(input.functions, live.contactsEpoch),
     );
   } catch (err) {
-    throw failure(err);
+    // Keeps the live epoch, so a manual retry goes straight to the disable.
+    throw failure(err, known);
   }
 }
 

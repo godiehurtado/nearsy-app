@@ -42,6 +42,7 @@ import {
   runEnableThenSync,
   runRefreshKeys,
   runResyncGrantedBook,
+  runSyncRetry,
   type ContactsBookPort,
   type ContactsEnableStage,
   type ContactsFlowOutcome,
@@ -49,9 +50,6 @@ import {
   type ContactsPermissionStatus,
   type ContactsStateSaver,
 } from './contactsSyncFlow.ts';
-
-/** Identity rejects writes closer than 2 s apart per account, syncs included. */
-export const CONTACTS_WRITE_SPACING_MS = 2_200;
 
 export type ContactsOpResult =
   | { status: 'ok'; outcome: ContactsFlowOutcome }
@@ -79,9 +77,6 @@ export type ContactsSessionDeps = {
   ensureAppCheck: () => Promise<void>;
   scheduleReevaluate: () => void;
   timeoutMs: number;
-  /** After a timeout, how long a request still blocks retries if it never settles. */
-  lateResultGraceMs: number;
-  writeSpacingMs?: number;
 };
 
 type Session = {
@@ -91,12 +86,10 @@ type Session = {
   operation: ContactsOperationKind | null;
   stage: ContactsEnableStage | null;
   liveRequests: number;
-  lastWriteAt: number;
   osPermission: ContactsSyncStatus['osPermission'];
   errorKey: ContactsErrorI18nKey | null;
   notifyEffective: boolean | null;
   resultSeq: number;
-  saveChain: Promise<void>;
 };
 
 type IdentityOp = 'enable' | 'sync' | 'remove' | 'disable' | 'refresh';
@@ -117,10 +110,11 @@ function sessionChangedError(): ContactsHmacError {
 }
 
 export function createContactsSyncSession(deps: ContactsSessionDeps) {
-  const writeSpacingMs = deps.writeSpacingMs ?? CONTACTS_WRITE_SPACING_MS;
   const listeners = new Set<(status: ContactsSyncStatus) => void>();
   /** Two loads for one account must not mint two sources. */
   const stateLoads = new Map<string, Promise<ContactsLocalState>>();
+  /** Per account, not per session: a new session must read past older writes. */
+  const saveChains = new Map<string, Promise<void>>();
   let session: Session | null = null;
 
   function buildStatus(): ContactsSyncStatus {
@@ -155,6 +149,7 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
     const running = stateLoads.get(uid);
     if (running) return running;
     const load = (async () => {
+      await saveChains.get(uid)?.catch(() => {});
       const sourceId = await loadOrCreateSourceIdForUid(
         deps.store,
         uid,
@@ -190,12 +185,10 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
       operation: null,
       stage: null,
       liveRequests: 0,
-      lastWriteAt: 0,
       osPermission: 'unknown',
       errorKey: null,
       notifyEffective: null,
       resultSeq: 0,
-      saveChain: Promise.resolve(),
     };
     created.ready = loadState(uid).then(
       (loaded) => {
@@ -213,10 +206,10 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
 
   function persist(s: Session): Promise<void> {
     const snapshot = s.state;
-    const write = s.saveChain
+    const write = (saveChains.get(s.uid) ?? Promise.resolve())
       .catch(() => {})
       .then(() => persistContactsLocalState(deps.store, s.uid, snapshot));
-    s.saveChain = write;
+    saveChains.set(s.uid, write);
     return write;
   }
 
@@ -293,9 +286,12 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
   }
 
   /**
-   * Time-bounded call. The timeout frees the UI; the request keeps counting as
-   * live until it settles, so a retry cannot overlap it. The identifiers are not
-   * retained: only the callable's name and version stay in scope for late results.
+   * The timeout frees the UI, not the operation: the request counts as live until
+   * it actually settles, however long that takes, because time passing proves
+   * nothing about it. So within a session no later operation can overlap it or be
+   * overwritten by its reply. If it never settles the section stays pending until
+   * the next session (sign-out or restart), whose replies are separate.
+   * The identifiers are not retained: only name and version stay in scope.
    */
   function trackRequest(
     s: Session,
@@ -307,15 +303,6 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
     s.liveRequests += 1;
     return new Promise((resolve, reject) => {
       let timedOut = false;
-      let released = false;
-      let graceTimer: ReturnType<typeof setTimeout> | undefined;
-
-      const release = () => {
-        if (released) return;
-        released = true;
-        s.liveRequests = Math.max(0, s.liveRequests - 1);
-        s.lastWriteAt = Date.now();
-      };
       const timeoutTimer = setTimeout(() => {
         timedOut = true;
         reject(
@@ -324,20 +311,13 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
             'Contacts could not confirm the result in time. (contacts-timeout)',
           ),
         );
-        graceTimer = setTimeout(() => {
-          release();
-          if (isCurrent(s)) emit();
-        }, deps.lateResultGraceMs);
       }, deps.timeoutMs);
 
       const settle = (deliver: () => void, deliverLate: () => void) => {
         clearTimeout(timeoutTimer);
-        if (graceTimer) clearTimeout(graceTimer);
-        // After the grace period a retry may be running: ignore this reply.
-        const abandoned = released;
-        release();
+        s.liveRequests = Math.max(0, s.liveRequests - 1);
         if (!timedOut) deliver();
-        else if (!abandoned && op) deliverLate();
+        else if (op) deliverLate();
       };
       request.then(
         (value) =>
@@ -361,11 +341,6 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
         // The token follows the signed-in user: never send one account's book
         // or epoch under another account's credentials.
         if (!isCurrent(s)) throw sessionChangedError();
-        const wait = s.lastWriteAt + writeSpacingMs - Date.now();
-        if (s.lastWriteAt > 0 && wait > 0) {
-          await new Promise((done) => setTimeout(done, wait));
-          if (!isCurrent(s)) throw sessionChangedError();
-        }
         const sentVersion =
           name === SYNC_CONTACT_HASHES
             ? (data as { snapshotVersion?: number } | undefined)?.snapshotVersion
@@ -490,9 +465,32 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
 
   const enableThenSync = () =>
     run('enable', async (s, ctx) => {
+      if (s.state.uncertainOp === 'disable') {
+        // A disable may still be in transit from an earlier session. Repeating it
+        // moves the epoch past it, so it can no longer land on top of this enable.
+        const fenced = await runDisable({
+          functions: ctx.functions,
+          state: s.state,
+          saveState: ctx.saveState,
+        });
+        s.state = fenced.state;
+        fireReevaluate(s, fenced.scheduleReevaluate);
+      }
       // Explicit user action; saved with the intent, before anything is sent.
       s.state = { ...s.state, userConsent: true };
       return runEnableThenSync({
+        functions: ctx.functions,
+        book: guardedBook(s),
+        state: s.state,
+        onStage: ctx.onStage,
+        saveState: ctx.saveState,
+      });
+    });
+
+  const retrySync = () =>
+    run('enable', (s, ctx) => {
+      s.state = { ...s.state, userConsent: true };
+      return runSyncRetry({
         functions: ctx.functions,
         book: guardedBook(s),
         state: s.state,
@@ -539,10 +537,16 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
     enableThenSync,
     disable,
     /** User-facing retry of whatever is still unconfirmed. */
-    retry(): Promise<ContactsOpResult> {
-      return session?.state.uncertainOp === 'disable'
-        ? disable()
-        : enableThenSync();
+    async retry(): Promise<ContactsOpResult> {
+      const s = currentSession();
+      // Decide on what was saved: right after a restart it may still be loading.
+      await s?.ready.catch(() => {});
+      const state = s?.state;
+      if (state?.uncertainOp === 'disable') return disable();
+      if (state?.enablementConfirmed === true && state.epochStale !== true) {
+        return retrySync();
+      }
+      return enableThenSync();
     },
     refreshKeys: () =>
       run('refresh', (s, ctx) =>
