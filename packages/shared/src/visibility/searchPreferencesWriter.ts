@@ -78,6 +78,8 @@ export type SearchPreferencesWriterDeps = {
 
 export function createSearchPreferencesWriter(deps: SearchPreferencesWriterDeps) {
   const now = deps.now ?? Date.now;
+  let onChange = deps.onChange;
+  let onFailure = deps.onFailure;
   let confirmed = deps.initial;
   let stored: StoredSearchPreferenceModes = {
     personal: false,
@@ -100,7 +102,7 @@ export function createSearchPreferencesWriter(deps: SearchPreferencesWriterDeps)
   }
 
   function emit(): void {
-    deps.onChange(getDraft());
+    onChange(getDraft());
   }
 
   function dispose(): void {
@@ -167,7 +169,7 @@ export function createSearchPreferencesWriter(deps: SearchPreferencesWriterDeps)
           emit();
         } else {
           emit();
-          deps.onFailure(mode, err);
+          onFailure(mode, err);
         }
         pump();
       },
@@ -198,6 +200,15 @@ export function createSearchPreferencesWriter(deps: SearchPreferencesWriterDeps)
       pump();
       return true;
     },
+    /** A new screen takes over; what it shows comes from this queue if it has read. */
+    rebind(
+      handlers: Pick<SearchPreferencesWriterDeps, 'onChange' | 'onFailure'>,
+    ): void {
+      onChange = handlers.onChange;
+      onFailure = handlers.onFailure;
+      if (ready) emit();
+    },
+    isDisposed: () => disposed,
     /** Drops unsent intent and ignores replies still in the air. */
     dispose,
   };
@@ -206,3 +217,28 @@ export function createSearchPreferencesWriter(deps: SearchPreferencesWriterDeps)
 export type SearchPreferencesWriter = ReturnType<
   typeof createSearchPreferencesWriter
 >;
+
+let activeWriter: SearchPreferencesWriter | null = null;
+
+/**
+ * One queue per signed-in account in this process, not per mounted screen. A
+ * remount during a save must join the running queue: a second one would send its
+ * edit first, and the first would then overwrite it with an older value.
+ */
+export function acquireSearchPreferencesWriter(
+  deps: SearchPreferencesWriterDeps,
+): SearchPreferencesWriter {
+  if (activeWriter?.uid === deps.uid && !activeWriter.isDisposed()) {
+    activeWriter.rebind(deps);
+    return activeWriter;
+  }
+  activeWriter?.dispose();
+  activeWriter = createSearchPreferencesWriter(deps);
+  return activeWriter;
+}
+
+/** No signed-in account: nothing may be sent or shown from the previous one. */
+export function releaseSearchPreferencesWriter(): void {
+  activeWriter?.dispose();
+  activeWriter = null;
+}

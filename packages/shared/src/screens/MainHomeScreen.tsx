@@ -101,7 +101,8 @@ import {
   type PrefsFieldPatch,
 } from '../visibility/preferenceDraft';
 import {
-  createSearchPreferencesWriter,
+  acquireSearchPreferencesWriter,
+  releaseSearchPreferencesWriter,
   searchPreferenceFieldsFromPatch,
   storedSearchPreferenceModes,
   type SearchPreferencesWriter,
@@ -207,7 +208,7 @@ export default function MainHomeScreen({ navigation }: Props) {
   );
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
-  /** One save queue per signed-in account; survives effect re-runs for that uid. */
+  /** The account's save queue, shared with any other mount of this screen. */
   const prefsWriterRef = useRef<SearchPreferencesWriter | null>(null);
   const showPrefsSaveErrorRef = useRef<() => void>(() => {});
   const [scrollEnabled, setScrollEnabled] = useState(true);
@@ -496,30 +497,26 @@ export default function MainHomeScreen({ navigation }: Props) {
 
   useEffect(() => {
     const uid = firebaseAuth.currentUser?.uid;
-    if (prefsWriterRef.current && prefsWriterRef.current.uid !== uid) {
-      prefsWriterRef.current.dispose();
-      prefsWriterRef.current = null;
-    }
     if (!uid) {
+      releaseSearchPreferencesWriter();
+      prefsWriterRef.current = null;
       setLoading(false);
       return;
     }
 
-    if (!prefsWriterRef.current) {
-      prefsWriterRef.current = createSearchPreferencesWriter({
-        uid,
-        initial: prefsRef.current,
-        isCurrent: () => firebaseAuth.currentUser?.uid === uid,
-        write: (mode, fields, updatedAt) =>
-          persistSearchPreferencesForMode(uid, mode, fields, updatedAt),
-        onChange: (draft) => {
-          prefsRef.current = draft;
-          setPrefs(draft);
-        },
-        onFailure: () => showPrefsSaveErrorRef.current(),
-      });
-    }
-    const prefsWriter = prefsWriterRef.current;
+    const prefsWriter = acquireSearchPreferencesWriter({
+      uid,
+      initial: prefsRef.current,
+      isCurrent: () => firebaseAuth.currentUser?.uid === uid,
+      write: (mode, fields, updatedAt) =>
+        persistSearchPreferencesForMode(uid, mode, fields, updatedAt),
+      onChange: (draft) => {
+        prefsRef.current = draft;
+        setPrefs(draft);
+      },
+      onFailure: () => showPrefsSaveErrorRef.current(),
+    });
+    prefsWriterRef.current = prefsWriter;
 
     let alive = true;
     bindPublicationSession(uid);

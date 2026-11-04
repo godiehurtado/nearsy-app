@@ -12,8 +12,10 @@ import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
+  acquireSearchPreferencesWriter,
   buildSearchPreferencesModeWrite,
   createSearchPreferencesWriter,
+  releaseSearchPreferencesWriter,
   searchPreferenceFieldsFromPatch,
   storedSearchPreferenceModes,
   type SearchPreferenceFields,
@@ -316,6 +318,191 @@ describe('Session changes', () => {
     const { env, writer } = harness({ seed: false });
     assert.equal(writer.patch('personal', { maxDistanceMeters: 35 }), false);
     assert.equal(env.sent.length, 0);
+  });
+});
+
+describe('Home remounts during a save', () => {
+  /**
+   * Firestore as the client sees it: writes reach the server in the order each
+   * reply is released, and a local read shows pending writes on top of the server.
+   */
+  function fakeFirestore() {
+    const fs = {
+      server: 30,
+      localPending: [] as number[],
+      sent: [] as Array<{ value: number; land: () => void; fail: () => void }>,
+      localRead(): VisibilitySearchPreferencesByMode {
+        const shown = bag();
+        shown.personal.maxDistanceMeters = fs.localPending.at(-1) ?? fs.server;
+        return shown;
+      },
+    };
+    return fs;
+  }
+
+  function mountHome(fs: ReturnType<typeof fakeFirestore>, uid = 'uid-a') {
+    const screen = {
+      uid,
+      shown: null as VisibilitySearchPreferencesByMode | null,
+      failures: 0,
+      writer: null as unknown as ReturnType<typeof acquireSearchPreferencesWriter>,
+      snapshot() {
+        screen.writer.applyRemote(fs.localRead(), STORED);
+      },
+    };
+    screen.writer = acquireSearchPreferencesWriter({
+      uid,
+      initial: bag(),
+      isCurrent: () => true,
+      write: (_mode, fields) =>
+        new Promise<void>((resolve, reject) => {
+          const value = fields.maxDistanceMeters as number;
+          fs.localPending.push(value);
+          const leave = () => fs.localPending.splice(fs.localPending.indexOf(value), 1);
+          fs.sent.push({
+            value,
+            land: () => {
+              leave();
+              fs.server = value;
+              resolve();
+            },
+            fail: () => {
+              leave();
+              reject(boom());
+            },
+          });
+        }),
+      onChange: (draft) => {
+        screen.shown = draft;
+      },
+      onFailure: () => {
+        screen.failures += 1;
+      },
+    });
+    return screen;
+  }
+
+  /** Lands everything, one at a time, in the order the queue sends it. */
+  async function landAll(fs: ReturnType<typeof fakeFirestore>, from: number) {
+    for (let i = from; i < fs.sent.length; i += 1) {
+      fs.sent[i].land();
+      await settled();
+    }
+  }
+
+  it('the older value cannot overwrite the newer edit', async () => {
+    releaseSearchPreferencesWriter();
+    const fs = fakeFirestore();
+    const first = mountHome(fs);
+    first.snapshot();
+    first.writer.patch('personal', { maxDistanceMeters: 35 }); // in flight
+    first.writer.patch('personal', { maxDistanceMeters: 40 }); // queued, unsent
+
+    const second = mountHome(fs); // unmount + remount, same process and account
+    second.snapshot(); // local read showing the pending 35: must not win
+    assert.equal(second.shown?.personal.maxDistanceMeters, 40);
+
+    second.writer.patch('personal', { maxDistanceMeters: 50 });
+    assert.equal(fs.sent.length, 1, 'no second queue racing the first');
+    await landAll(fs, 0);
+
+    assert.deepEqual(fs.sent.map((w) => w.value), [35, 50]);
+    assert.equal(fs.server, 50);
+    assert.equal(second.shown?.personal.maxDistanceMeters, 50);
+  });
+
+  it('the exact path: one save, remount, second edit of the same field', async () => {
+    releaseSearchPreferencesWriter();
+    const fs = fakeFirestore();
+    const first = mountHome(fs);
+    first.snapshot();
+    first.writer.patch('personal', { maxDistanceMeters: 35 });
+    const second = mountHome(fs);
+    second.snapshot();
+    second.writer.patch('personal', { maxDistanceMeters: 50 });
+    await landAll(fs, 0);
+    assert.equal(fs.server, 50);
+    second.snapshot(); // the settled read
+    assert.equal(second.shown?.personal.maxDistanceMeters, 50);
+  });
+
+  it('if the newer edit fails, it returns to the confirmed older value, not the initial one', async () => {
+    releaseSearchPreferencesWriter();
+    const fs = fakeFirestore();
+    const first = mountHome(fs);
+    first.snapshot();
+    first.writer.patch('personal', { maxDistanceMeters: 35 });
+    const second = mountHome(fs);
+    second.snapshot();
+    second.writer.patch('personal', { maxDistanceMeters: 50 });
+    fs.sent[0].land();
+    await settled();
+    fs.sent[1].fail();
+    await settled();
+    assert.equal(fs.server, 35);
+    assert.equal(second.shown?.personal.maxDistanceMeters, 35);
+    assert.equal(second.failures, 1, 'reported once, on the screen now open');
+    assert.equal(first.failures, 0);
+  });
+
+  it('a stale local read while saving does not become the confirmed value', async () => {
+    releaseSearchPreferencesWriter();
+    const fs = fakeFirestore();
+    const first = mountHome(fs);
+    first.snapshot();
+    first.writer.patch('personal', { maxDistanceMeters: 35 });
+    const second = mountHome(fs);
+    second.snapshot(); // shows the pending 35
+    fs.sent[0].fail();
+    await settled();
+    assert.equal(second.shown?.personal.maxDistanceMeters, 30, 'never confirmed');
+    assert.equal(second.failures, 1);
+  });
+
+  it('the new screen does not inherit the old one if the account changed', async () => {
+    releaseSearchPreferencesWriter();
+    const fs = fakeFirestore();
+    const first = mountHome(fs);
+    first.snapshot();
+    first.writer.patch('personal', { maxDistanceMeters: 35 });
+    first.writer.patch('personal', { maxDistanceMeters: 40 });
+
+    const other = mountHome(fs, 'uid-b');
+    assert.notEqual(other.writer, first.writer);
+    other.snapshot();
+    fs.sent[0].land();
+    await settled();
+    assert.equal(fs.sent.length, 1, "A's queued value is not sent");
+    assert.equal(first.writer.patch('personal', { maxDistanceMeters: 45 }), false);
+  });
+
+  it('sign-out drops the queue, and the same account starts clean afterwards', async () => {
+    releaseSearchPreferencesWriter();
+    const fs = fakeFirestore();
+    const first = mountHome(fs);
+    first.snapshot();
+    first.writer.patch('personal', { maxDistanceMeters: 35 });
+    first.writer.patch('personal', { maxDistanceMeters: 40 });
+    releaseSearchPreferencesWriter();
+    const again = mountHome(fs);
+    assert.notEqual(again.writer, first.writer);
+    fs.sent[0].land();
+    await settled();
+    assert.equal(fs.sent.length, 1);
+  });
+
+  it('a mode stays isolated across the remount', async () => {
+    releaseSearchPreferencesWriter();
+    const fs = fakeFirestore();
+    const first = mountHome(fs);
+    first.snapshot();
+    first.writer.patch('personal', { maxDistanceMeters: 35 });
+    const second = mountHome(fs);
+    second.writer.patch('professional', { ageMin: 33, ageMax: 44 });
+    assert.equal(second.shown?.professional.ageMin, 33);
+    assert.equal(second.shown?.personal.maxDistanceMeters, 35);
+    assert.equal(second.shown?.professional.maxDistanceMeters, 15);
+    releaseSearchPreferencesWriter();
   });
 });
 

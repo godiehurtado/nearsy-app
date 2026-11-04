@@ -5,7 +5,8 @@ Functions #45 says nothing about Android, which needs its own check.
 
 ## How a save works
 
-`visibility/searchPreferencesWriter.ts` is one save queue per signed-in account.
+`visibility/searchPreferencesWriter.ts` is one save queue per signed-in account in the
+process, not per mounted screen: a remount joins the running queue.
 
 - **One write at a time.** Replies cannot arrive out of order, and rapid slider moves
   coalesce into the latest intent.
@@ -63,5 +64,5 @@ real engine. The original stays in the backup folder outside the repository.
 - Android device QA is pending.
 - While offline, a native write stays pending until it reaches the server, so the section
   keeps showing the intent. No timer declares a result.
-- Leaving Home does not cancel the queue; a remount during a save starts a new queue from
-  the next read.
+- Leaving Home does not cancel the queue. A restart loses anything queued but not yet sent,
+  which is at most the latest intent behind the write in flight.
