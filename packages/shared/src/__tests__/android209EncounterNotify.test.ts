@@ -470,36 +470,12 @@ describe('Identity contacts HMAC wire', () => {
     assert.doesNotMatch(settings, /Contacts were updated/);
   });
 
-  it('does not upload empty when OS permission is denied and keeps a fence floor', async () => {
+  it('does not call Identity or upload when OS permission is denied', async () => {
     const calls: Array<{ name: string; data: unknown }> = [];
     const functions = {
       region: 'us-central1',
       async call(name: string, data?: unknown) {
         calls.push({ name, data });
-        if (name === ENABLE_CONTACTS_SYNC) {
-          return {
-            result: 'enabled',
-            contactsSyncEnabled: true,
-            contactsEpoch: 0,
-            notifyNearbyContactsEffective: true,
-            keyCount: 1,
-            syncCommitted: true,
-            reevaluateRequired: true,
-          };
-        }
-        if (name === REMOVE_CONTACT_SOURCE) {
-          return {
-            result: 'removed',
-            contactsSyncEnabled: true,
-            contactsEpoch: 0,
-            notifyNearbyContactsEffective: true,
-            sourceId: 'sourceId1',
-            snapshotVersion: 2,
-            identifierCount: 4,
-            syncCommitted: true,
-            reevaluateRequired: true,
-          };
-        }
         throw new Error(`unexpected ${name}`);
       },
     };
@@ -520,13 +496,10 @@ describe('Identity contacts HMAC wire', () => {
         removedSnapshotFloor: null,
       },
     });
-    assert.equal(outcome.result.result, 'removed');
-    assert.equal(outcome.state.removedSnapshotFloor, 2);
+    assert.equal(outcome.permission, 'denied');
+    assert.equal(outcome.result.contactsSyncEnabled, false);
     assert.equal(outcome.state.lastAckedVersion, null);
-    assert.deepEqual(
-      calls.map((c) => c.name),
-      [ENABLE_CONTACTS_SYNC, REMOVE_CONTACT_SOURCE],
-    );
+    assert.deepEqual(calls, []);
     assert.ok(!calls.some((c) => c.name === SYNC_CONTACT_HASHES));
   });
 

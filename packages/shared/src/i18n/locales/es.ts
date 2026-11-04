@@ -27,6 +27,11 @@ export const es: TranslationResources = {
       inactive: 'Inactivo',
       activeHint: 'Eres visible para usuarios cercanos',
       inactiveHint: 'Estás oculto para usuarios cercanos',
+      locationConsentTitle: '¿Permitir ubicación para Visibilidad?',
+      locationConsentBody:
+        'Nearsy recopila la ubicación de tu dispositivo mientras usas la app para mostrar personas cerca y mantener Visibilidad activa. La ubicación se envía de forma segura a Nearsy para el descubrimiento cercano. Puedes apagar Visibilidad cuando quieras.',
+      locationConsentContinue: 'Continuar',
+      locationConsentCancel: 'Ahora no',
     },
     preferences: {
       ageRange: 'Rango de edad',
@@ -307,7 +312,12 @@ export const es: TranslationResources = {
     contactsSync: {
       title: 'Sincronizar contactos',
       description:
-        'Relaciona en privado a personas que conoces cuando están cerca. Nearsy guarda identificadores cifrados, no nombres ni tu agenda.',
+        'Relaciona a personas que conoces cuando están cerca. Tras aceptar, Nearsy lee teléfonos y correos de este dispositivo, los envía por TLS a Nearsy Identity; allí se normalizan y hashean con HMAC para el matching. No se suben nombres ni fotos de contactos.',
+      consentTitle: '¿Permitir sincronizar contactos?',
+      consentBody:
+        'Nearsy leerá teléfonos y correos de tu agenda y los enviará por TLS a Nearsy Identity. Allí se normalizan y hashean con HMAC para el matching privado cerca. Los nombres y fotos de contactos se quedan en este dispositivo y no se suben. Puedes apagarlo cuando quieras.',
+      consentContinue: 'Continuar',
+      consentCancel: 'Ahora no',
       errors: {
         generic: 'No se pudo actualizar la sincronización de contactos. Inténtalo de nuevo.',
         auth: 'Tu sesión terminó. Vuelve a iniciar sesión e inténtalo otra vez.',
@@ -372,12 +382,12 @@ export const es: TranslationResources = {
         full: {
           title: 'Mantente visible cerca',
           body:
-            'Nearsy puede actualizar tu ubicación en segundo plano mientras Visibility esté activa, para que personas realmente cercanas te encuentren aunque la app esté cerrada. No se usa con Visibility desactivada.',
+            'Nearsy recopila datos de ubicación para habilitar el descubrimiento cercano mientras Visibility esté activa, incluso cuando la app esté cerrada o no se use. La ubicación se envía de forma segura a Nearsy para que personas realmente cercanas te encuentren. No se usa ubicación en segundo plano con Visibility desactivada.',
         },
         brief: {
           title: '¿Activar ubicación en segundo plano?',
           body:
-            'Las actualizaciones en segundo plano te mantienen visible cerca con Visibility activa. Puedes desactivarlo en cualquier momento en Más.',
+            'Nearsy recopila datos de ubicación en segundo plano mientras Visibility esté activa, incluso cuando la app esté cerrada o no se use, para que sigas siendo visible cerca. Puedes desactivarlo en cualquier momento en Más.',
         },
         settingsHint:
           'Para permanecer visible con Nearsy cerrada, elige Permitir todo el tiempo en Ajustes del sistema.',
@@ -391,10 +401,10 @@ export const es: TranslationResources = {
       disclosure: {
         fullTitle: 'Mantente visible cerca',
         fullBody:
-          'Nearsy puede actualizar tu ubicación en segundo plano mientras Visibility esté activa, para que personas realmente cercanas te encuentren aunque la app esté cerrada. No se usa con Visibility desactivada.',
+          'Nearsy recopila datos de ubicación para habilitar el descubrimiento cercano mientras Visibility esté activa, incluso cuando la app esté cerrada o no se use. La ubicación se envía de forma segura a Nearsy para que personas realmente cercanas te encuentren. No se usa ubicación en segundo plano con Visibility desactivada.',
         briefTitle: '¿Activar ubicación en segundo plano?',
         briefBody:
-          'Las actualizaciones en segundo plano te mantienen visible cerca con Visibility activa. Puedes desactivarlo en cualquier momento en Más.',
+          'Nearsy recopila datos de ubicación en segundo plano mientras Visibility esté activa, incluso cuando la app esté cerrada o no se use, para que sigas siendo visible cerca. Puedes desactivarlo en cualquier momento en Más.',
         bulletVisibility:
           'No se usa ubicación en segundo plano con Visibility desactivada.',
         bulletNearby:

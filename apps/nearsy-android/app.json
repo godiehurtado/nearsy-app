@@ -66,7 +66,7 @@
       [
         "expo-contacts",
         {
-          "contactsPermission": "Nearsy uses your contacts to notify you when people you know are nearby. Names stay on this device; Nearsy stores only hashed identifiers."
+          "contactsPermission": "Nearsy reads phone numbers and emails to match people you know nearby. They are sent over TLS to Nearsy Identity, where they are normalized and HMAC-hashed for matching. Contact names and photos stay on this device and are not uploaded."
         }
       ],
       "@react-native-community/datetimepicker",

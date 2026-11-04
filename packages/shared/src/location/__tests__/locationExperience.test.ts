@@ -1005,9 +1005,12 @@ describe('ENH-LOC-01 source contracts', () => {
     const es = readShared('i18n/locales/es.ts');
     assert.match(en, /education:\s*\{/);
     assert.match(en, /Stay discoverable nearby/);
+    assert.match(en, /collects location data/);
+    assert.match(en, /closed or not in use/);
     assert.match(en, /Allow all the time/);
     assert.match(en, /Background updates are off/);
     assert.match(es, /Mantente visible cerca/);
+    assert.match(es, /recopila datos de ubicación/);
     assert.match(es, /Permitir todo el tiempo/);
     assert.match(es, /Actualizaciones en segundo plano desactivadas/);
     assert.doesNotMatch(en, /iPhone/);

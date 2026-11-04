@@ -52,7 +52,12 @@ export default {
   contactsSync: {
     title: 'Sync contacts',
     description:
-      'Privately match people you know nearby. Nearsy stores hashed identifiers, not names or your address book.',
+      'Match people you know nearby. After you agree, Nearsy reads phone numbers and emails from this device, sends them over TLS to Nearsy Identity; Identity normalizes and HMAC-hashes them for matching. Contact names and photos are not uploaded.',
+    consentTitle: 'Allow contacts sync?',
+    consentBody:
+      'Nearsy will read phone numbers and emails from your address book and send them over TLS to Nearsy Identity. There they are normalized and HMAC-hashed for private nearby matching. Contact names and photos stay on this device and are not uploaded. You can turn this off anytime.',
+    consentContinue: 'Continue',
+    consentCancel: 'Not now',
     errors: {
       generic: 'Could not update Contacts sync. Please try again.',
       auth: 'Your session ended. Sign in again and retry.',
@@ -110,12 +115,12 @@ export default {
       full: {
         title: 'Stay discoverable nearby',
         body:
-          'Nearsy can update your location in the background while Visibility is on, so people who are truly nearby can find you even when the app is closed. Background location is not used when Visibility is off.',
+          'Nearsy collects location data to enable nearby discovery while Visibility is on, even when the app is closed or not in use. Location is sent securely to Nearsy so people who are truly nearby can find you. Background location is not used when Visibility is off.',
       },
       brief: {
         title: 'Enable background location?',
         body:
-          'Background updates keep you discoverable nearby while Visibility is on. You can turn this off anytime in More.',
+          'Nearsy collects location data in the background while Visibility is on, even when the app is closed or not in use, so you stay discoverable nearby. You can turn this off anytime in More.',
       },
       settingsHint:
         'To stay visible when Nearsy is closed, set location to Allow all the time in system Settings.',
@@ -130,10 +135,10 @@ export default {
     disclosure: {
       fullTitle: 'Stay discoverable nearby',
       fullBody:
-        'Nearsy can update your location in the background while Visibility is on, so people who are truly nearby can find you even when the app is closed. Background location is not used when Visibility is off.',
+        'Nearsy collects location data to enable nearby discovery while Visibility is on, even when the app is closed or not in use. Location is sent securely to Nearsy so people who are truly nearby can find you. Background location is not used when Visibility is off.',
       briefTitle: 'Enable background location?',
       briefBody:
-        'Background updates keep you discoverable nearby while Visibility is on. You can turn this off anytime in More.',
+        'Nearsy collects location data in the background while Visibility is on, even when the app is closed or not in use, so you stay discoverable nearby. You can turn this off anytime in More.',
       bulletVisibility:
         'Background location is not used when Visibility is off.',
       bulletNearby:

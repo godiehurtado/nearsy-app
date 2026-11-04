@@ -13,6 +13,11 @@ export default {
     inactive: 'Inactive',
     activeHint: 'You are visible to nearby users',
     inactiveHint: 'You are hidden from nearby users',
+    locationConsentTitle: 'Allow location for Visibility?',
+    locationConsentBody:
+      'Nearsy collects your device location while you use the app to show people nearby and keep Visibility on. Location is sent securely to Nearsy for nearby discovery. You can turn Visibility off anytime.',
+    locationConsentContinue: 'Continue',
+    locationConsentCancel: 'Not now',
   },
   preferences: {
     ageRange: 'Age range',
