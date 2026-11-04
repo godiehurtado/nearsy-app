@@ -20,6 +20,7 @@ import { createAndroidContactsBook } from './contactsBook.android.ts';
 import { ContactsHmacError } from './contactsHmacCore.ts';
 import {
   createContactsSyncSession,
+  type ContactsDisclosureAcceptance,
   type ContactsOpResult,
   type ContactsUserDocFacts,
 } from './contactsSyncSession.ts';
@@ -54,6 +55,7 @@ export type {
   ContactsEnableStage,
 } from './contactsSyncFlow.ts';
 export type {
+  ContactsDisclosureAcceptance,
   ContactsOpResult,
   ContactsUserDocFacts,
 } from './contactsSyncSession.ts';
@@ -132,12 +134,16 @@ export function reportContactsUserDocReadFailed(uid: string): void {
   bound().reportUserDocReadFailed(uid);
 }
 
-export function enableThenSyncContacts(): Promise<ContactsOpResult> {
-  return bound().enableThenSync();
+export function enableThenSyncContacts(
+  acceptance?: ContactsDisclosureAcceptance,
+): Promise<ContactsOpResult> {
+  return bound().enableThenSync(acceptance);
 }
 
-export function retryContactsSync(): Promise<ContactsOpResult> {
-  return bound().retry();
+export function retryContactsSync(
+  acceptance?: ContactsDisclosureAcceptance,
+): Promise<ContactsOpResult> {
+  return bound().retry(acceptance);
 }
 
 export function disableContactsIntegration(): Promise<ContactsOpResult> {

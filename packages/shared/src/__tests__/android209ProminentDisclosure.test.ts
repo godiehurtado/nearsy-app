@@ -112,11 +112,14 @@ describe('Background disclosure copy + Contacts', () => {
     );
     assert.match(more, /contactsSync\.consentTitle/);
     assert.match(more, /consentContinue[\s\S]*runContactsSyncEnable/);
-    assert.match(more, /outcome\.permission !== 'granted'/);
+    // Off stays off without the permission: nothing reaches Identity.
+    assert.match(flow, /osPermission !== 'granted'/);
     // OS READ_CONTACTS before Identity enable; LiveLocation never prompts.
-    const permIdx = flow.indexOf('input.book.requestPermission()');
-    const enableIdx = flow.indexOf('enableContactsSync(input.functions)');
-    assert.ok(permIdx >= 0 && enableIdx > permIdx);
+    const entry = flow.indexOf('export async function runEnableThenSync');
+    const permIdx = flow.indexOf('input.book.requestPermission()', entry);
+    const readIdx = flow.indexOf('refreshVerifiedActorKeys(input.functions)', entry);
+    const enableIdx = flow.indexOf('enableContactsSync(input.functions', entry);
+    assert.ok(permIdx > entry && readIdx > permIdx && enableIdx > permIdx);
     assert.doesNotMatch(live, /requestForegroundPermissionsAsync/);
     assert.match(crjAct, /getForegroundPermissionsAsync/);
     assert.match(crjAct, /Do not prompt here/);

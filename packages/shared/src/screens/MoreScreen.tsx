@@ -554,13 +554,46 @@ export default function MoreScreen() {
     );
   };
 
+  /**
+   * In-app disclosure + affirmative Continue before READ_CONTACTS / Identity sync.
+   * Cancel asks for no permission, calls no Identity and reads no book.
+   */
+  const confirmContactsDisclosure = (proceed: () => void) => {
+    const uid = firebaseAuth.currentUser?.uid;
+    Alert.alert(
+      t('settings.contactsSync.consentTitle'),
+      t('settings.contactsSync.consentBody'),
+      [
+        {
+          text: t('settings.contactsSync.consentCancel'),
+          style: 'cancel',
+        },
+        {
+          text: t('settings.contactsSync.consentContinue'),
+          onPress: () => {
+            if (firebaseAuth.currentUser?.uid === uid) proceed();
+          },
+        },
+      ],
+    );
+  };
+
+  const runContactsSyncEnable = async () => {
+    // OS READ_CONTACTS is requested inside enableThenSync only after this consent.
+    alertContactsFailure(
+      await enableThenSyncContacts({ disclosureAccepted: true }),
+    );
+  };
+
   const handleToggleContactsSync = async (enabled: boolean) => {
     if (Platform.OS !== 'android') return;
-    alertContactsFailure(
-      enabled
-        ? await enableThenSyncContacts()
-        : await disableContactsIntegration(),
-    );
+    if (enabled) {
+      confirmContactsDisclosure(() => {
+        void runContactsSyncEnable();
+      });
+      return;
+    }
+    alertContactsFailure(await disableContactsIntegration());
   };
 
   /** Only reads the account again: no enable, sync or permission comes out of this. */
@@ -586,7 +619,16 @@ export default function MoreScreen() {
   };
 
   const handleRetryContactsSync = async () => {
-    alertContactsFailure(await retryContactsSync());
+    const op = await retryContactsSync();
+    if (op.status !== 'needs_disclosure') {
+      alertContactsFailure(op);
+      return;
+    }
+    confirmContactsDisclosure(() => {
+      void retryContactsSync({ disclosureAccepted: true }).then(
+        alertContactsFailure,
+      );
+    });
   };
 
   const handleToggleNotifyNearbyContacts = async (enabled: boolean) => {

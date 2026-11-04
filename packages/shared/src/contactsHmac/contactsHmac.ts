@@ -3,7 +3,11 @@
  */
 import { ContactsHmacError } from './contactsHmacCore.ts';
 import type { ContactsWireResult } from './contactsHmacContract.ts';
-import type { ContactsOpResult, ContactsUserDocFacts } from './contactsSyncSession.ts';
+import type {
+  ContactsDisclosureAcceptance,
+  ContactsOpResult,
+  ContactsUserDocFacts,
+} from './contactsSyncSession.ts';
 import {
   CONTACTS_STATUS_SIGNED_OUT,
   type ContactsSyncStatus,
@@ -38,6 +42,7 @@ export type {
   ContactsEnableStage,
 } from './contactsSyncFlow.ts';
 export type {
+  ContactsDisclosureAcceptance,
   ContactsOpResult,
   ContactsUserDocFacts,
 } from './contactsSyncSession.ts';
@@ -72,11 +77,15 @@ export function expectContactsUserDocRead(_uid: string): void {}
 
 export function reportContactsUserDocReadFailed(_uid: string): void {}
 
-export function enableThenSyncContacts(): Promise<ContactsOpResult> {
+export function enableThenSyncContacts(
+  _acceptance?: ContactsDisclosureAcceptance,
+): Promise<ContactsOpResult> {
   return unavailable();
 }
 
-export function retryContactsSync(): Promise<ContactsOpResult> {
+export function retryContactsSync(
+  _acceptance?: ContactsDisclosureAcceptance,
+): Promise<ContactsOpResult> {
   return unavailable();
 }
 

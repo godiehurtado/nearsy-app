@@ -498,8 +498,9 @@ describe('Identity contacts HMAC wire', () => {
       },
     });
     assert.equal(outcome.permission, 'denied');
-    assert.equal(outcome.result.contactsSyncEnabled, false);
-    assert.equal(outcome.state.lastAckedVersion, null);
+    assert.equal(outcome.result, null);
+    // Nothing was withdrawn, so what is known about this source is kept.
+    assert.equal(outcome.state.lastAckedVersion, 2);
     assert.deepEqual(calls, []);
     assert.ok(!calls.some((c) => c.name === SYNC_CONTACT_HASHES));
   });

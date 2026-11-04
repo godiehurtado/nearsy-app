@@ -169,11 +169,11 @@ function harness(opts?: {
     ...raw,
     enableThenSync: async () => {
       await readAccount();
-      return raw.enableThenSync();
+      return raw.enableThenSync({ disclosureAccepted: true });
     },
     retry: async () => {
       await readAccount();
-      return raw.retry();
+      return raw.retry({ disclosureAccepted: true });
     },
     disable: async () => {
       await readAccount();
@@ -349,31 +349,36 @@ describe('Enable confirmed, then a later stage fails', () => {
     assert.equal(session.getStatus().snapshot, 'synced');
   });
 
-  it('keeps enabled when remove fails after a denied permission', async () => {
-    const book = fakeBook({ permission: 'undetermined', requested: 'denied' });
+  it('keeps enabled when remove fails after the permission is withdrawn', async () => {
+    const book = fakeBook();
     const { env, session } = harness({ book });
+    await session.enableThenSync();
+    book.permission = 'denied';
+    book.requested = 'denied';
     env.identity.intercept = (name) => {
       if (name === REMOVE_CONTACT_SOURCE) throw reason('contacts-hmac-unavailable');
       return undefined;
     };
-    const op = await session.enableThenSync();
+    const op = await session.retry();
     assert.equal(op.status, 'failed');
     const status = session.getStatus();
     assert.equal(status.enablement, 'enabled');
     assert.equal(status.snapshot, 'pending');
     assert.equal(status.osPermission, 'denied');
     assert.equal(contactsStatusCopyKey(status), 'status.enabledPermissionDenied');
-    assert.equal(env.identity.count(SYNC_CONTACT_HASHES), 0);
   });
 
   it('keeps enabled and a retryable state when remove times out', async () => {
-    const book = fakeBook({ permission: 'undetermined', requested: 'denied' });
+    const book = fakeBook();
     const { env, session } = harness({ book, timeoutMs: 15 });
+    await session.enableThenSync();
+    book.permission = 'denied';
+    book.requested = 'denied';
     const held = replyHeldAfterCommit(env, REMOVE_CONTACT_SOURCE);
-    const op = await session.enableThenSync();
+    const op = await session.retry();
     assert.equal(op.status, 'uncertain');
     assert.equal(session.getStatus().enablement, 'enabled');
-    assert.equal(savedState(env.store).uncertainOp, 'remove');
+    await until(() => savedState(env.store)?.uncertainOp === 'remove', 'intent saved');
     held.fail();
     await until(() => !session.getStatus().awaitingLateResult, 'request settled');
     book.requested = 'granted';
@@ -448,7 +453,7 @@ describe('Timeout means unknown', () => {
     status = session.getStatus();
     assert.equal(status.enablement, 'enabled');
     assert.equal(status.snapshot, 'pending', 'no sync is claimed');
-    assert.equal(env.book.requests, 0, 'a late result never prompts');
+    assert.equal(env.book.requests, 1, 'asked before Identity; a late result never prompts');
     assert.equal(env.reevaluations, 1, 'first enable asked for reevaluate');
   });
 
@@ -1275,7 +1280,7 @@ describe('Account changes', () => {
     release();
     assert.equal((await first).status, 'stale');
     assert.equal(env.identity.count(SYNC_CONTACT_HASHES), 0, 'A book never goes out as B');
-    assert.equal(env.book.requests, 0, 'no prompt for the new account');
+    assert.equal(env.book.requests, 1, 'only its own, none for the new account');
     assert.equal(env.store.mem.has(contactsStateStorageKey('uid-b')), false);
     assert.equal(session.getStatus().uid, null);
   });
@@ -1302,7 +1307,10 @@ describe('Account changes', () => {
       timeoutMs: 100,
     });
     await session.bindUserDoc('uid-a', identity.userDoc());
-    assert.equal((await session.enableThenSync()).status, 'stale');
+    assert.equal(
+      (await session.enableThenSync({ disclosureAccepted: true })).status,
+      'stale',
+    );
     assert.equal(identity.count(SYNC_CONTACT_HASHES), 0);
   });
 
@@ -1371,25 +1379,38 @@ describe('Account changes', () => {
 });
 
 describe('Permission states', () => {
-  it('a dismissed prompt withdraws nothing and stays pending', async () => {
+  it('a dismissed prompt calls nothing, withdraws nothing and stays off', async () => {
     const book = fakeBook({ permission: 'undetermined', requested: 'undetermined' });
     const { env, session } = harness({ book });
     const op = await session.enableThenSync();
     assert.equal(op.status, 'ok');
-    assert.equal(env.identity.count(REMOVE_CONTACT_SOURCE), 0);
-    assert.equal(env.identity.count(SYNC_CONTACT_HASHES), 0);
+    assert.equal(env.identity.calls.length, 0);
     const status = session.getStatus();
-    assert.equal(status.enablement, 'enabled');
-    assert.equal(status.snapshot, 'pending');
-    assert.equal(contactsStatusCopyKey(status), 'status.enabledPermissionNeeded');
+    assert.equal(status.enablement, 'off');
+    assert.equal(status.snapshot, 'none');
+    assert.equal(status.consent, false);
+    assert.equal(status.osPermission, 'undetermined');
+    assert.equal(book.reads, 0);
   });
 
-  it('a denial withdraws the source and never reports synced', async () => {
+  it('a denial while off calls nothing and stays off', async () => {
     const book = fakeBook({ permission: 'undetermined', requested: 'denied' });
     const { env, session } = harness({ book });
     assert.equal((await session.enableThenSync()).status, 'ok');
+    assert.equal(env.identity.calls.length, 0);
+    assert.equal(session.getStatus().enablement, 'off');
+    assert.equal(session.getStatus().osPermission, 'denied');
+    assert.equal(book.reads, 0);
+  });
+
+  it('a permission withdrawn later withdraws the source and never reports synced', async () => {
+    const book = fakeBook();
+    const { env, session } = harness({ book });
+    await session.enableThenSync();
+    book.permission = 'denied';
+    book.requested = 'denied';
+    assert.equal((await session.retry()).status, 'ok');
     assert.equal(env.identity.count(REMOVE_CONTACT_SOURCE), 1);
-    assert.equal(env.identity.count(SYNC_CONTACT_HASHES), 0);
     assert.equal(session.getStatus().snapshot, 'pending');
     assert.equal(session.getStatus().osPermission, 'denied');
   });
@@ -1456,7 +1477,7 @@ describe('Errors do not get confused', () => {
     assert.equal(status.osPermission, 'granted', 'not reported as a denial');
     assert.equal(contactsToggleValue(status), false, 'not drawn as enabled');
     assert.equal(contactsCanRetry(status), true);
-    assert.equal(env.book.requests, 0, 'never reaches the OS permission');
+    assert.equal(env.book.requests, 1, 'the permission came first, once');
     env.identity.intercept = null;
     assert.equal((await session.retry()).status, 'ok');
     assert.equal(session.getStatus().snapshot, 'synced');
@@ -1474,7 +1495,7 @@ describe('Errors do not get confused', () => {
     assert.equal(status.enablement, 'off');
     assert.equal(status.consent, false);
     assert.equal(status.errorKey, 'authLookup');
-    assert.equal(env.book.requests, 0);
+    assert.equal(env.book.reads, 0);
   });
 
   it('only uncertain reasons are uncertain', () => {

@@ -53,8 +53,13 @@ import {
   type ContactsStateSaver,
 } from './contactsSyncFlow.ts';
 
+/** The user accepted the in-app disclosure, just now. Only the screen can say so. */
+export type ContactsDisclosureAcceptance = { disclosureAccepted: true };
+
 export type ContactsOpResult =
   | { status: 'ok'; outcome: ContactsFlowOutcome }
+  /** Needs the disclosure accepted first: no permission, Identity call or book read. */
+  | { status: 'needs_disclosure' }
   /** An earlier request is still running; nothing was sent. */
   | { status: 'in_flight' }
   /** The account changed; this result was dropped. */
@@ -671,17 +676,34 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
         emit();
       }
     },
-    /** User tapped to turn on. */
-    enableThenSync: () => enableThenSync(),
+    /** User accepted the disclosure and asked to turn on. */
+    enableThenSync: async (
+      acceptance?: ContactsDisclosureAcceptance,
+    ): Promise<ContactsOpResult> =>
+      acceptance?.disclosureAccepted === true
+        ? enableThenSync()
+        : { status: 'needs_disclosure' },
     disable,
     /** User-facing retry of whatever is still unconfirmed. */
-    async retry(): Promise<ContactsOpResult> {
+    async retry(
+      acceptance?: ContactsDisclosureAcceptance,
+    ): Promise<ContactsOpResult> {
       const s = currentSession();
       // Decide on what was saved: right after a restart it may still be loading.
       await s?.ready.catch(() => {});
       if (!s?.bound) return { status: 'not_ready' };
       const state = s.state;
       if (state.uncertainOp === 'disable') return disable();
+      const bookPath =
+        state.enablementConfirmed === true || state.uncertainOp === 'enable';
+      // On from another install, say: consent on this device has not happened yet.
+      if (
+        bookPath &&
+        state.userConsent !== true &&
+        acceptance?.disclosureAccepted !== true
+      ) {
+        return { status: 'needs_disclosure' };
+      }
       if (state.enablementConfirmed === true) {
         // After a mismatch this reads the state first: if it reads off, it stays
         // off, because retrying a sync is not a request to turn on.

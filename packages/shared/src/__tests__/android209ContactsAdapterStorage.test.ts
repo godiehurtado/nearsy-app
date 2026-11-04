@@ -5,6 +5,7 @@
  * Run: node --experimental-strip-types --test packages/shared/src/__tests__/android209ContactsAdapterStorage.test.ts
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { before, beforeEach, describe, it } from 'node:test';
 
@@ -21,6 +22,8 @@ type Env = {
   uid: string | null;
   storage: Map<string, string>;
   calls: Array<{ name: string; data: any; uid: string | null }>;
+  /** Everything that touches the OS or Identity, in order. */
+  events: string[];
   respond: (name: string, data: any) => unknown;
   permission: string;
   contacts: Array<{ emails?: Array<{ email: string }> }>;
@@ -34,6 +37,7 @@ const env: Env = {
   uid: null,
   storage: new Map(),
   calls: [],
+  events: [],
   respond: () => undefined,
   permission: 'granted',
   contacts: [],
@@ -73,6 +77,7 @@ const NATIVE_MODULES: Record<string, string> = {
     export const getIdentityFunctions = () => ({
       httpsCallable: (name) => async (data) => {
         ${ENV}.calls.push({ name, data, uid: ${ENV}.uid });
+        ${ENV}.events.push(name);
         return { data: ${ENV}.respond(name, data) };
       },
     });`,
@@ -95,11 +100,17 @@ registerHooks({
   return {
     Fields: { Emails: 'emails', PhoneNumbers: 'phoneNumbers' },
     getPermissionsAsync: async () => ({ status: env.permission }),
-    requestPermissionsAsync: async () => ({ status: env.permission }),
-    getContactsAsync: async ({ pageSize, pageOffset }: any) => ({
+    requestPermissionsAsync: async () => {
+      env.events.push('os-permission');
+      return { status: env.permission };
+    },
+    getContactsAsync: async ({ pageSize, pageOffset }: any) => {
+      if (pageOffset === 0) env.events.push('read-book');
+      return {
       data: env.contacts.slice(pageOffset, pageOffset + pageSize),
       hasNextPage: pageOffset + pageSize < env.contacts.length,
-    }),
+      };
+    },
   };
 };
 
@@ -161,7 +172,7 @@ describe('Android adapter storage', () => {
   it('does not credit the device-wide source to the first account', async () => {
     env.storage.set(LEGACY_KEY, LEGACY_SOURCE);
     await openMore('uid-a');
-    const op = await adapter.enableThenSyncContacts();
+    const op = await adapter.enableThenSyncContacts({ disclosureAccepted: true });
     assert.equal(op.status, 'ok');
     const sent = env.calls.find((c) => c.name === 'syncContactHashes');
     assert.notEqual(sent?.data.sourceId, LEGACY_SOURCE);
@@ -174,7 +185,7 @@ describe('Android adapter storage', () => {
 
   it('separates sources, versions and acks by account', async () => {
     await openMore('uid-a');
-    await adapter.enableThenSyncContacts();
+    await adapter.enableThenSyncContacts({ disclosureAccepted: true });
     await flush();
     const sourceA = saved('uid-a').sourceId;
 
@@ -182,7 +193,7 @@ describe('Android adapter storage', () => {
     env.authListener?.({ uid: 'uid-b' });
     assert.equal(adapter.getContactsSyncStatus().snapshot, 'none');
     await openMore('uid-b');
-    await adapter.enableThenSyncContacts();
+    await adapter.enableThenSyncContacts({ disclosureAccepted: true });
     await flush();
     const sourceB = saved('uid-b').sourceId;
 
@@ -209,7 +220,7 @@ describe('Android adapter storage', () => {
     );
     account('uid-a').epoch = 2;
     await openMore('uid-a');
-    await adapter.enableThenSyncContacts();
+    await adapter.enableThenSyncContacts({ disclosureAccepted: true });
     const sent = env.calls.find((c) => c.name === 'syncContactHashes');
     assert.equal(sent?.data.sourceId, 'ownedSource1');
     assert.equal(sent?.data.snapshotVersion, 10, 'above the fence');
@@ -225,7 +236,7 @@ describe('Android adapter storage', () => {
             release = done;
           })
         : respondAsIdentity(name, data);
-    const first = adapter.enableThenSyncContacts();
+    const first = adapter.enableThenSyncContacts({ disclosureAccepted: true });
     await flush();
     env.uid = 'uid-b';
     env.authListener?.({ uid: 'uid-b' });
@@ -240,7 +251,7 @@ describe('Android adapter storage', () => {
   it('App Check failure is its own cause and sends nothing', async () => {
     await openMore('uid-a');
     env.appCheck = 'error';
-    const op = await adapter.enableThenSyncContacts();
+    const op = await adapter.enableThenSyncContacts({ disclosureAccepted: true });
     assert.equal(op.status, 'failed');
     assert.equal(
       op.status === 'failed' && adapter.contactsHmacErrorToI18nKey(op.error.reason),
@@ -254,7 +265,7 @@ describe('Android adapter storage', () => {
     env.contacts = Array.from({ length: 20_001 }, (_, i) => ({
       emails: [{ email: `u${i}@ex.co` }],
     }));
-    const op = await adapter.enableThenSyncContacts();
+    const op = await adapter.enableThenSyncContacts({ disclosureAccepted: true });
     assert.equal(op.status, 'failed');
     assert.equal(
       op.status === 'failed' && op.error.reason,
@@ -267,7 +278,7 @@ describe('Android adapter storage', () => {
 
   it('stores no address-book content on the device', async () => {
     await openMore('uid-a');
-    await adapter.enableThenSyncContacts();
+    await adapter.enableThenSyncContacts({ disclosureAccepted: true });
     await flush();
     assert.doesNotMatch(JSON.stringify([...env.storage.entries()]), /ada@b\.co/);
   });
@@ -289,6 +300,7 @@ describe('Android adapter on the contract of Identity #27', () => {
     env.storage.clear();
     accounts.clear();
     env.calls.length = 0;
+    env.events.length = 0;
     env.respond = respondAsIdentity;
     env.permission = 'granted';
     env.contacts = [{ emails: [{ email: 'ada@b.co' }] }];
@@ -311,7 +323,7 @@ describe('Android adapter on the contract of Identity #27', () => {
       assert.equal(adapter.contactsStatusCopyKey(before), 'status.confirming');
       assert.equal(adapter.contactsCanRetry(before), false);
 
-      assert.equal((await adapter.enableThenSyncContacts()).status, 'not_ready');
+      assert.equal((await adapter.enableThenSyncContacts({ disclosureAccepted: true })).status, 'not_ready');
       assert.equal((await adapter.retryContactsSync()).status, 'not_ready');
       assert.equal(env.calls.length, 0);
 
@@ -363,7 +375,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         contactsSyncEnabled: false,
         contactsEpoch: null,
       });
-      assert.equal((await adapter.enableThenSyncContacts()).status, 'ok');
+      assert.equal((await adapter.enableThenSyncContacts({ disclosureAccepted: true })).status, 'ok');
       assert.deepEqual(
         env.calls.map((c) => c.name),
         [REFRESH, ENABLE, SYNC],
@@ -376,7 +388,7 @@ describe('Android adapter on the contract of Identity #27', () => {
     it('a read of the document is not a confirmed epoch', async () => {
       account(UID).epoch = 2;
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       assert.equal(callsNamed(REFRESH).length, 1);
     });
 
@@ -386,7 +398,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         if (name === REFRESH) throw identityRejects('contacts-rate-limited');
         return respondAsIdentity(name, data);
       };
-      assert.equal((await adapter.enableThenSyncContacts()).status, 'failed');
+      assert.equal((await adapter.enableThenSyncContacts({ disclosureAccepted: true })).status, 'failed');
       assert.equal(callsNamed(ENABLE).length, 0);
       assert.equal(callsNamed(REFRESH).length, 1);
       await later();
@@ -402,7 +414,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         contactsSyncEnabled: false,
         contactsEpoch: 2,
       });
-      assert.equal((await adapter.enableThenSyncContacts()).status, 'ok');
+      assert.equal((await adapter.enableThenSyncContacts({ disclosureAccepted: true })).status, 'ok');
       assert.equal(callsNamed(ENABLE).length, 0);
       assert.equal(status().snapshot, 'synced');
     });
@@ -411,7 +423,7 @@ describe('Android adapter on the contract of Identity #27', () => {
   describe('Reactivation', () => {
     it('needs a new action and uses the epoch the disable returned', async () => {
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       env.calls.length = 0;
       assert.equal((await adapter.disableContactsIntegration()).status, 'ok');
       assert.equal(status().enablement, 'off');
@@ -422,7 +434,7 @@ describe('Android adapter on the contract of Identity #27', () => {
       await later();
       assert.equal(callsNamed(ENABLE).length, 0, 'not even re-opening More');
 
-      assert.equal((await adapter.enableThenSyncContacts()).status, 'ok');
+      assert.equal((await adapter.enableThenSyncContacts({ disclosureAccepted: true })).status, 'ok');
       assert.deepEqual(callsNamed(ENABLE)[0].data, { contactsEpoch: 1 });
       assert.equal(callsNamed(REFRESH).length, 0, 'the epoch was already confirmed');
       assert.equal(status().snapshot, 'synced');
@@ -430,9 +442,9 @@ describe('Android adapter on the contract of Identity #27', () => {
 
     it('never sends an enable without an epoch, on any path', async () => {
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       await adapter.disableContactsIntegration();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       for (const call of callsNamed(ENABLE)) {
         assert.equal(typeof call.data.contactsEpoch, 'number');
       }
@@ -442,12 +454,12 @@ describe('Android adapter on the contract of Identity #27', () => {
   describe('Mismatch', () => {
     it('reads the state, stays off and does not reactivate an old intent', async () => {
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       await adapter.disableContactsIntegration();
       // Another install disabled again: this client's epoch is now old.
       account(UID).epoch = 9;
       env.calls.length = 0;
-      const op = await adapter.enableThenSyncContacts();
+      const op = await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       assert.equal(op.status, 'failed');
       assert.deepEqual(
         env.calls.map((c) => c.name),
@@ -462,13 +474,13 @@ describe('Android adapter on the contract of Identity #27', () => {
 
       // A new action, with the epoch that read returned.
       env.calls.length = 0;
-      assert.equal((await adapter.enableThenSyncContacts()).status, 'ok');
+      assert.equal((await adapter.enableThenSyncContacts({ disclosureAccepted: true })).status, 'ok');
       assert.deepEqual(callsNamed(ENABLE)[0].data, { contactsEpoch: 9 });
     });
 
     it('on a sync: reads off, stops, and never re-enables', async () => {
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       const identity = account(UID);
       identity.enabled = false;
       identity.epoch = 5;
@@ -487,7 +499,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         if (name === SYNC) throw identityRejects('contacts-rate-limited');
         return respondAsIdentity(name, data);
       };
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       const identity = account(UID);
       identity.epoch = 5; // Moved on by another install, still on.
       env.respond = respondAsIdentity;
@@ -508,7 +520,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         if (name === SYNC) throw identityRejects('contacts-rate-limited');
         return respondAsIdentity(name, data);
       };
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       account(UID).epoch = 5;
       env.respond = (name, data) => {
         if (name === REFRESH) throw identityRejects('contacts-rate-limited');
@@ -539,7 +551,7 @@ describe('Android adapter on the contract of Identity #27', () => {
   describe('Remove', () => {
     it('sends the highest version sent in this epoch', async () => {
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       env.permission = 'denied';
       env.calls.length = 0;
       await adapter.retryContactsSync();
@@ -555,7 +567,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         }
         return respondAsIdentity(name, data);
       };
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       assert.equal(status().snapshot, 'uncertain');
       env.respond = respondAsIdentity;
       env.permission = 'denied';
@@ -566,9 +578,12 @@ describe('Android adapter on the contract of Identity #27', () => {
     });
 
     it('with nothing sent in this epoch it says 0', async () => {
-      env.permission = 'denied';
+      // On from another install, with no upload from this device yet.
+      const identity = account(UID);
+      identity.enabled = true;
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      env.permission = 'denied';
+      await adapter.retryContactsSync({ disclosureAccepted: true });
       assert.equal(callsNamed(REMOVE)[0].data.knownSnapshotVersion, 0);
     });
 
@@ -578,7 +593,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         if (name === SYNC) throw identityRejects('contacts-rate-limited');
         return respondAsIdentity(name, data);
       };
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       const identity = account(UID);
       const sourceId = saved(UID).sourceId;
       identity.sources.set(sourceId, { version: 7, fingerprint: 'fp1:other' });
@@ -602,7 +617,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         if (name === SYNC) throw identityRejects('contacts-rate-limited');
         return respondAsIdentity(name, data);
       };
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       const sourceId = saved(UID).sourceId;
       env.respond = (name, data) => {
         if (name !== REMOVE) return respondAsIdentity(name, data);
@@ -637,7 +652,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         }
         return reply;
       };
-      assert.equal((await adapter.enableThenSyncContacts()).status, 'uncertain');
+      assert.equal((await adapter.enableThenSyncContacts({ disclosureAccepted: true })).status, 'uncertain');
       assert.equal(status().enablement, 'enable_uncertain');
       assert.equal((await adapter.retryContactsSync()).status, 'ok');
       const enables = callsNamed(ENABLE);
@@ -648,7 +663,7 @@ describe('Android adapter on the contract of Identity #27', () => {
 
     it('disable: the retry reads off and is done, with no second barrier', async () => {
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       let lost = true;
       env.respond = (name, data) => {
         const reply = respondAsIdentity(name, data);
@@ -680,7 +695,7 @@ describe('Android adapter on the contract of Identity #27', () => {
           release = () => done(reply);
         });
       };
-      const enabling = adapter.enableThenSyncContacts();
+      const enabling = adapter.enableThenSyncContacts({ disclosureAccepted: true });
       await later();
       assert.equal(status().operation, 'enable');
       assert.equal(adapter.contactsToggleLocked(status()), false, 'can be turned off');
@@ -715,7 +730,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         },
       });
       try {
-        const enabling = adapter.enableThenSyncContacts();
+        const enabling = adapter.enableThenSyncContacts({ disclosureAccepted: true });
         await later();
         assert.equal(status().stage, 'permission');
         assert.equal((await adapter.disableContactsIntegration()).status, 'ok');
@@ -729,7 +744,7 @@ describe('Android adapter on the contract of Identity #27', () => {
 
     it('a late reply of a timed-out enable only raises the epoch, and asks for a reevaluate', async () => {
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       await adapter.disableContactsIntegration();
       env.calls.length = 0;
       env.reevaluations = 0;
@@ -740,7 +755,7 @@ describe('Android adapter on the contract of Identity #27', () => {
           release = done;
         });
       };
-      const enabling = adapter.enableThenSyncContacts();
+      const enabling = adapter.enableThenSyncContacts({ disclosureAccepted: true });
       await later();
       await adapter.disableContactsIntegration();
       release(
@@ -761,7 +776,7 @@ describe('Android adapter on the contract of Identity #27', () => {
 
     it('an older reply cannot lower the stored epoch', async () => {
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       await adapter.disableContactsIntegration();
       await adapter.bindContactsUserDoc(UID, {
         contactsSyncEnabled: false,
@@ -773,10 +788,119 @@ describe('Android adapter on the contract of Identity #27', () => {
 
     it('a disable keeps reevaluate pending for this account', async () => {
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       env.reevaluations = 0;
       await adapter.disableContactsIntegration();
       assert.equal(env.reevaluations, 1);
+    });
+  });
+
+  describe('Disclosure, then acceptance, then permission, then Identity', () => {
+    const ACCEPTED = { disclosureAccepted: true } as const;
+
+    it('turning on follows that order exactly', async () => {
+      await readAccount();
+      assert.equal((await adapter.enableThenSyncContacts(ACCEPTED)).status, 'ok');
+      assert.deepEqual(env.events, [
+        'os-permission',
+        REFRESH,
+        ENABLE,
+        'read-book',
+        SYNC,
+      ]);
+    });
+
+    it('without acceptance nothing happens: no permission, Identity or book', async () => {
+      await readAccount();
+      await later();
+      const before = env.storage.get(STATE_KEY(UID));
+      assert.equal((await adapter.enableThenSyncContacts()).status, 'needs_disclosure');
+      assert.deepEqual(env.events, []);
+      assert.equal(status().enablement, 'off');
+      assert.equal(status().consent, false);
+      await later();
+      assert.equal(env.storage.get(STATE_KEY(UID)), before);
+    });
+
+    for (const permission of ['denied', 'undetermined']) {
+      it(`${permission}: only the prompt happens, and it stays off`, async () => {
+        await readAccount();
+        env.permission = permission;
+        assert.equal((await adapter.enableThenSyncContacts(ACCEPTED)).status, 'ok');
+        assert.deepEqual(env.events, ['os-permission']);
+        assert.equal(status().enablement, 'off');
+        assert.equal(status().consent, false);
+        assert.equal(account(UID).enabled, false);
+      });
+    }
+
+    it('a retry that would read the book asks for the disclosure on this device first', async () => {
+      const identity = account(UID);
+      identity.enabled = true;
+      await readAccount();
+      assert.equal(status().enablement, 'enabled');
+      assert.equal(status().consent, false);
+      assert.equal((await adapter.retryContactsSync()).status, 'needs_disclosure');
+      assert.deepEqual(env.events, []);
+
+      assert.equal((await adapter.retryContactsSync(ACCEPTED)).status, 'ok');
+      assert.deepEqual(env.events, ['os-permission', 'read-book', SYNC]);
+      assert.equal(status().consent, true);
+    });
+
+    it('a retry after consent does not ask again', async () => {
+      await readAccount();
+      env.respond = (name, data) => {
+        if (name === SYNC) throw identityRejects('contacts-rate-limited');
+        return respondAsIdentity(name, data);
+      };
+      await adapter.enableThenSyncContacts(ACCEPTED);
+      env.respond = respondAsIdentity;
+      assert.equal((await adapter.retryContactsSync()).status, 'ok');
+    });
+
+    it('retrying a turn-off needs no disclosure and touches no book', async () => {
+      await readAccount();
+      await adapter.enableThenSyncContacts(ACCEPTED);
+      env.respond = (name, data) => {
+        if (name === DISABLE) {
+          throw Object.assign(new Error('network'), { code: 'functions/unavailable' });
+        }
+        return respondAsIdentity(name, data);
+      };
+      await adapter.disableContactsIntegration();
+      env.respond = respondAsIdentity;
+      env.events.length = 0;
+      assert.equal((await adapter.retryContactsSync()).status, 'ok');
+      assert.deepEqual(env.events, [DISABLE]);
+    });
+
+    it('reactivating asks again: a disable ended the earlier acceptance', async () => {
+      await readAccount();
+      await adapter.enableThenSyncContacts(ACCEPTED);
+      await adapter.disableContactsIntegration();
+      assert.equal((await adapter.enableThenSyncContacts()).status, 'needs_disclosure');
+    });
+
+    it('the screen states acceptance only from Continue, and Cancel does nothing', () => {
+      const more = readFileSync(
+        new URL('../screens/MoreScreen.tsx', import.meta.url),
+        'utf8',
+      ).replace(/\r\n/g, '\n');
+      const start = more.indexOf('const confirmContactsDisclosure');
+      const disclosure = more.slice(start, more.indexOf('const runContactsSyncEnable'));
+      assert.match(disclosure, /consentContinue[\s\S]*proceed\(\)/);
+      const cancel = disclosure.slice(
+        disclosure.indexOf('consentCancel'),
+        disclosure.indexOf('consentContinue'),
+      );
+      assert.doesNotMatch(cancel, /onPress/);
+      assert.equal(more.match(/disclosureAccepted: true/g)?.length, 2);
+      const toggle = more.slice(
+        more.indexOf('const handleToggleContactsSync'),
+        more.indexOf('const handleRetryContactsRead'),
+      );
+      assert.match(toggle, /if \(enabled\) \{\s*confirmContactsDisclosure/);
     });
   });
 
@@ -790,7 +914,7 @@ describe('Android adapter on the contract of Identity #27', () => {
     }
     async function enabledThenLostDisable(commit: boolean) {
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       env.respond = (name, data) => {
         if (name !== DISABLE) return respondAsIdentity(name, data);
         if (commit) void respondAsIdentity(name, data);
@@ -804,7 +928,7 @@ describe('Android adapter on the contract of Identity #27', () => {
 
     it('is on the device, per account, before anything is sent', async () => {
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       await later();
       let atSend: any = null;
       env.respond = (name, data) => {
@@ -819,7 +943,7 @@ describe('Android adapter on the contract of Identity #27', () => {
 
     it('survives a failure before sending too', async () => {
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       env.appCheck = 'error';
       await adapter.disableContactsIntegration();
       await later();
@@ -836,7 +960,7 @@ describe('Android adapter on the contract of Identity #27', () => {
       assert.equal(shown.enablement, 'disable_uncertain');
       assert.equal(shown.consent, false);
       assert.equal(adapter.contactsStatusCopyKey(shown), 'status.disableUncertain');
-      assert.equal((await adapter.enableThenSyncContacts()).status, 'not_ready');
+      assert.equal((await adapter.enableThenSyncContacts({ disclosureAccepted: true })).status, 'not_ready');
       assert.equal(env.calls.length, 0, 'not even a resend');
     });
 
@@ -921,7 +1045,7 @@ describe('Android adapter on the contract of Identity #27', () => {
       env.authListener?.({ uid: 'uid-b' });
       await adapter.bindContactsUserDoc('uid-b', account('uid-b').userDoc());
       assert.equal(status().enablement, 'off');
-      assert.equal((await adapter.enableThenSyncContacts()).status, 'ok');
+      assert.equal((await adapter.enableThenSyncContacts({ disclosureAccepted: true })).status, 'ok');
       assert.equal(account(UID).enabled, true);
     });
   });
@@ -934,7 +1058,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         if (name === SYNC) throw identityRejects('contacts-rate-limited');
         return respondAsIdentity(name, data);
       };
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       account(UID).epoch = 5;
       env.calls.length = 0;
       let answer: (v: unknown) => void = () => {};
@@ -1005,7 +1129,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         return respondAsIdentity(name, data);
       };
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       env.respond = respondAsIdentity;
       const identity = account(UID);
       identity.enabled = false;
@@ -1033,7 +1157,7 @@ describe('Android adapter on the contract of Identity #27', () => {
       assert.equal(adapter.contactsCanRetryRead(failed), true);
       assert.equal(adapter.contactsCanRetry(failed), false);
       assert.equal(adapter.contactsToggleLocked(failed), true);
-      assert.equal((await adapter.enableThenSyncContacts()).status, 'not_ready');
+      assert.equal((await adapter.enableThenSyncContacts({ disclosureAccepted: true })).status, 'not_ready');
       assert.equal((await adapter.retryContactsSync()).status, 'not_ready');
       assert.equal((await adapter.disableContactsIntegration()).status, 'not_ready');
       assert.equal(env.calls.length, 0);
@@ -1058,7 +1182,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         return respondAsIdentity(name, data);
       };
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       env.respond = respondAsIdentity;
       env.authListener?.(null);
       env.authListener?.({ uid: UID });
@@ -1081,7 +1205,7 @@ describe('Android adapter on the contract of Identity #27', () => {
   describe('Account change and remount', () => {
     it('a new account never receives the previous epoch or intent', async () => {
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       await adapter.disableContactsIntegration();
       await later();
       assert.equal(saved(UID).contactsEpoch, 1);
@@ -1093,7 +1217,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         contactsEpoch: null,
       });
       env.calls.length = 0;
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       assert.deepEqual(env.calls[0].name, REFRESH, 'its epoch is not known');
       assert.deepEqual(callsNamed(ENABLE)[0].data, { contactsEpoch: 0 });
       assert.equal(saved(UID).contactsEpoch, 1);
@@ -1107,7 +1231,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         return respondAsIdentity(name, data);
       };
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       assert.equal(status().snapshot, 'uncertain');
       env.calls.length = 0;
       for (let i = 0; i < 3; i += 1) {
@@ -1127,7 +1251,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         }
         return respondAsIdentity(name, data);
       };
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       env.respond = respondAsIdentity;
       await adapter.disableContactsIntegration();
       await later();
@@ -1149,7 +1273,7 @@ describe('Android adapter on the contract of Identity #27', () => {
         return respondAsIdentity(name, data);
       };
       await readAccount();
-      await adapter.enableThenSyncContacts();
+      await adapter.enableThenSyncContacts({ disclosureAccepted: true });
       env.respond = respondAsIdentity;
       env.permission = 'undetermined';
       env.authListener?.(null);

@@ -108,21 +108,37 @@ only grows and only disable grows: a reply cannot undo a newer state.
 **Known limit:** a stale local intent that reads a fresh epoch looks valid to the server. Cancelling
 those is this client's job, which is what the disable token does.
 
-## Integration requirement with #115
+## Order with the disclosure
 
-#115 is not integrated here, and this branch does not yet have the disclosure. The final
-integration must keep this order, with no prompt and no book read before consent:
+#115 and #117 are integrated here. On every path that turns Contacts on or reads the book:
 
-**disclosure → acceptance → OS permission → enable/sync**
+**disclosure → explicit acceptance → OS permission → enable/sync**
 
-- #115 moves the OS permission before enable, while this branch has enable first. Its
-  changes to `contactsSyncFlow.ts`, `MoreScreen.tsx` and the copy will conflict and must
-  be merged by hand.
-- Consent stays set only by the user's action. The retry row and reconciliation must not
-  bypass the disclosure: reconciliation already never prompts, and the retry may prompt
-  only for a user who has accepted.
-- Denied or dismissed permission at that point must not enable. The removal path for a
-  denial after enable stays for permission revoked later.
+- **Cancel on the disclosure** asks for no permission, calls no Identity and reads no book.
+- **OS permission comes before the first call to Identity,** including the read of the epoch.
+- **Denied or dismissed while off:** nothing reaches Identity, and it stays off. There is no source to
+  withdraw. If Identity already confirmed this on, a denial still withdraws the source.
+- **Only the screen can state the acceptance.** `enableThenSyncContacts` without it returns
+  `needs_disclosure` and does nothing. So does a retry that would read the book when this device
+  has no consent yet, for example an account turned on from another install.
+- **Reconciliation** never prompts and reads the book only with consent on this device and the
+  permission already granted.
+
+## Disable behind the live epoch: deliberate decision
+
+Contract §14.4 says that when a disable gets `contacts-epoch-mismatch` and a refresh reads on, the
+client should send disable again with the new epoch. **This client deliberately does not.** On at a
+later epoch may be a new activation from another device, and an older request must not switch it off
+by itself. It reads, adopts the epoch, keeps the disable pending and shows that the state changed;
+the disable goes out only on an explicit retry. A refresh that reads off completes it.
+
+Consequence: a real intent to turn off can stay pending until the user retries, and that retry does
+turn off the other device's activation. Identity should know about this departure from the contract.
+
+## Release order
+
+The adaptation to Identity #27 needs that server deployed before this client is distributed. A server
+without it rejects `contactsEpoch` on enable, so nobody could turn Contacts on.
 
 ## Why phone verification and source storage changed
 

@@ -536,6 +536,8 @@ async function syncAfterConfirmedEnable(input: {
   save: ContactsStateSaver;
   onStage?: (stage: ContactsEnableStage) => void;
   enableResult: ContactsWireResult | null;
+  /** Already asked before Identity: not asked again. */
+  knownPermission?: ContactsPermissionStatus;
   failure: (
     cause: ContactsHmacError,
     after: ContactsLocalState,
@@ -545,11 +547,13 @@ async function syncAfterConfirmedEnable(input: {
   const { state, save, failure } = input;
   const owed = state.reevaluateOwed === true;
 
-  let permission: ContactsPermissionStatus | null = null;
+  let permission: ContactsPermissionStatus | null = input.knownPermission ?? null;
   try {
     await save(state);
-    input.onStage?.('permission');
-    permission = await input.book.requestPermission();
+    if (!permission) {
+      input.onStage?.('permission');
+      permission = await input.book.requestPermission();
+    }
   } catch (err) {
     throw failure(asHmacError(err), state, permission);
   }
@@ -655,6 +659,9 @@ async function syncAfterConfirmedEnable(input: {
 }
 
 /**
+ * The caller has the user's acceptance of the disclosure. Then: OS permission, and only
+ * with it the first call to Identity. Without it, nothing reaches Identity.
+ *
  * Enable names the epoch it believes is live, so a late one cannot undo a disable.
  * Without a confirmed epoch it asks Identity first, and never assumes 0.
  */
@@ -669,8 +676,27 @@ export async function runEnableThenSync(input: {
 }): Promise<ContactsFlowOutcome> {
   const save = input.saveState ?? noSave;
   const mayEnable = input.mayEnable !== false;
-  input.onStage?.('enabling');
 
+  input.onStage?.('permission');
+  let osPermission: ContactsPermissionStatus;
+  try {
+    osPermission = await input.book.requestPermission();
+  } catch (err) {
+    throw new ContactsFlowStateError(asHmacError(err), input.state);
+  }
+  if (osPermission !== 'granted' && input.state.enablementConfirmed !== true) {
+    // Stays off. An earlier unknown enable stays unknown; otherwise consent led nowhere.
+    return {
+      result: null,
+      state: input.state.uncertainOp
+        ? input.state
+        : { ...input.state, userConsent: false },
+      scheduleReevaluate: false,
+      permission: osPermission,
+    };
+  }
+
+  input.onStage?.('enabling');
   let base = input.state;
   let live: ContactsWireResult | null = null;
   if (base.epochConfirmed !== true || base.epochStale === true) {
@@ -753,6 +779,7 @@ export async function runEnableThenSync(input: {
     save,
     onStage: input.onStage,
     enableResult: enabled,
+    knownPermission: osPermission,
     state: {
       ...withConfirmedEpoch(base, enabled.contactsEpoch),
       enablementConfirmed: true,
