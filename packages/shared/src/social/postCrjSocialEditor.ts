@@ -308,6 +308,18 @@ export function applyOwnershipVerifiedChange(
   return { ...prev, [id]: connected };
 }
 
+/** Editor draft after a manual link was written; url null means it was removed. */
+export function applyManualLinkResult(
+  draft: PostCrjSocialEditorDraft,
+  field: 'facebook' | 'linkedin' | 'website',
+  url: string | null,
+): PostCrjSocialEditorDraft {
+  const connected = { ...draft.connected, [field]: !!url };
+  return field === 'website'
+    ? { ...draft, connected, website: url ?? '' }
+    : { ...draft, connected, values: { ...draft.values, [field]: url ?? '' } };
+}
+
 export function shouldReportOwnershipConnectedChange(phase: string): boolean {
   return (
     phase !== 'loading' &&

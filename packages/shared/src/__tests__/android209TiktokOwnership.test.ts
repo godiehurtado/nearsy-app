@@ -418,7 +418,7 @@ describe('NEARSY-209 TikTok ownership Android wiring', () => {
     assert.match(screen, /TiktokOwnershipCard/);
     assert.match(screen, /legacyUrl=\{draft\.values\.tiktok\}/);
     assert.match(screen, /connected\.tiktok = false/);
-    assert.match(screen, /preserveLegacy\('tiktok'\)/);
+    assert.doesNotMatch(screen, /buildPostCrjSocialLinksPersistencePatch|updateUserProfilePartial/);
     assert.match(screen, /mode=\{editorMode/);
     assert.match(screen, /key=\{`tiktok-\$\{editorMode\}`\}/);
     assert.doesNotMatch(screen, /CRJ.*tiktokOwnership|tiktokOwnership.*CRJ/i);

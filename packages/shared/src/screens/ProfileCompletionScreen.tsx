@@ -167,6 +167,8 @@ import {
 } from '../social/onboardingSocialCatalog';
 import {
   buildCrjSocialLinksPersistencePatch,
+  mergeManualLinkIntoShell,
+  mergeSocialLinksIntoShell,
   readCrjSocialDraft,
   readExistingSocialLinks,
 } from '../social/onboardingSocialPersistence';
@@ -185,7 +187,7 @@ import {
   type CrjSocialFieldErrors,
 } from '../social/socialLinkNormalize';
 import { ANDROID_OWNERSHIP_CARD_IDS } from '../social/postCrjSocialEditor';
-import type { SocialCustomLink } from '../types/profile';
+import type { ManualSocialLinkId } from '../social/manualSocialLinkCard';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileCompletion'>;
 
@@ -329,12 +331,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [socialDraft, setSocialDraft] = useState<CrjSocialDraftValues>(
     emptyCrjSocialDraftValues,
   );
-  const [socialCustom, setSocialCustom] = useState<SocialCustomLink[]>([]);
   const [socialWebsite, setSocialWebsite] = useState('');
   const socialDraftRef = useRef(socialDraft);
   socialDraftRef.current = socialDraft;
-  const socialCustomRef = useRef(socialCustom);
-  socialCustomRef.current = socialCustom;
+  const [socialManualBusy, setSocialManualBusy] = useState(false);
+  const socialManualBusyRef = useRef(false);
   const socialWebsiteRef = useRef(socialWebsite);
   socialWebsiteRef.current = socialWebsite;
   const [socialFieldErrors, setSocialFieldErrors] =
@@ -509,7 +510,6 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     setSelectedAffiliations(readOnboardingAffiliations(data, nextMode));
     const social = readCrjSocialDraft(data, nextMode);
     setSocialDraft(social.values);
-    setSocialCustom(social.custom);
     setSocialWebsite(readExistingSocialLinks(data, nextMode).website ?? '');
     setSocialFieldErrors({});
     const gallery = readCrjGallery(data, nextMode);
@@ -976,27 +976,42 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     }));
   }
 
-  async function persistSocialMedia(overrides?: {
-    values?: CrjSocialDraftValues;
-    custom?: SocialCustomLink[];
-    website?: string;
-  }) {
+  async function persistSocialMedia() {
     if (!uid || !mode) return;
     const existing = readExistingSocialLinks(shellData, mode);
+    // No custom links here: this step no longer edits them, and in a merge an
+    // omitted key keeps its stored value, so historical ones survive untouched.
     const patch = buildCrjSocialLinksPersistencePatch(
       mode,
-      overrides?.values ?? socialDraftRef.current,
-      overrides?.custom ?? socialCustomRef.current,
+      socialDraftRef.current,
+      [],
       existing,
-      { website: overrides?.website ?? socialWebsiteRef.current },
+      { website: socialWebsiteRef.current },
     );
     await updateUserProfilePartial(uid, patch);
-    setShellData((prev) => ({
-      ...(prev ?? {}),
-      mode,
-      ...patch,
-    }));
+    setShellData((prev) => mergeSocialLinksIntoShell(prev, mode, patch));
   }
+
+  const handleManualSocialLinkSaved = useCallback(
+    (field: ManualSocialLinkId, url: string | null) => {
+      if (field === 'website') {
+        setSocialWebsite(url ?? '');
+      } else {
+        setSocialDraft((prev) => ({ ...prev, [field]: url ?? '' }));
+      }
+      if (mode) {
+        setShellData((prev) =>
+          mergeManualLinkIntoShell(prev, mode, field, url),
+        );
+      }
+    },
+    [mode],
+  );
+
+  const handleSocialManualBusyChange = useCallback((busy: boolean) => {
+    socialManualBusyRef.current = busy;
+    setSocialManualBusy(busy);
+  }, []);
 
   async function persistAndroidCrjResume(nextIndex: number) {
     if (Platform.OS !== 'android' || !uid || !mode) return;
@@ -1386,7 +1401,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   }
 
   async function advanceSocialMedia(options: { requireValidFields: boolean }) {
-    if (step.kind !== 'socialMedia' || submitting) return;
+    if (step.kind !== 'socialMedia' || submitting || socialManualBusyRef.current) {
+      return;
+    }
 
     const errors = collectSocialFieldErrors(
       socialDraft,
@@ -1719,13 +1736,13 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
               onPress={() => {
                 void advanceSocialMedia({ requireValidFields: true });
               }}
-              disabled={submitting}
+              disabled={submitting || socialManualBusy}
               loading={submitting}
             />
             <SecondaryButton
               label={t('onboarding.profileCompletion.socialMedia.skip' as any)}
               onPress={() => {
-                if (submitting) return;
+                if (submitting || socialManualBusy) return;
                 void advanceSocialMedia({ requireValidFields: false });
               }}
             />
@@ -2249,14 +2266,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
 
           {step.kind === 'socialMedia' && mode != null && (
             <OnboardingSocialMediaStep
+              uid={uid ?? null}
               mode={mode}
               values={socialDraft}
-              custom={socialCustom}
               website={socialWebsite}
-              onChangeValues={setSocialDraft}
-              onChangeCustom={setSocialCustom}
-              onChangeWebsite={setSocialWebsite}
-              onImmediatePersist={() => persistSocialMedia()}
+              onManualLinkSaved={handleManualSocialLinkSaved}
+              onManualBusyChange={handleSocialManualBusyChange}
               fieldErrors={socialFieldErrors}
               onClearFieldError={(id) => {
                 setSocialFieldErrors((prev) => {

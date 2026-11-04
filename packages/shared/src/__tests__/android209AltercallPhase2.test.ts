@@ -39,7 +39,6 @@ import {
 } from '../social/postCrjSocialEditor.ts';
 import {
   buildCrjSocialLinksPersistencePatch,
-  buildImmediateManualSocialPatch,
   buildPostCrjSocialLinksPersistencePatch,
   shouldApplySocialEditorResult,
 } from '../social/onboardingSocialPersistence.ts';
@@ -250,25 +249,9 @@ describe('social order, modals, and immediate persist', () => {
     assert.equal(crj.profileSetupCompleted, false);
     assert.equal(crj.socialLinksPersonal?.website, 'https://www.example.com/');
 
-    const immediate = buildImmediateManualSocialPatch(
-      'professional',
-      { facebook: 'https://www.facebook.com/old', twitter: 'https://x.com/keep' },
-      'facebook',
-      'https://www.facebook.com/new',
-    );
-    assert.equal(
-      immediate.socialLinksProfessional?.facebook,
-      'https://www.facebook.com/new',
-    );
-    assert.equal(immediate.socialLinksProfessional?.twitter, 'https://x.com/keep');
-    assert.equal(immediate.socialLinksPersonal, undefined);
-    const unlinked = buildImmediateManualSocialPatch(
-      'professional',
-      immediate.socialLinksProfessional,
-      'facebook',
-      null,
-    );
-    assert.equal(unlinked.socialLinksProfessional?.facebook, undefined);
+    const unlinked = {
+      socialLinksProfessional: { twitter: 'https://x.com/keep' },
+    };
 
     const laterSave = buildPostCrjSocialLinksPersistencePatch(
       'professional',
@@ -334,9 +317,11 @@ describe('social order, modals, and immediate persist', () => {
     const youtube = readSrc('components/profile/YoutubeOwnershipCard.tsx');
     assert.match(step, /ManualSocialLinkModal/);
     assert.match(step, /platforms.website/);
-    assert.match(screen, /buildImmediateManualSocialPatch/);
-    assert.match(screen, /shouldApplySocialEditorResult/);
-    assert.match(screen, /Platform\.OS !== 'android' \|\| isDirty/);
+    assert.match(screen, /useManualSocialLinks/);
+    assert.match(
+      readSrc('components/profile/useManualSocialLinks.ts'),
+      /shouldApplySocialEditorResult/,
+    );
     assert.match(instagram, /copyCode/);
     assert.match(instagram, /pendingSteps/);
     assert.match(instagram, /challenge\?\.challengeId/);
@@ -529,8 +514,8 @@ describe('Instagram/X ownership Connect and Unlink without general Save', () => 
     assert.doesNotMatch(instagramCard, /updateUserProfilePartial/);
     assert.doesNotMatch(xCard, /updateUserProfilePartial/);
     assert.doesNotMatch(screen, /canonicalUrl/);
-    assert.match(screen, /preserveLegacy\('instagram'\)/);
-    assert.match(screen, /preserveLegacy\('x'\)/);
+    assert.doesNotMatch(screen, /buildPostCrjSocialLinksPersistencePatch|updateUserProfilePartial/);
+    
     assert.match(instagramCard, /forMode !== modeRef\.current/);
     assert.match(xCard, /forMode !== modeRef\.current/);
   });

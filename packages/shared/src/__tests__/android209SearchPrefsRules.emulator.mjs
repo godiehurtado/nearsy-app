@@ -14,6 +14,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { before, beforeEach, describe, it } from 'node:test';
 
+import { buildManualSocialLinkWrite } from '../social/manualSocialLinkCard.ts';
 import { buildSearchPreferencesModeWrite } from '../visibility/searchPreferencesWriter.ts';
 
 const RULES_SHA256_AT_45 =
@@ -68,9 +69,14 @@ function toValue(value) {
   }
 }
 
+/** FieldValue.delete(): the path is in the mask and has no value. */
+const DELETE_FIELD = Symbol('delete');
+
 function toFields(map) {
   return Object.fromEntries(
-    Object.entries(map).map(([key, value]) => [key, toValue(value)]),
+    Object.entries(map)
+      .filter(([, value]) => value !== DELETE_FIELD)
+      .map(([key, value]) => [key, toValue(value)]),
   );
 }
 
@@ -363,6 +369,75 @@ describe('Home filter writes on the rules of #45', () => {
       const before = await stored();
       assertDenied(await homeWrite('personal', { maxDistanceMeters: 30 }));
       assert.deepEqual((await stored()).searchPreferences, before.searchPreferences);
+    });
+  });
+
+  describe('manual social links, written the same way', () => {
+    const CUSTOM = [
+      { name: 'Mastodon', url: 'https://mastodon.social/@ana' },
+      { name: 'Old', url: 'not a url' },
+    ];
+    const withLinks = () =>
+      fullProfile({
+        extra: {
+          socialLinksPersonal: {
+            facebook: 'https://www.facebook.com/ana',
+            twitter: 'https://x.com/ana',
+            custom: CUSTOM,
+          },
+          socialLinksProfessional: { linkedin: 'https://www.linkedin.com/in/ana' },
+        },
+      });
+    const link = (fields, bag) => fields[bag]?.mapValue?.fields;
+    const linkWrite = (mode, field, url) =>
+      setMerge(
+        `users/${UID}`,
+        {
+          ...buildManualSocialLinkWrite(mode, field, url, DELETE_FIELD),
+          updatedAt: 1762200000000,
+        },
+        tokenFor(UID),
+      );
+
+    it('add and edit keep custom links, other links and the other mode', async () => {
+      await seed(withLinks());
+      const before = await stored();
+      await assertAllowed(
+        await linkWrite('personal', 'linkedin', 'https://www.linkedin.com/in/new'),
+      );
+      await assertAllowed(
+        await linkWrite('personal', 'linkedin', 'https://www.linkedin.com/in/edited'),
+      );
+      const after = await stored();
+      const personal = link(after, 'socialLinksPersonal');
+      assert.equal(personal.linkedin.stringValue, 'https://www.linkedin.com/in/edited');
+      assert.deepEqual(personal.custom, link(before, 'socialLinksPersonal').custom);
+      assert.deepEqual(personal.twitter, link(before, 'socialLinksPersonal').twitter);
+      assert.deepEqual(after.socialLinksProfessional, before.socialLinksProfessional);
+    });
+
+    it('remove really removes, and only that key', async () => {
+      await seed(withLinks());
+      const before = await stored();
+      await assertAllowed(await linkWrite('personal', 'facebook', null));
+      const after = await stored();
+      const personal = link(after, 'socialLinksPersonal');
+      assert.equal(personal.facebook, undefined);
+      assert.deepEqual(personal.custom, link(before, 'socialLinksPersonal').custom);
+      assert.deepEqual(after.socialLinksProfessional, before.socialLinksProfessional);
+    });
+
+    it('the earlier payload could not remove: a merge keeps an omitted key', async () => {
+      await seed(withLinks());
+      await assertAllowed(
+        await setMerge(
+          `users/${UID}`,
+          { socialLinksPersonal: { twitter: 'https://x.com/ana' } },
+          tokenFor(UID),
+        ),
+      );
+      const personal = link(await stored(), 'socialLinksPersonal');
+      assert.equal(personal.facebook.stringValue, 'https://www.facebook.com/ana');
     });
   });
 

@@ -347,10 +347,8 @@ describe('NEARSY-209 Own Profile Android social summary overlay', () => {
     assert.match(screen, /onTiktokConnectedChange/);
     assert.match(screen, /onInstagramConnectedChange/);
     assert.match(screen, /onXConnectedChange/);
-    assert.match(screen, /preserveLegacy\('youtube'\)/);
-    assert.match(screen, /preserveLegacy\('tiktok'\)/);
-    assert.match(screen, /preserveLegacy\('instagram'\)/);
-    assert.match(screen, /preserveLegacy\('x'\)/);
+    assert.doesNotMatch(screen, /buildPostCrjSocialLinksPersistencePatch|updateUserProfilePartial/);
+
     assert.doesNotMatch(screen, /Alert\.alert\(\s*t\('profile\.social\.saved'/);
 
     for (const card of [

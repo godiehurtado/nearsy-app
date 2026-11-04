@@ -23,6 +23,8 @@ type Props = {
   initialValue: string;
   errorText?: string | null;
   saving?: boolean;
+  /** A link is already saved: this changes it. */
+  editing?: boolean;
   glyph?: React.ReactNode;
   onCancel: () => void;
   onSave: (value: string) => void;
@@ -35,6 +37,7 @@ export function ManualSocialLinkModal({
   initialValue,
   errorText,
   saving = false,
+  editing = false,
   glyph,
   onCancel,
   onSave,
@@ -81,7 +84,12 @@ export function ManualSocialLinkModal({
                 style={[styles.title, { color: palette.textPrimary }]}
                 maxFontSizeMultiplier={1.5}
               >
-                {t('profile.social.manual.title', { platform: platformLabel })}
+                {t(
+                  editing
+                    ? 'profile.social.manual.editTitle'
+                    : 'profile.social.manual.title',
+                  { platform: platformLabel },
+                )}
               </Text>
             </View>
             <Text

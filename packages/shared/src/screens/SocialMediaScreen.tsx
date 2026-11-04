@@ -4,21 +4,16 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   ScrollView,
   Pressable,
-  TextInput,
-  KeyboardAvoidingView,
   Platform,
-  Keyboard,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { firebaseAuth } from '../config/firebaseConfig';
-import { getUserProfile, updateUserProfilePartial } from '../services/firestoreService';
+import { getUserProfile } from '../services/firestoreService';
 import { useTranslation } from '../i18n';
 import { useAppTheme } from '../theme/ThemeContext';
 import { spacing, screenPadding } from '../theme/spacing';
@@ -28,104 +23,37 @@ import { cardShadow } from '../theme/shadows';
 import {
   getCrjSocialPlatform,
   type CrjSocialPlatform,
-  type CrjSocialPlatformId,
 } from '../social/onboardingSocialCatalog';
-import { ManualSocialLinkModal } from '../components/profile/ManualSocialLinkModal';
 import {
-  buildImmediateManualSocialPatch,
-  shouldApplySocialEditorResult,
-  type ImmediateManualSocialField,
-} from '../social/onboardingSocialPersistence';
-import {
-  normalizeCustomNetworkUrl,
-  normalizeSocialInput,
-} from '../social/socialLinkNormalize';
-import {
+  applyManualLinkResult,
   applyOwnershipVerifiedChange,
-  buildPostCrjSocialLinksPersistencePatch,
   countValidPostCrjSocialConnections,
   emptyPostCrjSocialConnectedState,
-  isPostCrjSocialEditorDirty,
   parsePostCrjSocialEditorParams,
   POST_CRJ_SOCIAL_CARD_ORDER,
   readPostCrjSocialEditorDraft,
-  validatePostCrjSocialDraftForSave,
-  buildValuesForPostCrjSocialSave,
   type AndroidOwnershipCardId,
-  type PostCrjSocialCardId,
   type PostCrjSocialEditorDraft,
 } from '../social/postCrjSocialEditor';
+import { isManualSocialLinkId } from '../social/manualSocialLinkCard';
 import type { ProfileMode } from '../profile/profileModeFields';
-import type { CrjSocialFieldErrors } from '../social/socialLinkNormalize';
+import { ManualSocialLinkCard } from '../components/profile/ManualSocialLinkCard';
+import { ManualSocialLinkModal } from '../components/profile/ManualSocialLinkModal';
+import {
+  SocialPlatformGlyph,
+  WEBSITE_SOCIAL_PLATFORM,
+} from '../components/profile/SocialPlatformGlyph';
+import { useManualSocialLinks } from '../components/profile/useManualSocialLinks';
 import { YoutubeOwnershipCard } from '../components/profile/YoutubeOwnershipCard';
 import { TiktokOwnershipCard } from '../components/profile/TiktokOwnershipCard';
 import { InstagramOwnershipCard } from '../components/profile/InstagramOwnershipCard';
 import { XOwnershipCard } from '../components/profile/XOwnershipCard';
-import {
-  SOCIAL_ACTION_HIT_SLOP,
-  socialActionButtonStyles,
-} from '../components/profile/socialActionButtonStyles';
-
 type RouteParams = {
   uid?: string;
   mode?: ProfileMode;
 };
 
 type LoadState = 'loading' | 'ready' | 'error' | 'blocked';
-
-function PlatformGlyph({
-  platform,
-}: {
-  platform:
-    | CrjSocialPlatform
-    | {
-        ionicon: string;
-        iconSet: 'ionicons' | 'fontawesome6';
-        color: string;
-        id: string;
-      };
-}) {
-  const isLightMark = platform.id === 'snapchat';
-  return (
-    <View
-      style={[
-        styles.glyph,
-        {
-          backgroundColor: platform.color,
-          borderColor:
-            platform.id === 'x' || platform.id === 'tiktok'
-              ? 'rgba(255,255,255,0.12)'
-              : 'transparent',
-        },
-      ]}
-    >
-      {platform.iconSet === 'fontawesome6' ? (
-        <FontAwesome6
-          name={
-            platform.ionicon as React.ComponentProps<typeof FontAwesome6>['name']
-          }
-          size={16}
-          color={isLightMark ? '#111111' : '#FFFFFF'}
-        />
-      ) : (
-        <Ionicons
-          name={
-            platform.ionicon as React.ComponentProps<typeof Ionicons>['name']
-          }
-          size={18}
-          color={isLightMark ? '#111111' : '#FFFFFF'}
-        />
-      )}
-    </View>
-  );
-}
-
-const WEBSITE_PLATFORM = {
-  id: 'website',
-  ionicon: 'globe-outline',
-  iconSet: 'ionicons' as const,
-  color: '#64748B',
-};
 
 export default function SocialMediaScreen() {
   const route = useRoute<any>();
@@ -153,28 +81,27 @@ export default function SocialMediaScreen() {
   const [loadState, setLoadState] = useState<LoadState>(
     parsed.ok ? 'loading' : 'blocked',
   );
-  const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<PostCrjSocialEditorDraft>(() => ({
     values: readPostCrjSocialEditorDraft(null, 'personal').values,
     website: '',
     custom: [],
     connected: emptyPostCrjSocialConnectedState(),
   }));
-  const snapshotRef = useRef<PostCrjSocialEditorDraft>(draft);
-  const [fieldErrors, setFieldErrors] = useState<
-    CrjSocialFieldErrors & { website?: string }
-  >({});
-  const inputRefs = useRef<
-    Partial<Record<PostCrjSocialCardId, TextInput | null>>
-  >({});
   const [ownershipVerified, setOwnershipVerified] = useState<
     Partial<Record<AndroidOwnershipCardId, boolean>>
   >({});
-  const [manualTarget, setManualTarget] = useState<ImmediateManualSocialField | null>(
-    null,
-  );
-  const [manualError, setManualError] = useState<string | null>(null);
-  const [manualSaving, setManualSaving] = useState(false);
+  const manualLinks = useManualSocialLinks({
+    uid: editorUid,
+    mode: editorMode,
+    values: {
+      facebook: draft.values.facebook ?? '',
+      linkedin: draft.values.linkedin ?? '',
+      website: draft.website,
+    },
+    onSaved: (field, url) => {
+      setDraft((prev) => applyManualLinkResult(prev, field, url));
+    },
+  });
 
   const onYoutubeConnectedChange = useCallback((connected: boolean) => {
     setOwnershipVerified((prev) =>
@@ -197,7 +124,6 @@ export default function SocialMediaScreen() {
     );
   }, []);
 
-  const isDirty = isPostCrjSocialEditorDirty(snapshotRef.current, draft);
   const validConnectionCount = countValidPostCrjSocialConnections(
     draft,
     Platform.OS === 'android' ? ownershipVerified : undefined,
@@ -213,36 +139,10 @@ export default function SocialMediaScreen() {
       ? t('profile.social.connectedCountOne')
       : t('profile.social.connectedCount', { count: validConnectionCount });
 
-  const saveButtonLabel =
-    validConnectionCount === 1
-      ? t('profile.social.saveConnectionsOne')
-      : t('profile.social.saveConnections', { count: validConnectionCount });
-
-  const confirmDiscard = useCallback(
-    (onDiscard: () => void) => {
-      Alert.alert(
-        t('profile.social.discard.title'),
-        t('profile.social.discard.body'),
-        [
-          { text: t('profile.social.discard.stay'), style: 'cancel' },
-          {
-            text: t('profile.social.discard.discard'),
-            style: 'destructive',
-            onPress: onDiscard,
-          },
-        ],
-      );
-    },
-    [t],
-  );
-
+  // Only navigates: every operation has already been written when it happened.
   const handleBack = useCallback(() => {
-    if (isDirty) {
-      confirmDiscard(() => navigation.goBack());
-      return;
-    }
     navigation.goBack();
-  }, [confirmDiscard, isDirty, navigation]);
+  }, [navigation]);
 
   useEffect(() => {
     if (!parsed.ok || !editorUid || !editorMode) {
@@ -274,7 +174,6 @@ export default function SocialMediaScreen() {
           loaded.connected.instagram = false;
           loaded.connected.x = false;
         }
-        snapshotRef.current = loaded;
         setDraft(loaded);
         setLoadState('ready');
       } catch {
@@ -290,261 +189,6 @@ export default function SocialMediaScreen() {
     };
   }, [editorMode, editorUid, parsed.ok]);
 
-  const connectPlatform = (id: PostCrjSocialCardId) => {
-    // YouTube pilot: verification UI only — no manual URL connect.
-    if (
-      Platform.OS === 'android' &&
-      (id === 'youtube' ||
-        id === 'tiktok' ||
-        id === 'instagram' ||
-        id === 'x')
-    ) {
-      return;
-    }
-    if (
-      Platform.OS === 'android' &&
-      (id === 'facebook' || id === 'linkedin' || id === 'website')
-    ) {
-      setManualError(null);
-      setManualTarget(id);
-      return;
-    }
-    setDraft((prev) => ({
-      ...prev,
-      connected: { ...prev.connected, [id]: true },
-    }));
-    setFieldErrors((prev) => {
-      const next = { ...prev };
-      delete next[id as CrjSocialPlatformId];
-      if (id === 'website') delete next.website;
-      return next;
-    });
-    setTimeout(() => {
-      inputRefs.current[id]?.focus();
-    }, 50);
-  };
-
-  const persistManualField = async (
-    field: ImmediateManualSocialField,
-    raw: string | null,
-  ) => {
-    if (!editorUid || !editorMode || manualSaving) return;
-    let url: string | null = null;
-    if (raw != null) {
-      const result =
-        field === 'website'
-          ? normalizeCustomNetworkUrl(raw)
-          : normalizeSocialInput(field, raw);
-      if (!result.ok || !result.url) {
-        setManualError(t('profile.social.invalidValue'));
-        return;
-      }
-      url = result.url;
-    }
-    setManualSaving(true);
-    const expectedUid = editorUid;
-    const expectedMode = editorMode;
-    const expectedGeneration = persistGenerationRef.current;
-    try {
-      const existing = {
-        facebook: draft.values.facebook || undefined,
-        linkedin: draft.values.linkedin || undefined,
-        instagram: snapshotRef.current.values.instagram || undefined,
-        youtube: snapshotRef.current.values.youtube || undefined,
-        twitter: snapshotRef.current.values.x || undefined,
-        tiktok: snapshotRef.current.values.tiktok || undefined,
-        snapchat: snapshotRef.current.values.snapchat || undefined,
-        website: draft.website || undefined,
-        custom: draft.custom,
-      };
-      const patch = buildImmediateManualSocialPatch(
-        editorMode,
-        existing,
-        field,
-        url,
-      );
-      await updateUserProfilePartial(editorUid, patch);
-      if (
-        !shouldApplySocialEditorResult({
-          expectedUid,
-          expectedMode,
-          liveUid: lockedUidRef.current,
-          liveMode: lockedModeRef.current,
-          expectedGeneration,
-          liveGeneration: persistGenerationRef.current,
-        })
-      ) {
-        return;
-      }
-      setDraft((prev) => {
-        const next =
-          field === 'website'
-            ? {
-                ...prev,
-                website: url ?? '',
-                connected: { ...prev.connected, website: !!url },
-              }
-            : {
-                ...prev,
-                values: { ...prev.values, [field]: url ?? '' },
-                connected: { ...prev.connected, [field]: !!url },
-              };
-        snapshotRef.current = next;
-        return next;
-      });
-      setManualTarget(null);
-      setManualError(null);
-    } catch {
-      Alert.alert(t('common.error'), t('profile.social.manual.saveFailed'));
-    } finally {
-      setManualSaving(false);
-    }
-  };
-
-  const disconnectPlatform = (id: PostCrjSocialCardId) => {
-    // YouTube pilot: do not clear legacy bag URL via manual disconnect.
-    if (
-      Platform.OS === 'android' &&
-      (id === 'youtube' ||
-        id === 'tiktok' ||
-        id === 'instagram' ||
-        id === 'x')
-    ) {
-      return;
-    }
-    if (
-      Platform.OS === 'android' &&
-      (id === 'facebook' || id === 'linkedin' || id === 'website')
-    ) {
-      void persistManualField(id, null);
-      return;
-    }
-    setDraft((prev) => {
-      const nextConnected = { ...prev.connected, [id]: false };
-      if (id === 'website') {
-        return {
-          ...prev,
-          connected: nextConnected,
-          website: '',
-        };
-      }
-      return {
-        ...prev,
-        connected: nextConnected,
-        values: { ...prev.values, [id]: '' },
-      };
-    });
-    setFieldErrors((prev) => {
-      const next = { ...prev };
-      delete next[id as CrjSocialPlatformId];
-      if (id === 'website') delete next.website;
-      return next;
-    });
-  };
-
-  const updatePlatformValue = (id: CrjSocialPlatformId, text: string) => {
-    setDraft((prev) => ({
-      ...prev,
-      values: { ...prev.values, [id]: text },
-    }));
-    setFieldErrors((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  };
-
-  const updateWebsite = (text: string) => {
-    setDraft((prev) => ({ ...prev, website: text }));
-    setFieldErrors((prev) => {
-      const next = { ...prev };
-      delete next.website;
-      return next;
-    });
-  };
-
-  const handleSave = async () => {
-    if (!editorUid || !editorMode || saving) return;
-
-    const validation = validatePostCrjSocialDraftForSave(draft, {
-      requiredWhenConnected: t('profile.social.requiredWhenConnected'),
-      invalidValue: t('profile.social.invalidValue'),
-    });
-    if (validation.ok === false) {
-      setFieldErrors(validation.errors);
-      return;
-    }
-
-    const expectedUid = editorUid;
-    const expectedMode = editorMode;
-    const expectedGeneration = persistGenerationRef.current;
-    try {
-      setSaving(true);
-      // YouTube pilot: never treat manual connect as verified; keep legacy URL in the bag.
-      const draftForSave: PostCrjSocialEditorDraft = {
-        ...draft,
-        connected: {
-          ...draft.connected,
-          youtube: false,
-          tiktok: false,
-          instagram: false,
-          x: false,
-        },
-      };
-      const valuesForSave = buildValuesForPostCrjSocialSave(draftForSave);
-      const preserveLegacy = (id: 'youtube' | 'tiktok' | 'instagram' | 'x') => {
-        const legacy = (
-          snapshotRef.current.values[id] ??
-          draft.values[id] ??
-          ''
-        ).trim();
-        if (legacy) valuesForSave[id] = legacy;
-      };
-      preserveLegacy('youtube');
-      preserveLegacy('tiktok');
-      preserveLegacy('instagram');
-      preserveLegacy('x');
-      const snapchatLegacy = (
-        snapshotRef.current.values.snapchat ??
-        draft.values.snapchat ??
-        ''
-      ).trim();
-      if (snapchatLegacy) valuesForSave.snapchat = snapchatLegacy;
-      const patch = buildPostCrjSocialLinksPersistencePatch(
-        editorMode,
-        valuesForSave,
-        draftForSave.custom,
-        {
-          website: draftForSave.connected.website ? draftForSave.website : '',
-          existing: { snapchat: snapchatLegacy || undefined },
-        },
-      );
-      await updateUserProfilePartial(editorUid, patch);
-      if (
-        !shouldApplySocialEditorResult({
-          expectedUid,
-          expectedMode,
-          liveUid: lockedUidRef.current,
-          liveMode: lockedModeRef.current,
-          expectedGeneration,
-          liveGeneration: persistGenerationRef.current,
-        })
-      ) {
-        return;
-      }
-      snapshotRef.current = draft;
-      Keyboard.dismiss();
-      navigation.goBack();
-    } catch (e: any) {
-      Alert.alert(
-        t('common.error'),
-        e?.message || t('profile.social.saveError'),
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const bottomBarInset =
     insets.bottom > 0 ? insets.bottom + spacing.sm : spacing.lg;
 
@@ -554,7 +198,7 @@ export default function SocialMediaScreen() {
         if (id === 'website') {
           return {
             id,
-            platform: WEBSITE_PLATFORM,
+            platform: WEBSITE_SOCIAL_PLATFORM,
             label: t('profile.social.platforms.website'),
             placeholder: t('profile.social.placeholders.website'),
           };
@@ -654,10 +298,7 @@ export default function SocialMediaScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: palette.background }]}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+      <View style={styles.flex}>
         <ScrollView
           style={styles.flex}
           contentContainerStyle={{
@@ -735,9 +376,7 @@ export default function SocialMediaScreen() {
                     legacyUrl={draft.values.youtube}
                     onConnectedChange={onYoutubeConnectedChange}
                     glyph={
-                      <PlatformGlyph
-                        platform={{ ...card.platform, id: card.id }}
-                      />
+                      <SocialPlatformGlyph platform={{ ...card.platform, id: card.id }} />
                     }
                   />
                 );
@@ -752,9 +391,7 @@ export default function SocialMediaScreen() {
                     legacyUrl={draft.values.tiktok}
                     onConnectedChange={onTiktokConnectedChange}
                     glyph={
-                      <PlatformGlyph
-                        platform={{ ...card.platform, id: card.id }}
-                      />
+                      <SocialPlatformGlyph platform={{ ...card.platform, id: card.id }} />
                     }
                   />
                 );
@@ -769,9 +406,7 @@ export default function SocialMediaScreen() {
                     legacyUrl={draft.values.instagram}
                     onConnectedChange={onInstagramConnectedChange}
                     glyph={
-                      <PlatformGlyph
-                        platform={{ ...card.platform, id: card.id }}
-                      />
+                      <SocialPlatformGlyph platform={{ ...card.platform, id: card.id }} />
                     }
                   />
                 );
@@ -786,189 +421,40 @@ export default function SocialMediaScreen() {
                     legacyUrl={draft.values.x}
                     onConnectedChange={onXConnectedChange}
                     glyph={
-                      <PlatformGlyph
-                        platform={{ ...card.platform, id: card.id }}
-                      />
+                      <SocialPlatformGlyph platform={{ ...card.platform, id: card.id }} />
                     }
                   />
                 );
               }
 
-              const connected = draft.connected[card.id];
-              const error =
-                card.id === 'website'
-                  ? fieldErrors.website
-                  : fieldErrors[card.id as CrjSocialPlatformId];
-              const value =
-                card.id === 'website'
-                  ? draft.website
-                  : draft.values[card.id as CrjSocialPlatformId];
-
+              const manualId = card.id;
+              if (!isManualSocialLinkId(manualId)) return null;
               return (
-                <View
-                  key={card.id}
-                  style={[
-                    styles.card,
-                    {
-                      backgroundColor: palette.panel,
-                      borderColor: connected ? palette.primary : palette.border,
-                      borderWidth: connected ? 1.5 : 1,
-                    },
-                  ]}
-                >
-                  <View style={styles.cardTopRow}>
-                    <PlatformGlyph platform={{ ...card.platform, id: card.id }} />
-                    <View style={styles.cardTextCol}>
-                      <Text
-                        style={[
-                          styles.platformName,
-                          { color: palette.textPrimary },
-                        ]}
-                      >
-                        {card.label}
-                      </Text>
-                      {connected ? (
-                        <View style={styles.connectedRow}>
-                          <View
-                            style={[
-                              styles.connectedDot,
-                              { backgroundColor: palette.success },
-                            ]}
-                            accessibilityElementsHidden
-                            importantForAccessibility="no"
-                          />
-                          <Text
-                            style={[
-                              styles.connectedLabel,
-                              { color: palette.success },
-                            ]}
-                          >
-                            {t('profile.social.connected')}
-                          </Text>
-                        </View>
-                      ) : (
-                        <Text
-                          style={[
-                            styles.notConnected,
-                            { color: palette.textMuted },
-                          ]}
-                        >
-                          {t('profile.social.notConnected')}
-                        </Text>
-                      )}
-                    </View>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        connected
-                          ? t('profile.social.disconnectA11y', {
-                              platform: card.label,
-                            })
-                          : t('profile.social.connectA11y', {
-                              platform: card.label,
-                            })
-                      }
-                      accessibilityState={{ selected: connected }}
-                      hitSlop={SOCIAL_ACTION_HIT_SLOP}
-                      onPress={() =>
-                        connected
-                          ? disconnectPlatform(card.id)
-                          : connectPlatform(card.id)
-                      }
-                      style={({ pressed }) => [
-                        socialActionButtonStyles.button,
-                        connected
-                          ? {
-                              backgroundColor: 'transparent',
-                              borderColor: palette.danger,
-                            }
-                          : {
-                              backgroundColor: palette.primary,
-                              borderColor: palette.primary,
-                            },
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          socialActionButtonStyles.text,
-                          {
-                            color: connected ? palette.danger : palette.surface,
-                          },
-                        ]}
-                      >
-                        {connected
-                          ? t('profile.social.disconnect')
-                          : t('profile.social.connect')}
-                      </Text>
-                    </Pressable>
-                  </View>
-
-                  {connected ? (
-                    Platform.OS === 'android' ? (
-                      <Text
-                        style={[
-                          styles.input,
-                          {
-                            color: palette.textSecondary,
-                            borderColor: palette.border,
-                            backgroundColor: palette.surface,
-                          },
-                        ]}
-                        numberOfLines={2}
-                      >
-                        {value}
-                      </Text>
-                    ) : (
-                    <>
-                      <TextInput
-                        ref={(ref) => {
-                          inputRefs.current[card.id] = ref;
-                        }}
-                        value={value}
-                        onChangeText={(text) =>
-                          card.id === 'website'
-                            ? updateWebsite(text)
-                            : updatePlatformValue(
-                                card.id as CrjSocialPlatformId,
-                                text,
-                              )
-                        }
-                        placeholder={card.placeholder}
-                        placeholderTextColor={palette.placeholder}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        keyboardType="url"
-                        accessibilityLabel={t('profile.social.inputA11y', {
-                          platform: card.label,
-                        })}
-                        style={[
-                          styles.input,
-                          {
-                            color: palette.textPrimary,
-                            borderColor: error ? palette.danger : palette.border,
-                            backgroundColor: palette.surface,
-                          },
-                        ]}
-                      />
-                      {error ? (
-                        <Text
-                          accessibilityRole="alert"
-                          style={[styles.fieldError, { color: palette.danger }]}
-                        >
-                          {error}
-                        </Text>
-                      ) : null}
-                    </>
-                    )
-                  ) : null}
-                </View>
+                <ManualSocialLinkCard
+                  key={manualId}
+                  id={manualId}
+                  label={card.label}
+                  url={
+                    manualId === 'website'
+                      ? draft.website
+                      : (draft.values[manualId] ?? '')
+                  }
+                  glyph={
+                    <SocialPlatformGlyph
+                      platform={{ ...card.platform, id: card.id }}
+                    />
+                  }
+                  disabled={manualLinks.busy}
+                  removing={manualLinks.busyField === manualId}
+                  error={manualLinks.errorFor(manualId)}
+                  onOpen={() => manualLinks.open(manualId)}
+                  onRemove={() => manualLinks.remove(manualId)}
+                />
               );
             })}
           </View>
         </ScrollView>
 
-        {Platform.OS !== 'android' || isDirty ? (
         <View
           style={[
             styles.bottomBar,
@@ -982,63 +468,21 @@ export default function SocialMediaScreen() {
         >
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={saveButtonLabel}
-            accessibilityState={{ disabled: saving, busy: saving }}
-            disabled={saving}
-            onPress={handleSave}
+            accessibilityLabel={t('profile.social.backToProfileA11y')}
+            onPress={handleBack}
             style={({ pressed }) => [
-              styles.saveBtn,
+              styles.bottomBackBtn,
               { backgroundColor: palette.primary },
-              saving && styles.disabled,
-              pressed && !saving && styles.pressed,
+              pressed && styles.pressed,
             ]}
           >
-            {saving ? (
-              <ActivityIndicator color={palette.surface} />
-            ) : (
-              <Text style={[styles.saveText, { color: palette.surface }]}>
-                {saveButtonLabel}
-              </Text>
-            )}
+            <Text style={[styles.bottomBackText, { color: '#FFFFFF' }]}>
+              {t('profile.social.back')}
+            </Text>
           </Pressable>
         </View>
-        ) : null}
-      </KeyboardAvoidingView>
-      <ManualSocialLinkModal
-        visible={manualTarget != null}
-        platformLabel={
-          manualTarget === 'website'
-            ? t('profile.social.platforms.website')
-            : t(
-                `onboarding.profileCompletion.socialMedia.platforms.${manualTarget ?? 'facebook'}` as any,
-              )
-        }
-        placeholder={
-          manualTarget === 'website'
-            ? t('profile.social.placeholders.website')
-            : t(
-                `onboarding.profileCompletion.socialMedia.placeholders.${manualTarget ?? 'facebook'}` as any,
-              )
-        }
-        initialValue={
-          manualTarget === 'website'
-            ? draft.website
-            : manualTarget
-              ? draft.values[manualTarget]
-              : ''
-        }
-        errorText={manualError}
-        saving={manualSaving}
-        onCancel={() => {
-          if (manualSaving) return;
-          setManualTarget(null);
-          setManualError(null);
-        }}
-        onSave={(value) => {
-          if (!manualTarget) return;
-          void persistManualField(manualTarget, value);
-        }}
-      />
+      </View>
+      <ManualSocialLinkModal {...manualLinks.modalProps} />
 
       <View
         pointerEvents="none"
@@ -1134,61 +578,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: screenPadding.horizontal,
   },
-  card: {
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  cardTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  glyph: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  cardTextCol: { flex: 1, minWidth: 0 },
-  platformName: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.extrabold,
-  },
-  connectedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 2,
-  },
-  connectedDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  connectedLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
-  },
-  notConnected: {
-    fontSize: fontSize.xs,
-    marginTop: 2,
-  },
-  input: {
-    minHeight: 44,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    fontSize: fontSize.base,
-    fontWeight: fontWeight.semibold,
-  },
-  fieldError: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
-  },
   bottomBar: {
     position: 'absolute',
     left: 0,
@@ -1198,17 +587,16 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingHorizontal: screenPadding.horizontal,
   },
-  saveBtn: {
+  bottomBackBtn: {
     minHeight: 48,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
   },
-  saveText: {
+  bottomBackText: {
     fontSize: fontSize.md,
     fontWeight: fontWeight.bold,
   },
   pressed: { opacity: 0.9 },
-  disabled: { opacity: 0.55 },
 });

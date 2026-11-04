@@ -328,7 +328,7 @@ describe('NEARSY-209 Instagram ownership Android wiring', () => {
     assert.match(screen, /InstagramOwnershipCard/);
     assert.match(screen, /legacyUrl=\{draft\.values\.instagram\}/);
     assert.match(screen, /connected\.instagram = false/);
-    assert.match(screen, /preserveLegacy\('instagram'\)/);
+    assert.doesNotMatch(screen, /buildPostCrjSocialLinksPersistencePatch|updateUserProfilePartial/);
     assert.doesNotMatch(screen, /instagramInboxAuthorizeStart/);
     assert.doesNotMatch(screen, /Authorize inbox|authorizeInbox/i);
   });
