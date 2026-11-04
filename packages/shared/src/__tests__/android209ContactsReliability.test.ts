@@ -175,6 +175,10 @@ function harness(opts?: {
       await readAccount();
       return raw.retry();
     },
+    disable: async () => {
+      await readAccount();
+      return raw.disable();
+    },
   };
   return { env, session, raw };
 }
@@ -677,17 +681,10 @@ describe('Rate limit is an explicit result', () => {
     assert.equal(env.identity.enabled, false);
   });
 
-  it('a limited disable keeps the live epoch it just learned', async () => {
+  it('a disable behind the live epoch adopts it and stops there', async () => {
     const identity = new FakeIdentity();
     identity.enabled = true;
     identity.epoch = 7;
-    let disables = 0;
-    identity.intercept = (name) => {
-      if (name !== DISABLE_CONTACTS_SYNC) return undefined;
-      disables += 1;
-      if (disables === 2) throw reason('contacts-rate-limited');
-      return undefined;
-    };
     await assert.rejects(
       runDisable({
         functions: { region: 'r', call: (n, d) => identity.call(n, d) },
@@ -700,11 +697,14 @@ describe('Rate limit is an explicit result', () => {
         },
       }),
       (err: any) => {
-        assert.equal(err.reason, 'contacts-rate-limited');
+        assert.equal(err.reason, 'contacts-epoch-mismatch');
         assert.equal(err.state.contactsEpoch, 7);
+        assert.equal(err.state.uncertainOp, 'disable');
         return true;
       },
     );
+    assert.equal(identity.count(DISABLE_CONTACTS_SYNC), 1, 'not sent again by itself');
+    assert.equal(identity.enabled, true);
   });
 
   it('does not depend on a wait hint the contract does not provide', () => {
@@ -995,6 +995,9 @@ describe('Older operation, newer operation', () => {
     const held = replyHeldAfterCommit(env, DISABLE_CONTACTS_SYNC);
     await session.disable();
     newSessionSameAccount(env, session);
+    assert.equal((await raw.retry()).status, 'not_ready', 'nothing before the read');
+    await raw.bindUserDoc('uid-a', { contactsSyncEnabled: true, contactsEpoch: 0 });
+    assert.equal(session.getStatus().enablement, 'disable_uncertain');
     assert.equal((await raw.retry()).status, 'ok');
     assert.equal(session.getStatus().enablement, 'off', 'it stays a disable');
     assert.equal(env.identity.enabled, false);
@@ -1055,25 +1058,23 @@ describe('Older operation, newer operation', () => {
     assert.equal(savedState(env.store).lastAckedVersion, null);
   });
 
-  it('old disable landing after a new enable: repeating it first fences it out', async () => {
+  it('an unresolved disable comes first: enable sends nothing until it settles', async () => {
     const { env, session } = harness({ timeoutMs: 5 });
     await session.enableThenSync();
     const held = requestHeldInTransit(env, DISABLE_CONTACTS_SYNC);
     assert.equal((await session.disable()).status, 'uncertain');
-    assert.equal(savedState(env.store).uncertainOp, 'disable');
     newSessionSameAccount(env, session);
-
+    env.identity.calls.length = 0;
+    assert.equal((await session.enableThenSync()).status, 'not_ready');
+    assert.equal(env.identity.calls.length, 0);
+    assert.equal((await session.retry()).status, 'ok');
+    assert.equal(env.identity.epoch, 1);
     assert.equal((await session.enableThenSync()).status, 'ok');
-    assert.equal(env.identity.epoch, 1, 'moved past the epoch the old one carries');
-    assert.equal(env.identity.last(SYNC_CONTACT_HASHES).contactsEpoch, 1);
-
-    assert.equal(held.land(), 'rejected', 'cannot switch it off');
+    assert.equal(env.identity.last(ENABLE_CONTACTS_SYNC).contactsEpoch, 1);
+    assert.equal(held.land(), 'rejected', 'the old one cannot switch it off');
     assert.equal(env.identity.enabled, true);
-    assert.equal(env.identity.sources.size, 1);
     await delay(5);
-    assert.equal(session.getStatus().enablement, 'enabled');
     assert.equal(session.getStatus().snapshot, 'synced');
-    assert.equal(savedState(env.store).contactsEpoch, 1);
   });
 
   it('old disable that already landed: enable does not bump the epoch again', async () => {
@@ -1231,6 +1232,28 @@ describe('Phone verification keeps its contract', () => {
     };
     walk(SRC);
     assert.deepEqual(importers.sort(), ['MoreScreen.tsx', 'PhoneVerificationScreen.android.tsx']);
+  });
+});
+
+describe('The first read never leaves it checking forever', () => {
+  it('a read that never answers ends in a recoverable error, without polling', async () => {
+    const { env, raw } = harness({ timeoutMs: 10 });
+    raw.expectUserDocRead('uid-a');
+    assert.equal(raw.getStatus().stateConfirmed, false);
+    assert.equal(raw.getStatus().readFailed, false);
+    await until(() => raw.getStatus().readFailed, 'deadline');
+    assert.equal(contactsStatusCopyKey(raw.getStatus()), 'status.readFailed');
+    assert.equal(env.identity.calls.length, 0);
+    assert.equal(env.book.requests + env.book.reads, 0);
+  });
+
+  it('a read in time cancels the deadline', async () => {
+    const { env, raw } = harness({ timeoutMs: 10 });
+    raw.expectUserDocRead('uid-a');
+    await raw.bindUserDoc('uid-a', env.identity.userDoc());
+    await delay(25);
+    assert.equal(raw.getStatus().readFailed, false);
+    assert.equal(raw.getStatus().stateConfirmed, true);
   });
 });
 

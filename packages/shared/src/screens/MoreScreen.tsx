@@ -49,6 +49,7 @@ import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximit
 import {
   bindContactsUserDoc,
   contactsCanRetry,
+  contactsCanRetryRead,
   contactsEpochFromUserDoc,
   contactsHmacAvailable,
   contactsHmacErrorToI18nKey,
@@ -58,7 +59,9 @@ import {
   contactsToggleValue,
   disableContactsIntegration,
   enableThenSyncContacts,
+  expectContactsUserDocRead,
   getContactsSyncStatus,
+  reportContactsUserDocReadFailed,
   retryContactsSync,
   subscribeContactsSyncStatus,
   type ContactsOpResult,
@@ -209,6 +212,16 @@ function minAge99BirthDate(asOf: Date = new Date()) {
   };
 }
 
+function contactsFactsFromProfile(data: ProfileDoc) {
+  return {
+    contactsSyncEnabled: resolveContactsSyncEnabled(data.contactsSyncEnabled),
+    contactsEpoch:
+      typeof data.contactsEpoch === 'number'
+        ? contactsEpochFromUserDoc(data.contactsEpoch)
+        : null,
+  };
+}
+
 export default function MoreScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<MoreStackParamList>>();
@@ -321,8 +334,16 @@ export default function MoreScreen() {
       return;
     }
     setUserEmail(firebaseAuth.currentUser?.email ?? '');
-    const data = (await getUserProfile(uid)) as ProfileDoc | null;
+    if (Platform.OS === 'android') expectContactsUserDocRead(uid);
+    let data: ProfileDoc | null;
+    try {
+      data = (await getUserProfile(uid)) as ProfileDoc | null;
+    } catch (err) {
+      if (Platform.OS === 'android') reportContactsUserDocReadFailed(uid);
+      throw err;
+    }
     if (!data) {
+      if (Platform.OS === 'android') reportContactsUserDocReadFailed(uid);
       setLoading(false);
       return;
     }
@@ -348,13 +369,9 @@ export default function MoreScreen() {
     );
     if (Platform.OS === 'android' && contactsHmacAvailable()) {
       // Not awaited: Contacts must not hold up the rest of this screen.
-      void bindContactsUserDoc(uid, {
-        contactsSyncEnabled: resolveContactsSyncEnabled(data.contactsSyncEnabled),
-        contactsEpoch:
-          typeof data.contactsEpoch === 'number'
-            ? contactsEpochFromUserDoc(data.contactsEpoch)
-            : null,
-      }).catch(() => {});
+      void bindContactsUserDoc(uid, contactsFactsFromProfile(data)).catch(() => {
+        reportContactsUserDocReadFailed(uid);
+      });
     }
     let bgPref = !!data.bgVisible;
     setVisibilityOn(!!data.visibility);
@@ -544,6 +561,28 @@ export default function MoreScreen() {
         ? await enableThenSyncContacts()
         : await disableContactsIntegration(),
     );
+  };
+
+  /** Only reads the account again: no enable, sync or permission comes out of this. */
+  const handleRetryContactsRead = async () => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) return;
+    expectContactsUserDocRead(uid);
+    try {
+      const data = (await getUserProfile(uid)) as ProfileDoc | null;
+      if (!data) throw new Error('profile-not-found');
+      setNotifyNearbyContacts(
+        resolveNotifyNearbyContacts({
+          contactsSyncEnabled: data.contactsSyncEnabled,
+          notifyNearbyContacts: data.notifyNearbyContacts,
+        }),
+      );
+      await bindContactsUserDoc(uid, contactsFactsFromProfile(data), {
+        readOnly: true,
+      });
+    } catch {
+      reportContactsUserDocReadFailed(uid);
+    }
   };
 
   const handleRetryContactsSync = async () => {
@@ -1114,6 +1153,13 @@ export default function MoreScreen() {
                 onValueChange={handleToggleContactsSync}
                 disabled={contactsToggleLocked(contactsStatus)}
               />
+              {contactsCanRetryRead(contactsStatus) ? (
+                <SettingsRow
+                  icon="refresh-outline"
+                  title={t('settings.contactsSync.retry')}
+                  onPress={handleRetryContactsRead}
+                />
+              ) : null}
               {contactsCanRetry(contactsStatus) ? (
                 <SettingsRow
                   icon="refresh-outline"

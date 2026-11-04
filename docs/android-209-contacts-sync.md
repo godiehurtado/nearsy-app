@@ -7,9 +7,9 @@ the rules of `src/modules/contactsHmac/service.ts` in `nearsy-identity-functions
 `295e0f44fc34bf4a1f17afa2d5ece987203665d1`).
 
 **This client requires #27 deployed first.** A server without it rejects `contactsEpoch`
-on enable as `contacts-identifier-invalid`, so no one could turn Contacts on. Its dev
-deployment is in progress and production is not authorized, so this build must not ship
-before that order is met.
+on enable as `contacts-identifier-invalid`, so no one could turn Contacts on. Identity reports
+it deployed on `nearsy-dev`, with its positive tests still running. Production is pending, so
+this build must not ship before that order is met.
 
 ## What each state means
 
@@ -46,7 +46,9 @@ automatic retry and no timer. The contract provides no retry-after value, so non
 - The stored epoch is per UID and never goes down. An epoch change voids the snapshot confirmation.
 - Mismatch or `contacts-epoch-required` on enable: read once. On means no enable is needed. Off
   stops there, because turning on takes a new action.
-- Mismatch on a sync: read once. Off stops, and on uploads once at the live epoch.
+- Mismatch on a sync: read once. Off stops. On uploads once at the live epoch, only if the user's
+  intent, local consent and the OS permission are all still in force. A disable or an account change
+  has already stopped that flow by then.
 - Remove sends `knownSnapshotVersion`, the highest sent for this source and epoch, uncertain
   uploads included. `superseded` is not a withdrawal: the version is raised, and remove is sent
   once more, because that denial is still the current intent. If still superseded, it stays
@@ -59,6 +61,11 @@ toggle and retry are locked, and enable sends nothing (`not_ready`). The rest of
 Reads repeat on remount or a language change. The automatic resend of an unconfirmed upload runs
 at most once per session.
 
+If that read fails, or does not answer within the callable timeout, the section shows a recoverable
+error with a retry that only reads. It sends no enable or sync, asks for no permission, does not
+poll, and does not trigger the automatic resend. Everything else stays locked, including turning
+off, until the state is confirmed.
+
 ## Turning off
 
 - It goes ahead of any running operation. The intent is recorded first, consent is cleared and
@@ -67,6 +74,13 @@ at most once per session.
   step, so it cannot prompt, read the book or upload.
 - A reply to a cancelled flow may only raise the epoch, and can owe a reevaluate. It is never "on".
 - A refused or unanswered disable stays pending and is retried by the user, since it set no barrier.
+- That pending disable is saved per UID before sending, and survives a restart. Until it is resolved
+  enable and sync send nothing, and it is not shown as done.
+- A read that shows off at a later epoch completes it. Off at the same epoch completes it only if
+  Identity never confirmed this on; otherwise it may be a cached read.
+- **On at a later epoch may be a new activation from another device,** so a mismatch reads and stops
+  there, and the disable goes out at that epoch only on an explicit retry. Contract §14.4 would
+  send it automatically; this client deliberately does not.
 - Turning on again takes a new action, with the epoch from the disable or from a read.
 
 ## Overlapping operations
@@ -88,7 +102,7 @@ only grows and only disable grows: a reply cannot undo a newer state.
 | sync → newer disable | Refused: epoch moved | Stays off |
 | sync → newer sync | Refused as stale if lower; idempotent if identical | Same version only for the same content |
 | enable → newer disable | Refused: it names the old epoch | Stays off |
-| disable → newer enable | Refused: the enable repeats the disable first, moving the epoch | Stays on |
+| disable → newer enable | Refused: enable waits for the pending disable to resolve, which moves the epoch | Stays on |
 | remove → newer sync | Kept: `superseded` | Version raised, not shown as removed |
 
 **Known limit:** a stale local intent that reads a fresh epoch looks valid to the server. Cancelling

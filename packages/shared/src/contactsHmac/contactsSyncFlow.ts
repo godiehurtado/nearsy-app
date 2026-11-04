@@ -488,6 +488,7 @@ async function uploadWithEpochRecovery(input: {
   identifiers: ContactIdentifierInput[];
   fingerprint: string;
   save: ContactsStateSaver;
+  book: ContactsBookPort;
 }) {
   try {
     return await uploadSnapshot(input);
@@ -507,7 +508,20 @@ async function uploadWithEpochRecovery(input: {
     if (!live.contactsSyncEnabled) {
       throw new ContactsFlowStateError(err, applyStoppedOff(err.state, live));
     }
-    return uploadSnapshot({ ...input, state: applyLiveState(err.state, live) });
+    const atLiveEpoch = applyLiveState(err.state, live);
+    // Sending again needs all of it still in force. A disable or an account change
+    // has already stopped this flow at the guards around the port and the book.
+    if (
+      atLiveEpoch.userConsent !== true ||
+      (await input.book.getPermission()) !== 'granted'
+    ) {
+      throw new ContactsFlowStateError(err, {
+        ...atLiveEpoch,
+        pendingUpload: null,
+        uncertainOp: null,
+      });
+    }
+    return uploadSnapshot({ ...input, state: atLiveEpoch });
   }
 }
 
@@ -619,6 +633,7 @@ async function syncAfterConfirmedEnable(input: {
   try {
     const synced = await uploadWithEpochRecovery({
       functions: input.functions,
+      book: input.book,
       state,
       identifiers: records,
       fingerprint: identifiersFingerprint(records),
@@ -814,6 +829,7 @@ export async function runResyncGrantedBook(input: {
   try {
     const synced = await uploadWithEpochRecovery({
       functions: input.functions,
+      book: input.book,
       state: input.state,
       identifiers: records,
       fingerprint: identifiersFingerprint(records),
@@ -872,21 +888,20 @@ export async function runDisable(input: {
   }
 
   // Our epoch is old, e.g. an earlier uncertain disable did land. Ask Identity.
-  let known: ContactsLocalState = { ...intent, epochStale: true };
+  let live: ContactsWireResult;
   try {
-    const live = await refreshVerifiedActorKeys(input.functions);
-    known = {
-      ...withConfirmedEpoch(intent, live.contactsEpoch),
-      uncertainOp: 'disable',
-    };
-    if (!live.contactsSyncEnabled) return finished(live);
-    return finished(
-      await disableContactsSync(input.functions, live.contactsEpoch),
-    );
+    live = await refreshVerifiedActorKeys(input.functions);
   } catch (err) {
-    // Keeps the live epoch, so a manual retry goes straight to the disable.
-    throw failure(err, known);
+    throw failure(err, { ...intent, epochStale: true });
   }
+  if (!live.contactsSyncEnabled) return finished(live);
+  // On at a later epoch: that may be a new activation from another device, which
+  // this older request must not switch off by itself. It takes an explicit retry.
+  throw failure(firstError, {
+    ...withConfirmedEpoch(intent, live.contactsEpoch),
+    uncertainOp: 'disable',
+    enablementConfirmed: true,
+  });
 }
 
 export async function runRefreshKeys(input: {

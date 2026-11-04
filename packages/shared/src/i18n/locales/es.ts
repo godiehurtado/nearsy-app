@@ -351,6 +351,7 @@ export const es: TranslationResources = {
       retry: 'Reintentar',
       status: {
         confirming: 'Comprobando la sincronización de contactos…',
+        readFailed: 'No pudimos comprobar la sincronización de contactos. Inténtalo de nuevo.',
         enabling: 'Activando la sincronización de contactos…',
         permission: 'Esperando tu permiso de Contactos…',
         reading: 'Leyendo los contactos de este dispositivo…',

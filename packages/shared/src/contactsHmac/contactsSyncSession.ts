@@ -99,6 +99,8 @@ type Session = {
   resultSeq: number;
   /** A read of the account was applied; until then "off" would be a guess. */
   bound: boolean;
+  readFailed: boolean;
+  readDeadline: ReturnType<typeof setTimeout> | null;
   /** Read that arrived during an operation, applied once it settles. */
   deferredDoc: ContactsUserDocFacts | null;
   /** The automatic resend runs at most once per session. */
@@ -144,6 +146,7 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
     return {
       uid: session.uid,
       stateConfirmed: session.bound,
+      readFailed: session.readFailed,
       disableInFlight:
         session.operation === 'disable' || session.liveDisables > 0,
       osPermission: session.osPermission,
@@ -213,6 +216,8 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
       notifyEffective: null,
       resultSeq: 0,
       bound: false,
+      readFailed: false,
+      readDeadline: null,
       deferredDoc: null,
       reconcileTried: false,
       token: 0,
@@ -334,9 +339,20 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
     applyUserDoc(s, doc);
   }
 
-  function applyUserDoc(s: Session, doc: ContactsUserDocFacts): void {
+  function clearReadDeadline(s: Session): void {
+    if (s.readDeadline) clearTimeout(s.readDeadline);
+    s.readDeadline = null;
+  }
+
+  function applyUserDoc(
+    s: Session,
+    doc: ContactsUserDocFacts,
+    mayResend = true,
+  ): void {
+    clearReadDeadline(s);
     s.state = mergeUserDocIntoState(s.state, doc);
     s.bound = true;
+    s.readFailed = false;
     if (!s.state.uncertainOp && s.state.reevaluateOwed === true) {
       s.state = { ...s.state, reevaluateOwed: false };
       fireReevaluate(s, true);
@@ -344,6 +360,7 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
     persistBestEffort(s);
     emit();
     if (
+      mayResend &&
       !s.reconcileTried &&
       s.state.uncertainOp === 'sync' &&
       s.state.userConsent === true &&
@@ -533,9 +550,17 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
       if (s.operation === 'disable' || s.liveDisables > 0) {
         return { status: 'in_flight' };
       }
+      if (!s.bound) return { status: 'not_ready' };
     } else {
       if (s.operation || s.liveRequests > 0) return { status: 'in_flight' };
       if (kind === 'enable' && !s.bound) return { status: 'not_ready' };
+      // A turn-off that is still unresolved comes first. Nothing goes on around it.
+      if (
+        (kind === 'enable' || kind === 'reconcile') &&
+        s.state.uncertainOp === 'disable'
+      ) {
+        return { status: 'not_ready' };
+      }
     }
     const token = (s.token += 1);
     s.operation = kind;
@@ -588,17 +613,6 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
 
   const enableThenSync = (mayEnable = true) =>
     run('enable', async (s, ctx) => {
-      if (s.state.uncertainOp === 'disable') {
-        // A disable may still be in transit from an earlier session. Repeating it
-        // moves the epoch past it, and gives the epoch this enable must send.
-        const fenced = await runDisable({
-          functions: ctx.functions,
-          state: s.state,
-          saveState: ctx.saveState,
-        });
-        await ctx.saveState(fenced.state);
-        fireReevaluate(s, fenced.scheduleReevaluate);
-      }
       // Explicit user action; saved with the intent, before anything is sent.
       s.state = { ...s.state, userConsent: true };
       return runEnableThenSync({
@@ -665,15 +679,16 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
       const s = currentSession();
       // Decide on what was saved: right after a restart it may still be loading.
       await s?.ready.catch(() => {});
-      const state = s?.state;
-      if (state?.uncertainOp === 'disable') return disable();
-      if (state?.enablementConfirmed === true) {
+      if (!s?.bound) return { status: 'not_ready' };
+      const state = s.state;
+      if (state.uncertainOp === 'disable') return disable();
+      if (state.enablementConfirmed === true) {
         // After a mismatch this reads the state first: if it reads off, it stays
         // off, because retrying a sync is not a request to turn on.
         return state.epochStale === true ? enableThenSync(false) : retrySync();
       }
       // Only an enable still in doubt is retried. Off stays off until the user acts.
-      if (state?.uncertainOp === 'enable') return enableThenSync();
+      if (state.uncertainOp === 'enable') return enableThenSync();
       return { status: 'not_ready' };
     },
     refreshKeys: () =>
@@ -681,11 +696,39 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
         runRefreshKeys({ functions: ctx.functions, state: s.state }),
       ),
     /**
-     * Facts read from users/{uid}. May settle an uncertain enable or disable, and
-     * re-send an unconfirmed upload for an account that consented on this device.
-     * Never prompts and never removes a source.
+     * A read of the account is on its way. It gets one deadline, so "checking" always
+     * ends; nothing here reads again by itself.
      */
-    async bindUserDoc(uid: string, doc: ContactsUserDocFacts): Promise<void> {
+    expectUserDocRead(uid: string): void {
+      const s = currentSession();
+      if (!s || s.uid !== uid || s.bound) return;
+      clearReadDeadline(s);
+      s.readFailed = false;
+      s.readDeadline = setTimeout(() => {
+        s.readDeadline = null;
+        if (!isCurrent(s) || s.bound) return;
+        s.readFailed = true;
+        emit();
+      }, deps.timeoutMs);
+      emit();
+    },
+    reportUserDocReadFailed(uid: string): void {
+      const s = currentSession();
+      if (!s || s.uid !== uid || s.bound) return;
+      clearReadDeadline(s);
+      s.readFailed = true;
+      emit();
+    },
+    /**
+     * Facts read from users/{uid}. May settle an uncertain enable or disable, and
+     * re-send an unconfirmed upload for an account that consented on this device,
+     * unless the caller only asked to read. Never prompts or removes a source.
+     */
+    async bindUserDoc(
+      uid: string,
+      doc: ContactsUserDocFacts,
+      options?: { readOnly?: boolean },
+    ): Promise<void> {
       const s = currentSession();
       if (!s || s.uid !== uid) return;
       await s.ready;
@@ -701,7 +744,7 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
         emit();
         return;
       }
-      applyUserDoc(s, doc);
+      applyUserDoc(s, doc, options?.readOnly !== true);
     },
   };
 }

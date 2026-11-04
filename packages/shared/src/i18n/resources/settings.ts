@@ -87,6 +87,7 @@ export default {
     retry: 'Retry',
     status: {
       confirming: 'Checking Contacts sync…',
+      readFailed: 'We could not check Contacts sync. Try again.',
       enabling: 'Turning on Contacts sync…',
       permission: 'Waiting for your Contacts permission…',
       reading: 'Reading contacts on this device…',

@@ -28,6 +28,8 @@ export type ContactsSyncStatus = {
   uid: string | null;
   /** False until a read of the account: then "off" would be a guess. */
   stateConfirmed: boolean;
+  /** That read failed or took too long. Only an explicit retry reads again. */
+  readFailed: boolean;
   /** A disable is running or unanswered: another one would be a duplicate. */
   disableInFlight: boolean;
   osPermission: ContactsPermissionStatus | 'unknown';
@@ -48,6 +50,7 @@ export type ContactsSyncStatus = {
 export const CONTACTS_STATUS_SIGNED_OUT: ContactsSyncStatus = {
   uid: null,
   stateConfirmed: false,
+  readFailed: false,
   disableInFlight: false,
   osPermission: 'unknown',
   consent: false,
@@ -103,13 +106,19 @@ export function mergeUserDocIntoState(
   if (docEpoch < state.contactsEpoch) return state;
   const newerEpoch = docEpoch > state.contactsEpoch;
   const next = withHigherEpoch(state, docEpoch);
+  if (newerEpoch) next.epochConfirmed = false;
 
   if (doc.contactsSyncEnabled) {
     next.enablementConfirmed = true;
     if (state.uncertainOp === 'enable') next.uncertainOp = null;
     return next;
   }
-  if (state.uncertainOp === 'disable' || newerEpoch) {
+  // A disable that landed moves the epoch. Off at the same epoch settles it only if
+  // Identity never confirmed this on: otherwise it may be a cached read.
+  if (
+    newerEpoch ||
+    (state.uncertainOp === 'disable' && state.enablementConfirmed !== true)
+  ) {
     // Off, at an epoch newer than anything pending here: all of it is cancelled.
     next.enablementConfirmed = false;
     next.userConsent = false;
@@ -152,6 +161,11 @@ export function contactsCanRetry(status: ContactsSyncStatus): boolean {
   return status.enablement !== 'enabled' || status.snapshot !== 'synced';
 }
 
+/** Reading the account again: never an enable, a sync or a permission prompt. */
+export function contactsCanRetryRead(status: ContactsSyncStatus): boolean {
+  return !status.stateConfirmed && status.readFailed;
+}
+
 /** Relative i18n key under settings.contactsSync; null keeps the description. */
 export function contactsStatusCopyKey(
   status: ContactsSyncStatus,
@@ -161,7 +175,9 @@ export function contactsStatusCopyKey(
     return `status.${status.stage ?? 'syncing'}`;
   }
   if (status.awaitingLateResult) return 'status.awaitingResult';
-  if (!status.stateConfirmed) return 'status.confirming';
+  if (!status.stateConfirmed) {
+    return status.readFailed ? 'status.readFailed' : 'status.confirming';
+  }
 
   switch (status.enablement) {
     case 'off':
@@ -171,7 +187,9 @@ export function contactsStatusCopyKey(
         ? 'errors.resultUnknown'
         : 'status.enableUncertain';
     case 'disable_uncertain':
-      return 'status.disableUncertain';
+      return status.errorKey === 'epochMismatch'
+        ? 'errors.epochMismatch'
+        : 'status.disableUncertain';
     case 'enabled':
       break;
   }

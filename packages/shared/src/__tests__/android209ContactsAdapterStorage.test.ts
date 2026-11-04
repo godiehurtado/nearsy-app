@@ -667,25 +667,6 @@ describe('Android adapter on the contract of Identity #27', () => {
       assert.equal(env.reevaluations, 1, 'owed from the lost reply');
     });
 
-    it('a toggle during an unresolved disable fences it, and enable carries the new epoch', async () => {
-      await readAccount();
-      await adapter.enableThenSyncContacts();
-      env.respond = (name, data) => {
-        if (name === DISABLE) {
-          throw Object.assign(new Error('network'), { code: 'functions/unavailable' });
-        }
-        return respondAsIdentity(name, data);
-      };
-      await adapter.disableContactsIntegration();
-      env.respond = respondAsIdentity;
-      env.calls.length = 0;
-      assert.equal((await adapter.enableThenSyncContacts()).status, 'ok');
-      assert.deepEqual(
-        env.calls.map((c) => c.name),
-        [DISABLE, ENABLE, SYNC],
-      );
-      assert.deepEqual(callsNamed(ENABLE)[0].data, { contactsEpoch: 1 });
-    });
   });
 
   describe('Turning off during an operation', () => {
@@ -796,6 +777,304 @@ describe('Android adapter on the contract of Identity #27', () => {
       env.reevaluations = 0;
       await adapter.disableContactsIntegration();
       assert.equal(env.reevaluations, 1);
+    });
+  });
+
+  describe('A pending disable across restarts', () => {
+    const network = () =>
+      Object.assign(new Error('network'), { code: 'functions/unavailable' });
+    /** Same account, new process: what is on the device is all that remains. */
+    function restart() {
+      env.authListener?.(null);
+      env.authListener?.({ uid: UID });
+    }
+    async function enabledThenLostDisable(commit: boolean) {
+      await readAccount();
+      await adapter.enableThenSyncContacts();
+      env.respond = (name, data) => {
+        if (name !== DISABLE) return respondAsIdentity(name, data);
+        if (commit) void respondAsIdentity(name, data);
+        throw network();
+      };
+      assert.equal((await adapter.disableContactsIntegration()).status, 'uncertain');
+      await later();
+      env.respond = respondAsIdentity;
+      env.calls.length = 0;
+    }
+
+    it('is on the device, per account, before anything is sent', async () => {
+      await readAccount();
+      await adapter.enableThenSyncContacts();
+      await later();
+      let atSend: any = null;
+      env.respond = (name, data) => {
+        if (name === DISABLE) atSend = saved(UID);
+        return respondAsIdentity(name, data);
+      };
+      await adapter.disableContactsIntegration();
+      assert.equal(atSend.uncertainOp, 'disable');
+      assert.equal(atSend.userConsent, false);
+      assert.equal(atSend.pendingUpload, null);
+    });
+
+    it('survives a failure before sending too', async () => {
+      await readAccount();
+      await adapter.enableThenSyncContacts();
+      env.appCheck = 'error';
+      await adapter.disableContactsIntegration();
+      await later();
+      assert.equal(saved(UID).uncertainOp, 'disable');
+      assert.equal(env.calls.filter((c) => c.name === DISABLE).length, 0);
+    });
+
+    it('after a restart it blocks enable and sync, and is not shown as done', async () => {
+      await enabledThenLostDisable(false);
+      restart();
+      await readAccount();
+      await later();
+      const shown = status();
+      assert.equal(shown.enablement, 'disable_uncertain');
+      assert.equal(shown.consent, false);
+      assert.equal(adapter.contactsStatusCopyKey(shown), 'status.disableUncertain');
+      assert.equal((await adapter.enableThenSyncContacts()).status, 'not_ready');
+      assert.equal(env.calls.length, 0, 'not even a resend');
+    });
+
+    it('if the server is already off, the read completes it', async () => {
+      await enabledThenLostDisable(true);
+      restart();
+      await readAccount();
+      await later();
+      assert.equal(status().enablement, 'off');
+      assert.equal(saved(UID).uncertainOp, null);
+      assert.equal(env.calls.length, 0);
+      assert.ok(env.reevaluations >= 1, 'owed from the lost reply');
+    });
+
+    it('if the server is on, it waits for an explicit retry and sends nothing by itself', async () => {
+      await enabledThenLostDisable(false);
+      restart();
+      await readAccount();
+      await later();
+      assert.equal(env.calls.length, 0);
+      assert.equal(account(UID).enabled, true);
+      assert.equal(adapter.contactsCanRetry(status()), true);
+      assert.equal((await adapter.retryContactsSync()).status, 'ok');
+      assert.equal(account(UID).enabled, false);
+      assert.equal(status().enablement, 'off');
+    });
+
+    it('on at a later epoch may be a new activation: it reads and stops', async () => {
+      await enabledThenLostDisable(true);
+      // Another device turned it back on: the lost disable did land before that.
+      const identity = account(UID);
+      identity.enabled = true;
+      identity.epoch = 4;
+      env.calls.length = 0;
+      assert.equal((await adapter.retryContactsSync()).status, 'failed');
+      assert.deepEqual(
+        env.calls.map((c) => c.name),
+        [DISABLE, REFRESH],
+      );
+      assert.equal(identity.enabled, true, 'that activation is untouched');
+      const shown = status();
+      assert.equal(shown.enablement, 'disable_uncertain');
+      assert.equal(adapter.contactsStatusCopyKey(shown), 'errors.epochMismatch');
+      await later();
+      assert.equal(saved(UID).contactsEpoch, 4);
+      assert.equal(saved(UID).uncertainOp, 'disable');
+
+      // The user sees it and asks again: now it applies, at the epoch just read.
+      env.calls.length = 0;
+      assert.equal((await adapter.retryContactsSync()).status, 'ok');
+      assert.deepEqual(env.calls.map((c) => c.name), [DISABLE]);
+      assert.equal(env.calls[0].data.contactsEpoch, 4);
+      assert.equal(identity.enabled, false);
+    });
+
+    it('a read at a later epoch that is still on does not send a disable either', async () => {
+      await enabledThenLostDisable(true);
+      const identity = account(UID);
+      identity.enabled = true;
+      identity.epoch = 4;
+      restart();
+      await readAccount();
+      await later();
+      assert.equal(env.calls.length, 0);
+      assert.equal(status().enablement, 'disable_uncertain');
+      assert.equal(identity.enabled, true);
+    });
+
+    it('a cached off at the same epoch does not declare it done', async () => {
+      await enabledThenLostDisable(false);
+      restart();
+      await adapter.bindContactsUserDoc(UID, {
+        contactsSyncEnabled: false,
+        contactsEpoch: 0,
+      });
+      assert.equal(status().enablement, 'disable_uncertain');
+    });
+
+    it('belongs to its account', async () => {
+      await enabledThenLostDisable(false);
+      env.uid = 'uid-b';
+      env.authListener?.({ uid: 'uid-b' });
+      await adapter.bindContactsUserDoc('uid-b', account('uid-b').userDoc());
+      assert.equal(status().enablement, 'off');
+      assert.equal((await adapter.enableThenSyncContacts()).status, 'ok');
+      assert.equal(account(UID).enabled, true);
+    });
+  });
+
+  describe('Sync after a mismatch', () => {
+    /** Enabled with a pending upload, and the epoch moved on by another install. */
+    async function pendingBehindLiveEpoch() {
+      await readAccount();
+      env.respond = (name, data) => {
+        if (name === SYNC) throw identityRejects('contacts-rate-limited');
+        return respondAsIdentity(name, data);
+      };
+      await adapter.enableThenSyncContacts();
+      account(UID).epoch = 5;
+      env.calls.length = 0;
+      let answer: (v: unknown) => void = () => {};
+      env.respond = (name, data) => {
+        if (name !== REFRESH) return respondAsIdentity(name, data);
+        return new Promise((done) => {
+          answer = () => done(account(UID).wire({ result: 'refreshed' }));
+        });
+      };
+      const retry = adapter.retryContactsSync();
+      await later();
+      assert.equal(callsNamed(REFRESH).length, 1);
+      return { retry, answer: () => answer(undefined) };
+    }
+    const syncsAfterMismatch = () => callsNamed(SYNC).length - 1;
+
+    it('goes out once when everything is still in force', async () => {
+      const { retry, answer } = await pendingBehindLiveEpoch();
+      answer();
+      assert.equal((await retry).status, 'ok');
+      assert.equal(syncsAfterMismatch(), 1);
+    });
+
+    it('not after turning off', async () => {
+      const { retry, answer } = await pendingBehindLiveEpoch();
+      env.respond = respondAsIdentity;
+      await adapter.disableContactsIntegration();
+      answer();
+      assert.equal((await retry).status, 'cancelled');
+      assert.equal(syncsAfterMismatch(), 0);
+      assert.equal(status().consent, false);
+    });
+
+    it('not after signing out', async () => {
+      const { retry, answer } = await pendingBehindLiveEpoch();
+      env.uid = null;
+      env.authListener?.(null);
+      answer();
+      assert.equal((await retry).status, 'stale');
+      assert.equal(syncsAfterMismatch(), 0);
+    });
+
+    it('not under another account', async () => {
+      const { retry, answer } = await pendingBehindLiveEpoch();
+      env.uid = 'uid-b';
+      env.authListener?.({ uid: 'uid-b' });
+      answer();
+      assert.equal((await retry).status, 'stale');
+      assert.equal(syncsAfterMismatch(), 0);
+      assert.equal(env.calls.filter((c) => c.uid === 'uid-b').length, 0);
+    });
+
+    it('not if the OS permission went away, and nothing is withdrawn or prompted', async () => {
+      const { retry, answer } = await pendingBehindLiveEpoch();
+      env.permission = 'denied';
+      answer();
+      assert.equal((await retry).status, 'failed');
+      assert.equal(syncsAfterMismatch(), 0);
+      assert.equal(callsNamed(REMOVE).length, 0);
+      assert.equal(status().snapshot, 'pending');
+    });
+
+    it('the automatic resend does not re-enable and stops on off', async () => {
+      env.respond = (name, data) => {
+        if (name === SYNC) {
+          throw Object.assign(new Error('network'), { code: 'functions/unavailable' });
+        }
+        return respondAsIdentity(name, data);
+      };
+      await readAccount();
+      await adapter.enableThenSyncContacts();
+      env.respond = respondAsIdentity;
+      const identity = account(UID);
+      identity.enabled = false;
+      identity.epoch = 5;
+      env.authListener?.(null);
+      env.authListener?.({ uid: UID });
+      env.calls.length = 0;
+      await adapter.bindContactsUserDoc(UID, { contactsSyncEnabled: true, contactsEpoch: 0 });
+      await later();
+      assert.equal(callsNamed(ENABLE).length, 0);
+      assert.equal(identity.enabled, false);
+      assert.equal(status().enablement, 'off');
+    });
+  });
+
+  describe('The first read fails', () => {
+    it('offers only a read again, and keeps everything else locked', async () => {
+      adapter.expectContactsUserDocRead(UID);
+      assert.equal(adapter.contactsStatusCopyKey(status()), 'status.confirming');
+      assert.equal(adapter.contactsCanRetryRead(status()), false);
+
+      adapter.reportContactsUserDocReadFailed(UID);
+      const failed = status();
+      assert.equal(adapter.contactsStatusCopyKey(failed), 'status.readFailed');
+      assert.equal(adapter.contactsCanRetryRead(failed), true);
+      assert.equal(adapter.contactsCanRetry(failed), false);
+      assert.equal(adapter.contactsToggleLocked(failed), true);
+      assert.equal((await adapter.enableThenSyncContacts()).status, 'not_ready');
+      assert.equal((await adapter.retryContactsSync()).status, 'not_ready');
+      assert.equal((await adapter.disableContactsIntegration()).status, 'not_ready');
+      assert.equal(env.calls.length, 0);
+    });
+
+    it('reading again recovers, and sends and prompts nothing', async () => {
+      adapter.reportContactsUserDocReadFailed(UID);
+      adapter.expectContactsUserDocRead(UID);
+      assert.equal(adapter.contactsStatusCopyKey(status()), 'status.confirming');
+      await adapter.bindContactsUserDoc(UID, account(UID).userDoc(), { readOnly: true });
+      await later();
+      assert.equal(status().stateConfirmed, true);
+      assert.equal(status().readFailed, false);
+      assert.equal(env.calls.length, 0);
+    });
+
+    it('that read does not resend an upload, even if one is owed', async () => {
+      env.respond = (name, data) => {
+        if (name === SYNC) {
+          throw Object.assign(new Error('network'), { code: 'functions/unavailable' });
+        }
+        return respondAsIdentity(name, data);
+      };
+      await readAccount();
+      await adapter.enableThenSyncContacts();
+      env.respond = respondAsIdentity;
+      env.authListener?.(null);
+      env.authListener?.({ uid: UID });
+      env.calls.length = 0;
+      adapter.reportContactsUserDocReadFailed(UID);
+      await adapter.bindContactsUserDoc(UID, account(UID).userDoc(), { readOnly: true });
+      await later();
+      assert.equal(env.calls.length, 0);
+      assert.equal(status().snapshot, 'uncertain');
+    });
+
+    it('a late read that succeeds still applies', async () => {
+      adapter.reportContactsUserDocReadFailed(UID);
+      await readAccount();
+      assert.equal(status().stateConfirmed, true);
+      assert.equal(adapter.contactsCanRetryRead(status()), false);
     });
   });
 

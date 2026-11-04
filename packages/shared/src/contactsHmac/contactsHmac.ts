@@ -25,6 +25,7 @@ export {
 } from './contactsHmacCore.ts';
 export {
   contactsCanRetry,
+  contactsCanRetryRead,
   contactsOperationInFlight,
   contactsStatusCopyKey,
   contactsToggleLocked,
@@ -64,7 +65,12 @@ export function subscribeContactsSyncStatus(
 export async function bindContactsUserDoc(
   _uid: string,
   _doc: ContactsUserDocFacts,
+  _options?: { readOnly?: boolean },
 ): Promise<void> {}
+
+export function expectContactsUserDocRead(_uid: string): void {}
+
+export function reportContactsUserDocReadFailed(_uid: string): void {}
 
 export function enableThenSyncContacts(): Promise<ContactsOpResult> {
   return unavailable();
