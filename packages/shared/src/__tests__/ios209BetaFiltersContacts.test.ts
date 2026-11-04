@@ -112,8 +112,8 @@ describe('Alignment ring + social modal polish (beta)', () => {
       assert.match(src, /instagram\.stepPaste/);
       assert.match(src, /instagram\.stepReturn/);
     }
-    // CRJ and editor share the manual-link card: Add / Edit / Remove +
-    // "Link saved", never Connect/Disconnect (behaviour: ios209SocialParity).
+    // CRJ and editor share the manual-link card: Connect / Edit / Disconnect +
+    // "Link saved" status, rendered by the card (behaviour: ios209SocialParity).
     const crj = readShared('components/registration/OnboardingSocialMediaStep.tsx');
     const card = readShared('components/social/ManualSocialLinkCard.tsx');
     const cardState = readShared('social/manualSocialLinkCard.ts');
@@ -124,7 +124,7 @@ describe('Alignment ring + social modal polish (beta)', () => {
     // "Other network" is out of the CRJ scope (data/schema untouched).
     assert.doesNotMatch(crj, /socialMedia\.other|onChangeCustom\(/);
     assert.match(cardState, /profile\.social\.linkSaved/);
-    assert.match(card, /profile\.social\.removeLink'/);
+    assert.match(card, /profile\.social\.disconnect'/);
     assert.match(editor, /openInboxA11y/);
   });
 });

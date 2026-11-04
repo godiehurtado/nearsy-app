@@ -1305,12 +1305,8 @@ const es: TranslationResources = {
       back: 'Volver',
       backToProfileA11y: 'Volver al perfil',
       noLinkSaved: 'Sin enlace',
-      addLink: 'Añadir enlace',
       editLink: 'Editar',
-      removeLink: 'Quitar',
-      addLinkA11y: 'Añadir enlace de {{platform}}',
       editLinkA11y: 'Editar enlace de {{platform}}',
-      removeLinkA11y: 'Quitar enlace de {{platform}}',
       notConnected: 'Sin conectar',
       connect: 'Conectar',
       disconnect: 'Desconectar',
@@ -1385,7 +1381,7 @@ const es: TranslationResources = {
         discard: 'Descartar',
       },
       youtube: {
-        connect: 'Conectar YouTube',
+        connect: 'Conectar',
         connectA11y: 'Conectar un canal de YouTube para este perfil',
         connecting: 'Conectando…',
         disconnect: 'Desconectar',
@@ -1422,7 +1418,7 @@ const es: TranslationResources = {
         },
       },
       tiktok: {
-        connect: 'Conectar TikTok',
+        connect: 'Conectar',
         connectA11y: 'Conectar una cuenta de TikTok para este perfil',
         connecting: 'Conectando…',
         disconnect: 'Desconectar',
@@ -1454,7 +1450,7 @@ const es: TranslationResources = {
         },
       },
       instagram: {
-        connect: 'Conectar Instagram',
+        connect: 'Conectar',
         connectA11y: 'Conectar una cuenta de Instagram para este perfil',
         connecting: 'Conectando…',
         disconnect: 'Desconectar',
@@ -1496,7 +1492,7 @@ const es: TranslationResources = {
         },
       },
       x: {
-        connect: 'Conectar X',
+        connect: 'Conectar',
         connectA11y: 'Conectar una cuenta de X para este perfil',
         connecting: 'Conectando…',
         disconnect: 'Desconectar',

@@ -33,18 +33,18 @@ function lookup(tree: unknown, key: string): unknown {
 }
 
 describe('Manual link card state (CRJ and editor)', () => {
-  it('empty or blank URL: No link saved + Add link, no Remove', () => {
+  it('empty or blank URL: No link saved + Connect, no Disconnect', () => {
     for (const url of ['', '   ', null, undefined]) {
       const s = manualSocialLinkCardState(url);
       assert.equal(s.saved, false);
       assert.equal(s.statusKey, 'profile.social.noLinkSaved');
-      assert.equal(s.primary.labelKey, 'profile.social.addLink');
-      assert.equal(s.primary.a11yKey, 'profile.social.addLinkA11y');
+      assert.equal(s.primary.labelKey, 'profile.social.connect');
+      assert.equal(s.primary.a11yKey, 'profile.social.connectA11y');
       assert.equal(s.showRemove, false);
     }
   });
 
-  it('saved URL: Link saved + Edit + Remove (never a verification state)', () => {
+  it('saved URL: Link saved + Edit + Disconnect (never a verification state)', () => {
     const s = manualSocialLinkCardState('https://www.linkedin.com/in/someone');
     assert.equal(s.saved, true);
     assert.equal(s.statusKey, 'profile.social.linkSaved');
@@ -117,16 +117,63 @@ describe('Editor manual links persist on each operation (no Save/Back)', () => {
   });
 });
 
+describe('Standard Connect/Disconnect button copy', () => {
+  const VERIFIED = ['youtube', 'tiktok', 'instagram', 'x'] as const;
+  const NAMES = { youtube: 'YouTube', tiktok: 'TikTok', instagram: 'Instagram', x: 'X' };
+
+  it('verified networks: visible label has no network name, a11y keeps it', () => {
+    for (const id of VERIFIED) {
+      assert.equal(lookup(enProfile, `social.${id}.connect`), 'Connect');
+      assert.equal(lookup(enProfile, `social.${id}.disconnect`), 'Disconnect');
+      assert.equal(lookup(es, `profile.social.${id}.connect`), 'Conectar');
+      assert.equal(lookup(es, `profile.social.${id}.disconnect`), 'Desconectar');
+      for (const key of ['connectA11y', 'disconnectA11y']) {
+        assert.match(String(lookup(enProfile, `social.${id}.${key}`)), new RegExp(NAMES[id]));
+        assert.match(String(lookup(es, `profile.social.${id}.${key}`)), new RegExp(NAMES[id]));
+      }
+    }
+  });
+
+  it('manual cards: Connect / Disconnect, Edit is kept, a11y names the network', () => {
+    assert.equal(lookup(enProfile, 'social.connect'), 'Connect');
+    assert.equal(lookup(enProfile, 'social.disconnect'), 'Disconnect');
+    assert.equal(lookup(enProfile, 'social.editLink'), 'Edit');
+    assert.equal(lookup(es, 'profile.social.connect'), 'Conectar');
+    assert.equal(lookup(es, 'profile.social.disconnect'), 'Desconectar');
+    assert.equal(lookup(es, 'profile.social.editLink'), 'Editar');
+    assert.equal(lookup(enProfile, 'social.connectA11y'), 'Connect {{platform}}');
+    assert.equal(lookup(enProfile, 'social.disconnectA11y'), 'Disconnect {{platform}}');
+    assert.equal(lookup(es, 'profile.social.connectA11y'), 'Conectar {{platform}}');
+    assert.equal(lookup(es, 'profile.social.disconnectA11y'), 'Desconectar {{platform}}');
+  });
+
+  it('out-of-scope copy is unchanged: status, transient, retry, modal titles', () => {
+    assert.equal(lookup(enProfile, 'social.linkSaved'), 'Link saved');
+    assert.equal(lookup(es, 'profile.social.linkSaved'), 'Enlace guardado');
+    for (const id of VERIFIED) {
+      assert.equal(lookup(enProfile, `social.${id}.connected`), 'Connected');
+      assert.equal(lookup(enProfile, `social.${id}.connecting`), 'Connecting…');
+      assert.equal(lookup(enProfile, `social.${id}.retry`), 'Try again');
+      assert.equal(lookup(es, `profile.social.${id}.connecting`), 'Conectando…');
+      assert.equal(lookup(es, `profile.social.${id}.retry`), 'Reintentar');
+      assert.equal(lookup(enProfile, `social.connectModal.${id}.title`), `Connect ${NAMES[id]}`);
+      assert.equal(lookup(es, `profile.social.connectModal.${id}.title`), `Conectar ${NAMES[id]}`);
+    }
+    assert.equal(lookup(enProfile, 'social.saveLink'), 'Save link');
+    assert.equal(lookup(es, 'profile.social.saveLink'), 'Guardar enlace');
+  });
+});
+
 describe('EN/ES copy for cards and Back', () => {
   const keys = [
     'linkSaved',
     'noLinkSaved',
-    'addLink',
+    'connect',
     'editLink',
-    'removeLink',
-    'addLinkA11y',
+    'disconnect',
+    'connectA11y',
     'editLinkA11y',
-    'removeLinkA11y',
+    'disconnectA11y',
     'back',
     'backToProfileA11y',
   ];
@@ -141,7 +188,7 @@ describe('EN/ES copy for cards and Back', () => {
   it('Back is "Back" / "Volver" and a11y names the platform', () => {
     assert.equal(lookup(enProfile, 'social.back'), 'Back');
     assert.equal(lookup(es, 'profile.social.back'), 'Volver');
-    for (const key of ['addLinkA11y', 'editLinkA11y', 'removeLinkA11y']) {
+    for (const key of ['connectA11y', 'editLinkA11y', 'disconnectA11y']) {
       assert.match(String(lookup(enProfile, `social.${key}`)), /\{\{platform\}\}/);
       assert.match(String(lookup(es, `profile.social.${key}`)), /\{\{platform\}\}/);
     }

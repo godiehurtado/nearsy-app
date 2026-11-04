@@ -19,12 +19,12 @@ export type ManualSocialLinkCardState = {
   saved: boolean;
   /** i18n key for the status line under the network name. */
   statusKey: 'profile.social.linkSaved' | 'profile.social.noLinkSaved';
-  /** Blue pill: Add link when empty, Edit when saved (both open the sheet). */
+  /** Blue pill: Connect when empty, Edit when saved (both open the sheet). */
   primary: {
-    labelKey: 'profile.social.addLink' | 'profile.social.editLink';
-    a11yKey: 'profile.social.addLinkA11y' | 'profile.social.editLinkA11y';
+    labelKey: 'profile.social.connect' | 'profile.social.editLink';
+    a11yKey: 'profile.social.connectA11y' | 'profile.social.editLinkA11y';
   };
-  /** Remove is offered only for a saved link. */
+  /** Disconnect (removes the link) is offered only for a saved link. */
   showRemove: boolean;
 };
 
@@ -37,7 +37,7 @@ export function manualSocialLinkCardState(
     statusKey: saved ? 'profile.social.linkSaved' : 'profile.social.noLinkSaved',
     primary: saved
       ? { labelKey: 'profile.social.editLink', a11yKey: 'profile.social.editLinkA11y' }
-      : { labelKey: 'profile.social.addLink', a11yKey: 'profile.social.addLinkA11y' },
+      : { labelKey: 'profile.social.connect', a11yKey: 'profile.social.connectA11y' },
     showRemove: saved,
   };
 }

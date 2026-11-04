@@ -212,12 +212,8 @@ export default {
     back: 'Back',
     backToProfileA11y: 'Back to profile',
     noLinkSaved: 'No link saved',
-    addLink: 'Add link',
     editLink: 'Edit',
-    removeLink: 'Remove',
-    addLinkA11y: 'Add {{platform}} link',
     editLinkA11y: 'Edit {{platform}} link',
-    removeLinkA11y: 'Remove {{platform}} link',
     notConnected: 'Not connected',
     connect: 'Connect',
     disconnect: 'Disconnect',
@@ -291,7 +287,7 @@ export default {
       discard: 'Discard',
     },
     youtube: {
-      connect: 'Connect YouTube',
+      connect: 'Connect',
       connectA11y: 'Connect a YouTube channel for this profile',
       connecting: 'Connecting…',
       disconnect: 'Disconnect',
@@ -326,7 +322,7 @@ export default {
       },
     },
     tiktok: {
-      connect: 'Connect TikTok',
+      connect: 'Connect',
       connectA11y: 'Connect a TikTok account for this profile',
       connecting: 'Connecting…',
       disconnect: 'Disconnect',
@@ -357,7 +353,7 @@ export default {
       },
     },
     instagram: {
-      connect: 'Connect Instagram',
+      connect: 'Connect',
       connectA11y: 'Connect an Instagram account for this profile',
       connecting: 'Connecting…',
       disconnect: 'Disconnect',
@@ -398,7 +394,7 @@ export default {
       },
     },
     x: {
-      connect: 'Connect X',
+      connect: 'Connect',
       connectA11y: 'Connect an X account for this profile',
       connecting: 'Connecting…',
       disconnect: 'Disconnect',

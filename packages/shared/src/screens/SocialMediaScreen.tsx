@@ -2375,7 +2375,7 @@ export default function SocialMediaScreen() {
                 card.id === 'website'
                   ? draft.website
                   : draft.values[card.id as CrjSocialPlatformId];
-              // Same card/state/actions as the CRJ: Add link / Edit open the
+              // Same card/state/actions as the CRJ: Connect / Edit open the
               // sheet (saved immediately), Remove persists immediately.
               return (
                 <ManualSocialLinkCard

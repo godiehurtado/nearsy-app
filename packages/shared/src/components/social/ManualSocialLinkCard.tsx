@@ -2,7 +2,7 @@
  * Facebook / LinkedIn / Website card shared by the CRJ and the post-CRJ social
  * editor. Same visual as the verified-network cards (large glyph, name, status,
  * rounded blue button) but the status is "Link saved" — never a verification
- * badge. Add/Edit open the caller's sheet; Remove is immediate.
+ * badge. Connect/Edit open the caller's sheet; Disconnect removes it immediately.
  */
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -128,7 +128,7 @@ export function ManualSocialLinkCard({
           </Text>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t('profile.social.removeLinkA11y', {
+            accessibilityLabel={t('profile.social.disconnectA11y', {
               platform: label,
             })}
             accessibilityState={{ disabled: busy }}
@@ -142,7 +142,7 @@ export function ManualSocialLinkCard({
             ]}
           >
             <Text style={[styles.pillText, { color: palette.danger }]}>
-              {t('profile.social.removeLink')}
+              {t('profile.social.disconnect')}
             </Text>
           </Pressable>
         </View>
