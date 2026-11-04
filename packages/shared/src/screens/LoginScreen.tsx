@@ -14,6 +14,7 @@ import {
   Alert,
   Modal,
   Keyboard,
+  Linking,
   ActivityIndicator,
   StatusBar,
   type NativeSyntheticEvent,
@@ -29,6 +30,7 @@ import {
 } from '../services/firestoreService';
 import { clearPendingSocialProfilePrefill } from '../authentication/social';
 import { useTranslation } from '../i18n';
+import { PRIVACY_POLICY_URL } from '../constants/legalLinks';
 import { authGradients, authRadius, authTypography } from '../theme/authTokens';
 import { useAppTheme } from '../theme/ThemeContext';
 import { LoginHero } from '../components/LoginHero';
@@ -582,7 +584,13 @@ export default function LoginScreen({ navigation }: any) {
                 {t('authentication.login.termsLink')}
               </Text>{' '}
               {t('authentication.login.termsAnd')}{' '}
-              <Text style={{ color: palette.chipText }}>
+              <Text
+                style={{ color: palette.chipText }}
+                accessibilityRole="link"
+                onPress={() => {
+                  void Linking.openURL(PRIVACY_POLICY_URL).catch(() => {});
+                }}
+              >
                 {t('authentication.login.privacyLink')}
               </Text>
               .

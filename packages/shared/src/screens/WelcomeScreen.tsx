@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Linking,
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +22,7 @@ import { useAppTheme } from '../theme/ThemeContext';
 import { fontWeight } from '../theme/typography';
 import { radius } from '../theme/radius';
 import { useTranslation } from '../i18n';
+import { PRIVACY_POLICY_URL } from '../constants/legalLinks';
 import { useGoogleSignInFlow } from '../hooks/useGoogleSignInFlow';
 import { useLinkedInSignInFlow } from '../hooks/useLinkedInSignInFlow';
 import { useFacebookSignInFlow } from '../hooks/useFacebookSignInFlow';
@@ -183,7 +185,13 @@ export default function WelcomeScreen({ navigation }: Props) {
               {t('authentication.login.termsLink')}
             </Text>{' '}
             {t('authentication.login.termsAnd')}{' '}
-            <Text style={{ color: palette.chipText }}>
+            <Text
+              style={{ color: palette.chipText }}
+              accessibilityRole="link"
+              onPress={() => {
+                void Linking.openURL(PRIVACY_POLICY_URL).catch(() => {});
+              }}
+            >
               {t('authentication.login.privacyLink')}
             </Text>
             .

@@ -411,7 +411,7 @@ export const es: TranslationResources = {
         'Nearsy necesita acceso a la ubicación en segundo plano para permanecer visible cuando la app no está abierta. Actívalo en Ajustes del sistema.',
       fgsNotificationTitle: 'Nearsy está actualizando tu ubicación',
       fgsNotificationBody:
-        'La ubicación puede actualizarse en segundo plano mientras Visibility esté activa',
+        'La ubicación puede actualizarse en segundo plano mientras Visibilidad esté activa',
       approximateTitle: 'Se necesita ubicación precisa',
       approximateMessage:
         'Nearsy necesita ubicación precisa para un radio cercano de unos 200 ft. Elige Precisa para Nearsy en Ajustes del sistema.',
@@ -422,12 +422,12 @@ export const es: TranslationResources = {
         full: {
           title: 'Mantente visible cerca',
           body:
-            'Nearsy recopila datos de ubicación para habilitar el descubrimiento cercano mientras Visibility esté activa, incluso cuando la app esté cerrada o no se use. La ubicación se envía de forma segura a Nearsy para que personas realmente cercanas te encuentren. No se usa ubicación en segundo plano con Visibility desactivada.',
+            'Nearsy recopila datos de ubicación para habilitar el descubrimiento cercano mientras Visibilidad esté activa, incluso cuando la app esté cerrada o no se use. La ubicación se envía de forma segura a Nearsy para que personas realmente cercanas te encuentren. No se usa ubicación en segundo plano con Visibilidad desactivada.',
         },
         brief: {
           title: '¿Activar ubicación en segundo plano?',
           body:
-            'Nearsy recopila datos de ubicación en segundo plano mientras Visibility esté activa, incluso cuando la app esté cerrada o no se use, para que sigas siendo visible cerca. Puedes desactivarlo en cualquier momento en Más.',
+            'Nearsy recopila datos de ubicación en segundo plano mientras Visibilidad esté activa, incluso cuando la app esté cerrada o no se use, para que sigas siendo visible cerca. Puedes desactivarlo en cualquier momento en Más.',
         },
         settingsHint:
           'Para permanecer visible con Nearsy cerrada, elige Permitir todo el tiempo en Ajustes del sistema.',
@@ -441,12 +441,12 @@ export const es: TranslationResources = {
       disclosure: {
         fullTitle: 'Mantente visible cerca',
         fullBody:
-          'Nearsy recopila datos de ubicación para habilitar el descubrimiento cercano mientras Visibility esté activa, incluso cuando la app esté cerrada o no se use. La ubicación se envía de forma segura a Nearsy para que personas realmente cercanas te encuentren. No se usa ubicación en segundo plano con Visibility desactivada.',
+          'Nearsy recopila datos de ubicación para habilitar el descubrimiento cercano mientras Visibilidad esté activa, incluso cuando la app esté cerrada o no se use. La ubicación se envía de forma segura a Nearsy para que personas realmente cercanas te encuentren. No se usa ubicación en segundo plano con Visibilidad desactivada.',
         briefTitle: '¿Activar ubicación en segundo plano?',
         briefBody:
-          'Nearsy recopila datos de ubicación en segundo plano mientras Visibility esté activa, incluso cuando la app esté cerrada o no se use, para que sigas siendo visible cerca. Puedes desactivarlo en cualquier momento en Más.',
+          'Nearsy recopila datos de ubicación en segundo plano mientras Visibilidad esté activa, incluso cuando la app esté cerrada o no se use, para que sigas siendo visible cerca. Puedes desactivarlo en cualquier momento en Más.',
         bulletVisibility:
-          'No se usa ubicación en segundo plano con Visibility desactivada.',
+          'No se usa ubicación en segundo plano con Visibilidad desactivada.',
         bulletNearby:
           'Ayuda a limitar los encuentros a personas que están realmente cerca.',
         bulletControl:

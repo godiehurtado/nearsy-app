@@ -64,6 +64,7 @@ import {
 import { registerWithEmail } from '../services/authService';
 import { createUserProfile } from '../services/firestoreService';
 import { useTranslation } from '../i18n';
+import { PRIVACY_POLICY_URL } from '../constants/legalLinks';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
 
@@ -571,6 +572,16 @@ export default function RegisterScreen({ navigation }: Props) {
                     }}
                   >
                     {t('authentication.register.termsLink')}
+                  </Text>{' '}
+                  {t('authentication.register.privacyAnd')}{' '}
+                  <Text
+                    style={[styles.termsLink, { color: palette.primary }]}
+                    accessibilityRole="link"
+                    onPress={() => {
+                      void Linking.openURL(PRIVACY_POLICY_URL).catch(() => {});
+                    }}
+                  >
+                    {t('authentication.register.privacyLink')}
                   </Text>
                   .
                 </Text>
