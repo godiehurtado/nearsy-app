@@ -45,6 +45,8 @@ import { decideContactsPermissionAction } from './syncPolicy';
 import type { ContactsWireResult } from './wireTypes';
 
 export const CONTACTS_OP_SKIPPED_REASON = 'contacts-op-skipped';
+/** A turn-off the server has not confirmed. Only an explicit retry resends it. */
+export const CONTACTS_DISABLE_PENDING_REASON = 'contacts-disable-pending';
 
 /** Bounded in-operation attempts for turning off; then the user can retry. */
 export const CONTACTS_DISABLE_MAX_ATTEMPTS = 3;
@@ -167,6 +169,56 @@ function refreshLiveState(
   );
 }
 
+async function setDisablePending(
+  ports: Pick<ContactsControllerPorts, 'session'>,
+  disablePending: boolean,
+): Promise<void> {
+  await ports.session.update((current) => ({
+    sourceId: null,
+    contactsEpoch: null,
+    snapshotVersion: null,
+    fingerprint: null,
+    ...current,
+    disablePending,
+  }));
+}
+
+/**
+ * Reads the state for an unresolved turn-off, once. Off completes it. On stays
+ * pending: a later epoch may be a new activation from another device, so this
+ * never sends a disable by itself.
+ */
+async function readPendingDisable(
+  ports: ContactsControllerPorts,
+): Promise<{ failure: ContactsFailure } | { live: ContactsWireResult | null }> {
+  const session = await ports.session.load();
+  if (!session?.disablePending) return { live: null };
+  let live: ContactsWireResult;
+  try {
+    live = await refreshLiveState(ports);
+  } catch {
+    return { failure: fail(CONTACTS_DISABLE_PENDING_REASON) };
+  }
+  if (isCancelled(ports)) return { failure: skipped() };
+  if (live.contactsSyncEnabled) {
+    return { failure: fail(CONTACTS_DISABLE_PENDING_REASON, live) };
+  }
+  await setDisablePending(ports, false);
+  return { live };
+}
+
+/** Recovers a turn-off left unfinished by an earlier run of the app. */
+export async function reconcilePendingDisable(
+  ports: ContactsControllerPorts,
+): Promise<ContactsControllerOutcome> {
+  if (isCancelled(ports)) return skipped();
+  const read = await readPendingDisable(ports);
+  if ('failure' in read) return read.failure;
+  return read.live
+    ? { ok: true, result: read.live, bookSynced: false }
+    : skipped();
+}
+
 type KnownEpoch = { epoch: number; live?: ContactsWireResult };
 
 /** Stored epoch, or one refresh when this install has none (§14.1). */
@@ -181,6 +233,8 @@ export async function enableAndSyncContacts(
   ports: ContactsControllerPorts,
 ): Promise<ContactsControllerOutcome> {
   if (isCancelled(ports)) return skipped();
+  const pendingDisable = await readPendingDisable(ports);
+  if ('failure' in pendingDisable) return pendingDisable.failure;
   let permission = await ports.book.getPermission();
   if (decideContactsPermissionAction(permission) === 'request') {
     permission = await ports.book.requestPermission();
@@ -203,6 +257,7 @@ export async function enableAndSyncContacts(
     );
   } catch (err) {
     const reason = failReason(err);
+    if (isCancelled(ports)) return skipped();
     if (!isEpochRejection(reason) || refreshed) return fail(reason);
     let live: ContactsWireResult;
     try {
@@ -233,6 +288,9 @@ export async function syncGrantedAddressBook(
   ports: ContactsControllerPorts,
 ): Promise<ContactsControllerOutcome> {
   if (isCancelled(ports)) return skipped();
+  const pendingDisable = await readPendingDisable(ports);
+  if ('failure' in pendingDisable) return pendingDisable.failure;
+  if (pendingDisable.live) return fail('contacts-not-enabled', pendingDisable.live);
   const permission = await ports.book.getPermission();
   if (decideContactsPermissionAction(permission) !== 'sync') {
     return withdrawContactSource(ports);
@@ -308,6 +366,8 @@ async function uploadSnapshot(
     };
   } catch (err) {
     const reason = failReason(err);
+    // An old answer cannot bring back an intent that was cancelled meanwhile.
+    if (isCancelled(ports)) return skipped();
     if (reason === 'contacts-epoch-mismatch') {
       if (refreshedHere) return fail(reason);
       let live: ContactsWireResult;
@@ -318,6 +378,15 @@ async function uploadSnapshot(
       }
       if (isCancelled(ports)) return skipped();
       if (!live.contactsSyncEnabled) return fail('contacts-not-enabled', live);
+      // Uploading again needs the same intent still valid: no turn-off pending
+      // and OS access still granted, read without prompting.
+      const session = await ports.session.load();
+      if (session?.disablePending) return fail(CONTACTS_DISABLE_PENDING_REASON, live);
+      const permission = await ports.book.getPermission();
+      if (decideContactsPermissionAction(permission) !== 'sync') {
+        return fail('contacts-os-denied');
+      }
+      if (isCancelled(ports)) return skipped();
       return uploadSnapshot(ports, identifiers, true);
     }
     if (
@@ -359,21 +428,22 @@ export async function disableContactsSyncFlow(
   const sleep = ports.sleep ?? sleepDefault;
   const done = async (result: ContactsWireResult): Promise<ContactsControllerOutcome> => {
     await ports.session.clearFingerprint();
+    await setDisablePending(ports, false);
     return { ok: true, result, bookSynced: false };
   };
 
-  let reason = 'contacts-hmac-unavailable';
-  let reconciled = false;
+  // Written first, so closing the app cannot lose the user's turn-off.
+  if (isCancelled(ports)) return skipped();
+  await setDisablePending(ports, true);
+
+  let reason = CONTACTS_DISABLE_PENDING_REASON;
   for (let attempt = 0; attempt < CONTACTS_DISABLE_MAX_ATTEMPTS; attempt += 1) {
     if (attempt > 0) await sleep(CONTACTS_DISABLE_BACKOFF_MS * attempt);
     // A later disable or a sign-out owns this now.
     if (isCancelled(ports)) return skipped();
     try {
       const known = await resolveEpoch(ports);
-      if (known.live) {
-        reconciled = true;
-        if (!known.live.contactsSyncEnabled) return done(known.live);
-      }
+      if (known.live && !known.live.contactsSyncEnabled) return done(known.live);
       const result = await identityCall(ports, () =>
         ports.client.disableContactsSync(
           buildDisableContactsSyncRequest(known.epoch),
@@ -383,13 +453,13 @@ export async function disableContactsSyncFlow(
     } catch (err) {
       reason = failReason(err);
       if (reason === 'contacts-epoch-mismatch') {
-        // Also the retry of a lost disable. Off confirms it; on needs the new
-        // epoch, which the refresh just stored.
-        if (reconciled) return fail(reason);
+        // Also the retry of a lost disable: off confirms it. On at a later epoch
+        // may be a new activation from another device, so it stays pending until
+        // the user retries explicitly, now with the stored live epoch.
         try {
           const live = await refreshLiveState(ports);
           if (!live.contactsSyncEnabled) return done(live);
-          continue;
+          return fail(CONTACTS_DISABLE_PENDING_REASON, live);
         } catch (refreshErr) {
           reason = failReason(refreshErr);
         }
@@ -397,7 +467,7 @@ export async function disableContactsSyncFlow(
       if (!isTransientForDisable(reason)) return fail(reason);
     }
   }
-  return fail(reason);
+  return fail(CONTACTS_DISABLE_PENDING_REASON);
 }
 
 export async function withdrawContactSource(

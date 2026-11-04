@@ -68,6 +68,7 @@ export function contactsSessionKeysForUid(uid: string) {
     snapshotVersion: `${prefix}.snapshotVersion`,
     fingerprint: `${prefix}.fingerprint`,
     sent: `${prefix}.sent`,
+    disablePending: `${prefix}.disablePending`,
   };
 }
 
@@ -159,16 +160,19 @@ export function createSecureStoreContactsSessionStore(
     async read(): Promise<ContactsSessionSnapshot | null> {
       const sourceId = await read(keys.sourceId);
       const contactsEpoch = parseEpoch(await read(keys.contactsEpoch));
-      if (!sourceId && contactsEpoch == null) return null;
+      const disablePending = (await read(keys.disablePending)) != null;
+      if (!sourceId && contactsEpoch == null && !disablePending) return null;
       return {
         sourceId: sourceId || null,
         contactsEpoch,
         snapshotVersion: parseVersion(await read(keys.snapshotVersion)),
         fingerprint: await read(keys.fingerprint),
         sent: parseSent(await read(keys.sent)),
+        disablePending,
       };
     },
     async write(snapshot) {
+      await writeOrRemove(keys.disablePending, snapshot.disablePending ? '1' : null);
       await writeOrRemove(keys.sourceId, snapshot.sourceId);
       await writeOrRemove(
         keys.sent,

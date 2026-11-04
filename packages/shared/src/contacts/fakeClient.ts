@@ -105,7 +105,9 @@ export function createMemoryContactsSessionStore(seed?: {
   memoryStoreCount += 1;
   const store = createContactsSessionStoreFromIO(`fake-${memoryStoreCount}`, {
     async read() {
-      return current.sourceId == null && current.contactsEpoch == null
+      return current.sourceId == null &&
+        current.contactsEpoch == null &&
+        !current.disablePending
         ? null
         : { ...current };
     },

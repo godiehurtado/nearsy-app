@@ -40,7 +40,10 @@ export function presentContactsSyncError(
   reason: string,
   t: TFunction,
 ): string {
-  const key = reason as ContactsHmacFailReason | 'contacts-timeout';
+  const key = reason as
+    | ContactsHmacFailReason
+    | 'contacts-timeout'
+    | 'contacts-disable-pending';
   switch (key) {
     case 'contacts-os-denied':
       return t('settings.contacts.permissionDenied');
@@ -54,6 +57,8 @@ export function presentContactsSyncError(
     case 'contacts-snapshot-stale':
     case 'contacts-snapshot-conflict':
       return t('settings.contacts.errors.stale');
+    case 'contacts-disable-pending':
+      return t('settings.contacts.errors.disablePending');
     case 'contacts-epoch-required':
       return t('settings.contacts.errors.epochRequired');
     case 'contacts-source-removed':

@@ -36,8 +36,10 @@ import {
   type ContactsOutcomeView,
 } from '../contacts/contactsOperationCoordinator';
 import {
+  CONTACTS_DISABLE_PENDING_REASON,
   disableContactsSyncFlow,
   enableAndSyncContacts,
+  reconcilePendingDisable,
   refreshVerifiedActorKeysFlow,
   syncGrantedAddressBook,
   withdrawContactSource,
@@ -511,17 +513,26 @@ describe('contacts-epoch-mismatch', () => {
     );
   });
 
-  it('disable, refreshed on: sends disable with the new epoch', async () => {
+  it('disable, refreshed on: stays pending until an explicit retry at the new epoch', async () => {
     const identity = createIdentityDouble({ epoch: 3, enabled: true });
     const stack = createStack({ identity });
     await seedEpoch(stack, 2);
     const out = await disableContactsSyncFlow(stack.ports);
-    assert.equal(out.ok, true);
+    assert.equal(out.ok === false && out.reason, CONTACTS_DISABLE_PENDING_REASON);
+    assert.equal(identity.state.enabled, true, 'may be a new activation elsewhere');
+    assert.equal(stack.named('disableContactsSync').length, 1);
+    const view = classifyContactsOutcome('disable', out, true);
+    assert.equal(view.enabled, true);
+    assert.equal(view.retryKind, 'disable');
+
+    const retry = await disableContactsSyncFlow(stack.ports);
+    assert.equal(retry.ok, true);
     assert.equal(identity.state.enabled, false);
     assert.deepEqual(
       stack.named('disableContactsSync').map((c) => c.data.contactsEpoch),
       [2, 3],
     );
+    assert.equal((await stack.session.load())?.disablePending, false);
   });
 
   it('remove, refreshed off: done, sources were purged', async () => {
@@ -901,6 +912,256 @@ describe('removeContactSource', () => {
     assert.equal(out.ok === false && out.reason, 'contacts-os-denied');
     assert.equal(stack.named('removeContactSource').length, 2);
     assert.equal(identity.state.sources.size, 1);
+  });
+});
+
+// ---------- Pending turn-off across restarts ----------
+
+describe('Pending disable across restarts', () => {
+  /** A turn-off whose request never reached the server, then the app closes. */
+  async function closedWithPendingDisable(
+    identity: ReturnType<typeof createIdentityDouble>,
+    keychain = fakeKeychain(),
+  ) {
+    const before = createStack({ identity, keychain });
+    await seedEpoch(before, identity.state.epoch);
+    before.net.down = true;
+    const out = await disableContactsSyncFlow(before.ports);
+    assert.equal(out.ok === false && out.reason, CONTACTS_DISABLE_PENDING_REASON);
+    assert.equal(identity.state.enabled, true, 'the server never saw it');
+    return createStack({ identity, keychain });
+  }
+
+  it('the intent is on the keychain before the request leaves', async () => {
+    const identity = createIdentityDouble({ enabled: true });
+    const stack = createStack({ identity });
+    await seedEpoch(stack, 0);
+    const held = gate();
+    stack.holdRequest.set('disableContactsSync', held);
+    const out = disableContactsSyncFlow(stack.ports);
+    await until(() => stack.named('disableContactsSync').length === 1);
+    const reopened = createSecureStoreContactsSessionStore(
+      stack.uid,
+      async () => stack.keychain.store,
+    );
+    assert.equal((await reopened.load())?.disablePending, true);
+    held.open();
+    await out;
+    assert.equal((await reopened.load())?.disablePending, false);
+  });
+
+  it('it survives a restart with no other local state', async () => {
+    const identity = createIdentityDouble({ enabled: true });
+    const keychain = fakeKeychain();
+    const before = createStack({ identity, keychain });
+    before.net.down = true;
+    await disableContactsSyncFlow(before.ports);
+    const after = createStack({ identity, keychain });
+    assert.equal((await after.session.load())?.disablePending, true);
+  });
+
+  it('after a restart, enable and sync send nothing while the server is on', async () => {
+    const identity = createIdentityDouble({ enabled: true });
+    const stack = await closedWithPendingDisable(identity);
+
+    const enable = await enableAndSyncContacts(stack.ports);
+    assert.equal(enable.ok === false && enable.reason, CONTACTS_DISABLE_PENDING_REASON);
+    const sync = await syncGrantedAddressBook(stack.ports);
+    assert.equal(sync.ok === false && sync.reason, CONTACTS_DISABLE_PENDING_REASON);
+
+    assert.equal(stack.named('enableContactsSync').length, 0);
+    assert.equal(stack.named('syncContactHashes').length, 0);
+    assert.equal(stack.named('disableContactsSync').length, 0);
+    assert.deepEqual(stack.book.log, [], 'no prompt and no book read');
+  });
+
+  it('recovering with the server off completes it, and only then shows off', async () => {
+    const identity = createIdentityDouble({ enabled: true });
+    const stack = await closedWithPendingDisable(identity);
+    // The lost request landed after all, or another device turned it off.
+    identity.state.enabled = false;
+    identity.state.epoch += 1;
+
+    const out = await reconcilePendingDisable(stack.ports);
+    assert.equal(out.ok, true);
+    assert.equal(classifyContactsOutcome('refresh', out, true).enabled, false);
+    assert.equal(classifyContactsOutcome('refresh', out, true).view, 'idle');
+    assert.equal(stack.named('disableContactsSync').length, 0);
+    assert.equal((await stack.session.load())?.disablePending, false);
+
+    // Turning on again is now a new intent with the confirmed epoch.
+    const again = await enableAndSyncContacts(stack.ports);
+    assert.equal(again.ok && again.bookSynced, true);
+  });
+
+  it('recovering with the server on shows pending and never resends by itself', async () => {
+    const identity = createIdentityDouble({ epoch: 4, enabled: true });
+    const stack = await closedWithPendingDisable(identity);
+    // A new activation from another device: a later epoch, on.
+    identity.state.epoch = 6;
+
+    const out = await reconcilePendingDisable(stack.ports);
+    assert.equal(out.ok === false && out.reason, CONTACTS_DISABLE_PENDING_REASON);
+    assert.equal(stack.named('refreshVerifiedActorKeys').length, 1, 'one read, no polling');
+    assert.equal(stack.named('disableContactsSync').length, 0);
+    assert.equal(identity.state.enabled, true);
+    const view = classifyContactsOutcome('refresh', out, true);
+    assert.equal(view.enabled, true, 'not shown as off');
+    assert.equal(view.retryable, true);
+    assert.equal(view.retryKind, 'disable');
+    assert.equal((await stack.session.load())?.disablePending, true);
+
+    // The explicit retry uses the epoch that read stored.
+    const retry = await disableContactsSyncFlow(stack.ports);
+    assert.equal(retry.ok, true);
+    assert.deepEqual(stack.named('disableContactsSync')[0].data, { contactsEpoch: 6 });
+    assert.equal(identity.state.enabled, false);
+  });
+
+  it('recovering without network keeps it and invents nothing', async () => {
+    const identity = createIdentityDouble({ enabled: true });
+    const stack = await closedWithPendingDisable(identity);
+    stack.net.down = true;
+    const out = await reconcilePendingDisable(stack.ports);
+    assert.equal(out.ok === false && out.reason, CONTACTS_DISABLE_PENDING_REASON);
+    const view = classifyContactsOutcome('refresh', out, true);
+    assert.equal(view.enabled, null, 'state stays unconfirmed');
+    assert.equal(view.retryKind, 'disable');
+    assert.equal((await stack.session.load())?.disablePending, true);
+    assert.equal(stack.named('refreshVerifiedActorKeys').length, 1);
+  });
+
+  it('nothing pending: recovering makes no Identity call', async () => {
+    const stack = createStack({ identity: createIdentityDouble({ enabled: true }) });
+    await seedEpoch(stack, 0);
+    const out = await reconcilePendingDisable(stack.ports);
+    assert.equal(out.ok === false && out.reason, CONTACTS_OP_SKIPPED_REASON);
+    assert.equal(stack.calls.length, 0);
+  });
+
+  it('it survives sign-out with source, versions and marker, and stays per UID', async () => {
+    const keychain = fakeKeychain();
+    const identity = createIdentityDouble({ enabled: true });
+    const a = createStack({ identity, keychain });
+    await seedEpoch(a, 0);
+    await syncGrantedAddressBook(a.ports);
+    const before = await a.session.load();
+    a.net.down = true;
+    await disableContactsSyncFlow(a.ports);
+    assert.equal(await a.pendingStore.isPending(a.uid), true);
+    await a.session.forgetEpoch();
+
+    const after = await a.session.load();
+    assert.equal(after?.contactsEpoch, null);
+    assert.equal(after?.disablePending, true);
+    assert.equal(after?.sourceId, before?.sourceId);
+    assert.equal(after?.snapshotVersion, before?.snapshotVersion);
+    assert.equal(await a.pendingStore.isPending(a.uid), true);
+
+    const b = createStack({
+      identity: createIdentityDouble(),
+      uid: 'uid-b',
+      keychain,
+    });
+    const out = await enableAndSyncContacts(b.ports);
+    assert.equal(out.ok && out.bookSynced, true, 'another account is not blocked');
+  });
+});
+
+// ---------- Upload after a mismatch needs the same intent ----------
+
+describe('Sync after a mismatch keeps to the same intent', () => {
+  async function staleSync() {
+    const identity = createIdentityDouble({ epoch: 3, enabled: true });
+    const stack = createStack({ identity });
+    await seedEpoch(stack, 2);
+    return { identity, stack };
+  }
+
+  it('turned off while the mismatch was on its way: no refresh and no upload', async () => {
+    const { stack } = await staleSync();
+    const held = gate();
+    stack.holdResponse.set('syncContactHashes', held);
+    let cancelled = false;
+    const sync = syncGrantedAddressBook({ ...stack.ports, isCancelled: () => cancelled });
+    await until(() => stack.named('syncContactHashes').length === 1);
+    cancelled = true;
+    held.open();
+    const out = await sync;
+    assert.equal(out.ok === false && out.reason, CONTACTS_OP_SKIPPED_REASON);
+    assert.equal(stack.named('syncContactHashes').length, 1);
+    assert.equal(stack.named('refreshVerifiedActorKeys').length, 0);
+  });
+
+  it('turned off during the state read: an "on" answer does not restore the intent', async () => {
+    const { stack } = await staleSync();
+    const held = gate();
+    stack.holdResponse.set('refreshVerifiedActorKeys', held);
+    const runner = createContactsOperationRunner();
+    const sync = runner.run(stack.uid, 'sync', ({ isCurrent }) =>
+      syncGrantedAddressBook({ ...stack.ports, isCancelled: () => !isCurrent() }),
+    );
+    await until(() => stack.named('refreshVerifiedActorKeys').length === 1);
+    runner.invalidate(stack.uid);
+    held.open();
+    const out = await sync.promise;
+    assert.equal(out.ok === false && out.reason, CONTACTS_OP_SKIPPED_REASON);
+    assert.equal(stack.named('syncContactHashes').length, 1);
+    assert.equal(stack.named('enableContactsSync').length, 0);
+  });
+
+  it('account changed or signed out during the read: same result', async () => {
+    const { stack } = await staleSync();
+    const held = gate();
+    stack.holdResponse.set('refreshVerifiedActorKeys', held);
+    let signedInUid = stack.uid;
+    const sync = syncGrantedAddressBook({
+      ...stack.ports,
+      isCancelled: () => signedInUid !== stack.uid,
+    });
+    await until(() => stack.named('refreshVerifiedActorKeys').length === 1);
+    signedInUid = 'uid-b';
+    held.open();
+    const out = await sync;
+    assert.equal(out.ok === false && out.reason, CONTACTS_OP_SKIPPED_REASON);
+    assert.equal(stack.named('syncContactHashes').length, 1);
+  });
+
+  it('a turn-off pending from elsewhere blocks the upload', async () => {
+    const { stack } = await staleSync();
+    const held = gate();
+    stack.holdResponse.set('refreshVerifiedActorKeys', held);
+    const sync = syncGrantedAddressBook(stack.ports);
+    await until(() => stack.named('refreshVerifiedActorKeys').length === 1);
+    await stack.session.update((current) => ({ ...current!, disablePending: true }));
+    held.open();
+    const out = await sync;
+    assert.equal(out.ok === false && out.reason, CONTACTS_DISABLE_PENDING_REASON);
+    assert.equal(stack.named('syncContactHashes').length, 1);
+  });
+
+  it('OS access withdrawn meanwhile: no upload and no prompt', async () => {
+    const { stack } = await staleSync();
+    const held = gate();
+    stack.holdResponse.set('refreshVerifiedActorKeys', held);
+    const sync = syncGrantedAddressBook(stack.ports);
+    await until(() => stack.named('refreshVerifiedActorKeys').length === 1);
+    stack.book.permission = 'denied';
+    held.open();
+    const out = await sync;
+    assert.equal(out.ok === false && out.reason, 'contacts-os-denied');
+    assert.equal(stack.named('syncContactHashes').length, 1);
+    assert.equal(stack.book.log.includes('requestPermission'), false);
+  });
+
+  it('with everything still valid it uploads once at the live epoch', async () => {
+    const { stack } = await staleSync();
+    const out = await syncGrantedAddressBook(stack.ports);
+    assert.equal(out.ok && out.bookSynced, true);
+    assert.deepEqual(
+      stack.named('syncContactHashes').map((c) => c.data.contactsEpoch),
+      [2, 3],
+    );
   });
 });
 

@@ -18,6 +18,7 @@
  */
 
 import {
+  CONTACTS_DISABLE_PENDING_REASON,
   CONTACTS_OP_SKIPPED_REASON,
   type ContactsControllerOutcome,
 } from './controller';
@@ -239,6 +240,17 @@ export function classifyContactsOutcome(
   const { reason } = failed;
   if (reason === CONTACTS_OP_SKIPPED_REASON) {
     return { enabled: null, notifyNearbyContacts: null, view: 'idle', reason: null, retryable: false, retryKind: null };
+  }
+  if (reason === CONTACTS_DISABLE_PENDING_REASON) {
+    // Never reported as off: only the server confirms that.
+    return {
+      enabled: failed.identityEnabled ?? null,
+      notifyNearbyContacts: failed.result?.notifyNearbyContactsEffective ?? null,
+      view: 'error',
+      reason,
+      retryable: true,
+      retryKind: 'disable',
+    };
   }
   const retryable = isContactsSyncRetryable(reason) && !isContactsCapExceeded(reason);
   const retryKind: ContactsOutcomeView['retryKind'] = !retryable

@@ -42,6 +42,11 @@ export type ContactsSessionSnapshot = {
   /** Confirmed snapshot in `contactsEpoch`. */
   fingerprint: string | null;
   sent?: ContactsSentSnapshot | null;
+  /**
+   * The user asked to turn off and the server has not confirmed it. Survives
+   * restarts and sign-out, and blocks enable and sync until resolved.
+   */
+  disablePending?: boolean;
 };
 
 export type ContactsSessionStore = {

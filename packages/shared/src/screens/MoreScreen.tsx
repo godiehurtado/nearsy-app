@@ -120,6 +120,7 @@ import {
 import {
   disableContactsSyncFlow,
   enableAndSyncContacts,
+  reconcilePendingDisable,
   syncGrantedAddressBook,
 } from '../contacts/controller';
 import {
@@ -587,7 +588,8 @@ export default function MoreScreen() {
     uid: string,
   ): Promise<ContactsServerState | null> => {
     const snap = await getDoc(doc(firestoreDb, 'users', uid));
-    if (!snap.exists()) return null;
+    // A cached copy says nothing about what the server has now.
+    if (!snap.exists() || snap.metadata.fromCache) return null;
     const data = snap.data() as ProfileDoc;
     return {
       enabled: resolveContactsSyncEnabled(data.contactsSyncEnabled),
@@ -663,7 +665,9 @@ export default function MoreScreen() {
     }
   };
 
-  const runContactsOperation = async (kind: 'enable' | 'sync' | 'disable') => {
+  const runContactsOperation = async (
+    kind: 'enable' | 'sync' | 'disable' | 'refresh',
+  ) => {
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) return;
     setContactsBusy(true);
@@ -678,6 +682,7 @@ export default function MoreScreen() {
           const ports = await contactsPorts(uid, isCurrent);
           if (kind === 'enable') return enableAndSyncContacts(ports);
           if (kind === 'disable') return disableContactsSyncFlow(ports);
+          if (kind === 'refresh') return reconcilePendingDisable(ports);
           return syncGrantedAddressBook(ports);
         },
         isActive: () =>
@@ -694,6 +699,21 @@ export default function MoreScreen() {
       }
     }
   };
+
+  // A turn-off left unfinished by an earlier run. Reads the state once and only
+  // when one is pending; it never resends the disable.
+  useEffect(() => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid || contactsOperationRunner.inFlight(uid) !== null) return;
+    void (async () => {
+      const session = await createContactsSessionStore(uid)
+        .load()
+        .catch(() => null);
+      if (!session?.disablePending || !contactsMountedRef.current) return;
+      await runContactsOperation('refresh');
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** A new user action: disable retries disable, it never turns into a sync. */
   const handleRetryContactsOperation = async (

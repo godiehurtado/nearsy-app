@@ -215,6 +215,9 @@ describe('Settings safety freeze', () => {
     assert.match(screen, /if \(contactsBusy && enabled\) return;/);
     assert.match(screen, /handleRetryContactsOperation\(retryKind\)/);
     assert.match(screen, /isCancelled: \(\) => !isCurrent\(\)/);
+    assert.match(screen, /reconcilePendingDisable\(ports\)/);
+    assert.match(screen, /session\?\.disablePending/);
+    assert.match(screen, /snap\.metadata\.fromCache/);
     assert.match(app, /contactsOperationRunner\.invalidate\(previousUid\)/);
     assert.match(app, /\.forgetEpoch\(\)/);
     assert.match(app, /createReevaluatePendingPort\(uid\)/);
