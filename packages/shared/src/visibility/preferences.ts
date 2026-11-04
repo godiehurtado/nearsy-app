@@ -177,8 +177,13 @@ export function prepareSearchPreferencesForPersist(
   if (official.length > MAX_SEARCH_INTEREST_IDS) {
     return { ok: false, reasons: [INTEREST_IDS_OVER_MAX_REASON] };
   }
+  // Firestore rules require ageMin/ageMax to be ints; coerce before validate.
+  const ageMin = Math.round(prefs.ageMin);
+  const ageMax = Math.round(prefs.ageMax);
   const next: VisibilitySearchPreferences = {
     ...prefs,
+    ageMin,
+    ageMax,
     interestIds: official,
   };
   const check = validateSearchPreferences(next, knownIds);
@@ -243,5 +248,21 @@ export function withDedupedInterestIds(
   return {
     ...prefs,
     interestIds: dedupeInterestIds(prefs.interestIds),
+  };
+}
+
+/**
+ * Firestore update payload for one mode: nested field path + top-level
+ * updatedAt. `timestamp` is the caller's serverTimestamp() sentinel (kept as a
+ * parameter so the exact shape can be exercised against the rules emulator).
+ */
+export function buildSearchPreferencesModeUpdate<T>(
+  mode: ProfileMode,
+  prepared: VisibilitySearchPreferences,
+  timestamp: T,
+): Record<string, VisibilitySearchPreferences | T> {
+  return {
+    [`searchPreferences.${mode}`]: { ...prepared },
+    updatedAt: timestamp,
   };
 }

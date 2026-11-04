@@ -25,6 +25,10 @@ describe('More Settings modernization', () => {
     assert.doesNotMatch(screen, /chevron-back/);
     assert.match(screen, /contactsSyncEnabled/);
     assert.match(screen, /enableAndSyncContacts/);
+    assert.match(screen, /syncGrantedAddressBook/);
+    assert.match(screen, /presentContactsSyncError/);
+    assert.match(screen, /CONTACTS_SYNC_TIMEOUT_MS/);
+    assert.match(screen, /settings\.contacts\.syncing/);
     assert.doesNotMatch(screen, /syncContactsSafe/);
     assert.doesNotMatch(screen, /expectedEpoch/);
     assert.doesNotMatch(screen, /Use phone contacts/);
@@ -195,5 +199,38 @@ describe('Settings safety freeze', () => {
     assert.doesNotMatch(screen, /Matching/);
     assert.doesNotMatch(screen, /Vertex/);
     assert.doesNotMatch(screen, /discoverNearby/);
+  });
+
+  // Behaviour is covered in ios209BetaHardening.test.ts; this pins the wiring.
+  it('routes Contacts ops through the UID runner and scopes session by UID', () => {
+    const screen = readShared('screens/MoreScreen.tsx');
+    assert.match(screen, /createContactsSessionStore\(uid\)/);
+    assert.match(screen, /driveContactsOperation\(/);
+    assert.match(screen, /contactsOperationRunner\.invalidate\(/);
+    assert.match(screen, /readContactsServerState/);
+    const app = readShared('App.tsx');
+    assert.match(app, /contactsOperationRunner\.run\(uid, 'refresh'/);
+    // Turning off stays available while an enable runs; a retry repeats its own kind.
+    assert.match(screen, /disabled=\{contactsBusy && !contactsSyncEnabled\}/);
+    assert.match(screen, /if \(contactsBusy && enabled\) return;/);
+    assert.match(screen, /handleRetryContactsOperation\(retryKind\)/);
+    assert.match(screen, /isCancelled: \(\) => !isCurrent\(\)/);
+    assert.match(screen, /reconcilePendingDisable\(ports\)/);
+    assert.match(screen, /session\?\.disablePending/);
+    assert.match(screen, /snap\.metadata\.fromCache/);
+    assert.match(app, /contactsOperationRunner\.invalidate\(previousUid\)/);
+    assert.match(app, /\.forgetEpoch\(\)/);
+    assert.match(app, /createReevaluatePendingPort\(uid\)/);
+    const session = readShared('contacts/iosContactsSession.ios.ts');
+    assert.match(session, /nearsy\.contacts\.v1\.uid\./);
+    assert.doesNotMatch(session, /migrateLegacyIfNeeded/);
+    assert.match(session, /Keep snapshotVersion/);
+    const errors = readShared('contacts/contactsErrorPresentation.ts');
+    assert.match(errors, /CAP_REASONS/);
+    assert.match(errors, /isContactsCapExceeded/);
+    assert.equal(
+      readShared('i18n/resources/settings.ts').includes('capAction:'),
+      true,
+    );
   });
 });

@@ -49,6 +49,34 @@ export default {
     permissionDenied:
       'Contacts access is required to sync your address book. You can enable it in iPhone Settings.',
     error: 'Could not update Contacts sync. Try again later.',
+    syncing: 'Syncing contacts…',
+    syncSuccess: 'Contacts synced.',
+    confirming:
+      'Still confirming with the server. You can keep using Nearsy.',
+    enabledNotSynced:
+      'Contacts nearby is on, but your address book is not synced yet.',
+    stateUnconfirmed: 'We could not confirm whether it is on or off.',
+    syncFailedTitle: 'Contacts sync',
+    retry: 'Retry',
+    errors: {
+      generic: 'Could not sync contacts. Try again.',
+      unauthenticated: 'Sign in again to sync contacts.',
+      accountGone: 'This account is no longer available for contacts sync.',
+      notEnabled: 'Turn on Contacts nearby before syncing.',
+      stale: 'Contacts sync is out of date. Retry to reconcile.',
+      sourceRemoved: 'Contacts sync was removed. Turn it on again to continue.',
+      disablePending:
+        'Turning off Contacts nearby is still pending. Retry to finish.',
+      epochRequired:
+        'Update Nearsy to turn Contacts nearby back on. Everything else keeps working.',
+      cap: 'Your address book is too large to sync right now.',
+      invalid: 'Some contact identifiers could not be synced. Try again.',
+      unavailable: 'Contacts sync is temporarily unavailable. Try again shortly.',
+      timeout:
+        'Contacts sync is taking too long. The server may still have written — retry to reconcile.',
+      capAction:
+        'Your address book exceeds the sync limit. Remove contacts in the Phone app, then retry.',
+    },
   },
   visibilityAge: {
     title: 'Who can find me by age',

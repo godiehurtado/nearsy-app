@@ -1,26 +1,26 @@
+import { createContactsSessionStoreFromIO } from './contactsSessionState';
 import { parseContactsWireResult } from './parse';
-import type { ContactsHmacClient } from './port';
+import type { ContactsHmacClient, ContactsSessionSnapshot } from './port';
 import type { ContactsWireResult } from './wireTypes';
 
 export function createFakeContactsHmacClient(
   handlers: Partial<ContactsHmacClient> = {},
 ): ContactsHmacClient & { calls: Array<{ name: string; request: unknown }> } {
   const calls: Array<{ name: string; request: unknown }> = [];
-  const enabled: ContactsWireResult = parseContactsWireResult({
-    result: 'enabled',
-    contactsSyncEnabled: true,
-    contactsEpoch: 1,
-    notifyNearbyContactsEffective: true,
-    keyCount: 0,
-    syncCommitted: true,
-    reevaluateRequired: true,
-  });
   return {
     calls,
     async enableContactsSync(request) {
       calls.push({ name: 'enableContactsSync', request });
       if (handlers.enableContactsSync) return handlers.enableContactsSync(request);
-      return enabled;
+      return parseContactsWireResult({
+        result: 'enabled',
+        contactsSyncEnabled: true,
+        contactsEpoch: request.contactsEpoch,
+        notifyNearbyContactsEffective: true,
+        keyCount: 0,
+        syncCommitted: true,
+        reevaluateRequired: true,
+      });
     },
     async syncContactHashes(request) {
       calls.push({ name: 'syncContactHashes', request });
@@ -87,28 +87,36 @@ export function createFakeContactsHmacClient(
   };
 }
 
+let memoryStoreCount = 0;
+
 export function createMemoryContactsSessionStore(seed?: {
-  sourceId?: string;
-  contactsEpoch?: number;
+  sourceId?: string | null;
+  contactsEpoch?: number | null;
   snapshotVersion?: number | null;
   fingerprint?: string | null;
 }) {
-  let current = {
-    sourceId: seed?.sourceId ?? 'ios_testdevice01',
-    contactsEpoch: seed?.contactsEpoch ?? 0,
+  let current: ContactsSessionSnapshot = {
+    sourceId: seed?.sourceId === undefined ? 'ios_testdevice01' : seed.sourceId,
+    contactsEpoch: seed?.contactsEpoch === undefined ? 0 : seed.contactsEpoch,
     snapshotVersion: seed?.snapshotVersion ?? null,
     fingerprint: seed?.fingerprint ?? null,
+    sent: null,
   };
-  return {
-    async load() {
-      return { ...current };
+  memoryStoreCount += 1;
+  const store = createContactsSessionStoreFromIO(`fake-${memoryStoreCount}`, {
+    async read() {
+      return current.sourceId == null &&
+        current.contactsEpoch == null &&
+        !current.disablePending
+        ? null
+        : { ...current };
     },
-    async save(next: typeof current) {
+    async write(next) {
       current = { ...next };
     },
-    async clearFingerprint() {
-      current = { ...current, fingerprint: null };
-    },
+  });
+  return {
+    ...store,
     peek() {
       return { ...current };
     },

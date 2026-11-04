@@ -91,3 +91,41 @@ export function computeAlignmentRingSvgMetrics(
     strokeDashoffset,
   };
 }
+
+/**
+ * Extra clip room past the ring square. Owner reported bottom flattening on
+ * compact ~83% rings; a half-clip (overflow:hidden) flush to the stroke edge
+ * cutting the anti-aliased outer edge is the leading hypothesis (not
+ * device-confirmed). Physical QA still required.
+ */
+export const ALIGNMENT_RING_HALF_CLIP_BLEED = 1;
+
+export type AlignmentHalfClipBox = {
+  /** Clip view frame, relative to the ring square. */
+  clip: { left: number; top: number; width: number; height: number };
+  /** Semicircle view offset inside the clip. */
+  inner: { left: number; top: number };
+};
+
+/**
+ * Frames for the two half-clips. Each clip grows by `bleed` on its OUTER sides
+ * only (never across the vertical center seam), and the semicircle is offset
+ * back so it stays at the ring's (0,0) with the same rotation center.
+ */
+export function computeAlignmentHalfClipLayout(
+  size: number,
+  bleed: number = ALIGNMENT_RING_HALF_CLIP_BLEED,
+): { first: AlignmentHalfClipBox; second: AlignmentHalfClipBox } {
+  const half = size / 2;
+  const clipHeight = size + bleed * 2;
+  return {
+    first: {
+      clip: { left: half, top: -bleed, width: half + bleed, height: clipHeight },
+      inner: { left: -half, top: bleed },
+    },
+    second: {
+      clip: { left: -bleed, top: -bleed, width: half + bleed, height: clipHeight },
+      inner: { left: bleed, top: bleed },
+    },
+  };
+}

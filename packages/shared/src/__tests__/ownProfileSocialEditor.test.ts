@@ -409,14 +409,20 @@ describe('post-CRJ Social Media editor screen contract', () => {
     assert.match(screen, /parsePostCrjSocialEditorParams/);
   });
 
-  it('SocialMediaScreen implements Connect/Disconnect draft semantics', () => {
+  it('SocialMediaScreen manual links use the shared card (same as the CRJ)', () => {
     const screen = readShared('screens/SocialMediaScreen.tsx');
-    assert.match(screen, /\{connected \? \(/);
-    assert.match(screen, /profile\.social\.connect/);
-    assert.match(screen, /profile\.social\.disconnect/);
+    const manualCards = screen.slice(
+      screen.indexOf('cardConfigs.map'),
+      screen.indexOf('cardConfigs.map') + 2000,
+    );
+    // Card states/actions live in ManualSocialLinkCard + manualSocialLinkCardState.
+    assert.match(manualCards, /<ManualSocialLinkCard/);
+    assert.match(manualCards, /onOpenSheet=\{\(\) => connectPlatform\(card\.id\)\}/);
+    assert.match(manualCards, /onRemove=\{\(\) => disconnectPlatform\(card\.id\)\}/);
+    // No inline TextInput editing that would need a Save button.
+    assert.doesNotMatch(manualCards, /<TextInput/);
+    assert.doesNotMatch(manualCards, /profile\.social\.(connected|connect|disconnect)'/);
     assert.match(screen, /countValidPostCrjSocialConnections\(draft,\s*\{\s*youtubeConnected/);
-    assert.match(screen, /saveConnections/);
-    assert.match(screen, /saveDisabled/);
     assert.match(screen, /omitYoutubeFromDraftValues/);
     assert.match(screen, /preserveLegacyYoutubeInSocialPatch/);
   });
@@ -488,15 +494,23 @@ describe('post-CRJ Social Media editor screen contract', () => {
     assert.doesNotMatch(screen, /INSTAGRAM_INBOX_AUTHORIZE_KEY/);
   });
 
-  it('SocialMediaScreen dismisses keyboard after successful save', () => {
+  it('SocialMediaScreen bottom button is Back: navigation only, always enabled', () => {
     const screen = readShared('screens/SocialMediaScreen.tsx');
+    const bar = screen.slice(screen.indexOf('styles.bottomBar'));
+    const backBtn = bar.slice(0, bar.indexOf('</Pressable>'));
+    assert.match(backBtn, /onPress=\{handleBack\}/);
+    assert.match(backBtn, /profile\.social\.back'/);
+    assert.doesNotMatch(backBtn, /disabled=/);
+    assert.doesNotMatch(backBtn, /persistDraftBag|runManualWrite|updateUserProfilePartial/);
+    // The old Save path is gone; each operation persists on its own.
+    assert.doesNotMatch(screen, /handleSave|saveConnections|saveButtonLabel/);
     const persistBlock = screen.slice(
       screen.indexOf('const persistDraftBag'),
-      screen.indexOf('const handleSave'),
+      screen.indexOf('const runManualWrite'),
     );
     assert.match(persistBlock, /updateUserProfilePartial/);
-    assert.match(persistBlock, /Keyboard\.dismiss\(\)/);
-    assert.match(screen, /persistDraftBag\(draft, \{ goBack: true \}\)/);
+    assert.doesNotMatch(persistBlock, /goBack/);
+    assert.match(persistBlock, /if \(mountedRef\.current\) setDraft\(nextDraft\)/);
   });
 
   it('post-CRJ patch replaces one face bag and preserves custom', () => {
@@ -541,7 +555,7 @@ describe('post-CRJ Social Media editor screen contract', () => {
     const onboarding = readShared(
       'components/registration/OnboardingSocialMediaStep.tsx',
     );
-    assert.match(onboarding, /CRJ_MANUAL_URL_SOCIAL_PLATFORMS\.map/);
+    assert.match(onboarding, /MANUAL_SOCIAL_LINK_ORDER\.map/);
     assert.doesNotMatch(onboarding, /SELECTABLE_CRJ_SOCIAL_PLATFORMS\.map/);
     assert.doesNotMatch(onboarding, /(?<!SELECTABLE_|CRJ_MANUAL_URL_)CRJ_SOCIAL_PLATFORMS\.map/);
     const patch = buildPostCrjSocialLinksPersistencePatch(

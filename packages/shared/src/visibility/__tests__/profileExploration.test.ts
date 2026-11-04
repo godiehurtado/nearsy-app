@@ -815,6 +815,16 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     assert.ok(aff > 0 && interests > aff);
   });
 
+  it('DiscoveryProfileHeader shows Alignment title beside compact ring', () => {
+    const headerSrc = readFileSync(
+      join(__dirname, '../../components/profile/DiscoveryProfileHeader.tsx'),
+      'utf8',
+    );
+    assert.match(headerSrc, /alignmentTitleLabel/);
+    assert.match(headerSrc, /AlignmentScoreRing/);
+    assert.doesNotMatch(headerSrc, /alignmentTierLabel/);
+  });
+
   it('wires backend alignment into DiscoveryProfileHeader', () => {
     assert.match(screenSrc, /DiscoveryProfileHeader/);
     assert.match(screenSrc, /toAlignment\(data\.compatibility\)/);

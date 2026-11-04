@@ -1,11 +1,24 @@
 /**
  * Persist searchPreferences on users/{uid} (owner-writable).
+ *
+ * Active-mode updates use a nested field path so the client's local copy of the
+ * inactive mode is never sent. Rules still validate the post-merge
+ * `searchPreferences` bag, so an invalid inactive bag already STORED on the
+ * server rejects the write (verified against the real rules in the emulator —
+ * see __tests__/searchPreferencesRules.emulator.test.ts). Visibility is never
+ * written here.
  */
 
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+
+import { firestoreDb } from '../config/firebaseConfig';
 import { flattenCatalogInterestItems } from '../interests/onboardingInterestCatalog';
 import type { ProfileMode } from '../profile/profileModeFields';
 import { updateUserProfilePartial } from '../services/firestoreService';
-import { prepareSearchPreferencesForPersist } from './preferences';
+import {
+  buildSearchPreferencesModeUpdate,
+  prepareSearchPreferencesForPersist,
+} from './preferences';
 import type {
   VisibilitySearchPreferences,
   VisibilitySearchPreferencesByMode,
@@ -35,6 +48,11 @@ function requirePersistable(
   return prepared.prefs;
 }
 
+/**
+ * Full dual-mode write — used when both faces must be replaced together
+ * (e.g. first hydration repair). Prefer {@link persistSearchPreferencesForMode}
+ * for Home slider patches.
+ */
 export async function persistSearchPreferences(
   uid: string,
   byMode: VisibilitySearchPreferencesByMode,
@@ -50,6 +68,10 @@ export async function persistSearchPreferences(
   });
 }
 
+/**
+ * Persist only the active mode via nested update. Does not touch visibility
+ * or the sibling mode document fields.
+ */
 export async function persistSearchPreferencesForMode(
   uid: string,
   byMode: VisibilitySearchPreferencesByMode,
@@ -62,6 +84,10 @@ export async function persistSearchPreferencesForMode(
     knownIds,
   );
   const updated = { ...byMode, [mode]: prepared };
-  await persistSearchPreferences(uid, updated);
+  const ref = doc(firestoreDb, 'users', uid);
+  await updateDoc(
+    ref,
+    buildSearchPreferencesModeUpdate(mode, prepared, serverTimestamp()),
+  );
   return updated;
 }

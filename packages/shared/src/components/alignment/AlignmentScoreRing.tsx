@@ -14,6 +14,7 @@ import {
   ALIGNMENT_RING_COMPACT_STROKE,
   ALIGNMENT_RING_DETAIL_SIZE,
   ALIGNMENT_RING_DETAIL_STROKE,
+  computeAlignmentHalfClipLayout,
   computeAlignmentRingGeometry,
   type AlignmentRingGeometry,
 } from './alignmentRingGeometry';
@@ -59,6 +60,9 @@ function ProgressArc({
 
   const half = size / 2;
   const { firstHalfDegrees, secondHalfDegrees, isFull } = geometry;
+  // Bleed keeps the View technique (no native SVG) without clipping the
+  // anti-aliased outer edge; see computeAlignmentHalfClipLayout.
+  const layout = computeAlignmentHalfClipLayout(size);
 
   const semiBase = {
     width: size,
@@ -67,7 +71,6 @@ function ProgressArc({
     borderWidth: stroke,
     borderColor: 'transparent' as const,
     position: 'absolute' as const,
-    top: 0,
   };
 
   return (
@@ -78,14 +81,17 @@ function ProgressArc({
     >
       {/* First 0–50%: right half-clip, max 180° via top+right semicircle */}
       <View
-        style={[styles.halfClip, { width: half, height: size, left: half }]}
+        style={[
+          styles.halfClip,
+          layout.first.clip,
+        ]}
         collapsable={false}
       >
         <View
           style={[
             semiBase,
             {
-              left: -half,
+              ...layout.first.inner,
               borderTopColor: color,
               borderRightColor: color,
               transform: [{ rotate: `${firstHalfDegrees - 180}deg` }],
@@ -97,14 +103,17 @@ function ProgressArc({
       {/* Second 50–100%: left half-clip paints only the excess over 180° */}
       {secondHalfDegrees > 0 ? (
         <View
-          style={[styles.halfClip, { width: half, height: size, left: 0 }]}
+          style={[
+            styles.halfClip,
+            layout.second.clip,
+          ]}
           collapsable={false}
         >
           <View
             style={[
               semiBase,
               {
-                left: 0,
+                ...layout.second.inner,
                 borderBottomColor: color,
                 borderLeftColor: color,
                 transform: [{ rotate: `${secondHalfDegrees - 180}deg` }],
@@ -199,16 +208,17 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'visible',
   },
   track: {
     ...StyleSheet.absoluteFillObject,
   },
   progressRoot: {
     ...StyleSheet.absoluteFillObject,
+    overflow: 'visible',
   },
   halfClip: {
     position: 'absolute',
-    top: 0,
     overflow: 'hidden',
   },
   label: {

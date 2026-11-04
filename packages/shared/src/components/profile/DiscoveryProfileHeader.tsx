@@ -17,6 +17,7 @@ import {
 } from '../../theme';
 import {
   alignmentAccessibilityLabel,
+  alignmentTitleLabel,
   alignmentUnavailableLabel,
 } from '../../visibility/alignmentPresentation';
 import type { Alignment } from '../../visibility/discoveryCompatibility';
@@ -93,12 +94,23 @@ export function DiscoveryProfileHeader({
           accessibilityLabel={alignmentA11y}
         >
           {alignment.available === true ? (
-            <AlignmentScoreRing
-              score={alignment.score}
-              variant="compact"
-              accessibilityElementsHidden
-              importantForAccessibility="no"
-            />
+            <>
+              <AlignmentScoreRing
+                score={alignment.score}
+                variant="compact"
+                accessibilityElementsHidden
+                importantForAccessibility="no"
+              />
+              <Text
+                style={[styles.alignmentTitle, { color: palette.primary }]}
+                numberOfLines={2}
+                maxFontSizeMultiplier={1.35}
+                accessibilityElementsHidden
+                importantForAccessibility="no"
+              >
+                {alignmentTitleLabel(t)}
+              </Text>
+            </>
           ) : (
             <Text
               style={[styles.unavailable, { color: palette.textMuted }]}
@@ -129,6 +141,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-start',
     paddingTop: 2,
+    gap: 4,
+  },
+  alignmentTitle: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+    textAlign: 'center',
+    lineHeight: 14,
+    alignSelf: 'stretch',
   },
   name: {
     fontSize: 24,

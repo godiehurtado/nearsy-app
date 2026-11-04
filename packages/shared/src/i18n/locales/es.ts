@@ -587,8 +587,8 @@ const es: TranslationResources = {
         title: 'Redes sociales',
         subtitle:
           'Conecta tus perfiles para que las personas puedan encontrarte en otros lugares. Todo es opcional.',
-        connected: '{{count}} conectadas',
-        connectedOne: '1 conectada',
+        connected: '{{count}} añadidas',
+        connectedOne: '1 añadida',
         next: 'Siguiente',
         skip: 'Omitir',
         other: 'Otra red',
@@ -1027,6 +1027,10 @@ const es: TranslationResources = {
       distanceRange: 'Rango de búsqueda',
       distanceValueFt: 'hasta {{value}} ft',
       distanceValueM: 'hasta {{value}} m',
+      errors: {
+        title: 'Filtros de descubrimiento',
+        saveFailed: 'No se pudieron guardar tus filtros. Inténtalo de nuevo.',
+      },
     },
     discovery: {
       title: 'Descubrimiento',
@@ -1297,6 +1301,12 @@ const es: TranslationResources = {
       description:
         'Conecta tus perfiles para que otras personas puedan encontrarte. Todo es opcional.',
       connected: 'Conectado',
+      linkSaved: 'Enlace guardado',
+      back: 'Volver',
+      backToProfileA11y: 'Volver al perfil',
+      noLinkSaved: 'Sin enlace',
+      editLink: 'Editar',
+      editLinkA11y: 'Editar enlace de {{platform}}',
       notConnected: 'Sin conectar',
       connect: 'Conectar',
       disconnect: 'Desconectar',
@@ -1334,7 +1344,9 @@ const es: TranslationResources = {
           stepCopy: 'Copia el código.',
           stepOpen: 'Abre Instagram y ve a @nearsy.app.',
           stepMessage: 'Toca Enviar mensaje.',
-          stepPaste: 'Pega el código, envíalo y vuelve a Nearsy.',
+          stepPaste: 'Pega el código y envíalo.',
+          stepReturn:
+            'Vuelve a Nearsy: comprobamos la conexión automáticamente.',
         },
         x: {
           title: 'Conectar X',
@@ -1369,7 +1381,7 @@ const es: TranslationResources = {
         discard: 'Descartar',
       },
       youtube: {
-        connect: 'Conectar YouTube',
+        connect: 'Conectar',
         connectA11y: 'Conectar un canal de YouTube para este perfil',
         connecting: 'Conectando…',
         disconnect: 'Desconectar',
@@ -1406,7 +1418,7 @@ const es: TranslationResources = {
         },
       },
       tiktok: {
-        connect: 'Conectar TikTok',
+        connect: 'Conectar',
         connectA11y: 'Conectar una cuenta de TikTok para este perfil',
         connecting: 'Conectando…',
         disconnect: 'Desconectar',
@@ -1438,7 +1450,7 @@ const es: TranslationResources = {
         },
       },
       instagram: {
-        connect: 'Conectar Instagram',
+        connect: 'Conectar',
         connectA11y: 'Conectar una cuenta de Instagram para este perfil',
         connecting: 'Conectando…',
         disconnect: 'Desconectar',
@@ -1480,7 +1492,7 @@ const es: TranslationResources = {
         },
       },
       x: {
-        connect: 'Conectar X',
+        connect: 'Conectar',
         connectA11y: 'Conectar una cuenta de X para este perfil',
         connecting: 'Conectando…',
         disconnect: 'Desconectar',
@@ -1719,6 +1731,39 @@ const es: TranslationResources = {
       permissionDenied:
         'Se necesita acceso a Contactos para sincronizar tu libreta. Puedes activarlo en Ajustes de iPhone.',
       error: 'No se pudo actualizar la sincronización de Contactos. Inténtalo más tarde.',
+      syncing: 'Sincronizando contactos…',
+      syncSuccess: 'Contactos sincronizados.',
+      confirming:
+        'Seguimos confirmando con el servidor. Puedes seguir usando Nearsy.',
+      enabledNotSynced:
+        'Contactos cercanos está activado, pero tu libreta aún no está sincronizada.',
+      stateUnconfirmed: 'No pudimos confirmar si está activado o desactivado.',
+      syncFailedTitle: 'Sincronización de contactos',
+      retry: 'Reintentar',
+      errors: {
+        generic: 'No se pudieron sincronizar los contactos. Inténtalo de nuevo.',
+        unauthenticated: 'Vuelve a iniciar sesión para sincronizar contactos.',
+        accountGone:
+          'Esta cuenta ya no está disponible para sincronizar contactos.',
+        notEnabled: 'Activa Contactos cercanos antes de sincronizar.',
+        stale:
+          'La sincronización de contactos está desactualizada. Reintenta para reconciliar.',
+        sourceRemoved:
+          'Se quitó la sincronización de contactos. Actívala de nuevo para continuar.',
+        disablePending:
+          'La desactivación de Contactos cercanos sigue pendiente. Reintenta para terminar.',
+        epochRequired:
+          'Actualiza Nearsy para volver a activar Contactos cercanos. El resto de la app sigue funcionando.',
+        cap: 'Tu libreta es demasiado grande para sincronizar ahora.',
+        invalid:
+          'Algunos identificadores de contacto no se pudieron sincronizar. Inténtalo de nuevo.',
+        unavailable:
+          'La sincronización de contactos no está disponible temporalmente. Inténtalo en breve.',
+        timeout:
+          'La sincronización de contactos está tardando demasiado. El servidor puede haber escrito igual — reintenta para reconciliar.',
+        capAction:
+          'Tu libreta supera el límite de sincronización. Quita contactos en la app Teléfono y luego reintenta.',
+      },
     },
     visibilityAge: {
       title: 'Quién puede encontrarme por edad',

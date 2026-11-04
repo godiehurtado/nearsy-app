@@ -21,6 +21,10 @@ export default {
     distanceRange: 'Search range',
     distanceValueFt: 'up to {{value}} ft',
     distanceValueM: 'up to {{value}} m',
+    errors: {
+      title: 'Discovery filters',
+      saveFailed: 'Could not save your filters. Please try again.',
+    },
   },
   discovery: {
     title: 'Discovery',

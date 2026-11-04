@@ -5,7 +5,10 @@
 
 import type { ContactIdentifierInput } from './domain';
 
-export type EnableContactsSyncRequest = Record<string, never>;
+/** Always carries the live epoch (Identity #27 §14.2). Never `{}`. */
+export type EnableContactsSyncRequest = {
+  contactsEpoch: number;
+};
 
 export type SyncContactHashesRequest = {
   sourceId: string;
@@ -21,6 +24,8 @@ export type DisableContactsSyncRequest = {
 export type RemoveContactSourceRequest = {
   sourceId: string;
   contactsEpoch: number;
+  /** Highest version sent for this source in this epoch, uncertain included. */
+  knownSnapshotVersion: number;
 };
 
 export type RefreshVerifiedActorKeysRequest = Record<string, never>;

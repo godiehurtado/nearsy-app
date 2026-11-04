@@ -106,7 +106,10 @@ import {
 } from '../theme';
 import type { ThemeName } from '../theme/colors';
 import { AppearanceToggle } from '../components/AppearanceToggle';
-import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
+import {
+  createReevaluatePendingPort,
+  scheduleReevaluateProximityNotices,
+} from '../alerts/reevaluateProximityNotices';
 import {
   buildNotifyNearbyContactsMutePatch,
   buildNotifyNearbyInterestsPatch,
@@ -117,12 +120,30 @@ import {
 import {
   disableContactsSyncFlow,
   enableAndSyncContacts,
+  reconcilePendingDisable,
+  syncGrantedAddressBook,
 } from '../contacts/controller';
+import {
+  CONTACTS_SYNC_TIMEOUT_MS,
+  presentContactsSyncError,
+} from '../contacts/contactsErrorPresentation';
+import {
+  contactsOperationRunner,
+  driveContactsOperation,
+  type ContactsOutcomeView,
+  type ContactsServerState,
+} from '../contacts/contactsOperationCoordinator';
 import { createContactsAddressBookPort } from '../contacts/iosAddressBook';
 import { getContactsHmacClient } from '../contacts/iosContactsFoundation';
 import { createContactsSessionStore } from '../contacts/iosContactsSession';
-import { shouldCallReevaluateAfterIdentity } from '../contacts/parse';
-import type { ContactsWireResult } from '../contacts/wireTypes';
+
+type ContactsSyncPhase =
+  | 'idle'
+  | 'syncing'
+  | 'confirming'
+  | 'synced'
+  | 'pending'
+  | 'error';
 
 type ProfileDoc = {
   phone?: string | null;
@@ -245,6 +266,16 @@ export default function MoreScreen() {
   const [contactsSyncEnabled, setContactsSyncEnabled] = useState(false);
   const [notifyNearbyContacts, setNotifyNearbyContacts] = useState(false);
   const [contactsBusy, setContactsBusy] = useState(false);
+  const [contactsSyncPhase, setContactsSyncPhase] =
+    useState<ContactsSyncPhase>('idle');
+  const [contactsSyncError, setContactsSyncError] = useState<string | null>(
+    null,
+  );
+  const contactsSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  /** Last server-confirmed Contacts enabled value (hydration or Identity). */
+  const contactsConfirmedEnabledRef = useRef(false);
   const [bgChanging, setBgChanging] = useState(false);
   const [bgEducationOpen, setBgEducationOpen] = useState(false);
   const [bgEducationVariant, setBgEducationVariant] =
@@ -335,7 +366,14 @@ export default function MoreScreen() {
     );
     setVisibilityOn(!!data.visibility);
     setNotifyNearbyInterests(resolveNotifyNearbyInterests(data.notifyNearbyInterests));
-    setContactsSyncEnabled(resolveContactsSyncEnabled(data.contactsSyncEnabled));
+    const serverContactsEnabled = resolveContactsSyncEnabled(
+      data.contactsSyncEnabled,
+    );
+    // An in-flight operation owns the toggle until it settles.
+    if (contactsOperationRunner.inFlight(uid) === null) {
+      contactsConfirmedEnabledRef.current = serverContactsEnabled;
+      setContactsSyncEnabled(serverContactsEnabled);
+    }
     setNotifyNearbyContacts(
       resolveNotifyNearbyContacts({
         contactsSyncEnabled: data.contactsSyncEnabled,
@@ -514,16 +552,177 @@ export default function MoreScreen() {
     setBgVisible(value);
   };
 
-  const contactsPorts = async () => ({
-    client: await getContactsHmacClient(),
-    session: createContactsSessionStore(),
-    book: createContactsAddressBookPort(),
-    afterIdentity: async (result: ContactsWireResult) => {
-      if (shouldCallReevaluateAfterIdentity(result)) {
-        scheduleReevaluateProximityNotices();
+  const contactsMountedRef = useRef(true);
+  useEffect(() => {
+    contactsMountedRef.current = true;
+    return () => {
+      contactsMountedRef.current = false;
+      if (contactsSuccessTimerRef.current) {
+        clearTimeout(contactsSuccessTimerRef.current);
       }
+    };
+  }, []);
+
+  const contactsPorts = async (uid: string, isCurrent: () => boolean) => ({
+    client: await getContactsHmacClient(),
+    session: createContactsSessionStore(uid),
+    book: createContactsAddressBookPort(),
+    isCancelled: () => !isCurrent() || firebaseAuth.currentUser?.uid !== uid,
+    reevaluatePending: createReevaluatePendingPort(uid),
+    // Reevaluate is best-effort and separate from Identity sync success. The
+    // controller calls this only when one is owed.
+    afterIdentity: async () => {
+      scheduleReevaluateProximityNotices();
     },
   });
+
+  const clearContactsSuccessTimer = () => {
+    if (contactsSuccessTimerRef.current) {
+      clearTimeout(contactsSuccessTimerRef.current);
+      contactsSuccessTimerRef.current = null;
+    }
+  };
+
+  /** Identity-owned fields only; used when an outcome does not prove state. */
+  const readContactsServerState = async (
+    uid: string,
+  ): Promise<ContactsServerState | null> => {
+    const snap = await getDoc(doc(firestoreDb, 'users', uid));
+    // A cached copy says nothing about what the server has now.
+    if (!snap.exists() || snap.metadata.fromCache) return null;
+    const data = snap.data() as ProfileDoc;
+    return {
+      enabled: resolveContactsSyncEnabled(data.contactsSyncEnabled),
+      notifyNearbyContacts: resolveNotifyNearbyContacts({
+        contactsSyncEnabled: data.contactsSyncEnabled,
+        notifyNearbyContacts: data.notifyNearbyContacts,
+      }),
+    };
+  };
+
+  const offerContactsRetry = (
+    message: string,
+    retryKind: ContactsOutcomeView['retryKind'],
+  ) => {
+    const buttons = retryKind
+      ? [
+          { text: t('common.cancel'), style: 'cancel' as const },
+          {
+            text: t('settings.contacts.retry'),
+            onPress: () => {
+              void handleRetryContactsOperation(retryKind);
+            },
+          },
+        ]
+      : [{ text: t('common.ok') }];
+    Alert.alert(t('settings.contacts.syncFailedTitle'), message, buttons);
+  };
+
+  const applyContactsView = (view: ContactsOutcomeView) => {
+    if (view.enabled !== null) {
+      contactsConfirmedEnabledRef.current = view.enabled;
+      setContactsSyncEnabled(view.enabled);
+    }
+    if (view.notifyNearbyContacts !== null) {
+      setNotifyNearbyContacts(view.notifyNearbyContacts);
+    }
+    clearContactsSuccessTimer();
+    switch (view.view) {
+      case 'syncing':
+      case 'confirming':
+      case 'idle':
+        setContactsSyncPhase(view.view);
+        setContactsSyncError(null);
+        return;
+      case 'synced':
+        setContactsSyncPhase('synced');
+        setContactsSyncError(null);
+        contactsSuccessTimerRef.current = setTimeout(() => {
+          setContactsSyncPhase('idle');
+          contactsSuccessTimerRef.current = null;
+        }, 2500);
+        return;
+      case 'enabledNotSynced': {
+        // Enable confirmed ≠ address book synced.
+        const message = t('settings.contacts.enabledNotSynced');
+        setContactsSyncPhase('pending');
+        setContactsSyncError(message);
+        offerContactsRetry(message, view.retryKind);
+        return;
+      }
+      case 'error': {
+        const base = presentContactsSyncError(view.reason ?? '', t);
+        // Server state unreadable → say so instead of implying ON/OFF.
+        const message =
+          view.enabled === null
+            ? `${base} ${t('settings.contacts.stateUnconfirmed')}`
+            : base;
+        setContactsSyncPhase('error');
+        setContactsSyncError(message);
+        offerContactsRetry(message, view.retryable ? view.retryKind : null);
+        return;
+      }
+    }
+  };
+
+  const runContactsOperation = async (
+    kind: 'enable' | 'sync' | 'disable' | 'refresh',
+  ) => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) return;
+    setContactsBusy(true);
+    try {
+      await driveContactsOperation({
+        runner: contactsOperationRunner,
+        uid,
+        kind,
+        previousEnabled: contactsConfirmedEnabledRef.current,
+        waitMs: CONTACTS_SYNC_TIMEOUT_MS,
+        task: async ({ isCurrent }) => {
+          const ports = await contactsPorts(uid, isCurrent);
+          if (kind === 'enable') return enableAndSyncContacts(ports);
+          if (kind === 'disable') return disableContactsSyncFlow(ports);
+          if (kind === 'refresh') return reconcilePendingDisable(ports);
+          return syncGrantedAddressBook(ports);
+        },
+        isActive: () =>
+          contactsMountedRef.current && firebaseAuth.currentUser?.uid === uid,
+        readServerState: () => readContactsServerState(uid),
+        onView: applyContactsView,
+      });
+    } finally {
+      if (
+        contactsMountedRef.current &&
+        contactsOperationRunner.inFlight(uid) === null
+      ) {
+        setContactsBusy(false);
+      }
+    }
+  };
+
+  // A turn-off left unfinished by an earlier run. Reads the state once and only
+  // when one is pending; it never resends the disable.
+  useEffect(() => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid || contactsOperationRunner.inFlight(uid) !== null) return;
+    void (async () => {
+      const session = await createContactsSessionStore(uid)
+        .load()
+        .catch(() => null);
+      if (!session?.disablePending || !contactsMountedRef.current) return;
+      await runContactsOperation('refresh');
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** A new user action: disable retries disable, it never turns into a sync. */
+  const handleRetryContactsOperation = async (
+    kind: NonNullable<ContactsOutcomeView['retryKind']>,
+  ) => {
+    if (contactsBusy) return;
+    if (kind !== 'sync') setContactsSyncEnabled(kind === 'enable');
+    await runContactsOperation(kind);
+  };
 
   const handleToggleNotifyNearbyInterests = async (enabled: boolean) => {
     const uid = firebaseAuth.currentUser?.uid;
@@ -562,35 +761,12 @@ export default function MoreScreen() {
   };
 
   const handleToggleContactsSync = async (enabled: boolean) => {
-    if (contactsBusy) return;
-    const previous = contactsSyncEnabled;
-    setContactsBusy(true);
+    // Turning off is always possible: it cancels a running enable or sync.
+    if (contactsBusy && enabled) return;
+    // Requested position while the operation runs; the final value comes from
+    // the Identity outcome or a server read, never from an assumed rollback.
     setContactsSyncEnabled(enabled);
-    try {
-      const ports = await contactsPorts();
-      const outcome = enabled
-        ? await enableAndSyncContacts(ports)
-        : await disableContactsSyncFlow(ports);
-      if (outcome.ok === false) {
-        setContactsSyncEnabled(previous);
-        if (outcome.reason === 'contacts-os-denied') {
-          Alert.alert(
-            t('common.appName'),
-            t('settings.contacts.permissionDenied'),
-          );
-        } else {
-          Alert.alert(t('common.error'), t('settings.contacts.error'));
-        }
-        return;
-      }
-      setContactsSyncEnabled(outcome.result.contactsSyncEnabled);
-      setNotifyNearbyContacts(outcome.result.notifyNearbyContactsEffective);
-    } catch {
-      setContactsSyncEnabled(previous);
-      Alert.alert(t('common.error'), t('settings.contacts.error'));
-    } finally {
-      setContactsBusy(false);
-    }
+    await runContactsOperation(enabled ? 'enable' : 'disable');
   };
 
   const showNeedsAlwaysSettings = () => {
@@ -944,6 +1120,10 @@ export default function MoreScreen() {
       } catch {
         // Keep going; leftover association is recovered on the next login as A.
       }
+      // Invalidate in-flight Contacts ops so late results cannot update UI /
+      // consent after this UID session ends.
+      const signingOutUid = firebaseAuth.currentUser?.uid;
+      if (signingOutUid) contactsOperationRunner.invalidate(signingOutUid);
       await firebaseAuth.signOut();
       // Idempotent Facebook SDK logout; never blocks guest navigation.
       await clearFacebookProviderSession();
@@ -1072,10 +1252,22 @@ export default function MoreScreen() {
           <SettingsToggleRow
             icon="people-circle-outline"
             title={t('settings.contacts.title')}
-            description={t('settings.contacts.description')}
+            description={
+              contactsSyncPhase === 'syncing'
+                ? t('settings.contacts.syncing')
+                : contactsSyncPhase === 'confirming'
+                  ? t('settings.contacts.confirming')
+                  : contactsSyncPhase === 'synced'
+                    ? t('settings.contacts.syncSuccess')
+                    : (contactsSyncPhase === 'error' ||
+                          contactsSyncPhase === 'pending') &&
+                        contactsSyncError
+                      ? contactsSyncError
+                      : t('settings.contacts.description')
+            }
             value={contactsSyncEnabled}
             onValueChange={handleToggleContactsSync}
-            disabled={contactsBusy}
+            disabled={contactsBusy && !contactsSyncEnabled}
           />
           <SettingsToggleRow
             icon="notifications-outline"

@@ -59,7 +59,15 @@ export async function resumePendingReevaluateProximityNotices(): Promise<void> {
   if (!invokeImpl) return;
   const uid = resolveUidImpl?.() ?? null;
   if (!uid) return;
-  const pending = await getReevaluatePendingStore().loadPendingUid();
-  if (pending !== uid) return;
+  if (!(await getReevaluatePendingStore().isPending(uid))) return;
   scheduleReevaluateProximityNotices();
+}
+
+/** Contract §9 marker for one UID, written before a mutating Identity call. */
+export function createReevaluatePendingPort(uid: string) {
+  return {
+    isPending: () => getReevaluatePendingStore().isPending(uid),
+    markPending: () => getReevaluatePendingStore().markPending(uid),
+    clear: () => getReevaluatePendingStore().clearIfUid(uid),
+  };
 }

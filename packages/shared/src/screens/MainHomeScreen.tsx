@@ -83,6 +83,11 @@ import {
   persistSearchPreferencesForMode,
 } from '../visibility/searchPreferencesStore';
 import {
+  createSearchPreferencesWriteLedger,
+  type SearchPreferencesWriteLedger,
+  type SearchPreferencesWriteSettle,
+} from '../visibility/searchPreferencesWriteLedger';
+import {
   applyModeFieldPatch,
   shouldApplyRemotePreferences,
   type PrefsFieldPatch,
@@ -206,6 +211,19 @@ export default function MainHomeScreen({ navigation }: Props) {
   const inFlightWritesRef = useRef(0);
   const localEpochRef = useRef(0);
   const appliedEpochRef = useRef(0);
+  /** Last confirmed filters per mode + writes in flight (current UID only). */
+  const prefsLedgerRef = useRef<SearchPreferencesWriteLedger | null>(null);
+  const syncPrefsLedgerWithServer = (
+    uid: string,
+    remote: VisibilitySearchPreferencesByMode,
+  ) => {
+    const ledger = prefsLedgerRef.current;
+    if (ledger && ledger.uid === uid) {
+      ledger.hydrate(remote);
+    } else {
+      prefsLedgerRef.current = createSearchPreferencesWriteLedger(uid, remote);
+    }
+  };
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const [ageVisual, setAgeVisual] = useState<{
     ageMin: number;
@@ -558,6 +576,7 @@ export default function MainHomeScreen({ navigation }: Props) {
           prefsRef.current = remote;
           setPrefs(remote);
           appliedEpochRef.current = 0;
+          syncPrefsLedgerWithServer(uid, remote);
         } else if (
           shouldApplyRemotePreferences({
             inFlightWrites: inFlightWritesRef.current,
@@ -573,6 +592,7 @@ export default function MainHomeScreen({ navigation }: Props) {
           prefsRef.current = remote;
           setPrefs(remote);
           appliedEpochRef.current = localEpochRef.current;
+          syncPrefsLedgerWithServer(uid, remote);
         }
       }
       setLoading(false);
@@ -1052,32 +1072,65 @@ export default function MainHomeScreen({ navigation }: Props) {
         return;
       }
 
+      let ledger = prefsLedgerRef.current;
+      if (!ledger || ledger.uid !== uid) {
+        // Not hydrated yet for this UID: the current state is the baseline.
+        ledger = createSearchPreferencesWriteLedger(uid, prefsRef.current);
+        prefsLedgerRef.current = ledger;
+      }
       const optimistic: VisibilitySearchPreferencesByMode = {
         ...draft,
         [mode]: prepared.prefs,
       };
       localEpochRef.current += 1;
       const epoch = localEpochRef.current;
+      const writeEpoch = ledger.begin(mode, prepared.prefs);
       prefsRef.current = optimistic;
       setPrefs(optimistic);
       setInterestLimitMessage(null);
 
+      const applySettle = (settled: SearchPreferencesWriteSettle | null) => {
+        // Late response after a UID change / remount: drop it.
+        if (!settled || prefsLedgerRef.current !== ledger) return;
+        prefsRef.current = settled.display;
+        setPrefs(settled.display);
+        // Nothing left in flight → server snapshots may rehydrate again.
+        if (settled.idle) appliedEpochRef.current = localEpochRef.current;
+      };
+
       inFlightWritesRef.current += 1;
       try {
-        const updated = await persistSearchPreferencesForMode(
+        await persistSearchPreferencesForMode(
           uid,
           optimistic,
           mode,
           prepared.prefs,
         );
-        if (epoch === localEpochRef.current) {
-          prefsRef.current = updated;
-          setPrefs(updated);
-          appliedEpochRef.current = epoch;
-        }
+        applySettle(ledger.succeed(writeEpoch));
       } catch (err) {
-        if (epoch === localEpochRef.current) {
-          Alert.alert(t('home.errors.title'), t('home.errors.generic'));
+        // Roll back to the last confirmed value for this mode (not another
+        // pending optimistic write). Alert only when the latest edit failed.
+        const settled = ledger.fail(writeEpoch);
+        applySettle(settled);
+        if (settled?.latestForModeFailed && prefsLedgerRef.current === ledger) {
+          // Filter persist is independent of Visibility — never reuse Visibility copy.
+          Alert.alert(
+            t('home.preferences.errors.title'),
+            t('home.preferences.errors.saveFailed'),
+          );
+        }
+        if (__DEV__) {
+          const code =
+            err && typeof err === 'object' && 'code' in err
+              ? String((err as { code?: unknown }).code ?? '')
+              : '';
+          console.warn('[Home.filters] persist failed', {
+            code: code || 'none',
+            mode,
+            epoch,
+            latestEpoch: localEpochRef.current,
+            rolledBack: settled?.latestForModeFailed === true,
+          });
         }
         const text = err instanceof Error ? err.message : '';
         if (text.includes(INTEREST_IDS_OVER_MAX_REASON)) {

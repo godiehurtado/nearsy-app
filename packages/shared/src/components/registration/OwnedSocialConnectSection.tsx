@@ -1508,6 +1508,20 @@ export function OwnedSocialConnectSection({
             ? t(`profile.social.connectModal.${connectSheet}.body` as any)
             : ''
         }
+        headerIcon={
+          connectSheet ? <PlatformGlyph id={connectSheet} /> : undefined
+        }
+        steps={
+          connectSheet === 'instagram'
+            ? [
+                t('profile.social.connectModal.instagram.stepCopy'),
+                t('profile.social.connectModal.instagram.stepOpen'),
+                t('profile.social.connectModal.instagram.stepMessage'),
+                t('profile.social.connectModal.instagram.stepPaste'),
+                t('profile.social.connectModal.instagram.stepReturn'),
+              ]
+            : undefined
+        }
         primaryLabel={
           connectSheet === 'instagram' && instagramChallenge
             ? t('profile.social.instagram.openInbox')
@@ -1548,52 +1562,36 @@ export function OwnedSocialConnectSection({
           setConnectSheet(null);
         }}
       >
-        {connectSheet === 'instagram' ? (
+        {connectSheet === 'instagram' && instagramChallenge ? (
           <View style={styles.instagramPending}>
-            <Text style={[styles.helperText, { color: palette.textSecondary }]}>
-              {t('profile.social.connectModal.instagram.stepCopy')}
+            <Text
+              selectable
+              accessibilityLabel={t('profile.social.instagram.shareCodeA11y')}
+              style={[
+                styles.instagramCode,
+                {
+                  color: palette.textPrimary,
+                  borderColor: palette.border,
+                  backgroundColor: palette.surface,
+                },
+              ]}
+            >
+              {instagramChallenge.code}
             </Text>
-            <Text style={[styles.helperText, { color: palette.textSecondary }]}>
-              {t('profile.social.connectModal.instagram.stepOpen')}
-            </Text>
-            <Text style={[styles.helperText, { color: palette.textSecondary }]}>
-              {t('profile.social.connectModal.instagram.stepMessage')}
-            </Text>
-            <Text style={[styles.helperText, { color: palette.textSecondary }]}>
-              {t('profile.social.connectModal.instagram.stepPaste')}
-            </Text>
-            {instagramChallenge ? (
-              <>
-                <Text
-                  selectable
-                  accessibilityLabel={t('profile.social.instagram.shareCodeA11y')}
-                  style={[
-                    styles.instagramCode,
-                    {
-                      color: palette.textPrimary,
-                      borderColor: palette.border,
-                      backgroundColor: palette.surface,
-                    },
-                  ]}
-                >
-                  {instagramChallenge.code}
-                </Text>
-                <InstagramChallengeCopyControls
-                  code={instagramChallenge.code}
-                  textColor={palette.textPrimary}
-                  mutedColor={palette.textMuted}
-                  borderColor={palette.border}
-                  surfaceColor={palette.surface}
-                />
-                {instagramBusyPhase === 'pending' ? (
-                  <Text
-                    accessibilityLiveRegion="polite"
-                    style={[styles.helperText, { color: palette.textMuted }]}
-                  >
-                    {t('profile.social.instagram.waiting')}
-                  </Text>
-                ) : null}
-              </>
+            <InstagramChallengeCopyControls
+              code={instagramChallenge.code}
+              textColor={palette.textPrimary}
+              mutedColor={palette.textMuted}
+              borderColor={palette.border}
+              surfaceColor={palette.surface}
+            />
+            {instagramBusyPhase === 'pending' ? (
+              <Text
+                accessibilityLiveRegion="polite"
+                style={[styles.helperText, { color: palette.textMuted }]}
+              >
+                {t('profile.social.instagram.waiting')}
+              </Text>
             ) : null}
           </View>
         ) : null}

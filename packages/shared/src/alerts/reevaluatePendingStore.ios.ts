@@ -8,7 +8,16 @@ import {
   registerReevaluatePendingStore,
 } from './reevaluatePendingStore';
 
-const KEY = 'nearsy.alerts.v1.reevaluatePendingUid';
+/** Single slot from before per-UID markers. Still honored for its own UID. */
+const LEGACY_KEY = 'nearsy.alerts.v1.reevaluatePendingUid';
+
+function keyForUid(uid: string): string {
+  const encoded = uid.replace(
+    /[^A-Za-z0-9]/g,
+    (ch) => `_${ch.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+  return `nearsy.alerts.v1.reevaluatePending.uid.${encoded}`;
+}
 
 type ExpoSecureStoreLike = {
   getItemAsync(key: string): Promise<string | null>;
@@ -24,43 +33,46 @@ async function loadSecureStore(): Promise<ExpoSecureStoreLike | null> {
   }
 }
 
-export function createSecureReevaluatePendingStore(): ReevaluatePendingStore {
+export function createSecureReevaluatePendingStore(
+  getStore: () => Promise<ExpoSecureStoreLike | null> = loadSecureStore,
+): ReevaluatePendingStore {
   const fallback = createMemoryReevaluatePendingStore();
   return {
     async markPending(uid: string) {
       if (!uid) return;
       await fallback.markPending(uid);
-      const store = await loadSecureStore();
+      const store = await getStore();
       if (!store) return;
       try {
-        await store.setItemAsync(KEY, uid);
+        await store.setItemAsync(keyForUid(uid), '1');
       } catch {
         /* memory fallback remains */
       }
     },
     async clearIfUid(uid: string) {
-      const current = await this.loadPendingUid();
-      if (current !== uid) return;
       await fallback.clearIfUid(uid);
-      const store = await loadSecureStore();
+      const store = await getStore();
       if (!store) return;
       try {
-        await store.deleteItemAsync(KEY);
+        await store.deleteItemAsync(keyForUid(uid));
+        if ((await store.getItemAsync(LEGACY_KEY)) === uid) {
+          await store.deleteItemAsync(LEGACY_KEY);
+        }
       } catch {
         /* ignore */
       }
     },
-    async loadPendingUid() {
-      const store = await loadSecureStore();
+    async isPending(uid: string) {
+      const store = await getStore();
       if (store) {
         try {
-          const raw = await store.getItemAsync(KEY);
-          if (typeof raw === 'string' && raw.trim()) return raw.trim();
+          if ((await store.getItemAsync(keyForUid(uid))) != null) return true;
+          if ((await store.getItemAsync(LEGACY_KEY)) === uid) return true;
         } catch {
           /* fall through */
         }
       }
-      return fallback.loadPendingUid();
+      return fallback.isPending(uid);
     },
   };
 }

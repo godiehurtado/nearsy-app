@@ -10,7 +10,6 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Keyboard,
   AppState,
   Linking,
 } from 'react-native';
@@ -42,6 +41,8 @@ import {
   readPostCrjSocialEditorDraft,
   validatePostCrjSocialDraftForSave,
   buildValuesForPostCrjSocialSave,
+  applyManualLinkRemove,
+  applyManualLinkSave,
   type PostCrjSocialCardId,
   type PostCrjSocialEditorDraft,
 } from '../social/postCrjSocialEditor';
@@ -53,6 +54,8 @@ import {
   type CrjSocialFieldErrors,
 } from '../social/socialLinkNormalize';
 import { SocialConnectionModal } from '../components/social/SocialConnectionModal';
+import { ManualSocialLinkCard } from '../components/social/ManualSocialLinkCard';
+import type { ManualSocialLinkId } from '../social/manualSocialLinkCard';
 import {
   getYoutubeOwnershipClient,
   getYoutubeOwnershipController,
@@ -204,7 +207,6 @@ export default function SocialMediaScreen() {
   const [loadState, setLoadState] = useState<LoadState>(
     parsed.ok ? 'loading' : 'blocked',
   );
-  const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<PostCrjSocialEditorDraft>(() => ({
     values: readPostCrjSocialEditorDraft(null, 'personal').values,
     website: '',
@@ -215,9 +217,18 @@ export default function SocialMediaScreen() {
   const [fieldErrors, setFieldErrors] = useState<
     CrjSocialFieldErrors & { website?: string }
   >({});
-  const inputRefs = useRef<
-    Partial<Record<PostCrjSocialCardId, TextInput | null>>
-  >({});
+  // Manual link writes in flight (sheet save / remove) and screen liveness, so
+  // a Back press during a write never updates an unmounted screen.
+  const [manualSaving, setManualSaving] = useState(false);
+  const [removingManualId, setRemovingManualId] =
+    useState<PostCrjSocialCardId | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const [youtubeVerified, setYoutubeVerified] =
     useState<YoutubeOwnershipVerified | null>(null);
   const [youtubeLegacyUrl, setYoutubeLegacyUrl] = useState<string | null>(null);
@@ -300,7 +311,6 @@ export default function SocialMediaScreen() {
     instagramConnected,
     xConnected,
   });
-  const saveDisabled = saving || !isDirty;
 
   const screenTitle =
     editorMode === 'professional'
@@ -311,13 +321,6 @@ export default function SocialMediaScreen() {
     validConnectionCount === 1
       ? t('profile.social.connectedCountOne')
       : t('profile.social.connectedCount', { count: validConnectionCount });
-
-  // Ownership persists immediately; only dirty manual links need Save.
-  const saveButtonLabel = !isDirty
-    ? connectedCountLabel
-    : validConnectionCount === 1
-      ? t('profile.social.saveConnectionsOne')
-      : t('profile.social.saveConnections', { count: validConnectionCount });
 
   const confirmDiscard = useCallback(
     (onDiscard: () => void) => {
@@ -1363,49 +1366,18 @@ export default function SocialMediaScreen() {
       id === 'x'
     )
       return;
-    const nextConnected = { ...draft.connected, [id]: false };
-    const nextDraft: PostCrjSocialEditorDraft =
-      id === 'website'
-        ? { ...draft, connected: nextConnected, website: '' }
-        : {
-            ...draft,
-            connected: nextConnected,
-            values: { ...draft.values, [id]: '' },
-          };
+    if (id !== 'facebook' && id !== 'linkedin' && id !== 'website') return;
+    const nextDraft = applyManualLinkRemove(draft, id);
     setFieldErrors((prev) => {
       const next = { ...prev };
       delete next[id as CrjSocialPlatformId];
       if (id === 'website') delete next.website;
       return next;
     });
-    void persistDraftBag(nextDraft);
+    void runManualWrite(nextDraft, { removing: id });
   };
 
-  const updatePlatformValue = (id: CrjSocialPlatformId, text: string) => {
-    setDraft((prev) => ({
-      ...prev,
-      values: { ...prev.values, [id]: text },
-    }));
-    setFieldErrors((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  };
-
-  const updateWebsite = (text: string) => {
-    setDraft((prev) => ({ ...prev, website: text }));
-    setFieldErrors((prev) => {
-      const next = { ...prev };
-      delete next.website;
-      return next;
-    });
-  };
-
-  const persistDraftBag = async (
-    nextDraft: PostCrjSocialEditorDraft,
-    options?: { goBack?: boolean },
-  ) => {
+  const persistDraftBag = async (nextDraft: PostCrjSocialEditorDraft) => {
     if (!editorUid || !editorMode) return false;
     const uidForWrite = editorUid;
     const modeForWrite = editorMode;
@@ -1457,7 +1429,8 @@ export default function SocialMediaScreen() {
       return false;
     }
     snapshotRef.current = nextDraft;
-    setDraft(nextDraft);
+    // The write landed; skip React state if the user already went Back.
+    if (mountedRef.current) setDraft(nextDraft);
     existingLinksRef.current = readExistingSocialLinks(
       {
         ...(modeForWrite === 'personal'
@@ -1466,36 +1439,36 @@ export default function SocialMediaScreen() {
       },
       modeForWrite,
     );
-    if (options?.goBack) {
-      Keyboard.dismiss();
-      navigation.goBack();
-    }
     return true;
   };
 
-  const handleSave = async () => {
-    if (!editorUid || !editorMode || saving || !isDirty) return;
-
-    const validation = validatePostCrjSocialDraftForSave(draft, {
-      requiredWhenConnected: t('profile.social.requiredWhenConnected'),
-      invalidValue: t('profile.social.invalidValue'),
-    });
-    if (validation.ok === false) {
-      setFieldErrors(validation.errors);
-      return;
-    }
-
+  /**
+   * Every manual-link change (sheet save, remove) persists immediately with a
+   * busy state and a visible error. Back never saves; a write already in
+   * flight still lands after navigation, without touching unmounted state.
+   */
+  const runManualWrite = async (
+    nextDraft: PostCrjSocialEditorDraft,
+    opts: { removing?: PostCrjSocialCardId } = {},
+  ): Promise<boolean> => {
+    if (manualSaving || removingManualId) return false;
+    if (opts.removing) setRemovingManualId(opts.removing);
+    else setManualSaving(true);
     try {
-      setSaving(true);
-      const ok = await persistDraftBag(draft, { goBack: true });
-      if (!ok) return;
+      return await persistDraftBag(nextDraft);
     } catch (e: any) {
-      Alert.alert(
-        t('common.error'),
-        e?.message || t('profile.social.saveError'),
-      );
+      if (mountedRef.current) {
+        Alert.alert(
+          t('common.error'),
+          e?.message || t('profile.social.saveError'),
+        );
+      }
+      return false;
     } finally {
-      setSaving(false);
+      if (mountedRef.current) {
+        setManualSaving(false);
+        setRemovingManualId(null);
+      }
     }
   };
 
@@ -2393,158 +2366,28 @@ export default function SocialMediaScreen() {
             </View>
 
             {cardConfigs.map((card) => {
-              const connected = draft.connected[card.id];
               const error =
                 card.id === 'website'
                   ? fieldErrors.website
                   : fieldErrors[card.id as CrjSocialPlatformId];
+              const connected = draft.connected[card.id];
               const value =
                 card.id === 'website'
                   ? draft.website
                   : draft.values[card.id as CrjSocialPlatformId];
-
+              // Same card/state/actions as the CRJ: Connect / Edit open the
+              // sheet (saved immediately), Remove persists immediately.
               return (
-                <View
+                <ManualSocialLinkCard
                   key={card.id}
-                  style={[
-                    styles.card,
-                    {
-                      backgroundColor: palette.panel,
-                      borderColor: connected ? palette.primary : palette.border,
-                      borderWidth: connected ? 1.5 : 1,
-                    },
-                  ]}
-                >
-                  <View style={styles.cardTopRow}>
-                    <PlatformGlyph platform={{ ...card.platform, id: card.id }} />
-                    <View style={styles.cardTextCol}>
-                      <Text
-                        style={[
-                          styles.platformName,
-                          { color: palette.textPrimary },
-                        ]}
-                      >
-                        {card.label}
-                      </Text>
-                      {connected ? (
-                        <View style={styles.connectedRow}>
-                          <View
-                            style={[
-                              styles.connectedDot,
-                              { backgroundColor: palette.success },
-                            ]}
-                            accessibilityElementsHidden
-                            importantForAccessibility="no"
-                          />
-                          <Text
-                            style={[
-                              styles.connectedLabel,
-                              { color: palette.success },
-                            ]}
-                          >
-                            {t('profile.social.connected')}
-                          </Text>
-                        </View>
-                      ) : (
-                        <Text
-                          style={[
-                            styles.notConnected,
-                            { color: palette.textMuted },
-                          ]}
-                        >
-                          {t('profile.social.notConnected')}
-                        </Text>
-                      )}
-                    </View>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        connected
-                          ? t('profile.social.disconnectA11y', {
-                              platform: card.label,
-                            })
-                          : t('profile.social.connectA11y', {
-                              platform: card.label,
-                            })
-                      }
-                      accessibilityState={{ selected: connected }}
-                      onPress={() =>
-                        connected
-                          ? disconnectPlatform(card.id)
-                          : connectPlatform(card.id)
-                      }
-                      style={({ pressed }) => [
-                        styles.toggleBtn,
-                        connected
-                          ? {
-                              backgroundColor: 'transparent',
-                              borderColor: palette.danger,
-                            }
-                          : {
-                              backgroundColor: palette.primary,
-                              borderColor: palette.primary,
-                            },
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.toggleText,
-                          {
-                            color: connected ? palette.danger : palette.surface,
-                          },
-                        ]}
-                      >
-                        {connected
-                          ? t('profile.social.disconnect')
-                          : t('profile.social.connect')}
-                      </Text>
-                    </Pressable>
-                  </View>
-
-                  {connected ? (
-                    <>
-                      <TextInput
-                        ref={(ref) => {
-                          inputRefs.current[card.id] = ref;
-                        }}
-                        value={value}
-                        onChangeText={(text) =>
-                          card.id === 'website'
-                            ? updateWebsite(text)
-                            : updatePlatformValue(
-                                card.id as CrjSocialPlatformId,
-                                text,
-                              )
-                        }
-                        placeholder={card.placeholder}
-                        placeholderTextColor={palette.placeholder}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        keyboardType="url"
-                        accessibilityLabel={t('profile.social.inputA11y', {
-                          platform: card.label,
-                        })}
-                        style={[
-                          styles.input,
-                          {
-                            color: palette.textPrimary,
-                            borderColor: error ? palette.danger : palette.border,
-                            backgroundColor: palette.surface,
-                          },
-                        ]}
-                      />
-                      {error ? (
-                        <Text
-                          accessibilityRole="alert"
-                          style={[styles.fieldError, { color: palette.danger }]}
-                        >
-                          {error}
-                        </Text>
-                      ) : null}
-                    </>
-                  ) : null}
-                </View>
+                  id={card.id as ManualSocialLinkId}
+                  label={card.label}
+                  url={connected ? value : ''}
+                  busy={manualSaving || removingManualId === card.id}
+                  error={error}
+                  onOpenSheet={() => connectPlatform(card.id)}
+                  onRemove={() => disconnectPlatform(card.id)}
+                />
               );
             })}
           </View>
@@ -2561,26 +2404,22 @@ export default function SocialMediaScreen() {
             cardShadow,
           ]}
         >
+          {/* Navigation only: every change is already saved by its own
+              operation. Always enabled, even with no networks added. */}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={saveButtonLabel}
-            accessibilityState={{ disabled: saveDisabled, busy: saving }}
-            disabled={saveDisabled}
-            onPress={handleSave}
+            accessibilityLabel={t('profile.social.backToProfileA11y')}
+            onPress={handleBack}
+            testID="social-editor-back"
             style={({ pressed }) => [
               styles.saveBtn,
               { backgroundColor: palette.primary },
-              saveDisabled && styles.disabled,
-              pressed && !saveDisabled && styles.pressed,
+              pressed && styles.pressed,
             ]}
           >
-            {saving ? (
-              <ActivityIndicator color={palette.surface} />
-            ) : (
-              <Text style={[styles.saveText, { color: palette.surface }]}>
-                {saveButtonLabel}
-              </Text>
-            )}
+            <Text style={[styles.saveText, { color: palette.surface }]}>
+              {t('profile.social.back')}
+            </Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -2597,12 +2436,33 @@ export default function SocialMediaScreen() {
             ? t(`profile.social.connectModal.${ownedSheet}.body` as any)
             : ''
         }
+        headerIcon={
+          ownedSheet ? (
+            <PlatformGlyph platform={getCrjSocialPlatform(ownedSheet)} />
+          ) : undefined
+        }
+        steps={
+          ownedSheet === 'instagram'
+            ? [
+                t('profile.social.connectModal.instagram.stepCopy'),
+                t('profile.social.connectModal.instagram.stepOpen'),
+                t('profile.social.connectModal.instagram.stepMessage'),
+                t('profile.social.connectModal.instagram.stepPaste'),
+                t('profile.social.connectModal.instagram.stepReturn'),
+              ]
+            : undefined
+        }
         primaryLabel={
           ownedSheet === 'instagram' && instagramChallenge
             ? t('profile.social.instagram.openInbox')
             : ownedSheet
               ? t(`profile.social.connectModal.${ownedSheet}.action` as any)
               : ''
+        }
+        primaryA11y={
+          ownedSheet === 'instagram' && instagramChallenge
+            ? t('profile.social.instagram.openInboxA11y')
+            : undefined
         }
         onPrimary={() => {
           if (ownedSheet === 'youtube') {
@@ -2634,9 +2494,6 @@ export default function SocialMediaScreen() {
       >
         {ownedSheet === 'instagram' && instagramChallenge ? (
           <View>
-            <Text style={[styles.helperText, { color: palette.textSecondary }]}>
-              {t('profile.social.connectModal.instagram.stepCopy')}
-            </Text>
             <Text
               selectable
               style={[
@@ -2673,6 +2530,20 @@ export default function SocialMediaScreen() {
             ? t(`profile.social.connectModal.${manualSheet}.body` as any)
             : ''
         }
+        headerIcon={
+          manualSheet && manualSheet !== 'website' ? (
+            <PlatformGlyph platform={getCrjSocialPlatform(manualSheet)} />
+          ) : manualSheet === 'website' ? (
+            <PlatformGlyph
+              platform={{
+                id: 'website',
+                ionicon: 'globe-outline',
+                iconSet: 'ionicons',
+                color: palette.chipBg,
+              }}
+            />
+          ) : undefined
+        }
         primaryLabel={t('profile.social.saveLink')}
         primaryA11y={
           manualSheet
@@ -2686,6 +2557,7 @@ export default function SocialMediaScreen() {
               })
             : undefined
         }
+        primaryBusy={manualSaving}
         onPrimary={() => {
           if (!manualSheet) return;
           const raw = manualDraft.trim();
@@ -2697,26 +2569,16 @@ export default function SocialMediaScreen() {
             setManualError(t('profile.social.invalidValue'));
             return;
           }
-          const nextDraft: PostCrjSocialEditorDraft =
-            manualSheet === 'website'
-              ? {
-                  ...draft,
-                  website: result.url,
-                  connected: { ...draft.connected, website: true },
-                }
-              : {
-                  ...draft,
-                  values: { ...draft.values, [manualSheet]: result.url },
-                  connected: { ...draft.connected, [manualSheet]: true },
-                };
-          void persistDraftBag(nextDraft).then((ok) => {
-            if (ok) {
+          const nextDraft = applyManualLinkSave(draft, manualSheet, result.url);
+          void runManualWrite(nextDraft).then((ok) => {
+            if (ok && mountedRef.current) {
               setManualSheet(null);
               setManualError(null);
             }
           });
         }}
         onRequestClose={() => {
+          if (manualSaving) return;
           setManualSheet(null);
           setManualError(null);
         }}

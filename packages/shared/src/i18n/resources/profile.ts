@@ -207,6 +207,13 @@ export default {
     description:
       'Connect your profiles so people can find you elsewhere. All optional.',
     connected: 'Connected',
+    /** Manual URL links (FB/LI/Web) — not a verified ownership badge. */
+    linkSaved: 'Link saved',
+    back: 'Back',
+    backToProfileA11y: 'Back to profile',
+    noLinkSaved: 'No link saved',
+    editLink: 'Edit',
+    editLinkA11y: 'Edit {{platform}} link',
     notConnected: 'Not connected',
     connect: 'Connect',
     disconnect: 'Disconnect',
@@ -244,7 +251,8 @@ export default {
         stepCopy: 'Copy the code.',
         stepOpen: 'Open Instagram and go to @nearsy.app.',
         stepMessage: 'Tap Message.',
-        stepPaste: 'Paste the code, send it, then return to Nearsy.',
+        stepPaste: 'Paste the code and send it.',
+        stepReturn: 'Come back to Nearsy: we check the connection automatically.',
       },
       x: {
         title: 'Connect X',
@@ -279,7 +287,7 @@ export default {
       discard: 'Discard',
     },
     youtube: {
-      connect: 'Connect YouTube',
+      connect: 'Connect',
       connectA11y: 'Connect a YouTube channel for this profile',
       connecting: 'Connecting…',
       disconnect: 'Disconnect',
@@ -314,7 +322,7 @@ export default {
       },
     },
     tiktok: {
-      connect: 'Connect TikTok',
+      connect: 'Connect',
       connectA11y: 'Connect a TikTok account for this profile',
       connecting: 'Connecting…',
       disconnect: 'Disconnect',
@@ -345,7 +353,7 @@ export default {
       },
     },
     instagram: {
-      connect: 'Connect Instagram',
+      connect: 'Connect',
       connectA11y: 'Connect an Instagram account for this profile',
       connecting: 'Connecting…',
       disconnect: 'Disconnect',
@@ -386,7 +394,7 @@ export default {
       },
     },
     x: {
-      connect: 'Connect X',
+      connect: 'Connect',
       connectA11y: 'Connect an X account for this profile',
       connecting: 'Connecting…',
       disconnect: 'Disconnect',
