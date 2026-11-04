@@ -27,6 +27,7 @@ export {
   contactsCanRetry,
   contactsOperationInFlight,
   contactsStatusCopyKey,
+  contactsToggleLocked,
   contactsToggleValue,
 } from './contactsSyncStatus.ts';
 export type { ContactsSyncStatus } from './contactsSyncStatus.ts';

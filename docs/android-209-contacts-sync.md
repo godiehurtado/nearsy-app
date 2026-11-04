@@ -2,7 +2,14 @@
 
 Scope: PR #117, Android client only. No device QA and no traffic to production
 Identity back this document: behavior is proven against a fake Identity that applies
-the rules of `src/modules/contactsHmac/service.ts` in `nearsy-identity-functions`.
+the rules of `src/modules/contactsHmac/service.ts` in `nearsy-identity-functions`, at
+#27 (HEAD `477240b2f432f7828532b47310b253becf3287de`, merge
+`295e0f44fc34bf4a1f17afa2d5ece987203665d1`).
+
+**This client requires #27 deployed first.** A server without it rejects `contactsEpoch`
+on enable as `contacts-identifier-invalid`, so no one could turn Contacts on. Its dev
+deployment is in progress and production is not authorized, so this build must not ship
+before that order is met.
 
 ## What each state means
 
@@ -21,24 +28,46 @@ pending and retryable, and is never shown as denied permission, synced or enable
 While an outcome is unknown the toggle shows the last state Identity confirmed, and the
 description says the result is unknown. Tapping asks for the operation again.
 
-## Pending server dependency: rate limit
+## Rate limit
 
-Identity rejects writes closer than 2 s apart (`contacts-rate-limited`), and enable and
-sync both count. Enable followed by sync can therefore be rejected when the permission
-is already granted. Identity is reproducing this as a separate defect.
+With #27, the 2 s interval is per scope and enable does not delay the first sync, so no fixed
+wait is needed. `contacts-rate-limited` is an explicit result: what was confirmed stays
+confirmed, nothing is marked synced and no ack is written. A manual retry sends only the sync
+when enable is already confirmed, with the same version for the same snapshot. There is no
+automatic retry and no timer. The contract provides no retry-after value, so none is read.
 
-The client does not work around it with a fixed wait:
+## Epoch and enable
 
-- `contacts-rate-limited` is an explicit result. Enable and its epoch stay confirmed,
-  nothing is marked synced, and no ack is written.
-- A manual retry sends only the sync, with the same version for the same snapshot. It
-  does not repeat enable, because that would be one more write inside the limit.
-- There is no automatic retry and no timer.
-- The contract does not provide a retry-after value (checked on `main` in the contract
-  document, `errors.ts`, `callableErrors.ts` and `service.ts`), so none is read.
+- Enable always sends `contactsEpoch`. It is never assumed: the epoch counts as confirmed only
+  from an Identity success. A read of `users/{uid}` raises it but does not confirm it.
+- Without a confirmed epoch, one `refreshVerifiedActorKeys` reads it first. That call has effects
+  and spends rate budget, so there is no polling: it runs once per user action. If it does not
+  answer, nothing is sent and the result stays pending.
+- The stored epoch is per UID and never goes down. An epoch change voids the snapshot confirmation.
+- Mismatch or `contacts-epoch-required` on enable: read once. On means no enable is needed. Off
+  stops there, because turning on takes a new action.
+- Mismatch on a sync: read once. Off stops, and on uploads once at the live epoch.
+- Remove sends `knownSnapshotVersion`, the highest sent for this source and epoch, uncertain
+  uploads included. `superseded` is not a withdrawal: the version is raised, and remove is sent
+  once more, because that denial is still the current intent. If still superseded, it stays
+  pending and is not shown as removed.
 
-**Until the server is fixed**, a first enable with the permission already granted is
-likely to end in "On, waiting to sync" and need one manual retry.
+## More before the first read
+
+Until `bindUserDoc` applies a read, the state is unknown: the section says it is checking, the
+toggle and retry are locked, and enable sends nothing (`not_ready`). The rest of More is usable.
+Reads repeat on remount or a language change. The automatic resend of an unconfirmed upload runs
+at most once per session.
+
+## Turning off
+
+- It goes ahead of any running operation. The intent is recorded first, consent is cleared and
+  pending uploads are dropped, before anything is sent.
+- Each operation holds a token that a disable invalidates. The cancelled flow stops at its next
+  step, so it cannot prompt, read the book or upload.
+- A reply to a cancelled flow may only raise the epoch, and can owe a reevaluate. It is never "on".
+- A refused or unanswered disable stays pending and is retried by the user, since it set no barrier.
+- Turning on again takes a new action, with the epoch from the disable or from a read.
 
 ## Overlapping operations
 
@@ -52,19 +81,18 @@ section stays pending until the next session (sign-out or restart). Replies addr
 an earlier session are dropped. As a second layer, replies are ordered by epoch, which
 only grows and only disable grows: a reply cannot undo a newer state.
 
-**Server effects.** What the contract can and cannot resolve:
+**Server effects.** With #27 installed clients are not protected, but this client is:
 
 | Older request lands after | Result on Identity | Client |
 |---|---|---|
-| sync → newer disable | Refused: epoch moved, sync cannot re-enable | Stays off |
+| sync → newer disable | Refused: epoch moved | Stays off |
 | sync → newer sync | Refused as stale if lower; idempotent if identical | Same version only for the same content |
-| disable → newer enable | Would switch it off, since enable keeps the epoch | **Fenced:** with a disable unresolved, enable first repeats it, moving the epoch past the old request |
-| remove → newer sync | **Not resolvable:** remove carries no version, so it can delete the newer source | Shown as synced until the next upload is refused or the source is re-sent |
-| enable → newer disable | **Not resolvable:** enable carries no epoch, so it can re-enable | Off until the next read of `users/{uid}`, then "On, waiting to sync", without consent or a book read |
+| enable → newer disable | Refused: it names the old epoch | Stays off |
+| disable → newer enable | Refused: the enable repeats the disable first, moving the epoch | Stays on |
+| remove → newer sync | Kept: `superseded` | Version raised, not shown as removed |
 
-The two unresolvable rows need a server change (an epoch on enable, a version on
-remove). Within one session they cannot happen; they need a restart or sign-out while the
-older request is still in transit.
+**Known limit:** a stale local intent that reads a fresh epoch looks valid to the server. Cancelling
+those is this client's job, which is what the disable token does.
 
 ## Integration requirement with #115
 

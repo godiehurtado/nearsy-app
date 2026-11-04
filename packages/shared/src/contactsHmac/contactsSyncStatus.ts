@@ -4,7 +4,7 @@
  */
 import type { ContactsErrorI18nKey } from './contactsHmacCore.ts';
 import {
-  withConfirmedEpoch,
+  withHigherEpoch,
   type ContactsEnableStage,
   type ContactsLocalState,
   type ContactsPermissionStatus,
@@ -26,6 +26,10 @@ export type ContactsSnapshotStatus = 'none' | 'pending' | 'uncertain' | 'synced'
 
 export type ContactsSyncStatus = {
   uid: string | null;
+  /** False until a read of the account: then "off" would be a guess. */
+  stateConfirmed: boolean;
+  /** A disable is running or unanswered: another one would be a duplicate. */
+  disableInFlight: boolean;
   osPermission: ContactsPermissionStatus | 'unknown';
   consent: boolean;
   enablement: ContactsEnablement;
@@ -43,6 +47,8 @@ export type ContactsSyncStatus = {
 
 export const CONTACTS_STATUS_SIGNED_OUT: ContactsSyncStatus = {
   uid: null,
+  stateConfirmed: false,
+  disableInFlight: false,
   osPermission: 'unknown',
   consent: false,
   enablement: 'off',
@@ -86,14 +92,17 @@ export function contactsSnapshotFromState(
 /**
  * Merge a read of users/{uid}. The epoch only grows, so an older read is stale;
  * and at the same epoch a cached "off" cannot undo what a callable just confirmed.
+ * A read raises the epoch but does not confirm it: only an Identity success does.
+ * A missing field (null) says nothing about the epoch.
  */
 export function mergeUserDocIntoState(
   state: ContactsLocalState,
-  doc: { contactsSyncEnabled: boolean; contactsEpoch: number },
+  doc: { contactsSyncEnabled: boolean; contactsEpoch: number | null },
 ): ContactsLocalState {
-  if (doc.contactsEpoch < state.contactsEpoch) return state;
-  const newerEpoch = doc.contactsEpoch > state.contactsEpoch;
-  const next = withConfirmedEpoch(state, doc.contactsEpoch);
+  const docEpoch = doc.contactsEpoch ?? state.contactsEpoch;
+  if (docEpoch < state.contactsEpoch) return state;
+  const newerEpoch = docEpoch > state.contactsEpoch;
+  const next = withHigherEpoch(state, docEpoch);
 
   if (doc.contactsSyncEnabled) {
     next.enablementConfirmed = true;
@@ -101,11 +110,10 @@ export function mergeUserDocIntoState(
     return next;
   }
   if (state.uncertainOp === 'disable' || newerEpoch) {
+    // Off, at an epoch newer than anything pending here: all of it is cancelled.
     next.enablementConfirmed = false;
     next.userConsent = false;
-    if (state.uncertainOp === 'disable' || state.uncertainOp === 'sync') {
-      next.uncertainOp = null;
-    }
+    next.uncertainOp = null;
     next.pendingUpload = null;
     return next;
   }
@@ -132,8 +140,14 @@ export function contactsOperationInFlight(status: ContactsSyncStatus): boolean {
   return status.operation != null || status.awaitingLateResult;
 }
 
+/** Turning off stays available during a flow: it cancels that flow. */
+export function contactsToggleLocked(status: ContactsSyncStatus): boolean {
+  if (!status.stateConfirmed || status.disableInFlight) return true;
+  return contactsOperationInFlight(status) && !contactsToggleValue(status);
+}
+
 export function contactsCanRetry(status: ContactsSyncStatus): boolean {
-  if (contactsOperationInFlight(status)) return false;
+  if (!status.stateConfirmed || contactsOperationInFlight(status)) return false;
   if (status.enablement === 'off') return false;
   return status.enablement !== 'enabled' || status.snapshot !== 'synced';
 }
@@ -147,6 +161,7 @@ export function contactsStatusCopyKey(
     return `status.${status.stage ?? 'syncing'}`;
   }
   if (status.awaitingLateResult) return 'status.awaitingResult';
+  if (!status.stateConfirmed) return 'status.confirming';
 
   switch (status.enablement) {
     case 'off':

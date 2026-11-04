@@ -335,7 +335,7 @@ describe('Identity contacts HMAC wire', () => {
     assert.equal(DISABLE_CONTACTS_SYNC, 'disableContactsSync');
     assert.equal(REMOVE_CONTACT_SOURCE, 'removeContactSource');
     assert.equal(REFRESH_VERIFIED_ACTOR_KEYS, 'refreshVerifiedActorKeys');
-    assert.deepEqual(Object.keys(buildEnableRequest()), []);
+    assert.deepEqual(buildEnableRequest(3), { contactsEpoch: 3 });
     assert.deepEqual(buildDisableRequest(3), { contactsEpoch: 3 });
     assert.deepEqual(buildRemoveSourceRequest('sourceId1', 2), {
       sourceId: 'sourceId1',
@@ -518,6 +518,7 @@ describe('Identity contacts HMAC wire', () => {
         lastAckedVersion: 2,
         lastAckedFingerprint: 'fp1:deadbeef',
         removedSnapshotFloor: null,
+        epochConfirmed: true,
       },
     });
     assert.equal(outcome.result.result, 'removed');

@@ -54,6 +54,7 @@ import {
   contactsHmacErrorToI18nKey,
   contactsOperationInFlight,
   contactsStatusCopyKey,
+  contactsToggleLocked,
   contactsToggleValue,
   disableContactsIntegration,
   enableThenSyncContacts,
@@ -349,7 +350,10 @@ export default function MoreScreen() {
       // Not awaited: Contacts must not hold up the rest of this screen.
       void bindContactsUserDoc(uid, {
         contactsSyncEnabled: resolveContactsSyncEnabled(data.contactsSyncEnabled),
-        contactsEpoch: contactsEpochFromUserDoc(data.contactsEpoch),
+        contactsEpoch:
+          typeof data.contactsEpoch === 'number'
+            ? contactsEpochFromUserDoc(data.contactsEpoch)
+            : null,
       }).catch(() => {});
     }
     let bgPref = !!data.bgVisible;
@@ -1108,7 +1112,7 @@ export default function MoreScreen() {
                 }
                 value={contactsToggleValue(contactsStatus)}
                 onValueChange={handleToggleContactsSync}
-                disabled={contactsBusy}
+                disabled={contactsToggleLocked(contactsStatus)}
               />
               {contactsCanRetry(contactsStatus) ? (
                 <SettingsRow

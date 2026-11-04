@@ -40,6 +40,8 @@ import {
   applyLateIdentityResult,
   runDisable,
   runEnableThenSync,
+  withConfirmedEpoch,
+  withDisableIntent,
   runRefreshKeys,
   runResyncGrantedBook,
   runSyncRetry,
@@ -57,13 +59,18 @@ export type ContactsOpResult =
   | { status: 'in_flight' }
   /** The account changed; this result was dropped. */
   | { status: 'stale' }
+  /** The user turned off meanwhile; this flow stopped and its result was dropped. */
+  | { status: 'cancelled' }
+  /** The account's state has not been read yet: nothing was sent. */
+  | { status: 'not_ready' }
   /** The server may have written: show pending, do not revert. */
   | { status: 'uncertain'; error: ContactsHmacError }
   | { status: 'failed'; error: ContactsHmacError };
 
 export type ContactsUserDocFacts = {
   contactsSyncEnabled: boolean;
-  contactsEpoch: number;
+  /** Null when the document has no such field: that is not epoch 0. */
+  contactsEpoch: number | null;
 };
 
 export type ContactsSessionDeps = {
@@ -90,6 +97,15 @@ type Session = {
   errorKey: ContactsErrorI18nKey | null;
   notifyEffective: boolean | null;
   resultSeq: number;
+  /** A read of the account was applied; until then "off" would be a guess. */
+  bound: boolean;
+  /** Read that arrived during an operation, applied once it settles. */
+  deferredDoc: ContactsUserDocFacts | null;
+  /** The automatic resend runs at most once per session. */
+  reconcileTried: boolean;
+  /** Each accepted operation takes one; a disable invalidates the one running. */
+  token: number;
+  liveDisables: number;
 };
 
 type IdentityOp = 'enable' | 'sync' | 'remove' | 'disable' | 'refresh';
@@ -101,6 +117,10 @@ const IDENTITY_OP_BY_CALLABLE: Record<string, IdentityOp> = {
   [DISABLE_CONTACTS_SYNC]: 'disable',
   [REFRESH_VERIFIED_ACTOR_KEYS]: 'refresh',
 };
+
+function operationCancelledError(): ContactsHmacError {
+  return new ContactsHmacError('generic', 'Contacts operation was cancelled.');
+}
 
 function sessionChangedError(): ContactsHmacError {
   return new ContactsHmacError(
@@ -123,6 +143,9 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
     }
     return {
       uid: session.uid,
+      stateConfirmed: session.bound,
+      disableInFlight:
+        session.operation === 'disable' || session.liveDisables > 0,
       osPermission: session.osPermission,
       consent: session.state.userConsent === true,
       enablement: contactsEnablementFromState(session.state),
@@ -189,6 +212,11 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
       errorKey: null,
       notifyEffective: null,
       resultSeq: 0,
+      bound: false,
+      deferredDoc: null,
+      reconcileTried: false,
+      token: 0,
+      liveDisables: 0,
     };
     created.ready = loadState(uid).then(
       (loaded) => {
@@ -218,13 +246,19 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
     void persist(s).catch(() => {});
   }
 
+  /** Stops the flow holding this token if the account changed or the user turned off. */
+  function assertLive(s: Session, token: number): void {
+    if (!isCurrent(s)) throw sessionChangedError();
+    if (s.token !== token) throw operationCancelledError();
+  }
+
   const saveIntent =
-    (s: Session): ContactsStateSaver =>
+    (s: Session, token: number): ContactsStateSaver =>
     async (next) => {
-      if (!isCurrent(s)) throw sessionChangedError();
+      assertLive(s, token);
       s.state = next;
       await persist(s);
-      if (!isCurrent(s)) throw sessionChangedError();
+      assertLive(s, token);
     };
 
   /**
@@ -271,6 +305,56 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
     emit();
   }
 
+  /**
+   * A reply to a cancelled flow (contract §14.5): it may only raise the epoch. It is
+   * not on, not consent, and starts nothing. What it did on the server may still
+   * owe a reevaluate.
+   */
+  function applyCancelledReply(s: Session, raw: unknown): void {
+    if (!isCurrent(s)) return;
+    try {
+      const result = parseContactsWireResult(raw);
+      s.state = withConfirmedEpoch(s.state, result.contactsEpoch);
+      if (result.syncCommitted && result.reevaluateRequired) {
+        if (s.state.uncertainOp) s.state = { ...s.state, reevaluateOwed: true };
+        else fireReevaluate(s, true);
+      }
+      persistBestEffort(s);
+    } catch {
+      /* Unreadable: nothing to learn from it. */
+    }
+    emit();
+  }
+
+  /** A read that arrived mid-operation applies once nothing is in the air. */
+  function applyDeferredDoc(s: Session): void {
+    if (!isCurrent(s) || s.operation || s.liveRequests > 0 || !s.deferredDoc) return;
+    const doc = s.deferredDoc;
+    s.deferredDoc = null;
+    applyUserDoc(s, doc);
+  }
+
+  function applyUserDoc(s: Session, doc: ContactsUserDocFacts): void {
+    s.state = mergeUserDocIntoState(s.state, doc);
+    s.bound = true;
+    if (!s.state.uncertainOp && s.state.reevaluateOwed === true) {
+      s.state = { ...s.state, reevaluateOwed: false };
+      fireReevaluate(s, true);
+    }
+    persistBestEffort(s);
+    emit();
+    if (
+      !s.reconcileTried &&
+      s.state.uncertainOp === 'sync' &&
+      s.state.userConsent === true &&
+      s.state.enablementConfirmed === true &&
+      s.osPermission === 'granted'
+    ) {
+      s.reconcileTried = true;
+      void reconcile();
+    }
+  }
+
   function applyLateError(s: Session, op: IdentityOp, err: unknown): void {
     if (!isCurrent(s)) return;
     const mapped = mapContactsCallableError(err);
@@ -295,12 +379,14 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
    */
   function trackRequest(
     s: Session,
+    token: number,
     name: string,
     sentVersion: number | undefined,
     request: Promise<unknown>,
   ): Promise<unknown> {
     const op = IDENTITY_OP_BY_CALLABLE[name];
     s.liveRequests += 1;
+    if (op === 'disable') s.liveDisables += 1;
     return new Promise((resolve, reject) => {
       let timedOut = false;
       const timeoutTimer = setTimeout(() => {
@@ -316,37 +402,47 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
       const settle = (deliver: () => void, deliverLate: () => void) => {
         clearTimeout(timeoutTimer);
         s.liveRequests = Math.max(0, s.liveRequests - 1);
+        if (op === 'disable') s.liveDisables = Math.max(0, s.liveDisables - 1);
         if (!timedOut) deliver();
         else if (op) deliverLate();
+        applyDeferredDoc(s);
       };
       request.then(
-        (value) =>
+        (value) => {
+          if (s.token !== token) applyCancelledReply(s, value);
           settle(
             () => resolve(value),
-            () => applyLateResult(s, op, sentVersion, value),
-          ),
+            () => {
+              if (s.token === token) applyLateResult(s, op, sentVersion, value);
+            },
+          );
+        },
         (err) =>
           settle(
             () => reject(err),
-            () => applyLateError(s, op, err),
+            () => {
+              if (s.token === token) applyLateError(s, op, err);
+              else if (isCurrent(s)) emit();
+            },
           ),
       );
     });
   }
 
-  function functionsPort(s: Session): ContactsHmacFunctionsPort {
+  function functionsPort(s: Session, token: number): ContactsHmacFunctionsPort {
     return {
       region: deps.region,
       async call(name, data) {
         // The token follows the signed-in user: never send one account's book
         // or epoch under another account's credentials.
-        if (!isCurrent(s)) throw sessionChangedError();
+        assertLive(s, token);
         const sentVersion =
           name === SYNC_CONTACT_HASHES
             ? (data as { snapshotVersion?: number } | undefined)?.snapshotVersion
             : undefined;
         return trackRequest(
           s,
+          token,
           name,
           sentVersion,
           (async () => deps.callIdentity(name, data ?? {}))(),
@@ -355,12 +451,12 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
     };
   }
 
-  function guardedBook(s: Session): ContactsBookPort {
+  function guardedBook(s: Session, token: number): ContactsBookPort {
     const book = deps.createBook();
     const guard = <T>(step: () => Promise<T>) => async () => {
-      if (!isCurrent(s)) throw sessionChangedError();
+      assertLive(s, token);
       const value = await step();
-      if (!isCurrent(s)) throw sessionChangedError();
+      assertLive(s, token);
       return value;
     };
     return {
@@ -394,10 +490,9 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
       noteResult(s, err.enableResult.notifyNearbyContactsEffective);
     }
     const uncertain = isContactsOutcomeUncertain(error.reason);
-    // Enable refused and nothing landed: the consent tap led nowhere.
+    // Nothing is on and nothing may be: the consent tap led nowhere.
     if (
       kind === 'enable' &&
-      !uncertain &&
       s.state.enablementConfirmed !== true &&
       s.state.uncertainOp !== 'enable'
     ) {
@@ -417,6 +512,7 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
       ctx: {
         functions: ContactsHmacFunctionsPort;
         saveState: ContactsStateSaver;
+        book: () => ContactsBookPort;
         onStage: (stage: ContactsEnableStage) => void;
       },
     ) => Promise<ContactsFlowOutcome>,
@@ -431,59 +527,87 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
         ),
       };
     }
-    // Set before any await: a second tap cannot pass this check.
-    if (s.operation || s.liveRequests > 0) return { status: 'in_flight' };
+    // All set before any await: a second tap cannot pass these checks.
+    if (kind === 'disable') {
+      // Turning off goes ahead of whatever is running, and cancels it.
+      if (s.operation === 'disable' || s.liveDisables > 0) {
+        return { status: 'in_flight' };
+      }
+    } else {
+      if (s.operation || s.liveRequests > 0) return { status: 'in_flight' };
+      if (kind === 'enable' && !s.bound) return { status: 'not_ready' };
+    }
+    const token = (s.token += 1);
     s.operation = kind;
     s.stage = null;
     s.errorKey = null;
     emit();
+    const dropped = (): ContactsOpResult =>
+      isCurrent(s) ? { status: 'cancelled' } : { status: 'stale' };
     try {
       await s.ready;
-      if (!isCurrent(s)) return { status: 'stale' };
+      if (kind === 'disable') {
+        // Recorded at once: from here no pending intent can come back.
+        s.state = {
+          ...withDisableIntent(s.state),
+          // Only what was already owed: this call's own need is decided by its reply.
+          reevaluateOwed: s.state.reevaluateOwed === true,
+        };
+        await persist(s);
+      }
+      if (!isCurrent(s) || s.token !== token) return dropped();
       await deps.ensureAppCheck();
-      if (!isCurrent(s)) return { status: 'stale' };
+      if (!isCurrent(s) || s.token !== token) return dropped();
       const outcome = await exec(s, {
-        functions: functionsPort(s),
-        saveState: saveIntent(s),
+        functions: functionsPort(s, token),
+        saveState: saveIntent(s, token),
+        book: () => guardedBook(s, token),
         onStage: (stage) => {
+          if (s.token !== token) return;
           s.stage = stage;
           if (isCurrent(s)) emit();
         },
       });
-      if (!isCurrent(s)) return { status: 'stale' };
+      if (!isCurrent(s) || s.token !== token) return dropped();
       applyOutcome(s, outcome);
       return { status: 'ok', outcome };
     } catch (err) {
-      if (!isCurrent(s)) return { status: 'stale' };
+      if (!isCurrent(s) || s.token !== token) return dropped();
       return applyFailure(s, kind, err);
     } finally {
-      s.operation = null;
-      s.stage = null;
-      if (isCurrent(s)) emit();
+      if (s.token === token) {
+        s.operation = null;
+        s.stage = null;
+        if (isCurrent(s)) {
+          emit();
+          applyDeferredDoc(s);
+        }
+      }
     }
   }
 
-  const enableThenSync = () =>
+  const enableThenSync = (mayEnable = true) =>
     run('enable', async (s, ctx) => {
       if (s.state.uncertainOp === 'disable') {
         // A disable may still be in transit from an earlier session. Repeating it
-        // moves the epoch past it, so it can no longer land on top of this enable.
+        // moves the epoch past it, and gives the epoch this enable must send.
         const fenced = await runDisable({
           functions: ctx.functions,
           state: s.state,
           saveState: ctx.saveState,
         });
-        s.state = fenced.state;
+        await ctx.saveState(fenced.state);
         fireReevaluate(s, fenced.scheduleReevaluate);
       }
       // Explicit user action; saved with the intent, before anything is sent.
       s.state = { ...s.state, userConsent: true };
       return runEnableThenSync({
         functions: ctx.functions,
-        book: guardedBook(s),
+        book: ctx.book(),
         state: s.state,
         onStage: ctx.onStage,
         saveState: ctx.saveState,
+        mayEnable,
       });
     });
 
@@ -492,7 +616,7 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
       s.state = { ...s.state, userConsent: true };
       return runSyncRetry({
         functions: ctx.functions,
-        book: guardedBook(s),
+        book: ctx.book(),
         state: s.state,
         onStage: ctx.onStage,
         saveState: ctx.saveState,
@@ -512,7 +636,7 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
     run('reconcile', (s, ctx) =>
       runResyncGrantedBook({
         functions: ctx.functions,
-        book: guardedBook(s),
+        book: ctx.book(),
         state: s.state,
         saveState: ctx.saveState,
       }),
@@ -533,8 +657,8 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
         emit();
       }
     },
-    /** User tapped to enable, or to retry an enable or a pending sync. */
-    enableThenSync,
+    /** User tapped to turn on. */
+    enableThenSync: () => enableThenSync(),
     disable,
     /** User-facing retry of whatever is still unconfirmed. */
     async retry(): Promise<ContactsOpResult> {
@@ -543,10 +667,14 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
       await s?.ready.catch(() => {});
       const state = s?.state;
       if (state?.uncertainOp === 'disable') return disable();
-      if (state?.enablementConfirmed === true && state.epochStale !== true) {
-        return retrySync();
+      if (state?.enablementConfirmed === true) {
+        // After a mismatch this reads the state first: if it reads off, it stays
+        // off, because retrying a sync is not a request to turn on.
+        return state.epochStale === true ? enableThenSync(false) : retrySync();
       }
-      return enableThenSync();
+      // Only an enable still in doubt is retried. Off stays off until the user acts.
+      if (state?.uncertainOp === 'enable') return enableThenSync();
+      return { status: 'not_ready' };
     },
     refreshKeys: () =>
       run('refresh', (s, ctx) =>
@@ -569,24 +697,11 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
       }
       if (!isCurrent(s)) return;
       if (s.operation || s.liveRequests > 0) {
+        s.deferredDoc = doc;
         emit();
         return;
       }
-      s.state = mergeUserDocIntoState(s.state, doc);
-      if (!s.state.uncertainOp && s.state.reevaluateOwed === true) {
-        s.state = { ...s.state, reevaluateOwed: false };
-        fireReevaluate(s, true);
-      }
-      persistBestEffort(s);
-      emit();
-      if (
-        s.state.uncertainOp === 'sync' &&
-        s.state.userConsent === true &&
-        s.state.enablementConfirmed === true &&
-        s.osPermission === 'granted'
-      ) {
-        void reconcile();
-      }
+      applyUserDoc(s, doc);
     },
   };
 }

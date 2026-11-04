@@ -51,6 +51,8 @@ import {
   type ContactsPermissionStatus,
 } from '../contactsHmac/contactsSyncFlow.ts';
 
+import { FakeIdentity, identityRejects } from './helpers/contactsIdentityFake.ts';
+
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
 const BOOK_A: ContactIdentifierInput[] = [{ kind: 'email', value: 'ada@b.co' }];
 const BOOK_B: ContactIdentifierInput[] = [
@@ -70,142 +72,7 @@ async function until(check: () => boolean, label: string): Promise<void> {
   assert.fail(`timed out waiting for: ${label}`);
 }
 
-type StoredSource = { version: number; fingerprint: string };
-
-/** Identity's write rules for one account, without its secrets or transport. */
-class FakeIdentity {
-  enabled = false;
-  epoch = 0;
-  sources = new Map<string, StoredSource>();
-  fences = new Map<string, number>();
-  calls: Array<{ uid: string; name: string; data: any }> = [];
-  /** Rule applied to the next calls: return a promise to hold, throw to fail. */
-  intercept: ((name: string, data: any) => unknown) | null = null;
-  uid = 'uid-a';
-  /** Identity's minimum gap between writes; 0 keeps it out of the way. */
-  minWriteGapMs = 0;
-  lastWriteAt = 0;
-
-  wire(extra: Record<string, unknown>) {
-    return {
-      contactsSyncEnabled: this.enabled,
-      contactsEpoch: this.epoch,
-      notifyNearbyContactsEffective: this.enabled,
-      syncCommitted: true,
-      reevaluateRequired: false,
-      ...extra,
-    };
-  }
-
-  /** Commits now; what happens to the reply is up to the caller. */
-  commit(name: string, data: any): unknown {
-    switch (name) {
-      case ENABLE_CONTACTS_SYNC: {
-        const first = !this.enabled;
-        if (first) {
-          this.enabled = true;
-          this.sources.clear();
-          this.fences.clear();
-        }
-        return this.wire({ result: 'enabled', reevaluateRequired: first });
-      }
-      case SYNC_CONTACT_HASHES: {
-        if (!this.enabled) throw reason('contacts-not-enabled');
-        if (data.contactsEpoch !== this.epoch) {
-          throw reason('contacts-epoch-mismatch');
-        }
-        const fence = this.fences.get(data.sourceId);
-        if (fence != null && data.snapshotVersion <= fence) {
-          throw reason('contacts-source-removed');
-        }
-        const fingerprint = identifiersFingerprint(data.identifiers);
-        const existing = this.sources.get(data.sourceId);
-        if (existing && data.snapshotVersion < existing.version) {
-          throw reason('contacts-snapshot-stale');
-        }
-        if (existing && data.snapshotVersion === existing.version) {
-          if (existing.fingerprint !== fingerprint) {
-            throw reason('contacts-snapshot-conflict');
-          }
-          return this.wire({
-            result: 'idempotent',
-            sourceId: data.sourceId,
-            snapshotVersion: data.snapshotVersion,
-          });
-        }
-        this.fences.delete(data.sourceId);
-        this.sources.set(data.sourceId, {
-          version: data.snapshotVersion,
-          fingerprint,
-        });
-        return this.wire({
-          result: 'synced',
-          sourceId: data.sourceId,
-          snapshotVersion: data.snapshotVersion,
-          reevaluateRequired: true,
-        });
-      }
-      case REMOVE_CONTACT_SOURCE: {
-        if (data.contactsEpoch !== this.epoch) {
-          throw reason('contacts-epoch-mismatch');
-        }
-        const existing = this.sources.get(data.sourceId);
-        this.fences.set(data.sourceId, existing?.version ?? 0);
-        this.sources.delete(data.sourceId);
-        return this.wire({
-          result: existing ? 'removed' : 'absent',
-          sourceId: data.sourceId,
-          ...(existing ? { snapshotVersion: existing.version } : {}),
-          reevaluateRequired: !!existing,
-        });
-      }
-      case DISABLE_CONTACTS_SYNC: {
-        if (data.contactsEpoch !== this.epoch) {
-          throw reason('contacts-epoch-mismatch');
-        }
-        this.enabled = false;
-        this.epoch += 1;
-        this.sources.clear();
-        this.fences.clear();
-        return this.wire({ result: 'disabled', reevaluateRequired: true });
-      }
-      case REFRESH_VERIFIED_ACTOR_KEYS:
-        return this.wire({ result: 'refreshed' });
-      default:
-        throw new Error(`unexpected ${name}`);
-    }
-  }
-
-  async call(name: string, data: any): Promise<unknown> {
-    this.calls.push({ uid: this.uid, name, data });
-    if (this.intercept) {
-      const held = this.intercept(name, data);
-      if (held !== undefined) return held;
-    }
-    if (this.minWriteGapMs > 0) {
-      if (Date.now() - this.lastWriteAt < this.minWriteGapMs) {
-        throw reason('contacts-rate-limited');
-      }
-      this.lastWriteAt = Date.now();
-    }
-    return this.commit(name, data);
-  }
-
-  count(name: string): number {
-    return this.calls.filter((c) => c.name === name).length;
-  }
-
-  last(name: string): any {
-    return [...this.calls].reverse().find((c) => c.name === name)?.data;
-  }
-}
-
-function reason(value: string): Error {
-  return Object.assign(new Error(`rejected (${value})`), {
-    code: 'functions/failed-precondition',
-    details: { reason: value },
-  });
-}
+const reason = identityRejects;
 
 function networkDown(): Error {
   return Object.assign(new Error('network error'), { code: 'functions/unavailable' });
@@ -271,7 +138,7 @@ function harness(opts?: {
     reevaluations: 0,
   };
   let nextSource = 0;
-  const session = createContactsSyncSession({
+  const raw = createContactsSyncSession({
     currentUid: () => env.uid,
     store: env.store,
     randomBytes: () => {
@@ -292,7 +159,24 @@ function harness(opts?: {
       }),
     timeoutMs: opts?.timeoutMs ?? 40,
   });
-  return { env, session };
+  /** What More does on mount: reads the account. */
+  const readAccount = async () => {
+    if (env.uid && !raw.getStatus().stateConfirmed) {
+      await raw.bindUserDoc(env.uid, env.identity.userDoc());
+    }
+  };
+  const session = {
+    ...raw,
+    enableThenSync: async () => {
+      await readAccount();
+      return raw.enableThenSync();
+    },
+    retry: async () => {
+      await readAccount();
+      return raw.retry();
+    },
+  };
+  return { env, session, raw };
 }
 
 type Env = ReturnType<typeof harness>['env'];
@@ -336,7 +220,7 @@ function requestHeldInTransit(env: Env, target: string) {
 /** Same account, new session: what a sign-out or an app restart leaves behind. */
 function newSessionSameAccount(
   env: Env,
-  session: ReturnType<typeof harness>['session'],
+  session: Pick<ReturnType<typeof harness>['raw'], 'handleAuthChanged'>,
 ): void {
   const uid = env.uid;
   env.uid = null;
@@ -653,8 +537,7 @@ describe('Timeout means unknown', () => {
     assert.equal(contactsOperationInFlight(status), true);
     assert.equal(contactsCanRetry(status), false);
     assert.equal((await session.enableThenSync()).status, 'in_flight');
-    assert.equal((await session.disable()).status, 'in_flight');
-    assert.equal(env.identity.calls.length, 1);
+    assert.equal(env.identity.count(ENABLE_CONTACTS_SYNC), 1);
     assert.equal(savedState(env.store).uncertainOp, 'enable');
   });
 });
@@ -672,9 +555,7 @@ describe('Single flight', () => {
     };
     const first = session.enableThenSync();
     const second = await session.enableThenSync();
-    const third = await session.disable();
     assert.equal(second.status, 'in_flight');
-    assert.equal(third.status, 'in_flight');
     await until(() => env.identity.count(ENABLE_CONTACTS_SYNC) === 1, 'sent');
     release();
     assert.equal((await first).status, 'ok');
@@ -694,7 +575,6 @@ describe('Single flight', () => {
     };
     await session.enableThenSync();
     assert.equal((await session.retry()).status, 'in_flight');
-    assert.equal((await session.disable()).status, 'in_flight');
     assert.equal(env.identity.count(SYNC_CONTACT_HASHES), 1);
     release();
     await until(() => !session.getStatus().awaitingLateResult, 'settled');
@@ -709,7 +589,10 @@ describe('Rate limit is an explicit result', () => {
   it('enable then sync sends both immediately and keeps what enable confirmed', async () => {
     const { env, session } = harness();
     env.identity.epoch = 4;
-    env.identity.minWriteGapMs = GAP_MS;
+    env.identity.intercept = (name) => {
+      if (name === SYNC_CONTACT_HASHES) throw reason('contacts-rate-limited');
+      return undefined;
+    };
     const op = await session.enableThenSync();
     assert.equal(op.status, 'failed');
     assert.equal(
@@ -729,7 +612,10 @@ describe('Rate limit is an explicit result', () => {
 
   it('never retries by itself', async () => {
     const { env, session } = harness();
-    env.identity.minWriteGapMs = GAP_MS;
+    env.identity.intercept = (name) => {
+      if (name === SYNC_CONTACT_HASHES) throw reason('contacts-rate-limited');
+      return undefined;
+    };
     await session.enableThenSync();
     const calls = env.identity.calls.length;
     await delay(GAP_MS * 2);
@@ -739,15 +625,20 @@ describe('Rate limit is an explicit result', () => {
 
   it('a manual retry sends only the sync, reuses the version and completes', async () => {
     const { env, session } = harness();
-    env.identity.minWriteGapMs = GAP_MS;
+    let limited = 2;
+    env.identity.intercept = (name) => {
+      if (name === SYNC_CONTACT_HASHES && limited > 0) {
+        limited -= 1;
+        throw reason('contacts-rate-limited');
+      }
+      return undefined;
+    };
     await session.enableThenSync();
+    await until(() => savedState(env.store)?.pendingUpload != null, 'intent saved');
     const version = savedState(env.store).pendingUpload?.version;
     // Tapping too soon is harmless: same answer, same version, nothing lost.
-    await delay(GAP_MS + 10);
-    env.identity.lastWriteAt = Date.now();
     assert.equal((await session.retry()).status, 'failed');
     assert.equal(session.getStatus().enablement, 'enabled');
-    await delay(GAP_MS + 10);
     assert.equal((await session.retry()).status, 'ok');
     assert.equal(session.getStatus().snapshot, 'synced');
     assert.equal(env.identity.count(ENABLE_CONTACTS_SYNC), 1, 'enable not repeated');
@@ -768,20 +659,22 @@ describe('Rate limit is an explicit result', () => {
     assert.equal(session.getStatus().snapshot, 'uncertain');
   });
 
-  it('a limited disable changes nothing locally and can be retried', async () => {
+  it('a refused disable stays a pending disable: it set no barrier, and it is retried', async () => {
     const { env, session } = harness();
     await session.enableThenSync();
     env.identity.intercept = (name) => {
-      if (name === DISABLE_CONTACTS_SYNC) throw reason('contacts-rate-limited');
+      if (name === DISABLE_CONTACTS_SYNC) throw reason('contacts-hmac-unavailable');
       return undefined;
     };
     assert.equal((await session.disable()).status, 'failed');
     const status = session.getStatus();
-    assert.equal(status.enablement, 'enabled');
-    assert.equal(status.snapshot, 'synced');
-    assert.equal(contactsStatusCopyKey(status), 'errors.rateLimited');
+    assert.equal(status.enablement, 'disable_uncertain');
+    assert.equal(status.consent, false);
+    assert.equal(contactsCanRetry(status), true);
     env.identity.intercept = null;
-    assert.equal((await session.disable()).status, 'ok');
+    assert.equal((await session.retry()).status, 'ok');
+    assert.equal(session.getStatus().enablement, 'off');
+    assert.equal(env.identity.enabled, false);
   });
 
   it('a limited disable keeps the live epoch it just learned', async () => {
@@ -1097,27 +990,39 @@ describe('An unreadable reply is unknown, not a refusal', () => {
 
 describe('Older operation, newer operation', () => {
   it('retry right after a restart acts on the saved state, not on a blank one', async () => {
-    const { env, session } = harness({ timeoutMs: 5 });
+    const { env, session, raw } = harness({ timeoutMs: 5 });
     await session.enableThenSync();
     const held = replyHeldAfterCommit(env, DISABLE_CONTACTS_SYNC);
     await session.disable();
     newSessionSameAccount(env, session);
-    assert.equal((await session.retry()).status, 'ok');
+    assert.equal((await raw.retry()).status, 'ok');
     assert.equal(session.getStatus().enablement, 'off', 'it stays a disable');
     assert.equal(env.identity.enabled, false);
     held.fail();
   });
 
-  it('within a session the newer one waits: nothing can overlap', async () => {
+  it('within a session, a sync cannot overlap a retry, but a disable goes ahead of it', async () => {
     const { env, session } = harness({ timeoutMs: 5 });
     const held = requestHeldInTransit(env, SYNC_CONTACT_HASHES);
     await session.enableThenSync();
-    assert.equal((await session.disable()).status, 'in_flight');
-    assert.equal(env.identity.count(DISABLE_CONTACTS_SYNC), 0);
-    assert.equal(held.land(), 'landed');
-    await until(() => session.getStatus().snapshot === 'synced', 'late ack');
+    assert.equal((await session.retry()).status, 'in_flight');
     assert.equal((await session.disable()).status, 'ok');
+    assert.equal(held.land(), 'rejected');
+    await delay(5);
     assert.equal(session.getStatus().enablement, 'off');
+    assert.equal(session.getStatus().snapshot, 'none');
+  });
+
+  it('a second disable while one is unanswered sends nothing', async () => {
+    const { env, session } = harness({ timeoutMs: 5 });
+    await session.enableThenSync();
+    const held = requestHeldInTransit(env, DISABLE_CONTACTS_SYNC);
+    assert.equal((await session.disable()).status, 'uncertain');
+    assert.equal(session.getStatus().disableInFlight, true);
+    assert.equal((await session.disable()).status, 'in_flight');
+    assert.equal(env.identity.count(DISABLE_CONTACTS_SYNC), 1);
+    held.land();
+    await until(() => session.getStatus().enablement === 'off', 'late disable');
   });
 
   it('old sync landing after a new disable: the epoch refuses it on the server', async () => {
@@ -1194,14 +1099,15 @@ describe('Older operation, newer operation', () => {
     newSessionSameAccount(env, session);
     // Same version would be a conflict if the old one had landed: goes higher.
     book.identifiers = BOOK_B;
-    assert.equal((await session.retry()).status, 'ok');
+    await session.retry();
+    await until(() => session.getStatus().snapshot === 'synced', 'new upload');
     assert.equal(env.identity.last(SYNC_CONTACT_HASHES).snapshotVersion, 2);
     assert.equal(held.land(), 'rejected');
     const stored = [...env.identity.sources.values()][0];
     assert.equal(stored.fingerprint, identifiersFingerprint(BOOK_B));
   });
 
-  it('contract limit: an old enable has no epoch, so it can land after a disable', async () => {
+  it('old enable landing after a new disable: the epoch it carries refuses it', async () => {
     const { env, session } = harness({ timeoutMs: 5 });
     const held = requestHeldInTransit(env, ENABLE_CONTACTS_SYNC);
     assert.equal((await session.enableThenSync()).status, 'uncertain');
@@ -1209,19 +1115,9 @@ describe('Older operation, newer operation', () => {
     assert.equal((await session.disable()).status, 'ok');
     assert.equal(session.getStatus().enablement, 'off');
 
-    assert.equal(held.land(), 'landed', 'the server has no way to refuse it');
-    assert.equal(env.identity.enabled, true);
-    // The client cannot see this until it reads again. Then it says what is true,
-    // without claiming a snapshot, consent, or touching the book.
+    assert.equal(held.land(), 'rejected', 'cannot switch it back on');
+    assert.equal(env.identity.enabled, false);
     assert.equal(session.getStatus().enablement, 'off');
-    await session.bindUserDoc('uid-a', {
-      contactsSyncEnabled: env.identity.enabled,
-      contactsEpoch: env.identity.epoch,
-    });
-    const status = session.getStatus();
-    assert.equal(status.enablement, 'enabled');
-    assert.equal(status.snapshot, 'pending');
-    assert.equal(status.consent, false);
     assert.equal(env.book.reads, 0, 'the book was never read');
   });
 
@@ -1382,6 +1278,7 @@ describe('Account changes', () => {
       scheduleReevaluate: () => {},
       timeoutMs: 100,
     });
+    await session.bindUserDoc('uid-a', identity.userDoc());
     assert.equal((await session.enableThenSync()).status, 'stale');
     assert.equal(identity.count(SYNC_CONTACT_HASHES), 0);
   });
@@ -1444,8 +1341,9 @@ describe('Account changes', () => {
     env.identity.intercept = (name) =>
       name === SYNC_CONTACT_HASHES ? new Promise(() => {}) : undefined;
     await session.enableThenSync();
+    const before = env.identity.count(REFRESH_VERIFIED_ACTOR_KEYS);
     assert.equal((await session.refreshKeys()).status, 'in_flight');
-    assert.equal(env.identity.count(REFRESH_VERIFIED_ACTOR_KEYS), 0);
+    assert.equal(env.identity.count(REFRESH_VERIFIED_ACTOR_KEYS), before);
   });
 });
 

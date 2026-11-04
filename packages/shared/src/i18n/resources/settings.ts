@@ -57,7 +57,10 @@ export default {
       generic: 'Could not update Contacts sync. Please try again.',
       auth: 'Your session ended. Sign in again and retry.',
       notEnabled: 'Contacts sync is not enabled.',
-      epochMismatch: 'Contacts sync is out of date. Turn it off and on again.',
+      epochMismatch:
+        'Contacts sync changed since your last action. Check this section and try again.',
+      epochRequired:
+        'Contacts sync needs to check its state first. Try again.',
       snapshotStale: 'This device’s contacts snapshot is out of date. Try again.',
       sourceRemoved:
         'This device’s previous Contacts sync was withdrawn. Turn sync off and on again.',
@@ -83,6 +86,7 @@ export default {
     },
     retry: 'Retry',
     status: {
+      confirming: 'Checking Contacts sync…',
       enabling: 'Turning on Contacts sync…',
       permission: 'Waiting for your Contacts permission…',
       reading: 'Reading contacts on this device…',

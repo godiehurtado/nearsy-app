@@ -343,8 +343,10 @@ export function removedSnapshotFloorAfterRemove(input: {
   return Math.max(...candidates);
 }
 
-export function buildEnableRequest(): Record<string, never> {
-  return {};
+export function buildEnableRequest(contactsEpoch: number): {
+  contactsEpoch: number;
+} {
+  return { contactsEpoch: assertContactsEpoch(contactsEpoch) };
 }
 
 export function buildRefreshRequest(): Record<string, never> {
@@ -379,11 +381,16 @@ export function buildDisableRequest(
 export function buildRemoveSourceRequest(
   sourceId: string,
   contactsEpoch: number,
+  knownSnapshotVersion?: number,
 ): RemoveContactSourceRequest {
-  return {
+  const request: RemoveContactSourceRequest = {
     sourceId: assertSourceId(sourceId),
     contactsEpoch: assertContactsEpoch(contactsEpoch),
   };
+  if (knownSnapshotVersion !== undefined) {
+    request.knownSnapshotVersion = assertContactsEpoch(knownSnapshotVersion);
+  }
+  return request;
 }
 
 export function parseContactsWireResult(raw: unknown): ContactsWireResult {
@@ -531,10 +538,11 @@ export function mapContactsCallableError(err: unknown): ContactsHmacError {
 
 export async function enableContactsSync(
   functions: ContactsHmacFunctionsPort,
+  contactsEpoch: number,
 ): Promise<ContactsWireResult> {
   try {
     return parseContactsWireResult(
-      await functions.call(ENABLE_CONTACTS_SYNC, buildEnableRequest()),
+      await functions.call(ENABLE_CONTACTS_SYNC, buildEnableRequest(contactsEpoch)),
     );
   } catch (err) {
     throw mapContactsCallableError(err);
@@ -578,7 +586,11 @@ export async function removeContactSource(
     return parseContactsWireResult(
       await functions.call(
         REMOVE_CONTACT_SOURCE,
-        buildRemoveSourceRequest(input.sourceId, input.contactsEpoch),
+        buildRemoveSourceRequest(
+          input.sourceId,
+          input.contactsEpoch,
+          input.knownSnapshotVersion,
+        ),
       ),
     );
   } catch (err) {
@@ -603,6 +615,7 @@ export type ContactsErrorI18nKey =
   | 'authLookup'
   | 'notEnabled'
   | 'epochMismatch'
+  | 'epochRequired'
   | 'snapshotStale'
   | 'sourceRemoved'
   | 'snapshotConflict'
@@ -631,6 +644,8 @@ export function contactsHmacErrorToI18nKey(
       return 'notEnabled';
     case 'contacts-epoch-mismatch':
       return 'epochMismatch';
+    case 'contacts-epoch-required':
+      return 'epochRequired';
     case 'contacts-snapshot-stale':
       return 'snapshotStale';
     case 'contacts-source-removed':

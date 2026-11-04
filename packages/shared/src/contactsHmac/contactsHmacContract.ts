@@ -1,5 +1,6 @@
 /**
- * Identity PR #23 Contacts HMAC client contract.
+ * Identity Contacts HMAC client contract, at #27 (merge
+ * 295e0f44fc34bf4a1f17afa2d5ece987203665d1): contract v1 §14 for mobile clients.
  * Writer: godiehurtado/nearsy-identity-functions @ cf6e6d9862d0005e00ae84d4dbdca6791d242fa8
  * Functions #40 consume: 60d33bab35743b39d221ec92d550129b623173f5
  *   (exact `source.epoch === contactsEpoch`; not Identity fencing).
@@ -44,6 +45,7 @@ export const CONTACTS_HMAC_FAIL_REASONS = [
   'contacts-account-gone',
   'contacts-not-enabled',
   'contacts-epoch-mismatch',
+  'contacts-epoch-required',
   'contacts-snapshot-stale',
   'contacts-source-removed',
   'contacts-snapshot-conflict',
@@ -67,7 +69,9 @@ export type ContactIdentifierInput = {
   value: string;
 };
 
-export type EnableContactsSyncRequest = Record<string, never>;
+export type EnableContactsSyncRequest = {
+  contactsEpoch: number;
+};
 export type RefreshVerifiedActorKeysRequest = Record<string, never>;
 
 export type SyncContactHashesRequest = {
@@ -84,6 +88,8 @@ export type DisableContactsSyncRequest = {
 export type RemoveContactSourceRequest = {
   sourceId: string;
   contactsEpoch: number;
+  /** Highest version sent for this source and epoch, uncertain ones included. */
+  knownSnapshotVersion?: number;
 };
 
 /**
@@ -112,7 +118,7 @@ export type DisableContactsSyncResult = ContactsWireResult & {
   result: 'disabled';
 };
 export type RemoveContactSourceResult = ContactsWireResult & {
-  result: 'removed' | 'absent';
+  result: 'removed' | 'absent' | 'superseded';
 };
 export type RefreshVerifiedActorKeysResult = ContactsWireResult & {
   result: 'refreshed';

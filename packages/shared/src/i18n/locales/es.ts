@@ -316,7 +316,9 @@ export const es: TranslationResources = {
         auth: 'Tu sesión terminó. Vuelve a iniciar sesión e inténtalo otra vez.',
         notEnabled: 'La sincronización de contactos no está activada.',
         epochMismatch:
-          'La sincronización de contactos está desactualizada. Apágala y vuélvela a activar.',
+          'La sincronización de contactos cambió desde tu última acción. Revisa esta sección e inténtalo de nuevo.',
+        epochRequired:
+          'La sincronización de contactos debe comprobar su estado primero. Inténtalo de nuevo.',
         snapshotStale:
           'La copia de contactos de este dispositivo está desactualizada. Inténtalo de nuevo.',
         sourceRemoved:
@@ -348,6 +350,7 @@ export const es: TranslationResources = {
       },
       retry: 'Reintentar',
       status: {
+        confirming: 'Comprobando la sincronización de contactos…',
         enabling: 'Activando la sincronización de contactos…',
         permission: 'Esperando tu permiso de Contactos…',
         reading: 'Leyendo los contactos de este dispositivo…',

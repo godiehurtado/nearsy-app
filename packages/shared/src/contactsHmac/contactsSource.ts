@@ -131,6 +131,16 @@ function sanitizePendingUpload(value: unknown): ContactsPendingUpload | null {
   return { version, fingerprint, epoch };
 }
 
+function sanitizeSentSnapshot(
+  value: unknown,
+): { epoch: number; version: number } | null {
+  if (!value || typeof value !== 'object') return null;
+  const row = value as Record<string, unknown>;
+  const epoch = asEpoch(row.epoch);
+  const version = asPositiveInt(row.version);
+  return epoch == null || version == null ? null : { epoch, version };
+}
+
 export async function loadContactsLocalState(
   store: KvStore,
   uid: string,
@@ -165,7 +175,9 @@ export async function loadContactsLocalState(
         ? (parsed.uncertainOp as ContactsUncertainOp)
         : null,
       reevaluateOwed: parsed.reevaluateOwed === true,
+      epochConfirmed: parsed.epochConfirmed === true,
       epochStale: parsed.epochStale === true,
+      sentSnapshot: sanitizeSentSnapshot(parsed.sentSnapshot),
       userConsent: parsed.userConsent === true,
     };
     if (typeof parsed.enablementConfirmed === 'boolean') {
@@ -194,7 +206,9 @@ export async function persistContactsLocalState(
     highestAttemptedVersion: state.highestAttemptedVersion ?? null,
     uncertainOp: state.uncertainOp ?? null,
     reevaluateOwed: state.reevaluateOwed === true,
+    epochConfirmed: state.epochConfirmed === true,
     epochStale: state.epochStale === true,
+    sentSnapshot: sanitizeSentSnapshot(state.sentSnapshot),
     userConsent: state.userConsent === true,
   };
   if (typeof state.enablementConfirmed === 'boolean') {
