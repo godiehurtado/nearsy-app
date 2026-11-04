@@ -309,7 +309,7 @@ describe('NEARSY-209 X ownership Android wiring', () => {
     assert.match(screen, /XOwnershipCard/);
     assert.match(screen, /legacyUrl=\{draft\.values\.x\}/);
     assert.match(screen, /connected\.x = false/);
-    assert.match(screen, /preserveLegacy\('x'\)/);
+    assert.doesNotMatch(screen, /buildPostCrjSocialLinksPersistencePatch|updateUserProfilePartial/);
     assert.match(screen, /key=\{`x-\$\{editorMode\}`\}/);
     const persist = readSrc('social/onboardingSocialPersistence.ts');
     const catalog = readSrc('social/onboardingSocialCatalog.ts');

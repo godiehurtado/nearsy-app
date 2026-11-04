@@ -207,6 +207,12 @@ const en = {
     description:
       'Connect your profiles so people can find you elsewhere. All optional.',
     connected: 'Connected',
+    linkSaved: 'Link saved',
+    noLinkSaved: 'No link saved',
+    editLink: 'Edit',
+    editLinkA11y: 'Edit {{platform}} link',
+    back: 'Back',
+    backToProfileA11y: 'Back to profile',
     notConnected: 'Not connected',
     connect: 'Connect',
     disconnect: 'Disconnect',
@@ -214,8 +220,6 @@ const en = {
     disconnectA11y: 'Disconnect {{platform}}',
     connectedCount: '{{count}} connections',
     connectedCountOne: '1 connection',
-    saveConnections: 'Save {{count}} connections',
-    saveConnectionsOne: 'Save 1 connection',
     saving: 'Saving…',
     loading: 'Loading social media…',
     loadError: 'We could not load your social media. Try again.',
@@ -233,6 +237,7 @@ const en = {
     },
     manual: {
       title: 'Add {{platform}}',
+      editTitle: 'Edit {{platform}}',
       body: 'Paste a profile URL or a unique identifier that clearly belongs to this account. A display name is not enough. This link is saved as unverified.',
       saveLink: 'Save link',
       cancel: 'Cancel',
@@ -327,11 +332,11 @@ const en = {
       disconnectConfirmBody:
         'Instagram will be removed from this profile mode. A pending code is cancelled. Your previously saved link stays private so you can connect again later.',
       disconnectConfirmAction: 'Disconnect',
-      pendingTitle: 'Send this code',
+      pendingTitle: 'Verify Instagram',
       pendingBody:
-        'Copy the code and send it from the Instagram account you want to verify. Open @{{inbox}}, tap Message, paste the code, send it, then return to Nearsy. Closing this screen does not verify the account.',
+        'Use the code below from the Instagram account you want to verify. Closing this screen does not finish verification.',
       pendingSteps:
-        '1. Copy the code.\n2. Open Instagram and go to @{{inbox}}.\n3. Tap Message / Send message.\n4. Paste the code and send it.\n5. Return to Nearsy and wait.',
+        '1. Copy the code.\n2. Open @{{inbox}} in Instagram.\n3. Tap Message / DM.\n4. Paste the code and send it.\n5. Return to Nearsy to verify.',
       waiting: 'Waiting for the message…',
       expiresAt: 'Expires at {{time}}',
       shareCode: 'Share code',
@@ -607,6 +612,12 @@ const es = {
       description:
         'Conecta tus perfiles para que otras personas puedan encontrarte. Todo es opcional.',
       connected: 'Conectado',
+      linkSaved: 'Enlace guardado',
+      noLinkSaved: 'Sin enlace',
+      editLink: 'Editar',
+      editLinkA11y: 'Editar enlace de {{platform}}',
+      back: 'Volver',
+      backToProfileA11y: 'Volver al perfil',
       notConnected: 'Sin conectar',
       connect: 'Conectar',
       disconnect: 'Desconectar',
@@ -614,8 +625,6 @@ const es = {
       disconnectA11y: 'Desconectar {{platform}}',
       connectedCount: '{{count}} conexiones',
       connectedCountOne: '1 conexión',
-      saveConnections: 'Guardar {{count}} conexiones',
-      saveConnectionsOne: 'Guardar 1 conexión',
       saving: 'Guardando…',
       loading: 'Cargando redes sociales…',
       loadError: 'No pudimos cargar tus redes sociales. Inténtalo de nuevo.',
@@ -632,7 +641,8 @@ const es = {
         website: 'https://www.ejemplo.com',
       },
       manual: {
-        title: 'Agregar {{platform}}',
+        title: 'Añadir {{platform}}',
+        editTitle: 'Editar {{platform}}',
         body: 'Pega una URL de perfil o un identificador único que pertenezca claramente a esta cuenta. Un nombre visible no basta. Este enlace se guarda sin verificar.',
         saveLink: 'Guardar enlace',
         cancel: 'Cancelar',
@@ -730,11 +740,11 @@ const es = {
         disconnectConfirmBody:
           'Instagram se quitará de este modo de perfil. Un código pendiente se cancela. El enlace que tenías guardado permanece en privado para que puedas conectarlo de nuevo después.',
         disconnectConfirmAction: 'Desconectar',
-        pendingTitle: 'Envía este código',
+        pendingTitle: 'Verificar Instagram',
         pendingBody:
-          'Copia el código y envíalo desde la cuenta de Instagram que quieres verificar. Abre @{{inbox}}, toca Enviar mensaje, pega el código, envíalo y vuelve a Nearsy. Cerrar esta pantalla no verifica la cuenta.',
+          'Usa el código de abajo desde la cuenta de Instagram que quieres verificar. Cerrar esta pantalla no completa la verificación.',
         pendingSteps:
-          '1. Copia el código.\n2. Abre Instagram y ve a @{{inbox}}.\n3. Toca Message / Enviar mensaje.\n4. Pega el código y envíalo.\n5. Vuelve a Nearsy y espera.',
+          '1. Copia el código.\n2. Abre @{{inbox}} en Instagram.\n3. Toca Message / DM.\n4. Pega el código y envíalo.\n5. Vuelve a Nearsy para verificar.',
         waiting: 'Esperando el mensaje…',
         expiresAt: 'Caduca a las {{time}}',
         shareCode: 'Compartir código',

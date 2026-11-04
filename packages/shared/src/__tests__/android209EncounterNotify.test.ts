@@ -335,7 +335,7 @@ describe('Identity contacts HMAC wire', () => {
     assert.equal(DISABLE_CONTACTS_SYNC, 'disableContactsSync');
     assert.equal(REMOVE_CONTACT_SOURCE, 'removeContactSource');
     assert.equal(REFRESH_VERIFIED_ACTOR_KEYS, 'refreshVerifiedActorKeys');
-    assert.deepEqual(Object.keys(buildEnableRequest()), []);
+    assert.deepEqual(buildEnableRequest(3), { contactsEpoch: 3 });
     assert.deepEqual(buildDisableRequest(3), { contactsEpoch: 3 });
     assert.deepEqual(buildRemoveSourceRequest('sourceId1', 2), {
       sourceId: 'sourceId1',
@@ -494,6 +494,7 @@ describe('Identity contacts HMAC wire', () => {
         lastAckedVersion: 2,
         lastAckedFingerprint: 'fp1:deadbeef',
         removedSnapshotFloor: null,
+        epochConfirmed: true,
       },
     });
     assert.equal(outcome.permission, 'denied');
@@ -649,15 +650,15 @@ describe('Android wiring', () => {
     assert.match(more, /enableThenSyncContacts/);
     assert.match(more, /disableContactsIntegration/);
     assert.match(more, /buildNotifyNearbyContactsPatch/);
-    assert.match(more, /contactsOpGenRef/);
-    assert.match(more, /onAuthStateChanged/);
+    assert.match(more, /subscribeContactsSyncStatus/);
+    assert.match(android, /onAuthStateChanged/);
     assert.match(core, /ENABLE_CONTACTS_SYNC/);
     assert.match(core, /SYNC_CONTACT_HASHES/);
     assert.match(core, /REMOVE_CONTACT_SOURCE/);
     assert.match(core, /REFRESH_VERIFIED_ACTOR_KEYS/);
     assert.match(core, /removedSnapshotFloor/);
     assert.match(core, /fp1:/);
-    assert.match(android, /runEnableThenSync/);
+    assert.match(readSrc('contactsHmac/contactsSyncSession.ts'), /runEnableThenSync/);
     assert.match(android, /httpsCallable/);
     assert.doesNotMatch(android, /expectedEpoch/);
     assert.match(core, /'expectedEpoch' in rec/);

@@ -118,7 +118,7 @@ describe('NEARSY-209 Android ownership counters and legacy bag', () => {
     assert.ok(ids.includes('snapchat'));
     const screen = readSrc('screens/SocialMediaScreen.tsx');
     assert.match(screen, /POST_CRJ_SOCIAL_CARD_ORDER/);
-    assert.match(screen, /valuesForSave\.snapchat/);
+    assert.doesNotMatch(screen, /buildPostCrjSocialLinksPersistencePatch|updateUserProfilePartial/);
     const order = readSrc('social/postCrjSocialEditor.ts');
     assert.match(order, /VISIBLE_CRJ_SOCIAL_PLATFORMS/);
     const cardOrder = order.slice(
@@ -131,11 +131,10 @@ describe('NEARSY-209 Android ownership counters and legacy bag', () => {
   it('unifies Connect/Disconnect action pills across ownership and legacy cards', () => {
     const styles = readSrc('components/profile/socialActionButtonStyles.ts');
     assert.match(styles, /borderRadius: radius\.pill/);
-    assert.match(styles, /minHeight: 32/);
-    assert.doesNotMatch(styles, /minHeight: 44/);
+    assert.match(styles, /minHeight: 44/);
     assert.match(styles, /SOCIAL_ACTION_HIT_SLOP/);
     for (const rel of [
-      'screens/SocialMediaScreen.tsx',
+      'components/profile/ManualSocialLinkCard.tsx',
       'components/profile/InstagramOwnershipCard.tsx',
       'components/profile/YoutubeOwnershipCard.tsx',
       'components/profile/TiktokOwnershipCard.tsx',
@@ -152,8 +151,8 @@ describe('NEARSY-209 Android ownership counters and legacy bag', () => {
     const screen = readSrc('screens/SocialMediaScreen.tsx');
     for (const id of ANDROID_OWNERSHIP_CARD_IDS) {
       assert.match(screen, new RegExp(`connected\\.${id} = false`));
-      assert.match(screen, new RegExp(`preserveLegacy\\('${id}'\\)`));
     }
+    assert.doesNotMatch(screen, /buildPostCrjSocialLinksPersistencePatch|updateUserProfilePartial/);
     assert.match(screen, /YoutubeOwnershipCard/);
     assert.match(screen, /TiktokOwnershipCard/);
     assert.match(screen, /InstagramOwnershipCard/);

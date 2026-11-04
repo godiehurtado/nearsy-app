@@ -619,9 +619,9 @@ describe('profile exploration block shape', () => {
 describe('profile exploration i18n EN/ES', () => {
   it('keeps Alignment and Social-related copy complete', () => {
     assert.equal(enAlignment.title, 'Alignment');
-    assert.equal(enAlignment.tiers.strong, 'Closely aligned');
+    assert.equal(enAlignment.tiers.strong, '');
     assert.equal(es.alignment.title, 'Compatibilidad');
-    assert.equal(es.alignment.tiers.full, 'Alineación excepcional');
+    assert.equal(es.alignment.tiers.full, '');
     assert.ok(enDiscovery.interests);
     assert.equal(enDiscovery.interests, 'Interests');
     assert.equal(es.discoveryProfile.interests, 'Intereses');

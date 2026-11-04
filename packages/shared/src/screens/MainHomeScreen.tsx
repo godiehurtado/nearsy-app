@@ -98,9 +98,15 @@ import {
 } from '../visibility/searchPreferencesStore';
 import {
   applyModeFieldPatch,
-  shouldApplyRemotePreferences,
   type PrefsFieldPatch,
 } from '../visibility/preferenceDraft';
+import {
+  acquireSearchPreferencesWriter,
+  releaseSearchPreferencesWriter,
+  searchPreferenceFieldsFromPatch,
+  storedSearchPreferenceModes,
+  type SearchPreferencesWriter,
+} from '../visibility/searchPreferencesWriter';
 import {
   resolveActiveMode,
   resolveActivePresentation,
@@ -202,9 +208,9 @@ export default function MainHomeScreen({ navigation }: Props) {
   );
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
-  const inFlightWritesRef = useRef(0);
-  const localEpochRef = useRef(0);
-  const appliedEpochRef = useRef(0);
+  /** The account's save queue, shared with any other mount of this screen. */
+  const prefsWriterRef = useRef<SearchPreferencesWriter | null>(null);
+  const showPrefsSaveErrorRef = useRef<() => void>(() => {});
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const [ageVisual, setAgeVisual] = useState<{
     ageMin: number;
@@ -492,9 +498,25 @@ export default function MainHomeScreen({ navigation }: Props) {
   useEffect(() => {
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) {
+      releaseSearchPreferencesWriter();
+      prefsWriterRef.current = null;
       setLoading(false);
       return;
     }
+
+    const prefsWriter = acquireSearchPreferencesWriter({
+      uid,
+      initial: prefsRef.current,
+      isCurrent: () => firebaseAuth.currentUser?.uid === uid,
+      write: (mode, fields, updatedAt) =>
+        persistSearchPreferencesForMode(uid, mode, fields, updatedAt),
+      onChange: (draft) => {
+        prefsRef.current = draft;
+        setPrefs(draft);
+      },
+      onFailure: () => showPrefsSaveErrorRef.current(),
+    });
+    prefsWriterRef.current = prefsWriter;
 
     let alive = true;
     bindPublicationSession(uid);
@@ -538,36 +560,15 @@ export default function MainHomeScreen({ navigation }: Props) {
             uid,
           );
           setProfile(data);
-          // After any local edit, draft owns the truth until remount.
-          // While writes are in flight, never rehydrate prefs from snapshots.
-          if (
-            inFlightWritesRef.current === 0 &&
-            localEpochRef.current === 0
-          ) {
-            const remote = parseSearchPreferencesFromUserDoc(
+          // Ignored while saving: local intent wins until its writes settle.
+          prefsWriter.applyRemote(
+            parseSearchPreferencesFromUserDoc(
               data as Record<string, unknown>,
               unit,
               officialInterestIds,
-            );
-            prefsRef.current = remote;
-            setPrefs(remote);
-            appliedEpochRef.current = 0;
-          } else if (
-            shouldApplyRemotePreferences({
-              inFlightWrites: inFlightWritesRef.current,
-              localEpoch: localEpochRef.current,
-              appliedEpoch: appliedEpochRef.current,
-            })
-          ) {
-            const remote = parseSearchPreferencesFromUserDoc(
-              data as Record<string, unknown>,
-              unit,
-              officialInterestIds,
-            );
-            prefsRef.current = remote;
-            setPrefs(remote);
-            appliedEpochRef.current = localEpochRef.current;
-          }
+            ),
+            storedSearchPreferenceModes(data as Record<string, unknown>),
+          );
 
           // Same-update path as setProfile: rising-edge true must clear sticky
           // permissionsValid=false before paint (BUG-VIS-01). Do not wait for effect.
@@ -907,12 +908,21 @@ export default function MainHomeScreen({ navigation }: Props) {
     Alert.alert(title, message);
   }, [t]);
 
-  const patchAndPersist = useCallback(
-    async (patch: PrefsFieldPatch) => {
-      const uid = firebaseAuth.currentUser?.uid;
-      if (!uid) return;
+  // Prefs slider/filter writes must not claim a Visibility activation failure.
+  showPrefsSaveErrorRef.current = () => {
+    Alert.alert(
+      t('home.errors.preferencesTitle'),
+      t('home.errors.preferencesSave'),
+    );
+  };
 
-      const draft = applyModeFieldPatch(prefsRef.current, mode, patch);
+  const patchAndPersist = useCallback(
+    (patch: PrefsFieldPatch) => {
+      const uid = firebaseAuth.currentUser?.uid;
+      const writer = prefsWriterRef.current;
+      if (!uid || !writer || writer.uid !== uid) return;
+
+      const draft = applyModeFieldPatch(writer.getDraft(), mode, patch);
       const prepared = prepareSearchPreferencesForPersist(
         draft[mode],
         officialInterestIds,
@@ -923,43 +933,17 @@ export default function MainHomeScreen({ navigation }: Props) {
         }
         return;
       }
-
-      const optimistic: VisibilitySearchPreferencesByMode = {
-        ...draft,
-        [mode]: prepared.prefs,
-      };
-      localEpochRef.current += 1;
-      const epoch = localEpochRef.current;
-      prefsRef.current = optimistic;
-      setPrefs(optimistic);
       setInterestLimitMessage(null);
-
-      inFlightWritesRef.current += 1;
-      try {
-        const updated = await persistSearchPreferencesForMode(
-          uid,
-          optimistic,
-          mode,
-          prepared.prefs,
-        );
-        if (epoch === localEpochRef.current) {
-          prefsRef.current = updated;
-          setPrefs(updated);
-          appliedEpochRef.current = epoch;
-        }
-      } catch (err) {
-        if (epoch === localEpochRef.current) {
-          Alert.alert(t('home.errors.title'), t('home.errors.generic'));
-        }
-        const text = err instanceof Error ? err.message : '';
-        if (text.includes(INTEREST_IDS_OVER_MAX_REASON)) {
-          announceInterestLimit();
-        }
-      } finally {
-        inFlightWritesRef.current = Math.max(0, inFlightWritesRef.current - 1);
-      }
+      writer.patch(
+        mode,
+        searchPreferenceFieldsFromPatch(
+          patch.kind === 'interests'
+            ? { kind: 'interests', interestIds: prepared.prefs.interestIds }
+            : patch,
+        ),
+      );
     },
-    [announceInterestLimit, mode, officialInterestIds, t],
+    [announceInterestLimit, mode, officialInterestIds],
   );
 
   const activateVisibility = useCallback(async () => {

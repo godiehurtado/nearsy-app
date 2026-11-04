@@ -234,15 +234,10 @@ export default function PhoneVerificationScreen() {
     if (next.phase === 'verified') {
       void (async () => {
         try {
-          const uid = firebaseAuth.currentUser?.uid;
-          if (!uid) return;
-          const {
-            loadContactsLocalState,
-            refreshContactsActorKeys,
-          } = await import('../contactsHmac/contactsHmac');
-          const state = await loadContactsLocalState(uid);
-          if (!state) return;
-          await refreshContactsActorKeys(state);
+          const { refreshContactsActorKeys } = await import(
+            '../contactsHmac/contactsHmac'
+          );
+          await refreshContactsActorKeys();
         } catch {
           /* Identity key validity is still open; do not block OTP success. */
         }

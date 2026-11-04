@@ -24,7 +24,7 @@ import {
   useAppTheme,
 } from '../../theme';
 import { cardShadow } from '../../theme/shadows';
-import { formatPublicAffiliationCaption } from '../../affiliations/affiliationPresentation';
+import { formatPublicAffiliationLines } from '../../affiliations/affiliationPresentation';
 import {
   MAX_DISCOVERY_AFFILIATIONS,
   resolveDiscoveryAffiliationGrid,
@@ -46,6 +46,10 @@ export function DiscoveryAffiliationsCard({ affiliations }: Props) {
     t(`onboarding.profileCompletion.affiliations.topics.${id}` as any, {
       defaultValue: fallback,
     });
+  const localizeCategory = (id: string, fallback: string) =>
+    t(`onboarding.profileCompletion.affiliations.categories.${id}` as any, {
+      defaultValue: fallback,
+    });
 
   const items = Array.isArray(affiliations)
     ? affiliations
@@ -55,7 +59,11 @@ export function DiscoveryAffiliationsCard({ affiliations }: Props) {
 
   const labeled = items.map((item) => ({
     ...item,
-    caption: formatPublicAffiliationCaption(item, localizeTopic),
+    lines: formatPublicAffiliationLines(
+      item,
+      localizeTopic,
+      localizeCategory,
+    ),
   }));
 
   const onGridLayout = useCallback((event: LayoutChangeEvent) => {
@@ -97,10 +105,10 @@ export function DiscoveryAffiliationsCard({ affiliations }: Props) {
               },
             ]}
             accessibilityRole="text"
-            accessibilityLabel={item.caption}
+            accessibilityLabel={item.lines.caption}
           >
             <AffiliationLogoMark
-              name={item.caption}
+              name={item.lines.title || item.lines.caption}
               type={item.type}
               logoUrl={item.logoUrl}
               size={AFFILIATION_DISCOVERY_LOGO_SIZE}
@@ -108,10 +116,18 @@ export function DiscoveryAffiliationsCard({ affiliations }: Props) {
             />
             <Text
               style={[styles.name, { color: palette.textPrimary }]}
-              numberOfLines={2}
+              maxFontSizeMultiplier={1.6}
             >
-              {item.caption}
+              {item.lines.title}
             </Text>
+            {item.lines.subtitle ? (
+              <Text
+                style={[styles.category, { color: palette.textSecondary }]}
+                maxFontSizeMultiplier={1.6}
+              >
+                {item.lines.subtitle}
+              </Text>
+            ) : null}
           </View>
         ))}
       </View>
@@ -151,6 +167,14 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     fontSize: 13,
     fontWeight: fontWeight.bold,
+    lineHeight: 18,
+    flexShrink: 1,
+  },
+  category: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: fontWeight.medium,
     lineHeight: 16,
+    flexShrink: 1,
   },
 });

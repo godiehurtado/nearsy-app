@@ -1,130 +1,85 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  Pressable,
-  Platform,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { useAppTheme } from '../../theme/ThemeContext.tsx';
 import { fontSize, fontWeight } from '../../theme/typography.ts';
 import { spacing } from '../../theme/spacing.ts';
-import { radius } from '../../theme/radius.ts';
 import { useTranslation } from '../../i18n/index.ts';
-import type { SocialCustomLink } from '../../types/profile.ts';
 import {
   VISIBLE_CRJ_SOCIAL_PLATFORMS,
-  CUSTOM_NETWORK_NAME_MAX,
   countConnectedSocials,
   type CrjSocialDraftValues,
-  type CrjSocialPlatform,
   type CrjSocialPlatformId,
 } from '../../social/onboardingSocialCatalog.ts';
-import {
-  isDuplicateCustomNetwork,
-  normalizeCustomNetworkUrl,
-  normalizeSocialInput,
-  type CrjSocialFieldErrors,
-  validateCustomNetworkName,
-} from '../../social/socialLinkNormalize.ts';
+import type { CrjSocialFieldErrors } from '../../social/socialLinkNormalize.ts';
 import type { ProfileMode } from '../../profile/profileModeFields.ts';
 import {
   ANDROID_OWNERSHIP_CARD_IDS,
   applyOwnershipVerifiedChange,
   type AndroidOwnershipCardId,
 } from '../../social/postCrjSocialEditor.ts';
+import {
+  isManualSocialLinkId,
+  type ManualSocialLinkId,
+} from '../../social/manualSocialLinkCard.ts';
 import { YoutubeOwnershipCard } from '../profile/YoutubeOwnershipCard.tsx';
 import { TiktokOwnershipCard } from '../profile/TiktokOwnershipCard.tsx';
 import { InstagramOwnershipCard } from '../profile/InstagramOwnershipCard.tsx';
 import { XOwnershipCard } from '../profile/XOwnershipCard.tsx';
+import { ManualSocialLinkCard } from '../profile/ManualSocialLinkCard.tsx';
 import { ManualSocialLinkModal } from '../profile/ManualSocialLinkModal.tsx';
 import {
-  SOCIAL_ACTION_HIT_SLOP,
-  socialActionButtonStyles,
-} from '../profile/socialActionButtonStyles.ts';
+  SocialPlatformGlyph,
+  WEBSITE_SOCIAL_PLATFORM,
+} from '../profile/SocialPlatformGlyph.tsx';
+import { useManualSocialLinks } from '../profile/useManualSocialLinks.ts';
 
 type Props = {
+  uid: string | null;
   mode: ProfileMode;
   values: CrjSocialDraftValues;
-  custom: SocialCustomLink[];
   website?: string;
-  onChangeValues: (next: CrjSocialDraftValues) => void;
-  onChangeCustom: (next: SocialCustomLink[]) => void;
-  onChangeWebsite?: (next: string) => void;
-  onImmediatePersist?: (overrides?: {
-    values?: CrjSocialDraftValues;
-    custom?: SocialCustomLink[];
-    website?: string;
-  }) => void | Promise<void>;
+  /** A link was written; the wizard only updates its own draft. */
+  onManualLinkSaved: (field: ManualSocialLinkId, url: string | null) => void;
+  /** Next and Skip wait: their write could otherwise undo a removal in flight. */
+  onManualBusyChange: (busy: boolean) => void;
   fieldErrors: CrjSocialFieldErrors;
-  onClearFieldError: (id: CrjSocialPlatformId | 'custom') => void;
+  onClearFieldError: (id: CrjSocialPlatformId) => void;
 };
 
-function PlatformGlyph({
-  platform,
-  glyphColor,
-}: {
-  platform: CrjSocialPlatform;
-  glyphColor: string;
-}) {
-  const isLightMark = platform.id === 'snapchat';
-  return (
-    <View
-      style={[
-        styles.glyph,
-        {
-          backgroundColor: platform.color,
-          borderColor: platform.id === 'x' || platform.id === 'tiktok'
-            ? 'rgba(255,255,255,0.12)'
-            : 'transparent',
-        },
-      ]}
-    >
-      {platform.iconSet === 'fontawesome6' ? (
-        <FontAwesome6
-          name={platform.ionicon as React.ComponentProps<typeof FontAwesome6>['name']}
-          size={12}
-          color={isLightMark ? '#111111' : '#FFFFFF'}
-        />
-      ) : (
-        <Ionicons
-          name={platform.ionicon as React.ComponentProps<typeof Ionicons>['name']}
-          size={14}
-          color={isLightMark ? '#111111' : glyphColor}
-        />
-      )}
-    </View>
-  );
-}
-
 export function OnboardingSocialMediaStep({
+  uid,
   mode,
   values,
-  custom,
   website = '',
-  onChangeValues,
-  onChangeCustom,
-  onChangeWebsite,
-  onImmediatePersist,
+  onManualLinkSaved,
+  onManualBusyChange,
   fieldErrors,
   onClearFieldError,
 }: Props) {
   const { palette } = useAppTheme();
   const { t } = useTranslation();
-  const [otherOpen, setOtherOpen] = useState(false);
-  const [otherName, setOtherName] = useState('');
-  const [otherUrl, setOtherUrl] = useState('');
-  const [otherError, setOtherError] = useState<string | null>(null);
   const [ownershipVerified, setOwnershipVerified] = useState<
     Partial<Record<AndroidOwnershipCardId, boolean>>
   >({});
-  const [manualTarget, setManualTarget] = useState<
-    'facebook' | 'linkedin' | 'website' | null
-  >(null);
-  const [manualError, setManualError] = useState<string | null>(null);
+
+  const manualLinks = useManualSocialLinks({
+    uid,
+    mode,
+    values: {
+      facebook: values.facebook ?? '',
+      linkedin: values.linkedin ?? '',
+      website,
+    },
+    onSaved: (field, url) => {
+      if (field !== 'website') onClearFieldError(field);
+      onManualLinkSaved(field, url);
+    },
+  });
+
+  const manualBusy = manualLinks.busy;
+  useEffect(() => {
+    onManualBusyChange(manualBusy);
+  }, [manualBusy, onManualBusyChange]);
 
   const onOwnershipConnectedChange = useCallback(
     (id: AndroidOwnershipCardId, connected: boolean) => {
@@ -145,8 +100,9 @@ export function OnboardingSocialMediaStep({
           x: '',
         }
       : values;
+  // Historical custom links stay stored, but are neither shown nor counted here.
   const connected =
-    countConnectedSocials(urlValuesForCount, custom, website) +
+    countConnectedSocials(urlValuesForCount, [], website) +
     (Platform.OS === 'android'
       ? ANDROID_OWNERSHIP_CARD_IDS.filter((id) => ownershipVerified[id]).length
       : 0);
@@ -157,53 +113,26 @@ export function OnboardingSocialMediaStep({
           count: connected,
         });
 
-  const otherReady = otherName.trim().length > 0;
-
-  const inputStyle = useMemo(
-    () => ({
-      color: palette.textPrimary,
-      borderColor: palette.accentBorder,
-      backgroundColor: palette.cardBg,
-    }),
-    [palette],
+  const manualCard = (
+    id: ManualSocialLinkId,
+    label: string,
+    url: string,
+    glyph: React.ReactNode,
+    fieldError?: string,
+  ) => (
+    <ManualSocialLinkCard
+      key={id}
+      id={id}
+      label={label}
+      url={url}
+      glyph={glyph}
+      disabled={manualLinks.busy}
+      removing={manualLinks.busyField === id}
+      error={manualLinks.errorFor(id) ?? fieldError}
+      onOpen={() => manualLinks.open(id)}
+      onRemove={() => manualLinks.remove(id)}
+    />
   );
-
-  function setValue(id: CrjSocialPlatformId, text: string) {
-    onClearFieldError(id);
-    onChangeValues({ ...values, [id]: text });
-  }
-
-  function addOther() {
-    const nameCheck = validateCustomNetworkName(otherName);
-    if (!nameCheck.ok) {
-      setOtherError(
-        t('onboarding.profileCompletion.socialMedia.otherNameRequired' as any),
-      );
-      return;
-    }
-    if (isDuplicateCustomNetwork(custom, otherName)) {
-      setOtherError(
-        t('onboarding.profileCompletion.socialMedia.duplicateCustom' as any),
-      );
-      return;
-    }
-    const urlResult = normalizeCustomNetworkUrl(otherUrl);
-    if (!urlResult.ok || !urlResult.url) {
-      setOtherError(
-        t('onboarding.profileCompletion.socialMedia.otherUrlRequired' as any),
-      );
-      return;
-    }
-    onChangeCustom([
-      ...custom,
-      { name: otherName.trim(), url: urlResult.url },
-    ]);
-    onClearFieldError('custom');
-    setOtherName('');
-    setOtherUrl('');
-    setOtherError(null);
-    setOtherOpen(false);
-  }
 
   return (
     <View>
@@ -217,23 +146,12 @@ export function OnboardingSocialMediaStep({
         {connectedLabel}
       </Text>
 
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: palette.surface,
-            borderColor: palette.accentBorder,
-          },
-        ]}
-      >
+      <View style={styles.cards}>
         {VISIBLE_CRJ_SOCIAL_PLATFORMS.map((platform) => {
-          const error = fieldErrors[platform.id];
           const label = t(
             `onboarding.profileCompletion.socialMedia.platforms.${platform.nameKey}` as any,
           );
-          const glyph = (
-            <PlatformGlyph platform={platform} glyphColor="#FFFFFF" />
-          );
+          const glyph = <SocialPlatformGlyph platform={platform} />;
 
           if (Platform.OS === 'android' && platform.id === 'youtube') {
             return (
@@ -291,354 +209,26 @@ export function OnboardingSocialMediaStep({
               />
             );
           }
-
-          if (
-            Platform.OS === 'android' &&
-            (platform.id === 'facebook' || platform.id === 'linkedin')
-          ) {
-            const connected = !!(values[platform.id] ?? '').trim();
-            return (
-              <View key={platform.id} style={styles.row}>
-                <View style={styles.rowHeader}>
-                  {glyph}
-                  <Text style={[styles.platformName, { color: palette.textPrimary, flex: 1 }]}>
-                    {label}
-                  </Text>
-                  <Pressable
-                    accessibilityRole="button"
-                    hitSlop={SOCIAL_ACTION_HIT_SLOP}
-                    onPress={() => {
-                      if (connected) {
-                        const next = { ...values, [platform.id]: '' };
-                        onChangeValues(next);
-                        void onImmediatePersist?.({ values: next });
-                        return;
-                      }
-                      setManualError(null);
-                      setManualTarget(
-                        platform.id === 'linkedin' ? 'linkedin' : 'facebook',
-                      );
-                    }}
-                    style={[
-                      socialActionButtonStyles.button,
-                      connected
-                        ? { backgroundColor: 'transparent', borderColor: palette.danger }
-                        : { backgroundColor: palette.primary, borderColor: palette.primary },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        socialActionButtonStyles.text,
-                        { color: connected ? palette.danger : '#FFFFFF' },
-                      ]}
-                    >
-                      {connected
-                        ? t('profile.social.disconnect')
-                        : t('profile.social.connect')}
-                    </Text>
-                  </Pressable>
-                </View>
-                {connected ? (
-                  <Text style={[styles.customUrl, { color: palette.textSecondary }]} numberOfLines={2}>
-                    {values[platform.id]}
-                  </Text>
-                ) : null}
-              </View>
+          if (isManualSocialLinkId(platform.id)) {
+            return manualCard(
+              platform.id,
+              label,
+              values[platform.id] ?? '',
+              glyph,
+              fieldErrors[platform.id],
             );
           }
-
-          return (
-            <View key={platform.id} style={styles.row}>
-              <View style={styles.rowHeader}>
-                {glyph}
-                <Text style={[styles.platformName, { color: palette.textPrimary }]}>
-                  {label}
-                </Text>
-              </View>
-              <TextInput
-                value={values[platform.id]}
-                onChangeText={(text) => setValue(platform.id, text)}
-                placeholder={t(
-                  `onboarding.profileCompletion.socialMedia.placeholders.${platform.placeholderKey}` as any,
-                )}
-                placeholderTextColor={palette.placeholder}
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="off"
-                keyboardType="url"
-                textContentType="URL"
-                accessibilityLabel={t(
-                  'onboarding.profileCompletion.socialMedia.inputA11y' as any,
-                  { name: label },
-                )}
-                style={[
-                  styles.input,
-                  inputStyle,
-                  error ? { borderColor: palette.danger } : null,
-                ]}
-              />
-              {error ? (
-                <Text style={[styles.error, { color: palette.danger }]}>
-                  {error}
-                </Text>
-              ) : null}
-            </View>
-          );
+          return null;
         })}
 
-        {Platform.OS === 'android' ? (
-          <View style={styles.row}>
-            <View style={styles.rowHeader}>
-              <View style={[styles.glyph, { backgroundColor: '#64748B' }]}>
-                <Ionicons name="globe-outline" size={14} color="#FFFFFF" />
-              </View>
-              <Text style={[styles.platformName, { color: palette.textPrimary, flex: 1 }]}>
-                {t('onboarding.profileCompletion.socialMedia.platforms.website' as any)}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                hitSlop={SOCIAL_ACTION_HIT_SLOP}
-                onPress={() => {
-                  if (website.trim()) {
-                    onChangeWebsite?.('');
-                    void onImmediatePersist?.({ website: '' });
-                    return;
-                  }
-                  setManualError(null);
-                  setManualTarget('website');
-                }}
-                style={[
-                  socialActionButtonStyles.button,
-                  website.trim()
-                    ? { backgroundColor: 'transparent', borderColor: palette.danger }
-                    : { backgroundColor: palette.primary, borderColor: palette.primary },
-                ]}
-              >
-                <Text
-                  style={[
-                    socialActionButtonStyles.text,
-                    { color: website.trim() ? palette.danger : '#FFFFFF' },
-                  ]}
-                >
-                  {website.trim()
-                    ? t('profile.social.disconnect')
-                    : t('profile.social.connect')}
-                </Text>
-              </Pressable>
-            </View>
-            {website.trim() ? (
-              <Text style={[styles.customUrl, { color: palette.textSecondary }]} numberOfLines={2}>
-                {website}
-              </Text>
-            ) : null}
-          </View>
-        ) : null}
-
-        {custom.map((row, index) => (
-          <View key={`${row.name}-${index}`} style={styles.row}>
-            <View style={styles.rowHeader}>
-              <View
-                style={[
-                  styles.glyph,
-                  { backgroundColor: '#64748B' },
-                ]}
-              >
-                <Ionicons name="globe-outline" size={14} color="#FFFFFF" />
-              </View>
-              <Text
-                style={[
-                  styles.platformName,
-                  { color: palette.textPrimary, flex: 1 },
-                ]}
-                numberOfLines={1}
-              >
-                {row.name}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t(
-                  'onboarding.profileCompletion.socialMedia.removeA11y' as any,
-                  { name: row.name },
-                )}
-                hitSlop={8}
-                onPress={() => {
-                  onChangeCustom(custom.filter((_, i) => i !== index));
-                }}
-                style={styles.removeHit}
-              >
-                <Text style={[styles.removeMark, { color: palette.textMuted }]}>
-                  {'\u00D7'}
-                </Text>
-              </Pressable>
-            </View>
-            {row.url ? (
-              <Text
-                style={[styles.customUrl, { color: palette.textSecondary }]}
-                numberOfLines={2}
-              >
-                {row.url}
-              </Text>
-            ) : null}
-          </View>
-        ))}
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t(
-            'onboarding.profileCompletion.socialMedia.other' as any,
-          )}
-          onPress={() => {
-            setOtherOpen((open) => !open);
-            setOtherError(null);
-          }}
-          style={[
-            styles.otherToggle,
-            { borderColor: palette.accentBorder },
-          ]}
-        >
-          <Text style={[styles.otherToggleText, { color: palette.textSecondary }]}>
-            {'＋ '}
-            {t('onboarding.profileCompletion.socialMedia.other' as any)}
-          </Text>
-        </Pressable>
-
-        {otherOpen ? (
-          <View
-            style={[
-              styles.otherPanel,
-              {
-                backgroundColor: palette.cardBg,
-                borderColor: palette.accentBorder,
-              },
-            ]}
-          >
-            <View style={styles.rowHeader}>
-              <View style={[styles.glyph, { backgroundColor: '#64748B' }]}>
-                <Ionicons name="globe-outline" size={14} color="#FFFFFF" />
-              </View>
-              <TextInput
-                value={otherName}
-                onChangeText={(text) => {
-                  setOtherName(text.slice(0, CUSTOM_NETWORK_NAME_MAX));
-                  setOtherError(null);
-                }}
-                placeholder={t(
-                  'onboarding.profileCompletion.socialMedia.otherNamePlaceholder' as any,
-                )}
-                placeholderTextColor={palette.placeholder}
-                accessibilityLabel={t(
-                  'onboarding.profileCompletion.socialMedia.otherNamePlaceholder' as any,
-                )}
-                style={[
-                  styles.input,
-                  inputStyle,
-                  { flex: 1, marginTop: 0 },
-                ]}
-              />
-            </View>
-            <TextInput
-              value={otherUrl}
-              onChangeText={(text) => {
-                setOtherUrl(text);
-                setOtherError(null);
-              }}
-              placeholder={t(
-                'onboarding.profileCompletion.socialMedia.otherUrlPlaceholder' as any,
-              )}
-              placeholderTextColor={palette.placeholder}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-              accessibilityLabel={t(
-                'onboarding.profileCompletion.socialMedia.otherUrlPlaceholder' as any,
-              )}
-              style={[styles.input, inputStyle]}
-            />
-            {otherError ? (
-              <Text style={[styles.error, { color: palette.danger }]}>
-                {otherError}
-              </Text>
-            ) : null}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: !otherReady }}
-              onPress={addOther}
-              style={[
-                styles.addNetwork,
-                {
-                  backgroundColor: otherReady ? palette.primary : 'transparent',
-                  borderColor: otherReady ? 'transparent' : palette.accentBorder,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.addNetworkText,
-                  {
-                    color: otherReady ? '#FFFFFF' : palette.textMuted,
-                  },
-                ]}
-              >
-                {t(
-                  'onboarding.profileCompletion.socialMedia.addNetwork' as any,
-                )}
-              </Text>
-            </Pressable>
-          </View>
-        ) : null}
+        {manualCard(
+          'website',
+          t('onboarding.profileCompletion.socialMedia.platforms.website' as any),
+          website,
+          <SocialPlatformGlyph platform={WEBSITE_SOCIAL_PLATFORM} />,
+        )}
       </View>
-      <ManualSocialLinkModal
-        visible={manualTarget != null}
-        platformLabel={
-          manualTarget === 'website'
-            ? t('onboarding.profileCompletion.socialMedia.platforms.website' as any)
-            : t(
-                `onboarding.profileCompletion.socialMedia.platforms.${manualTarget ?? 'facebook'}` as any,
-              )
-        }
-        placeholder={
-          manualTarget === 'website'
-            ? t('onboarding.profileCompletion.socialMedia.placeholders.website' as any)
-            : t(
-                `onboarding.profileCompletion.socialMedia.placeholders.${manualTarget ?? 'facebook'}` as any,
-              )
-        }
-        initialValue={
-          manualTarget === 'website'
-            ? website
-            : manualTarget
-              ? values[manualTarget]
-              : ''
-        }
-        errorText={manualError}
-        onCancel={() => {
-          setManualTarget(null);
-          setManualError(null);
-        }}
-        onSave={(value) => {
-          if (!manualTarget) return;
-          const result =
-            manualTarget === 'website'
-              ? normalizeCustomNetworkUrl(value)
-              : normalizeSocialInput(manualTarget, value);
-          if (!result.ok || !result.url) {
-            setManualError(
-              t('onboarding.profileCompletion.socialMedia.invalid' as any),
-            );
-            return;
-          }
-          if (manualTarget === 'website') {
-            onChangeWebsite?.(result.url);
-            void onImmediatePersist?.({ website: result.url });
-          } else {
-            const next = { ...values, [manualTarget]: result.url };
-            onChangeValues(next);
-            void onImmediatePersist?.({ values: next });
-          }
-          setManualTarget(null);
-          setManualError(null);
-        }}
-      />
+      <ManualSocialLinkModal {...manualLinks.modalProps} />
     </View>
   );
 }
@@ -660,93 +250,8 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.bold,
     marginTop: spacing.md,
   },
-  card: {
+  cards: {
     marginTop: spacing.lg,
-    padding: 14,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    gap: 14,
-  },
-  row: {
-    gap: 7,
-  },
-  rowHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-  },
-  glyph: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  platformName: {
-    fontSize: 13.5,
-    fontWeight: fontWeight.extrabold,
-  },
-  input: {
-    width: '100%',
-    marginTop: 7,
-    paddingVertical: 11,
-    paddingHorizontal: 13,
-    borderRadius: 12,
-    borderWidth: 1,
-    fontSize: 13,
-    fontWeight: fontWeight.semibold,
-    minHeight: 44,
-  },
-  error: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
-    marginTop: 4,
-  },
-  customUrl: {
-    fontSize: fontSize.sm,
-    marginTop: 6,
-  },
-  removeHit: {
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  removeMark: {
-    fontSize: 20,
-    fontWeight: fontWeight.extrabold,
-    lineHeight: 22,
-  },
-  otherToggle: {
-    minHeight: 44,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-  },
-  otherToggleText: {
-    fontSize: 12.5,
-    fontWeight: fontWeight.bold,
-  },
-  otherPanel: {
-    padding: 13,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  addNetwork: {
-    marginTop: 11,
-    minHeight: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 11,
-  },
-  addNetworkText: {
-    fontSize: 12.5,
-    fontWeight: fontWeight.extrabold,
+    gap: spacing.sm,
   },
 });

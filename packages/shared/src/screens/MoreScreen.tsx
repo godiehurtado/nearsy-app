@@ -47,15 +47,25 @@ import {
 } from '../alerts/notifyPrefs';
 import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
 import {
-  ContactsHmacError,
+  bindContactsUserDoc,
+  contactsCanRetry,
+  contactsCanRetryRead,
   contactsEpochFromUserDoc,
   contactsHmacAvailable,
   contactsHmacErrorToI18nKey,
+  contactsOperationInFlight,
+  contactsStatusCopyKey,
+  contactsToggleLocked,
+  contactsToggleValue,
   disableContactsIntegration,
   enableThenSyncContacts,
-  loadContactsLocalState,
+  expectContactsUserDocRead,
+  getContactsSyncStatus,
+  reportContactsUserDocReadFailed,
+  retryContactsSync,
+  subscribeContactsSyncStatus,
+  type ContactsOpResult,
 } from '../contactsHmac/contactsHmac';
-import type { ContactsLocalState } from '../contactsHmac/contactsSyncFlow';
 import {
   changeAppLanguage,
   isSupportedLanguage,
@@ -202,6 +212,16 @@ function minAge99BirthDate(asOf: Date = new Date()) {
   };
 }
 
+function contactsFactsFromProfile(data: ProfileDoc) {
+  return {
+    contactsSyncEnabled: resolveContactsSyncEnabled(data.contactsSyncEnabled),
+    contactsEpoch:
+      typeof data.contactsEpoch === 'number'
+        ? contactsEpochFromUserDoc(data.contactsEpoch)
+        : null,
+  };
+}
+
 export default function MoreScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<MoreStackParamList>>();
@@ -244,14 +264,12 @@ export default function MoreScreen() {
   const [visibleToMaxAge, setVisibleToMaxAge] = useState<number | null>(null);
   const [bgVisible, setBgVisible] = useState(false);
   const [notifyNearbyInterests, setNotifyNearbyInterests] = useState(true);
-  const [contactsSyncEnabled, setContactsSyncEnabled] = useState(false);
   const [notifyNearbyContacts, setNotifyNearbyContacts] = useState(false);
-  const [contactsBusy, setContactsBusy] = useState(false);
-  const contactsStateRef = useRef<ContactsLocalState | null>(null);
-  const contactsUidRef = useRef<string | null>(
-    firebaseAuth.currentUser?.uid ?? null,
-  );
-  const contactsOpGenRef = useRef(0);
+  const [contactsStatus, setContactsStatus] = useState(getContactsSyncStatus);
+  // Only Identity's confirmation counts; the toggle position alone does not.
+  const contactsSyncEnabled = contactsStatus.enablement === 'enabled';
+  const contactsBusy = contactsOperationInFlight(contactsStatus);
+  const contactsCopyKey = contactsStatusCopyKey(contactsStatus);
   const [visibilityOn, setVisibilityOn] = useState(false);
   const [bgChanging, setBgChanging] = useState(false);
   const [bgDisclosureVisible, setBgDisclosureVisible] = useState(false);
@@ -316,8 +334,16 @@ export default function MoreScreen() {
       return;
     }
     setUserEmail(firebaseAuth.currentUser?.email ?? '');
-    const data = (await getUserProfile(uid)) as ProfileDoc | null;
+    if (Platform.OS === 'android') expectContactsUserDocRead(uid);
+    let data: ProfileDoc | null;
+    try {
+      data = (await getUserProfile(uid)) as ProfileDoc | null;
+    } catch (err) {
+      if (Platform.OS === 'android') reportContactsUserDocReadFailed(uid);
+      throw err;
+    }
     if (!data) {
+      if (Platform.OS === 'android') reportContactsUserDocReadFailed(uid);
       setLoading(false);
       return;
     }
@@ -335,8 +361,6 @@ export default function MoreScreen() {
       typeof data.visibleToMaxAge === 'number' ? data.visibleToMaxAge : null,
     );
     setNotifyNearbyInterests(data.notifyNearbyInterests !== false);
-    const syncOn = resolveContactsSyncEnabled(data.contactsSyncEnabled);
-    setContactsSyncEnabled(syncOn);
     setNotifyNearbyContacts(
       resolveNotifyNearbyContacts({
         contactsSyncEnabled: data.contactsSyncEnabled,
@@ -344,15 +368,10 @@ export default function MoreScreen() {
       }),
     );
     if (Platform.OS === 'android' && contactsHmacAvailable()) {
-      try {
-        const local = await loadContactsLocalState(uid);
-        if (local) {
-          local.contactsEpoch = contactsEpochFromUserDoc(data.contactsEpoch);
-          contactsStateRef.current = local;
-        }
-      } catch {
-        contactsStateRef.current = null;
-      }
+      // Not awaited: Contacts must not hold up the rest of this screen.
+      void bindContactsUserDoc(uid, contactsFactsFromProfile(data)).catch(() => {
+        reportContactsUserDocReadFailed(uid);
+      });
     }
     let bgPref = !!data.bgVisible;
     setVisibilityOn(!!data.visibility);
@@ -392,18 +411,23 @@ export default function MoreScreen() {
   }, [t]);
 
   useEffect(() => {
-    const unsub = firebaseAuth.onAuthStateChanged((user) => {
-      const next = user?.uid ?? null;
-      if (next === contactsUidRef.current) return;
-      contactsUidRef.current = next;
-      contactsOpGenRef.current += 1;
-      contactsStateRef.current = null;
-      setContactsBusy(false);
-      setContactsSyncEnabled(false);
-      setNotifyNearbyContacts(false);
-    });
-    return () => unsub();
+    setContactsStatus(getContactsSyncStatus());
+    return subscribeContactsSyncStatus(setContactsStatus);
   }, []);
+
+  const contactsUid = contactsStatus.uid;
+  useEffect(() => {
+    // A signed-out account's value must not stay on screen.
+    if (!contactsUid) setNotifyNearbyContacts(false);
+  }, [contactsUid]);
+
+  const contactsNotifyEffective = contactsStatus.notifyEffective;
+  const contactsResultSeq = contactsStatus.resultSeq;
+  useEffect(() => {
+    if (contactsNotifyEffective != null) {
+      setNotifyNearbyContacts(contactsNotifyEffective);
+    }
+  }, [contactsNotifyEffective, contactsResultSeq]);
 
   useEffect(() => {
     reloadProfile().catch((e: any) => {
@@ -518,133 +542,51 @@ export default function MoreScreen() {
     setBgVisible(enabled);
   };
 
-  const contactsErrorMessage = (err: unknown) => {
-    if (err instanceof ContactsHmacError) {
-      const key = contactsHmacErrorToI18nKey(err.reason);
-      return t(
-        `settings.contactsSync.errors.${key}` as 'settings.contactsSync.errors.generic',
-      );
+  /** Uncertain and rate-limited results stay in the section, with a retry. */
+  const alertContactsFailure = (op: ContactsOpResult) => {
+    if (op.status !== 'failed' || op.error.reason === 'contacts-rate-limited') {
+      return;
     }
-    return (err as { message?: string })?.message || t('settings.saveError');
-  };
-
-  const runContactsSyncEnable = async (uid: string, opGen: number) => {
-    const previous = contactsSyncEnabled;
-    const previousNotices = notifyNearbyContacts;
-    setContactsBusy(true);
-    // Optimistic UI only; hard-cap / fence errors revert and never claim success.
-    setContactsSyncEnabled(true);
-    try {
-      let state = contactsStateRef.current;
-      if (!state) state = await loadContactsLocalState(uid);
-      if (!state) {
-        if (opGen === contactsOpGenRef.current) {
-          setContactsSyncEnabled(previous);
-        }
-        return;
-      }
-      const liveEpoch = contactsEpochFromUserDoc(state.contactsEpoch);
-      // OS READ_CONTACTS is requested inside enableThenSync only after this consent.
-      const outcome = await enableThenSyncContacts(state, liveEpoch);
-      if (
-        opGen !== contactsOpGenRef.current ||
-        firebaseAuth.currentUser?.uid !== uid
-      ) {
-        return;
-      }
-      contactsStateRef.current = outcome.state;
-      // Deny/cancel OS permission must leave the toggle off.
-      if (outcome.permission !== 'granted') {
-        setContactsSyncEnabled(false);
-        setNotifyNearbyContacts(previousNotices);
-        return;
-      }
-      setContactsSyncEnabled(outcome.result.contactsSyncEnabled);
-      setNotifyNearbyContacts(outcome.result.notifyNearbyContactsEffective);
-    } catch (err) {
-      if (
-        opGen === contactsOpGenRef.current &&
-        firebaseAuth.currentUser?.uid === uid
-      ) {
-        setContactsSyncEnabled(previous);
-        setNotifyNearbyContacts(previousNotices);
-        Alert.alert(t('common.error'), contactsErrorMessage(err));
-      }
-    } finally {
-      if (opGen === contactsOpGenRef.current) {
-        setContactsBusy(false);
-      }
-    }
+    const key = contactsHmacErrorToI18nKey(op.error.reason);
+    Alert.alert(
+      t('common.error'),
+      t(`settings.contactsSync.errors.${key}` as 'settings.contactsSync.errors.generic'),
+    );
   };
 
   const handleToggleContactsSync = async (enabled: boolean) => {
+    if (Platform.OS !== 'android') return;
+    alertContactsFailure(
+      enabled
+        ? await enableThenSyncContacts()
+        : await disableContactsIntegration(),
+    );
+  };
+
+  /** Only reads the account again: no enable, sync or permission comes out of this. */
+  const handleRetryContactsRead = async () => {
     const uid = firebaseAuth.currentUser?.uid;
-    if (!uid || Platform.OS !== 'android' || contactsBusy) return;
-    const previous = contactsSyncEnabled;
-    const previousNotices = notifyNearbyContacts;
-    const opGen = ++contactsOpGenRef.current;
-
-    if (enabled) {
-      // In-app disclosure + affirmative Continue before READ_CONTACTS / Identity sync.
-      Alert.alert(
-        t('settings.contactsSync.consentTitle'),
-        t('settings.contactsSync.consentBody'),
-        [
-          {
-            text: t('settings.contactsSync.consentCancel'),
-            style: 'cancel',
-            onPress: () => {
-              if (opGen === contactsOpGenRef.current) {
-                setContactsSyncEnabled(false);
-              }
-            },
-          },
-          {
-            text: t('settings.contactsSync.consentContinue'),
-            onPress: () => {
-              void runContactsSyncEnable(uid, opGen);
-            },
-          },
-        ],
-      );
-      return;
-    }
-
-    setContactsBusy(true);
-    setContactsSyncEnabled(false);
+    if (!uid) return;
+    expectContactsUserDocRead(uid);
     try {
-      let state = contactsStateRef.current;
-      if (!state) state = await loadContactsLocalState(uid);
-      if (!state) {
-        if (opGen === contactsOpGenRef.current) {
-          setContactsSyncEnabled(previous);
-        }
-        return;
-      }
-      const outcome = await disableContactsIntegration(state);
-      if (
-        opGen !== contactsOpGenRef.current ||
-        firebaseAuth.currentUser?.uid !== uid
-      ) {
-        return;
-      }
-      contactsStateRef.current = outcome.state;
-      setContactsSyncEnabled(outcome.result.contactsSyncEnabled);
-      setNotifyNearbyContacts(outcome.result.notifyNearbyContactsEffective);
-    } catch (err) {
-      if (
-        opGen === contactsOpGenRef.current &&
-        firebaseAuth.currentUser?.uid === uid
-      ) {
-        setContactsSyncEnabled(previous);
-        setNotifyNearbyContacts(previousNotices);
-        Alert.alert(t('common.error'), contactsErrorMessage(err));
-      }
-    } finally {
-      if (opGen === contactsOpGenRef.current) {
-        setContactsBusy(false);
-      }
+      const data = (await getUserProfile(uid)) as ProfileDoc | null;
+      if (!data) throw new Error('profile-not-found');
+      setNotifyNearbyContacts(
+        resolveNotifyNearbyContacts({
+          contactsSyncEnabled: data.contactsSyncEnabled,
+          notifyNearbyContacts: data.notifyNearbyContacts,
+        }),
+      );
+      await bindContactsUserDoc(uid, contactsFactsFromProfile(data), {
+        readOnly: true,
+      });
+    } catch {
+      reportContactsUserDocReadFailed(uid);
     }
+  };
+
+  const handleRetryContactsSync = async () => {
+    alertContactsFailure(await retryContactsSync());
   };
 
   const handleToggleNotifyNearbyContacts = async (enabled: boolean) => {
@@ -1148,11 +1090,29 @@ export default function MoreScreen() {
               <SettingsToggleRow
                 icon="people-circle-outline"
                 title={t('settings.contactsSync.title')}
-                description={t('settings.contactsSync.description')}
-                value={contactsSyncEnabled}
+                description={
+                  contactsCopyKey
+                    ? t(`settings.contactsSync.${contactsCopyKey}` as 'settings.contactsSync.description')
+                    : t('settings.contactsSync.description')
+                }
+                value={contactsToggleValue(contactsStatus)}
                 onValueChange={handleToggleContactsSync}
-                disabled={contactsBusy}
+                disabled={contactsToggleLocked(contactsStatus)}
               />
+              {contactsCanRetryRead(contactsStatus) ? (
+                <SettingsRow
+                  icon="refresh-outline"
+                  title={t('settings.contactsSync.retry')}
+                  onPress={handleRetryContactsRead}
+                />
+              ) : null}
+              {contactsCanRetry(contactsStatus) ? (
+                <SettingsRow
+                  icon="refresh-outline"
+                  title={t('settings.contactsSync.retry')}
+                  onPress={handleRetryContactsSync}
+                />
+              ) : null}
               <SettingsToggleRow
                 icon="notifications-circle-outline"
                 title={t('settings.contactNotices.title')}

@@ -188,37 +188,6 @@ export function shouldApplySocialEditorResult(input: {
 }
 
 /**
- * Read-modify-write one manual link into the active mode bag.
- * Never touches lifecycle, the opposite mode, or ownership Identity rows.
- */
-export function buildImmediateManualSocialPatch(
-  mode: 'personal' | 'professional',
-  existing: SocialLinks | null | undefined,
-  field: ImmediateManualSocialField,
-  url: string | null,
-): SocialLinksFieldPersistencePatch {
-  const values = emptyCrjSocialDraftValues();
-  values.facebook = existing?.facebook ?? '';
-  values.linkedin = existing?.linkedin ?? '';
-  values.instagram = existing?.instagram ?? '';
-  values.youtube = existing?.youtube ?? '';
-  values.x = existing?.twitter ?? '';
-  values.tiktok = existing?.tiktok ?? '';
-  values.snapchat = existing?.snapchat ?? '';
-  if (field === 'facebook') values.facebook = url ?? '';
-  if (field === 'linkedin') values.linkedin = url ?? '';
-  const website =
-    field === 'website' ? url ?? '' : existing?.website ?? '';
-  return buildSocialLinksFieldPersistencePatch(mode, {
-    values,
-    custom: existing?.custom ?? [],
-    websiteMode: 'draft',
-    websiteDraft: website,
-    existing,
-  });
-}
-
-/**
  * Post-CRJ Own Profile social editor write.
  * Website is editable via `website` (normalized HTTPS).
  * `custom` is the complete replacement set for this save (omit/empty clears).
@@ -267,6 +236,40 @@ export function readCrjSocialDraft(
     }
   }
   return { values, custom };
+}
+
+function socialBagKey(mode: 'personal' | 'professional') {
+  return mode === 'professional'
+    ? 'socialLinksProfessional'
+    : 'socialLinksPersonal';
+}
+
+/** Local copy of the doc after a merge write: same key-by-key result as Firestore. */
+export function mergeSocialLinksIntoShell<T extends Record<string, any> | null>(
+  shell: T,
+  mode: 'personal' | 'professional',
+  patch: SocialLinksFieldPersistencePatch & Record<string, unknown>,
+): Record<string, any> {
+  const key = socialBagKey(mode);
+  return {
+    ...(shell ?? {}),
+    ...patch,
+    mode,
+    [key]: { ...(shell?.[key] ?? {}), ...(patch[key] ?? {}) },
+  };
+}
+
+export function mergeManualLinkIntoShell<T extends Record<string, any> | null>(
+  shell: T,
+  mode: 'personal' | 'professional',
+  field: ImmediateManualSocialField,
+  url: string | null,
+): Record<string, any> {
+  const key = socialBagKey(mode);
+  const bag = { ...(shell?.[key] ?? {}) };
+  if (url) bag[field] = url;
+  else delete bag[field];
+  return { ...(shell ?? {}), [key]: bag };
 }
 
 export function readExistingSocialLinks(

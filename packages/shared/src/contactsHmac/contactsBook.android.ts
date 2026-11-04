@@ -2,7 +2,7 @@
  * Android OS contacts reader. Identifiers only — never a client hash.
  * Denied permission must not upload an empty snapshot.
  */
-import { collectContactIdentifiers } from './contactsHmacCore.ts';
+import { collectContactIdentifiers, ContactsHmacError } from './contactsHmacCore.ts';
 import type { ContactIdentifierInput } from './contactsHmacContract.ts';
 import type { ContactsBookPort, ContactsPermissionStatus } from './contactsSyncFlow.ts';
 
@@ -41,18 +41,22 @@ function mapPermission(status: string | undefined): ContactsPermissionStatus {
 export function createAndroidContactsBook(): ContactsBookPort {
   const Contacts = loadExpoContacts();
   return {
+    // A missing module is not the user's denial: it must not withdraw a source.
     async getPermission() {
-      if (!Contacts) return 'denied';
+      if (!Contacts) return 'undetermined';
       const snap = await Contacts.getPermissionsAsync();
       return mapPermission(snap.status);
     },
     async requestPermission() {
-      if (!Contacts) return 'denied';
+      if (!Contacts) return 'undetermined';
       const snap = await Contacts.requestPermissionsAsync();
       return mapPermission(snap.status);
     },
     async readRecords() {
-      if (!Contacts) return [];
+      // An empty list is a real empty book to Identity, so never invent one.
+      if (!Contacts) {
+        throw new ContactsHmacError('generic', 'Contacts are not available.');
+      }
       const pageSize = 200;
       let pageOffset = 0;
       let hasNext = true;
@@ -66,10 +70,14 @@ export function createAndroidContactsBook(): ContactsBookPort {
           pageSize,
           pageOffset,
         });
-        records.push(...(page.data ?? []));
+        const pageData = page.data ?? [];
+        // Local read ceiling: never return a silently truncated book as success.
+        if (records.length + pageData.length > 20_000) {
+          return { capExceeded: true };
+        }
+        records.push(...pageData);
         hasNext = page.hasNextPage === true;
         pageOffset += pageSize;
-        if (records.length > 20_000) break;
       }
       const collected = collectContactIdentifiers(records);
       if (!collected.ok) return { capExceeded: true };

@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -20,6 +23,9 @@ type Props = {
   initialValue: string;
   errorText?: string | null;
   saving?: boolean;
+  /** A link is already saved: this changes it. */
+  editing?: boolean;
+  glyph?: React.ReactNode;
   onCancel: () => void;
   onSave: (value: string) => void;
 };
@@ -31,6 +37,8 @@ export function ManualSocialLinkModal({
   initialValue,
   errorText,
   saving = false,
+  editing = false,
+  glyph,
   onCancel,
   onSave,
 }: Props) {
@@ -49,80 +57,124 @@ export function ManualSocialLinkModal({
       animationType="fade"
       onRequestClose={onCancel}
     >
-      <View style={styles.backdrop}>
+      <KeyboardAvoidingView
+        style={styles.backdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          accessibilityRole="button"
+          accessibilityLabel={t('profile.social.manual.cancel')}
+          onPress={onCancel}
+        />
         <View
           style={[
             styles.card,
             { backgroundColor: palette.panel, borderColor: palette.border },
           ]}
         >
-          <Text style={[styles.title, { color: palette.textPrimary }]}>
-            {t('profile.social.manual.title', { platform: platformLabel })}
-          </Text>
-          <Text style={[styles.body, { color: palette.textSecondary }]}>
-            {t('profile.social.manual.body', { platform: platformLabel })}
-          </Text>
-          <TextInput
-            value={value}
-            onChangeText={setValue}
-            placeholder={placeholder}
-            placeholderTextColor={palette.placeholder}
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="off"
-            keyboardType="url"
-            textContentType="URL"
-            editable={!saving}
-            accessibilityLabel={t('profile.social.inputA11y', {
-              platform: platformLabel,
-            })}
-            style={[
-              styles.input,
-              {
-                color: palette.textPrimary,
-                borderColor: errorText ? palette.danger : palette.borderStrong,
-                backgroundColor: palette.surface,
-              },
-            ]}
-          />
-          {errorText ? (
-            <Text style={[styles.error, { color: palette.danger }]}>
-              {errorText}
-            </Text>
-          ) : (
-            <Text style={[styles.hint, { color: palette.textMuted }]}>
-              {t('profile.social.manual.unverifiedHint')}
-            </Text>
-          )}
-          <View style={styles.actions}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={onCancel}
-              disabled={saving}
-              style={[styles.action, { borderColor: palette.border }]}
-            >
-              <Text style={{ color: palette.textPrimary, fontWeight: fontWeight.bold }}>
-                {t('profile.social.manual.cancel')}
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            bounces={false}
+            contentContainerStyle={styles.scroll}
+          >
+            <View style={styles.header}>
+              {glyph}
+              <Text
+                style={[styles.title, { color: palette.textPrimary }]}
+                maxFontSizeMultiplier={1.5}
+              >
+                {t(
+                  editing
+                    ? 'profile.social.manual.editTitle'
+                    : 'profile.social.manual.title',
+                  { platform: platformLabel },
+                )}
               </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => onSave(value)}
-              disabled={saving}
+            </View>
+            <Text
+              style={[styles.body, { color: palette.textSecondary }]}
+              maxFontSizeMultiplier={1.5}
+            >
+              {t('profile.social.manual.body', { platform: platformLabel })}
+            </Text>
+            <TextInput
+              value={value}
+              onChangeText={setValue}
+              placeholder={placeholder}
+              placeholderTextColor={palette.placeholder}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="off"
+              keyboardType="url"
+              textContentType="URL"
+              editable={!saving}
+              accessibilityLabel={t('profile.social.inputA11y', {
+                platform: platformLabel,
+              })}
               style={[
-                styles.action,
-                { backgroundColor: palette.primary, borderColor: palette.primary },
+                styles.input,
+                {
+                  color: palette.textPrimary,
+                  borderColor: errorText ? palette.danger : palette.borderStrong,
+                  backgroundColor: palette.surface,
+                },
               ]}
-            >
-              <Text style={{ color: '#FFFFFF', fontWeight: fontWeight.bold }}>
-                {saving
-                  ? t('profile.social.saving')
-                  : t('profile.social.manual.saveLink')}
+            />
+            {errorText ? (
+              <Text style={[styles.error, { color: palette.danger }]}>
+                {errorText}
               </Text>
-            </Pressable>
-          </View>
+            ) : (
+              <Text style={[styles.hint, { color: palette.textMuted }]}>
+                {t('profile.social.manual.unverifiedHint')}
+              </Text>
+            )}
+            <View style={styles.actions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={onCancel}
+                disabled={saving}
+                style={[styles.action, { borderColor: palette.border }]}
+              >
+                <Text
+                  style={{
+                    color: palette.textPrimary,
+                    fontWeight: fontWeight.bold,
+                    fontSize: fontSize.md,
+                  }}
+                >
+                  {t('profile.social.manual.cancel')}
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => onSave(value)}
+                disabled={saving}
+                style={[
+                  styles.action,
+                  {
+                    backgroundColor: palette.primary,
+                    borderColor: palette.primary,
+                  },
+                ]}
+              >
+                <Text
+                  style={{
+                    color: '#FFFFFF',
+                    fontWeight: fontWeight.bold,
+                    fontSize: fontSize.md,
+                  }}
+                >
+                  {saving
+                    ? t('profile.social.saving')
+                    : t('profile.social.manual.saveLink')}
+                </Text>
+              </Pressable>
+            </View>
+          </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -135,18 +187,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   card: {
+    maxHeight: '88%',
     borderWidth: 1,
     borderRadius: radius.xl,
+    overflow: 'hidden',
+  },
+  scroll: {
     padding: spacing.lg,
+    gap: spacing.md,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
   },
   title: {
+    flex: 1,
     fontSize: fontSize.lg,
     fontWeight: fontWeight.extrabold,
   },
   body: {
-    fontSize: fontSize.sm,
-    lineHeight: 20,
+    fontSize: fontSize.md,
+    lineHeight: 22,
   },
   input: {
     borderWidth: 1,
@@ -156,19 +218,18 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
   },
   error: {
-    fontSize: fontSize.xs,
+    fontSize: fontSize.sm,
     fontWeight: fontWeight.semibold,
   },
   hint: {
-    fontSize: fontSize.xs,
+    fontSize: fontSize.sm,
   },
   actions: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
   action: {
-    flex: 1,
     minHeight: 48,
     borderRadius: radius.lg,
     borderWidth: 1,

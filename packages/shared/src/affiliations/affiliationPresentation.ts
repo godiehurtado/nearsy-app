@@ -159,18 +159,57 @@ export function formatAffiliationCaption(
   return `${name} / ${topicLabel}`;
 }
 
+export type AffiliationCategoryLocalizer = (
+  categoryId: string,
+  fallback: string,
+) => string;
+
+/** Name + category/topic on separate lines for Discovery tiles (no ellipsis merge). */
+export type PublicAffiliationLines = {
+  title: string;
+  subtitle: string | null;
+  /** Single-string a11y / legacy callers. */
+  caption: string;
+};
+
 /**
  * Public Discovery `type` is the subcategory ID when known, else categoryId.
  */
 export function formatPublicAffiliationCaption(
   item: { name?: string | null; type?: string | null },
   localizeTopic: AffiliationTopicLocalizer,
+  localizeCategory?: AffiliationCategoryLocalizer,
 ): string {
+  return formatPublicAffiliationLines(item, localizeTopic, localizeCategory)
+    .caption;
+}
+
+function localizeCategoryLabel(
+  categoryId: OnboardingAffiliationCategoryId,
+  localizeCategory?: AffiliationCategoryLocalizer,
+): string {
+  const category = getOnboardingAffiliationCategory(categoryId);
+  return (localizeCategory?.(categoryId, category.name) ?? category.name).trim();
+}
+
+/**
+ * Split name vs parent category so Discovery can render two adaptive lines.
+ * Secondary line is always the CRJ category (Professional), never the topic
+ * humanization that truncated to "Professional o…". Family stays one composed
+ * title ("Father of Sofía"). Never invents category ids.
+ */
+export function formatPublicAffiliationLines(
+  item: { name?: string | null; type?: string | null },
+  localizeTopic: AffiliationTopicLocalizer,
+  localizeCategory?: AffiliationCategoryLocalizer,
+): PublicAffiliationLines {
   const name = (item.name ?? '').trim();
   const type = (item.type ?? '').trim();
-  if (!type) return name;
+  if (!type) {
+    return { title: name, subtitle: null, caption: name };
+  }
   if (isFamilyTopicId(type) || type === FAMILY_CATEGORY_ID) {
-    return formatAffiliationCaption(
+    const caption = formatAffiliationCaption(
       {
         name,
         categoryId: FAMILY_CATEGORY_ID,
@@ -178,18 +217,53 @@ export function formatPublicAffiliationCaption(
       },
       localizeTopic,
     );
+    return { title: caption, subtitle: null, caption };
   }
-  if (isOnboardingAffiliationCategoryId(type)) {
-    return name;
+
+  const categoryId = resolvePublicAffiliationCategoryId(type);
+  if (!categoryId) {
+    return { title: name || type, subtitle: null, caption: name || type };
   }
-  const categoryId = findAffiliationCategoryForTopic(type);
-  if (categoryId) {
-    return formatAffiliationCaption(
-      { name, categoryId, topic: type },
-      localizeTopic,
-    );
+
+  const categoryLabel = localizeCategoryLabel(categoryId, localizeCategory);
+  const topicOnly =
+    !isOnboardingAffiliationCategoryId(type) &&
+    findAffiliationCategoryForTopic(type) === categoryId;
+
+  if (!name) {
+    if (topicOnly) {
+      const caption = formatAffiliationCaption(
+        { name: '', categoryId, topic: type },
+        localizeTopic,
+      );
+      const title = caption || categoryLabel;
+      if (
+        !categoryLabel ||
+        normalizeMatch(title) === normalizeMatch(categoryLabel)
+      ) {
+        return { title, subtitle: null, caption: title };
+      }
+      return {
+        title,
+        subtitle: categoryLabel,
+        caption: `${title} / ${categoryLabel}`,
+      };
+    }
+    return {
+      title: categoryLabel,
+      subtitle: null,
+      caption: categoryLabel,
+    };
   }
-  return name;
+
+  if (normalizeMatch(name) === normalizeMatch(categoryLabel)) {
+    return { title: name, subtitle: null, caption: name };
+  }
+  return {
+    title: name,
+    subtitle: categoryLabel,
+    caption: `${name} / ${categoryLabel}`,
+  };
 }
 
 export function publicTypeSuppressesLogoDev(

@@ -15,6 +15,8 @@ import {
   Linking,
   Modal,
   AccessibilityInfo,
+  ScrollView,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useTranslation } from '../../i18n';
@@ -463,8 +465,15 @@ export function InstagramOwnershipCard({
       : phase === 'disconnecting'
         ? t('profile.social.instagramOwnership.disconnecting')
         : view.connected || pending
-          ? t('profile.social.instagramOwnership.disconnect')
-          : t('profile.social.instagramOwnership.connect');
+          ? t('profile.social.disconnect')
+          : t('profile.social.connect');
+  // The button text is generic; assistive tech still hears which network it is.
+  const primaryA11yLabel =
+    primaryLabel === t('profile.social.connect')
+      ? t('profile.social.connectA11y', { platform: label })
+      : primaryLabel === t('profile.social.disconnect')
+        ? t('profile.social.disconnectA11y', { platform: label })
+        : `${label}: ${primaryLabel}`;
 
   const expiresLabel = challenge
     ? t('profile.social.instagramOwnership.expiresAt', {
@@ -516,7 +525,7 @@ export function InstagramOwnershipCard({
         {pending ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={primaryLabel}
+            accessibilityLabel={primaryA11yLabel}
             accessibilityState={{ disabled: blocked || !api, busy: blocked }}
             disabled={blocked || !api}
             hitSlop={SOCIAL_ACTION_HIT_SLOP}
@@ -542,7 +551,7 @@ export function InstagramOwnershipCard({
         ) : (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={primaryLabel}
+            accessibilityLabel={primaryA11yLabel}
             accessibilityState={{ disabled: blocked || !api, busy: blocked }}
             disabled={blocked || !api}
             hitSlop={SOCIAL_ACTION_HIT_SLOP}
@@ -566,14 +575,14 @@ export function InstagramOwnershipCard({
           >
             {blocked && phase !== 'loading' ? (
               <ActivityIndicator
-                color={view.connected ? palette.danger : palette.surface}
+                color={view.connected ? palette.danger : '#FFFFFF'}
               />
             ) : (
               <Text
                 style={[
                   socialActionButtonStyles.text,
                   {
-                    color: view.connected ? palette.danger : palette.surface,
+                    color: view.connected ? palette.danger : '#FFFFFF',
                   },
                 ]}
               >
@@ -600,7 +609,16 @@ export function InstagramOwnershipCard({
         onRequestClose={() => setPendingModalOpen(false)}
       >
         {pending && challenge ? (
-          <View style={styles.modalBackdrop}>
+          <KeyboardAvoidingView
+            style={styles.modalBackdrop}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.social.instagramOwnership.cancel')}
+              onPress={() => setPendingModalOpen(false)}
+            />
             <View
               style={[
                 styles.pendingBox,
@@ -610,100 +628,144 @@ export function InstagramOwnershipCard({
                 },
               ]}
             >
-              <Text style={[styles.pendingTitle, { color: palette.textPrimary }]}>
-                {t('profile.social.instagramOwnership.pendingTitle')}
-              </Text>
-              <Text
-                selectable
-                style={[
-                  styles.code,
-                  {
-                    color: palette.textPrimary,
-                    borderColor: palette.border,
-                    backgroundColor: palette.surface,
-                  },
-                ]}
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                bounces={false}
+                contentContainerStyle={styles.pendingScroll}
               >
-                {challenge.code}
-              </Text>
-              <Text style={[styles.pendingBody, { color: palette.textSecondary }]}>
-                {t('profile.social.instagramOwnership.pendingBody', {
-                  inbox: challenge.inboxUsername,
-                })}
-              </Text>
-              <Text style={[styles.pendingBody, { color: palette.textSecondary }]}>
+                <View style={styles.pendingHeader}>
+                  {glyph}
+                  <Text
+                    style={[styles.pendingTitle, { color: palette.textPrimary }]}
+                    maxFontSizeMultiplier={1.5}
+                  >
+                    {t('profile.social.instagramOwnership.pendingTitle')}
+                  </Text>
+                </View>
+                <Text
+                  style={[styles.pendingBody, { color: palette.textSecondary }]}
+                  maxFontSizeMultiplier={1.5}
+                >
+                  {t('profile.social.instagramOwnership.pendingBody', {
+                    inbox: challenge.inboxUsername,
+                  })}
+                </Text>
+                <Text
+                  selectable
+                  style={[
+                    styles.code,
+                    {
+                      color: palette.textPrimary,
+                      borderColor: palette.border,
+                      backgroundColor: palette.surface,
+                    },
+                  ]}
+                >
+                  {challenge.code}
+                </Text>
                 {t('profile.social.instagramOwnership.pendingSteps', {
                   inbox: challenge.inboxUsername,
-                })}
-              </Text>
-              {expiresLabel ? (
-                <Text style={[styles.pendingBody, { color: palette.textMuted }]}>
-                  {expiresLabel}
-                </Text>
-              ) : null}
-              <View style={styles.pendingActions}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t(
-                    'profile.social.instagramOwnership.copyCodeA11y',
-                  )}
-                  hitSlop={SOCIAL_ACTION_HIT_SLOP}
-                  onPress={onCopyCode}
-                  style={({ pressed }) => [
-                    socialActionButtonStyles.button,
-                    {
-                      backgroundColor: palette.surface,
-                      borderColor: palette.border,
-                    },
-                    pressed && styles.pressed,
-                  ]}
-                >
+                })
+                  .split('\n')
+                  .filter((line) => line.trim().length > 0)
+                  .map((line) => (
+                    <Text
+                      key={line}
+                      style={[
+                        styles.pendingStep,
+                        { color: palette.textPrimary },
+                      ]}
+                      maxFontSizeMultiplier={1.5}
+                    >
+                      {line}
+                    </Text>
+                  ))}
+                {expiresLabel ? (
                   <Text
-                    style={[
-                      socialActionButtonStyles.text,
-                      { color: palette.textPrimary },
+                    style={[styles.pendingBody, { color: palette.textMuted }]}
+                  >
+                    {expiresLabel}
+                  </Text>
+                ) : null}
+                <View style={styles.pendingActions}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t(
+                      'profile.social.instagramOwnership.copyCodeA11y',
+                    )}
+                    hitSlop={SOCIAL_ACTION_HIT_SLOP}
+                    onPress={onCopyCode}
+                    style={({ pressed }) => [
+                      socialActionButtonStyles.button,
+                      styles.pendingActionBtn,
+                      {
+                        backgroundColor: palette.surface,
+                        borderColor: palette.border,
+                      },
+                      pressed && styles.pressed,
                     ]}
                   >
-                    {t('profile.social.instagramOwnership.copyCode')}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t(
-                    'profile.social.instagramOwnership.openInboxA11y',
-                  )}
-                  hitSlop={SOCIAL_ACTION_HIT_SLOP}
-                  onPress={onOpenInbox}
-                  style={({ pressed }) => [
-                    socialActionButtonStyles.button,
-                    {
-                      backgroundColor: palette.primary,
-                      borderColor: palette.primary,
-                    },
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      socialActionButtonStyles.text,
-                      { color: palette.surface },
+                    <Text
+                      style={[
+                        socialActionButtonStyles.text,
+                        { color: palette.textPrimary },
+                      ]}
+                    >
+                      {t('profile.social.instagramOwnership.copyCode')}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t(
+                      'profile.social.instagramOwnership.openInboxA11y',
+                    )}
+                    hitSlop={SOCIAL_ACTION_HIT_SLOP}
+                    onPress={onOpenInbox}
+                    style={({ pressed }) => [
+                      socialActionButtonStyles.button,
+                      styles.pendingActionBtn,
+                      {
+                        backgroundColor: palette.primary,
+                        borderColor: palette.primary,
+                      },
+                      pressed && styles.pressed,
                     ]}
                   >
-                    {t('profile.social.instagramOwnership.openInbox')}
-                  </Text>
-                </Pressable>
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setPendingModalOpen(false)}
-                style={styles.waitingHint}
-              >
-                <Text style={[styles.pendingBody, { color: palette.textMuted }]}>
+                    <Text
+                      style={[
+                        socialActionButtonStyles.text,
+                        { color: palette.surface },
+                      ]}
+                    >
+                      {t('profile.social.instagramOwnership.openInbox')}
+                    </Text>
+                  </Pressable>
+                </View>
+                <Text
+                  style={[styles.pendingBody, { color: palette.textMuted }]}
+                >
                   {t('profile.social.instagramOwnership.waiting')}
                 </Text>
-              </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t(
+                    'profile.social.instagramOwnership.cancel',
+                  )}
+                  onPress={() => setPendingModalOpen(false)}
+                  style={styles.waitingHint}
+                >
+                  <Text
+                    style={[
+                      styles.pendingBody,
+                      { color: palette.textSecondary, fontWeight: fontWeight.semibold },
+                    ]}
+                  >
+                    {t('profile.social.instagramOwnership.cancel')}
+                  </Text>
+                </Pressable>
+              </ScrollView>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         ) : null}
       </Modal>
 
@@ -739,27 +801,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  cardTextCol: { flex: 1, gap: 2 },
+  cardTextCol: { flex: 1, minWidth: 0 },
   platformName: {
     fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.extrabold,
   },
   connectedRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    marginTop: 2,
   },
   connectedDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
   connectedLabel: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.medium,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
   },
   notConnected: {
-    fontSize: fontSize.sm,
+    fontSize: fontSize.xs,
+    marginTop: 2,
   },
   channelUrl: { fontSize: fontSize.sm },
   legacyHint: {
@@ -773,33 +837,51 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   pendingBox: {
-    gap: spacing.sm,
-    marginTop: spacing.xs,
+    maxHeight: '88%',
     borderWidth: 1,
     borderRadius: radius.xl,
+    overflow: 'hidden',
+  },
+  pendingScroll: {
+    gap: spacing.sm,
     padding: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  pendingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   waitingHint: { minHeight: 44, justifyContent: 'center' },
   pendingTitle: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-  },
-  pendingBody: { fontSize: fontSize.sm },
-  code: {
+    flex: 1,
     fontSize: fontSize.lg,
+    fontWeight: fontWeight.extrabold,
+  },
+  pendingBody: { fontSize: fontSize.md, lineHeight: 22 },
+  pendingStep: {
+    fontSize: fontSize.md,
+    lineHeight: 22,
+    fontWeight: fontWeight.medium,
+  },
+  code: {
+    fontSize: fontSize.xl,
     fontWeight: fontWeight.semibold,
     letterSpacing: 2,
     borderWidth: 1,
     borderRadius: radius.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
     overflow: 'hidden',
     textAlign: 'center',
   },
   pendingActions: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     gap: spacing.sm,
-    flexWrap: 'wrap',
+  },
+  pendingActionBtn: {
+    alignSelf: 'stretch',
+    minHeight: 48,
   },
   pressed: { opacity: 0.85 },
   disabled: { opacity: 0.55 },

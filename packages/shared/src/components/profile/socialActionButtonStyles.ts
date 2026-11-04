@@ -4,7 +4,7 @@ import { radius } from '../../theme/radius.ts';
 import { spacing } from '../../theme/spacing.ts';
 import { fontSize, fontWeight } from '../../theme/typography.ts';
 
-/** Extra hit area around the compact pill so it stays near 44pt without growing visually. */
+/** Extra touch margin around the pill. */
 export const SOCIAL_ACTION_HIT_SLOP = {
   top: 10,
   bottom: 10,
@@ -16,15 +16,14 @@ export const socialActionButtonStyles = StyleSheet.create({
   button: {
     borderWidth: 1,
     borderRadius: radius.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
     minWidth: 112,
-    minHeight: 32,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   text: {
     fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.bold,
   },
 });

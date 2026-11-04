@@ -64,7 +64,7 @@ describe('NEARSY-209 Instagram Unlink vs Discovery public DTO', () => {
     assert.match(card, /profile\.social\.instagramOwnership\.legacyPrivateHint/);
     const screen = read('screens/SocialMediaScreen.tsx');
     assert.match(screen, /legacyUrl=\{draft\.values\.instagram\}/);
-    assert.match(screen, /preserveLegacy\('instagram'\)/);
+    assert.doesNotMatch(screen, /buildPostCrjSocialLinksPersistencePatch|updateUserProfilePartial/);
   });
 
   it('private bag URLs are not Discovery public links', () => {

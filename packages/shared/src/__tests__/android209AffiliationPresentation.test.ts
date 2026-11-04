@@ -9,6 +9,7 @@ import {
   affiliationNameRequired,
   formatAffiliationCaption,
   formatPublicAffiliationCaption,
+  formatPublicAffiliationLines,
   isFamilyAffiliationCategory,
   isTopicOptionalNameCategory,
   persistAffiliationTopicId,
@@ -106,6 +107,47 @@ describe('NEARSY-209 affiliation captions', () => {
     );
   });
 
+  it('Discovery lines keep name and parent category distinct (not topic humanize)', () => {
+    const localizeCategory = (id: string, fallback: string) =>
+      id === 'professional' ? 'Profesional' : fallback;
+    const localizeAll = (id: string, fallback: string) => {
+      const es: Record<string, string> = {
+        father_of: 'Padre de',
+        democratic_party: 'Partido Demócrata',
+        sports_team: 'Equipo deportivo',
+        pet_parent: 'Pet parent de',
+        parent: 'Padre o madre',
+        professional_organization: 'Organización profesional',
+      };
+      return es[id] ?? fallback;
+    };
+    // Topic id must resolve to parent category — never "Professional o…".
+    const org = formatPublicAffiliationLines(
+      { name: 'Nearsy Labs', type: 'professional_organization' },
+      localizeAll,
+      localizeCategory,
+    );
+    assert.equal(org.title, 'Nearsy Labs');
+    assert.equal(org.subtitle, 'Profesional');
+    assert.equal(org.caption, 'Nearsy Labs / Profesional');
+    assert.ok(!org.subtitle.includes('…'));
+    assert.ok(!org.subtitle.toLowerCase().includes('organization'));
+    const byCategory = formatPublicAffiliationLines(
+      { name: 'Acme Corp', type: 'professional' },
+      localizeAll,
+      localizeCategory,
+    );
+    assert.equal(byCategory.title, 'Acme Corp');
+    assert.equal(byCategory.subtitle, 'Profesional');
+    const topicOnly = formatPublicAffiliationLines(
+      { name: '', type: 'professional_organization' },
+      localizeAll,
+      localizeCategory,
+    );
+    assert.equal(topicOnly.title, 'Organización profesional');
+    assert.equal(topicOnly.subtitle, 'Profesional');
+  });
+
   it('named rows show name / subcategory; topic-only shows subcategory', () => {
     assert.equal(
       formatAffiliationCaption(
@@ -143,6 +185,14 @@ describe('NEARSY-209 affiliation captions', () => {
   });
 
   it('public Discovery composes from type topic ids including nameless civic', () => {
+    const localizeCategory = (id: string, fallback: string) => {
+      const es: Record<string, string> = {
+        political_civic: 'Política y cívica',
+        faith: 'Fe y espiritualidad',
+        professional: 'Profesional',
+      };
+      return es[id] ?? fallback;
+    };
     assert.equal(
       formatPublicAffiliationCaption(
         { name: 'Sofía', type: 'father_of' },
@@ -150,19 +200,22 @@ describe('NEARSY-209 affiliation captions', () => {
       ),
       'Padre de Sofía',
     );
+    // Caption uses parent category, not the topic (avoids "Professional o…").
     assert.equal(
       formatPublicAffiliationCaption(
         { name: 'Florida Demócratas', type: 'democratic_party' },
         localize,
+        localizeCategory,
       ),
-      'Florida Demócratas / Partido Demócrata',
+      'Florida Demócratas / Política y cívica',
     );
     assert.equal(
       formatPublicAffiliationCaption(
         { name: '', type: 'democratic_party' },
         localize,
+        localizeCategory,
       ),
-      'Partido Demócrata',
+      'Partido Demócrata / Política y cívica',
     );
     const parsed = parseDiscoveryAffiliations([
       { id: 'civic1', name: '', type: 'democratic_party', logoUrl: null },
@@ -181,8 +234,9 @@ describe('NEARSY-209 affiliation captions', () => {
       formatPublicAffiliationCaption(
         { name: '', type: 'catholic' },
         localize,
+        localizeCategory,
       ),
-      'Catholic',
+      'Catholic / Fe y espiritualidad',
     );
   });
 
@@ -346,7 +400,7 @@ describe('NEARSY-209 affiliation captions', () => {
       path.join(root, 'components/profileExploration/DiscoveryAffiliationsCard.tsx'),
       'utf8',
     );
-    assert.match(card, /formatPublicAffiliationCaption/);
+    assert.match(card, /formatPublicAffiliationLines/);
     assert.doesNotMatch(card, /formatDiscoveryAffiliationTypeLabel/);
     const onboarding = readFileSync(
       path.join(root, 'i18n/resources/onboarding.ts'),

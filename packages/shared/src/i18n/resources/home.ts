@@ -44,6 +44,9 @@ export default {
   errors: {
     title: 'Visibility',
     generic: 'Could not update Visibility. Please try again.',
+    preferencesTitle: 'Preferences',
+    preferencesSave:
+      'Could not save your discovery preferences. Please try again.',
     retry: 'Activation failed. Pull to refresh and try again.',
     profileIncomplete:
       'Complete your profile before turning on Visibility.',

@@ -106,7 +106,7 @@ describe('CHG-AFF-02 parser: malformed entries are dropped individually', () => 
     );
   });
 
-  it('keeps long names intact (UI clamps to two lines)', () => {
+  it('keeps long names intact (UI wraps without ellipsis clamp)', () => {
     const longName = 'International Association of Very Long Organization Names and Alumni';
     const parsed = parseDiscoveryAffiliations([
       { id: 'l', name: longName, type: null, logoUrl: null },
@@ -161,12 +161,15 @@ describe('CHG-AFF-02 DiscoveryAffiliationsCard layout (static)', () => {
     assert.doesNotMatch(card, /width: 220/);
   });
 
-  it('compact tile keeps a recognizable 44pt logo and two-line names', () => {
+  it('compact tile keeps a recognizable 44pt logo and adaptive name/category lines', () => {
     assert.match(logo, /AFFILIATION_DISCOVERY_LOGO_SIZE = 44/);
     assert.match(logo, /AFFILIATION_DISCOVERY_LOGO_RADIUS = 12/);
     assert.match(card, /size=\{AFFILIATION_DISCOVERY_LOGO_SIZE\}/);
     assert.match(card, /borderRadius=\{AFFILIATION_DISCOVERY_LOGO_RADIUS\}/);
-    assert.match(card, /styles\.name[\s\S]{0,80}numberOfLines=\{2\}/);
+    assert.match(card, /formatPublicAffiliationLines/);
+    assert.match(card, /item\.lines\.title/);
+    assert.match(card, /item\.lines\.subtitle/);
+    assert.doesNotMatch(card, /numberOfLines=\{2\}/);
   });
 
   it('logo load failure uses the existing logo mark fallback', () => {
@@ -202,7 +205,8 @@ describe('CHG-AFF-02 i18n EN/ES', () => {
     const card = readSrc('components/profileExploration/DiscoveryAffiliationsCard.tsx');
     assert.match(card, /t\('discoveryProfile\.affiliations'\)/);
     assert.match(card, /onboarding\.profileCompletion\.affiliations\.topics\.\$\{id\}/);
-    assert.match(card, /formatPublicAffiliationCaption/);
+    assert.match(card, /onboarding\.profileCompletion\.affiliations\.categories\.\$\{id\}/);
+    assert.match(card, /formatPublicAffiliationLines/);
   });
 });
 
