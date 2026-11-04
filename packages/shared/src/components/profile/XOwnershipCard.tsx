@@ -400,8 +400,15 @@ export function XOwnershipCard({
       : phase === 'disconnecting'
         ? t('profile.social.xOwnership.disconnecting')
         : view.connected
-          ? t('profile.social.xOwnership.disconnect')
-          : t('profile.social.xOwnership.connect');
+          ? t('profile.social.disconnect')
+          : t('profile.social.connect');
+  // The button text is generic; assistive tech still hears which network it is.
+  const primaryA11yLabel =
+    primaryLabel === t('profile.social.connect')
+      ? t('profile.social.connectA11y', { platform: label })
+      : primaryLabel === t('profile.social.disconnect')
+        ? t('profile.social.disconnectA11y', { platform: label })
+        : `${label}: ${primaryLabel}`;
 
   return (
     <View
@@ -440,7 +447,7 @@ export function XOwnershipCard({
         </View>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={primaryLabel}
+          accessibilityLabel={primaryA11yLabel}
           accessibilityState={{ disabled: blocked || !api, busy: blocked }}
           disabled={blocked || !api}
           hitSlop={SOCIAL_ACTION_HIT_SLOP}
@@ -464,14 +471,14 @@ export function XOwnershipCard({
         >
           {blocked && phase !== 'loading' ? (
             <ActivityIndicator
-              color={view.connected ? palette.danger : palette.surface}
+              color={view.connected ? palette.danger : '#FFFFFF'}
             />
           ) : (
             <Text
               style={[
                 socialActionButtonStyles.text,
                 {
-                  color: view.connected ? palette.danger : palette.surface,
+                  color: view.connected ? palette.danger : '#FFFFFF',
                 },
               ]}
             >
@@ -521,27 +528,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  cardTextCol: { flex: 1, gap: 2 },
+  cardTextCol: { flex: 1, minWidth: 0 },
   platformName: {
     fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
+    fontWeight: fontWeight.extrabold,
   },
   connectedRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    marginTop: 2,
   },
   connectedDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
   connectedLabel: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.medium,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
   },
   notConnected: {
-    fontSize: fontSize.sm,
+    fontSize: fontSize.xs,
+    marginTop: 2,
   },
   channelUrl: { fontSize: fontSize.sm },
   legacyHint: {

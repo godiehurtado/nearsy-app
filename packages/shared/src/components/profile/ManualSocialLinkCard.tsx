@@ -4,7 +4,13 @@
  * because nothing here verifies the account.
  */
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { useTranslation } from '../../i18n';
 import {
@@ -67,25 +73,36 @@ export function ManualSocialLinkCard({
         </View>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={t(state.primaryA11yKey, { platform: label })}
-          accessibilityState={{ disabled }}
+          accessibilityLabel={t(state.actionA11yKey, { platform: label })}
+          accessibilityState={{ disabled, busy: removing }}
           disabled={disabled}
           hitSlop={SOCIAL_ACTION_HIT_SLOP}
-          onPress={onOpen}
+          onPress={state.saved ? onRemove : onOpen}
           style={({ pressed }) => [
             socialActionButtonStyles.button,
-            { backgroundColor: palette.primary, borderColor: palette.primary },
+            state.saved
+              ? { backgroundColor: 'transparent', borderColor: palette.danger }
+              : { backgroundColor: palette.primary, borderColor: palette.primary },
             disabled && styles.disabled,
             pressed && !disabled && styles.pressed,
           ]}
         >
-          <Text style={[socialActionButtonStyles.text, { color: '#FFFFFF' }]}>
-            {t(state.primaryLabelKey)}
-          </Text>
+          {removing ? (
+            <ActivityIndicator color={palette.danger} />
+          ) : (
+            <Text
+              style={[
+                socialActionButtonStyles.text,
+                { color: state.saved ? palette.danger : '#FFFFFF' },
+              ]}
+            >
+              {t(state.actionLabelKey)}
+            </Text>
+          )}
         </Pressable>
       </View>
 
-      {state.saved ? (
+      {state.showEdit ? (
         <View style={styles.savedRow}>
           <Text
             style={[styles.url, { color: palette.textSecondary }]}
@@ -95,22 +112,20 @@ export function ManualSocialLinkCard({
           </Text>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t('profile.social.removeLinkA11y', {
+            accessibilityLabel={t('profile.social.editLinkA11y', {
               platform: label,
             })}
-            accessibilityState={{ disabled, busy: removing }}
+            accessibilityState={{ disabled }}
             disabled={disabled}
             hitSlop={SOCIAL_ACTION_HIT_SLOP}
-            onPress={onRemove}
+            onPress={onOpen}
             style={({ pressed }) => [
-              socialActionButtonStyles.button,
-              { backgroundColor: 'transparent', borderColor: palette.danger },
               disabled && styles.disabled,
               pressed && !disabled && styles.pressed,
             ]}
           >
-            <Text style={[socialActionButtonStyles.text, { color: palette.danger }]}>
-              {removing ? t('profile.social.saving') : t('profile.social.removeLink')}
+            <Text style={[styles.edit, { color: palette.textPrimary }]}>
+              {t('profile.social.editLink')}
             </Text>
           </Pressable>
         </View>
@@ -158,6 +173,11 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: fontSize.sm,
     lineHeight: fontSize.sm * 1.35,
+  },
+  edit: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
+    textDecorationLine: 'underline',
   },
   error: {
     fontSize: fontSize.xs,

@@ -81,22 +81,30 @@ const write = (
 ) => firestoreMerge(doc, buildManualSocialLinkWrite(mode, field, url, DELETE));
 
 describe('Card states', () => {
-  it('no link: Add link, no Remove', () => {
+  it('no link: Connect, and no edit', () => {
     for (const url of ['', '   ', null, undefined]) {
       const state = manualSocialLinkCardState(url);
       assert.equal(state.saved, false);
       assert.equal(state.statusKey, 'profile.social.noLinkSaved');
-      assert.equal(state.primaryLabelKey, 'profile.social.addLink');
-      assert.equal(state.showRemove, false);
+      assert.equal(state.actionLabelKey, 'profile.social.connect');
+      assert.equal(state.actionA11yKey, 'profile.social.connectA11y');
+      assert.equal(state.showEdit, false);
     }
   });
 
-  it('saved link: Edit and Remove, and only "Link saved"', () => {
+  it('saved link: Disconnect and Edit, and only "Link saved"', () => {
     const state = manualSocialLinkCardState('https://www.facebook.com/ana');
     assert.equal(state.statusKey, 'profile.social.linkSaved');
-    assert.equal(state.primaryLabelKey, 'profile.social.editLink');
-    assert.equal(state.primaryA11yKey, 'profile.social.editLinkA11y');
-    assert.equal(state.showRemove, true);
+    assert.equal(state.actionLabelKey, 'profile.social.disconnect');
+    assert.equal(state.actionA11yKey, 'profile.social.disconnectA11y');
+    assert.equal(state.showEdit, true);
+  });
+
+  it('Connect opens the modal, Disconnect withdraws the link, Edit opens the modal', () => {
+    const card = read('components/profile/ManualSocialLinkCard.tsx');
+    assert.match(card, /onPress=\{state\.saved \? onRemove : onOpen\}/);
+    assert.match(card, /onPress=\{onOpen\}/);
+    assert.match(card, /profile\.social\.editLinkA11y/);
   });
 
   it('order: YouTube, TikTok, Instagram, X, Facebook, LinkedIn, Website', () => {
@@ -118,20 +126,37 @@ describe('Card states', () => {
   it('every action names its network for accessibility, in EN and ES', () => {
     const { en, es } = profileTranslations as any;
     for (const [locale, expected] of [
-      [en.social, { linkSaved: 'Link saved', noLinkSaved: 'No link saved', addLink: 'Add link', editLink: 'Edit', removeLink: 'Remove', back: 'Back' }],
-      [es.social, { linkSaved: 'Enlace guardado', noLinkSaved: 'Sin enlace', addLink: 'Añadir enlace', editLink: 'Editar', removeLink: 'Quitar', back: 'Volver' }],
+      [en.social, { linkSaved: 'Link saved', noLinkSaved: 'No link saved', connect: 'Connect', disconnect: 'Disconnect', editLink: 'Edit', back: 'Back' }],
+      [es.social, { linkSaved: 'Enlace guardado', noLinkSaved: 'Sin enlace', connect: 'Conectar', disconnect: 'Desconectar', editLink: 'Editar', back: 'Volver' }],
     ] as const) {
       for (const [key, value] of Object.entries(expected)) {
         assert.equal(locale[key], value);
       }
-      for (const key of ['addLinkA11y', 'editLinkA11y', 'removeLinkA11y']) {
+      for (const key of ['connectA11y', 'disconnectA11y', 'editLinkA11y']) {
         assert.match(locale[key], /\{\{platform\}\}/);
       }
       assert.ok(locale.backToProfileA11y);
       assert.ok(locale.manual.editTitle);
       assert.equal(locale.saveConnections, undefined);
+      assert.equal(locale.addLink, undefined);
+      assert.equal(locale.removeLink, undefined);
     }
   });
+
+  for (const name of ['Youtube', 'Tiktok', 'Instagram', 'X']) {
+    it(`${name} card: generic button text, network in accessibility, white on blue`, () => {
+      const card = read(`components/profile/${name}OwnershipCard.tsx`);
+      assert.match(card, /: t\('profile\.social\.connect'\);/);
+      assert.match(card, /\? t\('profile\.social\.disconnect'\)/);
+      assert.match(card, /accessibilityLabel=\{primaryA11yLabel\}/);
+      assert.doesNotMatch(card, /accessibilityLabel=\{primaryLabel\}/);
+      assert.match(card, /profile\.social\.connectA11y', \{ platform: label \}/);
+      assert.match(card, /view\.connected \? palette\.danger : '#FFFFFF'/);
+      assert.doesNotMatch(card, /view\.connected \? palette\.danger : palette\.surface/);
+      assert.match(card, /borderColor: palette\.danger/);
+      assert.match(card, /backgroundColor: palette\.primary/);
+    });
+  }
 });
 
 describe('Each operation persists its own new value', () => {

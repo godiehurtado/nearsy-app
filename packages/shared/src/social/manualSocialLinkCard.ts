@@ -25,9 +25,10 @@ export function isManualSocialLinkId(id: string): id is ManualSocialLinkId {
 export type ManualSocialLinkCardState = {
   saved: boolean;
   statusKey: 'profile.social.linkSaved' | 'profile.social.noLinkSaved';
-  primaryLabelKey: 'profile.social.addLink' | 'profile.social.editLink';
-  primaryA11yKey: 'profile.social.addLinkA11y' | 'profile.social.editLinkA11y';
-  showRemove: boolean;
+  /** Connect opens the modal; Disconnect withdraws the link. */
+  actionLabelKey: 'profile.social.connect' | 'profile.social.disconnect';
+  actionA11yKey: 'profile.social.connectA11y' | 'profile.social.disconnectA11y';
+  showEdit: boolean;
 };
 
 export function manualSocialLinkCardState(
@@ -38,16 +39,16 @@ export function manualSocialLinkCardState(
     ? {
         saved,
         statusKey: 'profile.social.linkSaved',
-        primaryLabelKey: 'profile.social.editLink',
-        primaryA11yKey: 'profile.social.editLinkA11y',
-        showRemove: true,
+        actionLabelKey: 'profile.social.disconnect',
+        actionA11yKey: 'profile.social.disconnectA11y',
+        showEdit: true,
       }
     : {
         saved,
         statusKey: 'profile.social.noLinkSaved',
-        primaryLabelKey: 'profile.social.addLink',
-        primaryA11yKey: 'profile.social.addLinkA11y',
-        showRemove: false,
+        actionLabelKey: 'profile.social.connect',
+        actionA11yKey: 'profile.social.connectA11y',
+        showEdit: false,
       };
 }
 

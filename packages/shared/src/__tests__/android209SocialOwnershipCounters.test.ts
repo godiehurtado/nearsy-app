@@ -131,8 +131,7 @@ describe('NEARSY-209 Android ownership counters and legacy bag', () => {
   it('unifies Connect/Disconnect action pills across ownership and legacy cards', () => {
     const styles = readSrc('components/profile/socialActionButtonStyles.ts');
     assert.match(styles, /borderRadius: radius\.pill/);
-    assert.match(styles, /minHeight: 32/);
-    assert.doesNotMatch(styles, /minHeight: 44/);
+    assert.match(styles, /minHeight: 44/);
     assert.match(styles, /SOCIAL_ACTION_HIT_SLOP/);
     for (const rel of [
       'components/profile/ManualSocialLinkCard.tsx',

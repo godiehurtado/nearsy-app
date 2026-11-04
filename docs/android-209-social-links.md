@@ -9,13 +9,17 @@ Facebook, LinkedIn and Website are links the user saves, not verified accounts. 
 card, modal and hook (`ManualSocialLinkCard`, `ManualSocialLinkModal`, `useManualSocialLinks`)
 in the CRJ and in the editor, in Personal and Professional, EN and ES.
 
-| State | Status | Blue button | Remove |
+| State | Status | Action on the right | Also |
 |---|---|---|---|
-| No link | No link saved / Sin enlace | Add link / Añadir enlace | No |
-| Saved | Link saved / Enlace guardado | Edit / Editar | Remove / Quitar |
+| No link | No link saved / Sin enlace | Connect / Conectar (blue, white text): opens the modal | |
+| Saved | Link saved / Enlace guardado | Disconnect / Desconectar (red border and text): withdraws the link | Edit / Editar: opens the modal |
 
-There is no green dot or badge. Order: YouTube → TikTok → Instagram → X → Facebook →
-LinkedIn → Website. The YouTube, TikTok, Instagram and X cards are unchanged.
+All seven networks use the same button text and pill, in the CRJ and the editor. The visible text
+has no network name; the accessibility labels do.
+
+Manual links have no green dot or badge. Order: YouTube → TikTok → Instagram → X → Facebook →
+LinkedIn → Website. The YouTube, TikTok, Instagram and X cards changed in presentation only: their
+OAuth, ownership, permission and transient states are the same.
 
 The CRJ no longer offers Other network. Historical custom links are not shown or counted
 there, and stay stored.
@@ -47,10 +51,10 @@ unsaved-changes prompt, because it has no drafts left.
 
 ## Open points
 
-- **Header counter:** the editor header still says "N connections" and counts saved links, next to
-  verified accounts. It claims no verification, and the requirement only named the bottom button.
-- **Contrast in the ownership cards, not changed:** their button text uses `palette.surface`, which
-  is dark on the blue button in the dark theme. The new cards and Back use white.
+- **Reference:** the Owner's image was not available to this work. The structure and sizes follow
+  the request and the iOS card code at #116. Visual parity with iOS is unverified.
+- **No native capture:** it needs a dev build, which was out of scope, and that build would
+  talk to production Firebase.
 - **Older unused helpers** (`validatePostCrjSocialDraftForSave` and related) remain exported and
   tested in `postCrjSocialEditor.ts`.
 - **Device QA:** both screens in EN/ES and both modes; add, edit and remove followed by reopening;
