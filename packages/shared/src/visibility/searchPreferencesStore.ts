@@ -5,11 +5,10 @@
 import { flattenCatalogInterestItems } from '../interests/onboardingInterestCatalog';
 import type { ProfileMode } from '../profile/profileModeFields';
 import { updateUserProfilePartial } from '../services/firestoreService';
-import { prepareSearchPreferencesForPersist } from './preferences';
-import type {
-  VisibilitySearchPreferences,
-  VisibilitySearchPreferencesByMode,
-} from './types';
+import {
+  buildSearchPreferencesModeWrite,
+  type SearchPreferenceFields,
+} from './searchPreferencesWriter';
 
 export {
   parseSearchPreferencesFromUserDoc,
@@ -24,44 +23,15 @@ export function officialCatalogInterestIdSet(): ReadonlySet<string> {
   );
 }
 
-function requirePersistable(
-  prefs: VisibilitySearchPreferences,
-  knownIds: ReadonlySet<string>,
-): VisibilitySearchPreferences {
-  const prepared = prepareSearchPreferencesForPersist(prefs, knownIds);
-  if (prepared.ok === false) {
-    throw new Error(prepared.reasons.join(',') || 'invalid-search-preferences');
-  }
-  return prepared.prefs;
-}
-
-export async function persistSearchPreferences(
-  uid: string,
-  byMode: VisibilitySearchPreferencesByMode,
-): Promise<void> {
-  const knownIds = officialCatalogInterestIdSet();
-  const personal = requirePersistable(byMode.personal, knownIds);
-  const professional = requirePersistable(byMode.professional, knownIds);
-  await updateUserProfilePartial(uid, {
-    searchPreferences: {
-      personal: { ...personal },
-      professional: { ...professional },
-    },
-  });
-}
-
+/** Writes only the given fields of one mode; stored siblings are left alone. */
 export async function persistSearchPreferencesForMode(
   uid: string,
-  byMode: VisibilitySearchPreferencesByMode,
   mode: ProfileMode,
-  next: VisibilitySearchPreferences,
-): Promise<VisibilitySearchPreferencesByMode> {
-  const knownIds = officialCatalogInterestIdSet();
-  const prepared = requirePersistable(
-    { ...next, updatedAt: Date.now() },
-    knownIds,
+  fields: SearchPreferenceFields,
+  updatedAt: number,
+): Promise<void> {
+  await updateUserProfilePartial(
+    uid,
+    buildSearchPreferencesModeWrite(mode, fields, updatedAt),
   );
-  const updated = { ...byMode, [mode]: prepared };
-  await persistSearchPreferences(uid, updated);
-  return updated;
 }
