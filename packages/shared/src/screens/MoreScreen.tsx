@@ -106,7 +106,10 @@ import {
 } from '../theme';
 import type { ThemeName } from '../theme/colors';
 import { AppearanceToggle } from '../components/AppearanceToggle';
-import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
+import {
+  createReevaluatePendingPort,
+  scheduleReevaluateProximityNotices,
+} from '../alerts/reevaluateProximityNotices';
 import {
   buildNotifyNearbyContactsMutePatch,
   buildNotifyNearbyInterestsPatch,
@@ -132,8 +135,6 @@ import {
 import { createContactsAddressBookPort } from '../contacts/iosAddressBook';
 import { getContactsHmacClient } from '../contacts/iosContactsFoundation';
 import { createContactsSessionStore } from '../contacts/iosContactsSession';
-import { shouldCallReevaluateAfterIdentity } from '../contacts/parse';
-import type { ContactsWireResult } from '../contacts/wireTypes';
 
 type ContactsSyncPhase =
   | 'idle'
@@ -561,15 +562,16 @@ export default function MoreScreen() {
     };
   }, []);
 
-  const contactsPorts = async (uid: string) => ({
+  const contactsPorts = async (uid: string, isCurrent: () => boolean) => ({
     client: await getContactsHmacClient(),
     session: createContactsSessionStore(uid),
     book: createContactsAddressBookPort(),
-    afterIdentity: async (result: ContactsWireResult) => {
-      // Reevaluate is best-effort and separate from Identity sync success.
-      if (shouldCallReevaluateAfterIdentity(result)) {
-        scheduleReevaluateProximityNotices();
-      }
+    isCancelled: () => !isCurrent() || firebaseAuth.currentUser?.uid !== uid,
+    reevaluatePending: createReevaluatePendingPort(uid),
+    // Reevaluate is best-effort and separate from Identity sync success. The
+    // controller calls this only when one is owed.
+    afterIdentity: async () => {
+      scheduleReevaluateProximityNotices();
     },
   });
 
@@ -596,14 +598,17 @@ export default function MoreScreen() {
     };
   };
 
-  const offerContactsRetry = (message: string, offerRetry: boolean) => {
-    const buttons = offerRetry
+  const offerContactsRetry = (
+    message: string,
+    retryKind: ContactsOutcomeView['retryKind'],
+  ) => {
+    const buttons = retryKind
       ? [
           { text: t('common.cancel'), style: 'cancel' as const },
           {
             text: t('settings.contacts.retry'),
             onPress: () => {
-              void handleRetryContactsSync();
+              void handleRetryContactsOperation(retryKind);
             },
           },
         ]
@@ -640,7 +645,7 @@ export default function MoreScreen() {
         const message = t('settings.contacts.enabledNotSynced');
         setContactsSyncPhase('pending');
         setContactsSyncError(message);
-        offerContactsRetry(message, true);
+        offerContactsRetry(message, view.retryKind);
         return;
       }
       case 'error': {
@@ -652,7 +657,7 @@ export default function MoreScreen() {
             : base;
         setContactsSyncPhase('error');
         setContactsSyncError(message);
-        offerContactsRetry(message, view.retryable);
+        offerContactsRetry(message, view.retryable ? view.retryKind : null);
         return;
       }
     }
@@ -669,8 +674,8 @@ export default function MoreScreen() {
         kind,
         previousEnabled: contactsConfirmedEnabledRef.current,
         waitMs: CONTACTS_SYNC_TIMEOUT_MS,
-        task: async () => {
-          const ports = await contactsPorts(uid);
+        task: async ({ isCurrent }) => {
+          const ports = await contactsPorts(uid, isCurrent);
           if (kind === 'enable') return enableAndSyncContacts(ports);
           if (kind === 'disable') return disableContactsSyncFlow(ports);
           return syncGrantedAddressBook(ports);
@@ -690,9 +695,13 @@ export default function MoreScreen() {
     }
   };
 
-  const handleRetryContactsSync = async () => {
+  /** A new user action: disable retries disable, it never turns into a sync. */
+  const handleRetryContactsOperation = async (
+    kind: NonNullable<ContactsOutcomeView['retryKind']>,
+  ) => {
     if (contactsBusy) return;
-    await runContactsOperation('sync');
+    if (kind !== 'sync') setContactsSyncEnabled(kind === 'enable');
+    await runContactsOperation(kind);
   };
 
   const handleToggleNotifyNearbyInterests = async (enabled: boolean) => {
@@ -732,7 +741,8 @@ export default function MoreScreen() {
   };
 
   const handleToggleContactsSync = async (enabled: boolean) => {
-    if (contactsBusy) return;
+    // Turning off is always possible: it cancels a running enable or sync.
+    if (contactsBusy && enabled) return;
     // Requested position while the operation runs; the final value comes from
     // the Identity outcome or a server read, never from an assumed rollback.
     setContactsSyncEnabled(enabled);
@@ -1237,7 +1247,7 @@ export default function MoreScreen() {
             }
             value={contactsSyncEnabled}
             onValueChange={handleToggleContactsSync}
-            disabled={contactsBusy}
+            disabled={contactsBusy && !contactsSyncEnabled}
           />
           <SettingsToggleRow
             icon="notifications-outline"

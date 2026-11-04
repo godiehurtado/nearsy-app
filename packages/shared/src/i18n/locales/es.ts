@@ -1750,6 +1750,8 @@ const es: TranslationResources = {
           'La sincronización de contactos está desactualizada. Reintenta para reconciliar.',
         sourceRemoved:
           'Se quitó la sincronización de contactos. Actívala de nuevo para continuar.',
+        epochRequired:
+          'Actualiza Nearsy para volver a activar Contactos cercanos. El resto de la app sigue funcionando.',
         cap: 'Tu libreta es demasiado grande para sincronizar ahora.',
         invalid:
           'Algunos identificadores de contacto no se pudieron sincronizar. Inténtalo de nuevo.',

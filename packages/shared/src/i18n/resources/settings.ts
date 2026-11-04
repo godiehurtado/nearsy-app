@@ -65,6 +65,8 @@ export default {
       notEnabled: 'Turn on Contacts nearby before syncing.',
       stale: 'Contacts sync is out of date. Retry to reconcile.',
       sourceRemoved: 'Contacts sync was removed. Turn it on again to continue.',
+      epochRequired:
+        'Update Nearsy to turn Contacts nearby back on. Everything else keeps working.',
       cap: 'Your address book is too large to sync right now.',
       invalid: 'Some contact identifiers could not be synced. Try again.',
       unavailable: 'Contacts sync is temporarily unavailable. Try again shortly.',

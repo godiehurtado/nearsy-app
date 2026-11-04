@@ -85,8 +85,10 @@ function optionalInteger(value: unknown, field: string): number | undefined {
   return value;
 }
 
-export function buildEnableContactsSyncRequest(): EnableContactsSyncRequest {
-  return {};
+export function buildEnableContactsSyncRequest(
+  contactsEpoch: number,
+): EnableContactsSyncRequest {
+  return { contactsEpoch };
 }
 
 export function buildRefreshVerifiedActorKeysRequest(): RefreshVerifiedActorKeysRequest {
@@ -102,10 +104,12 @@ export function buildDisableContactsSyncRequest(
 export function buildRemoveContactSourceRequest(input: {
   sourceId: string;
   contactsEpoch: number;
+  knownSnapshotVersion: number;
 }): RemoveContactSourceRequest {
   return {
     sourceId: input.sourceId,
     contactsEpoch: input.contactsEpoch,
+    knownSnapshotVersion: input.knownSnapshotVersion,
   };
 }
 

@@ -210,6 +210,14 @@ describe('Settings safety freeze', () => {
     assert.match(screen, /readContactsServerState/);
     const app = readShared('App.tsx');
     assert.match(app, /contactsOperationRunner\.run\(uid, 'refresh'/);
+    // Turning off stays available while an enable runs; a retry repeats its own kind.
+    assert.match(screen, /disabled=\{contactsBusy && !contactsSyncEnabled\}/);
+    assert.match(screen, /if \(contactsBusy && enabled\) return;/);
+    assert.match(screen, /handleRetryContactsOperation\(retryKind\)/);
+    assert.match(screen, /isCancelled: \(\) => !isCurrent\(\)/);
+    assert.match(app, /contactsOperationRunner\.invalidate\(previousUid\)/);
+    assert.match(app, /\.forgetEpoch\(\)/);
+    assert.match(app, /createReevaluatePendingPort\(uid\)/);
     const session = readShared('contacts/iosContactsSession.ios.ts');
     assert.match(session, /nearsy\.contacts\.v1\.uid\./);
     assert.doesNotMatch(session, /migrateLegacyIfNeeded/);

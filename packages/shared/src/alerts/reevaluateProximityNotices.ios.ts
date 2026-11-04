@@ -15,6 +15,7 @@ import {
 } from '../firebase/callableHttp';
 import { ensureReevaluatePendingStoreRegistered } from './reevaluatePendingStore.ios';
 import {
+  createReevaluatePendingPort as createPendingPort,
   registerReevaluateProximityNoticesInvoker,
   reevaluateProximityNoticesNow as flushNow,
   resumePendingReevaluateProximityNotices as resumePending,
@@ -62,13 +63,19 @@ function currentUid(): string | null {
 let registered = false;
 
 async function invoke(forUid: string): Promise<void> {
+  // Throwing keeps the marker: returning would count as a completed reevaluate
+  // and lose it, for example when the account changed before the debounce fired.
   const user = firebaseAuth.currentUser;
-  if (!user || user.uid !== forUid) return;
+  if (!user || user.uid !== forUid) {
+    throw new Error('reevaluate-uid-changed');
+  }
   const environment = resolveNearsyFirebaseEnvironment(
     pick('EXPO_PUBLIC_NEARSY_FIREBASE_ENV'),
   );
   const projectId = readJsProjectId();
-  if (!projectId || projectId !== environment.firebaseProjectId) return;
+  if (!projectId || projectId !== environment.firebaseProjectId) {
+    throw new Error('reevaluate-project-unavailable');
+  }
   const region =
     pick('EXPO_PUBLIC_FIREBASE_FUNCTIONS_REGION') ??
     environment.functionsRegion ??
@@ -77,7 +84,7 @@ async function invoke(forUid: string): Promise<void> {
   const appCheck = createAppCheckBootstrap({ port });
   await appCheck.initialize();
   appCheck.ensureReady();
-  if (!port.withToken) return;
+  if (!port.withToken) throw new Error('reevaluate-app-check-unavailable');
   const idToken = await user.getIdToken();
   await port.withToken((appCheckToken) =>
     invokeFirebaseCallableHttp({
@@ -97,6 +104,11 @@ function ensureRegistered(): void {
     (uid) => invoke(uid),
     () => currentUid(),
   );
+}
+
+export function createReevaluatePendingPort(uid: string) {
+  ensureRegistered();
+  return createPendingPort(uid);
 }
 
 export function scheduleReevaluateProximityNotices(): void {

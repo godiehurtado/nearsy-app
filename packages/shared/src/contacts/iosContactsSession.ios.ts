@@ -15,7 +15,12 @@
  * snapshotVersion and fences (see clearFingerprint).
  */
 
-import type { ContactsSessionSnapshot, ContactsSessionStore } from './port';
+import { createContactsSessionStoreFromIO } from './contactsSessionState';
+import type {
+  ContactsSentSnapshot,
+  ContactsSessionSnapshot,
+  ContactsSessionStore,
+} from './port';
 
 /** Pre-UID keys. Kept for documentation/tests; never read for identity. */
 export const LEGACY_CONTACTS_SESSION_KEYS = [
@@ -62,12 +67,38 @@ export function contactsSessionKeysForUid(uid: string) {
     contactsEpoch: `${prefix}.contactsEpoch`,
     snapshotVersion: `${prefix}.snapshotVersion`,
     fingerprint: `${prefix}.fingerprint`,
+    sent: `${prefix}.sent`,
   };
 }
 
-function parseEpoch(raw: string | null): number {
-  const n = raw != null ? Number(raw) : 0;
-  return Number.isInteger(n) && n >= 0 ? n : 0;
+/** Missing or corrupt means unknown: Identity is asked, never a default of 0. */
+function parseEpoch(raw: string | null): number | null {
+  if (raw == null) return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 ? n : null;
+}
+
+function parseSent(raw: string | null): ContactsSentSnapshot | null {
+  if (raw == null) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<ContactsSentSnapshot>;
+    if (
+      Number.isInteger(value.epoch) &&
+      (value.epoch as number) >= 0 &&
+      Number.isInteger(value.version) &&
+      (value.version as number) >= 1
+    ) {
+      return {
+        epoch: value.epoch as number,
+        version: value.version as number,
+        fingerprint:
+          typeof value.fingerprint === 'string' ? value.fingerprint : null,
+      };
+    }
+  } catch {
+    /* corrupt: treated as nothing sent */
+  }
+  return null;
 }
 
 function parseVersion(raw: string | null): number | null {
@@ -116,50 +147,44 @@ export function createSecureStoreContactsSessionStore(
     }
   };
 
-  return {
-    async load(): Promise<ContactsSessionSnapshot | null> {
+  const writeOrRemove = async (key: string, value: string | null) => {
+    if (value != null) await write(key, value);
+    else await remove(key);
+  };
+
+  // Rules (monotonic epoch and version, serialized writes) live in
+  // contactsSessionState. Keep snapshotVersion when clearing a fingerprint:
+  // restarting at 1 for this stable sourceId would hit contacts-source-removed.
+  return createContactsSessionStoreFromIO(`secure:${trimmed}`, {
+    async read(): Promise<ContactsSessionSnapshot | null> {
       const sourceId = await read(keys.sourceId);
-      if (!sourceId) return null;
+      const contactsEpoch = parseEpoch(await read(keys.contactsEpoch));
+      if (!sourceId && contactsEpoch == null) return null;
       return {
-        sourceId,
-        contactsEpoch: parseEpoch(await read(keys.contactsEpoch)),
+        sourceId: sourceId || null,
+        contactsEpoch,
         snapshotVersion: parseVersion(await read(keys.snapshotVersion)),
         fingerprint: await read(keys.fingerprint),
+        sent: parseSent(await read(keys.sent)),
       };
     },
-    async save(snapshot) {
-      // Same sourceId: snapshotVersion never goes backwards (a late persist
-      // from an older operation must not reopen a fenced version).
-      const storedSource = await read(keys.sourceId);
-      const storedVersion =
-        storedSource === snapshot.sourceId
-          ? parseVersion(await read(keys.snapshotVersion))
-          : null;
-      const nextVersion =
-        storedVersion != null &&
-        (snapshot.snapshotVersion == null ||
-          snapshot.snapshotVersion < storedVersion)
-          ? storedVersion
-          : snapshot.snapshotVersion;
-      await write(keys.sourceId, snapshot.sourceId);
-      await write(keys.contactsEpoch, String(snapshot.contactsEpoch));
-      if (nextVersion != null) {
-        await write(keys.snapshotVersion, String(nextVersion));
-      } else {
-        await remove(keys.snapshotVersion);
-      }
-      if (snapshot.fingerprint) {
-        await write(keys.fingerprint, snapshot.fingerprint);
-      } else {
-        await remove(keys.fingerprint);
-      }
+    async write(snapshot) {
+      await writeOrRemove(keys.sourceId, snapshot.sourceId);
+      await writeOrRemove(
+        keys.sent,
+        snapshot.sent ? JSON.stringify(snapshot.sent) : null,
+      );
+      await writeOrRemove(
+        keys.snapshotVersion,
+        snapshot.snapshotVersion != null ? String(snapshot.snapshotVersion) : null,
+      );
+      await writeOrRemove(keys.fingerprint, snapshot.fingerprint || null);
+      await writeOrRemove(
+        keys.contactsEpoch,
+        snapshot.contactsEpoch != null ? String(snapshot.contactsEpoch) : null,
+      );
     },
-    async clearFingerprint() {
-      // Keep snapshotVersion: Identity fences removedSnapshotVersion for this
-      // stable sourceId. Restarting at 1 would throw contacts-source-removed.
-      await remove(keys.fingerprint);
-    },
-  };
+  });
 }
 
 export function createContactsSessionStore(uid: string): ContactsSessionStore {

@@ -30,6 +30,7 @@ import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 import * as Notifications from 'expo-notifications';
 import { parseEncounterNotifyPayload } from './alerts/encounterNotifyPayload';
 import {
+  createReevaluatePendingPort,
   resumePendingReevaluateProximityNotices,
   scheduleReevaluateProximityNotices,
 } from './alerts/reevaluateProximityNotices';
@@ -40,7 +41,6 @@ import { contactsOperationRunner } from './contacts/contactsOperationCoordinator
 import { getContactsHmacClient } from './contacts/iosContactsFoundation';
 import { createContactsSessionStore } from './contacts/iosContactsSession';
 import { registerRefreshVerifiedActorKeysInvoker } from './contacts/refreshActorKeys';
-import { shouldCallReevaluateAfterIdentity } from './contacts/parse';
 import { syncPushTokenForAuthUser } from './services/pushTokens';
 import { stopBackgroundLocationRuntime, syncBackgroundLocationRuntime } from './visibility/backgroundLocationRuntime';
 import { clearLocationPermissionJourneySession, reconcileLocationJourneyOnColdStart } from './visibility/locationPermissionJourney';
@@ -174,6 +174,18 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
         const previousUid = lastUid;
         lastUid = user?.uid ?? null;
 
+        if (previousUid && previousUid !== lastUid) {
+          // Contacts intents and the stored epoch never outlive the session.
+          contactsOperationRunner.invalidate(previousUid);
+          void createContactsSessionStore(previousUid)
+            .forgetEpoch()
+            .catch(() => {});
+        }
+        if (user) {
+          // A marker left by this account survives other accounts on the device.
+          void resumePendingReevaluateProximityNotices();
+        }
+
         if (!user) {
           // Logout: More / Delete Account already released under A.
           // Generation bump discards in-flight registers; do not write.
@@ -258,12 +270,11 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
         return refreshVerifiedActorKeysFlow({
           client,
           session,
-          afterIdentity: async (result) => {
-            // Idempotent / reevaluateRequired:false must not clear a prior pending mark.
-            // Reevaluate failure must not invalidate a confirmed Identity sync.
-            if (shouldCallReevaluateAfterIdentity(result)) {
-              scheduleReevaluateProximityNotices();
-            }
+          reevaluatePending: createReevaluatePendingPort(uid),
+          // The controller keeps a prior pending mark on "nothing changed".
+          // Reevaluate failure must not invalidate a confirmed Identity sync.
+          afterIdentity: async () => {
+            scheduleReevaluateProximityNotices();
           },
         });
       }).promise;

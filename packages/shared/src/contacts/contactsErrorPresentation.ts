@@ -11,6 +11,7 @@ export const CONTACTS_SYNC_TIMEOUT_MS = 45_000;
 
 const RETRYABLE_REASONS = new Set<string>([
   'contacts-hmac-unavailable',
+  'contacts-auth-lookup-failed',
   'contacts-rate-limited',
   'contacts-invalid-response',
   'contacts-epoch-mismatch',
@@ -53,6 +54,8 @@ export function presentContactsSyncError(
     case 'contacts-snapshot-stale':
     case 'contacts-snapshot-conflict':
       return t('settings.contacts.errors.stale');
+    case 'contacts-epoch-required':
+      return t('settings.contacts.errors.epochRequired');
     case 'contacts-source-removed':
       return t('settings.contacts.errors.sourceRemoved');
     case 'contacts-source-cap':
@@ -63,6 +66,7 @@ export function presentContactsSyncError(
     case 'contacts-client-hash-rejected':
       return t('settings.contacts.errors.invalid');
     case 'contacts-hmac-unavailable':
+    case 'contacts-auth-lookup-failed':
     case 'contacts-rate-limited':
       return t('settings.contacts.errors.unavailable');
     case 'contacts-timeout':

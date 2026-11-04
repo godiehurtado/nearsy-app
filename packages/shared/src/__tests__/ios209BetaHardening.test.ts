@@ -255,7 +255,7 @@ describe('Contacts operation runner', () => {
     gate.resolve({ ok: true, bookSynced: true, result: wire({}) });
   });
 
-  it('disable is queued after the running sync and supersedes its result', async () => {
+  it('disable starts without waiting for the running sync and supersedes it', async () => {
     const runner = createContactsOperationRunner();
     const order: string[] = [];
     const gate = deferred<ContactsControllerOutcome>();
@@ -273,7 +273,8 @@ describe('Contacts operation runner', () => {
     await tick();
     gate.resolve({ ok: true, bookSynced: true, result: wire({}) });
     await disable.promise;
-    assert.deepEqual(order, ['sync:start', 'sync:end', 'disable']);
+    await sync.promise;
+    assert.deepEqual(order, ['sync:start', 'disable', 'sync:end']);
     assert.equal(runner.isCurrent(sync.token), false, 'sync result is stale');
     assert.equal(runner.isCurrent(disable.token), true);
   });
@@ -350,7 +351,7 @@ describe('Contacts operation runner', () => {
     assert.deepEqual(views, ['syncing', 'confirming']);
   });
 
-  it('uncertain disable reconciles from the server read instead of reverting', async () => {
+  it('uncertain disable reads off from the server: done, not an error', async () => {
     const runner = createContactsOperationRunner();
     const views: ContactsOutcomeView[] = [];
     await driveContactsOperation({
@@ -369,7 +370,7 @@ describe('Contacts operation runner', () => {
       onView: (v) => views.push(v),
     });
     const last = views.at(-1)!;
-    assert.equal(last.view, 'error');
+    assert.equal(last.view, 'idle');
     assert.equal(last.enabled, false, 'server said OFF — the disable landed');
   });
 
@@ -407,7 +408,7 @@ describe('Contacts operation runner', () => {
     });
     const runner = createContactsOperationRunner();
     const p = ports({ client, session });
-    runner.run('uid-a', 'enable', () => enableAndSyncContacts(p));
+    await runner.run('uid-a', 'enable', () => enableAndSyncContacts(p)).promise;
     await runner.run('uid-a', 'disable', () => disableContactsSyncFlow(p)).promise;
     const disableCall = client.calls.find((c) => c.name === 'disableContactsSync');
     assert.deepEqual(disableCall?.request, { contactsEpoch: 7 });

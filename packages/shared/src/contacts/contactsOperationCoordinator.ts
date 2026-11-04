@@ -8,18 +8,30 @@
  *   operation in flight until it settles; the late result is reported to the
  *   caller only while its generation is current.
  * - invalidate(uid) (logout, UID change, disable) makes late results stale
- *   and skips queued operations that have not started yet. It never sends
- *   anything to Identity and never re-enables consent.
+ *   and skips queued operations that have not started yet. Running ones see it
+ *   through isCurrent and stop before their next step. It never sends anything
+ *   to Identity and never re-enables consent.
+ * - Disable does not wait for a running operation: turning off cannot depend
+ *   on a slow enable. Identity serializes them, and both orders end off.
  *
  * Pure TS (no React Native imports) so behaviour is testable under tsx.
  */
 
-import type { ContactsControllerOutcome } from './controller';
+import {
+  CONTACTS_OP_SKIPPED_REASON,
+  type ContactsControllerOutcome,
+} from './controller';
 import { isContactsCapExceeded, isContactsSyncRetryable } from './contactsErrorPresentation';
+import { isDefiniteContactsRejection } from './errors';
 
 export type ContactsOpKind = 'enable' | 'sync' | 'disable' | 'refresh';
 
-export const CONTACTS_OP_SKIPPED_REASON = 'contacts-op-skipped';
+export { CONTACTS_OP_SKIPPED_REASON };
+
+export type ContactsOpTask = (context: {
+  /** False once a disable or a sign-out superseded this intent. */
+  isCurrent: () => boolean;
+}) => Promise<ContactsControllerOutcome>;
 
 export type ContactsOpToken = { uid: string; generation: number };
 
@@ -41,7 +53,7 @@ export type ContactsOperationRunner = {
   run(
     uid: string,
     kind: ContactsOpKind,
-    task: () => Promise<ContactsControllerOutcome>,
+    task: ContactsOpTask,
   ): ContactsOpHandle;
   invalidate(uid: string): void;
   isCurrent(token: ContactsOpToken): boolean;
@@ -92,12 +104,14 @@ export function createContactsOperationRunner(): ContactsOperationRunner {
       // Queued work whose generation was invalidated before it started
       // (logout / UID change / later disable) never reaches Identity.
       if (!isCurrent(token)) return Promise.resolve(skipped());
-      return task();
+      return task({ isCurrent: () => isCurrent(token) });
     };
-    // Nothing running → start now (synchronously); otherwise queue behind it.
-    const promise = current
-      ? current.promise.catch(() => undefined).then(start)
-      : new Promise<ContactsControllerOutcome>((resolve) => resolve(start()));
+    // Nothing running, or a disable → start now (synchronously); otherwise
+    // queue behind what is running.
+    const promise =
+      current && kind !== 'disable'
+        ? current.promise.catch(() => undefined).then(start)
+        : new Promise<ContactsControllerOutcome>((resolve) => resolve(start()));
 
     const entry: InFlight = { kind, token, promise };
     inflight.set(uid, entry);
@@ -171,21 +185,11 @@ export type ContactsOutcomeView = {
   view: ContactsSyncView;
   reason: string | null;
   retryable: boolean;
+  /** What a user-initiated retry repeats. Null when there is nothing to retry. */
+  retryKind: Exclude<ContactsOpKind, 'refresh'> | null;
 };
 
 const WITHDRAWN_RESULTS = new Set(['removed', 'absent']);
-
-/**
- * Errors that prove Identity rejected the request (state unchanged). Anything
- * else (transport / unparseable) may have been applied server-side.
- */
-function isDefiniteRejection(reason: string): boolean {
-  return (
-    reason !== 'contacts-hmac-unavailable' &&
-    reason !== 'contacts-invalid-response' &&
-    reason !== 'contacts-timeout'
-  );
-}
 
 export function classifyContactsOutcome(
   kind: ContactsOpKind,
@@ -196,12 +200,19 @@ export function classifyContactsOutcome(
     const { result, bookSynced } = outcome;
     const enabled = result.contactsSyncEnabled === true;
     const notify = result.notifyNearbyContactsEffective === true;
-    if (kind === 'disable' || !enabled) {
-      return { enabled, notifyNearbyContacts: notify, view: 'idle', reason: null, retryable: false };
-    }
+    const quiet = {
+      enabled,
+      notifyNearbyContacts: notify,
+      reason: null,
+      retryable: false,
+      retryKind: null,
+    };
+    if (kind === 'disable' || !enabled) return { ...quiet, view: 'idle' };
     if (bookSynced && result.syncCommitted === true) {
-      return { enabled, notifyNearbyContacts: notify, view: 'synced', reason: null, retryable: false };
+      return { ...quiet, view: 'synced' };
     }
+    // Not withdrawn: a newer snapshot stays stored and the intent was stale.
+    if (result.result === 'superseded') return { ...quiet, view: 'idle' };
     if (WITHDRAWN_RESULTS.has(result.result)) {
       // OS access withdrawn: source removed, Contacts stays on server-side.
       return {
@@ -210,6 +221,7 @@ export function classifyContactsOutcome(
         view: 'error',
         reason: 'contacts-os-denied',
         retryable: false,
+        retryKind: null,
       };
     }
     return {
@@ -218,6 +230,7 @@ export function classifyContactsOutcome(
       view: 'enabledNotSynced',
       reason: null,
       retryable: true,
+      retryKind: 'sync',
     };
   }
 
@@ -225,9 +238,16 @@ export function classifyContactsOutcome(
   const failed = outcome as Extract<ContactsControllerOutcome, { ok: false }>;
   const { reason } = failed;
   if (reason === CONTACTS_OP_SKIPPED_REASON) {
-    return { enabled: null, notifyNearbyContacts: null, view: 'idle', reason: null, retryable: false };
+    return { enabled: null, notifyNearbyContacts: null, view: 'idle', reason: null, retryable: false, retryKind: null };
   }
   const retryable = isContactsSyncRetryable(reason) && !isContactsCapExceeded(reason);
+  const retryKind: ContactsOutcomeView['retryKind'] = !retryable
+    ? null
+    : failed.identityEnabled === true
+      ? 'sync'
+      : kind === 'refresh'
+        ? null
+        : kind;
   if (failed.identityEnabled === true) {
     return {
       enabled: true,
@@ -235,18 +255,31 @@ export function classifyContactsOutcome(
       view: 'error',
       reason,
       retryable,
+      retryKind,
+    };
+  }
+  if (failed.identityEnabled === false || reason === 'contacts-not-enabled') {
+    // Identity said it is off. Never turned back on without a new user action.
+    return {
+      enabled: false,
+      notifyNearbyContacts: false,
+      view: 'error',
+      reason,
+      retryable,
+      retryKind,
     };
   }
   if (reason === 'contacts-os-denied' && kind === 'enable') {
     // enableContactsSync was never sent.
-    return { enabled: previousEnabled, notifyNearbyContacts: null, view: 'error', reason, retryable: false };
+    return { enabled: previousEnabled, notifyNearbyContacts: null, view: 'error', reason, retryable: false, retryKind: null };
   }
   return {
-    enabled: isDefiniteRejection(reason) ? previousEnabled : null,
+    enabled: isDefiniteContactsRejection(reason) ? previousEnabled : null,
     notifyNearbyContacts: null,
     view: 'error',
     reason,
     retryable,
+    retryKind,
   };
 }
 
@@ -259,7 +292,7 @@ export type DriveContactsOperationInput = {
   runner: ContactsOperationRunner;
   uid: string;
   kind: ContactsOpKind;
-  task: () => Promise<ContactsControllerOutcome>;
+  task: ContactsOpTask;
   /** Last server-confirmed toggle value (before the user's tap). */
   previousEnabled: boolean;
   waitMs: number;
@@ -288,6 +321,7 @@ export async function driveContactsOperation(
     view,
     reason: null,
     retryable: false,
+    retryKind: null,
   });
 
   input.onView(pending('syncing'));
@@ -311,6 +345,7 @@ export async function driveContactsOperation(
           view: 'error',
           reason: 'contacts-invalid-response',
           retryable: true,
+          retryKind: handle.kind === 'refresh' ? null : handle.kind,
         };
 
   if (view.enabled === null && view.view !== 'idle') {
@@ -322,11 +357,22 @@ export async function driveContactsOperation(
     }
     if (!live()) return;
     if (server) {
-      view = {
-        ...view,
-        enabled: server.enabled,
-        notifyNearbyContacts: server.notifyNearbyContacts,
-      };
+      // Reads off after a turn-off whose response was lost: that is the goal.
+      view =
+        handle.kind === 'disable' && !server.enabled
+          ? {
+              enabled: false,
+              notifyNearbyContacts: false,
+              view: 'idle',
+              reason: null,
+              retryable: false,
+              retryKind: null,
+            }
+          : {
+              ...view,
+              enabled: server.enabled,
+              notifyNearbyContacts: server.notifyNearbyContacts,
+            };
     }
   }
   input.onView(view);

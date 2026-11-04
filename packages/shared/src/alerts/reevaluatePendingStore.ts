@@ -8,28 +8,26 @@
 export type ReevaluatePendingStore = {
   markPending(uid: string): Promise<void>;
   clearIfUid(uid: string): Promise<void>;
-  loadPendingUid(): Promise<string | null>;
+  isPending(uid: string): Promise<boolean>;
 };
-
-let memoryUid: string | null = null;
 
 export function createMemoryReevaluatePendingStore(
   seed?: string | null,
 ): ReevaluatePendingStore & { peek(): string | null } {
-  memoryUid = seed ?? null;
+  const pending = new Set<string>(seed ? [seed] : []);
   return {
     async markPending(uid: string) {
       if (!uid) return;
-      memoryUid = uid;
+      pending.add(uid);
     },
     async clearIfUid(uid: string) {
-      if (memoryUid && memoryUid === uid) memoryUid = null;
+      pending.delete(uid);
     },
-    async loadPendingUid() {
-      return memoryUid;
+    async isPending(uid: string) {
+      return pending.has(uid);
     },
     peek() {
-      return memoryUid;
+      return pending.values().next().value ?? null;
     },
   };
 }

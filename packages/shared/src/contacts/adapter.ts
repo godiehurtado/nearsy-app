@@ -47,7 +47,19 @@ export function createContactsHmacCallableClient(input: {
 
   return {
     enableContactsSync(request: EnableContactsSyncRequest) {
-      return invoke(CONTACTS_HMAC_CALLABLE_NAMES.enableContactsSync, request);
+      // Never send `{}`: at epoch > 0 Identity rejects it with no write.
+      if (!Number.isInteger(request.contactsEpoch) || request.contactsEpoch < 0) {
+        return Promise.reject(
+          new ContactsHmacClientError(
+            'contacts-epoch-required',
+            'Enable requires the live contactsEpoch.',
+          ),
+        );
+      }
+      return invoke(
+        CONTACTS_HMAC_CALLABLE_NAMES.enableContactsSync,
+        request as unknown as Record<string, unknown>,
+      );
     },
     syncContactHashes(request: SyncContactHashesRequest) {
       assertSyncRequestShape(request);

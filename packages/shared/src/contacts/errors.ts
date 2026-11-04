@@ -8,6 +8,7 @@ export type ContactsHmacFailReason =
   | 'contacts-account-gone'
   | 'contacts-not-enabled'
   | 'contacts-epoch-mismatch'
+  | 'contacts-epoch-required'
   | 'contacts-snapshot-stale'
   | 'contacts-snapshot-conflict'
   | 'contacts-source-removed'
@@ -17,6 +18,7 @@ export type ContactsHmacFailReason =
   | 'contacts-identifier-invalid'
   | 'contacts-client-hash-rejected'
   | 'contacts-hmac-unavailable'
+  | 'contacts-auth-lookup-failed'
   | 'contacts-rate-limited'
   | 'contacts-invalid-response'
   | 'contacts-os-denied';
@@ -26,6 +28,7 @@ const IDENTITY_REASONS = new Set<string>([
   'contacts-account-gone',
   'contacts-not-enabled',
   'contacts-epoch-mismatch',
+  'contacts-epoch-required',
   'contacts-snapshot-stale',
   'contacts-snapshot-conflict',
   'contacts-source-removed',
@@ -35,8 +38,22 @@ const IDENTITY_REASONS = new Set<string>([
   'contacts-identifier-invalid',
   'contacts-client-hash-rejected',
   'contacts-hmac-unavailable',
+  'contacts-auth-lookup-failed',
   'contacts-rate-limited',
 ]);
+
+/**
+ * Proves Identity rejected this call and wrote nothing. Anything else
+ * (transport, unparseable, infrastructure) may have been applied server-side.
+ */
+export function isDefiniteContactsRejection(reason: string): boolean {
+  return (
+    reason !== 'contacts-hmac-unavailable' &&
+    reason !== 'contacts-auth-lookup-failed' &&
+    reason !== 'contacts-invalid-response' &&
+    reason !== 'contacts-timeout'
+  );
+}
 
 export class ContactsHmacClientError extends Error {
   readonly reason: ContactsHmacFailReason;
@@ -92,6 +109,7 @@ export function shouldMarkBookSynced(reason: ContactsHmacFailReason | null): boo
   if (!reason) return true;
   return (
     reason !== 'contacts-epoch-mismatch' &&
+    reason !== 'contacts-epoch-required' &&
     reason !== 'contacts-union-cap' &&
     reason !== 'contacts-identifier-cap' &&
     reason !== 'contacts-snapshot-stale' &&
