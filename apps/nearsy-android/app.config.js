@@ -44,6 +44,25 @@ const logoDevPublishableKey = String(
 ).trim();
 
 /**
+ * Distribution channel for `getAppUpdatePolicy` (Functions PR #43
+ * CONTRACT.md: channel is separate from the Firebase project). Explicit
+ * build-time value only: `production` | `playInternal`. NOT derived from
+ * NEARSY_FIREBASE_ENV or the EAS profile name. Unset / invalid => omitted,
+ * and the client never consults the update policy (fail open).
+ * See packages/shared/src/appUpdate/channel.ts.
+ */
+const rawUpdateChannel = String(process.env.NEARSY_APP_UPDATE_CHANNEL || '').trim();
+const nearsyAppUpdateChannel =
+  rawUpdateChannel === 'production' || rawUpdateChannel === 'playInternal'
+    ? rawUpdateChannel
+    : '';
+if (rawUpdateChannel && !nearsyAppUpdateChannel) {
+  console.warn(
+    `[app.config] Ignoring invalid NEARSY_APP_UPDATE_CHANNEL (expected production | playInternal).`,
+  );
+}
+
+/**
  * Facebook Login (ENH-AUTH-FB-01). App ID + Client Token from env only; the
  * token is written to native resources by the plugin, never into extra or
  * the serialized plugins list.
@@ -74,6 +93,8 @@ const expoConfig = {
      * Combined with nearsyFirebaseEnv for App Check Debug eligibility.
      */
     nearsyDevClient,
+    /** App-update distribution channel (production | playInternal); see above. */
+    ...(nearsyAppUpdateChannel ? { nearsyAppUpdateChannel } : {}),
     /** Gates the native Facebook SDK in JS (never the token itself). */
     facebookAuthConfigured: facebookAuth.configured,
     ...(logoDevPublishableKey.startsWith('pk_')
