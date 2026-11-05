@@ -2,9 +2,12 @@
  * Non-iOS stub — Identity Contacts HMAC is composed on iOS via JS Auth HTTP.
  */
 
+import type { ContactsOperationTrace } from './contactsDiagnostics';
 import type { ContactsHmacClient } from './port';
 
-export function getContactsHmacClient(): Promise<ContactsHmacClient> {
+export function getContactsHmacClient(
+  _trace?: ContactsOperationTrace,
+): Promise<ContactsHmacClient> {
   return Promise.reject(
     new Error('Contacts Identity client is only available on iOS.'),
   );

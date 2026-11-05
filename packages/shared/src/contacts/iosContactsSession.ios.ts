@@ -129,8 +129,11 @@ export function createSecureStoreContactsSessionStore(
     if (!store) return null;
     try {
       return await store.getItemAsync(key);
-    } catch {
-      throw new Error('contacts-session-unavailable');
+    } catch (err) {
+      const unavailable = new Error('contacts-session-unavailable');
+      // Kept for the diagnostic code only; the behavior stays this one error.
+      (unavailable as Error & { cause?: unknown }).cause = err;
+      throw unavailable;
     }
   };
   const write = async (key: string, value: string): Promise<void> => {

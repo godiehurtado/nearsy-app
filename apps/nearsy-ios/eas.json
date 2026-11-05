@@ -31,6 +31,13 @@
       "env": {
         "EXPO_PUBLIC_NEARSY_FIREBASE_ENV": "production"
       }
+    },
+    "testflight-contacts-diagnostics": {
+      "extends": "production",
+      "env": {
+        "NEARSY_CONTACTS_DIAGNOSTICS_PROFILE": "testflight-contacts-diagnostics",
+        "NEARSY_CONTACTS_DIAGNOSTICS_UNTIL": ""
+      }
     }
   },
   "submit": {

@@ -25,6 +25,10 @@ const {
   resolveFacebookAuthEnvForConfig,
   buildFacebookPluginProps,
 } = require('./scripts/facebookAuthConfig.cjs');
+const {
+  CONTACTS_DIAGNOSTICS_UNTIL_ENV,
+  resolveContactsDiagnosticsUntil,
+} = require('./scripts/contactsDiagnosticsConfig.cjs');
 
 const FUNCTIONS_REGION = 'us-central1';
 const DEV_PLIST = './GoogleService-Info.development.plist';
@@ -281,6 +285,11 @@ module.exports = ({ config }) => {
       throw new Error(
         '[app.config] Production builds must use EXPO_PUBLIC_FIREBASE_PROJECT_ID=nearsy-pj',
       );
+    }
+
+    const contactsDiagnosticsUntil = resolveContactsDiagnosticsUntil(process.env);
+    if (contactsDiagnosticsUntil) {
+      extraBase[CONTACTS_DIAGNOSTICS_UNTIL_ENV] = contactsDiagnosticsUntil;
     }
   }
 

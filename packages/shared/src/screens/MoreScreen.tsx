@@ -125,6 +125,7 @@ import {
 } from '../contacts/controller';
 import {
   CONTACTS_SYNC_TIMEOUT_MS,
+  isGenericContactsSyncError,
   presentContactsSyncError,
 } from '../contacts/contactsErrorPresentation';
 import {
@@ -134,6 +135,14 @@ import {
   type ContactsServerState,
 } from '../contacts/contactsOperationCoordinator';
 import { createContactsAddressBookPort } from '../contacts/iosAddressBook';
+import {
+  appendContactsDiagnosticReference,
+  createContactsOperationTrace,
+  traceContactsAddressBook,
+  traceContactsSession,
+  type ContactsOperationTrace,
+} from '../contacts/contactsDiagnostics';
+import { isContactsDiagnosticsVisible } from '../contacts/contactsDiagnosticsFlag';
 import { getContactsHmacClient } from '../contacts/iosContactsFoundation';
 import { createContactsSessionStore } from '../contacts/iosContactsSession';
 
@@ -563,10 +572,14 @@ export default function MoreScreen() {
     };
   }, []);
 
-  const contactsPorts = async (uid: string, isCurrent: () => boolean) => ({
-    client: await getContactsHmacClient(),
-    session: createContactsSessionStore(uid),
-    book: createContactsAddressBookPort(),
+  const contactsPorts = async (
+    uid: string,
+    isCurrent: () => boolean,
+    trace: ContactsOperationTrace,
+  ) => ({
+    client: await getContactsHmacClient(trace),
+    session: traceContactsSession(createContactsSessionStore(uid), trace),
+    book: traceContactsAddressBook(createContactsAddressBookPort(), trace),
     isCancelled: () => !isCurrent() || firebaseAuth.currentUser?.uid !== uid,
     reevaluatePending: createReevaluatePendingPort(uid),
     // Reevaluate is best-effort and separate from Identity sync success. The
@@ -618,7 +631,10 @@ export default function MoreScreen() {
     Alert.alert(t('settings.contacts.syncFailedTitle'), message, buttons);
   };
 
-  const applyContactsView = (view: ContactsOutcomeView) => {
+  const applyContactsView = (
+    view: ContactsOutcomeView,
+    trace: ContactsOperationTrace,
+  ) => {
     if (view.enabled !== null) {
       contactsConfirmedEnabledRef.current = view.enabled;
       setContactsSyncEnabled(view.enabled);
@@ -653,10 +669,16 @@ export default function MoreScreen() {
       case 'error': {
         const base = presentContactsSyncError(view.reason ?? '', t);
         // Server state unreadable → say so instead of implying ON/OFF.
-        const message =
+        const message = appendContactsDiagnosticReference(
           view.enabled === null
             ? `${base} ${t('settings.contacts.stateUnconfirmed')}`
-            : base;
+            : base,
+          {
+            visible: isContactsDiagnosticsVisible(),
+            generic: isGenericContactsSyncError(view.reason ?? ''),
+            reference: trace.reference(),
+          },
+        );
         setContactsSyncPhase('error');
         setContactsSyncError(message);
         offerContactsRetry(message, view.retryable ? view.retryKind : null);
@@ -671,6 +693,7 @@ export default function MoreScreen() {
     const uid = firebaseAuth.currentUser?.uid;
     if (!uid) return;
     setContactsBusy(true);
+    const trace = createContactsOperationTrace();
     try {
       await driveContactsOperation({
         runner: contactsOperationRunner,
@@ -679,16 +702,21 @@ export default function MoreScreen() {
         previousEnabled: contactsConfirmedEnabledRef.current,
         waitMs: CONTACTS_SYNC_TIMEOUT_MS,
         task: async ({ isCurrent }) => {
-          const ports = await contactsPorts(uid, isCurrent);
-          if (kind === 'enable') return enableAndSyncContacts(ports);
-          if (kind === 'disable') return disableContactsSyncFlow(ports);
-          if (kind === 'refresh') return reconcilePendingDisable(ports);
-          return syncGrantedAddressBook(ports);
+          try {
+            const ports = await contactsPorts(uid, isCurrent, trace);
+            if (kind === 'enable') return await enableAndSyncContacts(ports);
+            if (kind === 'disable') return await disableContactsSyncFlow(ports);
+            if (kind === 'refresh') return await reconcilePendingDisable(ports);
+            return await syncGrantedAddressBook(ports);
+          } catch (err) {
+            trace.fail(err);
+            throw err;
+          }
         },
         isActive: () =>
           contactsMountedRef.current && firebaseAuth.currentUser?.uid === uid,
         readServerState: () => readContactsServerState(uid),
-        onView: applyContactsView,
+        onView: (view) => applyContactsView(view, trace),
       });
     } finally {
       if (

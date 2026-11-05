@@ -36,6 +36,12 @@ export function isContactsCapExceeded(reason: string): boolean {
   return CAP_REASONS.has(reason);
 }
 
+/** True when the reason ends in the generic message, known or not. */
+export function isGenericContactsSyncError(reason: string): boolean {
+  const key = ((k: string) => k) as unknown as TFunction;
+  return presentContactsSyncError(reason, key) === 'settings.contacts.errors.generic';
+}
+
 export function presentContactsSyncError(
   reason: string,
   t: TFunction,
