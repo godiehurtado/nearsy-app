@@ -518,12 +518,30 @@ describe('Contacts diagnostic: no sensitive output', () => {
 describe('Contacts diagnostic: visibility', () => {
   const now = Date.parse('2026-11-05T12:00:00Z');
 
-  it('is off without a valid, unexpired date', () => {
-    for (const value of [undefined, null, '', 'true', '1', 'yes', '2026-13-99', 20261120]) {
+  it('is off without a valid, unexpired instant', () => {
+    for (const value of [
+      undefined,
+      null,
+      '',
+      'true',
+      '1',
+      'yes',
+      '2026-11-20',
+      '2026-13-99T00:00:00.000Z',
+      '2026-11-12T23:59:00.000-05:00',
+      20261120,
+    ]) {
       assert.equal(isContactsDiagnosticsActive(value, now), false);
     }
-    assert.equal(isContactsDiagnosticsActive('2026-11-04', now), false);
-    assert.equal(isContactsDiagnosticsActive('2026-11-05', now), true);
+    assert.equal(isContactsDiagnosticsActive('2026-11-04T00:00:00.000Z', now), false);
+  });
+
+  it('ends at 23:59 in Miami on November 12, 2026', () => {
+    const until = '2026-11-13T04:59:00.000Z';
+    const at = (iso: string) => isContactsDiagnosticsActive(until, Date.parse(iso));
+    assert.equal(at('2026-11-12T23:58:59.000-05:00'), true);
+    assert.equal(at('2026-11-12T23:59:00.000-05:00'), false);
+    assert.equal(at('2026-11-13T00:00:00.000-05:00'), false);
   });
 
   it('the reference appears only when visible and on the generic message', () => {

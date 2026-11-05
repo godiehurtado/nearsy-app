@@ -588,7 +588,7 @@ describe('app update notice wiring', () => {
     assert.match(es.appUpdateNotice.title, /Nueva versión disponible/);
   });
 
-  it('does not bump the 2.0.9 (70) IPA numbering', () => {
+  it('keeps the 2.0.9 (71) IPA numbering', () => {
     const appJson = JSON.parse(
       readFileSync(
         join(here, '../../../../apps/nearsy-ios/app.json'),
@@ -596,6 +596,6 @@ describe('app update notice wiring', () => {
       ),
     );
     assert.equal(appJson.expo.version, '2.0.9');
-    assert.equal(appJson.expo.ios.buildNumber, '70');
+    assert.equal(appJson.expo.ios.buildNumber, '71');
   });
 });

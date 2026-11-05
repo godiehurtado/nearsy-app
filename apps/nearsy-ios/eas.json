@@ -36,11 +36,16 @@
       "extends": "production",
       "env": {
         "NEARSY_CONTACTS_DIAGNOSTICS_PROFILE": "testflight-contacts-diagnostics",
-        "NEARSY_CONTACTS_DIAGNOSTICS_UNTIL": ""
+        "NEARSY_CONTACTS_DIAGNOSTICS_UNTIL": "2026-11-13T04:59:00.000Z"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {},
+    "testflight-contacts-diagnostics": {
+      "ios": {
+        "ascAppId": "6759302206"
+      }
+    }
   }
 }

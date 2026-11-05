@@ -11,7 +11,8 @@ const {
 } = require('../contactsDiagnosticsConfig.cjs');
 
 const NOW = Date.parse('2026-11-05T12:00:00Z');
-const valid = { [UNTIL_ENV]: '2026-11-12', [PROFILE_ENV]: PROFILE, EAS_BUILD_PROFILE: PROFILE };
+const MIAMI_END = '2026-11-13T04:59:00.000Z';
+const valid = { [UNTIL_ENV]: MIAMI_END, [PROFILE_ENV]: PROFILE, EAS_BUILD_PROFILE: PROFILE };
 
 describe('Contacts diagnostics build gate', () => {
   it('is off by default', () => {
@@ -20,12 +21,12 @@ describe('Contacts diagnostics build gate', () => {
     assert.equal(resolve({ [UNTIL_ENV]: '', [PROFILE_ENV]: PROFILE }, NOW), undefined);
   });
 
-  it('accepts a near date in the dedicated profile', () => {
-    assert.equal(resolve(valid, NOW), '2026-11-12');
+  it('accepts a near instant in the dedicated profile', () => {
+    assert.equal(resolve(valid, NOW), MIAMI_END);
   });
 
   it('fails the build for a date outside that profile', () => {
-    assert.throws(() => resolve({ [UNTIL_ENV]: '2026-11-12' }, NOW), /only allowed/);
+    assert.throws(() => resolve({ [UNTIL_ENV]: MIAMI_END }, NOW), /only allowed/);
     assert.throws(
       () => resolve({ ...valid, EAS_BUILD_PROFILE: 'production' }, NOW),
       /only allowed/,
@@ -33,12 +34,19 @@ describe('Contacts diagnostics build gate', () => {
   });
 
   it('fails the build for a bad, past or distant date', () => {
-    for (const until of ['true', '2026-11-04', '2026-11-30', '2026-13-99']) {
+    for (const until of [
+      'true',
+      '2026-11-12',
+      '2026-11-04T00:00:00.000Z',
+      '2026-11-30T00:00:00.000Z',
+      '2026-13-99T00:00:00.000Z',
+      '2026-11-12T23:59:00.000-05:00',
+    ]) {
       assert.throws(() => resolve({ ...valid, [UNTIL_ENV]: until }, NOW), /must be/);
     }
   });
 
-  it('the committed profiles keep it off', () => {
+  it('only the diagnostics profile carries it', () => {
     const eas = JSON.parse(fs.readFileSync(path.join(__dirname, '../../eas.json'), 'utf8'));
     for (const [name, profile] of Object.entries(eas.build)) {
       if (name === PROFILE) continue;
@@ -46,6 +54,11 @@ describe('Contacts diagnostics build gate', () => {
       assert.equal(profile.env?.[PROFILE_ENV], undefined, name);
     }
     assert.equal(eas.build[PROFILE].extends, 'production');
-    assert.equal(eas.build[PROFILE].env[UNTIL_ENV], '');
+    assert.equal(eas.build[PROFILE].env[UNTIL_ENV], MIAMI_END);
+    assert.equal(eas.build[PROFILE].env[PROFILE_ENV], PROFILE);
+    // 23:59 in Miami on November 12, 2026 (UTC-5 after the November 1 change).
+    assert.equal(Date.parse(MIAMI_END), Date.parse('2026-11-12T23:59:00.000-05:00'));
+    assert.equal(eas.submit.production.ios, undefined);
+    assert.equal(eas.submit[PROFILE].ios.ascAppId, '6759302206');
   });
 });

@@ -362,16 +362,21 @@ export function traceContactsAddressBook(
 }
 
 /**
- * Visible only with a valid expiry date set at build time, up to the end of
- * that UTC day. Missing or malformed means off.
+ * Visible only until the exact UTC instant set at build time. Missing or
+ * malformed means off.
  */
 export function isContactsDiagnosticsActive(
   until: unknown,
   nowMs: number,
 ): boolean {
-  if (typeof until !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(until)) return false;
-  const end = Date.parse(`${until}T23:59:59.999Z`);
-  return Number.isFinite(end) && nowMs <= end;
+  if (
+    typeof until !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(until)
+  ) {
+    return false;
+  }
+  const end = Date.parse(until);
+  return Number.isFinite(end) && nowMs < end;
 }
 
 export function appendContactsDiagnosticReference(

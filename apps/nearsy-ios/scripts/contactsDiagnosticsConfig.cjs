@@ -1,7 +1,7 @@
 /**
  * Build-time gate for the Contacts diagnostic reference. Off unless the
- * dedicated EAS profile carries an expiry date; any other route fails the
- * build instead of shipping the reference by accident.
+ * dedicated EAS profile carries an expiry instant in UTC; any other route fails
+ * the build instead of shipping the reference by accident.
  */
 
 const CONTACTS_DIAGNOSTICS_PROFILE = 'testflight-contacts-diagnostics';
@@ -23,13 +23,13 @@ function resolveContactsDiagnosticsUntil(env, nowMs = Date.now()) {
     );
   }
 
-  const end = /^\d{4}-\d{2}-\d{2}$/.test(until)
-    ? Date.parse(`${until}T23:59:59.999Z`)
+  const end = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(until)
+    ? Date.parse(until)
     : Number.NaN;
   const latest = nowMs + MAX_WINDOW_DAYS * 24 * 60 * 60 * 1000;
-  if (!Number.isFinite(end) || end < nowMs || end > latest) {
+  if (!Number.isFinite(end) || end <= nowMs || end > latest) {
     throw new Error(
-      `[app.config] ${CONTACTS_DIAGNOSTICS_UNTIL_ENV} must be a YYYY-MM-DD date within the next ${MAX_WINDOW_DAYS} days`,
+      `[app.config] ${CONTACTS_DIAGNOSTICS_UNTIL_ENV} must be a YYYY-MM-DDTHH:mm:ss.sssZ instant within the next ${MAX_WINDOW_DAYS} days`,
     );
   }
   return until;
