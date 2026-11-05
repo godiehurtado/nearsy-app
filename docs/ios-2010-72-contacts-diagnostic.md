@@ -1,11 +1,13 @@
-# Nearsy iOS 2.0.9 (71): Contacts diagnostic build
+# Nearsy iOS 2.0.10 (72): Contacts diagnostic build
 
 **TestFlight internal testing only. Do not submit this build for App Store review or release it.**
 
 ## Purpose
-Build 70 turns several failures before the Identity request into "Could not sync contacts. Try again." This build shows which step failed, so the failure can be read from one screenshot.
+Build 2.0.9 (70) turns several failures before the Identity request into "Could not sync contacts. Try again." This build shows which step failed, so the failure can be read from one screenshot.
 
 It is `f5053a4` plus the diagnostic reference and this build's configuration. It contains no other changes.
+
+The number is 2.0.10 because Apple closed the 2.0.9 train once that version was approved, and rejected 2.0.9 (71) with errors 90062 and 90186.
 
 ## What differs
 When Contacts fails with the generic message, the alert adds a reference:
@@ -16,7 +18,7 @@ Ref: app_check_force/token-error/http-403/permission-denied/app-attest
 
 The parts are stage, code, HTTP status when a response exists, Firebase status, and App Check exchange. Unknown values become `other`. The reference contains no native messages, UIDs, tokens, URLs or contact data.
 
-Reason, toggle, consent, retries, persistence, network calls and the App Check provider match build 70.
+Reason, toggle, consent, retries, persistence, network calls and the App Check provider match build 2.0.9 (70).
 
 ## Expiry
 The reference stops showing at 23:59 Miami time on November 12, 2026. `NEARSY_CONTACTS_DIAGNOSTICS_UNTIL` holds that instant in UTC: `2026-11-13T04:59:00.000Z`.
@@ -36,4 +38,4 @@ eas submit --platform ios --profile testflight-contacts-diagnostics --id <build-
 TestFlight and App Store share the binary, so App Store Connect would still let someone select this build for review. Nothing in the code can block that. If it ever happened, the reference would stay visible until the expiry.
 
 ## After the diagnosis
-Remove the expiry and the profile's use before any store candidate. The next store build must have a higher build number than this one.
+Do not build a store candidate with this profile. The next store build must have a higher build number than 72, and its version must be accepted by App Store Connect given the 2.0.10 train this build opens.

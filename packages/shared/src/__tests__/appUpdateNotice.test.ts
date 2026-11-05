@@ -588,14 +588,14 @@ describe('app update notice wiring', () => {
     assert.match(es.appUpdateNotice.title, /Nueva versión disponible/);
   });
 
-  it('keeps the 2.0.9 (71) IPA numbering', () => {
+  it('keeps the 2.0.10 (72) IPA numbering', () => {
     const appJson = JSON.parse(
       readFileSync(
         join(here, '../../../../apps/nearsy-ios/app.json'),
         'utf8',
       ),
     );
-    assert.equal(appJson.expo.version, '2.0.9');
-    assert.equal(appJson.expo.ios.buildNumber, '71');
+    assert.equal(appJson.expo.version, '2.0.10');
+    assert.equal(appJson.expo.ios.buildNumber, '72');
   });
 });
