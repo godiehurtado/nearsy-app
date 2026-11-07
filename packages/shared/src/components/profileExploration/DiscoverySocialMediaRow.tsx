@@ -3,7 +3,9 @@
  * Renders only when getDiscoveryProfile.socialLinks has ≥1 valid entry.
  * Never invents placeholders for missing networks.
  */
-import React from 'react';
+import { DiscoveryProfileScoreContext } from './discoveryProfileScoreContext';
+import { trackMatchSocialTapped } from '../../analytics/analytics';
+import React, { useContext } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -56,12 +58,25 @@ function PlatformIcon({
 }
 
 export function DiscoverySocialMediaRow({ links }: Props) {
+  const score = useContext(DiscoveryProfileScoreContext);
   const { palette } = useAppTheme();
   const { t } = useTranslation();
   const items = Array.isArray(links)
     ? links.filter((l) => l?.platform && l?.url)
     : [];
   const openLink = useOpenSocialLink();
+
+  const trackOpen = async (
+    platform: Parameters<typeof openLink>[0],
+    opening: ReturnType<typeof openLink>,
+  ) => {
+    let openResult: unknown;
+    try {
+      openResult = await opening;
+    } finally {
+      trackMatchSocialTapped({ platform, score, openResult });
+    }
+  };
 
   if (items.length === 0) return null;
 
@@ -78,7 +93,9 @@ export function DiscoverySocialMediaRow({ links }: Props) {
         return (
           <Pressable
             key={`${link.platform}:${link.url}`}
-            onPress={() => void openLink(link.platform, link.url)}
+            onPress={() =>
+              void trackOpen(link.platform, openLink(link.platform, link.url))
+            }
             accessibilityRole="link"
             accessibilityLabel={label}
             hitSlop={6}

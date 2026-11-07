@@ -2,6 +2,8 @@
  * Android Own Profile overlay: Identity Get per UID+mode.
  * Does not write the social bag or copy canonicalUrl.
  */
+import { VERIFIED_SOCIAL_PLATFORMS } from '../analytics/analyticsSocial.ts';
+import { noteSocialOwnership } from '../analytics/analytics';
 import { getInstagramOwnershipState } from './instagramOwnership/instagramOwnership.android.ts';
 import { getTiktokOwnershipState } from './tiktokOwnership/tiktokOwnership.android.ts';
 import { getXOwnershipState } from './xOwnership/xOwnership.android.ts';
@@ -71,5 +73,14 @@ export async function loadOwnProfileSocialOwnershipOverlay(
   assign('tiktok', tiktok);
   assign('instagram', instagram);
   assign('x', x);
+  for (const mode of ['personal', 'professional'] as const) {
+    for (const platform of VERIFIED_SOCIAL_PLATFORMS) {
+      const status = out[mode][platform];
+      // An error stays unknown: it must not clear a stored network.
+      if (status === 'verified' || status === 'not_linked') {
+        noteSocialOwnership(mode, platform, status === 'verified');
+      }
+    }
+  }
   return out;
 }

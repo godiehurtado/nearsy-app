@@ -3,6 +3,7 @@
  * being edited (Personal XOR Professional). Connect/unlink only that mode.
  * No channel picker. No dual publish toggles.
  */
+import { noteSocialOwnership, trackSocialLinked } from '../../analytics/analytics';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -132,6 +133,7 @@ export function TiktokOwnershipCard({
       setConnected({
         handleLabel: tiktokOwnershipHandleLabel(verified),
       });
+      noteSocialOwnership(forMode, 'tiktok', true);
       setPhase('idle');
       return true;
     },
@@ -145,6 +147,7 @@ export function TiktokOwnershipCard({
       }
       setConnected(null);
       setPhase('idle');
+      noteSocialOwnership(forMode, 'tiktok', false);
       return true;
     },
     [],
@@ -204,6 +207,7 @@ export function TiktokOwnershipCard({
         const resumed = await api.resumeTiktokOwnershipReturn(forMode);
         if (cancelled || forMode !== modeRef.current) return;
         if (resumed.status === 'verified') {
+          trackSocialLinked('tiktok', 'verified', forMode);
           applyVerifiedIfCurrent(
             requestGenRef.current,
             forMode,
@@ -217,6 +221,7 @@ export function TiktokOwnershipCard({
     const watch = api?.watchTiktokOwnershipReturns?.(forMode, (outcome) => {
       if (cancelled || forMode !== modeRef.current) return;
       if (outcome.status === 'verified') {
+        trackSocialLinked('tiktok', 'verified', forMode);
         applyVerifiedIfCurrent(
           requestGenRef.current,
           forMode,
@@ -278,6 +283,7 @@ export function TiktokOwnershipCard({
         await refreshForMode(forMode);
         return;
       }
+      trackSocialLinked('tiktok', 'verified', forMode);
       applyVerifiedIfCurrent(gen, forMode, outcome.verified);
     } catch (err) {
       if (gen !== requestGenRef.current || forMode !== modeRef.current) {

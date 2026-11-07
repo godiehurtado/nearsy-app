@@ -1,3 +1,4 @@
+import { trackSocialLinked } from '../../analytics/analytics';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { firebaseAuth } from '../../config/firebaseConfig';
@@ -35,6 +36,8 @@ export function useManualSocialLinks(input: {
   const generationRef = useRef(0);
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
 
   useEffect(() => {
     // New account or mode: nothing in flight may reach this screen state.
@@ -77,6 +80,10 @@ export function useManualSocialLinks(input: {
       busyRef.current = false;
       setBusyField(null);
       if (result.status === 'saved') {
+        // Adding only: an edit already had a value, and removal has no url.
+        if (result.url && !valuesRef.current[field]?.trim()) {
+          trackSocialLinked(field, 'manual', mode);
+        }
         onSavedRef.current(field, result.url);
         setTarget(null);
         return;

@@ -2,6 +2,8 @@
  * NEARSY-209 Android — Instagram reverse-DM ownership card scoped to the
  * Own Profile mode being edited. Start / Get / Unlink only. No inbox admin.
  */
+import { withOwnExternalFlow } from '../../analytics/ownExternalFlow.ts';
+import { noteSocialOwnership, trackSocialLinked } from '../../analytics/analytics';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -149,6 +151,7 @@ export function InstagramOwnershipCard({
         return true;
       }
       setVerified(presented.verified);
+      noteSocialOwnership(forMode, 'instagram', !!presented.verified);
       setChallenge(presented.challenge);
       setHint(presented.hint);
       setPhase(presented.phase);
@@ -184,6 +187,10 @@ export function InstagramOwnershipCard({
         const wasPending = challengeRef.current != null;
         applyGetIfCurrent(gen, forMode, state);
         const presented = presentInstagramGetResponse(state);
+        // Verification ends here, by polling: pending is not a connection.
+        if (wasPending && presented.verified?.mode === forMode) {
+          trackSocialLinked('instagram', 'verified', forMode);
+        }
         if (
           options?.alertTerminal &&
           wasPending &&
@@ -429,7 +436,7 @@ export function InstagramOwnershipCard({
   const onOpenInbox = () => {
     const url = challenge?.inboxProfileUrl?.trim();
     if (!url || !url.startsWith('https://')) return;
-    void Linking.openURL(url).catch(() => {
+    void withOwnExternalFlow(() => Linking.openURL(url)).catch(() => {
       Alert.alert(
         t('common.error'),
         t('profile.social.instagramOwnership.errors.generic'),

@@ -3,6 +3,7 @@
  * being edited (Personal XOR Professional). Connect/unlink only that mode.
  * No channel picker. No dual publish toggles.
  */
+import { noteSocialOwnership, trackSocialLinked } from '../../analytics/analytics';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -131,6 +132,7 @@ export function XOwnershipCard({
       setConnected({
         handleLabel: xOwnershipHandleLabel(verified),
       });
+      noteSocialOwnership(forMode, 'x', true);
       setPhase('idle');
       return true;
     },
@@ -144,6 +146,7 @@ export function XOwnershipCard({
       }
       setConnected(null);
       setPhase('idle');
+      noteSocialOwnership(forMode, 'x', false);
       return true;
     },
     [],
@@ -203,6 +206,7 @@ export function XOwnershipCard({
         const resumed = await api.resumeXOwnershipReturn(forMode);
         if (cancelled || forMode !== modeRef.current) return;
         if (resumed.status === 'verified') {
+          trackSocialLinked('x', 'verified', forMode);
           applyVerifiedIfCurrent(
             requestGenRef.current,
             forMode,
@@ -216,6 +220,7 @@ export function XOwnershipCard({
     const watch = api?.watchXOwnershipReturns?.(forMode, (outcome) => {
       if (cancelled || forMode !== modeRef.current) return;
       if (outcome.status === 'verified') {
+        trackSocialLinked('x', 'verified', forMode);
         applyVerifiedIfCurrent(
           requestGenRef.current,
           forMode,
@@ -284,6 +289,7 @@ export function XOwnershipCard({
         await refreshForMode(forMode);
         return;
       }
+      trackSocialLinked('x', 'verified', forMode);
       applyVerifiedIfCurrent(gen, forMode, outcome.verified);
     } catch (err) {
       if (gen !== requestGenRef.current || forMode !== modeRef.current) {

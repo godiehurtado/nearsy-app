@@ -3,6 +3,7 @@
  * being edited (Personal XOR Professional). Connect/unlink only that mode.
  * No dual publish toggles.
  */
+import { noteSocialOwnership, trackSocialLinked } from '../../analytics/analytics';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -145,6 +146,7 @@ export function YoutubeOwnershipCard({
       setConnected({
         channelLabel: youtubeOwnershipChannelLabel(verified),
       });
+      noteSocialOwnership(forMode, 'youtube', true);
       setPhase('idle');
       return true;
     },
@@ -158,6 +160,7 @@ export function YoutubeOwnershipCard({
       }
       setConnected(null);
       setPhase('idle');
+      noteSocialOwnership(forMode, 'youtube', false);
       return true;
     },
     [],
@@ -218,6 +221,7 @@ export function YoutubeOwnershipCard({
         const resumed = await api.resumeYoutubeOwnershipReturn(forMode);
         if (cancelled || forMode !== modeRef.current) return;
         if (resumed.status === 'verified') {
+          trackSocialLinked('youtube', 'verified', forMode);
           applyVerifiedIfCurrent(
             requestGenRef.current,
             forMode,
@@ -239,6 +243,7 @@ export function YoutubeOwnershipCard({
     const watch = api?.watchYoutubeOwnershipReturns?.(forMode, (outcome) => {
       if (cancelled || forMode !== modeRef.current) return;
       if (outcome.status === 'verified') {
+        trackSocialLinked('youtube', 'verified', forMode);
         applyVerifiedIfCurrent(
           requestGenRef.current,
           forMode,
@@ -322,6 +327,7 @@ export function YoutubeOwnershipCard({
         await refreshForMode(forMode);
         return;
       }
+      trackSocialLinked('youtube', 'verified', forMode);
       applyVerifiedIfCurrent(gen, forMode, outcome.verified);
     } catch (err) {
       if (gen !== requestGenRef.current || forMode !== modeRef.current) {
@@ -366,6 +372,7 @@ export function YoutubeOwnershipCard({
           await refreshForMode(forMode);
           return;
         }
+        trackSocialLinked('youtube', 'verified', forMode);
         applyVerifiedIfCurrent(gen, forMode, outcome.verified);
         return;
       }
