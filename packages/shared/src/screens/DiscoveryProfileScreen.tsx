@@ -4,6 +4,9 @@
  * Interests: all public profile.interestIds (catalog-resolved); not viewer ∩ candidate.
  * Shown on the read-only DiscoveryInterests screen, opened from an entry row.
  */
+import { DiscoveryProfileScoreContext } from '../components/profileExploration/discoveryProfileScoreContext';
+import { trackMatchPresented, trackProfileViewed } from '../analytics/analytics';
+import { knownCompatibilityScore } from '../analytics/analyticsCompatibility.ts';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -106,6 +109,8 @@ export default function DiscoveryProfileScreen() {
 
   const translateItem = useInterestItemTranslator();
 
+  const viewedProfileRef = useRef<string | null>(null);
+
   const loadProfile = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent === true;
     const requestKey = uid ?? '';
@@ -142,6 +147,14 @@ export default function DiscoveryProfileScreen() {
         dataRef.current = decision.data;
         setData(decision.data);
         if (silent) setErrorKind('none');
+        // Refocus reloads silently; a screen visit counts once per profile.
+        const viewerUid = firebaseAuth.currentUser?.uid;
+        if (viewerUid && uid && viewedProfileRef.current !== uid) {
+          viewedProfileRef.current = uid;
+          const score = knownCompatibilityScore(decision.data.compatibility);
+          trackProfileViewed(viewerUid, score);
+          trackMatchPresented(viewerUid, uid, score, 'discovery_profile');
+        }
       }
     } catch (err) {
       const decision = decideDiscoveryProfileApply({
@@ -414,7 +427,11 @@ export default function DiscoveryProfileScreen() {
           />
 
           {/* 3. Social Media — omitted when DTO has no public links */}
-          <DiscoverySocialMediaRow links={publicSocialLinks} />
+          <DiscoveryProfileScoreContext.Provider
+            value={knownCompatibilityScore(data.compatibility)}
+          >
+            <DiscoverySocialMediaRow links={publicSocialLinks} />
+          </DiscoveryProfileScoreContext.Provider>
 
           {/* 4. Context — origin/current city/languages (replaces large Alignment card) */}
           <DiscoveryContextCard

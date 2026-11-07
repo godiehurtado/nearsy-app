@@ -1,6 +1,9 @@
 /**
  * NearbySearchScreen — designed discovery list (callable results only).
  */
+import { trackDiscoveryOpened, trackMatchPresented } from '../analytics/analytics';
+import { knownCompatibilityScore } from '../analytics/analyticsCompatibility.ts';
+import { createDiscoveryEntryTracker } from '../analytics/analyticsObservers.ts';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -142,6 +145,23 @@ export default function NearbySearchScreen() {
     return Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
   }, [profile.mode, profile.searchPreferences]);
 
+  const discoveryEntryRef = useRef(createDiscoveryEntryTracker(() => Date.now()));
+  const viewabilityConfigRef = useRef({ itemVisiblePercentThreshold: 50 });
+  const onViewableItemsChangedRef = useRef(
+    ({ viewableItems }: { viewableItems: Array<{ item: DiscoverNearbyResult }> }) => {
+      const viewerUid = firebaseAuth.currentUser?.uid;
+      if (!viewerUid) return;
+      for (const { item } of viewableItems) {
+        trackMatchPresented(
+          viewerUid,
+          item.uid,
+          knownCompatibilityScore(item.compatibility),
+          'nearby_list',
+        );
+      }
+    },
+  );
+
   const loadData = useCallback(
     async (
       showFullScreenLoader: boolean,
@@ -174,6 +194,7 @@ export default function NearbySearchScreen() {
           // Wait for profile snapshot; do not treat unknown visibility as off.
           return;
         }
+        discoveryEntryRef.current.noteAttemptStart();
         if (
           isNearbyViewerVisibilityConfirmedOff({
             profileHydrated,
@@ -268,6 +289,8 @@ export default function NearbySearchScreen() {
 
         // Success replaces the list with the latest discoverNearby set.
         setItems(outcome.results);
+        const opened = discoveryEntryRef.current.noteSuccess(outcome.results.length);
+        if (opened) trackDiscoveryOpened(uid, opened);
         if (outcome.results.length === 0) {
           setErrorKind('empty');
           setErrorMessage(t('nearby.emptyBody'));
@@ -598,6 +621,8 @@ export default function NearbySearchScreen() {
           data={filtered}
           keyExtractor={(item) => item.uid}
           renderItem={renderCard}
+          viewabilityConfig={viewabilityConfigRef.current}
+          onViewableItemsChanged={onViewableItemsChangedRef.current}
           contentContainerStyle={{
             paddingHorizontal: screenPadding.horizontal,
             paddingTop: spacing.md,
