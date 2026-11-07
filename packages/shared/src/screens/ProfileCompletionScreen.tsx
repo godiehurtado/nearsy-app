@@ -36,6 +36,16 @@ import { OnboardingInterestCategoryPanel } from '../components/registration/Onbo
 import { OnboardingAffiliationCategoryPanel } from '../components/registration/OnboardingAffiliationCategoryPanel';
 import { OnboardingSocialMediaStep } from '../components/registration/OnboardingSocialMediaStep';
 import {
+  manualSocialPlatforms,
+  noteLocationPermissionResolved,
+  summarizeAffiliations,
+  summarizeInterests,
+  trackManualSocialLinksSaved,
+  trackOnboardingStepCompleted,
+  trackProfileCompleted,
+  type SelectionSummary,
+} from '../analytics';
+import {
   IDLE_AFFILIATION_SEARCH_UI,
   affiliationSearchUiEqual,
   type AffiliationSearchUiSnapshot,
@@ -145,6 +155,7 @@ import {
   crjIndexForResolvedStep,
   resolveCrjStep,
   type ResolvedCrjStep,
+  isLastAffiliationCategory,
 } from '../onboarding/crjJourney';
 import {
   CRJ_RESUME_STAGE_FIELD,
@@ -343,6 +354,14 @@ function progressPhaseForStep(step: ResolvedStep): CrjProgressPhase | null {
   }
 }
 
+function selectionCounts(summary: SelectionSummary) {
+  return {
+    itemCount: summary.total,
+    catalogCount: summary.catalogCount,
+    customCount: summary.customCount,
+  };
+}
+
 export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const { palette } = useAppTheme();
   const { t } = useTranslation();
@@ -390,6 +409,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     emptyCrjSocialDraftValues,
   );
   const [socialCustom, setSocialCustom] = useState<SocialCustomLink[]>([]);
+  const verifiedSocialCountRef = useRef(0);
+  const manualSocialCountRef = useRef(0);
+  const handleVerifiedSocialCount = useCallback((count: number) => {
+    verifiedSocialCountRef.current = count;
+  }, []);
   const [socialWebsite, setSocialWebsite] = useState('');
   const [socialFieldErrors, setSocialFieldErrors] =
     useState<CrjSocialFieldErrors>({});
@@ -1037,6 +1061,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       ...patch,
       profileSetupCompleted: false,
     });
+    const savedLinks =
+      mode === 'professional'
+        ? patch.socialLinksProfessional
+        : patch.socialLinksPersonal;
+    trackManualSocialLinksSaved(uid, existing, savedLinks);
+    manualSocialCountRef.current = manualSocialPlatforms(savedLinks).length;
     setShellData((prev) => ({
       ...(prev ?? {}),
       mode,
@@ -1213,6 +1243,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         await Location.requestForegroundPermissionsAsync();
         const after = await Location.getForegroundPermissionsAsync();
         granted = !!after.granted || after.status === 'granted';
+        noteLocationPermissionResolved('foreground');
       }
       if (!crjLocationMountedRef.current) return;
 
@@ -1249,6 +1280,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       await Location.requestBackgroundPermissionsAsync();
       const snap = await readBackgroundPermissionSnapshot();
       granted = isBackgroundPermissionEffectivelyGranted(snap);
+      noteLocationPermissionResolved('background');
     } catch {
       threw = true;
     } finally {
@@ -1334,6 +1366,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         ...(firstName.trim() ? { realName: firstName.trim() } : {}),
         ...(lastName.trim() ? { lastName: lastName.trim() } : {}),
       });
+      trackProfileCompleted(uid);
       clearPendingSocialProfilePrefill();
 
       // Best-effort Discovery context projection once CRJ completes.
@@ -1447,11 +1480,23 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       return;
     }
     await persistInterests();
+    trackOnboardingStepCompleted(
+      uid,
+      'interests',
+      selectionCounts(summarizeInterests(selectedInterests)),
+    );
     shiftStep(1);
   }
 
   async function leaveLastAffiliationCategory() {
     await persistAffiliations();
+    if (isLastAffiliationCategory(step)) {
+      trackOnboardingStepCompleted(
+        uid,
+        'affiliations',
+        selectionCounts(summarizeAffiliations(selectedAffiliations)),
+      );
+    }
     shiftStep(1);
   }
 
@@ -1488,6 +1533,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       setSubmitting(true);
       await persistSocialMedia();
       setSocialFieldErrors({});
+      trackOnboardingStepCompleted(uid, 'socials', {
+        itemCount: manualSocialCountRef.current + verifiedSocialCountRef.current,
+        manualCount: manualSocialCountRef.current,
+        verifiedCount: verifiedSocialCountRef.current,
+      });
       shiftStep(1);
     } catch (e: any) {
       Alert.alert(
@@ -1581,15 +1631,18 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       setSubmitting(true);
       if (step.kind === 'type') {
         await persistType();
+        trackOnboardingStepCompleted(uid, 'profile_type');
         shiftStep(1);
       } else if (step.kind === 'identity') {
         await persistName();
         shiftStep(1);
       } else if (step.kind === 'photo') {
         await persistPhoto();
+        trackOnboardingStepCompleted(uid, 'basics');
         shiftStep(1);
       } else if (step.kind === 'details') {
         await persistDetails();
+        trackOnboardingStepCompleted(uid, 'about');
         shiftStep(1);
       } else if (step.kind === 'interestsIntro') {
         shiftStep(1);
@@ -2305,6 +2358,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             <OnboardingSocialMediaStep
               uid={uid}
               mode={mode}
+              onVerifiedCountChange={handleVerifiedSocialCount}
               values={socialDraft}
               website={socialWebsite}
               custom={socialCustom}
