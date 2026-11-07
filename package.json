@@ -13,6 +13,7 @@
     "test:matching-compatibility": "tsx --test --test-concurrency=1 packages/shared/src/visibility/__tests__/discoveryCompatibility.test.ts",
     "test:active-profile-mode": "tsx --test --test-concurrency=1 packages/shared/src/visibility/__tests__/activeProfileModeSync.test.ts",
     "test:ios-encounter-alerts": "tsx --test --test-concurrency=1 packages/shared/src/__tests__/ios209EncounterNotify.test.ts packages/shared/src/__tests__/iosNoContactsAccess.test.ts packages/shared/src/__tests__/alertsScreen.test.ts packages/shared/src/__tests__/moreSettings.test.ts packages/shared/src/__tests__/blockedPeople.test.ts packages/shared/src/visibility/__tests__/activeProfileModeSync.test.ts packages/shared/src/phoneOtp/__tests__/phoneOtp.test.ts",
+    "test:analytics": "tsx --test --test-concurrency=1 packages/shared/src/analytics/__tests__/analyticsCore.test.ts packages/shared/src/analytics/__tests__/analyticsRules.test.ts",
     "test:visibility-and-profile": "pnpm run test:visibility && pnpm run test:profile-exploration",
     "android:start": "pnpm --filter nearsy-android start",
     "android:ios": "pnpm --filter nearsy-android ios",
