@@ -1,6 +1,7 @@
 /**
  * Alerts — discoverNearby only; opens DiscoveryProfile (no peer user docs).
  */
+import { trackAlertOpened } from '../analytics';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -81,6 +82,7 @@ export default function AlertsScreen() {
     (item: AlertItem) => {
       if (!item.uid) return;
       void markAlertOpened(item);
+      trackAlertOpened({ source: 'inbox' });
       navigation.navigate('Home', {
         screen: 'DiscoveryProfile',
         params: { uid: item.uid },

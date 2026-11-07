@@ -28,7 +28,9 @@ import { AppUpdateNoticeHost } from './appUpdateNotice/AppUpdateNoticeHost';
 import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 
 import * as Notifications from 'expo-notifications';
-import { parseEncounterNotifyPayload } from './alerts/encounterNotifyPayload';
+import { createPushOpenCoordinator } from './alerts/pushOpenCoordinator';
+import { trackAlertOpened } from './analytics';
+import { startAnalyticsRuntime } from './analytics/runtime';
 import {
   createReevaluatePendingPort,
   resumePendingReevaluateProximityNotices,
@@ -72,6 +74,25 @@ async function ensureAndroidChannel() {
 }
 
 export { navigationRef } from './navigation/rootNavigationRef';
+
+const pushOpenCoordinator = createPushOpenCoordinator({
+  // Profiles live in MainTabs; login and onboarding stacks cannot show them.
+  canNavigate: () =>
+    navigationRef.isReady() &&
+    !!navigationRef
+      .getRootState()
+      ?.routes.some((route) => route.name === 'MainTabs'),
+  navigateToProfile: (uid) => {
+    (navigationRef as any).navigate('Home', {
+      screen: 'DiscoveryProfile',
+      params: { uid },
+    });
+  },
+  onAlertOpened: ({ alertId, motive }) => {
+    trackAlertOpened({ source: 'push', alertId, motive });
+  },
+  now: () => Date.now(),
+});
 
 function LinkedInA3ResumeBridge() {
   const { t } = useTranslation();
@@ -155,6 +176,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
   const { theme, palette, hydrating, hasChosenTheme } = useAppTheme();
 
   useEffect(() => {
+    startAnalyticsRuntime();
     startAffiliationEntitySearchBootstrap();
   }, []);
 
@@ -187,6 +209,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
         }
 
         if (!user) {
+          if (previousUid) pushOpenCoordinator.clearPending();
           // Logout: More / Delete Account already released under A.
           // Generation bump discards in-flight registers; do not write.
           await syncPushTokenForAuthUser(previousUid, null);
@@ -284,23 +307,13 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
 
     const responseSub = Notifications.addNotificationResponseReceivedListener(
       (response) => {
-        const data = response.notification.request.content.data as Record<
-          string,
-          unknown
-        >;
-        const parsed = parseEncounterNotifyPayload(data);
-        const actorUid =
-          parsed?.actorUid ??
-          (typeof data?.actorUid === 'string' ? data.actorUid : undefined);
-
-        if (actorUid && navigationRef.isReady()) {
-          (navigationRef as any).navigate('Home', {
-            screen: 'DiscoveryProfile',
-            params: { uid: actorUid },
-          });
-        }
+        pushOpenCoordinator.handleResponse(response);
       },
     );
+    // A tap that launched the app; the coordinator ignores a repeat of it.
+    void Notifications.getLastNotificationResponseAsync()
+      .then((response) => pushOpenCoordinator.handleResponse(response))
+      .catch(() => {});
 
     return () => {
       receivedSub.remove();
@@ -332,7 +345,12 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
           !hasChosenTheme ? 'dark' : theme === 'dark' ? 'light' : 'dark'
         }
       />
-      <NavigationContainer ref={navigationRef} theme={navTheme}>
+      <NavigationContainer
+        ref={navigationRef}
+        theme={navTheme}
+        onReady={pushOpenCoordinator.flush}
+        onStateChange={pushOpenCoordinator.flush}
+      >
         <LinkedInA3ResumeBridge />
         <AppUpdateNoticeHost />
         <AppNavigator />

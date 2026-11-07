@@ -36,7 +36,7 @@ describe('iOS 2.0.9 phone notifications — current evidence (no new infra)', ()
     assert.match(app, /syncPushTokenForAuthUser/);
     assert.match(app, /setNotificationHandler/);
     assert.match(app, /addNotificationResponseReceivedListener/);
-    assert.match(app, /actorUid/);
+    assert.match(readShared('alerts/pushOpenCoordinator.ts'), /actorUid/);
   });
 
   it('does not schedule local notifications and does not confuse Alerts with OS push', () => {

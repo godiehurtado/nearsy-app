@@ -372,7 +372,11 @@ describe('iOS wiring', () => {
     const more = readSrc('screens/MoreScreen.tsx');
     assert.match(alerts, /markAlertOpened/);
     assert.match(tabs, /unseenCount/);
-    assert.match(app, /parseEncounterNotifyPayload/);
+    assert.match(app, /createPushOpenCoordinator/);
+    assert.match(
+      readSrc('alerts/pushOpenCoordinator.ts'),
+      /parseEncounterNotifyPayload/,
+    );
     assert.match(app, /resumePendingReevaluateProximityNotices/);
     assert.match(more, /enableAndSyncContacts/);
     assert.match(more, /notifyNearbyContacts/);
