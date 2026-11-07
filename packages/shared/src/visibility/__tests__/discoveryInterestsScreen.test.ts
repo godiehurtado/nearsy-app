@@ -164,7 +164,7 @@ describe('Discovery profile regression', () => {
     assert.match(profileSrc, /navigation\.navigate\('ProfileGallery'/);
     assert.match(profileSrc, /showOccupation \|\| showCompany \|\| showBio \? \(/);
     assert.match(profileSrc, /<ProfileContextCard/);
-    assert.match(profileSrc, /<DiscoverySocialMediaRow links=\{publicSocialLinks\} \/>/);
+    assert.match(profileSrc, /<DiscoverySocialMediaRow\s+links=\{publicSocialLinks\}/);
     assert.match(profileSrc, /buildGetDiscoveryProfileRequest\(uid\)/);
   });
 
