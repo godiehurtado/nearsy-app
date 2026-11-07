@@ -26,7 +26,6 @@ import {
   INTERCEPT_TOKEN,
   resolveAnalyticsConfig,
   resolveAppOpenedMinBackgroundMs,
-  resolveSmokeDistinctId,
   type AnalyticsConfig,
   type AnalyticsExtras,
 } from './analyticsConfig';
@@ -34,7 +33,6 @@ import {
   describeForInspection,
   sanitizeOutgoingEvent,
   scoreProperties,
-  toKnownScore,
   TRACKING_PLAN_VERSION,
   type AnalyticsProperties,
 } from './analyticsContract';
@@ -50,8 +48,14 @@ import {
 import {
   buildBasePersonProperties,
   buildPersonProperties,
+  createPersonModeMemory,
+  personKeysToUnset,
 } from './analyticsPersonProperties';
-import { createSdkTransport, type InterceptedRequest } from './analyticsSdkTransport';
+import {
+  createSdkTransport,
+  type InterceptedRequest,
+  type TransportIssue,
+} from './analyticsSdkTransport';
 import {
   createPendingVerificationMarkers,
   createVerifiedSocialTracker,
@@ -135,9 +139,14 @@ function createInspectTransport(): AnalyticsTransport {
 function logInterceptedRequest(request: InterceptedRequest): void {
   const events = request.events.map(
     (item) =>
-      `${item.event} props=[${item.propertyKeys.join(',')}] person=[${item.personKeys.join(',')}]`,
+      `${item.event} props=[${item.propertyKeys.join(',')}] person=[${item.personKeys.join(',')}] unset=[${(item.unsetKeys ?? []).join(',')}]`,
   );
   console.log(`[analytics:sdk_intercept] ${request.path}`, events);
+}
+
+/** Keeps ingestion failures visible; the kind and status hold no personal data. */
+function logTransportIssue(issue: TransportIssue): void {
+  console.warn('[analytics:transport]', issue);
 }
 
 async function createTransport(config: AnalyticsConfig): Promise<AnalyticsTransport> {
@@ -159,8 +168,16 @@ async function createTransport(config: AnalyticsConfig): Promise<AnalyticsTransp
     PostHog,
     token: config.token,
     host: config.host,
-    // A smoke run leaves nothing behind: no queue or identity on the device.
-    persistence: config.mode === 'smoke' ? 'memory' : 'file',
+    persistence: 'file',
+    onTransportIssue: logTransportIssue,
+    ...(config.mode === 'beta'
+      ? {
+          installClassification: {
+            is_test_user: true,
+            distribution_channel: config.distributionChannel,
+          },
+        }
+      : {}),
   });
 }
 
@@ -172,6 +189,12 @@ const verifiedSocials = createVerifiedSocialTracker();
 const onboardingMilestones = createOnboardingMilestoneTracker();
 const linkedThisProcess = new Set<string>();
 let verifiedOwnerUid: string | null = null;
+
+function personModeMemory() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const storage = require('@react-native-async-storage/async-storage').default;
+  return createPersonModeMemory(storage);
+}
 
 function pendingVerificationMarkers() {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -200,7 +223,11 @@ function getSession(): Session | null {
       isDev: typeof __DEV__ !== 'undefined' ? __DEV__ : false,
       runtimeFirebaseProjectId: readFirebaseProjectId(),
     });
-    if (config.mode === 'off') return null;
+    if (config.mode === 'off') {
+      // A build that asked for sending should say why it does not.
+      if (config.reason !== 'not_enabled') console.warn('[analytics] off:', config.reason);
+      return null;
+    }
 
     const { appVersion, appBuild } = readAppVersions();
     const superProperties: AnalyticsProperties = {
@@ -229,15 +256,17 @@ function getSession(): Session | null {
           verifiedSocialsFor: (mode) =>
             verifiedOwnerUid === user.uid ? verifiedSocials.verifiedFor(mode) : undefined,
         }),
+      profileKeysToUnset: async (user, doc, properties) =>
+        personKeysToUnset({
+          doc,
+          properties,
+          previousMode: await personModeMemory().read(user.uid),
+        }),
+      onProfileSynced: (user, doc) =>
+        personModeMemory().write(user.uid, (doc as { mode?: unknown } | null)?.mode),
       superProperties,
       now: () => Date.now(),
-      ...(config.mode === 'smoke'
-        ? {
-            requirePerson: true,
-            distinctIdFor: (user: { uid: string; email?: string | null }) =>
-              resolveSmokeDistinctId(user, config.syntheticEmailSuffix),
-          }
-        : {}),
+      ...(config.mode === 'beta' ? { accountClassification: { is_test_user: true } } : {}),
     });
   } catch {
     session = null;

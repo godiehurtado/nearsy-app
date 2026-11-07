@@ -18,10 +18,9 @@ import { knownCompatibilityScore } from '../analyticsCompatibility.ts';
 import {
   resolveAnalyticsConfig,
   resolveAppOpenedMinBackgroundMs,
-  resolveSmokeDistinctId,
-  SMOKE_DISTINCT_ID_PREFIX,
 } from '../analyticsConfig.ts';
 import {
+  ANALYTICS_EVENT_CONTRACT,
   ANALYTICS_EVENTS,
   describeForInspection,
   isAllowedOutgoingEvent,
@@ -48,7 +47,7 @@ import {
   splitAffiliations,
   splitInterests,
 } from '../analyticsProfileLists.ts';
-import { describeInterceptedRequest, isOutboundEventPath } from '../analyticsSdkTransport.ts';
+import { describeInterceptedRequest } from '../analyticsSdkTransport.ts';
 import {
   createPendingVerificationMarkers,
   createVerifiedSocialTracker,
@@ -84,12 +83,6 @@ const DEV_CLIENT = {
   nearsyFirebaseProjectId: 'nearsy-dev',
   nearsyDevClient: true,
 };
-const SMOKE = {
-  enabled: true,
-  token: 'phc_abcdefghijklmnopqrstuvwxyz',
-  syntheticEmailSuffix: '@nearsy-smoke.test',
-};
-
 describe('test modes', () => {
   it('nothing is enabled when the build sets no variable', () => {
     const { resolveAnalyticsExtras, resolveAppLinkIntentFilters } = require(
@@ -119,71 +112,25 @@ describe('test modes', () => {
     assert.equal(resolveAnalyticsConfig({ extras, isDev: false }).mode, 'off');
   });
 
-  it('interception wins over smoke: when both are set nothing leaves', () => {
-    const extras = {
-      ...DEV_CLIENT,
-      nearsyAnalytics: { sdkIntercept: true, smoke: SMOKE },
-    };
-    assert.equal(
-      resolveAnalyticsConfig({ extras, isDev: true, runtimeFirebaseProjectId: 'nearsy-dev' }).mode,
-      'sdk_intercept',
-    );
-  });
-
-  it('smoke is off by default and needs nearsy-dev at runtime', () => {
-    const extras = { ...DEV_CLIENT, nearsyAnalytics: { smoke: SMOKE } };
-    const resolve = (over: object, project: unknown = 'nearsy-dev', isDev = true) =>
-      resolveAnalyticsConfig({
-        extras: { ...extras, ...over },
-        isDev,
-        runtimeFirebaseProjectId: project,
-      }).mode;
-    assert.equal(resolve({}), 'smoke');
-    assert.equal(resolve({ nearsyAnalytics: {} }), 'inspect');
-    assert.equal(resolve({}, 'nearsy-pj'), 'inspect');
-    assert.equal(resolve({}, null), 'inspect');
-    assert.equal(resolve({ nearsyFirebaseProjectId: 'nearsy-pj' }), 'inspect');
-    assert.equal(resolve({}, 'nearsy-dev', false), 'off');
-  });
-
-  it('smoke rejects a suffix that could match real mail', () => {
-    for (const syntheticEmailSuffix of ['@gmail.com', '+qa@gmail.com', '', 'test', '@corp.com']) {
-      const extras = {
-        ...DEV_CLIENT,
-        nearsyAnalytics: { smoke: { ...SMOKE, syntheticEmailSuffix } },
-      };
-      assert.equal(
-        resolveAnalyticsConfig({ extras, isDev: true, runtimeFirebaseProjectId: 'nearsy-dev' }).mode,
-        'inspect',
-      );
-    }
-  });
-
-  it('smoke identity is separate and only for synthetic accounts', () => {
-    assert.equal(
-      resolveSmokeDistinctId({ uid: 'u1', email: 'qa1@nearsy-smoke.test' }, '@nearsy-smoke.test'),
-      `${SMOKE_DISTINCT_ID_PREFIX}u1`,
-    );
-    assert.equal(
-      resolveSmokeDistinctId({ uid: 'u1', email: 'person@gmail.com' }, '@nearsy-smoke.test'),
-      null,
-    );
-    assert.equal(resolveSmokeDistinctId({ uid: 'u1' }, '@nearsy-smoke.test'), null);
-  });
-
   it('a token enters the config only when its mode can resolve', () => {
     const { resolveAnalyticsExtras } = require(
       '../../../../../apps/nearsy-android/plugins/analyticsBuildConfig.js',
     );
     const tokens = {
       NEARSY_POSTHOG_TOKEN: 'phc_should_not_appear',
-      NEARSY_ANALYTICS_SMOKE_TOKEN: 'phc_should_not_appear',
     };
     for (const env of [
       tokens,
       { ...tokens, NEARSY_ANALYTICS_ENABLED: 'true', NEARSY_ANALYTICS_ENV: 'preview' },
-      { ...tokens, NEARSY_ANALYTICS_SMOKE_ENABLED: 'true' },
-      { ...tokens, NEARSY_ANALYTICS_SMOKE_ENABLED: 'true', NEARSY_DEV_CLIENT: 'true' },
+      { ...tokens, NEARSY_ANALYTICS_BETA_ENABLED: 'true' },
+      { ...tokens, NEARSY_ANALYTICS_BETA_ENABLED: 'true', NEARSY_ANALYTICS_ENV: 'production' },
+      {
+        ...tokens,
+        NEARSY_ANALYTICS_BETA_ENABLED: 'true',
+        NEARSY_ANALYTICS_ENABLED: 'true',
+        NEARSY_ANALYTICS_ENV: 'production',
+        NEARSY_ANALYTICS_DISTRIBUTION_CHANNEL: 'beta',
+      },
     ]) {
       assert.ok(!JSON.stringify(resolveAnalyticsExtras(env)).includes('phc_'));
     }
@@ -209,62 +156,6 @@ describe('test modes', () => {
     assert.deepEqual(filter.data, [
       { scheme: 'https', host: 'links.example.test', pathPrefix: '/c' },
     ]);
-  });
-});
-
-describe('smoke identity in the session', () => {
-  function makeSession(user: { uid: string; email?: string } | null) {
-    const calls: string[] = [];
-    const auth = { user };
-    const transport: AnalyticsTransport = {
-      getIdentifiedDistinctId: () => null,
-      getSessionId: () => 's1',
-      identify: (id) => void calls.push(`identify:${id}`),
-      setPersonProperties: () => void calls.push('set'),
-      reset: () => void calls.push('reset'),
-      register: () => {},
-      capture: (event) => void calls.push(`capture:${event}`),
-    };
-    const session = createAnalyticsSession({
-      loadTransport: async () => transport,
-      getAuthUser: () => auth.user,
-      readCreationTime: () => undefined,
-      buildBaseProperties: () => ({}),
-      buildProfileProperties: () => ({}),
-      superProperties: {},
-      now: () => 0,
-      requirePerson: true,
-      distinctIdFor: (next) => resolveSmokeDistinctId(next, '@nearsy-smoke.test'),
-    });
-    return { auth, calls, session };
-  }
-
-  it('a synthetic account is sent under the separate id', async () => {
-    const { calls, session } = makeSession({ uid: 'u1', email: 'a@nearsy-smoke.test' });
-    session.trackAppOpened();
-    session.trackSignupCompleted('u1');
-    await session.settled();
-    assert.deepEqual(calls, [
-      `identify:${SMOKE_DISTINCT_ID_PREFIX}u1`,
-      'capture:app_opened',
-      'capture:signup_completed',
-    ]);
-  });
-
-  it('a real account sends nothing at all', async () => {
-    const { calls, session } = makeSession({ uid: 'u1', email: 'person@gmail.com' });
-    session.trackAppOpened();
-    session.trackSignupCompleted('u1');
-    session.syncPersonProfile('u1', {});
-    await session.settled();
-    assert.deepEqual(calls, []);
-  });
-
-  it('nothing is sent while signed out', async () => {
-    const { calls, session } = makeSession(null);
-    session.trackAppOpened();
-    await session.settled();
-    assert.deepEqual(calls, []);
   });
 });
 
@@ -298,7 +189,10 @@ describe('outgoing filter', () => {
 
   it('no event carries the other person', () => {
     const contract = src('analytics/analyticsContract.ts');
-    assert.ok(!/peer_uid|actor_uid|other_uid|target_uid|match_id/.test(contract));
+    assert.ok(!/peer_uid|actor_uid|other_uid|target_uid/.test(contract));
+    for (const properties of Object.values(ANALYTICS_EVENT_CONTRACT)) {
+      assert.ok(!(properties as readonly string[]).includes('match_id'));
+    }
   });
 
   it('the inspection view hides free text', () => {
@@ -314,12 +208,6 @@ describe('outgoing filter', () => {
     assert.equal(view.interests_custom, '<1 items>');
     assert.equal(view.country_birth, '<redacted>');
     assert.equal(view.score, 80);
-  });
-
-  it('only event batches may leave', () => {
-    assert.equal(isOutboundEventPath('https://us.i.posthog.com/batch/'), true);
-    assert.equal(isOutboundEventPath('https://us-assets.i.posthog.com/array/t/config'), false);
-    assert.equal(isOutboundEventPath('https://us.i.posthog.com/flags/?v=2'), false);
   });
 
   it('the interception record holds names, never values', () => {

@@ -34,21 +34,18 @@ function resolveAppLinks(env) {
     : null;
 }
 
-function isDevelopmentClient(env) {
-  const firebase = text(env, 'NEARSY_FIREBASE_ENV').toLowerCase();
-  return (
-    flag(env, 'NEARSY_DEV_CLIENT') &&
-    (firebase === 'development' || firebase === 'dev')
-  );
-}
-
 function resolveAnalyticsExtras(env) {
   // A mode that would resolve to off must not carry its token into the build.
-  const smokeEnabled =
-    flag(env, 'NEARSY_ANALYTICS_SMOKE_ENABLED') && isDevelopmentClient(env);
-  const remoteEnabled =
-    flag(env, 'NEARSY_ANALYTICS_ENABLED') &&
-    text(env, 'NEARSY_ANALYTICS_ENV') === 'production';
+  const environment = text(env, 'NEARSY_ANALYTICS_ENV');
+  const generalRequested = flag(env, 'NEARSY_ANALYTICS_ENABLED');
+  const betaRequested = flag(env, 'NEARSY_ANALYTICS_BETA_ENABLED');
+  const ambiguous = generalRequested && betaRequested;
+  const remoteEnabled = generalRequested && environment === 'production' && !ambiguous;
+  const betaEnabled =
+    betaRequested &&
+    environment === 'production' &&
+    text(env, 'NEARSY_ANALYTICS_DISTRIBUTION_CHANNEL') === 'beta' &&
+    !ambiguous;
   const appOpenedMinBackgroundSec = optionalNumber(
     env,
     'NEARSY_ANALYTICS_APP_OPENED_MIN_BG_SEC',
@@ -62,20 +59,21 @@ function resolveAnalyticsExtras(env) {
     enabled: remoteEnabled,
     ...(remoteEnabled
       ? {
-          environment: text(env, 'NEARSY_ANALYTICS_ENV'),
+          environment,
           token: text(env, 'NEARSY_POSTHOG_TOKEN'),
         }
       : {}),
-    ...(flag(env, 'NEARSY_ANALYTICS_SDK_INTERCEPT') ? { sdkIntercept: true } : {}),
-    ...(smokeEnabled
+    ...(betaEnabled
       ? {
-          smoke: {
+          beta: {
             enabled: true,
-            token: text(env, 'NEARSY_ANALYTICS_SMOKE_TOKEN'),
-            syntheticEmailSuffix: text(env, 'NEARSY_ANALYTICS_SMOKE_EMAIL_SUFFIX'),
+            environment,
+            distributionChannel: 'beta',
+            token: text(env, 'NEARSY_POSTHOG_TOKEN'),
           },
         }
       : {}),
+    ...(flag(env, 'NEARSY_ANALYTICS_SDK_INTERCEPT') ? { sdkIntercept: true } : {}),
     ...(appOpenedMinBackgroundSec !== undefined
       ? { appOpenedMinBackgroundSec }
       : {}),

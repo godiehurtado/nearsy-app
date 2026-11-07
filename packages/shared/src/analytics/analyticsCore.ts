@@ -51,21 +51,26 @@ export function createAnalyticsSession(deps: {
     user: AnalyticsAuthUser,
     doc: unknown,
   ) => AnalyticsProperties | null;
+  /** Stored values that `properties` shows can no longer be right. */
+  profileKeysToUnset?: (
+    user: AnalyticsAuthUser,
+    doc: unknown,
+    properties: AnalyticsProperties,
+  ) => string[] | Promise<string[]>;
+  /** The update of this document was handed to the SDK. */
+  onProfileSynced?: (user: AnalyticsAuthUser, doc: unknown) => void | Promise<void>;
   superProperties: AnalyticsProperties;
   now: () => number;
   /**
-   * Person id for an account; the Firebase UID by default. Null means this
-   * account gets no person, and nothing is sent while it is signed in.
+   * Set_once on each account this build signs in, once per process. It covers an
+   * identity restored from an earlier run, which never goes through identify.
    */
-  distinctIdFor?: (user: AnalyticsAuthUser) => string | null;
-  /** Drops events while there is no allowed signed-in account (smoke mode). */
-  requirePerson?: boolean;
+  accountClassification?: AnalyticsProperties;
 }) {
-  const distinctIdFor =
-    deps.distinctIdFor ?? ((user: AnalyticsAuthUser) => user.uid);
   let transportPromise: Promise<AnalyticsTransport | null> | null = null;
   let chain: Promise<void> = Promise.resolve();
   let identifiedId: string | null = null;
+  let classifiedId: string | null = null;
   let lastPersonFingerprint: string | null = null;
   const lastDirectPersonValues = new Map<string, string>();
   const emittedOnce = new Set<string>();
@@ -104,35 +109,35 @@ export function createAnalyticsSession(deps: {
   async function resetIdentity(transport: AnalyticsTransport) {
     await transport.reset();
     identifiedId = null;
+    classifiedId = null;
     lastPersonFingerprint = null;
     lastDirectPersonValues.clear();
     // reset() clears registered properties.
     await transport.register(deps.superProperties);
   }
 
-  /** False when this account may not have a person; nothing must be sent then. */
   async function ensureIdentity(
     transport: AnalyticsTransport,
     user: AnalyticsAuthUser,
-  ): Promise<boolean> {
-    const distinctId = distinctIdFor(user);
-    if (distinctId === null) {
+  ): Promise<void> {
+    if (identifiedId !== user.uid) {
       if (identifiedId !== null) await resetIdentity(transport);
-      return false;
+      await transport.identify(user.uid, deps.buildBaseProperties(user));
+      identifiedId = user.uid;
     }
-    if (identifiedId === distinctId) return true;
-    if (identifiedId !== null) await resetIdentity(transport);
-    await transport.identify(distinctId, deps.buildBaseProperties(user));
-    identifiedId = distinctId;
-    return true;
+    if (deps.accountClassification && classifiedId !== user.uid) {
+      await transport.setPersonProperties({}, deps.accountClassification);
+      classifiedId = user.uid;
+    }
   }
 
-  /** False when events must not be sent for the current auth state. */
-  async function alignWithAuth(transport: AnalyticsTransport): Promise<boolean> {
+  async function alignWithAuth(transport: AnalyticsTransport): Promise<void> {
     const user = deps.getAuthUser();
-    if (user) return ensureIdentity(transport, user);
-    if (identifiedId !== null) await resetIdentity(transport);
-    return !deps.requirePerson;
+    if (user) {
+      await ensureIdentity(transport, user);
+    } else if (identifiedId !== null) {
+      await resetIdentity(transport);
+    }
   }
 
   /** The user the operation was requested for, if still the signed-in one. */
@@ -178,7 +183,8 @@ export function createAnalyticsSession(deps: {
     ): void {
       enqueue(async (transport) => {
         const user = currentUserMatching(uid);
-        if (!user || !(await ensureIdentity(transport, user))) return;
+        if (!user) return;
+        await ensureIdentity(transport, user);
         const built = build({ sessionId: readSessionId(transport) });
         if (built) await send(transport, uid, built);
       });
@@ -189,7 +195,7 @@ export function createAnalyticsSession(deps: {
       build: (context: AnalyticsEventContext) => BuiltAnalyticsEvent | null,
     ): void {
       enqueue(async (transport) => {
-        if (!(await alignWithAuth(transport))) return;
+        await alignWithAuth(transport);
         const built = build({ sessionId: readSessionId(transport) });
         if (built) await send(transport, deps.getAuthUser()?.uid ?? '', built);
       });
@@ -197,7 +203,7 @@ export function createAnalyticsSession(deps: {
 
     trackAppOpened(): void {
       enqueue(async (transport) => {
-        if (!(await alignWithAuth(transport))) return;
+        await alignWithAuth(transport);
         const sessionId = readSessionId(transport);
         await transport.capture(
           'app_opened',
@@ -210,7 +216,8 @@ export function createAnalyticsSession(deps: {
     trackSignupCompleted(uid: string): void {
       enqueue(async (transport) => {
         const user = currentUserMatching(uid);
-        if (!user || !(await ensureIdentity(transport, user))) return;
+        if (!user) return;
+        await ensureIdentity(transport, user);
         await send(transport, uid, {
           event: 'signup_completed',
           onceKey: 'signup_completed',
@@ -223,7 +230,8 @@ export function createAnalyticsSession(deps: {
       const completedAtMs = deps.now();
       enqueue(async (transport) => {
         const user = currentUserMatching(uid);
-        if (!user || !(await ensureIdentity(transport, user))) return;
+        if (!user) return;
+        await ensureIdentity(transport, user);
         let creationTime: unknown;
         try {
           creationTime = deps.readCreationTime();
@@ -242,15 +250,20 @@ export function createAnalyticsSession(deps: {
     syncPersonProfile(uid: string, doc: unknown): void {
       enqueue(async (transport) => {
         const user = currentUserMatching(uid);
-        if (!user || !(await ensureIdentity(transport, user))) return;
+        if (!user) return;
+        await ensureIdentity(transport, user);
         const properties = deps.buildProfileProperties(user, doc);
         if (!properties) return;
-        const fingerprint = JSON.stringify(
+        const unset = (await deps.profileKeysToUnset?.(user, doc, properties)) ?? [];
+        const fingerprint = JSON.stringify([
           Object.entries(properties).sort(([a], [b]) => a.localeCompare(b)),
-        );
+          unset,
+        ]);
         if (fingerprint === lastPersonFingerprint) return;
         await transport.setPersonProperties(properties);
+        if (unset.length > 0) await transport.unsetPersonProperties(unset);
         lastPersonFingerprint = fingerprint;
+        await deps.onProfileSynced?.(user, doc);
       });
     },
 
@@ -265,7 +278,8 @@ export function createAnalyticsSession(deps: {
     ): void {
       enqueue(async (transport) => {
         const user = currentUserMatching(uid);
-        if (!user || !(await ensureIdentity(transport, user))) return;
+        if (!user) return;
+        await ensureIdentity(transport, user);
         const changed: AnalyticsProperties = {};
         const serialized: Array<[string, string]> = [];
         for (const [key, value] of Object.entries(properties)) {

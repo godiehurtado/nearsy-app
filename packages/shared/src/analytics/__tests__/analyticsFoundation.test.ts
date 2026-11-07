@@ -245,7 +245,7 @@ describe('remote activation', () => {
   it('the disabled path never loads the SDK', () => {
     const binding = read('analytics/analytics.android.ts');
     assert.doesNotMatch(binding, /^import .*posthog-react-native/m);
-    assert.match(binding, /if \(config\.mode === 'off'\) return null;/);
+    assert.match(binding, /if \(config\.mode === 'off'\) \{[^}]*return null;/);
     const base = read('analytics/analytics.ts');
     assert.doesNotMatch(base, /posthog|firebase|react-native/);
   });
