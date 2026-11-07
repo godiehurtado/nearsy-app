@@ -1,24 +1,41 @@
 # Nearsy iOS: PostHog analytics
 
-Project Nearsy, ID 716015, US Cloud, host `https://us.i.posthog.com`. Plan version `2026-11-06.2`.
+Project Nearsy, ID 716015, US Cloud, host `https://us.i.posthog.com`. Plan version `2026-11-07.1`.
 
-**Remote delivery is off, in production too.** Nothing in this repository turns it on. No event has been received in PostHog and no physical test has been run for this work.
+**Remote delivery is off, in production too.** Only the `beta` build profile declares capture, and it still needs a token that is not in the repository. No build has been made with it. No event has been received in PostHog and no physical test has been run for this work.
 
 ## Activation
 
-Set these at bundle time. Do not commit a token: use `apps/nearsy-ios/.env.local` locally and EAS for builds.
+Analytics captures only when a build declares all of these at bundle time. The token never goes in Git: use an EAS environment variable for builds, and `apps/nearsy-ios/.env.local` only for local work.
 
 | Variable | Value | Effect |
 |---|---|---|
 | `EXPO_PUBLIC_POSTHOG_ENABLED` | `true` | Required. Any other value keeps analytics off |
-| `EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL` | `beta` | Required. It is the only accepted channel, so general capture stays off |
+| `EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL` | `beta` or `production` | Required. Without a valid channel nothing is sent |
 | `EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN` | `phc_...` | Required. Missing or malformed keeps analytics off without failing |
-| `EXPO_PUBLIC_NEARSY_FIREBASE_ENV` | `production` | Beta refuses `development`. Empty reads as production, as in `app.config.js` |
+| `EXPO_PUBLIC_NEARSY_FIREBASE_ENV` | `production` | Both channels refuse `development`. Empty reads as production, as in `app.config.js` |
 | `EXPO_PUBLIC_POSTHOG_ALLOW_DEVELOPMENT` | `true` | Only for a Metro or Dev Client bundle. Its events carry `environment=development` |
 | `EXPO_PUBLIC_ATTRIBUTION_LINK_HOSTS` | `go.example.com` | Optional. Hosts accepted as campaign links |
 | `NEARSY_ATTRIBUTION_ASSOCIATED_DOMAINS` | `go.example.com` | Optional, build time. Adds the `applinks:` entitlement |
 
 No Personal API Key is needed.
+
+### Channels
+
+| Channel | Build | Events | Person |
+|---|---|---|---|
+| `beta` | EAS profile `beta`, for TestFlight | `distribution_channel=beta`, `is_test_user=true` | `is_test_user=true`, permanent |
+| `production` | Not enabled today | `distribution_channel=production`, no `is_test_user` | Never writes `is_test_user`, so an earlier Beta mark stays |
+| none | Every other build, including the current `production` profile | Nothing is sent | Nothing |
+
+**Enabling general capture after QA needs no code change**, only configuration and a new build. Add these to the `production` profile's `env` in `eas.json`, then build:
+
+```json
+"EXPO_PUBLIC_POSTHOG_ENABLED": "true",
+"EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL": "production"
+```
+
+The source guard in `analyticsCore.test.ts` already accepts that. It rejects a token in `eas.json`, a channel that does not match its profile, and these switches in any other profile.
 
 ### TestFlight Beta
 
@@ -26,26 +43,46 @@ Beta is TestFlight on **production Firebase** and PostHog project 716015. It rep
 
 - **UID:** the real Firebase UID, with no prefix.
 - **Event values:** `environment=production`, `distribution_channel=beta`, `is_test_user=true`.
-- **Declared, not detected:** the app does not try to detect TestFlight. The channel comes only from configuration.
+- **Declared, not detected:** the app does not try to detect TestFlight. The channel comes only from the build profile.
 
-**Configuration to add when activating (not in the repository today):**
+The `beta` profile is in `apps/nearsy-ios/eas.json`. It extends `production`, so it uses the same EAS environment (`production`), Firebase production and signing. The `production` profile is unchanged.
 
-1. Add a build profile that only Beta uses, so an App Store build cannot inherit the switches:
-   ```json
-   "beta": {
-     "extends": "production",
-     "env": {
-       "EXPO_PUBLIC_NEARSY_FIREBASE_ENV": "production",
-       "EXPO_PUBLIC_POSTHOG_ENABLED": "true",
-       "EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL": "beta"
-     }
-   }
+```json
+"beta": {
+  "extends": "production",
+  "env": {
+    "EXPO_PUBLIC_NEARSY_FIREBASE_ENV": "production",
+    "EXPO_PUBLIC_POSTHOG_ENABLED": "true",
+    "EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL": "beta"
+  }
+}
+```
+
+**Before the first Beta build:**
+
+1. **Token.** Create it once in the EAS `production` environment, which the `beta` profile inherits. The `production` profile also receives it, and stays off because it declares no channel.
+   ```bash
+   eas env:create --environment production --name EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN --value <phc_token> --visibility sensitive
    ```
-2. Create `EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN` as an EAS environment variable. Without the two switches above it does nothing.
-3. Update the source guard in `analyticsCore.test.ts` that forbids `EXPO_PUBLIC_POSTHOG` in `eas.json`. That change should be deliberate.
-4. Use a build number above the published binary, 2.0.10 (72).
+   An `EXPO_PUBLIC_` value is compiled into the app, so it is not a secret from the binary. Visibility only keeps it out of logs and the dashboard.
+2. **Build number.** `appVersionSource` is `local`, and `app.json` still says `buildNumber: "70"` for version `2.0.10`. App Store Connect already has at least 2.0.10 (72). Before building:
+   - In App Store Connect, open TestFlight for the app and find the highest build number uploaded, across every version and state (processing, expired, rejected included).
+   - Set `ios.buildNumber` in `apps/nearsy-ios/app.json` to that number plus one. Change `version` only if a new marketing version is wanted.
+   - This delivery does not change either value.
 
-**Do not promote a Beta binary to the App Store.** The channel is compiled into the bundle, so every store user would be reported as `is_test_user=true`. Build again for the store.
+**Commands, when authorized (not run):**
+
+```bash
+cd apps/nearsy-ios
+eas build --platform ios --profile beta
+eas submit --platform ios --profile production --id <BUILD_ID_FROM_THE_BETA_BUILD>
+```
+
+Use `--id` with the Beta build's ID rather than `--latest`, so a different build cannot be submitted by mistake. The only submit profile is `production`, which uploads to App Store Connect. The build then appears in TestFlight.
+
+**Do not promote a Beta binary to the App Store.** The channel is compiled into the bundle, so every store user would be reported as `is_test_user=true`. Build the store version from the `production` profile.
+
+**Local bundles and the Metro cache:** Metro can reuse a cached transform that already holds other `EXPO_PUBLIC_` values. When switching configuration locally, start Metro or `expo export` with `--clear`. EAS builds start from a clean cache.
 
 ### Beta install versus test account
 
@@ -63,7 +100,7 @@ The person flag does not mean the account was created for testing. The app has n
 | Beta, before login | Flag on every event, anonymous id | No person is created until login |
 | Beta, sign in as A | Flag on every event, distinct id A | A marked |
 | Beta, A→B | Each event under its own account, all flagged | A and B both marked. A's mark stays |
-| Account marked earlier, later on a non-Beta build | No `is_test_user` on those events | Stays marked |
+| Account marked earlier, later on a `production` build | No `is_test_user` on those events | Stays marked: `production` never writes the property |
 
 - **The flag can only be true.** The contract rule rejects `false` from any caller or build, so another build cannot clear it by accident.
 - **To remove a person's mark:** edit the person in PostHog by hand.
@@ -94,8 +131,9 @@ Both live in `defineNearsyPostHog` in `postHogTransport.ios.ts`, the only file t
 
 **Queue: `discardQueuedEventsFor`.**
 
-- **What it touches:** public `getPersistedProperty` and `setPersistedProperty`, but the queue item shape is internal to the SDK.
+- **What it touches:** public `getPersistedProperty` and `setPersistedProperty`, then the protected `flushStorage` from the subclass. The queue item shape, `{ message: { distinct_id, timestamp } }`, is internal to the SDK.
 - **Why:** `reset` keeps the queue by design, and no public call removes items from it.
+- **Found by the real SDK test:** in memory the SDK can hold `timestamp` as a `Date`, and on disk as an ISO string. Both are read. An unreadable timestamp is removed rather than kept.
 
 **Upgrade check:** `postHogRealSdk.test.ts` fails if the versions change, if the SDK starts honoring `disableRemoteConfig`, or if the override or the discard stops working.
 
@@ -106,6 +144,7 @@ Both live in `defineNearsyPostHog` in `postHogTransport.ios.ts`, the only file t
 | `packages/shared/src/analytics/contract.ts` | Allowlist of events and properties |
 | `analytics/config.ts` | Activation rules and Beta mode |
 | `analytics/client.ts` | Ordering, identity, deletion, error isolation |
+| `analytics/deletionRecords.ts` | Local deletion records applied to the queue at start |
 | `analytics/index.ts` | API used by screens |
 | `analytics/runtime.ts` | App wiring. Only `App.tsx` imports it |
 | `analytics/postHogTransport.ios.ts` | The only file using the SDK. The `.ts` variant is a no-op |
@@ -121,11 +160,11 @@ Tests: `pnpm run test:analytics`.
 
 ## Events
 
-Every event also carries `platform` (`iOS`), `app_version`, `app_build`, `environment` and `tracking_plan_version`. In Beta it also carries `distribution_channel` and `is_test_user`. Version and build come from the running binary.
+Every event also carries `platform` (`iOS`), `app_version`, `app_build`, `environment` and `tracking_plan_version`. With a declared channel it also carries `distribution_channel`, and in Beta `is_test_user=true`. Version and build come from the running binary.
 
 | Event | Properties | Fires when |
 |---|---|---|
-| `app_opened` | `open_type` (`cold_start`, `return_from_background`), `is_first_open`?, `session_id`? | Real arrival to foreground. Waits for the Auth session |
+| `app_opened` | `open_type` (`cold_start`, `return_from_background`), `session_id`? | Real arrival to foreground. Waits for the Auth session |
 | `signup_completed` | `signup_method`, `signup_source`?, `signup_campaign`?, `signup_content`?, `signup_tool`?, `attribution_method`? | Confirmed account creation |
 | `acquisition_attributed` | `signup_source`?, `signup_campaign`?, `signup_content`?, `signup_tool`?, `attribution_method`? | A link arrives after signup, within 24 h, with no acquisition recorded |
 | `campaign_accessed` | `campaign_source`?, `campaign_name`?, `campaign_content`?, `campaign_tool`?, `attribution_method` | Campaign link from an existing user |
@@ -193,9 +232,8 @@ Mode-scoped properties are `profile_type`, `occupation*`, `interests*`, `affilia
 
 Unknown is unset rather than left alone, because whatever PostHog holds may belong to the other mode.
 
-- **Occupation:** the mode's nested value wins. Otherwise the app's top-level value is used for legacy profiles, except once a switch was seen in this process or when that value equals the other mode's occupation. The switch runs in the backend, so the top level can still hold the previous mode. A legacy account that switched therefore reports no occupation in that process, even if the app still shows the top-level value.
+- **Occupation:** only the mode's own nested value, `profiles.<mode>.occupation`. The top-level `occupation` of a legacy profile is never sent, because it cannot be shown to belong to the active mode: the switch runs in the backend and does not rewrite it. Without a nested value, `occupation` and `occupation_truncated` are unset. This holds after a process restart too, and Firestore is not changed. The app may still show the top-level value.
 - **Verified lookup that fails:** it keeps values only if this mode already confirmed them in this process. Otherwise `social_platforms_verified`, `socials_connected` and `has_socials` are unset. After a restart, a failed lookup therefore clears them until the next successful one.
-- **Limit:** a legacy profile with no nested data whose mode was switched in an earlier process cannot be told apart, so its top-level occupation is still reported.
 
 ## Identity
 
@@ -207,22 +245,29 @@ Unknown is unset rather than left alone, because whatever PostHog holds may belo
 
 ### Account deletion
 
-Checked against the real SDK: **`reset` does not empty the queue.** Each queued event already holds its `distinct_id`, so after a normal logout it is still delivered, under the right account.
+Checked against the real SDK: **`reset` does not empty the queue.** Each queued event already holds its `distinct_id`, so after a normal logout it is still delivered, under the right account. Deletion therefore removes queued events explicitly.
 
-When the deletion closure is set (the backend confirmed it, Auth reported `user-not-found`, or the person signed out of an unresolved deletion), the client:
+Analytics follows three states published by the deletion modules. It subscribes to them, they never wait for it, and their listeners are guarded, so an analytics failure cannot block or alter the Nearsy deletion.
 
-1. Removes that UID's queued events. Events of other identities stay.
-2. Resets the SDK identity at once, without waiting for Firebase to emit the sign-out.
-3. Refuses later events and person updates for that account generation (UID + creation time). A recreated account with the same UID is another generation.
+| State | Source | What analytics does |
+|---|---|---|
+| **Intent** | `beginAccountDeletionSession`, or an uncertain result kept by `accountDeletionReconciliation` | New events and person updates of that account are dropped, not queued. Queued ones wait. A local `intent` record is written |
+| **Cancelled** | The session ends with no closure and no pending deletion | The account reports normally again. The `intent` record is removed and nothing is discarded |
+| **Confirmed** | The closure: the backend confirmed, Auth reported `user-not-found`, or the person signed out of an unresolved deletion | A local `confirmed` record is written. The account's queued events are removed and the removal is written to disk at once. The SDK identity resets, and later events of that account generation are refused |
 
-Analytics is a subscriber of `accountDeletionSession`, whose listeners are guarded, so a PostHog failure cannot block deletion. The deletion code does not import analytics.
+**Persisting the discard:** the queue item is removed with `setPersistedProperty`, then the write is forced with `flushStorage`. That is the SDK's own step after it changes the queue, instead of its usual debounce. The real SDK test restarts right after a discard and sends nothing.
 
-**Limits:**
+**After a restart:** before the transport serves any operation, every local record removes that account's queued events up to the recorded time, then the records are deleted. This covers an app that died before the live discard reached disk.
 
-- A batch already on the wire cannot be recalled, including its automatic retries. Nothing else follows it, but it can arrive after the backend deleted the person.
-- The SDK persists with a short debounce, so a kill just after the discard could restore those events on the next launch.
-- Signing out of an unresolved deletion also discards that account's queued events, even if the account turns out to still exist. A few events are lost rather than risk sending those of a deleted account. When the closure ends, the same account can sign in and report again.
-- If the app dies between the backend's confirmation and the closure, the queue survives until reconciliation sets the closure, and a flush could happen before that.
+- **Intent left by a dead process:** the deletion may or may not have happened, so that account's earlier queued events are removed. A few events are lost rather than risk sending those of a deleted account.
+- **Time bound:** it keeps a recreated account with the same UID untouched, and an account that turned out to still exist reports normally afterwards.
+- **Sign-out of an unresolved deletion:** it counts as confirmed for this purpose, so its queued events are removed even if the account still exists. When that closure ends, the same account can sign in and report again.
+
+**Limits for Functions, not closable from the app:**
+
+- **A request already on the wire cannot be recalled,** including the SDK's automatic retries of that batch. It holds only events captured before the intent, since the intent stops new ones. It can still reach PostHog after Functions deleted the person, and PostHog would then create the person again from it.
+- **PostHog ingestion is asynchronous.** Events accepted just before the deletion call may be processed after it, with the same effect.
+- **What Functions can do:** after deleting the person, check again after a delay (minutes) and delete any person recreated for that `distinct_id`. Or schedule the deletion with a delay after the account is closed. The app only guarantees that nothing new leaves once the intent starts.
 - Deleting the PostHog person belongs to Functions and is not implemented in iOS.
 
 ### LinkedIn
@@ -252,16 +297,7 @@ An open is a real arrival to foreground.
 - **To verify on a device:** which `AppState` values iOS really delivers for each provider. This has only been tested with simulated sequences.
 - `session_id` is the SDK session: 30 minutes of inactivity by default, and it resets on restart and on `reset`.
 
-**`is_first_open`** is sent only when it can be shown:
-
-| Evidence | Value |
-|---|---|
-| Marker, Welcome or appearance preference, or a restored session | `false` |
-| None of those, and the app's install date is within 24 h | `true` |
-| None of those, and the install date is older or unavailable | Omitted |
-| Storage cannot be read | Omitted |
-
-The install date separates a fresh install from an old one that upgrades with no other trace. A reinstall is a first open of that install. Its native behaviour has not been checked on a device.
+**`is_first_open` is not sent in this delivery.** Neither a recent install date nor the absence of local traces shows by itself that an open is the first one: storage can be cleared, and an upgrade or a restore can look fresh. The property is out of the contract, so the filter drops it. `app_opened` is unchanged otherwise.
 
 ## Onboarding
 
@@ -387,34 +423,32 @@ Still needed from each provider: matching method and data sent, ATT by flow, App
 | `event_cohort` | Functions | Not assigned |
 | Attribution domain and AASA | Infrastructure | No Universal Links |
 | Attribution for new installs | Product | Channel and campaign unknown for those installs |
-| Deleting the PostHog person on account deletion | Functions (assigned) | Person data stays in PostHog after account deletion until that ships |
+| Deleting the PostHog person on account deletion | Functions (assigned) | Person data stays in PostHog until that ships. See the limits under Account deletion |
 | App Privacy labels and privacy policy | Product | Must be updated before enabling in a store build |
 | Final validation of the `match_made` rule | Product | Implemented as the initial rule |
-| `beta` build profile and project token in EAS | Whoever activates Beta | Analytics stays off |
+| Project token as an EAS variable | Whoever activates Beta | Analytics stays off |
+| Build number above the highest in App Store Connect | Whoever builds | The upload is rejected |
 
-## QA on a physical iPhone (Metro on 8081)
+## QA on a physical iPhone
 
 Not run yet. A successful `expo export` is a bundle check only: it does not show that the native build compiles.
 
-**A. Off (should work on the current Dev Client, to be confirmed here):**
+**Priority: TestFlight Beta on Firebase production.** It is the validation that counts. A Dev Client run is optional and is not a prerequisite for it.
 
-1. Run `pnpm --filter nearsy-ios start:dev-client` and open the app.
-2. Confirm no request to `us.i.posthog.com` or `us-assets.i.posthog.com`, and no `[analytics]` logs.
-3. Regression pass: register, log in and out, complete onboarding, Discovery, alerts, tapping a push with the app closed, and every social sign-in.
+**1. TestFlight Beta (priority):**
 
-**B. On, Dev Client (needs a new one, because `expo-application` is a new native module):**
+1. Set the build number and the EAS token as described in TestFlight Beta.
+2. Build with the `beta` profile, submit, and install from TestFlight.
+3. Run the checklist below. Events must carry `environment=production`, `distribution_channel=beta` and `is_test_user=true`.
 
-1. Build and install a Dev Client from this branch, on production Firebase.
-2. In `apps/nearsy-ios/.env.local` set the activation variables, including `EXPO_PUBLIC_POSTHOG_ALLOW_DEVELOPMENT=true`, then restart Metro with a clean cache.
-3. Run the checklist below. Events carry `environment=development`.
+**2. Optional, Dev Client with analytics off:** run `pnpm --filter nearsy-ios start:dev-client` and confirm there are no requests to `us.i.posthog.com` or `us-assets.i.posthog.com`, and no `[analytics]` logs. The current Dev Client should work, because the off path never loads a new native module.
 
-**C. On, TestFlight Beta:** build with the `beta` profile described in Activation and run the checklist below. Events must carry `environment=production`.
+**3. Optional, Dev Client with analytics on:** it needs a new Dev Client, because `expo-application` is a new native module. Use production Firebase, set the variables in `apps/nearsy-ios/.env.local` including `EXPO_PUBLIC_POSTHOG_ALLOW_DEVELOPMENT=true`, and start Metro with `--clear`. Its events carry `environment=development`.
 
 **Checklist, using PostHog Activity:**
 
 - **Beta values:** an anonymous `app_opened` before login has `is_test_user=true` and `distribution_channel=beta`. The person shows the real UID with no prefix.
-- **Opens:** open, background and return give one `app_opened` each. A permission dialog adds none. Check each provider's sign-in adds none, and whether its `AppState` sequence matches the rule.
-- **First open:** fresh install gives `true`. Installing over an older build does not give `true`.
+- **Opens:** open, background and return give one `app_opened` each, with no `is_first_open`. A permission dialog adds none. Check each provider's sign-in adds none.
 - **Signups:** email, Google, Apple and Facebook give one `signup_completed`. Logging in again gives none. LinkedIn gives none, as documented.
 - **A→B:** events belong to the right person, and both are marked.
 - **Onboarding:** milestones 1 to 6. Going back and forward repeats none. Close midway and resume: no earlier ones appear.
@@ -424,7 +458,7 @@ Not run yet. A successful `expo export` is a bundle check only: it does not show
 - **Network tap:** tap a network on a profile.
 - **Push:** tap with the app closed navigates to the profile, with one `alert_opened` and `source=push`. Tap while signed out: nothing, and signing in does not jump to it. Tap an inbox row: `source=inbox`.
 - **Location task:** force it with the app closed: no event, no SDK start.
-- **Person properties:** edit interests, remove all selections, and switch mode, including a legacy account with no data for the other mode. No value of the previous mode remains.
-- **Deletion:** delete a test account with events queued (airplane mode, then back online). Its queued events do not arrive, deletion is not blocked, and the next account gets none of them.
+- **Person properties:** edit interests, remove all selections, and switch personal and professional, including a legacy account. No value of the previous mode remains, and no top-level `occupation` appears for a mode that has no nested one.
+- **Deletion:** with a disposable test account, queue events in airplane mode, then delete the account. Its queued events never arrive, also after force-quitting and reopening, deletion is not blocked, and the next account gets none of them. Cancel a deletion once: the account keeps reporting.
 
 **Rollback:** build without `EXPO_PUBLIC_POSTHOG_ENABLED`. Events already sent stay in PostHog.
