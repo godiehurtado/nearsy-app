@@ -99,7 +99,7 @@ export function DiscoverySocialMediaRow({ links, matchScore }: Props) {
         Alert.alert(t('discoveryProfile.openLinkError'));
       }
     },
-    [t],
+    [t, matchScore],
   );
 
   if (items.length === 0) return null;

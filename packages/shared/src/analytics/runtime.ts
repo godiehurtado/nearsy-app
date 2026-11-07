@@ -161,6 +161,8 @@ export function startAnalyticsRuntime(): void {
   let attributionTimer: ReturnType<typeof setTimeout> | null = null;
   let lastPermissionPerson: string | null = null;
   let lastSeenUid: string | null = null;
+  let verifiedGeneration = 0;
+  let syncChain: Promise<void> = Promise.resolve();
 
   async function syncProfile(uid: string): Promise<void> {
     const doc = (await getUserProfile(uid)) as Record<string, unknown> | null;
@@ -170,10 +172,19 @@ export function startAnalyticsRuntime(): void {
     let verified: VerifiedSocialState = null;
     if (mode) {
       const key = `${uid}|${mode}`;
-      if (!verifiedByKey.has(key) || verifiedByKey.get(key) === null) {
-        verifiedByKey.set(key, await readVerifiedSocials(mode));
+      const cached = verifiedByKey.get(key);
+      if (cached) {
+        verified = cached;
+      } else {
+        const generation = verifiedGeneration;
+        verified = await readVerifiedSocials(mode);
+        if (generation !== verifiedGeneration) {
+          // A connection changed during the read: treat this result as unknown.
+          verified = null;
+        } else if (verified) {
+          verifiedByKey.set(key, verified);
+        }
       }
-      verified = verifiedByKey.get(key) ?? null;
     }
     if (client.currentAuth()?.uid !== uid) return;
     const { patch, next } = diffPersonProperties(
@@ -188,9 +199,12 @@ export function startAnalyticsRuntime(): void {
     if (syncTimer) clearTimeout(syncTimer);
     syncTimer = setTimeout(() => {
       syncTimer = null;
-      void syncProfile(uid).catch(() => {
-        log('profile_sync_failed');
-      });
+      // One at a time, so an older read can never finish after a newer one.
+      syncChain = syncChain
+        .then(() => syncProfile(uid))
+        .catch(() => {
+          log('profile_sync_failed');
+        });
     }, PROFILE_SYNC_DEBOUNCE_MS);
   }
 
@@ -231,6 +245,7 @@ export function startAnalyticsRuntime(): void {
     },
     scheduleProfileSync,
     noteVerifiedSocialsChanged: (uid) => {
+      verifiedGeneration += 1;
       for (const key of [...verifiedByKey.keys()]) {
         if (key.startsWith(`${uid}|`)) verifiedByKey.delete(key);
       }

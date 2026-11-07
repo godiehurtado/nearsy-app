@@ -29,6 +29,7 @@ import {
 import {
   buildPersonProperties,
   computeAgeRange,
+  countSocialConnections,
   diffPersonProperties,
   manualSocialPlatforms,
   newlyAddedManualSocials,
@@ -470,6 +471,43 @@ describe('socials', () => {
   });
 });
 
+describe('socials step counts', () => {
+  it('a network both manual and verified counts once; custom links each count', () => {
+    assert.deepEqual(
+      countSocialConnections(
+        {
+          youtube: 'https://www.youtube.com/@ann',
+          website: 'https://example.com',
+          custom: [
+            { name: 'A', url: 'https://a.example.com' },
+            { name: 'B', url: 'https://b.example.com' },
+          ],
+        },
+        ['youtube', 'tiktok'],
+      ),
+      { itemCount: 5, manualCount: 4, verifiedCount: 2 },
+    );
+  });
+
+  it('unknown verified state with no manual links is not a skip', () => {
+    const counts = countSocialConnections({}, null);
+    assert.equal(counts.verifiedCount, undefined);
+    const props = buildOnboardingStepProperties('socials', counts);
+    assert.equal(props.item_count, 0);
+    assert.equal('skipped' in props, false);
+  });
+
+  it('unknown verified state with manual links is partial content', () => {
+    const counts = countSocialConnections({ website: 'https://a.example.com' }, null);
+    assert.equal(buildOnboardingStepProperties('socials', counts).skipped, false);
+  });
+
+  it('known empty state is a skip', () => {
+    const counts = countSocialConnections({}, []);
+    assert.equal(buildOnboardingStepProperties('socials', counts).skipped, true);
+  });
+});
+
 describe('location permission events', () => {
   function harness(initial: LocationPermissionReadings) {
     let readings = initial;
@@ -508,6 +546,27 @@ describe('location permission events', () => {
     h.set(state(false, true, false, false));
     await h.observer.observe('foreground');
     assert.deepEqual(h.events, [['foreground', false]]);
+  });
+
+  it('a dialog returning to active first does not lose the denied event', async () => {
+    const h = harness(state(false, false, false, false));
+    await h.observer.observe(null);
+    h.set(state(false, true, false, false));
+    await h.observer.observe(null);
+    assert.deepEqual(h.events, []);
+    await h.observer.observe('foreground');
+    assert.deepEqual(h.events, [['foreground', false]]);
+    await h.observer.observe('foreground');
+    assert.equal(h.events.length, 1);
+  });
+
+  it('a grant seen on active is not repeated when the request resolves', async () => {
+    const h = harness(state(false, false, false, false));
+    await h.observer.observe(null);
+    h.set(state(true, true, false, false));
+    await h.observer.observe(null);
+    await h.observer.observe('foreground');
+    assert.deepEqual(h.events, [['foreground', true]]);
   });
 
   it('reports foreground and background separately', async () => {
@@ -698,6 +757,22 @@ describe('push open coordinator', () => {
     h.coordinator.handleResponse({});
     assert.equal(h.opened.length, 0);
     assert.deepEqual(h.navigated, []);
+  });
+
+  it('a repeated identifier with a new delivery date is a new tap', () => {
+    const h = harness();
+    h.setReady(true);
+    const delivery = (date: number) => ({
+      notification: {
+        date,
+        request: { identifier: 'collapsed', content: { data: payload } },
+      },
+    });
+    h.coordinator.handleResponse(delivery(1));
+    h.coordinator.handleResponse(delivery(1));
+    h.coordinator.handleResponse(delivery(2));
+    assert.equal(h.opened.length, 2);
+    assert.equal(h.navigated.length, 2);
   });
 
   it('a second distinct tap is processed', () => {

@@ -25,7 +25,8 @@ No Personal API Key is needed.
 ### While on
 
 - Starts at the first real `active` state, so a location-task launch never initializes it.
-- Off by configuration: autocapture and `PostHogProvider` (not used), lifecycle capture, session replay, remote config, feature flags, surveys, push capture, error autocapture and GeoIP.
+- Off by configuration: autocapture and `PostHogProvider` (not used), lifecycle capture, session replay, feature flags, surveys, push capture, error autocapture and GeoIP.
+- Remote config is off by overriding `reloadRemoteConfigAsync`, because SDK 4.85.3 ignores `disableRemoteConfig`. Recheck this when upgrading the SDK.
 - `before_send` lets out only contract events plus `$identify` and `$set`.
 - `$device_name` is cleared. The SDK still adds technical `$os_*`, `$locale` and `$timezone`.
 - Disabling GeoIP tells PostHog not to enrich location. To also discard the IP, use the project setting in PostHog.
@@ -153,8 +154,9 @@ Evidence, read-only from `nearsy-identity-functions`: `linkedInFirebaseUid(iss, 
 - **`skipped`** is true when the milestone ended with no content. Partial content is false, with counts. It does not read the button.
   - `profile_type`, `basics` and `about` are always false, because their fields are required.
   - `interests` is always false today, because of the minimum of 10.
+- **`socials` counts:** a network both manual and verified counts once; each custom network counts. If verified state is not known yet and there are no manual links, `skipped` is omitted. A failed lookup for one network reads as not connected here. Legacy links kept in the profile count as manual.
 - **Resuming** never creates earlier milestones. Events fire only on a real transition.
-- **Dedupe limits:** the ledger is local. A reinstall or a second device can repeat a milestone if the user completes that step again there. The `crjResumeStage` cursor is not treated as delivery.
+- **Dedupe limits:** one-time items are claimed just before sending, so if the session changes in that instant the event is lost rather than repeated. The ledger is local. A reinstall or a second device can repeat a milestone if the user completes that step again there. The `crjResumeStage` cursor is not treated as delivery.
 - **`completion_time_min`** runs from Firebase creation, pauses included. Omitted when the date is missing, invalid or in the future. Old complete profiles emit nothing.
 
 ## Permissions and visibility
@@ -178,6 +180,7 @@ Evidence, read-only from `nearsy-identity-functions`: `linkedInFirebaseUid(iss, 
 - **`match_made`:** compatibility with a discovered profile, not a mutual match. Requires 50% of the row visible for 300 ms and a real score. Ranges are [0,50), [50,75), [75,100].
 - **Rule pending final validation:** one per viewer, profile and SDK session. A new session can count again.
 - **`match_id`:** truncated SHA-256 of the two UIDs. It is stable and pseudonymous, not anonymous. Nothing is written to Firestore, and the other UID is not sent.
+- **Instagram `social_linked`:** if verification finishes while the app is closed, no event fires because the app only sees it as existing state. `socials_verified` still updates.
 - **`match_social_tapped`:** a tap on any Discovery profile. It does not prove a connection between people. If the open has not resolved in 1.5 s, it reports `unknown`.
 
 ## Alerts
@@ -186,6 +189,7 @@ Evidence, read-only from `nearsy-identity-functions`: `linkedInFirebaseUid(iss, 
 - If the app cannot show the profile yet, the destination waits up to 30 s, until `MainTabs` exists. Sign-out clears it.
 - `alert_id` is read from the payload if present. Current payloads do not include it, and none is made up.
 - `source=inbox` does not imply a push was sent.
+- A tap made while signed out can still keep its destination for up to 30 s if a sign-in follows in that window.
 
 ## Attribution
 

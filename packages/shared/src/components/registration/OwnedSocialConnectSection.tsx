@@ -90,6 +90,8 @@ type Props = {
   uid: string;
   mode: ProfileMode;
   onOwnedCountChange?: (count: number) => void;
+  /** Connected networks; null until this mode's lookup has finished. */
+  onOwnedPlatformsChange?: (platforms: readonly string[] | null) => void;
 };
 
 function PlatformGlyph({
@@ -136,6 +138,7 @@ export function OwnedSocialConnectSection({
   uid,
   mode,
   onOwnedCountChange,
+  onOwnedPlatformsChange,
 }: Props) {
   const { palette } = useAppTheme();
   const { t } = useTranslation();
@@ -185,6 +188,7 @@ export function OwnedSocialConnectSection({
   >(null);
 
   const [xVerified, setXVerified] = useState<XOwnershipVerified | null>(null);
+  const [ownedLookupDone, setOwnedLookupDone] = useState(false);
   const [xLegacyUrl, setXLegacyUrl] = useState<string | null>(null);
   const [xBusyPhase, setXBusyPhase] = useState<XOwnershipBusyPhase>('idle');
   const [xNeedsRetry, setXNeedsRetry] = useState(false);
@@ -215,6 +219,26 @@ export function OwnedSocialConnectSection({
   }, [ownedCount, onOwnedCountChange]);
 
   useEffect(() => {
+    onOwnedPlatformsChange?.(
+      ownedLookupDone
+        ? [
+            ...(youtubeConnected ? ['youtube'] : []),
+            ...(tiktokConnected ? ['tiktok'] : []),
+            ...(instagramConnected ? ['instagram'] : []),
+            ...(xConnected ? ['x'] : []),
+          ]
+        : null,
+    );
+  }, [
+    onOwnedPlatformsChange,
+    ownedLookupDone,
+    youtubeConnected,
+    tiktokConnected,
+    instagramConnected,
+    xConnected,
+  ]);
+
+  useEffect(() => {
     youtubeEditorModeRef.current = mode;
     tiktokEditorModeRef.current = mode;
     instagramEditorModeRef.current = mode;
@@ -230,6 +254,7 @@ export function OwnedSocialConnectSection({
     const modeForRequest = mode;
     let cancelled = false;
 
+    setOwnedLookupDone(false);
     setYoutubeVerified(null);
     setYoutubeChannels(null);
     setYoutubeNeedsRetry(false);
@@ -347,6 +372,7 @@ export function OwnedSocialConnectSection({
         ]);
       } finally {
         if (!cancelled && requestGen === youtubeRequestGenRef.current) {
+          setOwnedLookupDone(true);
           setYoutubeBusyPhase('idle');
           setTiktokBusyPhase('idle');
           setInstagramBusyPhase((phase) =>

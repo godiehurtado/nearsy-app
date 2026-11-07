@@ -8,6 +8,8 @@ export type OnboardingStepCounts = {
   customCount?: number;
   manualCount?: number;
   verifiedCount?: number;
+  /** Connections could still exist but were not known yet: skipped is omitted. */
+  contentUnknown?: boolean;
 };
 
 /** profile_type, basics and about have required fields: they cannot be empty. */
@@ -19,7 +21,9 @@ export function buildOnboardingStepProperties(
     step,
     step_number: ONBOARDING_STEPS[step],
     // Finished with no content. Partial content is false. Never the button text.
-    skipped: counts ? counts.itemCount === 0 : false,
+    ...(counts?.contentUnknown
+      ? {}
+      : { skipped: counts ? counts.itemCount === 0 : false }),
     ...(counts
       ? {
           item_count: counts.itemCount,

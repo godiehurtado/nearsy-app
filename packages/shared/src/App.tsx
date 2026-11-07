@@ -209,7 +209,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
         }
 
         if (!user) {
-          if (previousUid) pushOpenCoordinator.clearPending();
+          pushOpenCoordinator.clearPending();
           // Logout: More / Delete Account already released under A.
           // Generation bump discards in-flight registers; do not write.
           await syncPushTokenForAuthUser(previousUid, null);
@@ -225,6 +225,7 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
           // token): session is already B, so Firestore owner rules forbid
           // deleting users/A/pushTokens/{token}. Release ran before the
           // session-replacing sign-in. Listener only registers B.
+          pushOpenCoordinator.clearPending();
           clearLocationPermissionJourneySession();
         }
 

@@ -85,7 +85,7 @@ export default function DiscoveryProfileScreen() {
   const { palette, theme } = useAppTheme();
   const { t } = useTranslation();
   const uid = route.params?.uid;
-  const profileViewedRef = useRef(false);
+  const profileViewedUidRef = useRef<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [errorKind, setErrorKind] = useState<
@@ -143,10 +143,10 @@ export default function DiscoveryProfileScreen() {
         return;
       }
       const next = applyDiscoveryProfileSuccess(response);
-      if (next.data && !profileViewedRef.current) {
+      if (next.data && profileViewedUidRef.current !== uid) {
         const viewerUid = firebaseAuth.currentUser?.uid;
         if (viewerUid) {
-          profileViewedRef.current = true;
+          profileViewedUidRef.current = uid;
           const alignment = toAlignment(next.data.compatibility);
           trackProfileViewed(
             viewerUid,

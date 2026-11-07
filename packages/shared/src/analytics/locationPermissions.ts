@@ -78,9 +78,12 @@ export function createLocationPermissionObserver(
           (wasRequested && !previous.decided)
         : wasRequested;
       if (shouldEmit) deps.onChange(kind, reading.granted);
+      // A later "active" reading must not consume the event of a pending request.
       const next = {
         granted: reading.granted,
-        decided: reading.decided || wasRequested || previous?.decided === true,
+        decided: previous
+          ? previous.decided || wasRequested || shouldEmit
+          : reading.decided || wasRequested,
       };
       if (previous?.granted !== next.granted || previous?.decided !== next.decided) {
         current[kind] = next;

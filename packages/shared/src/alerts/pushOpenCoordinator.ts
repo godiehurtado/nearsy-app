@@ -73,10 +73,8 @@ export function createPushOpenCoordinator(deps: PushOpenCoordinatorDeps) {
     handleResponse(response: PushResponseLike | null | undefined): void {
       const request = response?.notification?.request;
       if (!request) return;
-      const key =
-        typeof request.identifier === 'string' && request.identifier
-          ? request.identifier
-          : `date:${String(response?.notification?.date)}`;
+      // The date separates deliveries that reuse an identifier (collapsed pushes).
+      const key = `${String(request.identifier)}|${String(response?.notification?.date)}`;
       if (processed.has(key)) return;
       processed.add(key);
 

@@ -16,7 +16,14 @@ export async function createPostHogTransport(
 
   const { PostHog } =
     require('posthog-react-native') as typeof import('posthog-react-native');
-  const client = new PostHog(config.token, {
+  // SDK 4.85.3 declares disableRemoteConfig but never reads it: every start would
+  // fetch remote config. Nothing here uses it, so the call is replaced.
+  class NearsyPostHog extends PostHog {
+    override reloadRemoteConfigAsync() {
+      return Promise.resolve(undefined);
+    }
+  }
+  const client = new NearsyPostHog(config.token, {
     host: config.host,
     persistence: 'file',
     customStorage: AsyncStorage,

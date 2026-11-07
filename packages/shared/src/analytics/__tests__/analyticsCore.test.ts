@@ -885,6 +885,8 @@ describe('source guards', () => {
     ]) {
       assert.ok(source.includes(option), option);
     }
+    // The SDK ignores disableRemoteConfig, so the call itself is replaced.
+    assert.ok(/override reloadRemoteConfigAsync() {s*return Promise.resolve(undefined);/.test(source));
     assert.equal(source.includes('PostHogProvider'), false);
     assert.equal(/enabled:\s*true/.test(source), false);
   });

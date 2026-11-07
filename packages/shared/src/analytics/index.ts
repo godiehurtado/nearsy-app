@@ -35,7 +35,7 @@ import { toIsoCreationTime } from './client';
 
 export { createDiscoveryEntryTracker } from './discoveryTracking';
 export {
-  manualSocialPlatforms,
+  countSocialConnections,
   summarizeAffiliations,
   summarizeInterests,
   type SelectionSummary,

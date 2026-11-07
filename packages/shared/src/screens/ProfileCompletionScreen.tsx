@@ -36,7 +36,7 @@ import { OnboardingInterestCategoryPanel } from '../components/registration/Onbo
 import { OnboardingAffiliationCategoryPanel } from '../components/registration/OnboardingAffiliationCategoryPanel';
 import { OnboardingSocialMediaStep } from '../components/registration/OnboardingSocialMediaStep';
 import {
-  manualSocialPlatforms,
+  countSocialConnections,
   noteLocationPermissionResolved,
   summarizeAffiliations,
   summarizeInterests,
@@ -409,11 +409,14 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     emptyCrjSocialDraftValues,
   );
   const [socialCustom, setSocialCustom] = useState<SocialCustomLink[]>([]);
-  const verifiedSocialCountRef = useRef(0);
-  const manualSocialCountRef = useRef(0);
-  const handleVerifiedSocialCount = useCallback((count: number) => {
-    verifiedSocialCountRef.current = count;
-  }, []);
+  const verifiedSocialsRef = useRef<readonly string[] | null>(null);
+  const savedSocialLinksRef = useRef<unknown>(null);
+  const handleVerifiedSocials = useCallback(
+    (platforms: readonly string[] | null) => {
+      verifiedSocialsRef.current = platforms;
+    },
+    [],
+  );
   const [socialWebsite, setSocialWebsite] = useState('');
   const [socialFieldErrors, setSocialFieldErrors] =
     useState<CrjSocialFieldErrors>({});
@@ -1066,7 +1069,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         ? patch.socialLinksProfessional
         : patch.socialLinksPersonal;
     trackManualSocialLinksSaved(uid, existing, savedLinks);
-    manualSocialCountRef.current = manualSocialPlatforms(savedLinks).length;
+    savedSocialLinksRef.current = savedLinks;
     setShellData((prev) => ({
       ...(prev ?? {}),
       mode,
@@ -1533,11 +1536,14 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       setSubmitting(true);
       await persistSocialMedia();
       setSocialFieldErrors({});
-      trackOnboardingStepCompleted(uid, 'socials', {
-        itemCount: manualSocialCountRef.current + verifiedSocialCountRef.current,
-        manualCount: manualSocialCountRef.current,
-        verifiedCount: verifiedSocialCountRef.current,
-      });
+      trackOnboardingStepCompleted(
+        uid,
+        'socials',
+        countSocialConnections(
+          savedSocialLinksRef.current,
+          verifiedSocialsRef.current,
+        ),
+      );
       shiftStep(1);
     } catch (e: any) {
       Alert.alert(
@@ -2358,7 +2364,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             <OnboardingSocialMediaStep
               uid={uid}
               mode={mode}
-              onVerifiedCountChange={handleVerifiedSocialCount}
+              onVerifiedPlatformsChange={handleVerifiedSocials}
               values={socialDraft}
               website={socialWebsite}
               custom={socialCustom}

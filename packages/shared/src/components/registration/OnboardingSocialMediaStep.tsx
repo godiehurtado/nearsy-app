@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -35,7 +35,7 @@ type ManualSheetId = 'facebook' | 'linkedin' | 'website';
 type Props = {
   uid: string;
   mode: ProfileMode;
-  onVerifiedCountChange?: (count: number) => void;
+  onVerifiedPlatformsChange?: (platforms: readonly string[] | null) => void;
   values: CrjSocialDraftValues;
   website: string;
   /** Historical "Other network" links: kept by the caller, not shown in the CRJ. */
@@ -92,7 +92,7 @@ function PlatformGlyph({
 export function OnboardingSocialMediaStep({
   uid,
   mode,
-  onVerifiedCountChange,
+  onVerifiedPlatformsChange,
   values,
   website,
   onChangeValues,
@@ -104,13 +104,6 @@ export function OnboardingSocialMediaStep({
   const { palette } = useAppTheme();
   const { t } = useTranslation();
   const [ownedCount, setOwnedCount] = useState(0);
-  const handleOwnedCount = useCallback(
-    (count: number) => {
-      setOwnedCount(count);
-      onVerifiedCountChange?.(count);
-    },
-    [onVerifiedCountChange],
-  );
   const [manualSheet, setManualSheet] = useState<ManualSheetId | null>(null);
   const [manualDraft, setManualDraft] = useState('');
   const [manualError, setManualError] = useState<string | null>(null);
@@ -223,7 +216,8 @@ export function OnboardingSocialMediaStep({
       <OwnedSocialConnectSection
         uid={uid}
         mode={mode}
-        onOwnedCountChange={handleOwnedCount}
+        onOwnedCountChange={setOwnedCount}
+        onOwnedPlatformsChange={onVerifiedPlatformsChange}
       />
 
       <View style={styles.manualCards}>

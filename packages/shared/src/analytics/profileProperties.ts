@@ -241,6 +241,32 @@ export function manualSocialPlatforms(
   return out;
 }
 
+/**
+ * Counts for the socials milestone. A network both manual and verified counts
+ * once; each custom network counts. `verified` null means not known yet.
+ */
+export function countSocialConnections(
+  links: unknown,
+  verified: readonly string[] | null,
+): {
+  itemCount: number;
+  manualCount: number;
+  verifiedCount?: number;
+  contentUnknown?: boolean;
+} {
+  const manual = manualSocialPlatforms(links).filter((p) => p !== 'custom');
+  const customCount = customSocialKeys(links).size;
+  const networks = new Set<string>([...manual, ...(verified ?? [])]);
+  const itemCount = networks.size + customCount;
+  return {
+    itemCount,
+    manualCount: manual.length + customCount,
+    ...(verified
+      ? { verifiedCount: verified.length }
+      : { contentUnknown: itemCount === 0 }),
+  };
+}
+
 function customSocialKeys(links: unknown): Set<string> {
   const row = asRecord(links);
   const keys = new Set<string>();
