@@ -1,3 +1,4 @@
+import { withExternalAuthFlow } from '../../analytics';
 /**
  * Auth-session browser adapter for LinkedIn A3 (expo-web-browser).
  * Never logs authorizationUrl or return URLs.
@@ -54,9 +55,8 @@ export function createExpoLinkedInAuthBrowser(
         return { type: 'failed' };
       }
       try {
-        const result = await webBrowser.openAuthSessionAsync(
-          authorizationUrl,
-          returnUrl,
+        const result = await withExternalAuthFlow(() =>
+          webBrowser.openAuthSessionAsync(authorizationUrl, returnUrl),
         );
         return mapExpoAuthSessionResult(result);
       } catch {

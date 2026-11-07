@@ -1,3 +1,4 @@
+import { withExternalAuthFlow } from '../analytics';
 import { useCallback, useState } from 'react';
 import { Alert, Keyboard, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -32,7 +33,7 @@ export function useGoogleSignInFlow() {
 
     setSubmitting(true);
     try {
-      const result = await authenticateWithGoogle();
+      const result = await withExternalAuthFlow(() => authenticateWithGoogle());
 
       Keyboard.dismiss();
       setTimeout(() => {

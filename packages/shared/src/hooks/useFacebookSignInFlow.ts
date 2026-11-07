@@ -1,3 +1,4 @@
+import { withExternalAuthFlow } from '../analytics';
 import { useCallback, useState } from 'react';
 import { Alert, Keyboard, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -41,7 +42,7 @@ export function useFacebookSignInFlow() {
     setSubmitting(true);
     beginFacebookAuthTrace();
     try {
-      const result = await authenticateWithFacebook();
+      const result = await withExternalAuthFlow(() => authenticateWithFacebook());
       flushFacebookAuthTrace('success');
       if (__DEV__) setTimeout(() => flushFacebookAuthTrace('success_delayed'), 2000);
 

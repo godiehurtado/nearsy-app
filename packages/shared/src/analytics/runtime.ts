@@ -71,6 +71,19 @@ function readBinaryInfo() {
   };
 }
 
+/** Null when the binary cannot say, which leaves is_first_open omitted. */
+async function readInstalledAtMs(): Promise<number | null> {
+  try {
+    const Application =
+      require('expo-application') as typeof import('expo-application');
+    const installed = await Application.getInstallationTimeAsync();
+    const ms = installed.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  } catch {
+    return null;
+  }
+}
+
 function readLiveSession(): AuthSnapshot | null {
   return toSnapshot(firebaseAuth.currentUser);
 }
@@ -161,7 +174,10 @@ export function startAnalyticsRuntime(): void {
   });
 
   const lastSentByUid = new Map<string, Record<string, string>>();
+  /** uid|mode whose verified state was sent in this process. */
+  const verifiedSentFor = new Set<string>();
   const verifiedByKey = new Map<string, VerifiedSocialState>();
+  const lastModeByUid = new Map<string, string | null>();
   let syncTimer: ReturnType<typeof setTimeout> | null = null;
   let attributionTimer: ReturnType<typeof setTimeout> | null = null;
   let lastPermissionPerson: string | null = null;
@@ -192,10 +208,18 @@ export function startAnalyticsRuntime(): void {
       }
     }
     if (client.currentAuth()?.uid !== uid) return;
+    const verifiedKey = `${uid}|${mode}`;
+    const previousMode = lastModeByUid.get(uid);
     const { patch, next } = diffPersonProperties(
       lastSentByUid.get(uid) ?? {},
-      buildPersonProperties(doc, verified, new Date()),
+      buildPersonProperties(doc, verified, new Date(), {
+        verifiedConfirmedForMode:
+          previousMode === mode && verifiedSentFor.has(verifiedKey),
+        modeChanged: previousMode !== undefined && previousMode !== mode,
+      }),
     );
+    lastModeByUid.set(uid, mode);
+    if (verified) verifiedSentFor.add(verifiedKey);
     lastSentByUid.set(uid, next);
     client.setPersonProperties(uid, patch.set, {}, patch.unset);
   }
@@ -235,8 +259,13 @@ export function startAnalyticsRuntime(): void {
     },
   });
 
+  const foreground = createForegroundTracker();
   const services: AnalyticsServices = {
     client,
+    noteExternalAuthFlow: (active) => {
+      if (active) foreground.beginExternalFlow();
+      else foreground.endExternalFlow();
+    },
     ledger: createEventLedger(store),
     attribution: createPendingAttributionStore(store),
     attributionHosts: config.attributionHosts,
@@ -271,6 +300,8 @@ export function startAnalyticsRuntime(): void {
       lastPermissionPerson = null;
       verifiedByKey.clear();
       lastSentByUid.clear();
+      lastModeByUid.clear();
+      verifiedSentFor.clear();
       lastSeenUid = null;
       return;
     }
@@ -316,8 +347,10 @@ export function startAnalyticsRuntime(): void {
     let markerRecorded = true;
     let legacyUseEvidence = true;
     let firstOpenKnown = true;
+    let installedAtMs: number | null = null;
     if (firstOpenPending) {
       firstOpenPending = false;
+      installedAtMs = await readInstalledAtMs();
       try {
         const [marker, welcome, appearance] = await Promise.all([
           store.getItem(FIRST_OPEN_MARKER_KEY),
@@ -340,6 +373,8 @@ export function startAnalyticsRuntime(): void {
               markerRecorded,
               legacyUseEvidence,
               hasSession: client.currentAuth() !== null,
+              installedAtMs,
+              nowMs: Date.now(),
             })
           : undefined,
         session_id: client.getSessionId() ?? undefined,
@@ -347,7 +382,6 @@ export function startAnalyticsRuntime(): void {
     });
   }
 
-  const foreground = createForegroundTracker();
   function onAppState(state: string): void {
     const openType = foreground.onAppState(state);
     if (state === 'active') ensureForegroundStarted();

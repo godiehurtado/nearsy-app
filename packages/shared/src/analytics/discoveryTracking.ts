@@ -38,15 +38,15 @@ export function buildScoreProperties(
 }
 
 /**
- * Validation pending: one match_made per viewer, profile and SDK session. A new
- * session can count again. The other user's UID is only hashed into match_id,
- * which is pseudonymous and stable, not anonymous.
+ * Initial rule: one match_made per viewer, profile and SDK session. A new session
+ * can count again, and each account has its own count. The other user's UID is
+ * only hashed into match_id, which is pseudonymous and stable, not anonymous.
  */
 export function createMatchSessionDedupe() {
   const seen = new Set<string>();
   return {
-    claim(sessionId: string | null, viewerUid: string, otherUid: string): boolean {
-      const key = `${sessionId ?? 'no-session'}|${viewerUid}|${otherUid}`;
+    claim(sessionId: string, viewerUid: string, otherUid: string): boolean {
+      const key = `${sessionId}|${viewerUid}|${otherUid}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

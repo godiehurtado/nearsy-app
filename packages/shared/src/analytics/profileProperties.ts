@@ -1,9 +1,11 @@
 /**
  * Builds PostHog person properties from users/{uid}, always for the active mode.
  *
- * Unknown versus empty: a bag that exists and is empty sends [] and clears
- * PostHog. A bag that is absent sends nothing, so old profiles and failed reads
- * never erase valid data.
+ * Three states for what the active mode holds:
+ * - Known, including confirmed empty: the value is sent ([] for an empty bag).
+ * - Unknown in a profile that was read (absent bag, legacy profile): the property
+ *   is unset, because whatever PostHog holds may belong to the other mode.
+ * - Read failed: nothing runs, so valid data is never erased by an error.
  *
  * Pure module.
  */
@@ -16,7 +18,7 @@ import {
   type AgeRange,
   type AnalyticsSocialPlatform,
 } from './contract';
-import { isProfileMode, resolveModePresentation } from '../profile/profileModeFields';
+import { isProfileMode, type ProfileMode } from '../profile/profileModeFields';
 import { normalizeCountryCode } from '../profile/countryCatalog';
 import { parseCurrentCity } from '../profile/currentCity';
 import {
@@ -309,10 +311,69 @@ export type PersonPropertyPatch = {
   unset: string[];
 };
 
+const selectionPropertyNames = (prefix: 'interests' | 'affiliations'): string[] => [
+  prefix,
+  `${prefix}_custom`,
+  `${prefix}_custom_normalized`,
+  `${prefix}_catalog_count`,
+  `${prefix}_custom_count`,
+  `${prefix}_count`,
+  `${prefix}_truncated`,
+];
+
+const VERIFIED_DERIVED_NAMES = [
+  'social_platforms_verified',
+  'socials_connected',
+  'has_socials',
+];
+
+/** Everything that belongs to one profile mode. */
+export const MODE_SCOPED_PROPERTY_NAMES: readonly string[] = [
+  'profile_type',
+  'occupation',
+  'occupation_truncated',
+  ...selectionPropertyNames('interests'),
+  ...selectionPropertyNames('affiliations'),
+  'social_platforms_manual',
+  ...VERIFIED_DERIVED_NAMES,
+];
+
+export type BuildPersonOptions = {
+  /** PostHog already holds this mode's verified state, confirmed in this process. */
+  verifiedConfirmedForMode?: boolean;
+  /** The active mode changed since the last send in this process. */
+  modeChanged?: boolean;
+};
+
+function trimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/**
+ * The nested value of the mode, or else the top-level one the app shows for
+ * legacy profiles. The switch happens in the backend, so the top level can still
+ * hold the previous mode: it is refused when it is known to be that.
+ */
+function occupationForMode(
+  doc: Record<string, unknown>,
+  mode: ProfileMode,
+  modeChanged: boolean,
+): string {
+  const profiles = asRecord(doc.profiles);
+  const nested = trimmedString(asRecord(profiles?.[mode])?.occupation);
+  if (nested) return nested;
+  const topLevel = trimmedString(doc.occupation);
+  if (!topLevel || modeChanged) return '';
+  const otherMode = mode === 'personal' ? 'professional' : 'personal';
+  const other = trimmedString(asRecord(profiles?.[otherMode])?.occupation);
+  return other === topLevel ? '' : topLevel;
+}
+
 export function buildPersonProperties(
   doc: Record<string, unknown>,
   verified: VerifiedSocialState,
   now: Date,
+  options: BuildPersonOptions = {},
 ): PersonPropertyPatch {
   const set: Record<string, unknown> = {};
   const unset: string[] = [];
@@ -343,11 +404,14 @@ export function buildPersonProperties(
   }
 
   const mode = doc.mode;
-  if (!isProfileMode(mode)) return { set, unset };
+  if (!isProfileMode(mode)) {
+    unset.push(...MODE_SCOPED_PROPERTY_NAMES);
+    return { set, unset };
+  }
 
   set.profile_type = mode;
 
-  const occupation = resolveModePresentation(doc, mode).occupation?.trim();
+  const occupation = occupationForMode(doc, mode, options.modeChanged === true);
   if (occupation) {
     set.occupation = occupation.slice(0, OCCUPATION_MAX_LENGTH).trim();
     set.occupation_truncated = occupation.length > OCCUPATION_MAX_LENGTH;
@@ -361,6 +425,8 @@ export function buildPersonProperties(
       set,
       selectionProperties('interests', summarizeInterests(interestRows)),
     );
+  } else {
+    unset.push(...selectionPropertyNames('interests'));
   }
 
   const affiliationRows = doc[`${mode}OnboardingAffiliations`];
@@ -372,12 +438,15 @@ export function buildPersonProperties(
         summarizeAffiliations(affiliationRows),
       ),
     );
+  } else {
+    unset.push(...selectionPropertyNames('affiliations'));
   }
 
-  const manual = manualSocialPlatforms(
-    doc[mode === 'professional' ? 'socialLinksProfessional' : 'socialLinksPersonal'],
-  );
-  set.social_platforms_manual = manual;
+  const manualBag =
+    doc[mode === 'professional' ? 'socialLinksProfessional' : 'socialLinksPersonal'];
+  const manual = manualSocialPlatforms(manualBag);
+  if (asRecord(manualBag)) set.social_platforms_manual = manual;
+  else unset.push('social_platforms_manual');
   if (verified) {
     const verifiedList = (
       Object.keys(verified) as AnalyticsSocialPlatform[]
@@ -386,6 +455,9 @@ export function buildPersonProperties(
     set.social_platforms_verified = verifiedList;
     set.socials_connected = connected;
     set.has_socials = connected.length > 0;
+  } else if (!options.verifiedConfirmedForMode) {
+    // A failed lookup keeps what this mode confirmed, never another mode's value.
+    unset.push(...VERIFIED_DERIVED_NAMES);
   }
 
   return { set, unset };

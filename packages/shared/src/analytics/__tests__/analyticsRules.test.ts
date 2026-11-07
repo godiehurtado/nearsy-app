@@ -7,7 +7,11 @@ import {
   createPendingAttributionStore,
   parseCampaignLink,
 } from '../attribution';
-import { matchScoreRange, PROFILE_LIST_MAX_ITEMS } from '../contract';
+import {
+  matchScoreRange,
+  PERSON_PROPERTY_RULES,
+  PROFILE_LIST_MAX_ITEMS,
+} from '../contract';
 import {
   buildScoreProperties,
   createDiscoveryEntryTracker,
@@ -15,6 +19,7 @@ import {
 } from '../discoveryTracking';
 import {
   createForegroundTracker,
+  EXTERNAL_AUTH_MAX_MS,
   resolveIsFirstOpen,
   type StringStore,
 } from '../lifecycle';
@@ -32,6 +37,7 @@ import {
   countSocialConnections,
   diffPersonProperties,
   manualSocialPlatforms,
+  MODE_SCOPED_PROPERTY_NAMES,
   newlyAddedManualSocials,
   normalizeForComparison,
   profileWriteAffectsAnalytics,
@@ -90,11 +96,80 @@ describe('app_opened lifecycle', () => {
   });
 });
 
-describe('is_first_open', () => {
-  const base = { markerRecorded: false, legacyUseEvidence: false, hasSession: false };
+describe('external sign-in and app_opened', () => {
+  function tracker() {
+    let nowMs = 1000;
+    const t = createForegroundTracker(() => nowMs);
+    t.onAppState('active');
+    return { t, advance: (ms: number) => (nowMs += ms) };
+  }
 
-  it('true only with no evidence of earlier use', () => {
+  it('a sign-in that goes to background and returns is the same visit', () => {
+    const { t } = tracker();
+    t.beginExternalFlow();
+    t.onAppState('background');
+    assert.equal(t.onAppState('active'), null);
+    t.endExternalFlow();
+  });
+
+  it('also when the sign-in resolves before the app reports active', () => {
+    const { t } = tracker();
+    t.beginExternalFlow();
+    t.onAppState('background');
+    t.endExternalFlow();
+    assert.equal(t.onAppState('active'), null);
+  });
+
+  it('a sheet that only goes inactive adds nothing', () => {
+    const { t } = tracker();
+    t.beginExternalFlow();
+    t.onAppState('inactive');
+    assert.equal(t.onAppState('active'), null);
+    t.endExternalFlow();
+    t.onAppState('background');
+    assert.equal(t.onAppState('active'), 'return_from_background');
+  });
+
+  it('an abandoned sign-in stops hiding the return after the limit', () => {
+    const { t, advance } = tracker();
+    t.beginExternalFlow();
+    t.onAppState('background');
+    advance(EXTERNAL_AUTH_MAX_MS + 1);
+    assert.equal(t.onAppState('active'), 'return_from_background');
+  });
+
+  it('a later background after the flow ended counts normally', () => {
+    const { t } = tracker();
+    t.beginExternalFlow();
+    t.onAppState('background');
+    t.onAppState('active');
+    t.endExternalFlow();
+    t.onAppState('background');
+    assert.equal(t.onAppState('active'), 'return_from_background');
+  });
+});
+
+describe('is_first_open', () => {
+  const nowMs = Date.parse('2026-11-06T12:00:00Z');
+  const base = {
+    markerRecorded: false,
+    legacyUseEvidence: false,
+    hasSession: false,
+    installedAtMs: nowMs - 60_000,
+    nowMs,
+  };
+
+  it('true only with no earlier use and a fresh install date', () => {
     assert.equal(resolveIsFirstOpen(base), true);
+  });
+
+  it('omitted when a fresh install cannot be shown', () => {
+    assert.equal(resolveIsFirstOpen({ ...base, installedAtMs: null }), undefined);
+    assert.equal(
+      resolveIsFirstOpen({ ...base, installedAtMs: nowMs - 30 * 24 * 3600 * 1000 }),
+      undefined,
+    );
+    assert.equal(resolveIsFirstOpen({ ...base, installedAtMs: nowMs + 60_000 }), undefined);
   });
 
   it('turning tracking on for an existing install is not a first open', () => {
@@ -340,6 +415,166 @@ describe('person properties', () => {
     assert.equal(profileWriteAffectsAnalytics({ languageCodes: [] }), true);
     assert.equal(profileWriteAffectsAnalytics({ crjResumeStage: 'x' }), false);
     assert.equal(profileWriteAffectsAnalytics({ bgVisible: true }), false);
+  });
+});
+
+describe('person properties across profile modes', () => {
+  const personalDoc = {
+    mode: 'personal',
+    occupation: 'Baker',
+    personalOnboardingInterests: [
+      { id: 'technology_ai' },
+      { id: 'custom_x', name: 'Bread', isCustom: true },
+    ],
+    personalOnboardingAffiliations: [{ source: 'provider', providerId: 'p1', name: 'One' }],
+    socialLinksPersonal: { website: 'https://nearsy.example' },
+  };
+  const verifiedKnown = { youtube: true, x: false };
+
+  function afterSwitch(
+    next: Record<string, unknown>,
+    verified: Parameters<typeof buildPersonProperties>[1] = verifiedKnown,
+    options?: Parameters<typeof buildPersonProperties>[3],
+  ) {
+    const first = diffPersonProperties(
+      {},
+      buildPersonProperties(personalDoc, verifiedKnown, NOW),
+    );
+    return diffPersonProperties(
+      first.next,
+      buildPersonProperties(next, verified, NOW, options),
+    ).patch;
+  }
+
+  it('a filled new mode replaces every value of the previous one', () => {
+    const patch = afterSwitch({
+      ...personalDoc,
+      mode: 'professional',
+      profiles: { professional: { occupation: 'Engineer' } },
+      professionalOnboardingInterests: [{ id: 'travel_international' }],
+      professionalOnboardingAffiliations: [],
+      socialLinksProfessional: {},
+    });
+    assert.equal(patch.set.profile_type, 'professional');
+    assert.equal(patch.set.occupation, 'Engineer');
+    assert.deepEqual(patch.set.interests, ['travel_international']);
+    assert.deepEqual(patch.set.interests_custom, []);
+    assert.deepEqual(patch.set.affiliations, []);
+    assert.deepEqual(patch.set.social_platforms_manual, []);
+  });
+
+  it('confirmed empty in the new mode sends empty, not unset', () => {
+    const patch = afterSwitch({
+      mode: 'professional',
+      professionalOnboardingInterests: [],
+      professionalOnboardingAffiliations: [],
+      socialLinksProfessional: {},
+    });
+    assert.deepEqual(patch.set.interests, []);
+    assert.equal(patch.set.interests_count, 0);
+    assert.equal(patch.unset.includes('interests'), false);
+    assert.equal(patch.unset.includes('social_platforms_manual'), false);
+  });
+
+  it('a legacy profile with nothing for the new mode clears the old values', () => {
+    const patch = afterSwitch(
+      { ...personalDoc, mode: 'professional' },
+      verifiedKnown,
+      { modeChanged: true },
+    );
+    for (const name of [
+      'interests',
+      'interests_custom',
+      'interests_custom_normalized',
+      'interests_count',
+      'interests_truncated',
+      'affiliations',
+      'affiliations_custom_normalized',
+      'affiliations_count',
+      'social_platforms_manual',
+      'occupation',
+    ]) {
+      assert.ok(patch.unset.includes(name), name);
+    }
+    assert.equal(JSON.stringify(patch.set).includes('Bread'), false);
+    assert.equal(JSON.stringify(patch.set).includes('Baker'), false);
+  });
+
+  it('a top-level occupation known to be the other mode is not reported', () => {
+    const patch = buildPersonProperties(
+      {
+        mode: 'professional',
+        occupation: 'Baker',
+        profiles: { personal: { occupation: 'Baker' } },
+      },
+      null,
+      NOW,
+    );
+    assert.equal(patch.set.occupation, undefined);
+    assert.ok(patch.unset.includes('occupation'));
+  });
+
+  it('a legacy profile that never switched keeps the occupation the app shows', () => {
+    const patch = buildPersonProperties(
+      { mode: 'personal', occupation: 'Baker' },
+      null,
+      NOW,
+    );
+    assert.equal(patch.set.occupation, 'Baker');
+  });
+
+  it('the nested occupation of the mode always wins', () => {
+    const patch = buildPersonProperties(
+      {
+        mode: 'professional',
+        occupation: 'Baker',
+        profiles: { professional: { occupation: 'Engineer' } },
+      },
+      null,
+      NOW,
+      { modeChanged: true },
+    );
+    assert.equal(patch.set.occupation, 'Engineer');
+  });
+
+  it('a verified lookup that fails after a switch clears, it never keeps another mode', () => {
+    const patch = afterSwitch(
+      { mode: 'professional', professionalOnboardingInterests: [] },
+      null,
+      { verifiedConfirmedForMode: false },
+    );
+    for (const name of ['social_platforms_verified', 'socials_connected', 'has_socials']) {
+      assert.ok(patch.unset.includes(name), name);
+    }
+  });
+
+  it('a verified lookup that fails in the same mode keeps what it confirmed', () => {
+    const patch = afterSwitch(personalDoc, null, { verifiedConfirmedForMode: true });
+    assert.equal(patch.unset.includes('social_platforms_verified'), false);
+    assert.equal(patch.set.social_platforms_verified, undefined);
+  });
+
+  it('a profile with no valid mode clears everything that belongs to a mode', () => {
+    const { set, unset } = buildPersonProperties({ birthCountryCode: 'MX' }, null, NOW);
+    assert.equal(set.country_birth, 'MX');
+    for (const name of MODE_SCOPED_PROPERTY_NAMES) assert.ok(unset.includes(name), name);
+  });
+
+  it('account-level values do not depend on the mode', () => {
+    const { set } = buildPersonProperties(
+      { mode: 'professional', birthCountryCode: 'MX', languageCodes: ['es'] },
+      null,
+      NOW,
+    );
+    assert.equal(set.country_birth, 'MX');
+    assert.deepEqual(set.languages, ['es']);
+  });
+
+  it('every name unset or set exists in the contract', () => {
+    const { set, unset } = buildPersonProperties(personalDoc, verifiedKnown, NOW);
+    for (const name of [...Object.keys(set), ...unset, ...MODE_SCOPED_PROPERTY_NAMES]) {
+      assert.ok(Object.prototype.hasOwnProperty.call(PERSON_PROPERTY_RULES, name), name);
+    }
   });
 });
 
@@ -703,6 +938,7 @@ describe('push open coordinator', () => {
 
   it('listener plus launch response is one tap', () => {
     const h = harness();
+    h.coordinator.setSession('viewerA');
     h.setReady(true);
     h.coordinator.handleResponse(response('n1', payload));
     h.coordinator.handleResponse(response('n1', payload));
@@ -712,6 +948,7 @@ describe('push open coordinator', () => {
 
   it('cold start waits until navigation can show the profile', () => {
     const h = harness();
+    h.coordinator.setSession('viewerA');
     h.coordinator.handleResponse(response('n1', payload));
     assert.deepEqual(h.navigated, []);
     assert.equal(h.opened.length, 1);
@@ -734,11 +971,85 @@ describe('push open coordinator', () => {
 
   it('sign-out clears the destination', () => {
     const h = harness();
+    h.coordinator.setSession('viewerA');
     h.coordinator.handleResponse(response('n1', payload));
-    h.coordinator.clearPending();
+    h.coordinator.setSession(null);
     h.setReady(true);
     h.coordinator.flush();
     assert.deepEqual(h.navigated, []);
+  });
+
+  it('account change drops the destination of the previous account', () => {
+    const h = harness();
+    h.coordinator.setSession('viewerA');
+    h.coordinator.handleResponse(response('n1', payload));
+    h.coordinator.setSession('viewerB');
+    h.setReady(true);
+    h.coordinator.flush();
+    assert.deepEqual(h.navigated, []);
+    assert.equal(h.opened.length, 1);
+  });
+
+  it('a token refresh of the same account keeps it', () => {
+    const h = harness();
+    h.coordinator.setSession('viewerA');
+    h.coordinator.handleResponse(response('n1', payload));
+    h.coordinator.setSession('viewerA');
+    h.setReady(true);
+    h.coordinator.flush();
+    assert.deepEqual(h.navigated, ['actor1']);
+  });
+
+  it('cold start: the tap waits for Auth, then for navigation', () => {
+    const h = harness();
+    h.coordinator.handleResponse(response('n1', payload));
+    assert.equal(h.opened.length, 1);
+    h.setReady(true);
+    h.coordinator.flush();
+    assert.deepEqual(h.navigated, [], 'no session reported yet');
+    h.coordinator.setSession('viewerA');
+    assert.deepEqual(h.navigated, ['actor1']);
+  });
+
+  it('cold start that resolves signed out drops the destination', () => {
+    const h = harness();
+    h.coordinator.handleResponse(response('n1', payload));
+    h.coordinator.setSession(null);
+    h.coordinator.setSession('viewerA');
+    h.setReady(true);
+    h.coordinator.flush();
+    assert.deepEqual(h.navigated, []);
+  });
+
+  it('a tap while signed out neither counts nor reaches a later sign-in', () => {
+    const h = harness();
+    h.coordinator.setSession(null);
+    h.coordinator.handleResponse(response('n1', payload));
+    assert.equal(h.opened.length, 0);
+    h.coordinator.setSession('viewerA');
+    h.setReady(true);
+    h.coordinator.flush();
+    assert.deepEqual(h.navigated, []);
+  });
+
+  it('listener and launch response stay one tap across a cold start', () => {
+    const h = harness();
+    h.coordinator.handleResponse(response('n1', payload));
+    h.coordinator.setSession('viewerA');
+    h.coordinator.handleResponse(response('n1', payload));
+    h.setReady(true);
+    h.coordinator.flush();
+    assert.equal(h.opened.length, 1);
+    assert.deepEqual(h.navigated, ['actor1']);
+  });
+
+  it('an old payload without alertId opens the profile and reports none', () => {
+    const h = harness();
+    h.coordinator.setSession('viewerA');
+    h.setReady(true);
+    h.coordinator.handleResponse(response('old', { actorUid: 'oldActor' }));
+    assert.deepEqual(h.navigated, ['oldActor']);
+    assert.deepEqual(h.opened, [{ actorUid: 'oldActor' }]);
   });
 
   it('tolerates old payloads and invents no alertId', () => {
@@ -761,6 +1072,7 @@ describe('push open coordinator', () => {
 
   it('a repeated identifier with a new delivery date is a new tap', () => {
     const h = harness();
+    h.coordinator.setSession('viewerA');
     h.setReady(true);
     const delivery = (date: number) => ({
       notification: {

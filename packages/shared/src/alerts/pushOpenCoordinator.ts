@@ -1,7 +1,8 @@
 /**
  * One path for notification taps, warm or cold. The listener and the launch
  * response can report the same tap, so each notification is processed once. If
- * the app is not ready to show a profile yet, the destination waits briefly.
+ * the app is not ready to show a profile yet, the destination waits briefly,
+ * only for the session that was there at the tap.
  *
  * Pure module: navigation and analytics arrive as ports.
  */
@@ -56,6 +57,8 @@ export type PushOpenCoordinatorDeps = {
 export function createPushOpenCoordinator(deps: PushOpenCoordinatorDeps) {
   const processed = new Set<string>();
   let pending: { uid: string; atMs: number } | null = null;
+  /** undefined until Auth reports, which is the normal state of a cold start. */
+  let sessionUid: string | null | undefined;
 
   function flush(): void {
     if (!pending) return;
@@ -63,7 +66,7 @@ export function createPushOpenCoordinator(deps: PushOpenCoordinatorDeps) {
       pending = null;
       return;
     }
-    if (!deps.canNavigate()) return;
+    if (!sessionUid || !deps.canNavigate()) return;
     const { uid } = pending;
     pending = null;
     deps.navigateToProfile(uid);
@@ -78,6 +81,8 @@ export function createPushOpenCoordinator(deps: PushOpenCoordinatorDeps) {
       if (processed.has(key)) return;
       processed.add(key);
 
+      // Signed out: nobody to attribute it to, and a later sign-in must not inherit it.
+      if (sessionUid === null) return;
       const target = parsePushOpenTarget(request.content?.data);
       if (!target.actorUid) return;
       deps.onAlertOpened(target);
@@ -86,9 +91,12 @@ export function createPushOpenCoordinator(deps: PushOpenCoordinatorDeps) {
     },
     /** Call when navigation becomes ready or its state changes. */
     flush,
-    /** A signed-out session must not inherit the destination. */
-    clearPending(): void {
-      pending = null;
+    /** Feed every Auth report. Sign-out and A→B drop the destination. */
+    setSession(uid: string | null): void {
+      const changed = sessionUid !== undefined && sessionUid !== uid;
+      sessionUid = uid;
+      if (changed || uid === null) pending = null;
+      flush();
     },
   };
 }

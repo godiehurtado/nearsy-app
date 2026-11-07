@@ -21,6 +21,7 @@ import {
   TRACKING_PLAN_VERSION,
 } from '../contract';
 import { createFakeTransport, type FakeTransport } from '../fakeTransport';
+import { isValidValue } from '../sanitize';
 import {
   bindAnalyticsServices,
   handleCampaignLink,
@@ -35,6 +36,7 @@ import {
   trackProfileCompleted,
   trackSignupCompleted,
   trackSocialAuthSession,
+  withExternalAuthFlow,
   type AnalyticsServices,
 } from '../index';
 import { createEventLedger } from '../ledger';
@@ -127,6 +129,7 @@ function bindFacade(
     },
     noteVerifiedSocialsChanged: () => {},
     observeLocationPermissions: () => {},
+    noteExternalAuthFlow: () => {},
     ...overrides,
     syncs,
   };
@@ -868,6 +871,71 @@ describe('match_made through the facade', () => {
     assert.equal(fake.captured('match_made')[0]?.properties.match_score_range, 'low');
   });
 
+  it('only a score in 0-100 counts, and it does not burn the dedupe', async () => {
+    const { fake, client } = setup();
+    bindFacade(client, memoryStore());
+    await client.start();
+    client.reportAuthState(USER_A);
+    for (const bad of [-1, 100.5, 101, NaN, Infinity]) {
+      trackMatchPresented('uidA', 'other', bad);
+    }
+    await settle();
+    assert.equal(fake.captured('match_made').length, 0);
+    trackMatchPresented('uidA', 'other', 74.5);
+    trackMatchPresented('uidA', 'other2', 75);
+    trackMatchPresented('uidA', 'other3', 100);
+    trackMatchPresented('uidA', 'other4', 49.9);
+    await settle();
+    assert.deepEqual(
+      fake.captured('match_made').map((e) => e.properties.match_score_range),
+      ['medium', 'high', 'high', 'low'],
+    );
+  });
+
+  it('list row and later profile opening count once', async () => {
+    const { fake, client } = setup();
+    bindFacade(client, memoryStore());
+    await client.start();
+    client.reportAuthState(USER_A);
+    trackMatchPresented('uidA', 'other', 80); // row
+    await settle();
+    trackMatchPresented('uidA', 'other', 80); // opening
+    await settle();
+    assert.equal(fake.captured('match_made').length, 1);
+  });
+
+  it('A→B counts separately for the same profile', async () => {
+    const { fake, client } = setup();
+    bindFacade(client, memoryStore());
+    await client.start();
+    client.reportAuthState(USER_A);
+    trackMatchPresented('uidA', 'other', 80);
+    await settle();
+    client.reportAuthState(USER_B);
+    trackMatchPresented('uidB', 'other', 80);
+    await settle();
+    assert.deepEqual(
+      fake.captured('match_made').map((e) => e.distinctId),
+      ['uidA', 'uidB'],
+    );
+  });
+
+  it('match_id is optional: a failed hash still reports the event', async () => {
+    const { fake, client } = setup();
+    bindFacade(client, memoryStore(), {
+      sha256Hex: async () => {
+        throw new Error('no crypto');
+      },
+    });
+    await client.start();
+    client.reportAuthState(USER_A);
+    trackMatchPresented('uidA', 'other', 80);
+    await settle();
+    const [event] = fake.captured('match_made');
+    assert.equal(event?.properties.match_score, 80);
+    assert.equal('match_id' in (event?.properties ?? {}), false);
+  });
+
   it('never sends the other UID', async () => {
     const { fake, client } = setup();
     bindFacade(client, memoryStore(), {
@@ -880,6 +948,28 @@ describe('match_made through the facade', () => {
     const [event] = fake.captured('match_made');
     assert.equal(event?.properties.match_id, 'ab'.repeat(16));
     assert.equal(JSON.stringify(event).includes('otherSecretUid'), false);
+  });
+});
+
+describe('withExternalAuthFlow', () => {
+  it('runs the sign-in and reports begin and end', async () => {
+    const flow: boolean[] = [];
+    const { client } = setup();
+    bindFacade(client, memoryStore(), {
+      noteExternalAuthFlow: (active) => flow.push(active),
+    });
+    assert.equal(await withExternalAuthFlow(async () => 'done'), 'done');
+    await assert.rejects(
+      withExternalAuthFlow(async () => {
+        throw new Error('cancelled');
+      }),
+      /cancelled/,
+    );
+    assert.deepEqual(flow, [true, false, true, false]);
+  });
+
+  it('with analytics off it only runs the sign-in', async () => {
+    assert.equal(await withExternalAuthFlow(async () => 7), 7);
   });
 });
 
@@ -1003,9 +1093,74 @@ describe('attribution flows', () => {
   });
 });
 
+describe('canonical contract names', () => {
+  it('events', () => {
+    assert.ok('campaign_accessed' in EVENT_RULES);
+    assert.equal('campaign_access' in EVENT_RULES, false);
+    assert.ok('acquisition_attributed' in EVENT_RULES);
+    assert.deepEqual(Object.keys(EVENT_RULES.foreground_location), ['granted']);
+    assert.deepEqual(Object.keys(EVENT_RULES.background_location), ['granted']);
+    assert.deepEqual(EVENT_RULES.alert_opened.source, {
+      kind: 'enum',
+      values: ['push', 'inbox'],
+    });
+  });
+
+  it('person properties', () => {
+    for (const name of [
+      'social_platforms_manual',
+      'social_platforms_verified',
+      'foreground_location_granted',
+      'background_location_granted',
+      'distribution_channel',
+      'is_test_user',
+    ]) {
+      assert.ok(name in PERSON_PROPERTY_RULES, name);
+    }
+    for (const name of [
+      'socials_manual',
+      'socials_verified',
+      'foreground_location',
+      'background_location',
+    ]) {
+      assert.equal(name in PERSON_PROPERTY_RULES, false, name);
+    }
+  });
+
+  it('every new name passes the filter and is_test_user can only be true', () => {
+    assert.equal(isAllowedOutgoingEvent('campaign_accessed'), true);
+    assert.equal(isAllowedOutgoingEvent('campaign_access'), false);
+    assert.equal(isValidValue(PERSON_PROPERTY_RULES.is_test_user, true), true);
+    assert.equal(isValidValue(PERSON_PROPERTY_RULES.is_test_user, false), false);
+  });
+});
+
 describe('source guards', () => {
   const read = (path: string) =>
     readFileSync(join(repoRoot, path), 'utf8');
+
+  it('deletion reaches analytics only as a guarded subscriber', () => {
+    const runtime = read('packages/shared/src/analytics/runtime.ts');
+    assert.ok(runtime.includes('subscribeAccountDeletionClosure(discardClosedAccount)'));
+    const session = read('packages/shared/src/services/accountDeletionSession.ts');
+    assert.equal(session.includes('analytics'), false);
+    assert.ok(/listener\(\);\s*\} catch/.test(session));
+  });
+
+  it('sign-in entry points and Discovery are wired', () => {
+    for (const path of [
+      'packages/shared/src/hooks/useGoogleSignInFlow.ts',
+      'packages/shared/src/hooks/useFacebookSignInFlow.ts',
+      'packages/shared/src/hooks/useAppleSignInFlow.ts',
+      'packages/shared/src/authentication/linkedinA3/browserSession.ts',
+    ]) {
+      assert.ok(read(path).includes('withExternalAuthFlow('), path);
+    }
+    const profile = read('packages/shared/src/screens/DiscoveryProfileScreen.tsx');
+    assert.ok(profile.includes('trackMatchPresented(viewerUid, uid, score)'));
+    const app = read('packages/shared/src/App.tsx');
+    assert.ok(app.includes('pushOpenCoordinator.setSession(lastUid);'));
+  });
 
   it('PostHog runs with every automatic capture off', () => {
     const source = read('packages/shared/src/analytics/postHogTransport.ios.ts');

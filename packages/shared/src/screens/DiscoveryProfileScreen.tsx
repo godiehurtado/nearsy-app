@@ -31,7 +31,7 @@ import {
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 
-import { trackProfileViewed } from '../analytics';
+import { trackMatchPresented, trackProfileViewed } from '../analytics';
 import { firebaseAuth } from '../config/firebaseConfig';
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { useTranslation } from '../i18n';
@@ -148,10 +148,10 @@ export default function DiscoveryProfileScreen() {
         if (viewerUid) {
           profileViewedUidRef.current = uid;
           const alignment = toAlignment(next.data.compatibility);
-          trackProfileViewed(
-            viewerUid,
-            alignment?.available === true ? alignment.score : undefined,
-          );
+          const score =
+            alignment?.available === true ? alignment.score : undefined;
+          trackProfileViewed(viewerUid, score);
+          trackMatchPresented(viewerUid, uid, score);
         }
       }
       setData(next.data);

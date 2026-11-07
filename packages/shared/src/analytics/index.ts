@@ -52,6 +52,7 @@ export type AnalyticsServices = {
   scheduleProfileSync: (uid: string) => void;
   noteVerifiedSocialsChanged: (uid: string) => void;
   observeLocationPermissions: (kind: LocationPermissionKind | null) => void;
+  noteExternalAuthFlow: (active: boolean) => void;
 };
 
 let services: AnalyticsServices | null = null;
@@ -178,6 +179,20 @@ export function trackProfileCompleted(uid: string | null | undefined): void {
   });
 }
 
+/**
+ * Wraps a sign-in that can leave the app for a moment, so its return is not
+ * reported as an open. Runs the sign-in the same with analytics off.
+ */
+export async function withExternalAuthFlow<T>(run: () => Promise<T>): Promise<T> {
+  safely((s) => s.noteExternalAuthFlow(true));
+  const active = services;
+  try {
+    return await run();
+  } finally {
+    if (active === services) safely((s) => s.noteExternalAuthFlow(false));
+  }
+}
+
 export function noteProfileWrite(
   uid: string,
   patch: Readonly<Record<string, unknown>>,
@@ -221,20 +236,30 @@ export function trackProfileViewed(uid: string, score?: number | null): void {
   });
 }
 
-/** A discovered profile with a real compatibility score was shown on screen. */
+/**
+ * Compatibility presented, not a mutual match: a list row at least 50% visible or
+ * a profile opened, with a valid score. Row and later opening share one count.
+ */
 export function trackMatchPresented(
   viewerUid: string,
   otherUid: string,
   score: number | null | undefined,
 ): void {
-  if (typeof score !== 'number') return;
+  const scoreProperties = buildScoreProperties(score);
+  if (Object.keys(scoreProperties).length === 0) return;
   safely(async (s) => {
+    // The rule is per SDK session, so it needs the SDK running to read it.
+    await s.client.start();
     const sessionId = s.client.getSessionId();
-    if (!matchDedupe.claim(sessionId, viewerUid, otherUid)) return;
-    const digest = await s.sha256Hex(matchIdSeed(viewerUid, otherUid));
+    if (!sessionId || !matchDedupe.claim(sessionId, viewerUid, otherUid)) return;
+    // match_id is a convenience for this emitter: the event stands without it.
+    const matchId = await s
+      .sha256Hex(matchIdSeed(viewerUid, otherUid))
+      .then((digest) => digest.slice(0, MATCH_ID_LENGTH))
+      .catch(() => undefined);
     s.client.captureForUser(viewerUid, 'match_made', {
-      match_id: digest.slice(0, MATCH_ID_LENGTH),
-      ...buildScoreProperties(score),
+      match_id: matchId,
+      ...scoreProperties,
     });
   });
 }

@@ -1,3 +1,4 @@
+import { withExternalAuthFlow } from '../analytics';
 import { useCallback, useState } from 'react';
 import { Alert, Keyboard, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -38,7 +39,7 @@ export function useAppleSignInFlow() {
 
     setSubmitting(true);
     try {
-      const result = await authenticateWithApple();
+      const result = await withExternalAuthFlow(() => authenticateWithApple());
 
       Keyboard.dismiss();
       setTimeout(() => {
