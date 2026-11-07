@@ -551,6 +551,59 @@ describe('beta classification with the real SDK', () => {
     assert.equal(server.events().at(-1)?.properties.$set.occupation, 'x');
   });
 
+  it('set_once keeps a Beta person marked across restarts, devices and builds', async () => {
+    // What PostHog documents for person updates: $set overwrites, $set_once keeps the first.
+    // The server itself is not in this test; QA checks it once events are received.
+    const person: Record<string, unknown> = {};
+    const apply = (events: Array<{ properties: Record<string, any> }>) => {
+      for (const { properties } of events) {
+        Object.assign(person, properties.$set);
+        for (const [key, value] of Object.entries(properties.$set_once ?? {})) {
+          if (!(key in person)) person[key] = value;
+        }
+      }
+    };
+    const run = async (classified: boolean, write: (t: AnalyticsTransport) => void | Promise<void>) => {
+      const server = installFakeServer(answering());
+      const transport = await sendingTransport(
+        classified ? { installClassification: BETA_STAMP } : {},
+      );
+      const session = createAnalyticsSession({
+        loadTransport: async () => transport,
+        getAuthUser: () => ({ uid: 'uid-a' }),
+        readCreationTime: () => undefined,
+        buildBaseProperties: () => ({}),
+        buildProfileProperties: () => null,
+        superProperties: {},
+        now: () => 0,
+        ...(classified ? { accountClassification: { is_test_user: true } } : {}),
+      });
+      session.trackAppOpened();
+      await session.settled();
+      await write(transport);
+      await transport.flush();
+      const events = server.events();
+      apply(events);
+      return events;
+    };
+
+    const firstBeta = await run(true, () => {});
+    assert.equal(person.is_test_user, true);
+    const carrier = firstBeta.find((item) => item.properties.$set_once?.is_test_user);
+    assert.ok(carrier);
+    assert.ok(!('is_test_user' in (carrier.properties.$set ?? {})));
+
+    // A general build, even one that tried to write false, on any channel of the person.
+    await run(false, (transport) =>
+      transport.setPersonProperties({ is_test_user: false }, { is_test_user: false }),
+    );
+    assert.equal(person.is_test_user, true);
+
+    // Another Beta run repeats set_once, which changes nothing.
+    await run(true, () => {});
+    assert.equal(person.is_test_user, true);
+  });
+
   it('a false classification cannot be written, even in a Beta build', () => {
     const event = applyInstallClassification(
       { properties: {}, $set: { is_test_user: false, a: 1 }, $set_once: { is_test_user: true } },

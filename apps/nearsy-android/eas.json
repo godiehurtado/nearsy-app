@@ -42,6 +42,15 @@
       "android": {
         "buildType": "app-bundle"
       }
+    },
+    "beta": {
+      "extends": "production",
+      "env": {
+        "NEARSY_ANALYTICS_BETA_ENABLED": "true",
+        "NEARSY_ANALYTICS_DISTRIBUTION_CHANNEL": "beta",
+        "NEARSY_ANALYTICS_ENV": "production",
+        "NEARSY_ANALYTICS_ENABLED": "false"
+      }
     }
   },
   "submit": {
@@ -49,6 +58,12 @@
       "android": {
         "track": "production",
         "releaseStatus": "draft"
+      }
+    },
+    "beta": {
+      "extends": "production",
+      "android": {
+        "track": "internal"
       }
     }
   }
