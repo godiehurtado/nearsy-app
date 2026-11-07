@@ -1,3 +1,8 @@
+import {
+  readLinkedInAccountCreationSignal,
+  type LinkedInAccountCreationSignal,
+} from './accountCreationSignal';
+
 export type LinkedInA3Platform = 'ios' | 'android';
 
 export type LinkedInAuthStartInput = {
@@ -27,6 +32,8 @@ export type LinkedInAuthProfileHints = {
 export type LinkedInAuthExchangeResult = {
   customToken: string;
   profileHints?: LinkedInAuthProfileHints;
+  /** Omitted while Identity has not confirmed it. See accountCreationSignal.ts. */
+  accountCreation?: Exclude<LinkedInAccountCreationSignal, 'unknown'>;
 };
 
 export function assertLinkedInAuthStartInput(
@@ -125,5 +132,10 @@ export function assertLinkedInAuthExchangeResult(
     throw new Error('invalid customToken');
   }
   const profileHints = parseOptionalProfileHints(record.profileHints);
-  return profileHints ? { customToken, profileHints } : { customToken };
+  const accountCreation = readLinkedInAccountCreationSignal(record);
+  return {
+    customToken,
+    ...(profileHints ? { profileHints } : {}),
+    ...(accountCreation !== 'unknown' ? { accountCreation } : {}),
+  };
 }

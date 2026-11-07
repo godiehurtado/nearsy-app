@@ -1,3 +1,4 @@
+import { trackSocialAuthSession } from '../../../analytics';
 import type { SocialAuthenticationProviderAdapter } from './socialAuthenticationPort';
 import type { SocialProviderRegistry } from './providerRegistry';
 import type {
@@ -142,6 +143,8 @@ export function createAuthenticateWithFacebook(
         }
         throw firebaseErr;
       }
+
+      trackSocialAuthSession('facebook', session);
 
       let socialProfile: SocialProfileData | undefined;
       try {

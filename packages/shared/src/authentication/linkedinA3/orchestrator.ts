@@ -4,6 +4,7 @@
  * Optional durable store holds one active transaction for kill/relaunch recovery.
  */
 
+import type { LinkedInAuthExchangeResult } from './types';
 import { LINKEDIN_APP_RETURN_URL } from './environment/nearsyFirebaseEnvironment';
 import type { LinkedInA3CallableClient } from './functions/linkedInA3CallableClient';
 import {
@@ -68,6 +69,7 @@ export type LinkedInA3FlowResult =
       status: 'authenticated';
       session: LinkedInA3AuthSession;
       profileHints?: LinkedInAuthProfileHints;
+      accountCreation?: LinkedInAuthExchangeResult['accountCreation'];
     } & LinkedInA3TerminalMeta)
   | ({
       status: Exclude<LinkedInA3FlowStatus, 'authenticated'>;
@@ -402,6 +404,9 @@ export async function runLinkedInA3BrowserAuthFlow(
         status: 'authenticated',
         session,
         profileHints: exchangeResult.profileHints,
+        ...(exchangeResult.accountCreation
+          ? { accountCreation: exchangeResult.accountCreation }
+          : {}),
       });
     } catch (err) {
       if (err instanceof LinkedInA3ClientError) {

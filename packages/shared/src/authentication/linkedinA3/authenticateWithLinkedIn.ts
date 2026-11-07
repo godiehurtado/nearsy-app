@@ -4,6 +4,7 @@
  */
 
 import { signInWithCustomToken } from 'firebase/auth';
+import { trackLinkedInAuthSession } from '../../analytics';
 import { getUserProfile, isProfileComplete } from '../../services/firestoreService';
 import { firebaseAuth } from '../../config/firebaseConfig';
 import { withPushTokenReleaseAroundSessionReplace } from '../../services/pushTokenBeforeAuthReplace';
@@ -84,6 +85,7 @@ export async function finalizeLinkedInA3AuthenticatedSession(input: {
   uid: string;
   sessionEmail: string | null;
   profileHints?: LinkedInAuthProfileHints;
+  accountCreation?: 'created' | 'existing';
 }): Promise<LinkedInA3SignInOutcome> {
   const uid = input.uid;
   if (!firebaseAuth.currentUser || firebaseAuth.currentUser.uid !== uid) {
@@ -112,6 +114,8 @@ export async function finalizeLinkedInA3AuthenticatedSession(input: {
       ),
     };
   }
+
+  trackLinkedInAuthSession(uid, input.accountCreation ?? 'unknown');
 
   let complete = false;
   try {
@@ -200,5 +204,6 @@ export async function signInWithLinkedInA3(): Promise<LinkedInA3SignInOutcome> {
     uid: flow.session.uid,
     sessionEmail: flow.session.email,
     profileHints: flow.profileHints,
+    accountCreation: flow.accountCreation,
   });
 }

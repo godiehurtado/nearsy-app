@@ -207,6 +207,9 @@ export async function resumeLinkedInA3FromReturnUrl(
       status: 'authenticated',
       session,
       profileHints: exchangeResult.profileHints,
+      ...(exchangeResult.accountCreation
+        ? { accountCreation: exchangeResult.accountCreation }
+        : {}),
     });
   } catch (err) {
     await linkedInA3DurablePersistence.clearSafely(deps.durableStore);

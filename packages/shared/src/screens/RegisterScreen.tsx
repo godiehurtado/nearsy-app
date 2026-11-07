@@ -62,6 +62,7 @@ import {
   resolveCalendarInitialBirthDate,
 } from '../utils/birthDate';
 import { registerWithEmail } from '../services/authService';
+import { trackSignupCompleted } from '../analytics';
 import { createUserProfile } from '../services/firestoreService';
 import { useTranslation } from '../i18n';
 
@@ -303,6 +304,7 @@ export default function RegisterScreen({ navigation }: Props) {
         form.email.trim(),
         form.password,
       );
+      trackSignupCompleted({ uid: user.uid, method: 'email' });
 
       await createUserProfile(user.uid, {
         email: form.email.trim(),
