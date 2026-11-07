@@ -254,7 +254,6 @@ surveys or GeoIP. Event names are final: the app reports these exact ones.
 | | `alert_id` | string | `data.alertId` of the push | Push that carries it. None does yet |
 | `campaign_accessed` | `campaign_source`, `campaign_name`, `campaign_content`, `campaign_tool` | string | Safe tokens, up to 64 characters | Those present in the link |
 | | `attribution_method` | string | `custom_scheme`, `app_link` | Always |
-
 | `signup_completed`, `acquisition_attributed` | `signup_source`, `signup_campaign`, `signup_content`, `signup_tool` | string | Safe tokens, up to 64 characters | Those present in the evidence |
 | | `attribution_method` | string | `custom_scheme`, `app_link`, `install_referrer` | Only with evidence; never `organic` or `unknown` |
 
