@@ -27,14 +27,30 @@ function defineNearsyPostHog({ PostHog, PostHogPersistedProperty }: PostHogModul
       return Promise.resolve(undefined);
     }
 
-    /** `reset` keeps the queue by design, and no public call removes from it. */
-    discardQueuedEventsFor(distinctId: string): number {
+    /**
+     * `reset` keeps the queue by design, and no public call removes from it. The
+     * item shape ({ message: { distinct_id, timestamp } }) is internal to this
+     * version. The write is then forced to disk with `flushStorage`, the SDK's own
+     * step after it changes the queue, so a restart cannot bring the events back.
+     */
+    async discardQueuedEventsFor(distinctId: string, untilMs?: number): Promise<number> {
       const key = PostHogPersistedProperty.Queue;
       const queue =
-        this.getPersistedProperty<{ message?: { distinct_id?: unknown } }[]>(key) ??
-        [];
-      const kept = queue.filter((item) => item.message?.distinct_id !== distinctId);
-      if (kept.length !== queue.length) this.setPersistedProperty(key, kept);
+        this.getPersistedProperty<
+          { message?: { distinct_id?: unknown; timestamp?: unknown } }[]
+        >(key) ?? [];
+      const kept = queue.filter((item) => {
+        if (item.message?.distinct_id !== distinctId) return true;
+        if (untilMs === undefined) return false;
+        // In memory the SDK can hold a Date; on disk it is an ISO string.
+        const raw = item.message.timestamp;
+        const at = raw instanceof Date ? raw.getTime() : Date.parse(String(raw));
+        // An unreadable timestamp is removed too: keeping it could leak the account.
+        return Number.isFinite(at) && at > untilMs;
+      });
+      if (kept.length === queue.length) return 0;
+      this.setPersistedProperty(key, kept);
+      await this.flushStorage();
       return queue.length - kept.length;
     }
   };
@@ -117,8 +133,8 @@ export async function createPostHogTransport(
     reset: () => {
       client.reset();
     },
-    discardQueuedEventsFor: (distinctId) =>
-      client.discardQueuedEventsFor(distinctId),
+    discardQueuedEventsFor: (distinctId, untilMs) =>
+      client.discardQueuedEventsFor(distinctId, untilMs),
     getIdentifiedId: () => {
       const distinctId = client.getDistinctId();
       return distinctId && distinctId !== client.getAnonymousId()

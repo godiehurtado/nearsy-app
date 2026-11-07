@@ -77,6 +77,8 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
   let afterAuthReady: (() => void)[] = [];
   /** Account generation closed by deletion. A recreated account is not it. */
   let closedAccount: { uid: string; creationTime: string | null } | null = null;
+  /** Deletion requested and not resolved: this account's new events are dropped. */
+  let heldUid: string | null = null;
 
   function isClosed(session: AuthSnapshot): boolean {
     return (
@@ -226,6 +228,10 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     properties?: Readonly<Record<string, unknown>>,
   ): void {
     runWhenAuthKnown(() => {
+      if (heldUid && auth?.uid === heldUid) {
+        log('event_dropped_account_deleting', { event });
+        return;
+      }
       const payload = buildEvent(event, properties);
       run((t) => t.capture(event, payload));
     });
@@ -238,6 +244,10 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     properties?: Readonly<Record<string, unknown>>,
   ): boolean {
     if (!enabled || !uid) return false;
+    if (uid === heldUid) {
+      log('event_dropped_account_deleting', { event });
+      return false;
+    }
     if (!sessionOwnedBy(uid) || !auth) {
       log('event_dropped_session_mismatch', { event });
       return false;
@@ -265,6 +275,7 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     unset: readonly string[] = [],
   ): boolean {
     if (!enabled || !uid) return false;
+    if (uid === heldUid) return false;
     if (!sessionOwnedBy(uid) || !auth) {
       log('person_update_dropped_session_mismatch');
       return false;
@@ -305,10 +316,22 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     closedAccount = { uid, creationTime: session?.creationTime ?? null };
     if (auth?.uid === uid) auth = null;
     if (identifiedUid === uid) identifiedUid = null;
+    if (heldUid === uid) heldUid = null;
     run((t) => {
-      t.discardQueuedEventsFor(uid);
+      void Promise.resolve(t.discardQueuedEventsFor(uid)).catch((error: unknown) => {
+        log('discard_failed', { name: errorName(error) });
+      });
       if (t.getIdentifiedId() === uid) t.reset();
     }, true);
+  }
+
+  /**
+   * Deletion requested (or left uncertain): new events of this account are
+   * dropped, queued ones wait for the outcome. null releases it: cancelled.
+   */
+  function holdAccount(uid: string | null): void {
+    if (!enabled) return;
+    heldUid = uid || null;
   }
 
   /**
@@ -325,6 +348,7 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     isEnabled: () => enabled && !failed,
     discardAccount,
     clearClosedAccount,
+    holdAccount,
     start,
     reportAuthState,
     runWhenAuthKnown,

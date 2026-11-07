@@ -2,9 +2,11 @@
  * Remote delivery is off unless every switch below is set explicitly, in
  * production too. A missing token never fails the app, it keeps analytics off.
  *
- * The only channel that can capture today is Beta: TestFlight on production
- * Firebase, declared by configuration because TestFlight is not auto-detected.
- * Without a declared channel nothing is sent, so general capture stays off.
+ * Both channels run on production Firebase and are declared by configuration,
+ * because TestFlight is not auto-detected:
+ * - beta: TestFlight. Every event and the person are marked is_test_user=true.
+ * - production: App Store. Nothing is marked, and nothing writes false either.
+ * Without a declared channel nothing is sent. No build declares production yet.
  */
 import {
   DISTRIBUTION_CHANNELS,

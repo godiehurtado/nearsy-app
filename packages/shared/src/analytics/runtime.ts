@@ -12,11 +12,15 @@ import * as Location from 'expo-location';
 import { firebaseAuth } from '../config/firebaseConfig';
 import {
   getAccountDeletionClosure,
+  isAccountDeletionSessionActive,
   subscribeAccountDeletionClosure,
+  subscribeAccountDeletionSession,
 } from '../services/accountDeletionSession';
-import { HAS_SEEN_WELCOME_STORAGE_KEY } from '../onboarding/welcomeStorage';
+import {
+  getPendingAccountDeletionState,
+  subscribePendingAccountDeletion,
+} from '../services/accountDeletionReconciliation';
 import { getUserProfile } from '../services/firestoreService';
-import { APPEARANCE_STORAGE_KEY } from '../theme/themeStorage';
 import {
   isBackgroundPermissionEffectivelyGranted,
   readBackgroundPermissionSnapshot,
@@ -32,11 +36,10 @@ import {
   resolvePendingAttribution,
   type AnalyticsServices,
 } from './index';
+import { createDeletionRecords } from './deletionRecords';
 import { createEventLedger } from './ledger';
 import {
   createForegroundTracker,
-  FIRST_OPEN_MARKER_KEY,
-  resolveIsFirstOpen,
   type AppOpenType,
   type StringStore,
 } from './lifecycle';
@@ -69,19 +72,6 @@ function readBinaryInfo() {
     appVersion: Application.nativeApplicationVersion,
     appBuild: Application.nativeBuildVersion,
   };
-}
-
-/** Null when the binary cannot say, which leaves is_first_open omitted. */
-async function readInstalledAtMs(): Promise<number | null> {
-  try {
-    const Application =
-      require('expo-application') as typeof import('expo-application');
-    const installed = await Application.getInstallationTimeAsync();
-    const ms = installed.getTime();
-    return Number.isFinite(ms) ? ms : null;
-  } catch {
-    return null;
-  }
 }
 
 function readLiveSession(): AuthSnapshot | null {
@@ -165,9 +155,15 @@ export function startAnalyticsRuntime(): void {
   markAnalyticsConfigured();
 
   const store: StringStore = AsyncStorage;
+  const deletionRecords = createDeletionRecords(store);
   const client = createAnalyticsClient({
     config,
-    createTransport: () => createPostHogTransport(config, log),
+    createTransport: async () => {
+      const transport = await createPostHogTransport(config, log);
+      // Before any queued operation, so nothing recorded as deleted can leave.
+      if (transport) await deletionRecords.purgeQueued(transport);
+      return transport;
+    },
     binary: readBinaryInfo,
     readSession: readLiveSession,
     logger: log,
@@ -178,8 +174,6 @@ export function startAnalyticsRuntime(): void {
   const verifiedSentFor = new Set<string>();
   const verifiedByKey = new Map<string, VerifiedSocialState>();
   const lastModeByUid = new Map<string, string | null>();
-  /** Stays set: the top level can hold the previous mode on every later read too. */
-  const modeSwitchedUids = new Set<string>();
   let syncTimer: ReturnType<typeof setTimeout> | null = null;
   let attributionTimer: ReturnType<typeof setTimeout> | null = null;
   let lastPermissionPerson: string | null = null;
@@ -212,15 +206,11 @@ export function startAnalyticsRuntime(): void {
     if (client.currentAuth()?.uid !== uid) return;
     const verifiedKey = `${uid}|${mode}`;
     const previousMode = lastModeByUid.get(uid);
-    if (previousMode !== undefined && previousMode !== mode) {
-      modeSwitchedUids.add(uid);
-    }
     const { patch, next } = diffPersonProperties(
       lastSentByUid.get(uid) ?? {},
       buildPersonProperties(doc, verified, new Date(), {
         verifiedConfirmedForMode:
           previousMode === mode && verifiedSentFor.has(verifiedKey),
-        modeChanged: modeSwitchedUids.has(uid),
       }),
     );
     lastModeByUid.set(uid, mode);
@@ -306,7 +296,6 @@ export function startAnalyticsRuntime(): void {
       verifiedByKey.clear();
       lastSentByUid.clear();
       lastModeByUid.clear();
-      modeSwitchedUids.clear();
       verifiedSentFor.clear();
       lastSeenUid = null;
       return;
@@ -330,18 +319,40 @@ export function startAnalyticsRuntime(): void {
     bindAnalyticsServices(services);
     void client.start();
     // Before the Auth listener, so a closure already set wins over its first report.
-    const discardClosedAccount = () => {
+    // Intent (request in flight or uncertain), cancellation and confirmed deletion
+    // come from the deletion modules, which never wait on analytics.
+    let sessionHoldUid: string | null = null;
+    let recordedIntentUid: string | null = null;
+    const syncAccountDeletion = () => {
       const closure = getAccountDeletionClosure();
       if (closure) {
+        void deletionRecords.record(closure.uid, 'confirmed', Date.now()).catch(() => {});
+        recordedIntentUid = null;
+        client.holdAccount(null);
         client.discardAccount(closure.uid);
-      } else if (client.clearClosedAccount()) {
+        return;
+      }
+      if (client.clearClosedAccount()) {
         // The Auth listener may have reported this sign-in while it was blocked.
         lastSeenUid = null;
         onAuthChanged(readLiveSession());
       }
+      if (!isAccountDeletionSessionActive()) sessionHoldUid = null;
+      else sessionHoldUid ??= client.currentAuth()?.uid ?? null;
+      const holdUid = getPendingAccountDeletionState().pending?.uid ?? sessionHoldUid;
+      client.holdAccount(holdUid);
+      if (holdUid && holdUid !== recordedIntentUid) {
+        recordedIntentUid = holdUid;
+        void deletionRecords.record(holdUid, 'intent', Date.now()).catch(() => {});
+      } else if (!holdUid && recordedIntentUid) {
+        void deletionRecords.cancelIntent(recordedIntentUid).catch(() => {});
+        recordedIntentUid = null;
+      }
     };
-    subscribeAccountDeletionClosure(discardClosedAccount);
-    discardClosedAccount();
+    subscribeAccountDeletionClosure(syncAccountDeletion);
+    subscribeAccountDeletionSession(syncAccountDeletion);
+    subscribePendingAccountDeletion(syncAccountDeletion);
+    syncAccountDeletion();
     firebaseAuth.onAuthStateChanged((user: unknown) => {
       onAuthChanged(toSnapshot(user));
     });
@@ -353,42 +364,11 @@ export function startAnalyticsRuntime(): void {
     }
   }
 
-  let firstOpenPending = true;
   async function captureAppOpened(openType: AppOpenType): Promise<void> {
     await client.start();
-    let markerRecorded = true;
-    let legacyUseEvidence = true;
-    let firstOpenKnown = true;
-    let installedAtMs: number | null = null;
-    if (firstOpenPending) {
-      firstOpenPending = false;
-      installedAtMs = await readInstalledAtMs();
-      try {
-        const [marker, welcome, appearance] = await Promise.all([
-          store.getItem(FIRST_OPEN_MARKER_KEY),
-          store.getItem(HAS_SEEN_WELCOME_STORAGE_KEY),
-          store.getItem(APPEARANCE_STORAGE_KEY),
-        ]);
-        markerRecorded = marker !== null;
-        legacyUseEvidence = welcome !== null || appearance !== null;
-        if (!markerRecorded) await store.setItem(FIRST_OPEN_MARKER_KEY, '1');
-      } catch {
-        // Unreadable storage: is_first_open is omitted rather than guessed.
-        firstOpenKnown = false;
-      }
-    }
     client.runWhenAuthKnown(() => {
       client.captureDeviceEvent('app_opened', {
         open_type: openType,
-        is_first_open: firstOpenKnown
-          ? resolveIsFirstOpen({
-              markerRecorded,
-              legacyUseEvidence,
-              hasSession: client.currentAuth() !== null,
-              installedAtMs,
-              nowMs: Date.now(),
-            })
-          : undefined,
         session_id: client.getSessionId() ?? undefined,
       });
     });

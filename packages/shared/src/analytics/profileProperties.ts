@@ -341,8 +341,6 @@ export const MODE_SCOPED_PROPERTY_NAMES: readonly string[] = [
 export type BuildPersonOptions = {
   /** PostHog already holds this mode's verified state, confirmed in this process. */
   verifiedConfirmedForMode?: boolean;
-  /** The active mode has changed at some point in this process. */
-  modeChanged?: boolean;
 };
 
 function trimmedString(value: unknown): string {
@@ -350,23 +348,13 @@ function trimmedString(value: unknown): string {
 }
 
 /**
- * The nested value of the mode, or else the top-level one the app shows for
- * legacy profiles. The switch happens in the backend, so the top level can still
- * hold the previous mode: it is refused when it is known to be that.
+ * Only the mode's own nested value. The top-level occupation of a legacy profile
+ * cannot be shown to belong to the active mode (the switch runs in the backend),
+ * so it is never reported: the property is unset instead. Firestore is untouched.
  */
-function occupationForMode(
-  doc: Record<string, unknown>,
-  mode: ProfileMode,
-  modeChanged: boolean,
-): string {
+function occupationForMode(doc: Record<string, unknown>, mode: ProfileMode): string {
   const profiles = asRecord(doc.profiles);
-  const nested = trimmedString(asRecord(profiles?.[mode])?.occupation);
-  if (nested) return nested;
-  const topLevel = trimmedString(doc.occupation);
-  if (!topLevel || modeChanged) return '';
-  const otherMode = mode === 'personal' ? 'professional' : 'personal';
-  const other = trimmedString(asRecord(profiles?.[otherMode])?.occupation);
-  return other === topLevel ? '' : topLevel;
+  return trimmedString(asRecord(profiles?.[mode])?.occupation);
 }
 
 export function buildPersonProperties(
@@ -411,7 +399,7 @@ export function buildPersonProperties(
 
   set.profile_type = mode;
 
-  const occupation = occupationForMode(doc, mode, options.modeChanged === true);
+  const occupation = occupationForMode(doc, mode);
   if (occupation) {
     set.occupation = occupation.slice(0, OCCUPATION_MAX_LENGTH).trim();
     set.occupation_truncated = occupation.length > OCCUPATION_MAX_LENGTH;

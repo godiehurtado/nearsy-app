@@ -4,6 +4,7 @@
  *   never counts, so active → inactive → active is not an open.
  * - A launch that stays in background (location task) is not an open until the
  *   user brings the app forward.
+ * - is_first_open is not sent: no evidence available here shows a first open.
  * - A sign-in that leaves the app for a moment (provider app, browser) is the
  *   same visit, so a background that starts during it does not count on return.
  */
@@ -47,32 +48,6 @@ export function createForegroundTracker(now: () => number = Date.now) {
       externalFlows = Math.max(0, externalFlows - 1);
     },
   };
-}
-
-export const FIRST_OPEN_MARKER_KEY = 'nearsy.analytics.firstOpenRecorded.v1';
-
-/** A fresh install reaches its first open well inside this window. */
-export const FIRST_OPEN_INSTALL_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-/**
- * false with evidence of earlier use. true only when the install date also shows
- * a fresh install, because an old install that upgrades can have no other trace.
- * undefined (omitted) when that cannot be shown. Uninstalling clears local
- * storage, so a reinstall is a first open of that install again.
- */
-export function resolveIsFirstOpen(input: {
-  markerRecorded: boolean;
-  legacyUseEvidence: boolean;
-  hasSession: boolean;
-  installedAtMs: number | null;
-  nowMs: number;
-}): boolean | undefined {
-  if (input.markerRecorded || input.legacyUseEvidence || input.hasSession) {
-    return false;
-  }
-  if (input.installedAtMs === null) return undefined;
-  const age = input.nowMs - input.installedAtMs;
-  return age >= 0 && age <= FIRST_OPEN_INSTALL_WINDOW_MS ? true : undefined;
 }
 
 export type StringStore = {

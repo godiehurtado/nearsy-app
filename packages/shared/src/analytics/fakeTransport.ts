@@ -17,7 +17,7 @@ export type FakeTransportCall =
     }
   | { op: 'unsetPerson'; names: readonly string[]; distinctId: string | null }
   | { op: 'reset' }
-  | { op: 'discard'; distinctId: string }
+  | { op: 'discard'; distinctId: string; untilMs?: number }
   | { op: 'flush' };
 
 export type FakeTransport = AnalyticsTransport & {
@@ -68,9 +68,9 @@ export function createFakeTransport(
       identified = null;
       calls.push({ op: 'reset' });
     },
-    discardQueuedEventsFor(distinctId) {
+    async discardQueuedEventsFor(distinctId, untilMs) {
       guard('discard');
-      calls.push({ op: 'discard', distinctId });
+      calls.push({ op: 'discard', distinctId, ...(untilMs === undefined ? {} : { untilMs }) });
       return 0;
     },
     getIdentifiedId: () => identified,

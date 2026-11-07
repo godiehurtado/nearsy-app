@@ -7,7 +7,7 @@
  * Pure module: no React Native or Expo imports.
  */
 
-export const TRACKING_PLAN_VERSION = '2026-11-06.2';
+export const TRACKING_PLAN_VERSION = '2026-11-07.1';
 
 export type PropertyRule =
   | { kind: 'boolean' }
@@ -80,8 +80,11 @@ export const AGE_RANGES = [
 ] as const;
 export type AgeRange = (typeof AGE_RANGES)[number];
 
-/** Channels allowed to capture. General capture has no channel yet, so it stays off. */
-export const DISTRIBUTION_CHANNELS = ['beta'] as const;
+/**
+ * Channels that can capture. Each needs its own build configuration: nothing
+ * captures without a declared channel, so a build without one stays off.
+ */
+export const DISTRIBUTION_CHANNELS = ['beta', 'production'] as const;
 export type DistributionChannel = (typeof DISTRIBUTION_CHANNELS)[number];
 
 const SLUG: PropertyRule = { kind: 'id', maxLength: 64 };
@@ -105,7 +108,6 @@ const ACQUISITION_RULES = {
 export const EVENT_RULES = {
   app_opened: {
     open_type: { kind: 'enum', values: ['cold_start', 'return_from_background'] },
-    is_first_open: { kind: 'boolean' },
     session_id: { kind: 'id', maxLength: 64 },
   },
   signup_completed: {

@@ -200,6 +200,19 @@ describe('activation config', () => {
     }
   });
 
+  it('production is supported, unmarked, and needs its own configuration', () => {
+    const base = { enabledFlag: 'true', token: 'phc_real', firebaseEnv: 'production' };
+    const production = resolveAnalyticsConfig({ ...base, distributionChannel: 'production' });
+    assert.equal(production.enabled, true);
+    assert.equal(production.distributionChannel, 'production');
+    assert.equal(production.isTestInstall, false);
+    assert.equal(production.environment, 'production');
+    assert.equal(
+      resolveAnalyticsConfig({ ...base, distributionChannel: 'production', firebaseEnv: 'development' }).enabled,
+      false,
+    );
+  });
+
   it('Beta is production Firebase with real identities, and never nearsy-dev', () => {
     const base = { enabledFlag: 'true', distributionChannel: 'beta', token: 'phc_real' };
     const beta = resolveAnalyticsConfig({ ...base, firebaseEnv: 'production' });
@@ -773,6 +786,24 @@ describe('Beta classification', () => {
     for (const { set } of identifies) assert.equal(set.is_test_user, true);
   });
 
+  it('production never writes is_test_user, so a Beta mark on the person stays', async () => {
+    const fake = createFakeTransport();
+    const client = createAnalyticsClient({
+      config: { ...ENABLED, distributionChannel: 'production', isTestInstall: false },
+      createTransport: async () => fake,
+      binary: () => ({ appVersion: '2.0.11', appBuild: '80' }),
+    });
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.captureForUser('uidA', 'visibility_changed', { enabled: true });
+    client.setPersonProperties('uidA', { is_test_user: false });
+    assert.equal(JSON.stringify(fake.calls).includes('is_test_user'), false);
+    assert.equal(fake.captured()[0]?.properties.distribution_channel, 'production');
+    const identify = fake.calls.find((c) => c.op === 'identify');
+    assert.ok(identify && identify.op === 'identify');
+    assert.equal(identify.set.distribution_channel, 'production');
+  });
+
   it('a build outside Beta cannot write false, by config or by a caller', async () => {
     const fake = createFakeTransport();
     const client = createAnalyticsClient({
@@ -867,6 +898,39 @@ describe('account deletion', () => {
     assert.ok(fake.calls.some((c) => c.op === 'discard' && c.distinctId === 'uidA'));
     assert.equal(fake.getIdentifiedId(), 'uidB');
     assert.ok(fake.captured().length < 150);
+  });
+
+  it('intent holds the account: its new events are dropped, not queued', async () => {
+    const { fake, client } = setup();
+    await client.start();
+    client.reportAuthState(USER_A);
+    fake.calls.length = 0;
+    client.holdAccount('uidA');
+    assert.equal(client.captureForUser('uidA', 'visibility_changed', { enabled: true }), false);
+    client.captureDeviceEvent('app_opened', { open_type: 'return_from_background' });
+    assert.equal(client.setPersonProperties('uidA', { profile_type: 'personal' }), false);
+    assert.deepEqual(fake.calls, []);
+    assert.equal(fake.getIdentifiedId(), 'uidA', 'identity is untouched until confirmed');
+  });
+
+  it('cancellation releases the hold and nothing was discarded', async () => {
+    const { fake, client } = setup();
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.holdAccount('uidA');
+    client.holdAccount(null);
+    assert.equal(client.captureForUser('uidA', 'visibility_changed', { enabled: true }), true);
+    assert.equal(fake.calls.some((c) => c.op === 'discard'), false);
+  });
+
+  it('a hold on one account does not touch another', async () => {
+    const { fake, client } = setup();
+    await client.start();
+    client.reportAuthState(USER_B);
+    client.holdAccount('uidA');
+    assert.equal(client.captureForUser('uidB', 'visibility_changed', { enabled: true }), true);
+    client.captureDeviceEvent('app_opened', { open_type: 'cold_start' });
+    assert.equal(fake.captured().length, 2);
   });
 
   it('an SDK failure during the discard never reaches the deletion flow', async () => {
@@ -1191,7 +1255,14 @@ describe('source guards', () => {
 
   it('deletion reaches analytics only as a guarded subscriber', () => {
     const runtime = read('packages/shared/src/analytics/runtime.ts');
-    assert.ok(runtime.includes('subscribeAccountDeletionClosure(discardClosedAccount)'));
+    for (const call of [
+      'subscribeAccountDeletionClosure(syncAccountDeletion)',
+      'subscribeAccountDeletionSession(syncAccountDeletion)',
+      'subscribePendingAccountDeletion(syncAccountDeletion)',
+      'await deletionRecords.purgeQueued(transport)',
+    ]) {
+      assert.ok(runtime.includes(call), call);
+    }
     const session = read('packages/shared/src/services/accountDeletionSession.ts');
     assert.equal(session.includes('analytics'), false);
     assert.ok(/listener\(\);\s*\} catch/.test(session));
@@ -1263,8 +1334,54 @@ describe('source guards', () => {
     const pkg = JSON.parse(read('apps/nearsy-ios/package.json'));
     assert.equal(pkg.dependencies['posthog-react-native'], '4.85.3');
     assert.equal(pkg.dependencies['expo-application'], '7.0.8');
-    const eas = read('apps/nearsy-ios/eas.json');
-    assert.equal(eas.includes('EXPO_PUBLIC_POSTHOG'), false);
+  });
+
+  it('eas.json: non-secret switches only, each channel in its own profile, never a token', () => {
+    const raw = read('apps/nearsy-ios/eas.json');
+    const eas = JSON.parse(raw);
+    assert.equal(/phc_[A-Za-z0-9]/.test(raw), false);
+    assert.equal(raw.includes('EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN'), false);
+    const allowed = new Set([
+      'EXPO_PUBLIC_POSTHOG_ENABLED',
+      'EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL',
+    ]);
+    const channelFor: Record<string, string> = { beta: 'beta', production: 'production' };
+    for (const [name, profile] of Object.entries(eas.build) as [string, any][]) {
+      const keys = Object.keys(profile.env ?? {}).filter((k) => k.includes('POSTHOG'));
+      for (const key of keys) assert.ok(allowed.has(key), `${name}: ${key}`);
+      if (keys.length === 0) continue;
+      assert.ok(name in channelFor, `${name} cannot declare analytics`);
+      assert.equal(profile.env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL, channelFor[name], name);
+      assert.notEqual(profile.env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV, 'development', name);
+    }
+  });
+
+  it('eas.json today: Beta declared, production unchanged and off', () => {
+    const eas = JSON.parse(read('apps/nearsy-ios/eas.json'));
+    assert.deepEqual(eas.build.production.env, {
+      EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'production',
+    });
+    assert.equal(eas.build.production.environment, 'production');
+    assert.equal(eas.build.production.autoIncrement, false);
+    assert.equal(eas.build.beta.extends, 'production');
+    assert.deepEqual(eas.build.beta.env, {
+      EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'production',
+      EXPO_PUBLIC_POSTHOG_ENABLED: 'true',
+      EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL: 'beta',
+    });
+    const config = resolveAnalyticsConfig({
+      enabledFlag: eas.build.beta.env.EXPO_PUBLIC_POSTHOG_ENABLED,
+      distributionChannel: eas.build.beta.env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL,
+      firebaseEnv: eas.build.beta.env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV,
+      token: 'phc_fake',
+    });
+    assert.equal(config.enabled, true);
+    assert.equal(config.isTestInstall, true);
+    assert.equal(
+      resolveAnalyticsConfig({ ...eas.build.beta.env, token: 'phc_fake' }).enabled,
+      false,
+      'the token alone, or the profile without a token, never turns it on',
+    );
   });
 
   it('location code never reaches the analytics payloads', () => {

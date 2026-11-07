@@ -5,13 +5,34 @@
  */
 
 let accountDeletionSessionActive = false;
+const sessionListeners = new Set<() => void>();
+
+function setAccountDeletionSessionActive(next: boolean): void {
+  if (accountDeletionSessionActive === next) return;
+  accountDeletionSessionActive = next;
+  for (const listener of [...sessionListeners]) {
+    try {
+      listener();
+    } catch {
+      // A failing subscriber must not affect deletion.
+    }
+  }
+}
 
 export function beginAccountDeletionSession(): void {
-  accountDeletionSessionActive = true;
+  setAccountDeletionSessionActive(true);
 }
 
 export function endAccountDeletionSession(): void {
-  accountDeletionSessionActive = false;
+  setAccountDeletionSessionActive(false);
+}
+
+/** Notified when a deletion attempt starts and when it ends, either way. */
+export function subscribeAccountDeletionSession(listener: () => void): () => void {
+  sessionListeners.add(listener);
+  return () => {
+    sessionListeners.delete(listener);
+  };
 }
 
 export function isAccountDeletionSessionActive(): boolean {
@@ -194,4 +215,5 @@ export function __resetAccountDeletionSessionForTests(): void {
   accountDeletionSessionActive = false;
   accountDeletionClosure = null;
   closureListeners.clear();
+  sessionListeners.clear();
 }

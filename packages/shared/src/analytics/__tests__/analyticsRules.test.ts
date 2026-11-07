@@ -8,6 +8,7 @@ import {
   parseCampaignLink,
 } from '../attribution';
 import {
+  EVENT_RULES,
   matchScoreRange,
   PERSON_PROPERTY_RULES,
   PROFILE_LIST_MAX_ITEMS,
@@ -20,7 +21,6 @@ import {
 import {
   createForegroundTracker,
   EXTERNAL_AUTH_MAX_MS,
-  resolveIsFirstOpen,
   type StringStore,
 } from '../lifecycle';
 import {
@@ -158,32 +158,8 @@ describe('external sign-in and app_opened', () => {
 });
 
 describe('is_first_open', () => {
-  const nowMs = Date.parse('2026-11-06T12:00:00Z');
-  const base = {
-    markerRecorded: false,
-    legacyUseEvidence: false,
-    hasSession: false,
-    installedAtMs: nowMs - 60_000,
-    nowMs,
-  };
-
-  it('true only with no earlier use and a fresh install date', () => {
-    assert.equal(resolveIsFirstOpen(base), true);
-  });
-
-  it('omitted when a fresh install cannot be shown', () => {
-    assert.equal(resolveIsFirstOpen({ ...base, installedAtMs: null }), undefined);
-    assert.equal(
-      resolveIsFirstOpen({ ...base, installedAtMs: nowMs - 30 * 24 * 3600 * 1000 }),
-      undefined,
-    );
-    assert.equal(resolveIsFirstOpen({ ...base, installedAtMs: nowMs + 60_000 }), undefined);
-  });
-
-  it('turning tracking on for an existing install is not a first open', () => {
-    assert.equal(resolveIsFirstOpen({ ...base, legacyUseEvidence: true }), false);
-    assert.equal(resolveIsFirstOpen({ ...base, hasSession: true }), false);
-    assert.equal(resolveIsFirstOpen({ ...base, markerRecorded: true }), false);
+  it('is not part of app_opened in this delivery', () => {
+    assert.equal('is_first_open' in EVENT_RULES.app_opened, false);
   });
 });
 
@@ -429,7 +405,7 @@ describe('person properties', () => {
 describe('person properties across profile modes', () => {
   const personalDoc = {
     mode: 'personal',
-    occupation: 'Baker',
+    profiles: { personal: { occupation: 'Baker' } },
     personalOnboardingInterests: [
       { id: 'technology_ai' },
       { id: 'custom_x', name: 'Bread', isCustom: true },
@@ -485,11 +461,7 @@ describe('person properties across profile modes', () => {
   });
 
   it('a legacy profile with nothing for the new mode clears the old values', () => {
-    const patch = afterSwitch(
-      { ...personalDoc, mode: 'professional' },
-      verifiedKnown,
-      { modeChanged: true },
-    );
+    const patch = afterSwitch({ ...personalDoc, mode: 'professional' });
     for (const name of [
       'interests',
       'interests_custom',
@@ -522,13 +494,41 @@ describe('person properties across profile modes', () => {
     assert.ok(patch.unset.includes('occupation'));
   });
 
-  it('a legacy profile that never switched keeps the occupation the app shows', () => {
-    const patch = buildPersonProperties(
-      { mode: 'personal', occupation: 'Baker' },
-      null,
-      NOW,
+  it('a top-level occupation alone is never reported, since its mode cannot be shown', () => {
+    for (const mode of ['personal', 'professional']) {
+      const patch = buildPersonProperties({ mode, occupation: 'Baker' }, null, NOW);
+      assert.equal(patch.set.occupation, undefined, mode);
+      assert.ok(patch.unset.includes('occupation'), mode);
+      assert.ok(patch.unset.includes('occupation_truncated'), mode);
+    }
+  });
+
+  it('after a process restart, a legacy occupation already in PostHog is cleared', () => {
+    // A new process starts with nothing sent, as after a restore.
+    const { patch } = diffPersonProperties(
+      {},
+      buildPersonProperties({ mode: 'professional', occupation: 'Baker' }, null, NOW),
     );
-    assert.equal(patch.set.occupation, 'Baker');
+    assert.ok(patch.unset.includes('occupation'));
+    assert.equal(JSON.stringify(patch.set).includes('Baker'), false);
+  });
+
+  it('personal → professional → personal reports each mode with its own value', () => {
+    const doc = {
+      occupation: 'Baker',
+      profiles: { personal: { occupation: 'Baker' }, professional: { occupation: 'Engineer' } },
+    };
+    let sent: Record<string, string> = {};
+    const values: unknown[] = [];
+    for (const mode of ['personal', 'professional', 'personal']) {
+      const { patch, next } = diffPersonProperties(
+        sent,
+        buildPersonProperties({ ...doc, mode }, null, NOW),
+      );
+      sent = next;
+      values.push(patch.set.occupation);
+    }
+    assert.deepEqual(values, ['Baker', 'Engineer', 'Baker']);
   });
 
   it('the nested occupation of the mode always wins', () => {
@@ -540,7 +540,6 @@ describe('person properties across profile modes', () => {
       },
       null,
       NOW,
-      { modeChanged: true },
     );
     assert.equal(patch.set.occupation, 'Engineer');
   });

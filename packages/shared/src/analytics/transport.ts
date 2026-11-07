@@ -9,8 +9,11 @@ export type AnalyticsTransport = {
   setPersonProperties(set: AnalyticsProps, setOnce: AnalyticsProps): void;
   unsetPersonProperties(names: readonly string[]): void;
   reset(): void;
-  /** Removes queued events of this identity and returns how many were removed. */
-  discardQueuedEventsFor(distinctId: string): number;
+  /**
+   * Removes queued events of this identity, only those captured at or before
+   * `untilMs` when given, and resolves once the removal is persisted.
+   */
+  discardQueuedEventsFor(distinctId: string, untilMs?: number): Promise<number>;
   /** Distinct id if a person is identified, null while anonymous. */
   getIdentifiedId(): string | null;
   getSessionId(): string | null;

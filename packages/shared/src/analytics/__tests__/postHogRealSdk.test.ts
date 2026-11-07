@@ -12,6 +12,7 @@ import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
 import { gunzipSync } from 'node:zlib';
 
 import { createAnalyticsClient } from '../client';
+import { createDeletionRecords, DELETION_RECORDS_KEY } from '../deletionRecords';
 import { resolveAnalyticsConfig } from '../config';
 import type { PostHogDeliveryOverrides } from '../postHogTransport.ios';
 import type { AnalyticsLogger, AnalyticsTransport } from '../transport';
@@ -169,6 +170,15 @@ function makeClient(transport: AnalyticsTransport) {
 const batches = () => requests.filter((r) => r.url.includes('/batch'));
 const sentEvents = () =>
   batches().flatMap((r) => (r.body?.batch ?? []) as Record<string, any>[]);
+
+/** The SDK debounces its storage writes; this waits past that debounce. */
+async function waitForSdkPersist(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 700));
+}
+
+function memoryStorageText(): string {
+  return [...memoryStorage.values()].join('\n');
+}
 
 async function settle(): Promise<void> {
   for (let i = 0; i < 20; i += 1) {
@@ -431,6 +441,7 @@ describe('real SDK: account deletion', () => {
     client.captureForUser('uidA', 'visibility_changed', { enabled: true });
     client.discardAccount('uidA');
     assert.equal(transport.getIdentifiedId(), null);
+    await settle();
     await transport.flush();
     assert.equal(JSON.stringify(sentEvents()).includes('uidA'), false);
   });
@@ -468,17 +479,89 @@ describe('real SDK: account deletion', () => {
     );
   });
 
-  it('a discard stays durable: the next process does not send them', async () => {
+  it('a discard is persisted at once: a restart right after it sends nothing', async () => {
     const first = await makeTransport();
     const client = makeClient(first);
     await client.start();
     client.reportAuthState(USER_A);
     client.captureForUser('uidA', 'visibility_changed', { enabled: true });
-    client.discardAccount('uidA');
-    await new Promise((resolve) => setTimeout(resolve, 700));
+    await waitForSdkPersist();
+    assert.ok(memoryStorageText().includes('uidA'), 'the event reached storage first');
+    const removed = await first.discardQueuedEventsFor('uidA');
+    assert.ok(removed >= 1, 'the event, plus the identify of that account');
+    // No wait for the debounce: a new process reads storage right away.
     const second = await makeTransport();
     await second.flush();
     assert.equal(JSON.stringify(sentEvents()).includes('uidA'), false);
+  });
+
+  it('a time bound keeps events of a recreated account with the same UID', async () => {
+    const transport = await makeTransport();
+    const client = makeClient(transport);
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.captureForUser('uidA', 'visibility_changed', { enabled: true });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const deletedAt = Date.now();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    client.captureForUser('uidA', 'visibility_changed', { enabled: false });
+    assert.ok((await transport.discardQueuedEventsFor('uidA', deletedAt)) >= 1);
+    await transport.flush();
+    assert.deepEqual(
+      sentEvents().filter((e) => e.event === 'visibility_changed').map((e) => e.properties.enabled),
+      [false],
+    );
+  });
+
+  it('records left by a deletion are applied at the next start, before anything leaves', async () => {
+    const first = await makeTransport();
+    const client = makeClient(first);
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.captureForUser('uidA', 'visibility_changed', { enabled: true });
+    client.reportAuthState(USER_B);
+    client.captureForUser('uidB', 'visibility_changed', { enabled: false });
+    await waitForSdkPersist();
+    // The app died after the confirmation was recorded, before the live discard.
+    const records = createDeletionRecords(asyncStorage);
+    await records.record('uidA', 'confirmed', Date.now());
+
+    const second = await makeTransport();
+    assert.ok((await records.purgeQueued(second)) >= 1);
+    await second.flush();
+    assert.equal(JSON.stringify(sentEvents()).includes('uidA'), false);
+    assert.ok(sentEvents().some((e) => e.distinct_id === 'uidB'));
+    assert.equal(await asyncStorage.getItem(DELETION_RECORDS_KEY), null);
+  });
+
+  it('a cancelled intent leaves the queue alone at the next start', async () => {
+    const first = await makeTransport();
+    const client = makeClient(first);
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.captureForUser('uidA', 'visibility_changed', { enabled: true });
+    await waitForSdkPersist();
+    const records = createDeletionRecords(asyncStorage);
+    await records.record('uidA', 'intent', Date.now());
+    await records.cancelIntent('uidA');
+    const second = await makeTransport();
+    assert.equal(await records.purgeQueued(second), 0);
+    await second.flush();
+    assert.ok(sentEvents().some((e) => e.distinct_id === 'uidA'));
+  });
+
+  it('an intent left by a dead process removes that account up to the request', async () => {
+    const first = await makeTransport();
+    const client = makeClient(first);
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.captureForUser('uidA', 'visibility_changed', { enabled: true });
+    await waitForSdkPersist();
+    const records = createDeletionRecords(asyncStorage);
+    await records.record('uidA', 'intent', Date.now());
+    await records.record('uidA', 'intent', Date.now() + 1);
+    const second = await makeTransport();
+    assert.ok((await records.purgeQueued(second)) >= 1);
   });
 
   it('a batch already on the wire cannot be recalled: this limit is documented', async () => {
