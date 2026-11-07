@@ -20,6 +20,10 @@ import { fontSize, fontWeight } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { useTranslation } from '../../i18n';
+import {
+  noteVerifiedSocialRemoved,
+  trackVerifiedSocialLinked,
+} from '../../analytics';
 import type { ProfileMode } from '../../profile/profileModeFields';
 import { getUserProfile } from '../../services/firestoreService';
 import { getCrjSocialPlatform } from '../../social/onboardingSocialCatalog';
@@ -424,6 +428,7 @@ export function OwnedSocialConnectSection({
         return;
       }
       setYoutubeVerified(outcome.verified);
+      trackVerifiedSocialLinked(uid, 'youtube');
       setYoutubeChannels(null);
       setYoutubeNeedsRetry(false);
     } catch (err) {
@@ -452,6 +457,7 @@ export function OwnedSocialConnectSection({
         const verified = await youtubeSelectRef.current(channelId);
         if (!isYoutubeResultCurrent(requestGen, modeForRequest)) return;
         setYoutubeVerified(verified);
+        trackVerifiedSocialLinked(uid, 'youtube');
         setYoutubeChannels(null);
         youtubeSelectRef.current = null;
         setYoutubeNeedsRetry(false);
@@ -495,6 +501,7 @@ export function OwnedSocialConnectSection({
                 setYoutubeBusyPhase('disconnecting');
                 const client = await getYoutubeOwnershipClient();
                 await client.unlink(modeForRequest);
+                noteVerifiedSocialRemoved(uid);
                 if (!isYoutubeResultCurrent(requestGen, modeForRequest)) return;
                 setYoutubeVerified(null);
                 setYoutubeChannels(null);
@@ -594,6 +601,7 @@ export function OwnedSocialConnectSection({
         return;
       }
       setTiktokVerified(outcome.verified);
+      trackVerifiedSocialLinked(uid, 'tiktok');
       setTiktokNeedsRetry(false);
       setTiktokBusyPhase('idle');
     } catch (err) {
@@ -627,6 +635,7 @@ export function OwnedSocialConnectSection({
                 setTiktokBusyPhase('disconnecting');
                 const client = await getTiktokOwnershipClient();
                 await client.unlink(modeForRequest);
+                noteVerifiedSocialRemoved(uid);
                 if (!isTiktokResultCurrent(requestGen, modeForRequest)) return;
                 setTiktokVerified(null);
                 setTiktokNeedsRetry(false);
@@ -770,6 +779,9 @@ export function OwnedSocialConnectSection({
       if (!isInstagramResultCurrent(requestGen, modeForRequest)) return;
       const wasPending = Boolean(instagramChallengeRef.current);
       const presented = presentInstagramGetResponse(get);
+      if (wasPending && presented.verified) {
+        trackVerifiedSocialLinked(uid, 'instagram');
+      }
       setInstagramVerified(presented.verified);
       setInstagramChallenge(presented.challenge);
       instagramChallengeRef.current = presented.challenge;
@@ -910,6 +922,7 @@ export function OwnedSocialConnectSection({
                 setInstagramBusyPhase('disconnecting');
                 const client = await getInstagramOwnershipClient();
                 await client.unlink(modeForRequest);
+                noteVerifiedSocialRemoved(uid);
                 if (!isInstagramResultCurrent(requestGen, modeForRequest)) {
                   return;
                 }
@@ -1042,6 +1055,7 @@ export function OwnedSocialConnectSection({
         return;
       }
       setXVerified(outcome.verified);
+      trackVerifiedSocialLinked(uid, 'x');
       setXNeedsRetry(false);
       setXBusyPhase('idle');
     } catch (err) {
@@ -1081,6 +1095,7 @@ export function OwnedSocialConnectSection({
                 setXBusyPhase('disconnecting');
                 const client = await getXOwnershipClient();
                 await client.unlink(modeForRequest);
+                noteVerifiedSocialRemoved(uid);
                 if (!isXResultCurrent(requestGen, modeForRequest)) return;
                 setXVerified(null);
                 setXNeedsRetry(false);

@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { trackManualSocialLinksSaved } from '../analytics';
 import { firebaseAuth } from '../config/firebaseConfig';
 import { getUserProfile, updateUserProfilePartial } from '../services/firestoreService';
 import { useTranslation } from '../i18n';
@@ -1422,6 +1423,13 @@ export default function SocialMediaScreen() {
       existingLinksRef.current,
     );
     await updateUserProfilePartial(uidForWrite, patch);
+    trackManualSocialLinksSaved(
+      uidForWrite,
+      existingLinksRef.current,
+      modeForWrite === 'personal'
+        ? patch.socialLinksPersonal
+        : patch.socialLinksProfessional,
+    );
     if (
       lockedUidRef.current !== uidForWrite ||
       lockedModeRef.current !== modeForWrite
