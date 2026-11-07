@@ -175,6 +175,18 @@ function resolveDevelopmentGoogleConfig(googleServicesFile) {
   };
 }
 
+/**
+ * @param {string | undefined} raw comma-separated hosts, e.g. "go.example.com"
+ * @returns {string[]} applinks entries; empty leaves the entitlement out
+ */
+function resolveAttributionAssociatedDomains(raw) {
+  return String(raw ?? '')
+    .split(',')
+    .map((host) => host.trim().toLowerCase())
+    .filter((host) => /^[a-z0-9.-]+.[a-z]{2,}$/.test(host))
+    .map((host) => `applinks:${host}`);
+}
+
 /** @param {import('expo/config').ConfigContext} ctx */
 module.exports = ({ config }) => {
   const environment = resolveEnvironmentName();
@@ -296,12 +308,19 @@ module.exports = ({ config }) => {
     extraBase[FACEBOOK_APP_ID_ENV] = facebook.appID;
   }
 
+  // Off unless explicitly set. See docs/ios-posthog-analytics.md before using it:
+  // the entitlement needs a domain that serves the matching AASA file.
+  const associatedDomains = resolveAttributionAssociatedDomains(
+    process.env.NEARSY_ATTRIBUTION_ASSOCIATED_DOMAINS,
+  );
+
   return {
     ...config,
     ios: {
       ...config.ios,
       bundleIdentifier: 'com.nearsy.app.client',
       googleServicesFile,
+      ...(associatedDomains.length > 0 ? { associatedDomains } : {}),
     },
     plugins: [
       // RNFB App: GoogleService-Info + canonical FirebaseApp.configure().
