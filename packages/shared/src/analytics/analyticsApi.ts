@@ -11,6 +11,11 @@ export type AnalyticsApi = {
   trackSignupCompleted(uid: string): void;
   /** Firebase confirmed this sign-in was an existing account (`isNewUser === false`). */
   noteExistingAccountSignIn(uid: string): void;
+  /** What LinkedIn Exchange said about the account it just signed in, if anything. */
+  noteLinkedInAccountOutcome(
+    uid: string,
+    signal: { accountOutcome: 'created' | 'existing'; authCreationTimeMs: number } | undefined,
+  ): void;
   trackProfileCompleted(uid: string): void;
   syncAnalyticsPersonProfile(uid: string, doc: unknown): void;
 

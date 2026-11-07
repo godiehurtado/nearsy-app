@@ -7,6 +7,7 @@ import type { AnalyticsApi } from './analyticsApi';
 export const startAnalytics: AnalyticsApi['startAnalytics'] = () => () => {};
 export const trackSignupCompleted: AnalyticsApi['trackSignupCompleted'] = () => {};
 export const noteExistingAccountSignIn: AnalyticsApi['noteExistingAccountSignIn'] = () => {};
+export const noteLinkedInAccountOutcome: AnalyticsApi['noteLinkedInAccountOutcome'] = () => {};
 export const trackProfileCompleted: AnalyticsApi['trackProfileCompleted'] = () => {};
 export const syncAnalyticsPersonProfile: AnalyticsApi['syncAnalyticsPersonProfile'] =
   () => {};

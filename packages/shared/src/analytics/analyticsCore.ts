@@ -219,12 +219,14 @@ export function createAnalyticsSession(deps: {
     trackSignupCompleted(
       uid: string,
       resolveAttribution?: () => Promise<AnalyticsProperties | null>,
+      /** Dedupe within the account; a recreated account with the same UID has another. */
+      onceKey = 'signup_completed',
     ): void {
       enqueue(async (transport) => {
         const user = currentUserMatching(uid);
         if (!user) return;
         await ensureIdentity(transport, user);
-        if (emittedOnce.has(`${uid}:signup_completed`)) return;
+        if (emittedOnce.has(`${uid}:${onceKey}`)) return;
         let attribution: AnalyticsProperties | null = null;
         try {
           attribution = (await resolveAttribution?.()) ?? null;
@@ -233,7 +235,7 @@ export function createAnalyticsSession(deps: {
         }
         await send(transport, uid, {
           event: 'signup_completed',
-          onceKey: 'signup_completed',
+          onceKey,
           properties: attribution ?? {},
         });
         if (attribution) await transport.setPersonProperties({}, attribution);

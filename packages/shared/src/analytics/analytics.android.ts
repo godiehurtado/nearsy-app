@@ -59,6 +59,7 @@ import {
   type InterceptedRequest,
   type TransportIssue,
 } from './analyticsSdkTransport';
+import { decideLinkedInAccount } from './linkedinNewAccountSignal';
 import {
   createPendingVerificationMarkers,
   createVerifiedSocialTracker,
@@ -483,6 +484,31 @@ export const startAnalytics: AnalyticsApi['startAnalytics'] = () => {
 export const trackSignupCompleted: AnalyticsApi['trackSignupCompleted'] = safely((uid) => {
   getSession()?.trackSignupCompleted(uid, () =>
     consumeSignupAttribution(uid).catch(() => null),
+  );
+});
+
+/**
+ * LinkedIn: a creation is believed only for the user Firebase signed in, created
+ * when Exchange says. Dedupe is per UID and creation, so a recreated account with
+ * the same UID counts again. Unknown keeps held evidence held.
+ */
+export const noteLinkedInAccountOutcome: AnalyticsApi['noteLinkedInAccountOutcome'] = safely((
+  uid,
+  signal,
+) => {
+  if (!getSession()) return;
+  const user = firebaseAuth.currentUser;
+  const decision = decideLinkedInAccount({
+    uid,
+    signal,
+    currentUser: user ? { uid: user.uid, creationTime: user.metadata?.creationTime } : null,
+  });
+  if (decision.kind === 'existing') noteExistingAccountSignIn(uid);
+  if (decision.kind !== 'created') return;
+  getSession()?.trackSignupCompleted(
+    uid,
+    () => consumeSignupAttribution(uid).catch(() => null),
+    `signup_completed:${decision.createdAt}`,
   );
 });
 

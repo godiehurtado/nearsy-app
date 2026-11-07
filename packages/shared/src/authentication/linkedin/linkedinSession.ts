@@ -38,12 +38,30 @@ import {
   linkedInAuthExchange,
   MAX_TRANSACTION_ID_LEN,
   MIN_TRANSACTION_ID_LEN,
+  type LinkedInAccountSignal,
   type LinkedInAuthClientDeps,
 } from './linkedinAuthCore.ts';
 
 export type LinkedInSessionDeps = LinkedInCoordinatorDeps & {
   firebaseAuth: LinkedInFirebaseAuthPort;
+  /**
+   * Called once Firebase holds the session, with what Exchange said about the
+   * account, or undefined when it said nothing usable. It cannot affect the login.
+   */
+  onAuthenticated?: (uid: string, accountSignal: LinkedInAccountSignal | undefined) => void;
 };
+
+function reportAuthenticated(
+  deps: LinkedInSessionDeps,
+  uid: string,
+  accountSignal: LinkedInAccountSignal | undefined,
+): void {
+  try {
+    deps.onAuthenticated?.(uid, accountSignal);
+  } catch {
+    // Reporting must never change the result of the login.
+  }
+}
 
 export type LinkedInSessionResult =
   | {
@@ -320,6 +338,7 @@ export async function authenticateWithLinkedInBrowser(
     if (signedIn.status !== 'authenticated') {
       return signedIn;
     }
+    reportAuthenticated(deps, signedIn.session.uid, flow.accountSignal);
     return profileHints
       ? { ...signedIn, profileHints }
       : signedIn;
@@ -397,6 +416,7 @@ export async function authenticateWithLinkedInColdStartClaim(
 
     let customToken: string;
     let profileHints: import('./linkedinAuthCore.ts').LinkedInProfileHints | undefined;
+    let accountSignal: LinkedInAccountSignal | undefined;
     try {
       const exchanged = await linkedInAuthExchange(
         deps as LinkedInAuthClientDeps,
@@ -404,6 +424,7 @@ export async function authenticateWithLinkedInColdStartClaim(
       );
       customToken = exchanged.customToken;
       profileHints = exchanged.profileHints;
+      accountSignal = exchanged.accountSignal;
     } catch (err) {
       const normalized =
         err instanceof LinkedInAuthError
@@ -423,6 +444,7 @@ export async function authenticateWithLinkedInColdStartClaim(
     if (signedIn.status !== 'authenticated') {
       return signedIn;
     }
+    reportAuthenticated(deps, signedIn.session.uid, accountSignal);
     return profileHints
       ? { ...signedIn, profileHints }
       : signedIn;

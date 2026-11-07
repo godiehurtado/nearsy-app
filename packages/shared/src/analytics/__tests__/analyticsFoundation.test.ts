@@ -238,8 +238,9 @@ describe('remote activation', () => {
       join(here, '..', '..', '..', '..', '..', 'apps', 'nearsy-android', 'plugins', 'analyticsBuildConfig.js'),
       'utf8',
     );
-    assert.doesNotMatch(appConfig, /phc_/);
-    assert.doesNotMatch(buildConfig, /phc_/);
+    // A token-shaped value, not the format check of the build guard.
+    assert.doesNotMatch(appConfig, /phc_[A-Za-z0-9]{8,}/);
+    assert.doesNotMatch(buildConfig, /phc_[A-Za-z0-9]{8,}/);
   });
 
   it('the disabled path never loads the SDK', () => {

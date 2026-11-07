@@ -99,7 +99,7 @@ registerHooks({
       return { url: 'stub:languages', shortCircuit: true };
     }
     if (specifier.startsWith('./analytics') || specifier.startsWith('./appOpened') ||
-        specifier.startsWith('./ownExternal')) {
+        specifier.startsWith('./ownExternal') || specifier.startsWith('./linkedin')) {
       if (context.parentURL?.includes('/analytics/') && !/\.ts(\?|$)/.test(specifier)) {
         return next(`${specifier}.ts`, context);
       }
@@ -464,6 +464,83 @@ describe('acquisition and campaigns, by the real result of authentication', () =
   });
 });
 
+describe('LinkedIn account outcome', () => {
+  const CREATED_ISO = '2026-11-06T12:00:00.123Z';
+  const CREATED_MS = Date.parse(CREATED_ISO);
+  const LINK = 'nearsy://campaign?utm_source=li&utm_campaign=fall';
+  const build = () => startBuild(extrasFor(betaEnv()));
+  const named = (events: Array<{ event: string }>, name: string) =>
+    events.filter((item) => item.event === name);
+  const created = (ms = CREATED_MS) => ({ accountOutcome: 'created' as const, authCreationTimeMs: ms });
+
+  it('created: identify first, then one signup_completed with the held acquisition', async () => {
+    const { binding, server, signIn, openLink } = await build();
+    await openLink(LINK);
+    await signIn({ uid: REAL_UID, metadata: { creationTime: CREATED_ISO } });
+    binding.noteLinkedInAccountOutcome(REAL_UID, created());
+    binding.noteLinkedInAccountOutcome(REAL_UID, created());
+    await tick(40);
+    const events = server.events();
+    const identify = events.findIndex((item) => item.event === '$identify');
+    const signups = named(events, 'signup_completed');
+    assert.equal(signups.length, 1);
+    assert.ok(identify >= 0 && identify < events.indexOf(signups[0]));
+    assert.equal(signups[0].distinct_id, REAL_UID);
+    assert.equal(signups[0].properties.signup_source, 'li');
+    assert.equal(signups[0].properties.attribution_method, 'custom_scheme');
+  });
+
+  it('existing: no signup; held evidence becomes campaign_accessed', async () => {
+    const { binding, server, signIn, openLink } = await build();
+    await openLink(LINK);
+    await signIn({ uid: REAL_UID, metadata: { creationTime: CREATED_ISO } });
+    binding.noteLinkedInAccountOutcome(REAL_UID, {
+      accountOutcome: 'existing',
+      authCreationTimeMs: CREATED_MS,
+    });
+    await tick(40);
+    assert.equal(named(server.events(), 'signup_completed').length, 0);
+    assert.equal(named(server.events(), 'campaign_accessed').length, 1);
+  });
+
+  it('old response or a time that is not this user creation: nothing, evidence kept', async () => {
+    const { binding, server, signIn, openLink } = await build();
+    await openLink(LINK);
+    await signIn({ uid: REAL_UID, metadata: { creationTime: CREATED_ISO } });
+    binding.noteLinkedInAccountOutcome(REAL_UID, undefined);
+    binding.noteLinkedInAccountOutcome(REAL_UID, created(CREATED_MS - 86_400_000));
+    await tick(40);
+    assert.equal(named(server.events(), 'signup_completed').length, 0);
+    assert.equal(named(server.events(), 'campaign_accessed').length, 0);
+    // The held acquisition is still there for a confirmed creation.
+    binding.noteLinkedInAccountOutcome(REAL_UID, created());
+    await tick(40);
+    assert.equal(named(server.events(), 'signup_completed')[0].properties.signup_source, 'li');
+  });
+
+  it('a recreated account with the same UID counts again', async () => {
+    const { binding, server, signIn } = await build();
+    await signIn({ uid: REAL_UID, metadata: { creationTime: CREATED_ISO } });
+    binding.noteLinkedInAccountOutcome(REAL_UID, created());
+    await tick(40);
+    const recreatedIso = '2026-11-07T09:30:00.456Z';
+    await signIn(null);
+    await signIn({ uid: REAL_UID, metadata: { creationTime: recreatedIso } });
+    binding.noteLinkedInAccountOutcome(REAL_UID, created(Date.parse(recreatedIso)));
+    binding.noteLinkedInAccountOutcome(REAL_UID, created(Date.parse(recreatedIso)));
+    await tick(40);
+    assert.equal(named(server.events(), 'signup_completed').length, 2);
+  });
+
+  it('another account signed in by then: unknown', async () => {
+    const { binding, server, signIn } = await build();
+    await signIn({ uid: 'someone-else', metadata: { creationTime: CREATED_ISO } });
+    binding.noteLinkedInAccountOutcome(REAL_UID, created());
+    await tick(40);
+    assert.equal(named(server.events(), 'signup_completed').length, 0);
+  });
+});
+
 describe('general capture, ready by configuration only', () => {
   it('a later build with general capture sends production events, with no Beta marks', async () => {
     const env = {
@@ -500,12 +577,31 @@ describe('builds that must send nothing', () => {
       ...betaEnv(),
       NEARSY_ANALYTICS_ENABLED: 'true',
     })],
-    ['beta without the token', () => profileEnv('beta')],
     ['beta on a development Firebase', () => ({
       ...betaEnv(),
       NEARSY_FIREBASE_ENV: 'development',
     })],
   ];
+  it('a Beta build without a valid token fails clearly, without printing it', () => {
+    for (const token of [undefined, '', 'phx_personal_api_key_shape_000000', 'phc_short']) {
+      const env: Record<string, string> = { ...profileEnv('beta') };
+      if (token !== undefined) env.NEARSY_POSTHOG_TOKEN = token;
+      assert.throws(
+        () => extrasFor(env),
+        (error: Error) =>
+          /Beta build declared without a valid NEARSY_POSTHOG_TOKEN/.test(error.message) &&
+          (!token || !error.message.includes(token)),
+      );
+    }
+  });
+
+  it('builds that do not declare Beta still work without the token', () => {
+    for (const env of [{}, profileEnv('production'), profileEnv('preview')]) {
+      const extra = extrasFor(env);
+      assert.equal((extra.nearsyAnalytics as { enabled: unknown }).enabled, false);
+    }
+  });
+
   for (const [name, env] of cases) {
     it(name, async () => {
       const extra = extrasFor(env());

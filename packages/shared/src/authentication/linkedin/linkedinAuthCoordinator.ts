@@ -40,6 +40,7 @@ import {
   type LinkedInAuthClientDeps,
   type LinkedInAuthStartResult,
   type LinkedInDeepLinkParseResult,
+  type LinkedInAccountSignal,
   type LinkedInProfileHints,
   type LinkedInStoredTransaction,
 } from './linkedinAuthCore.ts';
@@ -60,7 +61,12 @@ export type LinkedInReturnSource =
   | 'explicit';
 
 export type LinkedInBrowserFlowResult =
-  | { status: 'authenticated'; customToken: string; profileHints?: LinkedInProfileHints }
+  | {
+      status: 'authenticated';
+      customToken: string;
+      profileHints?: LinkedInProfileHints;
+      accountSignal?: LinkedInAccountSignal;
+    }
   | { status: 'cancelled' }
   | { status: 'dismissed' }
   | { status: 'provider_error'; errorCode: string; transactionId?: string }
@@ -76,7 +82,12 @@ export type LinkedInPendingExchangeClaim = {
 export type LinkedInReturnHandleResult =
   | { status: 'ignored' }
   | { status: 'pending_exchange'; claim: LinkedInPendingExchangeClaim }
-  | { status: 'authenticated'; customToken: string; profileHints?: LinkedInProfileHints }
+  | {
+      status: 'authenticated';
+      customToken: string;
+      profileHints?: LinkedInProfileHints;
+      accountSignal?: LinkedInAccountSignal;
+    }
   | { status: 'provider_error'; errorCode: string; transactionId?: string }
   | { status: 'failed'; error: LinkedInAuthError };
 
@@ -294,12 +305,15 @@ export async function handleLinkedInReturnUrl(
   }
 
   try {
-    const { customToken, profileHints } = await linkedInAuthExchange(deps, {
+    const { customToken, profileHints, accountSignal } = await linkedInAuthExchange(deps, {
       transactionId: gated.transactionId,
     });
-    return profileHints
-      ? { status: 'authenticated', customToken, profileHints }
-      : { status: 'authenticated', customToken };
+    return {
+      status: 'authenticated',
+      customToken,
+      ...(profileHints ? { profileHints } : {}),
+      ...(accountSignal ? { accountSignal } : {}),
+    };
   } catch (err) {
     const normalized =
       err instanceof LinkedInAuthError
@@ -423,16 +437,12 @@ export async function runLinkedInBrowserAuthFlow(
     // handle a soft duplicate (no clear). We do not invoke handle twice here.
 
     if (handled.status === 'authenticated') {
-      return handled.profileHints
-        ? {
-            status: 'authenticated',
-            customToken: handled.customToken,
-            profileHints: handled.profileHints,
-          }
-        : {
-            status: 'authenticated',
-            customToken: handled.customToken,
-          };
+      return {
+        status: 'authenticated',
+        customToken: handled.customToken,
+        ...(handled.profileHints ? { profileHints: handled.profileHints } : {}),
+        ...(handled.accountSignal ? { accountSignal: handled.accountSignal } : {}),
+      };
     }
     if (handled.status === 'provider_error') {
       return {

@@ -59,8 +59,8 @@ import {
 } from '../analyticsSocial.ts';
 import { createAppOpenedTracker, OWN_FLOW_MAX_AWAY_MS } from '../appOpenedTracker.ts';
 import {
-  readLinkedinNewAccountSignal,
-  LINKEDIN_NEW_ACCOUNT_FIELD,
+  decideLinkedInAccount,
+  readAuthCreationTime,
 } from '../linkedinNewAccountSignal.ts';
 import {
   isLocationRequestInFlight,
@@ -1256,18 +1256,44 @@ describe('campaign attribution', () => {
   });
 });
 
-describe('LinkedIn new account signal', () => {
-  it('nothing is inferred until Identity agrees on the field', () => {
-    assert.equal(LINKEDIN_NEW_ACCOUNT_FIELD, null);
-    assert.equal(readLinkedinNewAccountSignal({ isNewUser: true }), false);
-    assert.equal(readLinkedinNewAccountSignal({ isNewAccount: true }), false);
+describe('LinkedIn account decision', () => {
+  const MS = Date.parse('2026-11-06T12:00:00.123Z');
+  const ISO = '2026-11-06T12:00:00.123Z';
+  const created = (authCreationTimeMs: number) => ({
+    accountOutcome: 'created' as const,
+    authCreationTimeMs,
+  });
+  const decide = (signal: ReturnType<typeof created> | { accountOutcome: 'existing'; authCreationTimeMs: number } | undefined, creationTime: unknown = ISO, currentUid = 'u1') =>
+    decideLinkedInAccount({ uid: 'u1', signal, currentUser: { uid: currentUid, creationTime } });
+
+  it('created only when the time is the creation of this user', () => {
+    assert.deepEqual(decide(created(MS)), { kind: 'created', uid: 'u1', createdAt: MS, precisionMs: 1 });
+    assert.deepEqual(decide(created(MS + 1)), { kind: 'unknown' });
+    assert.deepEqual(decide(created(MS - 60_000)), { kind: 'unknown' });
   });
 
-  it('only an explicit true counts once the field is known', () => {
-    assert.equal(readLinkedinNewAccountSignal({ agreed: true }, 'agreed'), true);
-    assert.equal(readLinkedinNewAccountSignal({ agreed: 'true' }, 'agreed'), false);
-    assert.equal(readLinkedinNewAccountSignal({}, 'agreed'), false);
-    assert.equal(readLinkedinNewAccountSignal(null, 'agreed'), false);
+  it('compares at the precision both sides really have, with no window', () => {
+    // Whole seconds on the server side, milliseconds on the client.
+    assert.equal(decide(created(Date.parse('2026-11-06T12:00:00Z'))).kind, 'created');
+    assert.equal(decide(created(Date.parse('2026-11-06T12:00:01Z'))).kind, 'unknown');
+    // Whole seconds on the client side.
+    assert.equal(decide(created(MS), 'Fri, 06 Nov 2026 12:00:00 GMT').kind, 'created');
+    assert.equal(decide(created(MS + 1000), 'Fri, 06 Nov 2026 12:00:00 GMT').kind, 'unknown');
+    assert.deepEqual(readAuthCreationTime(ISO), { ms: MS, precisionMs: 1 });
+    assert.deepEqual(readAuthCreationTime('Fri, 06 Nov 2026 12:00:00 GMT')?.precisionMs, 1000);
+  });
+
+  it('existing never creates; unknown covers the rest', () => {
+    assert.deepEqual(decide({ accountOutcome: 'existing', authCreationTimeMs: MS }), { kind: 'existing', uid: 'u1' });
+    assert.deepEqual(decide(undefined), { kind: 'unknown' });
+    assert.deepEqual(decide(created(MS), null), { kind: 'unknown' });
+    assert.deepEqual(decide(created(MS), 'not a date'), { kind: 'unknown' });
+    // Another account is signed in now.
+    assert.deepEqual(decide(created(MS), ISO, 'u2'), { kind: 'unknown' });
+    assert.deepEqual(
+      decideLinkedInAccount({ uid: 'u1', signal: created(MS), currentUser: null }),
+      { kind: 'unknown' },
+    );
   });
 });
 

@@ -489,3 +489,95 @@ describe('import and App.tsx wiring absence', () => {
     assert.equal(/linkedin|LinkedIn|signInWithCustomToken/i.test(app), false);
   });
 });
+
+describe('Exchange account signal', () => {
+  const CREATED = { accountOutcome: 'created', authCreationTimeMs: 1_762_430_400_123 };
+
+  function withSignal(exchange: Record<string, unknown>) {
+    const deps = createSessionDeps({ exchange: { customToken: SYNTH_TOKEN, ...exchange } });
+    const reported: Array<[string, unknown]> = [];
+    deps.onAuthenticated = (uid, signal) => void reported.push([uid, signal]);
+    return { deps, reported };
+  }
+
+  it('the browser path reports the signal after Firebase authenticated', async () => {
+    const { deps, reported } = withSignal(CREATED);
+    const result = await authenticateWithLinkedInBrowser(deps);
+    assert.equal(result.status, 'authenticated');
+    assert.deepEqual(reported, [['li_synth_uid_001', CREATED]]);
+    assert.equal(
+      deps.calls.filter((call) => call.name === LINKEDIN_AUTH_EXCHANGE_CALLABLE).length,
+      1,
+    );
+  });
+
+  it('the resumed path reports it too, with one Exchange', async () => {
+    const { deps, reported } = withSignal({ accountOutcome: 'existing', authCreationTimeMs: 5 });
+    await linkedInAuthStart(deps);
+    const result = await authenticateWithLinkedInColdStartClaim(deps, {
+      transactionId: TX,
+      fingerprint: expectedLinkedInSuccessFingerprint(TX),
+    });
+    assert.equal(result.status, 'authenticated');
+    assert.deepEqual(reported, [
+      ['li_synth_uid_001', { accountOutcome: 'existing', authCreationTimeMs: 5 }],
+    ]);
+    assert.equal(
+      deps.calls.filter((call) => call.name === LINKEDIN_AUTH_EXCHANGE_CALLABLE).length,
+      1,
+    );
+  });
+
+  it('an old response, one field alone or an invalid value is unknown, and login is unaffected', async () => {
+    for (const exchange of [
+      {},
+      { accountOutcome: 'created' },
+      { authCreationTimeMs: 1_762_430_400_123 },
+      { accountOutcome: 'new', authCreationTimeMs: 1_762_430_400_123 },
+      { accountOutcome: 'created', authCreationTimeMs: '1762430400123' },
+      { accountOutcome: 'created', authCreationTimeMs: 0 },
+      { accountOutcome: 'created', authCreationTimeMs: -5 },
+      { accountOutcome: 'created', authCreationTimeMs: 1.5 },
+      { accountOutcome: 'created', authCreationTimeMs: Number.MAX_VALUE },
+    ]) {
+      __resetLinkedInAuthClientLocksForTests();
+      __resetLinkedInCoordinatorForTests();
+      __resetLinkedInSessionForTests();
+      const { deps, reported } = withSignal(exchange);
+      const result = await authenticateWithLinkedInBrowser(deps);
+      assert.equal(result.status, 'authenticated', JSON.stringify(exchange));
+      assert.deepEqual(reported, [['li_synth_uid_001', undefined]], JSON.stringify(exchange));
+    }
+  });
+
+  it('nothing is reported when Firebase did not authenticate', async () => {
+    const deps = createSessionDeps({
+      exchange: { customToken: SYNTH_TOKEN, ...CREATED },
+      auth: createMockAuth({
+        signInImpl: async () => {
+          throw Object.assign(new Error('x'), { code: 'auth/invalid-custom-token' });
+        },
+      }),
+    });
+    const reported: unknown[] = [];
+    deps.onAuthenticated = (...args) => void reported.push(args);
+    const result = await authenticateWithLinkedInBrowser(deps);
+    assert.equal(result.status, 'failed');
+    assert.deepEqual(reported, []);
+  });
+
+  it('a throwing reporter does not change the login', async () => {
+    const { deps } = withSignal(CREATED);
+    deps.onAuthenticated = () => {
+      throw new Error('analytics failed');
+    };
+    const result = await authenticateWithLinkedInBrowser(deps);
+    assert.equal(result.status, 'authenticated');
+  });
+
+  it('the signal never carries the token', async () => {
+    const { deps, reported } = withSignal(CREATED);
+    await authenticateWithLinkedInBrowser(deps);
+    assert.ok(!JSON.stringify(reported).includes(SYNTH_TOKEN));
+  });
+});

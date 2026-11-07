@@ -208,7 +208,7 @@ surveys or GeoIP. Event names are final: the app reports these exact ones.
 | Event | Who | When |
 |---|---|---|
 | `app_opened` | Anonymous or signed in | First foreground of the process, or return after 30 s or more away. Own flows do not count |
-| `signup_completed` | Signed in | `additionalUserInfo.isNewUser === true`, or email account created. Email, Google, Facebook. LinkedIn pending |
+| `signup_completed` | Signed in | `additionalUserInfo.isNewUser === true`, or email account created (Email, Google, Facebook). LinkedIn: `accountOutcome=created` whose `authCreationTimeMs` is this user's creation |
 | `acquisition_attributed` | Signed in | Acquisition evidence older than the signup arrived after `signup_completed` was sent, and that signup had none. At most once per account |
 | `profile_completed` | Signed in | Final CRJ save succeeded |
 | `onboarding_step_completed` | Signed in | A milestone was saved; once per milestone, account and process |
@@ -432,6 +432,26 @@ leaves the device. iOS and Functions should not expect `match_id` from Android.
   tap handled by an earlier run is not replayed.
 - Tokens and reminders are unchanged. `alert_sent` belongs to Functions and means accepted by Expo.
 
+### LinkedIn
+
+Exchange may return `accountOutcome` (`created` or `existing`) and `authCreationTimeMs` (Unix
+milliseconds, positive integer). Both or none: a missing, partial or invalid pair is unknown and never
+changes the login. The pair travels in memory through the browser path and the resumed (cold start) path,
+and is reported only after Firebase holds the session. Exchange is not repeated, and the one-use
+transaction is untouched.
+
+| Signal | Result |
+|---|---|
+| `created`, time equal to `metadata.creationTime` of the signed-in user | `$identify`, then `signup_completed` with held acquisition |
+| `created`, another time | Unknown: nothing |
+| `existing` | No signup; held evidence becomes `campaign_accessed` |
+| Absent or invalid (Identity not deployed) | Unknown: nothing; evidence stays held |
+| Another account signed in by then | Unknown |
+
+- Times are compared at the precision both sides have: RNFirebase gives milliseconds; a whole-second
+  value on either side is compared by second. No window.
+- Dedupe is per UID and creation time, so a recreated account with the same UID counts again.
+
 ### Attribution
 
 - Allowlist: `utm_source`, `utm_campaign`, `utm_content`, `nearsy_tool` or `utm_tool`. Values must be
@@ -476,7 +496,7 @@ referrer, and neither is validated.
 | Item | Owner | Needed |
 |---|---|---|
 | Domain and App Links | Product | Choose host and path, publish `/.well-known/assetlinks.json` with the **Play App Signing** SHA-256 (Play Console, App integrity), and a landing page for users without the app |
-| LinkedIn `signup_completed` | Identity | Name the explicit new-account field. Set it in `linkedinNewAccountSignal.ts` and call it at the two `performSignInOnce` sites of `linkedinSession.ts`. Not inferred meanwhile |
+| LinkedIn signal deployed | Identity | Exchange must send `accountOutcome` and `authCreationTimeMs`. Until then LinkedIn signs in with no `signup_completed`, and held acquisition stays held |
 | Account recreation | Identity and iOS | No permanent dedupe by UID is used here, and the iOS report differs. A recreated account counts as a new signup |
 | `data.alertId` on push | Functions | Optional field |
 | `event_cohort` | Server | Assigned by venue and window, not by link or date. The app does not send it |

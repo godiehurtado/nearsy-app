@@ -6,6 +6,7 @@ import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 import { Linking } from 'react-native';
+import { noteLinkedInAccountOutcome } from '../../analytics/analytics';
 import { firebaseAuth } from '../../config/firebaseConfig.android';
 import { runWithOutgoingPushRelease } from '../../services/pushTokens';
 import {
@@ -241,6 +242,7 @@ function createDefaultSessionDeps(): LinkedInSessionDeps {
   return {
     ...createDefaultCoordinatorDeps(),
     firebaseAuth: createDefaultFirebaseAuthPort(),
+    onAuthenticated: noteLinkedInAccountOutcome,
   };
 }
 

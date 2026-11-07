@@ -46,6 +46,14 @@ function resolveAnalyticsExtras(env) {
     environment === 'production' &&
     text(env, 'NEARSY_ANALYTICS_DISTRIBUTION_CHANNEL') === 'beta' &&
     !ambiguous;
+  // A declared Beta build without its token would ship silently off: stop the build.
+  if (betaEnabled && !/^phc_[A-Za-z0-9_-]{20,}$/.test(text(env, 'NEARSY_POSTHOG_TOKEN'))) {
+    throw new Error(
+      '[analytics] Beta build declared without a valid NEARSY_POSTHOG_TOKEN. ' +
+        'Create it in the EAS "production" environment with visibility Sensitive. ' +
+        'The value is never printed.',
+    );
+  }
   const appOpenedMinBackgroundSec = optionalNumber(
     env,
     'NEARSY_ANALYTICS_APP_OPENED_MIN_BG_SEC',

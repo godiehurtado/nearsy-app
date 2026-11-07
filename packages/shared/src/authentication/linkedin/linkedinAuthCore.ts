@@ -61,10 +61,31 @@ export type LinkedInProfileHints = {
   photoUrl?: string;
 };
 
+/**
+ * What Exchange says about the account it signed in. Both fields or none: a
+ * missing, partial or invalid pair is unknown and never affects the login.
+ */
+export type LinkedInAccountSignal = {
+  accountOutcome: 'created' | 'existing';
+  /** Unix time of the Firebase Auth user creation, in milliseconds. */
+  authCreationTimeMs: number;
+};
+
 export type LinkedInAuthExchangeResponse = {
   customToken: string;
   profileHints?: LinkedInProfileHints;
+  accountSignal?: LinkedInAccountSignal;
 };
+
+export function parseLinkedInAccountSignal(
+  data: Record<string, unknown>,
+): LinkedInAccountSignal | undefined {
+  const outcome = data.accountOutcome;
+  const time = data.authCreationTimeMs;
+  if (outcome !== 'created' && outcome !== 'existing') return undefined;
+  if (typeof time !== 'number' || !Number.isSafeInteger(time) || time <= 0) return undefined;
+  return { accountOutcome: outcome, authCreationTimeMs: time };
+}
 
 /**
  * Validated deep-link shapes (A3.4.3 parser produces these).
@@ -210,9 +231,12 @@ export function parseLinkedInAuthExchangeResponse(
     throw new Error('INVALID_EXCHANGE_RESPONSE');
   }
   const profileHints = parseLinkedInProfileHints(d.profileHints);
-  return profileHints
-    ? { customToken: d.customToken, profileHints }
-    : { customToken: d.customToken };
+  const accountSignal = parseLinkedInAccountSignal(d);
+  return {
+    customToken: d.customToken,
+    ...(profileHints ? { profileHints } : {}),
+    ...(accountSignal ? { accountSignal } : {}),
+  };
 }
 
 export function isExactLinkedInMobileReturnBase(url: string): boolean {
@@ -750,7 +774,11 @@ export async function linkedInAuthStart(
 export async function linkedInAuthExchange(
   deps: LinkedInAuthClientDeps,
   input: { transactionId: string },
-): Promise<{ customToken: string; profileHints?: LinkedInProfileHints }> {
+): Promise<{
+  customToken: string;
+  profileHints?: LinkedInProfileHints;
+  accountSignal?: LinkedInAccountSignal;
+}> {
   if (startInFlight || exchangeInFlight) {
     throw new LinkedInAuthError(
       'OPERATION_IN_PROGRESS',
@@ -794,6 +822,7 @@ export async function linkedInAuthExchange(
 
     let customToken: string;
     let profileHints: LinkedInProfileHints | undefined;
+    let accountSignal: LinkedInAccountSignal | undefined;
     try {
       const raw = await deps.functions.call<
         LinkedInAuthExchangeRequest,
@@ -803,6 +832,7 @@ export async function linkedInAuthExchange(
         const parsed = parseLinkedInAuthExchangeResponse(raw);
         customToken = parsed.customToken;
         profileHints = parsed.profileHints;
+        accountSignal = parsed.accountSignal;
       } catch {
         throw new LinkedInAuthError(
           'EXCHANGE_RESPONSE_INVALID',
@@ -821,7 +851,11 @@ export async function linkedInAuthExchange(
     }
 
     await deps.store.clear();
-    return profileHints ? { customToken, profileHints } : { customToken };
+    return {
+      customToken,
+      ...(profileHints ? { profileHints } : {}),
+      ...(accountSignal ? { accountSignal } : {}),
+    };
   } finally {
     exchangeInFlight = false;
   }
