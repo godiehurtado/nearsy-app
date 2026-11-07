@@ -49,7 +49,7 @@ describe('iOS binary version override', () => {
     assert.equal(appJson.expo.version, '2.0.9');
     assert.equal(appJson.expo.ios.buildNumber, '70');
     assert.equal(eas.build.beta.env.NEARSY_IOS_VERSION, '2.0.10');
-    assert.equal(eas.build.beta.env.NEARSY_IOS_BUILD_NUMBER, '73');
+    assert.equal(eas.build.beta.env.NEARSY_IOS_BUILD_NUMBER, '74');
     for (const [name, profile] of Object.entries(eas.build)) {
       if (name === 'beta') continue;
       const env = profile.env ?? {};

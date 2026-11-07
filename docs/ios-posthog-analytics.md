@@ -55,7 +55,7 @@ The `beta` profile is in `apps/nearsy-ios/eas.json`. It extends `production`, so
     "EXPO_PUBLIC_POSTHOG_ENABLED": "true",
     "EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL": "beta",
     "NEARSY_IOS_VERSION": "2.0.10",
-    "NEARSY_IOS_BUILD_NUMBER": "73"
+    "NEARSY_IOS_BUILD_NUMBER": "74"
   }
 }
 ```
@@ -74,7 +74,7 @@ The `beta` profile is in `apps/nearsy-ios/eas.json`. It extends `production`, so
 2. **Version and build number.**
    - **Source:** `appVersionSource` is `local` and `autoIncrement` is `false`. EAS has no remote counter for this app and takes both values from the resolved app config.
    - **The `beta` profile numbers itself** with `NEARSY_IOS_VERSION` and `NEARSY_IOS_BUILD_NUMBER`, which `app.config.js` applies to that build only. `app.json` stays at 2.0.9 (70), which every other profile still reads.
-   - **History checked on 2026-11-07 with `eas build:list`:** the highest iOS build is 2.0.10 (72), from the `testflight-contacts-diagnostics` profile on another branch. 2.0.9 already has builds up to 71. So Beta proposes **2.0.10 (73)**.
+   - **History checked on 2026-11-07 with `eas build:list`:** the highest iOS build is 2.0.10 (72), from the `testflight-contacts-diagnostics` profile on another branch. 2.0.9 already has builds up to 71. So the first Beta used **2.0.10 (73)**. Rechecked before the second Beta: the highest was still 73, so it uses **2.0.10 (74)**.
    - **Still to confirm in App Store Connect:** that no build above 72 was uploaded outside EAS (Xcode or Transporter), and that the 2.0.10 version is still open for builds. If either fails, change only the two values in the `beta` profile.
 
 **Commands:**
