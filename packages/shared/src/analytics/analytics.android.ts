@@ -30,6 +30,7 @@ import {
   type AnalyticsExtras,
 } from './analyticsConfig';
 import {
+  buildMatchMadeEvent,
   describeForInspection,
   sanitizeOutgoingEvent,
   scoreProperties,
@@ -633,16 +634,9 @@ export const trackMatchPresented: AnalyticsApi['trackMatchPresented'] = safely((
   presentedIn,
 ) => {
   // Compatibility is what this event measures: unknown is not zero, and not a match.
-  if (toKnownScore(score) === undefined || !peerUid) return;
-  getSession()?.trackForUser(uid, ({ sessionId }) => ({
-    event: 'match_made',
-    onceKey: `match_made:${sessionId ?? 'no-session'}:${peerUid}`,
-    properties: {
-      ...scoreProperties(score),
-      presented_in: presentedIn,
-      ...(sessionId ? { session_id: sessionId } : {}),
-    },
-  }));
+  getSession()?.trackForUser(uid, ({ sessionId }) =>
+    buildMatchMadeEvent({ peerUid, score, presentedIn, sessionId }),
+  );
 });
 
 export const trackAlertOpened: AnalyticsApi['trackAlertOpened'] = safely((source, alertId) => {

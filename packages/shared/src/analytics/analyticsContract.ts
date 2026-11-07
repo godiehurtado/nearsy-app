@@ -198,6 +198,34 @@ export function matchScoreRange(score: number): MatchScoreRange {
   return score < 75 ? 'medium' : 'high';
 }
 
+/**
+ * `match_made`, or null without a valid score or a profile to count. The unit is
+ * one profile, per viewer and SDK session. The other person's UID is only part of
+ * the local dedupe key: it never becomes a property, and `match_id` is not used.
+ */
+export function buildMatchMadeEvent(input: {
+  peerUid: unknown;
+  score: unknown;
+  presentedIn: 'nearby_list' | 'discovery_profile';
+  sessionId: string | undefined;
+}): {
+  event: 'match_made';
+  onceKey: string;
+  properties: AnalyticsProperties;
+} | null {
+  if (toKnownScore(input.score) === undefined) return null;
+  if (typeof input.peerUid !== 'string' || !input.peerUid) return null;
+  return {
+    event: 'match_made',
+    onceKey: `match_made:${input.sessionId ?? 'no-session'}:${input.peerUid}`,
+    properties: {
+      ...scoreProperties(input.score),
+      presented_in: input.presentedIn,
+      ...(input.sessionId ? { session_id: input.sessionId } : {}),
+    },
+  };
+}
+
 /** Score properties when known, otherwise nothing. */
 export function scoreProperties(score: unknown): AnalyticsProperties {
   const known = toKnownScore(score);
