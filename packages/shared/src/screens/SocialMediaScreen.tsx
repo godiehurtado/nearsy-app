@@ -18,7 +18,11 @@ import { Ionicons } from '@expo/vector-icons';
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { trackManualSocialLinksSaved } from '../analytics';
+import {
+  noteVerifiedSocialRemoved,
+  trackManualSocialLinksSaved,
+  trackVerifiedSocialLinked,
+} from '../analytics';
 import { firebaseAuth } from '../config/firebaseConfig';
 import { getUserProfile, updateUserProfilePartial } from '../services/firestoreService';
 import { useTranslation } from '../i18n';
@@ -613,6 +617,7 @@ export default function SocialMediaScreen() {
       }
       // Backend confirmed ownership before updating UI.
       setYoutubeVerified(outcome.verified);
+      trackVerifiedSocialLinked(editorUid, 'youtube');
       setYoutubeChannels(null);
       setYoutubeNeedsRetry(false);
     } catch (err) {
@@ -656,6 +661,7 @@ export default function SocialMediaScreen() {
         const verified = await youtubeSelectRef.current(channelId);
         if (!isYoutubeResultCurrent(requestGen, modeForRequest)) return;
         setYoutubeVerified(verified);
+        trackVerifiedSocialLinked(editorUid, 'youtube');
         setYoutubeChannels(null);
         youtubeSelectRef.current = null;
         setYoutubeNeedsRetry(false);
@@ -699,6 +705,7 @@ export default function SocialMediaScreen() {
                 setYoutubeBusyPhase('disconnecting');
                 const client = await getYoutubeOwnershipClient();
                 await client.unlink(modeForRequest);
+                noteVerifiedSocialRemoved(editorUid);
                 if (!isYoutubeResultCurrent(requestGen, modeForRequest)) return;
                 setYoutubeVerified(null);
                 setYoutubeChannels(null);
@@ -808,6 +815,7 @@ export default function SocialMediaScreen() {
         return;
       }
       setTiktokVerified(outcome.verified);
+      trackVerifiedSocialLinked(editorUid, 'tiktok');
       setTiktokNeedsRetry(false);
       setTiktokBusyPhase('idle');
     } catch (err) {
@@ -847,6 +855,7 @@ export default function SocialMediaScreen() {
                 setTiktokBusyPhase('disconnecting');
                 const client = await getTiktokOwnershipClient();
                 await client.unlink(modeForRequest);
+                noteVerifiedSocialRemoved(editorUid);
                 if (!isTiktokResultCurrent(requestGen, modeForRequest)) return;
                 setTiktokVerified(null);
                 setTiktokNeedsRetry(false);
@@ -998,6 +1007,10 @@ export default function SocialMediaScreen() {
       if (!isInstagramResultCurrent(requestGen, modeForRequest)) return;
       const wasPending = Boolean(instagramChallengeRef.current);
       const presented = presentInstagramGetResponse(get);
+      // Only a pending challenge that turns verified is a new link; plain reads are not.
+      if (wasPending && presented.verified) {
+        trackVerifiedSocialLinked(editorUid, 'instagram');
+      }
       setInstagramVerified(presented.verified);
       setInstagramChallenge(presented.challenge);
       instagramChallengeRef.current = presented.challenge;
@@ -1140,6 +1153,7 @@ export default function SocialMediaScreen() {
                 setInstagramBusyPhase('disconnecting');
                 const client = await getInstagramOwnershipClient();
                 await client.unlink(modeForRequest);
+                noteVerifiedSocialRemoved(editorUid);
                 if (!isInstagramResultCurrent(requestGen, modeForRequest)) {
                   return;
                 }
@@ -1274,6 +1288,7 @@ export default function SocialMediaScreen() {
         return;
       }
       setXVerified(outcome.verified);
+      trackVerifiedSocialLinked(editorUid, 'x');
       setXNeedsRetry(false);
       setXBusyPhase('idle');
     } catch (err) {
@@ -1314,6 +1329,7 @@ export default function SocialMediaScreen() {
                 setXBusyPhase('disconnecting');
                 const client = await getXOwnershipClient();
                 await client.unlink(modeForRequest);
+                noteVerifiedSocialRemoved(editorUid);
                 if (!isXResultCurrent(requestGen, modeForRequest)) return;
                 setXVerified(null);
                 setXNeedsRetry(false);

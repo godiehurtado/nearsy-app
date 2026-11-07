@@ -253,6 +253,7 @@ Mode-scoped properties are `profile_type`, `occupation*`, `interests*`, `affilia
 Unknown is unset rather than left alone, because whatever PostHog holds may belong to the other mode.
 
 - **Occupation:** only the mode's own nested value, `profiles.<mode>.occupation`. The top-level `occupation` of a legacy profile is never sent, because it cannot be shown to belong to the active mode: the switch runs in the backend and does not rewrite it. Without a nested value, `occupation` and `occupation_truncated` are unset. This holds after a process restart too, and Firestore is not changed. The app may still show the top-level value.
+- **Verified lookup, one platform at a time:** each network is read separately. A network whose backend is switched off (its `*_NOT_ENABLED` refusal, for example YouTube while its core is off) counts as not connected, so it no longer hides Instagram or X. Any other failure (network, server, App Check) still makes the whole verified state unknown.
 - **Verified lookup that fails:** it keeps values only if this mode already confirmed them in this process. Otherwise `social_platforms_verified`, `socials_connected` and `has_socials` are unset. After a restart, a failed lookup therefore clears them until the next successful one.
 
 ## Identity
@@ -384,6 +385,7 @@ An open is a real arrival to foreground.
   - **Unit:** one directed pair, viewer to profile. It repeats across sessions, so distinct `match_id` counts pairs and event totals count presentations per session.
   - **Privacy:** stable and pseudonymous, not anonymous. Nothing is written to Firestore.
   - **Failure:** if hashing fails, the event is sent without it.
+- **Verified `social_linked`:** fires from both onboarding and the profile social editor when the backend confirms a connection. For Instagram, only a pending challenge that turns verified counts; opening the editor or a restart never does. Each unlink refreshes the person properties without an event, and a relink reports again.
 - **Instagram `social_linked`:** if verification finishes while the app is closed, no event fires because the app only sees it as existing state. `social_platforms_verified` still updates.
 - **`match_social_tapped`:** a tap on any Discovery profile. It does not prove a connection between people. If the open has not resolved in 1.5 s, it reports `unknown`.
 

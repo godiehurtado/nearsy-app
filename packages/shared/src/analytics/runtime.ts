@@ -54,6 +54,7 @@ import {
   type VerifiedSocialState,
 } from './profileProperties';
 import type { AnalyticsLogger } from './transport';
+import { combineVerifiedSocialReads } from './verifiedSocialRead';
 
 const PROFILE_SYNC_DEBOUNCE_MS = 1500;
 /** Lets signup claim a pending link first; then it counts as access. */
@@ -108,32 +109,21 @@ async function readLocationPermissions(): Promise<LocationPermissionReadings> {
 async function readVerifiedSocials(
   mode: 'personal' | 'professional',
 ): Promise<VerifiedSocialState> {
-  try {
-    const [youtube, tiktok, instagram, x] = await Promise.all([
-      import('../social/youtubeOwnership').then(async (m) =>
-        (await m.getYoutubeOwnershipClient()).get(mode),
-      ),
-      import('../social/tiktokOwnership').then(async (m) =>
-        (await m.getTiktokOwnershipClient()).get(mode),
-      ),
-      import('../social/instagramOwnership').then(async (m) =>
-        (await m.getInstagramOwnershipClient()).get(mode),
-      ),
-      import('../social/xOwnership').then(async (m) =>
-        (await m.getXOwnershipClient()).get(mode),
-      ),
-    ]);
-    const state: Partial<Record<AnalyticsSocialPlatform, boolean>> = {
-      youtube: youtube.result === 'verified',
-      tiktok: tiktok.result === 'verified',
-      instagram: instagram.result === 'verified',
-      x: x.result === 'verified',
-    };
-    return state;
-  } catch {
-    // Unknown never erases a connection already reported.
-    return null;
-  }
+  const [youtube, tiktok, instagram, x] = await Promise.allSettled([
+    import('../social/youtubeOwnership').then(async (m) =>
+      (await m.getYoutubeOwnershipClient()).get(mode),
+    ),
+    import('../social/tiktokOwnership').then(async (m) =>
+      (await m.getTiktokOwnershipClient()).get(mode),
+    ),
+    import('../social/instagramOwnership').then(async (m) =>
+      (await m.getInstagramOwnershipClient()).get(mode),
+    ),
+    import('../social/xOwnership').then(async (m) =>
+      (await m.getXOwnershipClient()).get(mode),
+    ),
+  ]);
+  return combineVerifiedSocialReads({ youtube, tiktok, instagram, x });
 }
 
 let started = false;
