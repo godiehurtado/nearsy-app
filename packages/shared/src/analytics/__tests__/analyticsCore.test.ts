@@ -1368,6 +1368,8 @@ describe('source guards', () => {
       EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'production',
       EXPO_PUBLIC_POSTHOG_ENABLED: 'true',
       EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL: 'beta',
+      NEARSY_IOS_VERSION: '2.0.10',
+      NEARSY_IOS_BUILD_NUMBER: '73',
     });
     const config = resolveAnalyticsConfig({
       enabledFlag: eas.build.beta.env.EXPO_PUBLIC_POSTHOG_ENABLED,

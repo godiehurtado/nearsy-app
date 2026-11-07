@@ -25,6 +25,9 @@ const {
   resolveFacebookAuthEnvForConfig,
   buildFacebookPluginProps,
 } = require('./scripts/facebookAuthConfig.cjs');
+const {
+  resolveIosBinaryVersionOverride,
+} = require('./scripts/iosBinaryVersionOverride.cjs');
 
 const FUNCTIONS_REGION = 'us-central1';
 const DEV_PLIST = './GoogleService-Info.development.plist';
@@ -314,10 +317,15 @@ module.exports = ({ config }) => {
     process.env.NEARSY_ATTRIBUTION_ASSOCIATED_DOMAINS,
   );
 
+  // Set only by a build profile that numbers its own binary (today: beta).
+  const binaryOverride = resolveIosBinaryVersionOverride(process.env);
+
   return {
     ...config,
+    ...(binaryOverride.version ? { version: binaryOverride.version } : {}),
     ios: {
       ...config.ios,
+      ...(binaryOverride.buildNumber ? { buildNumber: binaryOverride.buildNumber } : {}),
       bundleIdentifier: 'com.nearsy.app.client',
       googleServicesFile,
       ...(associatedDomains.length > 0 ? { associatedDomains } : {}),

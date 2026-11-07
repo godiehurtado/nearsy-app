@@ -53,7 +53,9 @@ The `beta` profile is in `apps/nearsy-ios/eas.json`. It extends `production`, so
   "env": {
     "EXPO_PUBLIC_NEARSY_FIREBASE_ENV": "production",
     "EXPO_PUBLIC_POSTHOG_ENABLED": "true",
-    "EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL": "beta"
+    "EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL": "beta",
+    "NEARSY_IOS_VERSION": "2.0.10",
+    "NEARSY_IOS_BUILD_NUMBER": "73"
   }
 }
 ```
@@ -65,16 +67,17 @@ The `beta` profile is in `apps/nearsy-ios/eas.json`. It extends `production`, so
    eas env:create --environment production --name EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN --value <phc_token> --visibility sensitive
    ```
    An `EXPO_PUBLIC_` value is compiled into the app, so it is not a secret from the binary. Visibility only keeps it out of logs and the dashboard.
-2. **Build number.** `appVersionSource` is `local`, and `app.json` still says `buildNumber: "70"` for version `2.0.10`. App Store Connect already has at least 2.0.10 (72). Before building:
-   - In App Store Connect, open TestFlight for the app and find the highest build number uploaded, across every version and state (processing, expired, rejected included).
-   - Set `ios.buildNumber` in `apps/nearsy-ios/app.json` to that number plus one. Change `version` only if a new marketing version is wanted.
-   - This delivery does not change either value.
+2. **Version and build number.**
+   - **Source:** `appVersionSource` is `local` and `autoIncrement` is `false`. EAS has no remote counter for this app and takes both values from the resolved app config.
+   - **The `beta` profile numbers itself** with `NEARSY_IOS_VERSION` and `NEARSY_IOS_BUILD_NUMBER`, which `app.config.js` applies to that build only. `app.json` stays at 2.0.9 (70), which every other profile still reads.
+   - **History checked on 2026-11-07 with `eas build:list`:** the highest iOS build is 2.0.10 (72), from the `testflight-contacts-diagnostics` profile on another branch. 2.0.9 already has builds up to 71. So Beta proposes **2.0.10 (73)**.
+   - **Still to confirm in App Store Connect:** that no build above 72 was uploaded outside EAS (Xcode or Transporter), and that the 2.0.10 version is still open for builds. If either fails, change only the two values in the `beta` profile.
 
 **Commands, when authorized (not run):**
 
 ```bash
 cd apps/nearsy-ios
-eas build --platform ios --profile beta
+eas build --platform ios --profile beta --clear-cache
 eas submit --platform ios --profile production --id <BUILD_ID_FROM_THE_BETA_BUILD>
 ```
 
@@ -253,7 +256,8 @@ Analytics follows three states published by the deletion modules. It subscribes 
 |---|---|---|
 | **Intent** | `beginAccountDeletionSession`, or an uncertain result kept by `accountDeletionReconciliation` | New events and person updates of that account are dropped, not queued. Queued ones wait. A local `intent` record is written |
 | **Cancelled** | The session ends with no closure and no pending deletion | The account reports normally again. The `intent` record is removed and nothing is discarded |
-| **Confirmed** | The closure: the backend confirmed, Auth reported `user-not-found`, or the person signed out of an unresolved deletion | A local `confirmed` record is written. The account's queued events are removed and the removal is written to disk at once. The SDK identity resets, and later events of that account generation are refused |
+| **Confirmed** | The closure: the backend confirmed, or Auth reported `user-not-found` | A local `confirmed` record is written. The account's queued events are removed and the removal is written to disk at once. The SDK identity resets, and later events of that account generation are refused |
+| **Exit while unresolved** | The person signs out of a deletion whose outcome is unknown. The deletion module sets the same closure | Treated like Confirmed by analytics, as a **preventive discard of the local queue only**. It is not evidence that the account was deleted, and nothing is reported anywhere as a deletion |
 
 **Persisting the discard:** the queue item is removed with `setPersistedProperty`, then the write is forced with `flushStorage`. That is the SDK's own step after it changes the queue, instead of its usual debounce. The real SDK test restarts right after a discard and sends nothing.
 
@@ -261,13 +265,14 @@ Analytics follows three states published by the deletion modules. It subscribes 
 
 - **Intent left by a dead process:** the deletion may or may not have happened, so that account's earlier queued events are removed. A few events are lost rather than risk sending those of a deleted account.
 - **Time bound:** it keeps a recreated account with the same UID untouched, and an account that turned out to still exist reports normally afterwards.
-- **Sign-out of an unresolved deletion:** it counts as confirmed for this purpose, so its queued events are removed even if the account still exists. When that closure ends, the same account can sign in and report again.
+- **Exit while unresolved:** the queue of that account is discarded as a precaution, even if the account still exists. A few events are lost rather than risk sending those of a deleted account. When that closure ends, the same account can sign in and report again. This block does not change that flow.
 
 **Limits for Functions, not closable from the app:**
 
 - **A request already on the wire cannot be recalled,** including the SDK's automatic retries of that batch. It holds only events captured before the intent, since the intent stops new ones. It can still reach PostHog after Functions deleted the person, and PostHog would then create the person again from it.
 - **PostHog ingestion is asynchronous.** Events accepted just before the deletion call may be processed after it, with the same effect.
-- **What Functions can do:** after deleting the person, check again after a delay (minutes) and delete any person recreated for that `distinct_id`. Or schedule the deletion with a delay after the account is closed. The app only guarantees that nothing new leaves once the intent starts.
+- **What Functions must keep:** the UID alone does not identify a deleted account. A LinkedIn account recreated with the same UID is a different account generation, and its events must not be deleted with the old one. Any later cleanup of a recreated person has to check the generation first, for example the person's `account_created_at` against the deleted account's Firebase creation time. Only events of the deleted generation should go.
+- **One option for Functions:** after the deletion, check again later and delete only what belongs to that generation: events with a timestamp up to the deletion, on a person whose `account_created_at` is the deleted one. A person that now belongs to a recreated account stays.
 - Deleting the PostHog person belongs to Functions and is not implemented in iOS.
 
 ### LinkedIn
