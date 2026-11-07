@@ -186,6 +186,7 @@ import {
   collectSocialFieldErrors,
   type CrjSocialFieldErrors,
 } from '../social/socialLinkNormalize';
+import { trackProfileCompleted } from '../analytics/analytics';
 import { ANDROID_OWNERSHIP_CARD_IDS } from '../social/postCrjSocialEditor';
 import type { ManualSocialLinkId } from '../social/manualSocialLinkCard';
 
@@ -1290,6 +1291,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         ...(firstName.trim() ? { realName: firstName.trim() } : {}),
         ...(lastName.trim() ? { lastName: lastName.trim() } : {}),
       });
+      trackProfileCompleted(uid);
       clearPendingSocialProfilePrefill();
 
       try {

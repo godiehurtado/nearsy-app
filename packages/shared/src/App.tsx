@@ -9,6 +9,7 @@ import { ensureAppCheckInitialized } from './config/appCheckBootstrap';
 import { startAffiliationEntitySearchBootstrap } from './affiliations/iosAffiliationEntitySearchBootstrap';
 import { initI18n } from './i18n';
 import { useAppUpdateNotice } from './appUpdate/useAppUpdateNotice';
+import { startAnalytics } from './analytics/analytics';
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -254,6 +255,8 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
 
 export default function App() {
   const [i18nReady, setI18nReady] = useState(false);
+
+  useEffect(() => startAnalytics(), []);
 
   // App Check must be ready before future identity Functions callables.
   // Non-blocking: skip/error must not prevent Google/email/Firestore startup.

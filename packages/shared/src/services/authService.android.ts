@@ -2,6 +2,7 @@
 import { Platform } from 'react-native';
 import { firebaseAuth } from '../config/firebaseConfig.android';
 import { runWithOutgoingPushRelease } from './pushTokens';
+import { trackSignupCompleted } from '../analytics/analytics';
 
 // Tipos suaves (para que compile con ambos SDKs)
 type AnyUser = any;
@@ -33,6 +34,8 @@ export const registerWithEmail = async (
 
     // TEMP: Email verification temporarily disabled (Android only).
     // await sendVerificationEmail(userCredential.user);
+
+    trackSignupCompleted(userCredential.user.uid);
 
     return userCredential;
   } catch (error: any) {

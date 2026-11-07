@@ -55,6 +55,23 @@ if (!facebookAuth.configured) {
   );
 }
 
+/**
+ * PostHog remote capture is off by default in every profile, production
+ * included. It needs NEARSY_ANALYTICS_ENABLED=true, NEARSY_ANALYTICS_ENV and
+ * NEARSY_POSTHOG_TOKEN. The token is never embedded unless capture is enabled.
+ */
+const analyticsEnabled =
+  String(process.env.NEARSY_ANALYTICS_ENABLED || '')
+    .trim()
+    .toLowerCase() === 'true';
+const nearsyAnalytics = analyticsEnabled
+  ? {
+      enabled: true,
+      environment: String(process.env.NEARSY_ANALYTICS_ENV || '').trim(),
+      token: String(process.env.NEARSY_POSTHOG_TOKEN || '').trim(),
+    }
+  : { enabled: false };
+
 const expoConfig = {
   ...appJson.expo,
   plugins: [...(appJson.expo.plugins || []), ...FACEBOOK_STATIC_PLUGINS],
@@ -74,6 +91,7 @@ const expoConfig = {
      * Combined with nearsyFirebaseEnv for App Check Debug eligibility.
      */
     nearsyDevClient,
+    nearsyAnalytics,
     /** Gates the native Facebook SDK in JS (never the token itself). */
     facebookAuthConfigured: facebookAuth.configured,
     ...(logoDevPublishableKey.startsWith('pk_')

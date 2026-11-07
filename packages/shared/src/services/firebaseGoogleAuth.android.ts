@@ -7,6 +7,8 @@
 import auth from '@react-native-firebase/auth';
 import { firebaseAuth } from '../config/firebaseConfig.android';
 import { runWithOutgoingPushRelease } from './pushTokens';
+import { trackSignupCompleted } from '../analytics/analytics';
+import { isConfirmedNewAccount } from '../analytics/analyticsContract';
 
 export type FirebaseGoogleAuthResult = {
   uid: string;
@@ -105,6 +107,9 @@ export async function signInWithGoogleIdToken(
       const credential = auth.GoogleAuthProvider.credential(trimmed);
       const userCredential = await firebaseAuth.signInWithCredential(credential);
       const user = userCredential.user;
+      if (isConfirmedNewAccount(userCredential)) {
+        trackSignupCompleted(user.uid);
+      }
       return {
         uid: user.uid,
         email: user.email ?? null,

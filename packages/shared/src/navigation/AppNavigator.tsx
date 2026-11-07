@@ -36,6 +36,7 @@ import { useAppTheme } from '../theme/ThemeContext';
 
 import { firebaseAuth } from '../config/firebaseConfig';
 import { dbGetUser, dbOnUserSnapshot } from '../services/db';
+import { syncAnalyticsPersonProfile } from '../analytics/analytics';
 import { loadHasSeenWelcome } from '../onboarding/welcomeStorage';
 import {
   createAuthenticatedProfileGate,
@@ -164,7 +165,15 @@ export default function AppNavigator() {
   const [gate] = useState(() =>
     createDeletionAwareProfileGate({
       gate: createAuthenticatedProfileGate({
-        listen: dbOnUserSnapshot,
+        listen: (uid, onData, onErr) =>
+          dbOnUserSnapshot(
+            uid,
+            (data) => {
+              syncAnalyticsPersonProfile(uid, data);
+              onData(data);
+            },
+            onErr,
+          ),
         get: dbGetUser,
       }),
       exit: accountDeletionExit,
