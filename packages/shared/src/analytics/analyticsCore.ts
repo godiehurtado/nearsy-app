@@ -21,6 +21,7 @@ export type AnalyticsTransport = {
     properties: AnalyticsProperties,
     propertiesOnce?: AnalyticsProperties,
   ): void | Promise<void>;
+  unsetPersonProperties(names: string[]): void | Promise<void>;
   reset(): void | Promise<void>;
   register(properties: AnalyticsProperties): void | Promise<void>;
   capture(

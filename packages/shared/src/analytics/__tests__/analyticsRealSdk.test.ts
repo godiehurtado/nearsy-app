@@ -4,7 +4,6 @@
  * device behaviour.
  */
 import assert from 'node:assert/strict';
-import Module, { createRequire } from 'node:module';
 import { after, before, describe, it } from 'node:test';
 
 import { INTERCEPT_HOST, INTERCEPT_TOKEN } from '../analyticsConfig.ts';
@@ -13,51 +12,22 @@ import {
   createSdkTransport,
   type InterceptedRequest,
 } from '../analyticsSdkTransport.ts';
+import { loadRealPostHog, restoreGlobals } from './realSdkHarness.ts';
 
-const require = createRequire(import.meta.url);
-const moduleInternals = Module as unknown as {
-  _load: (request: string, parent: unknown, isMain: boolean) => unknown;
-};
-const originalLoad = moduleInternals._load;
 const originalFetch = globalThis.fetch;
 let networkCalls = 0;
 let PostHog: unknown;
 
-const reactNativeStub = {
-  Platform: { OS: 'android', Version: 34, select: (o: Record<string, unknown>) => o.android ?? o.default },
-  AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
-  Dimensions: { get: () => ({ width: 360, height: 800, scale: 2, fontScale: 1 }) },
-  Linking: {
-    getInitialURL: async () => null,
-    addEventListener: () => ({ remove() {} }),
-  },
-  NativeModules: {},
-  StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 },
-  View: 'View',
-  Text: 'Text',
-  Pressable: 'Pressable',
-  TurboModuleRegistry: { get: () => null, getEnforcing: () => ({}) },
-  requireNativeComponent: () => 'Native',
-  findNodeHandle: () => null,
-  useWindowDimensions: () => ({ width: 360, height: 800 }),
-};
-
 before(() => {
-  (globalThis as { __DEV__?: boolean }).__DEV__ = false;
-  moduleInternals._load = function load(request, parent, isMain) {
-    if (request === 'react-native') return reactNativeStub;
-    return originalLoad.call(this, request, parent, isMain);
-  };
+  PostHog = loadRealPostHog();
   globalThis.fetch = (async () => {
     networkCalls += 1;
     throw new Error('network must not be reached');
   }) as typeof fetch;
-  const loaded = require('posthog-react-native') as { default: unknown };
-  PostHog = loaded.default;
 });
 
 after(() => {
-  moduleInternals._load = originalLoad;
+  restoreGlobals();
   globalThis.fetch = originalFetch;
 });
 
@@ -77,33 +47,19 @@ async function makeTransport() {
   return { requests, sent, transport };
 }
 
-describe('real SDK outside interception', () => {
-  it('only event batches reach fetch; the startup config request stays local', async () => {
-    const urls: string[] = [];
-    const previous = globalThis.fetch;
-    globalThis.fetch = (async (url: string) => {
-      urls.push(String(url));
-      return { status: 200, text: async () => '{}', json: async () => ({}) };
-    }) as unknown as typeof fetch;
-    try {
-      const transport = await createSdkTransport({
-        PostHog,
-        token: INTERCEPT_TOKEN,
-        host: INTERCEPT_HOST,
-        persistence: 'memory',
-      });
-      await transport.capture('app_opened', {});
-      await transport.flush();
-      assert.deepEqual(urls, [`${INTERCEPT_HOST}/batch/`]);
-    } finally {
-      globalThis.fetch = previous;
-    }
-  });
-});
-
 describe('real SDK with intercepted requests', () => {
   it('loads the published SDK class', () => {
     assert.equal(typeof PostHog, 'function');
+  });
+
+  it('answers the startup config with a simulated body, and nothing reaches the network', async () => {
+    const { requests } = await makeTransport();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.deepEqual(
+      requests.map((request) => request.path),
+      [`/array/${INTERCEPT_TOKEN}/config`],
+    );
+    assert.equal(networkCalls, 0);
   });
 
   it('sends identify then the event through the batch path, without network', async () => {

@@ -122,6 +122,7 @@ function createInspectTransport(): AnalyticsTransport {
       log('set_person', properties);
       if (once) log('set_person_once', once);
     },
+    unsetPersonProperties: (names) => console.log('[analytics:inspect] unset_person', names),
     reset: () => log('reset'),
     register: (properties) => log('register', properties),
     capture: (event, properties) => {

@@ -62,6 +62,47 @@ export const SUPER_PROPERTY_KEYS = [
   'tracking_plan_version',
 ] as const;
 
+/**
+ * Marks of the installation, declared by the build. A Beta install stamps them on
+ * every event, whoever is signed in. Any other build removes them, because the SDK
+ * persists registered properties across an app update.
+ */
+export type InstallClassification = {
+  is_test_user: true;
+  distribution_channel: 'beta';
+};
+
+const INSTALL_CLASSIFICATION_KEYS = ['is_test_user', 'distribution_channel'] as const;
+
+/** A person can be marked as a test user, and no code path may ever unmark one. */
+function withoutFalseClassification(
+  bag: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!bag || !('is_test_user' in bag) || bag.is_test_user === true) return bag;
+  const { is_test_user: _dropped, ...rest } = bag;
+  return rest;
+}
+
+export function applyInstallClassification<T extends object | null>(
+  event: T,
+  classification: InstallClassification | undefined,
+): T {
+  if (!event) return event;
+  const typed = event as {
+    properties?: Record<string, unknown>;
+    $set?: Record<string, unknown>;
+    $set_once?: Record<string, unknown>;
+  };
+  const properties: Record<string, unknown> = { ...typed.properties };
+  for (const key of INSTALL_CLASSIFICATION_KEYS) delete properties[key];
+  return {
+    ...typed,
+    $set: withoutFalseClassification(typed.$set),
+    $set_once: withoutFalseClassification(typed.$set_once),
+    properties: { ...properties, ...classification },
+  } as T;
+}
+
 /** Person-update events the SDK sends for identify and property updates. */
 const SDK_PERSON_EVENTS = ['$identify', '$set'] as const;
 
@@ -167,6 +208,7 @@ export function scoreProperties(score: unknown): AnalyticsProperties {
 
 const INSPECTABLE_KEYS = new Set<string>([
   ...SUPER_PROPERTY_KEYS,
+  ...INSTALL_CLASSIFICATION_KEYS,
   'profile_type',
   'completion_time_min',
   'step_name',
