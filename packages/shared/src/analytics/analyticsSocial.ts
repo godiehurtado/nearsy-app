@@ -4,7 +4,8 @@
  * Manual links come from the profile document. Verified ones come from the
  * Identity callables, so they are known only once the app has asked for them.
  * While any verified status is unknown, the verified list and everything that
- * depends on it are omitted: an unknown state must not clear a stored value.
+ * depends on it are left out of the update; `personKeysToUnset` handles the value
+ * already stored.
  */
 import type { AnalyticsProperties } from './analyticsContract.ts';
 

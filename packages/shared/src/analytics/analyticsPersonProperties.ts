@@ -1,7 +1,7 @@
 /**
- * Person properties, read from auth and users/{uid}. An unknown value is
- * omitted. A confirmed empty one is sent explicitly (`[]`, `null`), which clears
- * a value stored earlier.
+ * Person properties, read from auth and users/{uid}. A confirmed empty value is
+ * sent explicitly (`[]`, `null`). An unknown one is left out of the update, and
+ * `personKeysToUnset` decides whether the stored value must be removed as well.
  *
  * Only the fields listed here leave the device; no other profile text does.
  */
@@ -133,6 +133,90 @@ function modeAffiliations(doc: Record<string, unknown>, mode: string): unknown[]
   const rows = doc[`${mode}OnboardingAffiliations`];
   if (Array.isArray(rows) && rows.length > 0) return rows;
   return hasLegacyRows(doc[`${mode}Affiliations`]) ? undefined : [];
+}
+
+function listKeys(prefix: 'interests' | 'affiliations'): string[] {
+  return ['', '_custom', '_custom_normalized', '_count', '_catalog_count', '_custom_count'].map(
+    (suffix) => `${prefix}${suffix}`,
+  );
+}
+
+/** What the document alone decides: if absent from an update, it is not knowable. */
+const MODE_KEYS_FROM_DOCUMENT = [
+  'occupation',
+  ...listKeys('interests'),
+  ...listKeys('affiliations'),
+  'social_platforms_manual',
+];
+const VERIFIED_KEY = 'social_platforms_verified';
+const COMBINED_SOCIAL_KEYS = ['socials_connected', 'has_socials'];
+
+/** Everything that describes one mode; none of it may outlive a switch unchecked. */
+export const MODE_SCOPED_PERSON_PROPERTIES: readonly string[] = [
+  'profile_type',
+  ...MODE_KEYS_FROM_DOCUMENT,
+  VERIFIED_KEY,
+  ...COMBINED_SOCIAL_KEYS,
+];
+
+/**
+ * Stored person values to remove. Unknown is not empty, so nothing is written in
+ * their place: the property simply stops existing until a real value is known.
+ *
+ * - The document is complete, so a document field it cannot resolve (legacy rows,
+ *   a malformed bag) can only hold another mode's value. Always removed.
+ * - Verified networks come from reads that can fail. A failure in the same mode
+ *   keeps the last confirmed value; after a switch that value is another mode's.
+ * - No readable mode: nothing can be attributed, but only a person this device
+ *   has written for has anything to remove.
+ */
+export function personKeysToUnset(input: {
+  doc: unknown;
+  properties: AnalyticsProperties;
+  /** Mode of the last update written for this account; null when none is known. */
+  previousMode: string | null;
+}): string[] {
+  const row = input.doc as { mode?: unknown } | null | undefined;
+  if (!isProfileMode(row?.mode)) {
+    return input.previousMode === null ? [] : [...MODE_SCOPED_PERSON_PROPERTIES];
+  }
+  const absent = (key: string) => !(key in input.properties);
+  const unset = MODE_KEYS_FROM_DOCUMENT.filter(absent);
+  const verifiedStale = absent(VERIFIED_KEY) && input.previousMode !== row?.mode;
+  if (verifiedStale) unset.push(VERIFIED_KEY);
+  if (verifiedStale || absent('social_platforms_manual')) {
+    unset.push(...COMBINED_SOCIAL_KEYS.filter(absent));
+  }
+  return unset;
+}
+
+const PERSON_MODE_KEY_PREFIX = 'NEARSY_ANALYTICS_PERSON_MODE:';
+
+/**
+ * Remembers the mode last written per account, so a restart can tell a failed read
+ * in the same mode from a switch. Local only; a failed read means "not known".
+ */
+export function createPersonModeMemory(storage: {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+}) {
+  return {
+    async read(uid: string): Promise<string | null> {
+      try {
+        return await storage.getItem(`${PERSON_MODE_KEY_PREFIX}${uid}`);
+      } catch {
+        return null;
+      }
+    },
+    async write(uid: string, mode: unknown): Promise<void> {
+      if (!isProfileMode(mode)) return;
+      try {
+        await storage.setItem(`${PERSON_MODE_KEY_PREFIX}${uid}`, mode);
+      } catch {
+        // The next update treats the mode as not known, which is the safe side.
+      }
+    },
+  };
 }
 
 export function buildPersonProperties(input: {
