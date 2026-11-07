@@ -341,7 +341,7 @@ export const MODE_SCOPED_PROPERTY_NAMES: readonly string[] = [
 export type BuildPersonOptions = {
   /** PostHog already holds this mode's verified state, confirmed in this process. */
   verifiedConfirmedForMode?: boolean;
-  /** The active mode changed since the last send in this process. */
+  /** The active mode has changed at some point in this process. */
   modeChanged?: boolean;
 };
 

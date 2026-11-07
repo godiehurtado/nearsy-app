@@ -193,7 +193,7 @@ Mode-scoped properties are `profile_type`, `occupation*`, `interests*`, `affilia
 
 Unknown is unset rather than left alone, because whatever PostHog holds may belong to the other mode.
 
-- **Occupation:** the mode's nested value wins. Otherwise the app's top-level value is used for legacy profiles, except when the switch was seen in this process or when that value equals the other mode's occupation. The switch runs in the backend, so the top level can still hold the previous mode.
+- **Occupation:** the mode's nested value wins. Otherwise the app's top-level value is used for legacy profiles, except once a switch was seen in this process or when that value equals the other mode's occupation. The switch runs in the backend, so the top level can still hold the previous mode. A legacy account that switched therefore reports no occupation in that process, even if the app still shows the top-level value.
 - **Verified lookup that fails:** it keeps values only if this mode already confirmed them in this process. Otherwise `social_platforms_verified`, `socials_connected` and `has_socials` are unset. After a restart, a failed lookup therefore clears them until the next successful one.
 - **Limit:** a legacy profile with no nested data whose mode was switched in an earlier process cannot be told apart, so its top-level occupation is still reported.
 
@@ -209,7 +209,7 @@ Unknown is unset rather than left alone, because whatever PostHog holds may belo
 
 Checked against the real SDK: **`reset` does not empty the queue.** Each queued event already holds its `distinct_id`, so after a normal logout it is still delivered, under the right account.
 
-When the deletion closure is set (the backend confirmed it, or Auth reported `user-not-found`), the client:
+When the deletion closure is set (the backend confirmed it, Auth reported `user-not-found`, or the person signed out of an unresolved deletion), the client:
 
 1. Removes that UID's queued events. Events of other identities stay.
 2. Resets the SDK identity at once, without waiting for Firebase to emit the sign-out.
@@ -220,6 +220,8 @@ Analytics is a subscriber of `accountDeletionSession`, whose listeners are guard
 **Limits:**
 
 - A batch already on the wire cannot be recalled, including its automatic retries. Nothing else follows it, but it can arrive after the backend deleted the person.
+- The SDK persists with a short debounce, so a kill just after the discard could restore those events on the next launch.
+- Signing out of an unresolved deletion also discards that account's queued events, even if the account turns out to still exist. A few events are lost rather than risk sending those of a deleted account. When the closure ends, the same account can sign in and report again.
 - If the app dies between the backend's confirmation and the closure, the queue survives until reconciliation sets the closure, and a flush could happen before that.
 - Deleting the PostHog person belongs to Functions and is not implemented in iOS.
 

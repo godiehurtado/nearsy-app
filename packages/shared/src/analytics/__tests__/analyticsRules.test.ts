@@ -138,6 +138,14 @@ describe('external sign-in and app_opened', () => {
     assert.equal(t.onAppState('active'), 'return_from_background');
   });
 
+  it('a sign-in that never settles stops hiding returns after the limit', () => {
+    const { t, advance } = tracker();
+    t.beginExternalFlow();
+    advance(EXTERNAL_AUTH_MAX_MS + 1);
+    t.onAppState('background');
+    assert.equal(t.onAppState('active'), 'return_from_background');
+  });
+
   it('a later background after the flow ended counts normally', () => {
     const { t } = tracker();
     t.beginExternalFlow();

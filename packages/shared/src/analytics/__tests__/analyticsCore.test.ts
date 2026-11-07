@@ -819,6 +819,56 @@ describe('account deletion', () => {
     assert.equal(fake.getIdentifiedId(), 'uidA');
   });
 
+  it('later closure phases do not reopen the account or discard again', async () => {
+    let live: AuthSnapshot | null = USER_A;
+    const { fake, client } = setup({ live: () => live });
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.discardAccount('uidA');
+    live = null;
+    client.discardAccount('uidA');
+    assert.equal(fake.calls.filter((c) => c.op === 'discard').length, 1);
+    client.reportAuthState(USER_A);
+    assert.equal(client.currentAuth(), null);
+  });
+
+  it('a closure that ends lets the same account back in', async () => {
+    let live: AuthSnapshot | null = USER_A;
+    const { fake, client } = setup({ live: () => live });
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.discardAccount('uidA');
+    assert.equal(client.clearClosedAccount(), true);
+    assert.equal(client.clearClosedAccount(), false);
+    client.reportAuthState(USER_A);
+    assert.equal(fake.getIdentifiedId(), 'uidA');
+    assert.equal(client.captureForUser('uidA', 'visibility_changed', { enabled: true }), true);
+    live = null;
+  });
+
+  it('identity operations pass the pending cap while events do not', async () => {
+    const fake = createFakeTransport();
+    let ready: (t: FakeTransport) => void = () => {};
+    const client = createAnalyticsClient({
+      config: ENABLED,
+      createTransport: () => new Promise((resolve) => (ready = resolve)),
+      binary: () => ({ appVersion: '2.0.11', appBuild: '80' }),
+    });
+    const starting = client.start();
+    client.reportAuthState(USER_A);
+    for (let i = 0; i < 150; i += 1) {
+      client.captureForUser('uidA', 'visibility_changed', { enabled: true });
+    }
+    client.discardAccount('uidA');
+    client.reportAuthState(USER_B);
+    await Promise.resolve();
+    ready(fake);
+    await starting;
+    assert.ok(fake.calls.some((c) => c.op === 'discard' && c.distinctId === 'uidA'));
+    assert.equal(fake.getIdentifiedId(), 'uidB');
+    assert.ok(fake.captured().length < 150);
+  });
+
   it('an SDK failure during the discard never reaches the deletion flow', async () => {
     const { fake, client } = setup();
     await client.start();

@@ -18,13 +18,17 @@ export function createForegroundTracker(now: () => number = Date.now) {
   let inForeground = false;
   let opens = 0;
   let externalFlows = 0;
+  let flowBeganAtMs = 0;
   let leftDuringFlowAtMs: number | null = null;
   return {
     /** Returns the open type when this state change is a real app open. */
     onAppState(state: AppStateName): AppOpenType | null {
       if (state === 'background') {
         inForeground = false;
-        leftDuringFlowAtMs = externalFlows > 0 ? now() : null;
+        // A sign-in that never settles cannot hide returns for the whole process.
+        const inFlow =
+          externalFlows > 0 && now() - flowBeganAtMs <= EXTERNAL_AUTH_MAX_MS;
+        leftDuringFlowAtMs = inFlow ? now() : null;
         return null;
       }
       if (state !== 'active' || inForeground) return null;
@@ -37,6 +41,7 @@ export function createForegroundTracker(now: () => number = Date.now) {
     },
     beginExternalFlow(): void {
       externalFlows += 1;
+      flowBeganAtMs = now();
     },
     endExternalFlow(): void {
       externalFlows = Math.max(0, externalFlows - 1);

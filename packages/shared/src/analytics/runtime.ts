@@ -178,6 +178,8 @@ export function startAnalyticsRuntime(): void {
   const verifiedSentFor = new Set<string>();
   const verifiedByKey = new Map<string, VerifiedSocialState>();
   const lastModeByUid = new Map<string, string | null>();
+  /** Stays set: the top level can hold the previous mode on every later read too. */
+  const modeSwitchedUids = new Set<string>();
   let syncTimer: ReturnType<typeof setTimeout> | null = null;
   let attributionTimer: ReturnType<typeof setTimeout> | null = null;
   let lastPermissionPerson: string | null = null;
@@ -210,12 +212,15 @@ export function startAnalyticsRuntime(): void {
     if (client.currentAuth()?.uid !== uid) return;
     const verifiedKey = `${uid}|${mode}`;
     const previousMode = lastModeByUid.get(uid);
+    if (previousMode !== undefined && previousMode !== mode) {
+      modeSwitchedUids.add(uid);
+    }
     const { patch, next } = diffPersonProperties(
       lastSentByUid.get(uid) ?? {},
       buildPersonProperties(doc, verified, new Date(), {
         verifiedConfirmedForMode:
           previousMode === mode && verifiedSentFor.has(verifiedKey),
-        modeChanged: previousMode !== undefined && previousMode !== mode,
+        modeChanged: modeSwitchedUids.has(uid),
       }),
     );
     lastModeByUid.set(uid, mode);
@@ -301,6 +306,7 @@ export function startAnalyticsRuntime(): void {
       verifiedByKey.clear();
       lastSentByUid.clear();
       lastModeByUid.clear();
+      modeSwitchedUids.clear();
       verifiedSentFor.clear();
       lastSeenUid = null;
       return;
@@ -326,7 +332,13 @@ export function startAnalyticsRuntime(): void {
     // Before the Auth listener, so a closure already set wins over its first report.
     const discardClosedAccount = () => {
       const closure = getAccountDeletionClosure();
-      if (closure) client.discardAccount(closure.uid);
+      if (closure) {
+        client.discardAccount(closure.uid);
+      } else if (client.clearClosedAccount()) {
+        // The Auth listener may have reported this sign-in while it was blocked.
+        lastSeenUid = null;
+        onAuthChanged(readLiveSession());
+      }
     };
     subscribeAccountDeletionClosure(discardClosedAccount);
     discardClosedAccount();

@@ -85,10 +85,11 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     );
   }
 
-  function run(op: Op): void {
+  /** Identity operations pass the cap: losing one could mix two accounts. */
+  function run(op: Op, essential = false): void {
     if (!enabled || failed) return;
     if (!transport) {
-      if (pending.length >= MAX_PENDING_OPS) {
+      if (!essential && pending.length >= MAX_PENDING_OPS) {
         log('queue_full');
         return;
       }
@@ -155,7 +156,7 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     run((t) => {
       const persisted = t.getIdentifiedId();
       if (persisted && persisted !== nextUid) t.reset();
-    });
+    }, true);
     identifiedUid = nextUid;
     if (!next) return;
     const createdAt = toIsoCreationTime(next.creationTime);
@@ -167,7 +168,7 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     const { values: setOnce } = sanitizeProperties(PERSON_PROPERTY_RULES, {
       account_created_at: createdAt ?? undefined,
     });
-    run((t) => t.identify(next.uid, set, setOnce));
+    run((t) => t.identify(next.uid, set, setOnce), true);
   }
 
   /** Adopts the live session when it already owns this uid. */
@@ -297,23 +298,33 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
    */
   function discardAccount(uid: string): void {
     if (!enabled || !uid) return;
-    const session =
-      auth?.uid === uid ? auth : (deps.readSession?.() ?? null);
-    closedAccount = {
-      uid,
-      creationTime: session?.uid === uid ? session.creationTime : null,
-    };
+    const live = auth?.uid === uid ? auth : (deps.readSession?.() ?? null);
+    const session = live?.uid === uid ? live : null;
+    // Later closure phases repeat the uid, often after the session is gone.
+    if (closedAccount?.uid === uid && (!session || isClosed(session))) return;
+    closedAccount = { uid, creationTime: session?.creationTime ?? null };
     if (auth?.uid === uid) auth = null;
     if (identifiedUid === uid) identifiedUid = null;
     run((t) => {
       t.discardQueuedEventsFor(uid);
       if (t.getIdentifiedId() === uid) t.reset();
-    });
+    }, true);
+  }
+
+  /**
+   * The closure ended: a later sign-in, or a sign-out of a deletion that was never
+   * confirmed. Returns whether an account was closed until now.
+   */
+  function clearClosedAccount(): boolean {
+    const wasClosed = closedAccount !== null;
+    closedAccount = null;
+    return wasClosed;
   }
 
   return {
     isEnabled: () => enabled && !failed,
     discardAccount,
+    clearClosedAccount,
     start,
     reportAuthState,
     runWhenAuthKnown,
