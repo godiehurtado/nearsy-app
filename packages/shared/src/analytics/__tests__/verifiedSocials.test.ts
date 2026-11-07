@@ -18,7 +18,7 @@ import { createEventLedger } from '../ledger';
 import { createPendingAttributionStore } from '../attribution';
 import type { StringStore } from '../lifecycle';
 import { buildPersonProperties, diffPersonProperties } from '../profileProperties';
-import { combineVerifiedSocialReads } from '../verifiedSocialRead';
+import { combineVerifiedSocialReads, createVerifiedSocialMemory } from '../verifiedSocialRead';
 import { InstagramOwnershipClientError } from '../../social/instagramOwnership/errors';
 import { TiktokOwnershipClientError } from '../../social/tiktokOwnership/errors';
 import { XOwnershipClientError } from '../../social/xOwnership/errors';
@@ -37,7 +37,7 @@ const DOC = {
 };
 
 describe('verified reads, one platform at a time', () => {
-  it('a disabled YouTube or TikTok no longer hides Instagram and X', () => {
+  it('a disabled YouTube or TikTok is unknown and does not hide Instagram and X', () => {
     assert.deepEqual(
       combineVerifiedSocialReads({
         youtube: youtubeOff,
@@ -45,7 +45,7 @@ describe('verified reads, one platform at a time', () => {
         instagram: ok('verified'),
         x: ok('verified'),
       }),
-      { youtube: false, tiktok: false, instagram: true, x: true },
+      { instagram: true, x: true },
     );
   });
 
@@ -57,7 +57,7 @@ describe('verified reads, one platform at a time', () => {
         instagram: ok('verified'),
         x: ok('not_linked'),
       }),
-      { youtube: false, tiktok: false, instagram: true, x: false },
+      { instagram: true, x: false },
     );
   });
 
@@ -69,39 +69,111 @@ describe('verified reads, one platform at a time', () => {
         instagram: ok('not_linked'),
         x: ok('verified'),
       }),
-      { youtube: false, tiktok: false, instagram: false, x: true },
+      { instagram: false, x: true },
     );
   });
 
   it('a pending Instagram challenge is not connected yet', () => {
-    const state = combineVerifiedSocialReads({ instagram: ok('pending'), x: ok('verified') });
-    assert.deepEqual(state, { instagram: false, x: true });
+    assert.deepEqual(combineVerifiedSocialReads({ instagram: ok('pending'), x: ok('verified') }), {
+      instagram: false,
+      x: true,
+    });
   });
 
-  it('a real failure on any platform stays unknown, so nothing is erased', () => {
+  it('any refusal leaves only that platform unknown', () => {
     for (const reason of [
+      new InstagramOwnershipClientError('INSTAGRAM_NOT_ENABLED', 'off'),
       new InstagramOwnershipClientError('NETWORK', 'down'),
-      new XOwnershipClientError('UNKNOWN', 'server'),
       new Error('app check not ready'),
       undefined,
     ]) {
-      assert.equal(
-        combineVerifiedSocialReads({
-          youtube: youtubeOff,
-          tiktok: tiktokOff,
-          instagram: fail(reason),
-          x: ok('verified'),
-        }),
-        null,
+      assert.deepEqual(
+        combineVerifiedSocialReads({ youtube: youtubeOff, instagram: fail(reason), x: ok('verified') }),
+        { x: true },
       );
     }
-    assert.equal(
+    assert.deepEqual(
       combineVerifiedSocialReads({
         instagram: ok('verified'),
-        x: fail(new XOwnershipClientError('NETWORK', 'down')),
+        x: fail(new XOwnershipClientError('X_NOT_ENABLED', 'off')),
       }),
-      null,
+      { instagram: true },
     );
+  });
+
+  it('nothing proved is null', () => {
+    assert.equal(combineVerifiedSocialReads({ youtube: youtubeOff, tiktok: tiktokOff }), null);
+  });
+});
+
+describe('remembered verified state', () => {
+  const read = (state: Record<string, boolean> | null) => state;
+
+  it('an unknown platform keeps its last proved value', async () => {
+    const memory = createVerifiedSocialMemory(memoryStore());
+    await memory.merge('uidA', 'personal', read({ youtube: true, instagram: true, x: true }));
+    // YouTube is switched off later: its refusal proves nothing.
+    const merged = await memory.merge('uidA', 'personal', read({ instagram: true, x: false }));
+    assert.deepEqual(merged, { youtube: true, instagram: true, x: false });
+  });
+
+  it('an explicit false replaces a remembered true', async () => {
+    const memory = createVerifiedSocialMemory(memoryStore());
+    await memory.merge('uidA', 'personal', read({ x: true }));
+    assert.deepEqual(await memory.merge('uidA', 'personal', read({ x: false })), { x: false });
+  });
+
+  it('survives a restart, because it lives on the device', async () => {
+    const store = memoryStore();
+    await createVerifiedSocialMemory(store).merge('uidA', 'personal', read({ instagram: true }));
+    const afterRestart = createVerifiedSocialMemory(store);
+    assert.deepEqual(await afterRestart.merge('uidA', 'personal', null), { instagram: true });
+  });
+
+  it('is kept apart per account and per mode', async () => {
+    const memory = createVerifiedSocialMemory(memoryStore());
+    await memory.merge('uidA', 'personal', read({ instagram: true }));
+    assert.equal(await memory.merge('uidB', 'personal', null), null);
+    assert.equal(await memory.merge('uidA', 'professional', null), null);
+  });
+
+  it('is removed when the account is deleted', async () => {
+    const store = memoryStore();
+    const memory = createVerifiedSocialMemory(store);
+    await memory.merge('uidA', 'personal', read({ instagram: true }));
+    await memory.merge('uidA', 'professional', read({ x: true }));
+    await memory.merge('uidB', 'personal', read({ x: true }));
+    await memory.forget('uidA');
+    assert.equal(await memory.merge('uidA', 'personal', null), null);
+    assert.equal(await memory.merge('uidA', 'professional', null), null);
+    assert.deepEqual(await memory.merge('uidB', 'personal', null), { x: true });
+  });
+
+  it('a read with nothing proved writes nothing', async () => {
+    const store = memoryStore();
+    const memory = createVerifiedSocialMemory(store);
+    await memory.merge('uidA', 'personal', null);
+    assert.equal(store.size(), 0);
+  });
+
+  it('the QA account with YouTube off and no memory: Instagram and X still reach the person', () => {
+    const verified = combineVerifiedSocialReads({
+      youtube: youtubeOff,
+      tiktok: ok('not_linked'),
+      instagram: ok('verified'),
+      x: ok('verified'),
+    });
+    const { set, unset } = buildPersonProperties(DOC, verified, NOW);
+    assert.deepEqual(set.social_platforms_verified, ['instagram', 'x']);
+    assert.deepEqual(set.socials_connected, ['facebook', 'instagram', 'x']);
+    assert.equal(set.has_socials, true);
+    assert.equal(unset.includes('social_platforms_verified'), false);
+  });
+
+  it('nothing known at all still never sends an empty verified list', () => {
+    const { set } = buildPersonProperties(DOC, null, NOW, { verifiedConfirmedForMode: true });
+    assert.equal('social_platforms_verified' in set, false);
+    assert.equal('has_socials' in set, false);
   });
 });
 
@@ -156,9 +228,10 @@ describe('person properties across link, unlink and relink', () => {
   });
 });
 
-function memoryStore(): StringStore {
+function memoryStore(): StringStore & { size(): number } {
   const map = new Map<string, string>();
   return {
+    size: () => map.size,
     getItem: async (k) => map.get(k) ?? null,
     setItem: async (k, v) => {
       map.set(k, v);
@@ -206,7 +279,7 @@ async function setup() {
   bindAnalyticsServices(services);
   await client.start();
   client.reportAuthState({ uid: 'uidA', email: null, creationTime: 'Mon, 02 Nov 2026 10:00:00 GMT' });
-  return { fake, changed };
+  return { fake, changed, client };
 }
 
 afterEach(() => {
@@ -269,4 +342,60 @@ describe('the profile social editor reports verified changes', () => {
     const unlinks = screen.match(/await client\.unlink\(modeForRequest\);\s*noteVerifiedSocialRemoved\(editorUid\);/g);
     assert.equal(unlinks?.length, 4);
   });
+});
+
+describe('account changes during verified operations', () => {
+  it('a link confirmed for A after switching to B is dropped, and B gets nothing', async () => {
+    const { fake, client } = await setup();
+    client.reportAuthState({ uid: 'uidB', email: null, creationTime: 'Tue, 03 Nov 2026 10:00:00 GMT' });
+    trackVerifiedSocialLinked('uidA', 'instagram');
+    trackVerifiedSocialLinked('uidA', 'x');
+    await settle();
+    assert.equal(fake.captured('social_linked').length, 0);
+  });
+
+  it('after signing out, a late confirmation for A is dropped', async () => {
+    const { fake, client } = await setup();
+    client.reportAuthState(null);
+    trackVerifiedSocialLinked('uidA', 'x');
+    await settle();
+    assert.equal(fake.captured('social_linked').length, 0);
+  });
+
+  it('back on A, a new link reports under A only', async () => {
+    const { fake, client } = await setup();
+    client.reportAuthState({ uid: 'uidB', email: null, creationTime: 'Tue, 03 Nov 2026 10:00:00 GMT' });
+    client.reportAuthState({ uid: 'uidA', email: null, creationTime: 'Mon, 02 Nov 2026 10:00:00 GMT' });
+    trackVerifiedSocialLinked('uidA', 'instagram');
+    await settle();
+    const events = fake.captured('social_linked');
+    assert.equal(events.length, 1);
+    assert.equal(events[0]?.distinctId, 'uidA');
+  });
+});
+
+describe('X confirmed by reconciliation after the finalizer fails', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  for (const [name, path, uidVar] of [
+    ['profile editor', '../../screens/SocialMediaScreen.tsx', 'editorUid'],
+    ['onboarding', '../../components/registration/OwnedSocialConnectSection.tsx', 'uid'],
+  ] as const) {
+    const source = readFileSync(join(here, path), 'utf8').split('\r\n').join('\n');
+
+    it(`${name}: captures whether X was connected before the attempt`, () => {
+      assert.match(source, /const wasXConnected = xConnectedRef\.current;/);
+      assert.match(source, /xConnectedRef\.current = xConnected;/);
+    });
+
+    it(`${name}: reports once, only when this attempt is confirmed and X was not connected`, () => {
+      assert.match(
+        source,
+        new RegExp(
+          `const get = await client\\.get\\(modeForRequest\\);\\s*if \\(!isXResultCurrent\\(requestGen, modeForRequest\\)\\) return;[\\s\\S]{0,240}if \\(get\\.result === 'verified' && !wasXConnected\\) \\{\\s*trackVerifiedSocialLinked\\(${uidVar}, 'x'\\);`,
+        ),
+      );
+      // The normal success path and the reconciliation are exclusive branches.
+      assert.equal(source.match(new RegExp(`trackVerifiedSocialLinked\\(${uidVar}, 'x'\\)`, 'g'))?.length, 2);
+    });
+  }
 });

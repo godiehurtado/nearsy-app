@@ -207,6 +207,8 @@ export function OwnedSocialConnectSection({
   );
   const xActionLocked = isXActionLocked(xBusyPhase);
   const xConnected = xConnectedForMode(xVerified, mode);
+  const xConnectedRef = useRef(xConnected);
+  xConnectedRef.current = xConnected;
 
   const ownedCount =
     (youtubeConnected ? 1 : 0) +
@@ -1048,6 +1050,7 @@ export function OwnedSocialConnectSection({
     if (xActionLocked) return;
     const requestGen = xRequestGenRef.current;
     const modeForRequest = mode;
+    const wasXConnected = xConnectedRef.current;
     try {
       setXNeedsRetry(false);
       setXBusyPhase('connecting');
@@ -1064,6 +1067,11 @@ export function OwnedSocialConnectSection({
             const client = await getXOwnershipClient();
             const get = await client.get(modeForRequest);
             if (!isXResultCurrent(requestGen, modeForRequest)) return;
+            // This attempt is the pending intent: the server confirming it is a new
+            // link, once. A link that already existed before the attempt is not.
+            if (get.result === 'verified' && !wasXConnected) {
+              trackVerifiedSocialLinked(uid, 'x');
+            }
             setXVerified(get.result === 'verified' ? get : null);
           } catch {
             // Keep prior verified state if Get also fails.

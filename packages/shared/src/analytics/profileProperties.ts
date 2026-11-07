@@ -301,7 +301,10 @@ export function newlyAddedManualSocials(
   return added;
 }
 
-/** True/false per network, or null when any lookup failed (unknown). */
+/**
+ * What each network proved: true or false. A network missing from the record is
+ * unknown and stays out of the verified list. Null when nothing is known at all.
+ */
 export type VerifiedSocialState =
   | Partial<Record<AnalyticsSocialPlatform, boolean>>
   | null;

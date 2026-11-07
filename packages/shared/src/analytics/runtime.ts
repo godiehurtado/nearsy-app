@@ -54,7 +54,10 @@ import {
   type VerifiedSocialState,
 } from './profileProperties';
 import type { AnalyticsLogger } from './transport';
-import { combineVerifiedSocialReads } from './verifiedSocialRead';
+import {
+  combineVerifiedSocialReads,
+  createVerifiedSocialMemory,
+} from './verifiedSocialRead';
 
 const PROFILE_SYNC_DEBOUNCE_MS = 1500;
 /** Lets signup claim a pending link first; then it counts as access. */
@@ -146,6 +149,7 @@ export function startAnalyticsRuntime(): void {
 
   const store: StringStore = AsyncStorage;
   const deletionRecords = createDeletionRecords(store);
+  const verifiedMemory = createVerifiedSocialMemory(store);
   const client = createAnalyticsClient({
     config,
     createTransport: async () => {
@@ -184,12 +188,14 @@ export function startAnalyticsRuntime(): void {
         verified = cached;
       } else {
         const generation = verifiedGeneration;
-        verified = await readVerifiedSocials(mode);
+        const read = await readVerifiedSocials(mode);
         if (generation !== verifiedGeneration) {
           // A connection changed during the read: treat this result as unknown.
           verified = null;
-        } else if (verified) {
-          verifiedByKey.set(key, verified);
+        } else if (client.currentAuth()?.uid === uid) {
+          // Platforms this read could not prove keep their last proved value.
+          verified = await verifiedMemory.merge(uid, mode, read);
+          if (verified) verifiedByKey.set(key, verified);
         }
       }
     }
@@ -317,6 +323,7 @@ export function startAnalyticsRuntime(): void {
       const closure = getAccountDeletionClosure();
       if (closure) {
         void deletionRecords.record(closure.uid, 'confirmed', Date.now()).catch(() => {});
+        void verifiedMemory.forget(closure.uid).catch(() => {});
         recordedIntentUid = null;
         client.holdAccount(null);
         client.discardAccount(closure.uid);

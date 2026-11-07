@@ -308,6 +308,8 @@ export default function SocialMediaScreen() {
     instagramConnectedForMode(instagramVerified, editorMode);
   const xActionLocked = isXActionLocked(xBusyPhase);
   const xConnected = !!editorMode && xConnectedForMode(xVerified, editorMode);
+  const xConnectedRef = useRef(xConnected);
+  xConnectedRef.current = xConnected;
 
   const isDirty = isPostCrjSocialEditorDirty(snapshotRef.current, draft);
   const validConnectionCount = countValidPostCrjSocialConnections(draft, {
@@ -1254,6 +1256,7 @@ export default function SocialMediaScreen() {
     if (xActionLocked || !editorMode) return;
     const requestGen = xRequestGenRef.current;
     const modeForRequest = editorMode;
+    const wasXConnected = xConnectedRef.current;
     try {
       setXNeedsRetry(false);
       setXBusyPhase('connecting');
@@ -1271,6 +1274,11 @@ export default function SocialMediaScreen() {
             const client = await getXOwnershipClient();
             const get = await client.get(modeForRequest);
             if (!isXResultCurrent(requestGen, modeForRequest)) return;
+            // This attempt is the pending intent: the server confirming it is a new
+            // link, once. A link that already existed before the attempt is not.
+            if (get.result === 'verified' && !wasXConnected) {
+              trackVerifiedSocialLinked(editorUid, 'x');
+            }
             setXVerified(get.result === 'verified' ? get : null);
           } catch {
             // Keep prior verified state if Get also fails.
