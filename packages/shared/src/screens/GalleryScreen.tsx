@@ -1,3 +1,4 @@
+import { withOwnExternalFlow } from '../analytics/ownExternalFlow.ts';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -170,7 +171,7 @@ export default function GalleryScreen() {
     let uploadedPath: string | null = null;
 
     try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const perm = await withOwnExternalFlow(() => ImagePicker.requestMediaLibraryPermissionsAsync());
       if (!perm.granted) {
         Alert.alert(
           t('profile.gallery.permissionTitle'),
@@ -179,11 +180,11 @@ export default function GalleryScreen() {
         return;
       }
 
-      const result = await ImagePicker.launchImageLibraryAsync({
+      const result = await withOwnExternalFlow(() => ImagePicker.launchImageLibraryAsync({
         allowsEditing: true,
         quality: 0.8,
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      });
+      }));
 
       if (result.canceled || result.assets.length === 0) return;
 

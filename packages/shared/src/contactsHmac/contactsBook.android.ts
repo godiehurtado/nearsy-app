@@ -2,6 +2,7 @@
  * Android OS contacts reader. Identifiers only — never a client hash.
  * Denied permission must not upload an empty snapshot.
  */
+import { withOwnExternalFlow } from '../analytics/ownExternalFlow.ts';
 import { collectContactIdentifiers, ContactsHmacError } from './contactsHmacCore.ts';
 import type { ContactIdentifierInput } from './contactsHmacContract.ts';
 import type { ContactsBookPort, ContactsPermissionStatus } from './contactsSyncFlow.ts';
@@ -49,7 +50,7 @@ export function createAndroidContactsBook(): ContactsBookPort {
     },
     async requestPermission() {
       if (!Contacts) return 'undetermined';
-      const snap = await Contacts.requestPermissionsAsync();
+      const snap = await withOwnExternalFlow(() => Contacts.requestPermissionsAsync());
       return mapPermission(snap.status);
     },
     async readRecords() {

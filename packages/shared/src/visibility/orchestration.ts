@@ -2,6 +2,7 @@
  * Visibility lifecycle orchestration — permission, location sample, callables.
  */
 
+import { withLocationPermissionRequest } from '../analytics/ownExternalFlow.ts';
 import * as Location from 'expo-location';
 
 import {
@@ -47,7 +48,7 @@ export async function ensureForegroundPermission(): Promise<{
   // Request when the OS may still show a system prompt.
   let requestedInSession = false;
   if (perm.status === 'undetermined' || perm.canAskAgain) {
-    perm = await Location.requestForegroundPermissionsAsync();
+    perm = await withLocationPermissionRequest('foreground', () => Location.requestForegroundPermissionsAsync());
     requestedInSession = true;
   }
 

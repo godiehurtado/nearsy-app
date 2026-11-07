@@ -5,6 +5,7 @@
  * to the caller in memory. Never logs the token. App Events, auto-init and
  * advertiser ID collection stay disabled via app.config.js.
  */
+import { withOwnExternalFlow } from '../analytics/ownExternalFlow.ts';
 import { AccessToken, LoginManager, Settings } from 'react-native-fbsdk-next';
 import {
   FACEBOOK_LOGIN_PERMISSIONS,
@@ -26,6 +27,10 @@ function ensureSdkInitialized(): void {
  * returned token always comes from this interaction (fresh for reauth).
  */
 export async function requestFacebookAccessToken(): Promise<FacebookAccessTokenResult> {
+  return withOwnExternalFlow(readFacebookAccessToken);
+}
+
+async function readFacebookAccessToken(): Promise<FacebookAccessTokenResult> {
   ensureSdkInitialized();
   LoginManager.logOut();
   const result = await LoginManager.logInWithPermissions([

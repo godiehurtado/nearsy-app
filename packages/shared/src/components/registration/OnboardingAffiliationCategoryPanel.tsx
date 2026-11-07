@@ -1,3 +1,4 @@
+import { withOwnExternalFlow } from '../../analytics/ownExternalFlow.ts';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -305,14 +306,14 @@ export function OnboardingAffiliationCategoryPanel({
   }
 
   async function pickOwnLogo() {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const perm = await withOwnExternalFlow(() => ImagePicker.requestMediaLibraryPermissionsAsync());
     if (!perm.granted) return;
-    const result = await ImagePicker.launchImageLibraryAsync({
+    const result = await withOwnExternalFlow(() => ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.85,
-    });
+    }));
     if (!result.canceled && result.assets?.[0]?.uri) {
       setDraftImage(result.assets[0].uri);
     }

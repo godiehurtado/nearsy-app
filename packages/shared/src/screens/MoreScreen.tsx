@@ -1,6 +1,8 @@
 ﻿/**
  * Settings hub — Nearsy 2.0 More tab (Unit 2A).
  */
+import { withOwnExternalFlow } from '../analytics/ownExternalFlow.ts';
+import { withLocationPermissionRequest } from '../analytics/ownExternalFlow.ts';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -680,7 +682,7 @@ export default function MoreScreen() {
       if (!snap.foregroundGranted) {
         let fg = await Location.getForegroundPermissionsAsync();
         if (fg.status !== 'granted' && (fg.status === 'undetermined' || fg.canAskAgain)) {
-          fg = await Location.requestForegroundPermissionsAsync();
+          fg = await withLocationPermissionRequest('foreground', () => Location.requestForegroundPermissionsAsync());
         }
         if (fg.status !== 'granted') {
           setBgVisible(false);
@@ -693,7 +695,7 @@ export default function MoreScreen() {
                 text: t('settings.backgroundVisibility.openSettings'),
                 onPress: () => {
                   pendingBgEnableIntentRef.current = true;
-                  void Linking.openSettings();
+                  void withOwnExternalFlow(() => Linking.openSettings());
                 },
               },
             ],
@@ -714,7 +716,7 @@ export default function MoreScreen() {
               text: t('settings.backgroundVisibility.openSettings'),
               onPress: () => {
                 pendingBgEnableIntentRef.current = true;
-                void Linking.openSettings();
+                void withOwnExternalFlow(() => Linking.openSettings());
               },
             },
           ],
@@ -725,12 +727,12 @@ export default function MoreScreen() {
       if (!snap.backgroundGranted) {
         if (requiresSettingsForBackgroundPermission(Platform.Version)) {
           pendingBgEnableIntentRef.current = true;
-          void Linking.openSettings();
+          void withOwnExternalFlow(() => Linking.openSettings());
           return;
         }
 
         // Android 10-compatible path: request BG dialog after disclosure consent.
-        const bg = await Location.requestBackgroundPermissionsAsync();
+        const bg = await withLocationPermissionRequest('background', () => Location.requestBackgroundPermissionsAsync());
         if (bg.status !== 'granted') {
           setBgVisible(false);
           Alert.alert(
@@ -742,7 +744,7 @@ export default function MoreScreen() {
                 text: t('settings.backgroundVisibility.openSettings'),
                 onPress: () => {
                   pendingBgEnableIntentRef.current = true;
-                  void Linking.openSettings();
+                  void withOwnExternalFlow(() => Linking.openSettings());
                 },
               },
             ],
@@ -814,7 +816,7 @@ export default function MoreScreen() {
             },
             {
               text: t('settings.backgroundVisibility.openSettings'),
-              onPress: () => void Linking.openSettings(),
+              onPress: () => void withOwnExternalFlow(() => Linking.openSettings()),
             },
           ],
         );
@@ -832,7 +834,7 @@ export default function MoreScreen() {
       if (isBackgroundLocationPermissionError(e)) {
         const openSettings = () => {
           pendingBgEnableIntentRef.current = true;
-          void Linking.openSettings();
+          void withOwnExternalFlow(() => Linking.openSettings());
         };
         const message =
           e.code === 'foreground-denied'

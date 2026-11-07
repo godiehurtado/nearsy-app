@@ -1,5 +1,6 @@
 // src/services/backgroundLocation.ts
 
+import { withLocationPermissionRequest } from '../analytics/ownExternalFlow.ts';
 import { Platform } from 'react-native';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -84,7 +85,7 @@ export async function startBackgroundLocation({
   let fgRequestedInSession = false;
   if (fg.status !== 'granted') {
     if (fg.status === 'undetermined' || fg.canAskAgain) {
-      fg = await Location.requestForegroundPermissionsAsync();
+      fg = await withLocationPermissionRequest('foreground', () => Location.requestForegroundPermissionsAsync());
       fgRequestedInSession = true;
     }
   }
@@ -101,7 +102,7 @@ export async function startBackgroundLocation({
   let bgRequestedInSession = false;
   if (bg.status !== 'granted') {
     if (bg.status === 'undetermined' || bg.canAskAgain) {
-      bg = await Location.requestBackgroundPermissionsAsync();
+      bg = await withLocationPermissionRequest('background', () => Location.requestBackgroundPermissionsAsync());
       bgRequestedInSession = true;
     }
   }

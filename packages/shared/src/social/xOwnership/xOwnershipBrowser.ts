@@ -3,6 +3,7 @@
  * Never logs authorizationUrl or return URLs.
  */
 
+import { withOwnExternalFlow } from '../../analytics/ownExternalFlow.ts';
 import { X_OWNERSHIP_RETURN_URL } from './xOwnershipContract.ts';
 
 export type XOwnershipBrowserOutcome =
@@ -54,10 +55,10 @@ export function createExpoXOwnershipBrowser(
         return { type: 'failed' };
       }
       try {
-        const result = await webBrowser.openAuthSessionAsync(
+        const result = await withOwnExternalFlow(() => webBrowser.openAuthSessionAsync(
           authorizationUrl,
           returnUrl,
-        );
+        ));
         return mapExpoAuthSessionResult(result);
       } catch {
         return { type: 'unavailable' };

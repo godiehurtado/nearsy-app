@@ -3,6 +3,7 @@
  * All FGS starts must pass visibility ∧ bgVisible ∧ permissions.
  */
 
+import { withLocationPermissionRequest } from '../analytics/ownExternalFlow.ts';
 import { AppState, Platform } from 'react-native';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -128,7 +129,7 @@ export async function startGatedBackgroundLocation(
   if (opts.requestPermissions && !snap.foregroundGranted) {
     let fg = await Location.getForegroundPermissionsAsync();
     if (fg.status !== 'granted' && (fg.status === 'undetermined' || fg.canAskAgain)) {
-      fg = await Location.requestForegroundPermissionsAsync();
+      fg = await withLocationPermissionRequest('foreground', () => Location.requestForegroundPermissionsAsync());
     }
     if (fg.status !== 'granted') {
       return {
@@ -154,7 +155,7 @@ export async function startGatedBackgroundLocation(
     }
     let bg = await Location.getBackgroundPermissionsAsync();
     if (bg.status !== 'granted' && (bg.status === 'undetermined' || bg.canAskAgain)) {
-      bg = await Location.requestBackgroundPermissionsAsync();
+      bg = await withLocationPermissionRequest('background', () => Location.requestBackgroundPermissionsAsync());
     }
     if (bg.status !== 'granted') {
       return {

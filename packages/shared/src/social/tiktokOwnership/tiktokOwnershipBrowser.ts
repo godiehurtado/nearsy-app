@@ -3,6 +3,7 @@
  * Never logs authorizationUrl or return URLs.
  */
 
+import { withOwnExternalFlow } from '../../analytics/ownExternalFlow.ts';
 import { TIKTOK_OWNERSHIP_RETURN_URL } from './tiktokOwnershipContract.ts';
 
 export type TiktokOwnershipBrowserOutcome =
@@ -54,10 +55,10 @@ export function createExpoTiktokOwnershipBrowser(
         return { type: 'failed' };
       }
       try {
-        const result = await webBrowser.openAuthSessionAsync(
+        const result = await withOwnExternalFlow(() => webBrowser.openAuthSessionAsync(
           authorizationUrl,
           returnUrl,
-        );
+        ));
         return mapExpoAuthSessionResult(result);
       } catch {
         return { type: 'unavailable' };

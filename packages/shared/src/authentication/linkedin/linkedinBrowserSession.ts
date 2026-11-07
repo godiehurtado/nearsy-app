@@ -4,6 +4,7 @@
  * No logging of authorizationUrl or return URLs.
  */
 
+import { withOwnExternalFlow } from '../../analytics/ownExternalFlow.ts';
 import { LINKEDIN_MOBILE_RETURN_URL } from './linkedinAuthCore.ts';
 
 export type LinkedInAuthBrowserOutcome =
@@ -68,10 +69,10 @@ export function createExpoLinkedInAuthBrowser(
         return { type: 'failed' };
       }
       try {
-        const result = await webBrowser.openAuthSessionAsync(
+        const result = await withOwnExternalFlow(() => webBrowser.openAuthSessionAsync(
           authorizationUrl,
           returnUrl,
-        );
+        ));
         return mapExpoAuthSessionResult(result);
       } catch {
         return { type: 'unavailable' };

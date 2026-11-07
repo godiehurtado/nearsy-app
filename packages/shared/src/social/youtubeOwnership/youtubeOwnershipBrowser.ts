@@ -3,6 +3,7 @@
  * Never logs authorizationUrl or return URLs.
  */
 
+import { withOwnExternalFlow } from '../../analytics/ownExternalFlow.ts';
 import { YOUTUBE_OWNERSHIP_RETURN_URL } from './youtubeOwnershipContract.ts';
 
 export type YoutubeOwnershipBrowserOutcome =
@@ -54,10 +55,10 @@ export function createExpoYoutubeOwnershipBrowser(
         return { type: 'failed' };
       }
       try {
-        const result = await webBrowser.openAuthSessionAsync(
+        const result = await withOwnExternalFlow(() => webBrowser.openAuthSessionAsync(
           authorizationUrl,
           returnUrl,
-        );
+        ));
         return mapExpoAuthSessionResult(result);
       } catch {
         return { type: 'unavailable' };

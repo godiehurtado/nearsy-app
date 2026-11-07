@@ -1,3 +1,4 @@
+import { withOwnExternalFlow } from '../analytics/ownExternalFlow.ts';
 import React, {
   useState,
   useCallback,
@@ -534,7 +535,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
   const pickImage = async () => {
     try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const perm = await withOwnExternalFlow(() => ImagePicker.requestMediaLibraryPermissionsAsync());
       if (!perm.granted) {
         Alert.alert(
           t('profile.permission.required'),
@@ -542,12 +543,12 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         );
         return;
       }
-      const result = await ImagePicker.launchImageLibraryAsync({
+      const result = await withOwnExternalFlow(() => ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
-      });
+      }));
       if (!result.canceled && result.assets.length > 0) {
         setProfileImage(result.assets[0].uri);
       }
@@ -558,7 +559,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
   const takeProfilePhoto = async () => {
     try {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      const perm = await withOwnExternalFlow(() => ImagePicker.requestCameraPermissionsAsync());
       if (!perm.granted) {
         Alert.alert(
           t('profile.permission.required'),
@@ -566,12 +567,12 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         );
         return;
       }
-      const result = await ImagePicker.launchCameraAsync({
+      const result = await withOwnExternalFlow(() => ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
-      });
+      }));
       if (!result.canceled && result.assets.length > 0) {
         setProfileImage(result.assets[0].uri);
       }

@@ -5,6 +5,7 @@
  * TS-007. Does not wire Login UI, Firebase credential exchange, or session
  * establishment.
  */
+import { withOwnExternalFlow } from '../analytics/ownExternalFlow.ts';
 import {
   GoogleSignin,
   isErrorWithCode,
@@ -221,7 +222,7 @@ export async function requestGoogleIdToken(): Promise<GoogleIdTokenResult> {
   await ensureGooglePlayServicesAvailable(true);
 
   try {
-    const response = await GoogleSignin.signIn();
+    const response = await withOwnExternalFlow(() => GoogleSignin.signIn());
 
     if (!isSuccessResponse(response)) {
       throw new GoogleAuthFoundationError(
