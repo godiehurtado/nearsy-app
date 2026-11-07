@@ -18,6 +18,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import {
+  createDiscoveryEntryTracker,
+  trackDiscoveryOpened,
+  trackMatchPresented,
+} from '../analytics';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { firebaseAuth } from '../config/firebaseConfig';
 import { dbOnUserSnapshot } from '../services/db';
@@ -100,6 +105,24 @@ export default function NearbySearchScreen() {
   itemsRef.current = items;
   /** Monotonic load generation — only the latest completion may mutate list/error UI. */
   const loadRequestIdRef = useRef(0);
+  const discoveryEntryRef = useRef(createDiscoveryEntryTracker());
+  /** Stable for FlatList: match_made counts results really shown on screen. */
+  const matchViewabilityConfigRef = useRef({
+    itemVisiblePercentThreshold: 50,
+    minimumViewTime: 300,
+  });
+  const onMatchViewableItemsChangedRef = useRef(
+    ({ viewableItems }: { viewableItems: { item: DiscoverNearbyResult }[] }) => {
+      const viewerUid = firebaseAuth.currentUser?.uid;
+      if (!viewerUid) return;
+      for (const { item } of viewableItems) {
+        const alignment = toAlignment(item.compatibility);
+        if (alignment?.available === true) {
+          trackMatchPresented(viewerUid, item.uid, alignment.score);
+        }
+      }
+    },
+  );
   /**
    * Request id that currently owns the fullscreen loader claim. Silent loads do
    * not take the claim, so a superseded fullscreen owner can still clear loading.
@@ -362,6 +385,12 @@ export default function NearbySearchScreen() {
 
         // Successful response replaces the list (OOO-safe via isCurrent).
         setItems(outcome.results);
+        if (discoveryEntryRef.current.consumeSuccess()) {
+          trackDiscoveryOpened(uid, {
+            loadTimeMs: Date.now() - startedAt,
+            peopleShown: outcome.results.length,
+          });
+        }
         if (outcome.results.length === 0) {
           setErrorKind('empty');
           setErrorMessage(t('nearby.emptyBody'));
@@ -425,6 +454,7 @@ export default function NearbySearchScreen() {
   useFocusEffect(
     useCallback(() => {
       screenFocusedRef.current = true;
+      discoveryEntryRef.current.onFocus();
       if (skipNextFocusRediscoverRef.current) {
         skipNextFocusRediscoverRef.current = false;
       } else {
@@ -506,9 +536,10 @@ export default function NearbySearchScreen() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={cardA11y}
-        onPress={() =>
-          navigation.navigate('DiscoveryProfile', { uid: item.uid })
-        }
+        onPress={() => {
+          discoveryEntryRef.current.onOpenChild();
+          navigation.navigate('DiscoveryProfile', { uid: item.uid });
+        }}
         style={({ pressed }) => [
           styles.card,
           subtleShadow,
@@ -679,6 +710,8 @@ export default function NearbySearchScreen() {
           data={filtered}
           keyExtractor={(item) => item.uid}
           renderItem={renderCard}
+          viewabilityConfig={matchViewabilityConfigRef.current}
+          onViewableItemsChanged={onMatchViewableItemsChangedRef.current}
           contentContainerStyle={{
             paddingHorizontal: screenPadding.horizontal,
             paddingTop: spacing.md,

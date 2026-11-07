@@ -31,6 +31,7 @@ import {
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 
+import { trackProfileViewed } from '../analytics';
 import { firebaseAuth } from '../config/firebaseConfig';
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { useTranslation } from '../i18n';
@@ -84,6 +85,7 @@ export default function DiscoveryProfileScreen() {
   const { palette, theme } = useAppTheme();
   const { t } = useTranslation();
   const uid = route.params?.uid;
+  const profileViewedRef = useRef(false);
 
   const [loading, setLoading] = useState(true);
   const [errorKind, setErrorKind] = useState<
@@ -141,6 +143,17 @@ export default function DiscoveryProfileScreen() {
         return;
       }
       const next = applyDiscoveryProfileSuccess(response);
+      if (next.data && !profileViewedRef.current) {
+        const viewerUid = firebaseAuth.currentUser?.uid;
+        if (viewerUid) {
+          profileViewedRef.current = true;
+          const alignment = toAlignment(next.data.compatibility);
+          trackProfileViewed(
+            viewerUid,
+            alignment?.available === true ? alignment.score : undefined,
+          );
+        }
+      }
       setData(next.data);
       setErrorKind(next.errorKind);
       setLoading(next.loading);
@@ -408,7 +421,13 @@ export default function DiscoveryProfileScreen() {
           />
 
           {/* 3. Social Media — omitted when DTO has no public links */}
-          <DiscoverySocialMediaRow links={publicSocialLinks} />
+          <DiscoverySocialMediaRow
+            links={publicSocialLinks}
+            matchScore={(() => {
+              const alignment = toAlignment(data.compatibility);
+              return alignment?.available === true ? alignment.score : undefined;
+            })()}
+          />
 
           {/* 4. Profile context — origin / current city / languages */}
           <ProfileContextCard

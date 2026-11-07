@@ -15,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 
+import { trackMatchSocialTapped } from '../../analytics';
 import { useTranslation } from '../../i18n';
 import { radius, spacing, useAppTheme } from '../../theme';
 import { cardShadow } from '../../theme/shadows';
@@ -29,7 +30,11 @@ import {
 
 type Props = {
   links?: readonly DiscoveryPublicSocialLink[] | null;
+  matchScore?: number;
 };
+
+/** The tap is the event; a stalled open still reports it, with no known result. */
+const OPEN_RESULT_WAIT_MS = 1500;
 
 function PlatformIcon({
   platform,
@@ -59,7 +64,7 @@ function PlatformIcon({
   );
 }
 
-export function DiscoverySocialMediaRow({ links }: Props) {
+export function DiscoverySocialMediaRow({ links, matchScore }: Props) {
   const { palette } = useAppTheme();
   const { t } = useTranslation();
   const items = useMemo(
@@ -72,7 +77,22 @@ export function DiscoverySocialMediaRow({ links }: Props) {
 
   const openLink = useCallback(
     async (link: DiscoveryPublicSocialLink) => {
+      let reported = false;
+      const report = (
+        openResult: 'opened' | 'invalid' | 'failed' | 'unknown',
+      ) => {
+        if (reported) return;
+        reported = true;
+        trackMatchSocialTapped({
+          platform: link.platform,
+          score: matchScore,
+          openResult,
+        });
+      };
+      const waitTimer = setTimeout(() => report('unknown'), OPEN_RESULT_WAIT_MS);
       const result = await openDiscoverySocialLink(link, Linking);
+      clearTimeout(waitTimer);
+      report(result);
       if (result === 'invalid') {
         Alert.alert(t('discoveryProfile.invalidLinkError'));
       } else if (result === 'failed') {
