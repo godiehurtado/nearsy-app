@@ -2,7 +2,7 @@
 import { Platform } from 'react-native';
 import { firebaseAuth } from '../config/firebaseConfig.android';
 import { runWithOutgoingPushRelease } from './pushTokens';
-import { trackSignupCompleted } from '../analytics/analytics';
+import { noteExistingAccountSignIn, trackSignupCompleted } from '../analytics/analytics';
 
 // Tipos suaves (para que compile con ambos SDKs)
 type AnyUser = any;
@@ -54,6 +54,8 @@ export const loginWithEmail = async (
     const userCredential: AnyUserCredential = await runWithOutgoingPushRelease(
       () => (firebaseAuth as any).signInWithEmailAndPassword(email, password),
     );
+    // Signing in with a password never creates an account.
+    if (userCredential?.user?.uid) noteExistingAccountSignIn(userCredential.user.uid);
 
     // Web SDK: await user.reload()
     // RNFirebase: await user.reload()

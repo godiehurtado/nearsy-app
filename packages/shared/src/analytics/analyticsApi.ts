@@ -9,6 +9,8 @@ export type AnalyticsApi = {
   /** Starts listeners from the mounted app. Returns a detach function. */
   startAnalytics(): () => void;
   trackSignupCompleted(uid: string): void;
+  /** Firebase confirmed this sign-in was an existing account (`isNewUser === false`). */
+  noteExistingAccountSignIn(uid: string): void;
   trackProfileCompleted(uid: string): void;
   syncAnalyticsPersonProfile(uid: string, doc: unknown): void;
 

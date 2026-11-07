@@ -8,7 +8,9 @@ import { fileURLToPath } from 'node:url';
 import {
   campaignAccessedProperties,
   createCampaignTouchStore,
-  isEstablishedAccount,
+  createSignupRecords,
+  decideEvidence,
+  decideHeldTouchForExistingAccount,
   parseCampaignLink,
   parseInstallReferrer,
   resolveAttributionSettings,
@@ -174,12 +176,13 @@ describe('outgoing filter', () => {
       properties: {
         $session_id: 'kept',
         platform: 'Android',
+        match_score: 80,
         score: 80,
         peer_uid: 'must-not-leave',
         email: 'must-not-leave',
       },
     }) as { properties: Record<string, unknown> };
-    assert.deepEqual(Object.keys(out.properties).sort(), ['$session_id', 'platform', 'score']);
+    assert.deepEqual(Object.keys(out.properties).sort(), ['$session_id', 'match_score', 'platform']);
   });
 
   it('person updates keep their shape', () => {
@@ -201,13 +204,13 @@ describe('outgoing filter', () => {
       occupation: 'x',
       interests_custom: ['text'],
       country_birth: 'MX',
-      score: 80,
+      match_score: 80,
     });
     assert.equal(view.email, '<redacted>');
     assert.equal(view.occupation, '<redacted>');
     assert.equal(view.interests_custom, '<1 items>');
     assert.equal(view.country_birth, '<redacted>');
-    assert.equal(view.score, 80);
+    assert.equal(view.match_score, 80);
   });
 
   it('the interception record holds names, never values', () => {
@@ -360,7 +363,7 @@ describe('onboarding milestones', () => {
       buildOnboardingStepProperties({ step: 'affiliations', selected: [] }),
       buildOnboardingStepProperties({ step: 'interests', selected: [] }),
       buildOnboardingStepProperties({ step: 'socials', manualValues: [] }),
-    ].map((props) => [props.step_name, props.step_number]);
+    ].map((props) => [props.step, props.step_number]);
     assert.deepEqual(numbers, [
       ['profile_type', 1],
       ['basics', 2],
@@ -827,7 +830,7 @@ describe('discovery and match', () => {
       [100, 'high'],
     ];
     for (const [score, range] of cases) assert.equal(matchScoreRange(score), range);
-    assert.deepEqual(scoreProperties(0), { score: 0, match_score_range: 'low' });
+    assert.deepEqual(scoreProperties(0), { match_score: 0, match_score_range: 'low' });
     for (const unknown of [undefined, null, 'x', -1, 101, Number.NaN]) {
       assert.deepEqual(scoreProperties(unknown), {});
     }
@@ -1168,11 +1171,45 @@ describe('campaign attribution', () => {
     ]);
   });
 
-  it('a recent account keeps the touch for its signup', () => {
-    const now = Date.parse('2026-11-06T12:00:00Z');
-    assert.equal(isEstablishedAccount('2026-11-06T11:59:30Z', now), false);
-    assert.equal(isEstablishedAccount('2026-11-06T11:00:00Z', now), true);
-    assert.equal(isEstablishedAccount(undefined, now), false);
+  it('the auth result decides, never the age of the account', () => {
+    const link = { source: 'ig', method: 'custom_scheme' as const };
+    const referrer = { source: 'ads', method: 'install_referrer' as const };
+    const decide = (
+      signedIn: boolean,
+      touch: typeof link | typeof referrer,
+      observedAt: number,
+      signup: { at: number; attributed: boolean } | null,
+    ) => decideEvidence({ signedIn, touch, observedAt, signup });
+    // Signed out: held until a confirmed result.
+    assert.equal(decide(false, link, 10, null), 'hold');
+    assert.equal(decide(false, referrer, 0, null), 'hold');
+    // Signed in, no signup of this account here: it existed before the touch.
+    assert.equal(decide(true, link, 10, null), 'campaign_accessed');
+    assert.equal(decide(true, referrer, 0, null), 'drop');
+    // Evidence that predates a signup without acquisition: late acquisition.
+    assert.equal(decide(true, referrer, 0, { at: 50, attributed: false }), 'acquisition_attributed');
+    assert.equal(decide(true, link, 40, { at: 50, attributed: false }), 'acquisition_attributed');
+    // A link opened after the signup is not acquisition.
+    assert.equal(decide(true, link, 60, { at: 50, attributed: false }), 'campaign_accessed');
+    // The original acquisition is never overwritten.
+    assert.equal(decide(true, link, 40, { at: 50, attributed: true }), 'campaign_accessed');
+    assert.equal(decide(true, referrer, 0, { at: 50, attributed: true }), 'drop');
+    // A held touch after a confirmed existing sign-in.
+    assert.equal(decideHeldTouchForExistingAccount(link), 'campaign_accessed');
+    assert.equal(decideHeldTouchForExistingAccount(referrer), 'drop');
+    const code = src('analytics/analyticsAttribution.ts') + src('analytics/analytics.android.ts');
+    assert.ok(!/creationTime[^;]*campaign|isEstablishedAccount|SIGNUP_ATTRIBUTION_WINDOW/.test(code));
+  });
+
+  it('signup records expire and are per account', async () => {
+    const storage = memoryStorage();
+    let now = 100;
+    const records = createSignupRecords({ storage, now: () => now, expiryMs: 1000 });
+    await records.write('u1', { at: 100, attributed: false });
+    assert.deepEqual(await records.read('u1'), { at: 100, attributed: false });
+    assert.equal(await records.read('u2'), null);
+    now = 2000;
+    assert.equal(await records.read('u1'), null);
   });
 
   it('expiry is configurable with a safe default', () => {

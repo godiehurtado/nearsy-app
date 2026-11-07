@@ -133,7 +133,10 @@ before(() => {
       AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
       Linking: {
         getInitialURL: async () => null,
-        addEventListener: () => ({ remove() {} }),
+        addEventListener: (_type: string, listener: (event: { url: string }) => void) => {
+          linkListeners.push(listener);
+          return { remove() {} };
+        },
       },
     },
   };
@@ -145,9 +148,22 @@ after(() => {
 beforeEach(() => {
   authStub.currentUser = null;
   authStub.listeners.length = 0;
+  linkListeners.length = 0;
+  referrer = null;
 });
 
 let caseNumber = 0;
+const linkListeners: Array<(event: { url: string }) => void> = [];
+let referrer: { resolve(value: string): void; promise: Promise<string> } | null = null;
+
+function deferredReferrer() {
+  let resolve!: (value: string) => void;
+  const promise = new Promise<string>((done) => {
+    resolve = done;
+  });
+  referrer = { resolve, promise };
+  return referrer;
+}
 
 /** Loads a fresh copy of the binding, as a new process of a build with these extras. */
 async function startBuild(extra: Record<string, unknown>, remoteConfig: Record<string, unknown> = {}) {
@@ -171,7 +187,11 @@ async function startBuild(extra: Record<string, unknown>, remoteConfig: Record<s
       case 'expo-constants':
         return { default: { expoConfig: { extra } } };
       case 'expo-application':
-        return { nativeApplicationVersion: '2.0.9', nativeBuildVersion: '300' };
+        return {
+          nativeApplicationVersion: '2.0.9',
+          nativeBuildVersion: '300',
+          getInstallReferrerAsync: () => referrer?.promise ?? Promise.resolve(''),
+        };
       case 'posthog-react-native':
         return { default: ObservedPostHog };
       case '@react-native-async-storage/async-storage':
@@ -204,7 +224,11 @@ async function startBuild(extra: Record<string, unknown>, remoteConfig: Record<s
     for (const listener of authStub.listeners) listener();
     await tick(30);
   };
-  return { binding, constructed, server, signIn };
+  const openLink = async (url: string) => {
+    for (const listener of linkListeners) listener({ url });
+    await tick(30);
+  };
+  return { binding, constructed, server, signIn, openLink };
 }
 
 const betaEnv = () => ({ ...profileEnv('beta'), NEARSY_POSTHOG_TOKEN: FAKE_TOKEN });
@@ -328,6 +352,140 @@ describe('beta build, from the profile to the wire', () => {
       'background_location',
     ]);
     for (const item of server.events()) assert.ok(allowed.has(item.event), item.event);
+  });
+});
+
+describe('acquisition and campaigns, by the real result of authentication', () => {
+  const campaignBuild = () =>
+    startBuild(extrasFor({ ...betaEnv(), NEARSY_ATTRIBUTION_INSTALL_REFERRER: 'true' }));
+  const named = (events: Array<{ event: string }>, name: string) =>
+    events.filter((item) => item.event === name);
+  const LINK = 'nearsy://campaign?utm_source=ig&utm_campaign=fall&nearsy_tool=qr';
+
+  it('new account: the signup carries the acquisition, once', async () => {
+    const { binding, server, signIn, openLink } = await campaignBuild();
+    await openLink(LINK);
+    await signIn({ uid: REAL_UID });
+    binding.trackSignupCompleted(REAL_UID);
+    binding.trackSignupCompleted(REAL_UID);
+    await tick(40);
+    const signups = named(server.events(), 'signup_completed');
+    assert.equal(signups.length, 1);
+    assert.equal(signups[0].properties.signup_source, 'ig');
+    assert.equal(signups[0].properties.signup_campaign, 'fall');
+    assert.equal(signups[0].properties.signup_tool, 'qr');
+    assert.equal(signups[0].properties.attribution_method, 'custom_scheme');
+    const person = server.events().find((item) => item.properties.$set_once?.signup_source);
+    assert.deepEqual(person?.properties.$set_once, {
+      signup_source: 'ig',
+      signup_campaign: 'fall',
+      signup_tool: 'qr',
+      attribution_method: 'custom_scheme',
+    });
+    assert.equal(named(server.events(), 'campaign_accessed').length, 0);
+  });
+
+  it('new account without evidence: no attribution at all, nothing unknown', async () => {
+    const { binding, server, signIn } = await campaignBuild();
+    await signIn({ uid: REAL_UID });
+    binding.trackSignupCompleted(REAL_UID);
+    await tick(40);
+    const [signup] = named(server.events(), 'signup_completed');
+    assert.ok(!('attribution_method' in signup.properties));
+    assert.ok(!JSON.stringify(server.events()).includes('unknown'));
+  });
+
+  it('existing account: campaign_accessed, acquisition untouched', async () => {
+    const { binding, server, signIn, openLink } = await campaignBuild();
+    await openLink(LINK);
+    await signIn({ uid: REAL_UID });
+    binding.noteExistingAccountSignIn(REAL_UID);
+    await tick(40);
+    const accessed = named(server.events(), 'campaign_accessed');
+    assert.equal(accessed.length, 1);
+    assert.equal(accessed[0].properties.campaign_source, 'ig');
+    assert.ok(!JSON.stringify(server.events()).includes('signup_source'));
+  });
+
+  it('unknown result: the evidence stays held and nothing is classified', async () => {
+    const { binding, server, signIn, openLink } = await campaignBuild();
+    await openLink(LINK);
+    await signIn({ uid: REAL_UID });
+    await tick(40);
+    assert.equal(named(server.events(), 'campaign_accessed').length, 0);
+    assert.ok(!JSON.stringify(server.events()).includes('signup_source'));
+    // The same evidence is still there for a confirmed result.
+    binding.trackSignupCompleted(REAL_UID);
+    await tick(40);
+    assert.equal(named(server.events(), 'signup_completed')[0].properties.signup_source, 'ig');
+  });
+
+  it('a link opened while signed in is campaign_accessed, whatever the account age', async () => {
+    const { binding, server, signIn, openLink } = await campaignBuild();
+    await signIn({ uid: REAL_UID });
+    binding.trackSignupCompleted(REAL_UID);
+    await tick(40);
+    await openLink(LINK);
+    const events = server.events();
+    assert.equal(named(events, 'campaign_accessed').length, 1);
+    assert.equal(named(events, 'acquisition_attributed').length, 0);
+    assert.ok(!('signup_source' in named(events, 'signup_completed')[0].properties));
+  });
+
+  it('evidence of the install that arrives after the signup is attributed once, without a new signup', async () => {
+    const pending = deferredReferrer();
+    const { binding, server, signIn } = await campaignBuild();
+    await signIn({ uid: REAL_UID });
+    binding.trackSignupCompleted(REAL_UID);
+    await tick(40);
+    pending.resolve('utm_source=ads&utm_campaign=launch');
+    await tick(60);
+    const events = server.events();
+    assert.equal(named(events, 'signup_completed').length, 1);
+    const late = named(events, 'acquisition_attributed');
+    assert.equal(late.length, 1);
+    assert.equal(late[0].properties.signup_source, 'ads');
+    assert.equal(late[0].properties.attribution_method, 'install_referrer');
+    assert.ok(events.some((item) => item.properties.$set_once?.signup_source === 'ads'));
+  });
+
+  it('late evidence never replaces the acquisition the signup already had', async () => {
+    const pending = deferredReferrer();
+    const { binding, server, signIn, openLink } = await campaignBuild();
+    await openLink(LINK);
+    await signIn({ uid: REAL_UID });
+    binding.trackSignupCompleted(REAL_UID);
+    await tick(40);
+    pending.resolve('utm_source=ads&utm_campaign=launch');
+    await tick(60);
+    const events = server.events();
+    assert.equal(named(events, 'acquisition_attributed').length, 0);
+    assert.ok(!JSON.stringify(events).includes('"ads"'));
+  });
+});
+
+describe('general capture, ready by configuration only', () => {
+  it('a later build with general capture sends production events, with no Beta marks', async () => {
+    const env = {
+      ...profileEnv('production'),
+      NEARSY_ANALYTICS_ENABLED: 'true',
+      NEARSY_ANALYTICS_ENV: 'production',
+      NEARSY_POSTHOG_TOKEN: FAKE_TOKEN,
+    };
+    const { binding, constructed, server, signIn } = await startBuild(extrasFor(env));
+    assert.equal(constructed.length, 1);
+    await signIn({ uid: REAL_UID });
+    binding.trackSignupCompleted(REAL_UID);
+    await tick(40);
+    const events = server.events();
+    assert.ok(events.some((item) => item.event === 'signup_completed'));
+    for (const item of events) {
+      assert.equal(item.properties.environment, 'production', item.event);
+      assert.ok(!('is_test_user' in item.properties), item.event);
+      assert.ok(!('distribution_channel' in item.properties), item.event);
+      assert.ok(!('is_test_user' in (item.properties.$set ?? {})), item.event);
+      assert.ok(!('is_test_user' in (item.properties.$set_once ?? {})), item.event);
+    }
   });
 });
 

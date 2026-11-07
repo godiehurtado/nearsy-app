@@ -212,16 +212,31 @@ export function createAnalyticsSession(deps: {
       });
     },
 
-    /** Call only when the account creation is confirmed. */
-    trackSignupCompleted(uid: string): void {
+    /**
+     * Call only when the account creation is confirmed. Acquisition evidence is
+     * resolved in order, so the event carries it and the person gets it once.
+     */
+    trackSignupCompleted(
+      uid: string,
+      resolveAttribution?: () => Promise<AnalyticsProperties | null>,
+    ): void {
       enqueue(async (transport) => {
         const user = currentUserMatching(uid);
         if (!user) return;
         await ensureIdentity(transport, user);
+        if (emittedOnce.has(`${uid}:signup_completed`)) return;
+        let attribution: AnalyticsProperties | null = null;
+        try {
+          attribution = (await resolveAttribution?.()) ?? null;
+        } catch {
+          attribution = null;
+        }
         await send(transport, uid, {
           event: 'signup_completed',
           onceKey: 'signup_completed',
+          properties: attribution ?? {},
         });
+        if (attribution) await transport.setPersonProperties({}, attribution);
       });
     },
 

@@ -32,7 +32,11 @@ export function buildBasePersonProperties(input: {
   return out;
 }
 
-/** Same precedence as `resolveModePresentation`: active mode, then top level. */
+/**
+ * Only the active mode's own field. The product also shows a top-level legacy
+ * value for the active mode, but nothing in the document says which mode wrote
+ * it, so analytics treats it as unknown and the stored value is removed.
+ */
 function readOccupation(
   doc: Record<string, unknown>,
   mode: string,
@@ -41,10 +45,8 @@ function readOccupation(
     | Record<string, Record<string, unknown> | undefined>
     | undefined;
   const nested = profiles?.[mode]?.occupation;
-  const top = doc.occupation;
-  const value = nonBlank(nested) ?? nonBlank(top);
-  if (value) return value;
-  return typeof nested === 'string' || typeof top === 'string' ? null : undefined;
+  if (typeof nested !== 'string') return undefined;
+  return nonBlank(nested);
 }
 
 const COUNTRY_CODE = /^[A-Za-z]{2}$/;

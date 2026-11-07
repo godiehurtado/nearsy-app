@@ -8,8 +8,11 @@
 import auth from '@react-native-firebase/auth';
 import { firebaseAuth } from '../config/firebaseConfig.android';
 import { runWithOutgoingPushRelease } from './pushTokens';
-import { trackSignupCompleted } from '../analytics/analytics';
-import { isConfirmedNewAccount } from '../analytics/analyticsContract';
+import { noteExistingAccountSignIn, trackSignupCompleted } from '../analytics/analytics';
+import {
+  isConfirmedExistingAccount,
+  isConfirmedNewAccount,
+} from '../analytics/analyticsContract';
 import {
   extractFacebookIdentity,
   type FacebookFirebaseSession,
@@ -23,6 +26,8 @@ export async function signInWithFacebookAccessToken(
     const userCredential = await firebaseAuth.signInWithCredential(credential);
     if (isConfirmedNewAccount(userCredential)) {
       trackSignupCompleted(userCredential.user.uid);
+    } else if (isConfirmedExistingAccount(userCredential)) {
+      noteExistingAccountSignIn(userCredential.user.uid);
     }
     return {
       uid: userCredential.user.uid,

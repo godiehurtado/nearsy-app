@@ -80,7 +80,7 @@ export type OnboardingStepInput =
 
 function base(step: OnboardingStepName, skipped: boolean): AnalyticsProperties {
   return {
-    step_name: step,
+    step,
     step_number: ONBOARDING_STEP_NUMBERS[step],
     skipped,
   };

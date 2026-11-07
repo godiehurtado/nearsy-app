@@ -6,6 +6,8 @@
  *   parameters are never stored or sent.
  * - Any URL with an OAuth parameter, or the OAuth return addresses, is ignored.
  *   Reading a link does not consume it, so those flows are not affected.
+ * - What a touch means depends on the real result of authentication, never on
+ *   the age of the account. See `decideEvidence`.
  * - Acquisition (`signup_*`) goes out as set_once, only for a confirmed new
  *   account and only with real evidence. `organic` and `unknown` are never
  *   written, so late legitimate evidence is not blocked.
@@ -220,15 +222,70 @@ export function createCampaignTouchStore(deps: {
   };
 }
 
-/**
- * Account old enough that the link cannot belong to its signup. A recent account
- * keeps the touch: its signup confirmation may still be on the way, and an
- * identity provider without a new-account signal must not lose the attribution.
- */
-export const SIGNUP_ATTRIBUTION_WINDOW_MS = 2 * 60_000;
+/** A signup confirmed on this device, kept to judge evidence that arrives later. */
+export type SignupRecord = { at: number; attributed: boolean };
 
-export function isEstablishedAccount(creationTime: unknown, nowMs: number): boolean {
-  if (typeof creationTime !== 'string') return false;
-  const created = Date.parse(creationTime);
-  return Number.isFinite(created) && nowMs - created > SIGNUP_ATTRIBUTION_WINDOW_MS;
+const SIGNUP_RECORD_PREFIX = 'NEARSY_ANALYTICS_SIGNUP:';
+
+export function createSignupRecords(deps: {
+  storage: Pick<AttributionStorage, 'getItem' | 'setItem'>;
+  now: () => number;
+  expiryMs: number;
+}) {
+  return {
+    async read(uid: string): Promise<SignupRecord | null> {
+      try {
+        const parsed = JSON.parse(
+          (await deps.storage.getItem(`${SIGNUP_RECORD_PREFIX}${uid}`)) ?? 'null',
+        ) as SignupRecord | null;
+        const age = parsed ? deps.now() - Number(parsed.at) : Number.NaN;
+        return parsed && Number.isFinite(age) && age >= 0 && age <= deps.expiryMs
+          ? { at: Number(parsed.at), attributed: parsed.attributed === true }
+          : null;
+      } catch {
+        return null;
+      }
+    },
+    async write(uid: string, record: SignupRecord): Promise<void> {
+      await deps.storage.setItem(`${SIGNUP_RECORD_PREFIX}${uid}`, JSON.stringify(record));
+    },
+  };
+}
+
+export type EvidenceDecision =
+  | 'hold'
+  | 'campaign_accessed'
+  | 'acquisition_attributed'
+  | 'drop';
+
+/**
+ * A touch observed now. `observedAt` is when the evidence came into being: the
+ * launch of the process for the link that opened it, the install for the Play
+ * referrer, the moment of arrival for any other link.
+ *
+ * - Signed out: held. Only the result of the next authentication decides.
+ * - Signed in, and it predates a signup of this account on this device that has
+ *   no acquisition yet: late acquisition evidence.
+ * - Signed in otherwise: the account existed before this touch, so it cannot
+ *   have been acquired by it. A link is `campaign_accessed`; the referrer only
+ *   describes an earlier install and is dropped.
+ */
+export function decideEvidence(input: {
+  signedIn: boolean;
+  touch: CampaignTouch;
+  observedAt: number;
+  signup: SignupRecord | null;
+}): EvidenceDecision {
+  if (!input.signedIn) return 'hold';
+  if (input.signup && !input.signup.attributed && input.observedAt <= input.signup.at) {
+    return 'acquisition_attributed';
+  }
+  return input.touch.method === 'install_referrer' ? 'drop' : 'campaign_accessed';
+}
+
+/** A held touch after a sign-in that Firebase confirmed was an existing account. */
+export function decideHeldTouchForExistingAccount(
+  touch: CampaignTouch,
+): 'campaign_accessed' | 'drop' {
+  return touch.method === 'install_referrer' ? 'drop' : 'campaign_accessed';
 }

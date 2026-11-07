@@ -751,6 +751,23 @@ describe('person properties across modes', () => {
     assert.equal(device.person.occupation, null);
   });
 
+  it('a top-level occupation is not attributed to the active mode', async () => {
+    const device = makeDevice();
+    const session = device.startProcess();
+    await sync(session, { ...modernBoth, mode: 'personal' });
+    assert.equal(device.person.occupation, 'Student');
+    // Professional has no own value; the legacy top level could be any mode's.
+    const legacy = { ...modernBoth, occupation: 'Legacy top', profiles: { personal: { occupation: 'Student' } } };
+    await sync(session, { ...legacy, mode: 'professional' });
+    assert.ok(!('occupation' in device.person));
+    // Back in a new process: the personal value returns.
+    await sync(device.startProcess(), { ...legacy, mode: 'personal' });
+    assert.equal(device.person.occupation, 'Student');
+    // And in another new process, professional again: removed, not the top level.
+    await sync(device.startProcess(), { ...legacy, mode: 'professional' });
+    assert.ok(!('occupation' in device.person));
+  });
+
   it('an unreadable occupation or a malformed bag does not keep the old value', async () => {
     const device = makeDevice();
     device.verified.personal = ['x'];

@@ -483,6 +483,15 @@ describe('person properties', () => {
     );
   });
 
+  it('never takes the top-level occupation for the active mode', () => {
+    const props = buildPersonProperties({
+      doc: { mode: 'professional', occupation: 'Top', profiles: { personal: { occupation: 'P' } } },
+      authEmail: null,
+      normalizeLanguages,
+    });
+    assert.equal(props && 'occupation' in props, false);
+  });
+
   it('falls back to the document email for providers without one', () => {
     assert.equal(
       buildPersonProperties({

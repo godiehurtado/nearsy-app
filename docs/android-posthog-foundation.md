@@ -175,6 +175,10 @@ plugin they would send outside `before_send`. That plugin is not installed.
 
 ### Remote
 
+General capture is ready by configuration alone; it stays off. A later build only needs these variables
+(and no Beta ones), with no code change. A test runs that path with a fake token, and no event or person
+update carries `is_test_user` or `distribution_channel`. Persons marked by Beta keep `true`.
+
 Needs `NEARSY_ANALYTICS_ENABLED=true`, `NEARSY_ANALYTICS_ENV=production`, a valid
 `NEARSY_POSTHOG_TOKEN`, production Firebase, no Dev Client and a release build. `preview` resolves
 to `off` unless it is declared as Beta. A token enters the build only when its mode can resolve.
@@ -204,7 +208,8 @@ surveys or GeoIP. Event names are final: the app reports these exact ones.
 | Event | Who | When |
 |---|---|---|
 | `app_opened` | Anonymous or signed in | First foreground of the process, or return after 30 s or more away. Own flows do not count |
-| `signup_completed` | Signed in | `additionalUserInfo.isNewUser` confirmed, or email account created. Email, Google, Facebook. LinkedIn pending |
+| `signup_completed` | Signed in | `additionalUserInfo.isNewUser === true`, or email account created. Email, Google, Facebook. LinkedIn pending |
+| `acquisition_attributed` | Signed in | Acquisition evidence older than the signup arrived after `signup_completed` was sent, and that signup had none. At most once per account |
 | `profile_completed` | Signed in | Final CRJ save succeeded |
 | `onboarding_step_completed` | Signed in | A milestone was saved; once per milestone, account and process |
 | `social_linked` | Signed in | A connection was added. Not on hydration or on an edit |
@@ -215,13 +220,13 @@ surveys or GeoIP. Event names are final: the app reports these exact ones.
 | `profile_viewed` | Signed in | Discovery profile loaded, once per screen visit |
 | `match_made` | Signed in | Card 50% visible or profile opened, with a valid score; once per profile, user and SDK session |
 | `alert_opened` | Anonymous or signed in | Inbox row or push tapped; a push needs `actorUid` or `alertId` |
-| `campaign_accessed` | Signed in | Campaign link opened by an account older than 2 minutes |
+| `campaign_accessed` | Signed in | Campaign link opened while signed in, or held from before a sign-in that Firebase confirmed as an existing account. Never decided by account age |
 
 | Event | Property | Type | Values | Sent |
 |---|---|---|---|---|
 | `app_opened` | `session_id` | string | SDK session id | If available |
 | `profile_completed` | `completion_time_min` | number | Minutes since Auth creation, 1 decimal | If the date is valid |
-| `onboarding_step_completed` | `step_name` | string | `profile_type`, `basics`, `about`, `affiliations`, `interests`, `socials` | Always |
+| `onboarding_step_completed` | `step` | string | `profile_type`, `basics`, `about`, `affiliations`, `interests`, `socials` | Always |
 | | `step_number` | integer | 1 to 6, in that order | Always |
 | | `skipped` | boolean | `true` when it ended without content | Always |
 | | `profile_type` | string | `personal`, `professional` | `profile_type` step |
@@ -230,10 +235,10 @@ surveys or GeoIP. Event names are final: the app reports these exact ones.
 | | `manual_count` | integer | Manual links | `socials` |
 | | `verified_count` | integer | Verified networks | `socials`, if known |
 | `social_linked` | `social_platform` | string | `linkedin`, `instagram`, `facebook`, `youtube`, `x`, `tiktok`, `snapchat`, `website` | Always |
-| | `connection_type` | string | `manual`, `verified` | Always |
+| | `link_type` | string | `manual`, `verified` | Always |
 | | `profile_type` | string | `personal`, `professional` | Always |
 | `match_social_tapped` | `social_platform` | string | As in `social_linked` | Always |
-| | `score` | number | 0 to 100 | If known |
+| | `match_score` | number | 0 to 100 | If known |
 | | `match_score_range` | string | `low` [0,50), `medium` [50,75), `high` [75,100] | If known |
 | | `open_result` | string | `opened`, `invalid`, `failed`; only whether the OS accepted the link | Always |
 | `foreground_location`, `background_location` | `granted` | boolean | | Always |
@@ -241,8 +246,8 @@ surveys or GeoIP. Event names are final: the app reports these exact ones.
 | `visibility_changed` | `enabled` | boolean | | Always |
 | `discovery_opened` | `load_time_sec` | number | Seconds, 1 decimal | Always |
 | | `people_shown` | integer | Results of that load, before text filters | Always |
-| `profile_viewed` | `score`, `match_score_range` | number, string | As above | If known |
-| `match_made` | `score`, `match_score_range` | number, string | As above | Always |
+| `profile_viewed` | `match_score`, `match_score_range` | number, string | As above | If known |
+| `match_made` | `match_score`, `match_score_range` | number, string | As above | Always |
 | | `presented_in` | string | `nearby_list`, `discovery_profile` | Always |
 | | `session_id` | string | SDK session id | If available |
 | `alert_opened` | `source` | string | `push`, `inbox` | Always |
@@ -250,7 +255,11 @@ surveys or GeoIP. Event names are final: the app reports these exact ones.
 | `campaign_accessed` | `campaign_source`, `campaign_name`, `campaign_content`, `campaign_tool` | string | Safe tokens, up to 64 characters | Those present in the link |
 | | `attribution_method` | string | `custom_scheme`, `app_link` | Always |
 
-`signup_completed` has no properties of its own.
+| `signup_completed`, `acquisition_attributed` | `signup_source`, `signup_campaign`, `signup_content`, `signup_tool` | string | Safe tokens, up to 64 characters | Those present in the evidence |
+| | `attribution_method` | string | `custom_scheme`, `app_link`, `install_referrer` | Only with evidence; never `organic` or `unknown` |
+
+Renamed for the shared contract, with no old name sent alongside: `step_name` is `step`, `score` is
+`match_score`, `connection_type` is `link_type`.
 
 ### Person properties (active mode)
 
@@ -263,7 +272,7 @@ unknown one is never written as empty. See "Changing mode" for what happens to i
 | `platform` | string | `Android` | Build |
 | `app_version` | string | | Build |
 | `profile_type` | string | `personal`, `professional` | Active mode |
-| `occupation` | string or null | | Active mode, then top level |
+| `occupation` | string or null | | `profiles.<active mode>.occupation` only |
 | `languages` | string[] | Language codes | `languageCodes` |
 | `country_birth` | string or null | Upper-case ISO alpha-2 | `birthCountryCode`; Product treats origin as birth |
 | `country_live` | string or null | Upper-case ISO alpha-2 | `currentCity.countryCode`; never GPS or IP |
@@ -298,7 +307,8 @@ Profile documents are never modified or migrated by analytics. For each property
 | Properties | State in the document | Action |
 |---|---|---|
 | `profile_type` | Valid mode | Set |
-| `occupation` | Value in the mode, or at top level (as the product reads it) | Set |
+| `occupation` | Value in `profiles.<mode>` | Set |
+| | Only a top-level value | **Unset**: nothing shows which mode wrote it, although the product displays it |
 | | Blank string | `null` |
 | | No string anywhere | **Unset** |
 | `interests*`, `affiliations*` | Modern rows, or an empty list | Set, `[]` and `0` when empty |
@@ -430,8 +440,22 @@ leaves the device. iOS and Functions should not expect `match_id` from Android.
 - A URL with an OAuth parameter (`code`, `state`, `token`, `transactionId`, `result`, ...) is ignored
   entirely. Only the fields go to temporary storage, never the URL.
 - Expiry: 7 days, set with `NEARSY_ATTRIBUTION_EXPIRY_HOURS`.
-- A signed-out or recent account holds the touch. A confirmed signup consumes it as set_once. An
-  account older than 2 minutes sends `campaign_accessed` instead.
+- The real result of authentication decides, never the age of the account:
+
+| Situation | Result |
+|---|---|
+| Link opened signed out | Held, up to the expiry |
+| Then signup confirmed (`isNewUser === true`, or email account created) | `signup_completed` carries `signup_*` and `attribution_method`; same values as person set_once |
+| Then sign-in confirmed as existing (`isNewUser === false`, or email and password) | `campaign_accessed`; acquisition untouched |
+| Then sign-in with no result (LinkedIn today, or a restored session) | Nothing classified; the evidence stays held |
+| Link opened signed in | `campaign_accessed`: the account existed before the link |
+| Install referrer, signed in, no signup of this account on this device | Dropped: it describes an earlier install |
+| Evidence older than a signup of this account on this device that had no acquisition | `acquisition_attributed` with `signup_*`, and person set_once. No new `signup_completed` |
+| That signup already had an acquisition | Never replaced. A link becomes `campaign_accessed`; the referrer is dropped |
+
+"Older" means when the evidence came to exist: the launch of the process for the link that opened the app,
+the install for the referrer, the arrival for any other link. A link opened after the signup is never
+acquisition. The signup record is local, per account, and lasts as long as the attribution expiry.
 - `organic` and `unknown` are never written, so later evidence is not blocked. `utm_medium=organic`
   from Play is not treated as evidence.
 - Reading a link does not consume it, so LinkedIn and ownership OAuth are unaffected.
@@ -440,9 +464,13 @@ Sources:
 
 | Source | State |
 |---|---|
-| `nearsy://campaign?...` | Works on the existing scheme |
-| App Links | Configurable. No filter exists until `NEARSY_APP_LINKS_HOST` and `NEARSY_APP_LINKS_PATH_PREFIX` are set. `/` alone is rejected |
-| Install Referrer | `expo-application` already includes it; no new SDK. Off until `NEARSY_ATTRIBUTION_INSTALL_REFERRER=true`. Read once, only while signed out |
+| `nearsy://campaign?...` | Parser and rules tested. Only reaches people who **already have the app installed**: a custom scheme does not survive an install |
+| App Links | Configuration only. No filter exists until `NEARSY_APP_LINKS_HOST` and `NEARSY_APP_LINKS_PATH_PREFIX` are set, and no domain or `assetlinks.json` exists. `/` alone is rejected |
+| Install Referrer | Parser and rules tested with synthetic strings. Off until `NEARSY_ATTRIBUTION_INSTALL_REFERRER=true`, which the `beta` profile does not set. Read once per install. **Never run against a real Play install**, so it is not validated attribution after install |
+
+Real coverage today: a signed-out person who already has the app, opens a `nearsy://campaign` link and
+signs up on that device within 7 days. Acquisition of people without the app needs App Links or the
+referrer, and neither is validated.
 
 ## Pending and external
 
@@ -536,7 +564,8 @@ it to compare with `inspect`.
 | Alerts | Tap a push, **app closed** | Profile opens once; one event |
 | Alerts | Tap a push, restart without tapping | No replay |
 | Campaign | `adb shell am start -a android.intent.action.VIEW -d "nearsy://campaign?utm_source=qa"`, then sign up | `signup_source` on the person |
-| Campaign | Same link, signed in with an older account | `campaign_accessed` |
+| Campaign | Same link signed out, then sign in with an existing account | `campaign_accessed`; no `signup_*` |
+| Campaign | Same link signed in | `campaign_accessed` |
 | OAuth | Complete LinkedIn login | Works as before; no campaign data |
 | Identity | Logout; A then B | `reset` before the next `$identify` |
 | Privacy | Any line | No email, occupation, custom text, UID or token |

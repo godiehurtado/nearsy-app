@@ -11,10 +11,16 @@ export const TRACKING_PLAN_VERSION = 'v1';
  */
 export const ANALYTICS_EVENT_CONTRACT = {
   app_opened: ['session_id'],
-  signup_completed: [],
+  signup_completed: [
+    'signup_source',
+    'signup_campaign',
+    'signup_content',
+    'signup_tool',
+    'attribution_method',
+  ],
   profile_completed: ['completion_time_min'],
   onboarding_step_completed: [
-    'step_name',
+    'step',
     'step_number',
     'skipped',
     'profile_type',
@@ -24,10 +30,10 @@ export const ANALYTICS_EVENT_CONTRACT = {
     'manual_count',
     'verified_count',
   ],
-  social_linked: ['social_platform', 'connection_type', 'profile_type'],
+  social_linked: ['social_platform', 'link_type', 'profile_type'],
   match_social_tapped: [
     'social_platform',
-    'score',
+    'match_score',
     'match_score_range',
     'open_result',
   ],
@@ -35,9 +41,17 @@ export const ANALYTICS_EVENT_CONTRACT = {
   background_location: ['granted', 'trigger'],
   visibility_changed: ['enabled'],
   discovery_opened: ['load_time_sec', 'people_shown'],
-  profile_viewed: ['score', 'match_score_range'],
-  match_made: ['score', 'match_score_range', 'presented_in', 'session_id'],
+  profile_viewed: ['match_score', 'match_score_range'],
+  match_made: ['match_score', 'match_score_range', 'presented_in', 'session_id'],
   alert_opened: ['source', 'alert_id'],
+  /** Acquisition evidence that arrived after `signup_completed` was sent. */
+  acquisition_attributed: [
+    'signup_source',
+    'signup_campaign',
+    'signup_content',
+    'signup_tool',
+    'attribution_method',
+  ],
   campaign_accessed: [
     'campaign_source',
     'campaign_name',
@@ -163,6 +177,14 @@ export function isConfirmedNewAccount(credential: unknown): boolean {
   return info?.isNewUser === true;
 }
 
+/** True only when Firebase states that the account already existed. Missing is unknown. */
+export function isConfirmedExistingAccount(credential: unknown): boolean {
+  const info = (
+    credential as { additionalUserInfo?: { isNewUser?: unknown } } | null
+  )?.additionalUserInfo;
+  return info?.isNewUser === false;
+}
+
 /**
  * Elapsed minutes since the Firebase Auth account was created. This is elapsed
  * time, not active time. Missing, invalid or negative input returns undefined
@@ -231,7 +253,7 @@ export function scoreProperties(score: unknown): AnalyticsProperties {
   const known = toKnownScore(score);
   return known === undefined
     ? {}
-    : { score: known, match_score_range: matchScoreRange(known) };
+    : { match_score: known, match_score_range: matchScoreRange(known) };
 }
 
 const INSPECTABLE_KEYS = new Set<string>([
@@ -239,7 +261,7 @@ const INSPECTABLE_KEYS = new Set<string>([
   ...INSTALL_CLASSIFICATION_KEYS,
   'profile_type',
   'completion_time_min',
-  'step_name',
+  'step',
   'step_number',
   'skipped',
   'item_count',
@@ -248,9 +270,9 @@ const INSPECTABLE_KEYS = new Set<string>([
   'manual_count',
   'verified_count',
   'social_platform',
-  'connection_type',
+  'link_type',
   'open_result',
-  'score',
+  'match_score',
   'match_score_range',
   'presented_in',
   'granted',

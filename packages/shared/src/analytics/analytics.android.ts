@@ -11,8 +11,10 @@ import type { AnalyticsApi } from './analyticsApi';
 import {
   campaignAccessedProperties,
   createCampaignTouchStore,
+  createSignupRecords,
+  decideEvidence,
+  decideHeldTouchForExistingAccount,
   INSTALL_REFERRER_READ_KEY,
-  isEstablishedAccount,
   parseCampaignLink,
   parseInstallReferrer,
   resolveAttributionSettings,
@@ -332,61 +334,71 @@ function campaignStore() {
   });
 }
 
-function readEstablishedAccount(): boolean {
-  try {
-    return isEstablishedAccount(
-      firebaseAuth.currentUser?.metadata?.creationTime,
-      Date.now(),
-    );
-  } catch {
-    return false;
-  }
+function signupRecords() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const storage = require('@react-native-async-storage/async-storage').default;
+  return createSignupRecords({
+    storage,
+    now: () => Date.now(),
+    expiryMs: attributionSettings().expiryMs,
+  });
 }
 
-function sendCampaignAccessed(touch: CampaignTouch): void {
-  getSession()?.trackForCurrent(() => ({
+/** The launch link exists from the start of the process. */
+const PROCESS_STARTED_AT = Date.now();
+
+function sendCampaignAccessed(uid: string, touch: CampaignTouch): void {
+  getSession()?.trackForUser(uid, () => ({
     event: 'campaign_accessed',
     properties: campaignAccessedProperties(touch),
   }));
 }
 
-async function noteCampaignLink(url: unknown): Promise<void> {
+/** Acquisition evidence for an account whose signup_completed already went out. */
+async function sendLateAcquisition(uid: string, touch: CampaignTouch): Promise<void> {
+  const records = signupRecords();
+  const record = await records.read(uid);
+  if (!record || record.attributed) return;
+  await records.write(uid, { ...record, attributed: true });
+  const properties = signupAttributionProperties(touch);
+  getSession()?.trackForUser(uid, () => ({
+    event: 'acquisition_attributed',
+    onceKey: 'acquisition_attributed',
+    properties,
+  }));
+  getSession()?.setPersonForUser(uid, {}, properties);
+}
+
+async function noteEvidence(touch: CampaignTouch, observedAt: number): Promise<void> {
+  const uid = currentUid();
+  const decision = decideEvidence({
+    signedIn: uid !== null,
+    touch,
+    observedAt,
+    signup: uid ? await signupRecords().read(uid) : null,
+  });
+  if (decision === 'hold') await campaignStore().save(touch);
+  else if (uid && decision === 'campaign_accessed') sendCampaignAccessed(uid, touch);
+  else if (uid && decision === 'acquisition_attributed') await sendLateAcquisition(uid, touch);
+}
+
+async function noteCampaignLink(url: unknown, observedAt: number): Promise<void> {
   try {
     const touch = parseCampaignLink(url, attributionSettings());
-    if (!touch) return;
-    if (currentUid() && readEstablishedAccount()) {
-      sendCampaignAccessed(touch);
-      return;
-    }
-    await campaignStore().save(touch);
+    if (touch) await noteEvidence(touch, observedAt);
   } catch {
     // Analytics must never interrupt the product flow.
   }
 }
 
-/** A touch held from before login, for an account it cannot have created. */
-async function settleHeldCampaignTouch(): Promise<void> {
-  try {
-    if (!currentUid() || !readEstablishedAccount()) return;
-    const touch = await campaignStore().consume();
-    // The referrer describes the install, not a visit by this existing account.
-    if (touch && touch.method !== 'install_referrer') sendCampaignAccessed(touch);
-  } catch {
-    // Analytics must never interrupt the product flow.
-  }
+/** Held evidence becomes acquisition; the record judges evidence that comes later. */
+async function consumeSignupAttribution(uid: string): Promise<AnalyticsProperties | null> {
+  const touch = await campaignStore().consume();
+  await signupRecords().write(uid, { at: Date.now(), attributed: touch !== null });
+  return touch ? signupAttributionProperties(touch) : null;
 }
 
-async function applySignupAttribution(uid: string): Promise<void> {
-  try {
-    const touch = await campaignStore().consume();
-    if (touch) {
-      getSession()?.setPersonForUser(uid, {}, signupAttributionProperties(touch));
-    }
-  } catch {
-    // Analytics must never interrupt the product flow.
-  }
-}
-
+/** Read once per install, whatever the auth state; `noteEvidence` decides. */
 async function readInstallReferrerOnce(): Promise<void> {
   if (!attributionSettings().installReferrerEnabled) return;
   try {
@@ -394,12 +406,11 @@ async function readInstallReferrerOnce(): Promise<void> {
     const storage = require('@react-native-async-storage/async-storage').default;
     if (await storage.getItem(INSTALL_REFERRER_READ_KEY)) return;
     await storage.setItem(INSTALL_REFERRER_READ_KEY, '1');
-    // An account already here was not acquired by this read.
-    if (currentUid()) return;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const Application = require('expo-application');
     const touch = parseInstallReferrer(await Application.getInstallReferrerAsync());
-    if (touch) await campaignStore().save(touch);
+    // The install precedes any signup made with it.
+    if (touch) await noteEvidence(touch, 0);
   } catch {
     // Not installed from Play, or the service is unavailable: no evidence.
   }
@@ -440,19 +451,18 @@ export const startAnalytics: AnalyticsApi['startAnalytics'] = () => {
         active.noteAuthChange();
         openTracker.noteAuthReady();
         locationPermissions.replayPerson();
-        void settleHeldCampaignTouch();
       }),
     );
     void readLocationPermissions();
 
     const linkSub = Linking.addEventListener('url', ({ url }) => {
-      void noteCampaignLink(url);
+      void noteCampaignLink(url, Date.now());
     });
     detachers.push(() => linkSub.remove());
     if (!attributionStarted) {
       attributionStarted = true;
       void Linking.getInitialURL()
-        .then(noteCampaignLink)
+        .then((url) => noteCampaignLink(url, PROCESS_STARTED_AT))
         .catch(() => {});
       void readInstallReferrerOnce();
     }
@@ -471,10 +481,24 @@ export const startAnalytics: AnalyticsApi['startAnalytics'] = () => {
 };
 
 export const trackSignupCompleted: AnalyticsApi['trackSignupCompleted'] = safely((uid) => {
-  const active = getSession();
-  if (!active) return;
-  active.trackSignupCompleted(uid);
-  void applySignupAttribution(uid);
+  getSession()?.trackSignupCompleted(uid, () =>
+    consumeSignupAttribution(uid).catch(() => null),
+  );
+});
+
+/** An unknown result (no `isNewUser`) never reaches here, so held evidence stays held. */
+export const noteExistingAccountSignIn: AnalyticsApi['noteExistingAccountSignIn'] = safely((
+  uid,
+) => {
+  if (!getSession()) return;
+  void campaignStore()
+    .consume()
+    .then((touch) => {
+      if (touch && decideHeldTouchForExistingAccount(touch) === 'campaign_accessed') {
+        sendCampaignAccessed(uid, touch);
+      }
+    })
+    .catch(() => {});
 });
 
 export const trackProfileCompleted: AnalyticsApi['trackProfileCompleted'] = safely((uid) => {
@@ -566,7 +590,7 @@ export const trackSocialLinked: AnalyticsApi['trackSocialLinked'] = safely((
     event: 'social_linked',
     properties: {
       social_platform: name,
-      connection_type: connectionType,
+      link_type: connectionType,
       profile_type: mode,
     },
   }));
