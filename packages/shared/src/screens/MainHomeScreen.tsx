@@ -1,4 +1,6 @@
 // MainHomeScreen — Visibility & Discovery (final UI)
+import { trackVisibilityChanged } from '../analytics/analytics';
+import { withOwnExternalFlow } from '../analytics/ownExternalFlow.ts';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -374,7 +376,7 @@ export default function MainHomeScreen({ navigation }: Props) {
               { text: t('common.actions.cancel'), style: 'cancel' },
               {
                 text: t('settings.backgroundVisibility.openSettings'),
-                onPress: () => void Linking.openSettings(),
+                onPress: () => void withOwnExternalFlow(() => Linking.openSettings()),
               },
             ],
           );
@@ -385,7 +387,7 @@ export default function MainHomeScreen({ navigation }: Props) {
         if (requiresSettingsForBackgroundPermission(Platform.Version)) {
           pendingBgEnableFromSettingsRef.current = true;
           setBgDisclosureVisible(false);
-          void Linking.openSettings();
+          void withOwnExternalFlow(() => Linking.openSettings());
           return;
         }
 
@@ -408,7 +410,7 @@ export default function MainHomeScreen({ navigation }: Props) {
           setProfile((p) => ({ ...p, bgVisible: true }));
         } else if (result.reason === 'needs-settings') {
           pendingBgEnableFromSettingsRef.current = true;
-          void Linking.openSettings();
+          void withOwnExternalFlow(() => Linking.openSettings());
         } else if (
           result.reason === 'background-denied' ||
           result.reason === 'foreground-denied'
@@ -894,7 +896,7 @@ export default function MainHomeScreen({ navigation }: Props) {
         text: openSettingsLabel,
         onPress: () => {
           pendingVisibilityIntentRef.current = true;
-          void Linking.openSettings();
+          void withOwnExternalFlow(() => Linking.openSettings());
         },
       },
     ]);
@@ -960,6 +962,7 @@ export default function MainHomeScreen({ navigation }: Props) {
       if (outcome.ok === true) {
         // Explicit activate confirms this session; runtime may start below.
         confirmPublicationSession(confirmTicket);
+        trackVisibilityChanged(uid, true);
         setRuntimeConfirmationFailed(false);
       }
       if (outcome.ok === false) {
@@ -978,7 +981,7 @@ export default function MainHomeScreen({ navigation }: Props) {
                 text: t('settings.backgroundVisibility.openSettings'),
                 onPress: () => {
                   pendingVisibilityIntentRef.current = true;
-                  void Linking.openSettings();
+                  void withOwnExternalFlow(() => Linking.openSettings());
                 },
               },
             ],
@@ -991,7 +994,7 @@ export default function MainHomeScreen({ navigation }: Props) {
               { text: t('common.actions.cancel'), style: 'cancel' },
               {
                 text: t('settings.backgroundVisibility.openSettings'),
-                onPress: () => void Linking.openSettings(),
+                onPress: () => void withOwnExternalFlow(() => Linking.openSettings()),
               },
             ],
           );
@@ -1066,6 +1069,7 @@ export default function MainHomeScreen({ navigation }: Props) {
         );
         return;
       }
+      trackVisibilityChanged(uid, false);
       setProfile((p) => ({ ...p, visibility: false }));
       setLastConfirmedVisibility(false);
       void recordConfirmedVisibility(uid, false, AsyncStorage);
