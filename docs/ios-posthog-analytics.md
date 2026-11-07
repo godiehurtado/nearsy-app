@@ -77,7 +77,7 @@ The `beta` profile is in `apps/nearsy-ios/eas.json`. It extends `production`, so
    - **History checked on 2026-11-07 with `eas build:list`:** the highest iOS build is 2.0.10 (72), from the `testflight-contacts-diagnostics` profile on another branch. 2.0.9 already has builds up to 71. So Beta proposes **2.0.10 (73)**.
    - **Still to confirm in App Store Connect:** that no build above 72 was uploaded outside EAS (Xcode or Transporter), and that the 2.0.10 version is still open for builds. If either fails, change only the two values in the `beta` profile.
 
-**Commands, when authorized (not run):**
+**Commands:**
 
 ```bash
 cd apps/nearsy-ios
@@ -86,6 +86,19 @@ eas submit --platform ios --profile production --id <BUILD_ID_FROM_THE_BETA_BUIL
 ```
 
 Use `--id` with the Beta build's ID rather than `--latest`, so a different build cannot be submitted by mistake. The only submit profile is `production`, which uploads to App Store Connect. The build then appears in TestFlight.
+
+**First Beta, 2.0.10 (73), distributed on 2026-11-07:**
+
+| Item | Value |
+|---|---|
+| EAS build | `95f13034-2b81-40e2-8488-3e31b23fb9d6`, profile `beta`, distribution store |
+| Commit built | `b4e7c7fc566f2166346c2a76bd8a28070e7cb23b` |
+| EAS submission | `ec50716f-a8aa-49c5-9d81-b8f54f2bca2a` |
+| App Store Connect app | `6759302206` (`com.nearsy.app.client`) |
+| Later commit | `7384762` sets `ascAppId` in the `production` submit profile. It does not change the binary |
+| Status | Processed by Apple and available in TestFlight |
+
+Distribution is complete. Physical QA and receipt of events in PostHog are still pending.
 
 **Do not promote a Beta binary to the App Store.** The channel is compiled into the bundle, so every store user would be reported as `is_test_user=true`. Build the store version from the `production` profile.
 
@@ -453,7 +466,7 @@ Still needed from each provider: matching method and data sent, ATT by flow, App
 
 ## QA on a physical iPhone
 
-Not run yet. A successful `expo export` is a bundle check only: it does not show that the native build compiles.
+Not run yet; the first Beta build is available in TestFlight. A successful `expo export` is a bundle check only: it does not show that the native build compiles.
 
 **Priority: TestFlight Beta on Firebase production.** It is the validation that counts. A Dev Client run is optional and is not a prerequisite for it.
 
