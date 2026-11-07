@@ -582,9 +582,9 @@ describe('builds that must send nothing', () => {
       NEARSY_FIREBASE_ENV: 'development',
     })],
   ];
-  it('a Beta build without a valid token fails clearly, without printing it', () => {
+  it('a Beta build without a valid token fails clearly on the EAS worker, without printing it', () => {
     for (const token of [undefined, '', 'phx_personal_api_key_shape_000000', 'phc_short']) {
-      const env: Record<string, string> = { ...profileEnv('beta') };
+      const env: Record<string, string> = { ...profileEnv('beta'), EAS_BUILD: 'true' };
       if (token !== undefined) env.NEARSY_POSTHOG_TOKEN = token;
       assert.throws(
         () => extrasFor(env),
@@ -593,6 +593,20 @@ describe('builds that must send nothing', () => {
           (!token || !error.message.includes(token)),
       );
     }
+  });
+
+  it('a local config read only warns, and keeps Beta without a token', () => {
+    const warned: unknown[] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => void warned.push(args.join(' '));
+    try {
+      const extra = extrasFor(profileEnv('beta'));
+      const beta = (extra.nearsyAnalytics as { beta?: { token?: string } }).beta;
+      assert.equal(beta?.token, '');
+    } finally {
+      console.warn = original;
+    }
+    assert.ok(warned.some((line) => String(line).includes('NEARSY_POSTHOG_TOKEN')));
   });
 
   it('builds that do not declare Beta still work without the token', () => {

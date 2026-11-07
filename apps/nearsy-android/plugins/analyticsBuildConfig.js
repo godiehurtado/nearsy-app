@@ -46,13 +46,17 @@ function resolveAnalyticsExtras(env) {
     environment === 'production' &&
     text(env, 'NEARSY_ANALYTICS_DISTRIBUTION_CHANNEL') === 'beta' &&
     !ambiguous;
-  // A declared Beta build without its token would ship silently off: stop the build.
+  // A declared Beta build without its token would ship silently off. The EAS
+  // worker has the EAS variables, so the build stops there. Commands that only
+  // read the config locally (eas config, build:version:get) do not receive them,
+  // so they only warn, and the token stays out of that config.
   if (betaEnabled && !/^phc_[A-Za-z0-9_-]{20,}$/.test(text(env, 'NEARSY_POSTHOG_TOKEN'))) {
-    throw new Error(
+    const message =
       '[analytics] Beta build declared without a valid NEARSY_POSTHOG_TOKEN. ' +
-        'Create it in the EAS "production" environment with visibility Sensitive. ' +
-        'The value is never printed.',
-    );
+      'Create it in the EAS "production" environment with visibility Sensitive. ' +
+      'The value is never printed.';
+    if (flag(env, 'EAS_BUILD')) throw new Error(message);
+    console.warn(message);
   }
   const appOpenedMinBackgroundSec = optionalNumber(
     env,
