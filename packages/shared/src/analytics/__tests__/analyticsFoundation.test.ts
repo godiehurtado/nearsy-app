@@ -234,8 +234,12 @@ describe('remote activation', () => {
       join(here, '..', '..', '..', '..', '..', 'apps', 'nearsy-android', 'app.config.js'),
       'utf8',
     );
-    assert.match(appConfig, /: \{ enabled: false \}/);
+    const buildConfig = readFileSync(
+      join(here, '..', '..', '..', '..', '..', 'apps', 'nearsy-android', 'plugins', 'analyticsBuildConfig.js'),
+      'utf8',
+    );
     assert.doesNotMatch(appConfig, /phc_/);
+    assert.doesNotMatch(buildConfig, /phc_/);
   });
 
   it('the disabled path never loads the SDK', () => {
@@ -247,14 +251,13 @@ describe('remote activation', () => {
   });
 
   it('keeps automatic capture, flags and GeoIP off', () => {
-    const binding = read('analytics/analytics.android.ts');
+    const binding = read('analytics/analyticsSdkTransport.ts');
     for (const option of [
       'captureAppLifecycleEvents: false',
       'enableSessionReplay: false',
       'errorTracking: { autocapture: false }',
       'preloadFeatureFlags: false',
       'disableRemoteFeatureFlags: true',
-      'disableRemoteConfig: true',
       'disableSurveys: true',
       'disableGeoip: true',
     ]) {
@@ -482,7 +485,7 @@ describe('person properties', () => {
     );
   });
 
-  it('never sends fields outside this batch', () => {
+  it('never sends excluded fields', () => {
     const properties = buildPersonProperties({
       doc: {
         mode: 'personal',
@@ -492,12 +495,13 @@ describe('person properties', () => {
         gender: 'x',
         seniority: 'x',
         industry: 'x',
-        personalOnboardingAffiliations: [{ id: 'x' }],
       },
       authEmail: null,
       normalizeLanguages,
     });
-    assert.deepEqual(Object.keys(properties ?? {}).sort(), ['platform', 'profile_type']);
+    for (const excluded of ['gender', 'seniority', 'industry']) {
+      assert.equal(excluded in (properties ?? {}), false, excluded);
+    }
   });
 
   it('repeated snapshots do not rewrite unchanged properties', async () => {

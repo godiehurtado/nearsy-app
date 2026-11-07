@@ -10,6 +10,10 @@
  */
 const appJson = require('./app.json');
 const {
+  resolveAnalyticsExtras,
+  resolveAppLinkIntentFilters,
+} = require('./plugins/analyticsBuildConfig');
+const {
   FACEBOOK_STATIC_PLUGINS,
   resolveFacebookAuthConfig,
   withNearsyFacebookAuth,
@@ -58,19 +62,11 @@ if (!facebookAuth.configured) {
 /**
  * PostHog remote capture is off by default in every profile, production
  * included. It needs NEARSY_ANALYTICS_ENABLED=true, NEARSY_ANALYTICS_ENV and
- * NEARSY_POSTHOG_TOKEN. The token is never embedded unless capture is enabled.
+ * NEARSY_POSTHOG_TOKEN. Tokens are never embedded unless their mode is enabled.
+ * Each setting is validated again at runtime; see analyticsConfig.ts.
  */
-const analyticsEnabled =
-  String(process.env.NEARSY_ANALYTICS_ENABLED || '')
-    .trim()
-    .toLowerCase() === 'true';
-const nearsyAnalytics = analyticsEnabled
-  ? {
-      enabled: true,
-      environment: String(process.env.NEARSY_ANALYTICS_ENV || '').trim(),
-      token: String(process.env.NEARSY_POSTHOG_TOKEN || '').trim(),
-    }
-  : { enabled: false };
+const nearsyAnalytics = resolveAnalyticsExtras(process.env);
+const nearsyAppLinkFilters = resolveAppLinkIntentFilters(process.env);
 
 const expoConfig = {
   ...appJson.expo,
@@ -78,6 +74,14 @@ const expoConfig = {
   android: {
     ...appJson.expo.android,
     googleServicesFile,
+    ...(nearsyAppLinkFilters.length > 0
+      ? {
+          intentFilters: [
+            ...(appJson.expo.android?.intentFilters || []),
+            ...nearsyAppLinkFilters,
+          ],
+        }
+      : {}),
   },
   extra: {
     ...(appJson.expo.extra || {}),
