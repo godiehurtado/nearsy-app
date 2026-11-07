@@ -7,12 +7,13 @@ Tracking Plan v1, Android only. Remote sending is off in every build, production
 | Level | State |
 |---|---|
 | Implemented | Everything in this document, except what "Pending" lists |
-| Tested with mocks | 150+ tests in `packages/shared/src/analytics/__tests__` |
-| Real SDK executed | Only under Node, with `react-native` stubbed and requests intercepted (`analyticsRealSdk.test.ts`) |
+| Tested with mocks | The suites in `packages/shared/src/analytics/__tests__` |
+| Real SDK executed | Only under Node, with `react-native` stubbed and the network scripted (`analyticsRealSdk.test.ts`, `analyticsBetaTransport.test.ts`). Not under Hermes, with no native module |
 | Tested on a device | No |
 | Received in PostHog | No. Nothing has been sent |
 
-The logs of `inspect` mode show what the app asks for. They do not prove that the SDK works.
+The logs of `inspect` mode show what the app asks for. They do not prove that the SDK works. The
+scripted runs prove how the SDK reacts to answers. They do not prove what PostHog answers.
 
 ## Modes
 
@@ -23,55 +24,135 @@ development builds and to `off` in release builds.
 |---|---|---|---|---|
 | `off` | Release | Not loaded | None | Default |
 | `inspect` | Dev | Not loaded | None | Default in dev; sanitized logs |
-| `sdk_intercept` | Dev Client | Real | None | `NEARSY_ANALYTICS_SDK_INTERCEPT=true` |
-| `smoke` | Dev Client | Real | PostHog | See "Smoke" below. **Not activated** |
+| `sdk_intercept` | Dev Client | Real | None | Optional local tool: `NEARSY_ANALYTICS_SDK_INTERCEPT=true` |
+| `beta` | Release | Real | PostHog | See "Beta" below. **Not activated** |
 | `remote` | Release | Real | PostHog | See "Remote" below. **Not activated** |
+
+A build that asks for both `beta` and `remote` resolves to `off` (`ambiguous_mode`) and carries no
+token. A release build that asked for sending and resolved to `off` logs the reason, never a value.
+
+### Beta
+
+Beta is tested through the Google Play internal track, on production Firebase, against the PostHog
+project Nearsy 716015 (US Cloud), with real Firebase UIDs and no prefix. It needs no `nearsy-dev`, no
+synthetic domain and no `sdk_intercept`.
+
+Exact configuration of the future build, as EAS build variables. The token stays out of Git:
+
+| Variable | Value |
+|---|---|
+| `NEARSY_ANALYTICS_BETA_ENABLED` | `true` |
+| `NEARSY_ANALYTICS_DISTRIBUTION_CHANNEL` | `beta` |
+| `NEARSY_ANALYTICS_ENV` | `production` |
+| `NEARSY_POSTHOG_TOKEN` | Project token of Nearsy 716015 (`phc_...`) |
+| `NEARSY_FIREBASE_ENV` | `production` |
+| `NEARSY_DEV_CLIENT` | `false` |
+| `NEARSY_ANALYTICS_ENABLED` | Unset. General capture stays off |
+
+Nothing else in code changes. Requirements checked at runtime: a release build, no Dev Client, and
+`nearsy-pj` both in the build setting and in the **initialized Firebase app**. The token only shows a
+valid format: nothing in the app can confirm it belongs to project 716015, so check that once.
+
+Rules that follow from it:
+
+- `distribution_channel=beta` is **declared by the build**. The app does not detect the Play track.
+- **Do not promote a Beta build to production in Play.** Promotion keeps the same binary, so its
+  events would stay marked as tests. General capture needs its own build.
+- The current `production` EAS profile sets none of these variables, and this branch does not change
+  `eas.json`.
+
+### Installation and account are different things
+
+| | Installation | Account |
+|---|---|---|
+| Where | `is_test_user=true` and `distribution_channel=beta` on **each event** | `is_test_user=true` on the **person**, with set_once |
+| Decided by | The build | Signing in on a Beta build |
+| Reaches | Every event of this install, anonymous ones and any account | Only the signed-in account |
+| Means | "This event came from a Beta build" | "This account was used on a Beta build at least once" |
+| Lasts | While this build is installed | Permanently, unless changed by hand in PostHog |
+
+What happens:
+
+| Situation | Result |
+|---|---|
+| App opened, nobody signed in | Anonymous events with both marks. No person is created |
+| Real account signs in on a Beta build | `$identify` with the real UID, then set_once of `is_test_user`. That account is now a test person, and its anonymous events of this install join it |
+| App restarts with the session | Same person. Set_once again, once per process, without a new `$identify` |
+| Logout | `reset()`: new anonymous id. The next anonymous events belong to nobody |
+| Account B signs in on the same device | B gets its own person and its own mark. Nothing of A travels to B: no email, no list, no mode memory. B is marked because B used the build |
+| The same account on a production install | Its events carry no marks, and that build writes no classification. The person stays `true` |
+| A Beta install is updated to a general build | New events lose the marks, although the SDK persisted them. Events already queued keep them |
+
+No code path can write `is_test_user=false`: general builds do not write the property, and the outgoing
+filter removes a false value from any person update.
+
+**Consequence to decide when analyzing:** a real user who signs in once on a tester's device stays
+marked as a person. To measure by build, filter on the event property. To drop test people entirely,
+filter on the person property as well, knowing that this also drops that account's production events.
+Undoing a mark is manual, in PostHog. This app holds no administrative credentials.
 
 ### `sdk_intercept`
 
-A subclass of the real PostHog class overrides `fetch`, the only method through which the SDK
-reaches the network. Queueing, flush, identify, `before_send` and sessions run for real, and every
-request ends in a local log. The host is a `.invalid` name as a second barrier, and the token is a
-placeholder. It needs a Dev Client on the development Firebase, and it wins over `smoke`.
+Optional, local, and not needed for Beta. It executes the real SDK with simulated answers: queueing,
+flush, identify, `before_send` and sessions run for real, and every request ends in a local log. The
+host is a `.invalid` name as a second barrier, and the token is a placeholder. It needs a Dev Client
+on the development Firebase. Only here do requests get a simulated success.
 
 ```bash
 NEARSY_ANALYTICS_SDK_INTERCEPT=true NEARSY_FIREBASE_ENV=development NEARSY_DEV_CLIENT=true pnpm --filter nearsy-android exec expo start --dev-client --port 8082
 ```
 
-Logs: `[analytics:sdk_intercept] /batch/ <event> props=[names] person=[names]`. Names only.
+Logs: `[analytics:sdk_intercept] /batch/ <event> props=[names] person=[names] unset=[names]`. Names only.
 
-### Network guard, in every mode
+### Transport while sending (`beta`, `remote`)
 
-SDK 4.85.3 requests `/array/{token}/config` at startup and has no option to stop it; the
-`disableRemoteConfig` option used by the first batch does not exist. The guard answers that request
-and any other path locally, so only `/batch/` can ever leave.
+Verified in SDK 4.85.3 and `@posthog/core` 1.64.1, in the installed code and in the public docs.
 
-### Smoke
+| Request | Needed | Treatment |
+|---|---|---|
+| `POST {host}/batch/` | Yes: all events and person updates | Real answer reaches the SDK |
+| `GET us-assets.i.posthog.com/array/{token}/config` | The SDK always sends it at startup | **Real**, see below |
+| `POST /flags/` | No | Not sent: `disableRemoteFeatureFlags`, `preloadFeatureFlags: false` |
+| `GET /api/surveys/` | No | Not sent: `disableSurveys` |
+| `/i/v1/logs`, `metrics`, `traces` | No | The app never uses them |
+| Anything else | No | Refused with an error, reported as `request_blocked` |
 
-Prepared and off. All of this must hold at runtime:
+Remote config:
 
-- `__DEV__`, a Dev Client, and `NEARSY_FIREBASE_ENV=development`.
-- The **initialized Firebase app** reports project `nearsy-dev`, not only the build setting.
-- `NEARSY_ANALYTICS_SMOKE_ENABLED=true` and a valid `NEARSY_ANALYTICS_SMOKE_TOKEN`.
-- `NEARSY_ANALYTICS_SMOKE_EMAIL_SUFFIX`, ending in a reserved domain (`.test`, `.example`,
-  `.invalid`), so a suffix such as `@gmail.com` is rejected.
+- It cannot be disabled. `disableRemoteConfig` is declared in the types, marked deprecated and no-op,
+  and no implementation reads it. **Correction:** the first batch passed it believing it worked, and
+  a later report said it did not exist. It exists and does nothing.
+- It carries the project token and no person data.
+- **The earlier decision was wrong and is reverted.** Answering it locally with `{}` made the SDK turn
+  off compression, because the answer lists no supported format. The real answer now reaches the SDK.
+- The answer cannot turn on what the app declines. A test answers with flags, surveys, replay and
+  error tracking all on, and nothing but the two requests above leaves.
+- It failing does not stop events. It is reported as `config_failed`.
 
-Isolation:
+Errors are not hidden. The SDK sees each real status, and `[analytics:transport]` logs the kind and the
+status, without URL, token or payload.
 
-- Only an account whose email has that suffix gets a person, as `smoke_nearsy_dev_<uid>`. Any other
-  account sends nothing, not even anonymous events.
-- Nothing is sent while signed out, and `environment` is `smoke_nearsy_dev`.
-- Persistence is in memory: no queue or identity stays on the device.
+What the SDK does with each answer, run with the real class:
 
-**A separate PostHog project is still the better isolation.** With the production project, smoke
-persons and events share its totals unless filtered by `environment`. No administrative credential
-is used or needed.
+| Answer | Result |
+|---|---|
+| 2xx | Removed from the queue |
+| 408, 429, 5xx | Retried, same event uuid. Default 3 retries, 3 s apart. **After the last retry the batch is dropped** |
+| Other 4xx (invalid token, for example) | **Dropped, no retry**. What follows still goes out |
+| 413 | Batch split, no loss |
+| Network failure | Stays queued for the next flush |
+| Process restart | Queue and identity survive on storage, once written |
+
+Disk writes are not immediate, so a kill right after an event can lose it. Options also off because the
+app does not use them: lifecycle events, replay, error autocapture, GeoIP, default person properties for
+flags, and push subscriptions and opens. The last two matter: they default to true, and with the native
+plugin they would send outside `before_send`. That plugin is not installed.
 
 ### Remote
 
 Needs `NEARSY_ANALYTICS_ENABLED=true`, `NEARSY_ANALYTICS_ENV=production`, a valid
 `NEARSY_POSTHOG_TOKEN`, production Firebase, no Dev Client and a release build. `preview` resolves
-to `off`, because it uses production UIDs. A token enters the build only when its mode can resolve.
+to `off` unless it is declared as Beta. A token enters the build only when its mode can resolve.
 
 ## Contract
 
@@ -80,7 +161,8 @@ not list. SDK `$` keys and the technical properties stay. The app does not send 
 screens, replay, exceptions, flags, surveys or GeoIP.
 
 Every event also carries `platform`, `app_version`, `app_build`, `environment` and
-`tracking_plan_version`.
+`tracking_plan_version`. Beta builds add `is_test_user=true` and `distribution_channel=beta`, with
+`environment=production`. Other builds remove those two.
 
 | Event | Properties | Fires |
 |---|---|---|
@@ -100,10 +182,8 @@ Every event also carries `platform`, `app_version`, `app_build`, `environment` a
 
 ### Person properties (active mode)
 
-An unknown value is omitted. A confirmed empty one clears the stored value. An absent list or social
-bag in the complete profile document counts as empty, as the product reads it, which also clears the
-previous mode's values after a switch. Legacy interests or affiliations, which have no stable ids, stay
-unknown, so a user with only legacy rows can keep the previous mode's values until they are migrated.
+A confirmed empty value is sent explicitly (`[]`, `null`). An unknown one is never written as empty.
+See "Changing mode" for what happens to its stored value.
 
 | Property | Source |
 |---|---|
@@ -121,6 +201,7 @@ unknown, so a user with only legacy rows can keep the previous mode's values unt
 | `social_platforms_verified` | Confirmed Identity reads |
 | `socials_connected`, `has_socials` | Union of both; only when both are known |
 | `foreground_location_granted`, `background_location_granted` | Current permission |
+| `is_test_user` | Beta builds only, set_once, always `true` |
 | `signup_source`, `signup_campaign`, `signup_content`, `signup_tool`, `attribution_method` | set_once, confirmed signup with evidence |
 
 Details:
@@ -133,6 +214,39 @@ Details:
 - A custom social network reports only `custom`; its name is free text.
 - Verified status comes from confirmed reads only. A failed read also clears the card, so
   `onConnectedChange` cannot tell "not linked" from "unknown" and is not used.
+
+### Changing mode
+
+Profile documents are never modified or migrated by analytics. For each property of the active mode:
+
+| Properties | State in the document | Action |
+|---|---|---|
+| `profile_type` | Valid mode | Set |
+| `occupation` | Value in the mode, or at top level (as the product reads it) | Set |
+| | Blank string | `null` |
+| | No string anywhere | **Unset** |
+| `interests*`, `affiliations*` | Modern rows, or an empty list | Set, `[]` and `0` when empty |
+| | No list and no legacy rows | Set as empty, as the product reads it |
+| | Only legacy rows, which have no stable ids | **Unset**, all six of each family |
+| `social_platforms_manual` | Valid or absent bag | Set |
+| | Malformed bag | **Unset**, with `socials_connected` and `has_socials` |
+| `social_platforms_verified`, `socials_connected`, `has_socials` | All four reads confirmed | Set |
+| | Read pending or failed, **same mode as the last update** | Omitted: the last confirmed value stays |
+| | Read pending or failed, **another mode or none known** | **Unset**, until a read confirms |
+| All of the above | Document without a valid mode | **Unset** only if this device wrote for another mode |
+| All | Document could not be read | Nothing changes, `profile_type` included |
+
+`languages`, countries, `age_range` and `email` belong to the account, not to the mode.
+
+- **Unset means "unknown".** The property disappears from the person, and no value stands in for it.
+  It is a `$set` event with `$unset`.
+- The mode last written is kept per account in local storage (`NEARSY_ANALYTICS_PERSON_MODE:<uid>`), so
+  a restart can tell a failed read in the same mode from a switch. If it cannot be read, it counts as a
+  switch.
+- **Limit:** with two devices, one that still remembers the same mode cannot see a switch and back made
+  on the other. If its verified reads also fail, those three properties can stay out of date until a
+  read succeeds.
+- A switch can make verified networks briefly absent, between the update and the read that follows.
 
 ## Rules
 
@@ -197,20 +311,31 @@ Dedupe limits:
 
 ### Discovery and match
 
-**Provisional rule, for review.** `match_made` means compatibility discovered, not mutual acceptance.
-The mobile app emits it.
+**Decided rule.** `match_made` means compatibility discovered, not mutual acceptance. The mobile app
+emits it.
 
 - An entry is one mount of `NearbySearchScreen`. Returning from a profile is not an entry.
 - `load_time_sec` runs from the start of the attempt that succeeded, after the profile snapshot is
   ready. `people_shown` is the result count of that load, before any text filter. An error is not an
   empty success.
-- `match_made` fires for a card at least 50% visible, or an opened profile. Results that never appear,
-  and the 30-second alert polling, do not count.
-- One per profile, user and **SDK session**. Another session can count again. Refreshes and rerenders
-  do not multiply it.
-- **Assumption:** without a known score there is no `match_made`, because there is no compatibility to
-  report. `profile_viewed` and `match_social_tapped` still fire, without a score.
-- The other person's UID is only a local dedupe key. It is never sent, and `match_id` was not needed.
+- Fires for a card at least 50% visible, or an opened profile. Results that never appear, and the
+  30-second alert polling, do not count.
+- Needs a valid score, 0 to 100. Without one there is no `match_made`, because there is no compatibility
+  to report. `profile_viewed` and `match_social_tapped` still fire, without a score.
+- Ranges: `low` [0,50), `medium` [50,75), `high` [75,100].
+
+**Unit of count:** one profile, per user and per **SDK session**. So:
+
+- A card seen and then opened is one event, and `presented_in` keeps the first place.
+- Going back to a profile, a refresh or a rerender do not repeat it. A refresh creates no session.
+- `session_id` is the SDK's own. Another session counts the same profile again, so this is **not** a
+  count of unique pairs of people.
+- Another account on the device starts its own count, under its own person and session.
+- Delivery is what the SDK retries. Dedupe lives in the process, so a restart begins a new session anyway.
+
+**Deviation from the plan:** the plan lists `match_id`, and it is not sent. Nothing uses it, and a stable
+id would need the other person's UID or a hash of it. That UID is only a local dedupe key and never
+leaves the device. iOS and Functions should not expect `match_id` from Android.
 
 ### Alerts
 
@@ -252,9 +377,24 @@ Sources:
 | Account recreation | Identity and iOS | No permanent dedupe by UID is used here, and the iOS report differs. A recreated account counts as a new signup |
 | `data.alertId` on push | Functions | Optional field |
 | `event_cohort` | Server | Assigned by venue and window, not by link or date. The app does not send it |
-| Smoke run | Product | Decide on a separate PostHog project, create synthetic accounts, then authorize |
+| Beta activation | Product | Authorize; set the build variables of "Beta" in EAS; confirm the token is project 716015 |
 
 Out of scope: gender, seniority, industry, monetization, backfills, new Firestore rules or fields.
+
+## Unrelated hypothesis: Home, return from Settings
+
+**Pending reproduction. Not confirmed, not run, not fixed here, and not a blocker for PostHog.**
+
+Flow: Home, background visibility on, Android needs the Settings screen for that permission. The app
+sets `pendingBgEnableFromSettingsRef` and opens Settings
+(`packages/shared/src/screens/MainHomeScreen.tsx:388`, `:412`). The user grants it and returns.
+
+Suspicion: on return, the AppState handler has `if (!pendingVisibilityIntentRef.current) return;` at line
+1128, before the block that handles that ref at line 1154. With no pending visibility intent, that block
+would never run, so `bgVisible` would not be saved, even with the permission granted.
+
+To reproduce: visibility already on, background permission not granted, turn background on, grant
+"Allow all the time" in Settings, return. Then check whether the switch and `users/{uid}.bgVisible` update.
 
 ## Limitations
 
@@ -266,9 +406,10 @@ Out of scope: gender, seniority, industry, monetization, backfills, new Firestor
   minutes. A tap claimed while signed in is dropped if another account takes over.
 - `session_id` in `inspect` mode is a stand-in, not an SDK session.
 
-## QA on a physical Android device (Metro 8082)
+## QA on a physical Android device
 
-Use `nearsy-dev` test accounts only. Nothing here sends data remotely.
+Nothing in this part sends data remotely. It is optional before Beta, and useful to find problems
+early. On the development Firebase, with `nearsy-dev` test accounts:
 
 ```bash
 adb reverse tcp:8082 tcp:8082
@@ -283,7 +424,7 @@ it to compare with `inspect`.
 
 | Area | Step | Expected |
 |---|---|---|
-| SDK | Start | `[analytics:sdk_intercept] /batch/` lines; no external traffic |
+| SDK | Start | `/array/.../config` line, then `/batch/`; no external traffic |
 | Open | Cold start | One `app_opened` |
 | Open | Permission dialog or Google sign-in open over 30 s | No new `app_opened` |
 | Open | Home screen 30 s or more, then return | One `app_opened` |
@@ -297,6 +438,7 @@ it to compare with `inspect`.
 | CRJ | Lose network on a save | No event until it succeeds |
 | CRJ | Finish | `profile_completed`, with duration |
 | Person | Edit interests, add a custom one | Person update; custom text only in `*_custom` |
+| Person | Switch personal and professional, with data in each | Person update with the new mode's values; `unset=[...]` only for what is unknown |
 | Socials | Add Website, then edit it | One `social_linked` |
 | Socials | Connect YouTube, TikTok or X | One `social_linked`, `verified` |
 | Socials | Instagram pending, then verified | Event only once verified |
@@ -308,7 +450,8 @@ it to compare with `inspect`.
 | Discovery | Wait 2 minutes, pull to refresh | No new `discovery_opened` |
 | Discovery | Airplane mode, then retry | Only the retry reports |
 | Match | Scroll the list | One `match_made` per visible profile with a score |
-| Match | Open a profile, return, refresh | No multiplied events |
+| Match | Card seen, then open that profile | Still one `match_made` |
+| Match | Return, refresh | No multiplied events; same session |
 | Profile | Open, go to the gallery, return | One `profile_viewed` |
 | Social tap | Tap a network | `match_social_tapped` with `open_result` |
 | Alerts | Tap an inbox row | `alert_opened`, `inbox` |
@@ -321,17 +464,35 @@ it to compare with `inspect`.
 | Identity | Logout; A then B | `reset` before the next `$identify` |
 | Privacy | Any line | No email, occupation, custom text, UID or token |
 
+### After activation: Beta on Google Play
+
+This is the first run with the native SDK and with PostHog answering. It needs the authorization and
+the build of "Beta". In PostHog, activity of project 716015, filtered by `distribution_channel = beta`:
+
+| Step | Expected |
+|---|---|
+| Open the app signed out | `app_opened`, anonymous, with both marks and `environment=production` |
+| Sign in with the test account | `$identify` with the real UID; person has `is_test_user=true` |
+| Sign out, sign in with a second test account | Two persons; no data crossed; both marked |
+| Airplane mode, use the app, reconnect | Queued events arrive |
+| Close the app, reopen, check `app_version`, `app_build` | Real values of the Play build |
+| Any screen | No `$screen`, `Application Opened`, `$exception` or `$push_*` events |
+| Device logs | No `[analytics:transport]` with `batch_rejected`; no `[analytics] off:` line |
+
+If `[analytics] off: firebase_environment_mismatch` appears, the runtime project check did not see
+`nearsy-pj`; that read has only been checked by code, never on a device.
+
 ### Dev Client
 
 - **Installed client:** enough for `inspect` and `sdk_intercept`, if it includes `expo-application`.
   The SDK is JavaScript only and runs in memory here. Check that the first lines show `app_version`.
-- **New build needed:** App Links (a manifest change), and `remote`, whose settings are fixed at build
-  time. Install Referrer only if the installed client lacks `expo-application`.
+- **New build needed:** App Links (a manifest change), and `beta` and `remote`, whose settings are
+  fixed at build time. Install Referrer only if the installed client lacks `expo-application`.
 
 ## Tests
 
 From `packages/shared`:
 
 ```bash
-node --experimental-strip-types --test --test-force-exit src/analytics/__tests__/analyticsFoundation.test.ts src/analytics/__tests__/analyticsTrackingPlan.test.ts src/analytics/__tests__/analyticsRealSdk.test.ts
+node --experimental-strip-types --test --test-force-exit src/analytics/__tests__/analyticsFoundation.test.ts src/analytics/__tests__/analyticsTrackingPlan.test.ts src/analytics/__tests__/analyticsRealSdk.test.ts src/analytics/__tests__/analyticsBetaTransport.test.ts
 ```
