@@ -11,6 +11,8 @@
  *
  * TEMPORARY: Phone OTP remains out of scope (handled earlier in Register).
  */
+import { withOwnExternalFlow } from '../analytics/ownExternalFlow.ts';
+import { withLocationPermissionRequest } from '../analytics/ownExternalFlow.ts';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -186,7 +188,12 @@ import {
   collectSocialFieldErrors,
   type CrjSocialFieldErrors,
 } from '../social/socialLinkNormalize';
-import { trackProfileCompleted } from '../analytics/analytics';
+import {
+  noteOnboardingResume,
+  trackOnboardingStep,
+  trackProfileCompleted,
+  trackVisibilityChanged,
+} from '../analytics/analytics';
 import { ANDROID_OWNERSHIP_CARD_IDS } from '../social/postCrjSocialEditor';
 import type { ManualSocialLinkId } from '../social/manualSocialLinkCard';
 
@@ -662,6 +669,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
           interestIds: INTEREST_CATEGORY_IDS,
         });
         setStepIndex(resume.stepIndex);
+        if (uid) noteOnboardingResume(uid, resolveStep(resume.stepIndex).kind);
       }
     } finally {
       setHydrated(true);
@@ -678,28 +686,28 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   }, [hydrated, step.kind, applyNamePrefillFromPending]);
 
   async function pickFromLibrary() {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const perm = await withOwnExternalFlow(() => ImagePicker.requestMediaLibraryPermissionsAsync());
     if (!perm.granted) return;
-    const result = await ImagePicker.launchImageLibraryAsync({
+    const result = await withOwnExternalFlow(() => ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.85,
-    });
+    }));
     if (!result.canceled && result.assets?.[0]?.uri) {
       setWizardPhoto(result.assets[0].uri);
     }
   }
 
   async function takePhoto() {
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    const perm = await withOwnExternalFlow(() => ImagePicker.requestCameraPermissionsAsync());
     if (!perm.granted) return;
-    const result = await ImagePicker.launchCameraAsync({
+    const result = await withOwnExternalFlow(() => ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.85,
-    });
+    }));
     if (!result.canceled && result.assets?.[0]?.uri) {
       setWizardPhoto(result.assets[0].uri);
     }
@@ -1053,17 +1061,17 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
 
   async function addGalleryPhoto() {
     if (!uid || !mode || galleryItems.length >= CRJ_GALLERY_UX_CAP) return;
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const perm = await withOwnExternalFlow(() => ImagePicker.requestMediaLibraryPermissionsAsync());
     if (!perm.granted) {
       setGalleryPermissionDenied(true);
       return;
     }
     setGalleryPermissionDenied(false);
-    const result = await ImagePicker.launchImageLibraryAsync({
+    const result = await withOwnExternalFlow(() => ImagePicker.launchImageLibraryAsync({
       allowsEditing: true,
       quality: 0.8,
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-    });
+    }));
     if (result.canceled || result.assets.length === 0) return;
     const asset = result.assets[0]!;
     const localId = `local-${Date.now()}`;
@@ -1155,7 +1163,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       const current = await Location.getForegroundPermissionsAsync();
       let granted = current.granted || current.status === 'granted';
       if (!granted) {
-        const req = await Location.requestForegroundPermissionsAsync();
+        const req = await withLocationPermissionRequest('foreground', () => Location.requestForegroundPermissionsAsync());
         granted = req.granted || req.status === 'granted';
       }
       if (!granted) {
@@ -1174,7 +1182,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
             { text: t('common.actions.cancel'), style: 'cancel' },
             {
               text: t('settings.backgroundVisibility.openSettings'),
-              onPress: () => void Linking.openSettings(),
+              onPress: () => void withOwnExternalFlow(() => Linking.openSettings()),
             },
           ],
         );
@@ -1217,12 +1225,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
           reduceCrjLocationStep(s, { type: 'OPEN_SETTINGS' }),
         );
         pendingCrjBgSettingsRef.current = true;
-        void Linking.openSettings();
+        void withOwnExternalFlow(() => Linking.openSettings());
         return;
       }
 
       if (canRequestBackgroundViaDialog(apiLevel)) {
-        const bg = await Location.requestBackgroundPermissionsAsync();
+        const bg = await withLocationPermissionRequest('background', () => Location.requestBackgroundPermissionsAsync());
         setCrjLocation((s) =>
           reduceCrjLocationStep(s, {
             type: bg.status === 'granted' ? 'BG_GRANTED' : 'BG_DENIED',
@@ -1236,7 +1244,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         reduceCrjLocationStep(s, { type: 'OPEN_SETTINGS' }),
       );
       pendingCrjBgSettingsRef.current = true;
-      void Linking.openSettings();
+      void withOwnExternalFlow(() => Linking.openSettings());
     } catch {
       setCrjLocation((s) => reduceCrjLocationStep(s, { type: 'BG_ERROR' }));
     } finally {
@@ -1253,13 +1261,13 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       await commitStepIndex(stepIndex + 1);
       return;
     }
-    const req = await Notifications.requestPermissionsAsync({
+    const req = await withOwnExternalFlow(() => Notifications.requestPermissionsAsync({
       ios: {
         allowAlert: true,
         allowBadge: true,
         allowSound: true,
       },
-    });
+    }));
     const granted =
       req.granted ||
       req.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
@@ -1316,6 +1324,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
 
       if (activation.activated && uid) {
         markCrjVisibilityActivationSucceeded(uid);
+        trackVisibilityChanged(uid, true);
       } else if (uid) {
         // Contractual activate did not succeed — drop provisional before Home
         // can keep painting Active.
@@ -1370,11 +1379,20 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       return;
     }
     await persistInterests();
+    if (uid) {
+      trackOnboardingStep(uid, { step: 'interests', selected: selectedInterests });
+    }
     await commitStepIndex(stepIndex + 1);
   }
 
   async function leaveLastAffiliationCategory() {
     await persistAffiliations();
+    if (uid) {
+      trackOnboardingStep(uid, {
+        step: 'affiliations',
+        selected: selectedAffiliations,
+      });
+    }
     await commitStepIndex(stepIndex + 1);
   }
 
@@ -1422,6 +1440,15 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     try {
       setSubmitting(true);
       await persistSocialMedia();
+      if (uid) {
+        trackOnboardingStep(uid, {
+          step: 'socials',
+          manualValues: [
+            ...Object.values(socialDraftRef.current),
+            socialWebsiteRef.current,
+          ],
+        });
+      }
       setSocialFieldErrors({});
       await commitStepIndex(stepIndex + 1);
     } catch (e: any) {
@@ -1517,15 +1544,20 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       setSubmitting(true);
       if (step.kind === 'type') {
         await persistType();
+        if (uid && mode) {
+          trackOnboardingStep(uid, { step: 'profile_type', profileType: mode });
+        }
         await commitStepIndex(stepIndex + 1);
       } else if (step.kind === 'identity') {
         await persistName();
         await commitStepIndex(stepIndex + 1);
       } else if (step.kind === 'photo') {
         await persistPhoto();
+        if (uid) trackOnboardingStep(uid, { step: 'basics' });
         await commitStepIndex(stepIndex + 1);
       } else if (step.kind === 'details') {
         await persistDetails();
+        if (uid) trackOnboardingStep(uid, { step: 'about' });
         await commitStepIndex(stepIndex + 1);
       } else if (step.kind === 'interestsIntro') {
         await commitStepIndex(stepIndex + 1);
@@ -2300,7 +2332,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                 void retryGalleryPhoto(id);
               }}
               onOpenSettings={() => {
-                void Linking.openSettings();
+                void withOwnExternalFlow(() => Linking.openSettings());
               }}
             />
           )}
