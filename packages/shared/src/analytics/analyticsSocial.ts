@@ -32,13 +32,14 @@ function isHttpsUrl(value: unknown): boolean {
   return typeof value === 'string' && /^https:\/\/\S+$/i.test(value.trim());
 }
 
-/** Undefined when the document has no bag for this mode: unknown, not empty. */
+/** An absent bag is empty, as the product reads it; a malformed one is unknown. */
 export function readManualPlatforms(
   doc: Record<string, unknown>,
   mode: string,
 ): string[] | undefined {
   const bag = doc[mode === 'professional' ? 'socialLinksProfessional' : 'socialLinksPersonal'];
-  if (!bag || typeof bag !== 'object' || Array.isArray(bag)) return undefined;
+  if (bag === undefined || bag === null) return [];
+  if (typeof bag !== 'object' || Array.isArray(bag)) return undefined;
   const found = new Set<string>();
   for (const [key, value] of Object.entries(bag as Record<string, unknown>)) {
     const name = MANUAL_BAG_KEYS[key];
@@ -68,6 +69,44 @@ export function socialProperties(
     out.has_socials = connected.length > 0;
   }
   return out;
+}
+
+export const PENDING_VERIFICATION_KEY = 'NEARSY_ANALYTICS_PENDING_VERIFICATION';
+
+/**
+ * Verifications that were seen pending. Instagram ends by a later read, often
+ * after the card closed or the process died, so the marker must outlive both.
+ * A verified read without a marker is hydration, not a new connection.
+ */
+export function createPendingVerificationMarkers(storage: {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+}) {
+  async function read(): Promise<string[]> {
+    try {
+      const parsed = JSON.parse((await storage.getItem(PENDING_VERIFICATION_KEY)) ?? '[]');
+      return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+  return {
+    async mark(key: string): Promise<void> {
+      const keys = await read();
+      if (keys.includes(key)) return;
+      await storage.setItem(PENDING_VERIFICATION_KEY, JSON.stringify([...keys, key]));
+    },
+    /** True once per marker. */
+    async consume(key: string): Promise<boolean> {
+      const keys = await read();
+      if (!keys.includes(key)) return false;
+      await storage.setItem(
+        PENDING_VERIFICATION_KEY,
+        JSON.stringify(keys.filter((item) => item !== key)),
+      );
+      return true;
+    },
+  };
 }
 
 /** Verified status by mode and platform, for the signed-in account. */

@@ -3,7 +3,7 @@
  * Own Profile mode being edited. Start / Get / Unlink only. No inbox admin.
  */
 import { withOwnExternalFlow } from '../../analytics/ownExternalFlow.ts';
-import { noteSocialOwnership, trackSocialLinked } from '../../analytics/analytics';
+import { noteSocialOwnership, noteSocialVerificationPending } from '../../analytics/analytics';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -151,6 +151,10 @@ export function InstagramOwnershipCard({
         return true;
       }
       setVerified(presented.verified);
+      // Pending is not a connection: social_linked waits for the verified read.
+      if (presented.phase === 'pending') {
+        noteSocialVerificationPending(forMode, 'instagram');
+      }
       noteSocialOwnership(forMode, 'instagram', !!presented.verified);
       setChallenge(presented.challenge);
       setHint(presented.hint);
@@ -187,10 +191,6 @@ export function InstagramOwnershipCard({
         const wasPending = challengeRef.current != null;
         applyGetIfCurrent(gen, forMode, state);
         const presented = presentInstagramGetResponse(state);
-        // Verification ends here, by polling: pending is not a connection.
-        if (wasPending && presented.verified?.mode === forMode) {
-          trackSocialLinked('instagram', 'verified', forMode);
-        }
         if (
           options?.alertTerminal &&
           wasPending &&
@@ -305,6 +305,7 @@ export function InstagramOwnershipCard({
         return;
       }
       setVerified(null);
+      noteSocialVerificationPending(forMode, 'instagram');
       setChallenge(pending);
       setHint(null);
       setPhase('pending');

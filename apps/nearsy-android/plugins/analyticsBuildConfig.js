@@ -34,8 +34,21 @@ function resolveAppLinks(env) {
     : null;
 }
 
+function isDevelopmentClient(env) {
+  const firebase = text(env, 'NEARSY_FIREBASE_ENV').toLowerCase();
+  return (
+    flag(env, 'NEARSY_DEV_CLIENT') &&
+    (firebase === 'development' || firebase === 'dev')
+  );
+}
+
 function resolveAnalyticsExtras(env) {
-  const smokeEnabled = flag(env, 'NEARSY_ANALYTICS_SMOKE_ENABLED');
+  // A mode that would resolve to off must not carry its token into the build.
+  const smokeEnabled =
+    flag(env, 'NEARSY_ANALYTICS_SMOKE_ENABLED') && isDevelopmentClient(env);
+  const remoteEnabled =
+    flag(env, 'NEARSY_ANALYTICS_ENABLED') &&
+    text(env, 'NEARSY_ANALYTICS_ENV') === 'production';
   const appOpenedMinBackgroundSec = optionalNumber(
     env,
     'NEARSY_ANALYTICS_APP_OPENED_MIN_BG_SEC',
@@ -46,8 +59,8 @@ function resolveAnalyticsExtras(env) {
   );
   const appLinks = resolveAppLinks(env);
   return {
-    enabled: flag(env, 'NEARSY_ANALYTICS_ENABLED'),
-    ...(flag(env, 'NEARSY_ANALYTICS_ENABLED')
+    enabled: remoteEnabled,
+    ...(remoteEnabled
       ? {
           environment: text(env, 'NEARSY_ANALYTICS_ENV'),
           token: text(env, 'NEARSY_POSTHOG_TOKEN'),

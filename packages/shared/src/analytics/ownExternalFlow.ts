@@ -17,6 +17,10 @@ type LocationRequestListener = (
 
 let ownFlowListener: OwnFlowListener | null = null;
 let locationRequestListener: LocationRequestListener | null = null;
+const locationRequestsInFlight: Record<LocationPermissionKind, number> = {
+  foreground: 0,
+  background: 0,
+};
 
 export function setOwnExternalFlowListener(next: OwnFlowListener | null): void {
   ownFlowListener = next;
@@ -44,11 +48,21 @@ export async function withOwnExternalFlow<T>(run: () => T | Promise<T>): Promise
   }
 }
 
+export function isLocationRequestInFlight(kind: LocationPermissionKind): boolean {
+  return locationRequestsInFlight[kind] > 0;
+}
+
 export async function withLocationPermissionRequest<T>(
   kind: LocationPermissionKind,
   run: () => T | Promise<T>,
 ): Promise<T> {
-  const result = await withOwnExternalFlow(run);
+  locationRequestsInFlight[kind] += 1;
+  let result: T;
+  try {
+    result = await withOwnExternalFlow(run);
+  } finally {
+    locationRequestsInFlight[kind] -= 1;
+  }
   try {
     const status = (result as { status?: unknown } | null | undefined)?.status;
     if (typeof status === 'string') {

@@ -52,8 +52,13 @@ import {
   buildPersonProperties,
 } from './analyticsPersonProperties';
 import { createSdkTransport, type InterceptedRequest } from './analyticsSdkTransport';
-import { createVerifiedSocialTracker, toSocialPlatformName } from './analyticsSocial';
 import {
+  createPendingVerificationMarkers,
+  createVerifiedSocialTracker,
+  toSocialPlatformName,
+} from './analyticsSocial';
+import {
+  isLocationRequestInFlight,
   setLocationRequestListener,
   setOwnExternalFlowListener,
 } from './ownExternalFlow';
@@ -167,6 +172,16 @@ const onboardingMilestones = createOnboardingMilestoneTracker();
 const linkedThisProcess = new Set<string>();
 let verifiedOwnerUid: string | null = null;
 
+function pendingVerificationMarkers() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const storage = require('@react-native-async-storage/async-storage').default;
+  return createPendingVerificationMarkers(storage);
+}
+
+function pendingVerificationKey(uid: string, mode: string, platform: string): string {
+  return `${uid}:${mode}:${platform}`;
+}
+
 function alignSocialOwner(uid: string): void {
   if (verifiedOwnerUid === uid) return;
   verifiedOwnerUid = uid;
@@ -260,8 +275,13 @@ async function readLocationPermissions(): Promise<void> {
       Location.getForegroundPermissionsAsync(),
       Location.getBackgroundPermissionsAsync(),
     ]);
-    locationPermissions.noteState('foreground', foreground?.status === 'granted');
-    locationPermissions.noteState('background', background?.status === 'granted');
+    // An open request reports its own result, as a request.
+    if (!isLocationRequestInFlight('foreground')) {
+      locationPermissions.noteState('foreground', foreground?.status === 'granted');
+    }
+    if (!isLocationRequestInFlight('background')) {
+      locationPermissions.noteState('background', background?.status === 'granted');
+    }
   } catch {
     // Analytics must never interrupt the product flow.
   }
@@ -475,6 +495,25 @@ export const noteSocialOwnership: AnalyticsApi['noteSocialOwnership'] = safely((
   if (changed && lastProfileDoc?.uid === uid) {
     active.syncPersonProfile(uid, lastProfileDoc.doc);
   }
+  if (connected) {
+    void pendingVerificationMarkers()
+      .consume(pendingVerificationKey(uid, mode, platform))
+      .then((wasPending) => {
+        if (wasPending) trackSocialLinked(platform, 'verified', mode);
+      })
+      .catch(() => {});
+  }
+});
+
+export const noteSocialVerificationPending: AnalyticsApi['noteSocialVerificationPending'] = safely((
+  mode,
+  platform,
+) => {
+  const uid = currentUid();
+  if (!getSession() || !uid) return;
+  void pendingVerificationMarkers()
+    .mark(pendingVerificationKey(uid, mode, platform))
+    .catch(() => {});
 });
 
 export const trackSocialLinked: AnalyticsApi['trackSocialLinked'] = safely((

@@ -431,9 +431,18 @@ describe('person properties', () => {
     );
   });
 
+  /** The base fields; lists and socials have their own tests. */
+  const baseFields = (properties: Record<string, unknown> | null) => {
+    const out: Record<string, unknown> = {};
+    for (const key of ['platform', 'app_version', 'email', 'profile_type', 'occupation', 'languages']) {
+      if (properties && key in properties) out[key] = properties[key];
+    }
+    return out;
+  };
+
   it('sends confirmed empty values explicitly', () => {
     assert.deepEqual(
-      buildPersonProperties({
+      baseFields(buildPersonProperties({
         doc: {
           mode: 'personal',
           languageCodes: [],
@@ -441,14 +450,14 @@ describe('person properties', () => {
         },
         authEmail: null,
         normalizeLanguages,
-      }),
+      })),
       { platform: 'Android', profile_type: 'personal', occupation: null, languages: [] },
     );
   });
 
   it('reads the active mode and prefers the auth email', () => {
     assert.deepEqual(
-      buildPersonProperties({
+      baseFields(buildPersonProperties({
         doc: {
           email: 'doc@example.com',
           mode: 'professional',
@@ -462,7 +471,7 @@ describe('person properties', () => {
         authEmail: 'auth@example.com',
         appVersion: '2.0.9',
         normalizeLanguages,
-      }),
+      })),
       {
         platform: 'Android',
         app_version: '2.0.9',

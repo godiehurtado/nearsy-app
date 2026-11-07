@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import type { NavigationContainerRefWithCurrent } from '@react-navigation/native';
 
+import { firebaseAuth } from '../config/firebaseConfig';
 import { trackAlertOpened } from './analytics';
 import { createPushOpenCoordinator, isRouteReachable } from './pushOpenCoordinator';
 
@@ -16,6 +17,7 @@ export function createAlertPushOpens(
 ) {
   const coordinator = createPushOpenCoordinator({
     now: () => Date.now(),
+    currentUid: () => firebaseAuth.currentUser?.uid ?? null,
     canNavigate: () =>
       navigationRef.isReady() &&
       isRouteReachable(navigationRef.getRootState(), 'Home'),

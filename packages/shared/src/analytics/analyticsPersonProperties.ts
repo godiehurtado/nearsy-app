@@ -113,13 +113,26 @@ export function computeAgeRange(
   return null;
 }
 
-function modeList(
-  doc: Record<string, unknown>,
-  mode: string,
-  suffix: 'OnboardingInterests' | 'OnboardingAffiliations',
-): unknown[] | undefined {
-  const value = doc[`${mode}${suffix}`];
-  return Array.isArray(value) ? value : undefined;
+function hasLegacyRows(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
+}
+
+/**
+ * The profile document is complete, and the product reads an absent list as
+ * empty, so this also clears the lists of the previous mode after a switch.
+ * Legacy rows are the exception: the product still shows them, and they have no
+ * stable ids, so the state is unknown rather than empty.
+ */
+function modeInterests(doc: Record<string, unknown>, mode: string): unknown[] | undefined {
+  const rows = doc[`${mode}OnboardingInterests`];
+  if (Array.isArray(rows)) return rows;
+  return hasLegacyRows(doc[`${mode}Interests`]) ? undefined : [];
+}
+
+function modeAffiliations(doc: Record<string, unknown>, mode: string): unknown[] | undefined {
+  const rows = doc[`${mode}OnboardingAffiliations`];
+  if (Array.isArray(rows) && rows.length > 0) return rows;
+  return hasLegacyRows(doc[`${mode}Affiliations`]) ? undefined : [];
 }
 
 export function buildPersonProperties(input: {
@@ -145,9 +158,9 @@ export function buildPersonProperties(input: {
     const occupation = readOccupation(row, row.mode);
     if (occupation !== undefined) out.occupation = occupation;
 
-    const interests = modeList(row, row.mode, 'OnboardingInterests');
+    const interests = modeInterests(row, row.mode);
     if (interests) Object.assign(out, listProperties('interests', splitInterests(interests)));
-    const affiliations = modeList(row, row.mode, 'OnboardingAffiliations');
+    const affiliations = modeAffiliations(row, row.mode);
     if (affiliations) {
       Object.assign(out, listProperties('affiliations', splitAffiliations(affiliations)));
     }

@@ -71,7 +71,7 @@ is used or needed.
 
 Needs `NEARSY_ANALYTICS_ENABLED=true`, `NEARSY_ANALYTICS_ENV=production`, a valid
 `NEARSY_POSTHOG_TOKEN`, production Firebase, no Dev Client and a release build. `preview` resolves
-to `off`, because it uses production UIDs. Tokens enter the build only when their mode is enabled.
+to `off`, because it uses production UIDs. A token enters the build only when its mode can resolve.
 
 ## Contract
 
@@ -100,7 +100,10 @@ Every event also carries `platform`, `app_version`, `app_build`, `environment` a
 
 ### Person properties (active mode)
 
-An unknown value is omitted. A confirmed empty one clears the stored value.
+An unknown value is omitted. A confirmed empty one clears the stored value. An absent list or social
+bag in the complete profile document counts as empty, as the product reads it, which also clears the
+previous mode's values after a switch. Legacy interests or affiliations, which have no stable ids, stay
+unknown, so a user with only legacy rows can keep the previous mode's values until they are migrated.
 
 | Property | Source |
 |---|---|
@@ -175,8 +178,9 @@ Dedupe limits:
 
 ### Socials
 
-- `social_linked` fires on a manual add (no previous value), on an OAuth connect or return, and when
-  Instagram goes from pending to verified. Never on hydration, on editing a link, or while pending.
+- `social_linked` fires on a manual add (no previous value), on an OAuth connect or return, and on
+  the first verified Instagram read after a pending one. A local marker keeps that pending state
+  across a closed card or a restart. Never on hydration, on editing a link, or while pending.
 - Removing and adding again counts as a new connection.
 - `match_social_tapped` does not mean a connection between people. `open_result` only says whether
   the OS accepted the link (`opened`, `invalid`, `failed`).
@@ -258,6 +262,8 @@ Out of scope: gender, seniority, industry, monetization, backfills, new Firestor
 - Email signup fires once the Auth account exists, even if the later profile write fails.
 - `completion_time_min` is elapsed time since Auth creation, not active time.
 - A cold-start tap waits for Home. If that never happens within 5 minutes, it is neither opened nor counted.
+- A tap claimed before auth restored has no owner, so it opens for whoever signs in within those 5
+  minutes. A tap claimed while signed in is dropped if another account takes over.
 - `session_id` in `inspect` mode is a stand-in, not an SDK session.
 
 ## QA on a physical Android device (Metro 8082)

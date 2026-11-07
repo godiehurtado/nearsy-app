@@ -50,6 +50,7 @@ import {
 } from '../analyticsProfileLists.ts';
 import { describeInterceptedRequest, isOutboundEventPath } from '../analyticsSdkTransport.ts';
 import {
+  createPendingVerificationMarkers,
   createVerifiedSocialTracker,
   readManualPlatforms,
   socialProperties,
@@ -61,6 +62,7 @@ import {
   LINKEDIN_NEW_ACCOUNT_FIELD,
 } from '../linkedinNewAccountSignal.ts';
 import {
+  isLocationRequestInFlight,
   setLocationRequestListener,
   setOwnExternalFlowListener,
   withLocationPermissionRequest,
@@ -169,17 +171,22 @@ describe('test modes', () => {
     assert.equal(resolveSmokeDistinctId({ uid: 'u1' }, '@nearsy-smoke.test'), null);
   });
 
-  it('a token enters the config only with its mode', () => {
+  it('a token enters the config only when its mode can resolve', () => {
     const { resolveAnalyticsExtras } = require(
       '../../../../../apps/nearsy-android/plugins/analyticsBuildConfig.js',
     );
-    const config = JSON.stringify(
-      resolveAnalyticsExtras({
-        NEARSY_POSTHOG_TOKEN: 'phc_should_not_appear',
-        NEARSY_ANALYTICS_SMOKE_TOKEN: 'phc_should_not_appear',
-      }),
-    );
-    assert.ok(!config.includes('phc_'));
+    const tokens = {
+      NEARSY_POSTHOG_TOKEN: 'phc_should_not_appear',
+      NEARSY_ANALYTICS_SMOKE_TOKEN: 'phc_should_not_appear',
+    };
+    for (const env of [
+      tokens,
+      { ...tokens, NEARSY_ANALYTICS_ENABLED: 'true', NEARSY_ANALYTICS_ENV: 'preview' },
+      { ...tokens, NEARSY_ANALYTICS_SMOKE_ENABLED: 'true' },
+      { ...tokens, NEARSY_ANALYTICS_SMOKE_ENABLED: 'true', NEARSY_DEV_CLIENT: 'true' },
+    ]) {
+      assert.ok(!JSON.stringify(resolveAnalyticsExtras(env)).includes('phc_'));
+    }
   });
 
   it('App Links need an exact host and a dedicated prefix', () => {
@@ -624,9 +631,37 @@ describe('approved person properties', () => {
     assert.equal(empty?.country_live, null);
     assert.deepEqual(empty?.languages, []);
     const unknown = build({ mode: 'personal' }) ?? {};
-    for (const key of ['interests', 'affiliations', 'country_birth', 'country_live', 'age_range', 'languages']) {
+    for (const key of ['country_birth', 'country_live', 'age_range', 'languages']) {
       assert.equal(key in unknown, false, key);
     }
+    const noMode = build({}) ?? {};
+    for (const key of ['interests', 'affiliations', 'social_platforms_manual']) {
+      assert.equal(key in noMode, false, key);
+    }
+  });
+
+  it('a mode switch clears the lists of the previous mode', () => {
+    const props = build({
+      mode: 'professional',
+      personalOnboardingInterests: [{ id: 'personal_one' }],
+      personalOnboardingAffiliations: [{ id: 'p1', source: 'provider' }],
+      socialLinksPersonal: { website: 'https://me.test' },
+    });
+    assert.deepEqual(props?.interests, []);
+    assert.equal(props?.interests_count, 0);
+    assert.deepEqual(props?.affiliations, []);
+    assert.deepEqual(props?.social_platforms_manual, []);
+  });
+
+  it('legacy rows are unknown, not empty', () => {
+    const props = build({
+      mode: 'personal',
+      personalInterests: ['Rock'],
+      personalOnboardingAffiliations: [],
+      personalAffiliations: [{ category: 'x', label: 'Club' }],
+    }) ?? {};
+    assert.equal('interests' in props, false);
+    assert.equal('affiliations' in props, false);
   });
 
   it('country_live is the declared city, never another source', () => {
@@ -684,7 +719,8 @@ describe('social properties', () => {
 
   it('valid manual links only, Website included, X under one name', () => {
     assert.deepEqual(readManualPlatforms(doc, 'personal'), ['custom', 'website', 'x']);
-    assert.equal(readManualPlatforms(doc, 'professional'), undefined);
+    assert.deepEqual(readManualPlatforms(doc, 'professional'), []);
+    assert.equal(readManualPlatforms({ socialLinksPersonal: 'x' }, 'personal'), undefined);
     assert.equal(toSocialPlatformName('twitter'), 'x');
   });
 
@@ -728,7 +764,30 @@ describe('social properties', () => {
       assert.ok(source.includes('trackSocialLinked'), file);
     }
     const instagram = src('components/profile/InstagramOwnershipCard.tsx');
-    assert.ok(instagram.includes('wasPending && presented.verified?.mode === forMode'));
+    assert.ok(instagram.includes("noteSocialVerificationPending(forMode, 'instagram')"));
+    assert.ok(!instagram.includes('trackSocialLinked'));
+  });
+
+  it('a pending verification survives the card, once, and hydration has no marker', async () => {
+    const data = new Map<string, string>();
+    const markers = createPendingVerificationMarkers({
+      getItem: async (key) => data.get(key) ?? null,
+      setItem: async (key, value) => void data.set(key, value),
+    });
+    assert.equal(await markers.consume('u:personal:instagram'), false);
+    await markers.mark('u:personal:instagram');
+    await markers.mark('u:personal:instagram');
+    assert.equal(await markers.consume('u:professional:instagram'), false);
+    assert.equal(await markers.consume('u:personal:instagram'), true);
+    assert.equal(await markers.consume('u:personal:instagram'), false);
+  });
+
+  it('damaged markers read as none', async () => {
+    const markers = createPendingVerificationMarkers({
+      getItem: async () => '{bad',
+      setItem: async () => {},
+    });
+    assert.equal(await markers.consume('x'), false);
   });
 
   it('a failed read does not report a network as not linked', () => {
@@ -778,6 +837,33 @@ describe('permissions and visibility', () => {
       ['background', false, 'request'],
       ['background', true, 'request'],
     ]);
+  });
+
+  it('a request is in flight until its result is reported', async () => {
+    let release: (value: { status: string }) => void = () => {};
+    const seen: Array<[boolean, boolean]> = [];
+    setLocationRequestListener((_kind, granted) =>
+      seen.push([granted, isLocationRequestInFlight('foreground')]),
+    );
+    try {
+      const request = withLocationPermissionRequest(
+        'foreground',
+        () => new Promise<{ status: string }>((resolve) => { release = resolve; }),
+      );
+      assert.equal(isLocationRequestInFlight('foreground'), true);
+      assert.equal(isLocationRequestInFlight('background'), false);
+      release({ status: 'granted' });
+      await request;
+      assert.deepEqual(seen, [[true, false]]);
+      await assert.rejects(
+        withLocationPermissionRequest('foreground', async () => {
+          throw new Error('denied');
+        }),
+      );
+      assert.equal(isLocationRequestInFlight('foreground'), false);
+    } finally {
+      setLocationRequestListener(null);
+    }
   });
 
   it('location request sites report the result and add no request', () => {
@@ -938,11 +1024,12 @@ describe('alert opens', () => {
   });
 
   function make(options: { lastHandled?: string | null; ready?: boolean } = {}) {
-    const state = { ready: options.ready ?? true, now: 0 };
+    const state = { ready: options.ready ?? true, now: 0, uid: 'A' as string | null };
     const opened: unknown[] = [];
     const profiles: string[] = [];
     const coordinator = createPushOpenCoordinator({
       now: () => state.now,
+      currentUid: () => state.uid,
       canNavigate: () => state.ready,
       openProfile: (uid) => profiles.push(uid),
       emitOpened: (alertId) => opened.push(alertId),
@@ -998,6 +1085,26 @@ describe('alert opens', () => {
     assert.equal(opened.length, 0);
   });
 
+  it('a tap does not cross to another account', () => {
+    const { coordinator, opened, profiles, state } = make({ ready: false });
+    coordinator.handleResponse(response('n1', { actorUid: 'a' }));
+    state.uid = 'B';
+    state.ready = true;
+    coordinator.flush();
+    assert.deepEqual(profiles, []);
+    assert.equal(opened.length, 0);
+  });
+
+  it('a cold start before auth restored still opens', () => {
+    const { coordinator, profiles, state } = make({ ready: false });
+    state.uid = null;
+    coordinator.handleResponse(response('n1', { actorUid: 'a' }));
+    state.uid = 'A';
+    state.ready = true;
+    coordinator.flush();
+    assert.deepEqual(profiles, ['a']);
+  });
+
   it('a tap that waited too long is dropped', async () => {
     const { coordinator, profiles, state } = make({ ready: false });
     coordinator.handleResponse(response('n1', { actorUid: 'a' }));
@@ -1011,6 +1118,7 @@ describe('alert opens', () => {
     const profiles: string[] = [];
     const coordinator = createPushOpenCoordinator({
       now: () => 0,
+      currentUid: () => 'A',
       canNavigate: () => true,
       openProfile: (uid) => profiles.push(uid),
       emitOpened: () => {

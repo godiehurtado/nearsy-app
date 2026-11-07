@@ -22,6 +22,8 @@ export type AnalyticsApi = {
     platform: VerifiedSocialPlatform,
     connected: boolean,
   ): void;
+  /** A verification started; its first verified read later counts as linked. */
+  noteSocialVerificationPending(mode: string, platform: VerifiedSocialPlatform): void;
   /** A connection was just added. Never call it for hydration or an edit. */
   trackSocialLinked(
     platform: unknown,

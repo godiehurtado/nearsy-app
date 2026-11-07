@@ -58,6 +58,8 @@ export function isRouteReachable(state: unknown, name: string): boolean {
 
 export function createPushOpenCoordinator(deps: {
   now: () => number;
+  /** The tap may belong to whoever was signed in when it arrived. */
+  currentUid: () => string | null;
   canNavigate: () => boolean;
   openProfile: (actorUid: string) => void;
   emitOpened: (alertId: string | undefined) => void;
@@ -66,12 +68,12 @@ export function createPushOpenCoordinator(deps: {
   writeLastHandledId: (id: string) => Promise<void>;
 }) {
   const claimed = new Set<string>();
-  let pending: (PushOpen & { receivedAt: number }) | null = null;
+  let pending: (PushOpen & { receivedAt: number; ownerUid: string | null }) | null = null;
 
   function claim(open: PushOpen): void {
     if (claimed.has(open.responseId)) return;
     claimed.add(open.responseId);
-    pending = { ...open, receivedAt: deps.now() };
+    pending = { ...open, receivedAt: deps.now(), ownerUid: deps.currentUid() };
     deps.writeLastHandledId(open.responseId).catch(() => {});
     flush();
   }
@@ -85,6 +87,9 @@ export function createPushOpenCoordinator(deps: {
     if (!deps.canNavigate()) return;
     const open = pending;
     pending = null;
+    // Another account signed in while it waited. Null at claim is a cold start,
+    // before auth restored, so it cannot be told apart and is kept.
+    if (open.ownerUid !== null && open.ownerUid !== deps.currentUid()) return;
     try {
       deps.emitOpened(open.alertId);
     } catch {
