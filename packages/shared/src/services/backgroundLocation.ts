@@ -1,3 +1,4 @@
+import { noteLocationPermissionResolved } from '../analytics';
 // src/services/backgroundLocation.ts
 
 import * as Location from 'expo-location';
@@ -60,6 +61,7 @@ export async function ensureBackgroundLocationPermissions(
       (fg.status === 'undetermined' || fg.canAskAgain)
     ) {
       fg = await Location.requestForegroundPermissionsAsync();
+      noteLocationPermissionResolved('foreground');
     }
   }
   if (fg.status !== 'granted') {
@@ -79,6 +81,7 @@ export async function ensureBackgroundLocationPermissions(
       (bg.status === 'undetermined' || bg.canAskAgain)
     ) {
       bg = await Location.requestBackgroundPermissionsAsync();
+      noteLocationPermissionResolved('background');
     }
   }
   // Re-read effective status — iOS may defer Always, or report scope before status.

@@ -30,6 +30,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { SettingsSection } from '../components/settings/SettingsSection';
 import { SettingsRow } from '../components/settings/SettingsRow';
 import { SettingsToggleRow } from '../components/settings/SettingsToggleRow';
+import { noteLocationPermissionResolved } from '../analytics';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import {
   changeAppLanguage,
@@ -866,6 +867,7 @@ export default function MoreScreen() {
       if (!fg.granted) {
         if (fg.canAskAgain || fg.status === 'undetermined') {
           const req = await Location.requestForegroundPermissionsAsync();
+          noteLocationPermissionResolved('foreground');
           fg = {
             status: String(req.status),
             granted: !!req.granted || req.status === 'granted',

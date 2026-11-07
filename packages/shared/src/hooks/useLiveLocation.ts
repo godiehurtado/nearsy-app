@@ -1,3 +1,4 @@
+import { noteLocationPermissionResolved } from '../analytics';
 // src/hooks/useLiveLocation.ts
 import { useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
@@ -55,6 +56,7 @@ export function useLiveLocation({
         let perm = await Location.getForegroundPermissionsAsync();
         if (perm.status !== 'granted') {
           const req = await Location.requestForegroundPermissionsAsync();
+          noteLocationPermissionResolved('foreground');
           if (req.status !== 'granted') {
             if (!cancelled) setHasPermission(false);
             return;

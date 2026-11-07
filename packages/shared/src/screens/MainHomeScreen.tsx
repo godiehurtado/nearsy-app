@@ -23,6 +23,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { doc, onSnapshot, type DocumentSnapshot } from 'firebase/firestore';
 
+import { noteLocationPermissionResolved } from '../analytics';
 import { firebaseAuth, firestoreDb } from '../config/firebaseConfig';
 import { useTranslation } from '../i18n';
 import {
@@ -876,6 +877,7 @@ export default function MainHomeScreen({ navigation }: Props) {
               await Location.requestForegroundPermissionsAsync().catch(
                 () => null,
               );
+              noteLocationPermissionResolved('foreground');
               if (cancelled) return;
               const after = await Location.getForegroundPermissionsAsync();
               const newlyGranted =
@@ -918,6 +920,7 @@ export default function MainHomeScreen({ navigation }: Props) {
               await Location.requestForegroundPermissionsAsync().catch(
                 () => undefined,
               );
+              noteLocationPermissionResolved('foreground');
               if (cancelled) return;
               const after = await Location.getForegroundPermissionsAsync();
               const newlyGranted =
@@ -1179,6 +1182,7 @@ export default function MainHomeScreen({ navigation }: Props) {
       if (!beforeFg.granted) {
         if (beforeFg.canAskAgain || beforeFg.status === 'undetermined') {
           const req = await Location.requestForegroundPermissionsAsync();
+          noteLocationPermissionResolved('foreground');
           afterFg = {
             status: String(req.status),
             granted: !!req.granted || req.status === 'granted',

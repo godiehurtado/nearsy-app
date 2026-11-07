@@ -1,3 +1,7 @@
+import {
+  noteLocationPermissionResolved,
+  trackVisibilityChanged,
+} from '../analytics';
 /**
  * Visibility lifecycle orchestration — permission, location sample, callables.
  */
@@ -58,6 +62,7 @@ export async function ensureForegroundPermission(): Promise<{
   }
   if (perm.status === 'undetermined' || perm.canAskAgain) {
     perm = await Location.requestForegroundPermissionsAsync();
+    noteLocationPermissionResolved('foreground');
   }
   if (perm.status === 'granted') {
     return { status: 'granted', canAskAgain: true };
@@ -148,6 +153,7 @@ export async function activateVisibilityFlow(
       client.activateVisibility(buildActivateVisibilityRequest(sample.location)),
     );
     if (guarded.ok === false) return sessionClosedOutcome();
+    trackVisibilityChanged(true);
     return { ok: true as const, response: guarded.value };
   } catch (err) {
     return {
@@ -169,6 +175,7 @@ export async function deactivateVisibilityFlow(
     const response = await client.deactivateVisibility(
       buildDeactivateVisibilityRequest(),
     );
+    trackVisibilityChanged(false);
     return { ok: true, response };
   } catch (err) {
     return {
