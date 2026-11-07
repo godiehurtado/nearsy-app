@@ -62,7 +62,9 @@ The `beta` profile is in `apps/nearsy-ios/eas.json`. It extends `production`, so
 
 **Before the first Beta build:**
 
-`app.config.js` refuses to build a profile that declares analytics without a valid token. The `beta` profile therefore stops with a message naming `EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN` until the token exists, so a QA build cannot ship without analytics. Profiles that declare nothing need no token. The message never includes the token.
+`app.config.js` refuses to build a profile that declares analytics without a valid token. On the EAS builder (`EAS_BUILD=true`), where EAS injects its variables, the `beta` profile stops with a message naming `EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN`, so a QA build cannot ship without analytics. The EAS CLI first reads `app.config.js` on the local machine without the EAS variables, so that local read only checks the profile is complete. Profiles that declare nothing need no token. The message never includes the token.
+
+**Local read before upload:** `app.config.js` also requires `EXPO_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY`, which lives in EAS. If it is not in the local environment, the CLI stops before uploading. A placeholder `pk_` value works for that local read only, because the builder evaluates the config again with the real EAS value.
 
 1. **Token.** Create it once in the EAS `production` environment, which the `beta` profile inherits. The `production` profile also receives it, and stays off because it declares no channel.
    ```bash
@@ -438,7 +440,7 @@ Still needed from each provider: matching method and data sent, ATT by flow, App
 | Item | Owner | Effect while pending |
 |---|---|---|
 | Project token | Product | Analytics stays off |
-| Deploy of `accountOutcome` and `authCreationTimeMs` in Exchange | Identity | No LinkedIn `signup_completed`; the consumer is ready |
+| Deploy of `accountOutcome` and `authCreationTimeMs` in Exchange | Identity | LinkedIn keeps signing in with the current Exchange, but emits no `signup_completed`. The consumer is ready |
 | `alert_sent`, `alertId` in payload | Functions | No sent counts; `alert_id` omitted |
 | `event_cohort` | Functions | Not assigned |
 | Attribution domain and AASA | Infrastructure | No Universal Links |

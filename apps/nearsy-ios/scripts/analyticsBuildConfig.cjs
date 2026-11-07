@@ -3,6 +3,11 @@
  * must also have a PostHog project token, or the binary would silently ship
  * without analytics. Profiles that do not declare capture need no token.
  *
+ * Where it is enforced: on the EAS builder (`EAS_BUILD=true`), where EAS injects
+ * its environment variables, so a build without the token fails before compiling.
+ * The EAS CLI also reads app.config on this machine before uploading, without
+ * those variables, so that local read only checks the profile is complete.
+ *
  * Never prints the token or any part of it.
  */
 const ENABLED_ENV = 'EXPO_PUBLIC_POSTHOG_ENABLED';
@@ -19,13 +24,14 @@ function assertAnalyticsBuildConfig(env) {
     );
   }
   const token = String(env[TOKEN_ENV] ?? '').trim();
-  if (!token.startsWith('phc_') || token.length < 8) {
-    throw new Error(
-      `[app.config] This build declares analytics (channel "${channel}") but ${TOKEN_ENV} is missing or malformed. ` +
-        'Create it as an EAS environment variable before building, so a QA build cannot ship without analytics.',
-    );
-  }
-  return { declared: true, channel };
+  const tokenValid = token.startsWith('phc_') && token.length >= 8;
+  if (tokenValid) return { declared: true, channel, tokenChecked: true };
+  const onEasBuilder = String(env.EAS_BUILD ?? '').trim() === 'true';
+  if (!onEasBuilder) return { declared: true, channel, tokenChecked: false };
+  throw new Error(
+    `[app.config] This build declares analytics (channel "${channel}") but ${TOKEN_ENV} is missing or malformed. ` +
+      'Create it as an EAS environment variable before building, so a QA build cannot ship without analytics.',
+  );
 }
 
 module.exports = { assertAnalyticsBuildConfig, CHANNEL_ENV, ENABLED_ENV, TOKEN_ENV };
