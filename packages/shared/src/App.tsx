@@ -10,6 +10,8 @@ import { startAffiliationEntitySearchBootstrap } from './affiliations/iosAffilia
 import { initI18n } from './i18n';
 import { useAppUpdateNotice } from './appUpdate/useAppUpdateNotice';
 import { startAnalytics } from './analytics/analytics';
+import { createAlertPushOpens } from './analytics/alertPushOpens';
+import { PUSH_OPEN_MAX_WAIT_MS } from './analytics/pushOpenCoordinator';
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -72,6 +74,7 @@ async function ensureAndroidChannel() {
 }
 
 export const navigationRef = createNavigationContainerRef();
+const alertPushOpens = createAlertPushOpens(navigationRef);
 
 /**
  * Holds a neutral surface until the persisted appearance preference is known,
@@ -201,6 +204,10 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
 
     const responseSub = Notifications.addNotificationResponseReceivedListener(
       (response) => {
+        if (Platform.OS === 'android') {
+          alertPushOpens.handleResponse(response);
+          return;
+        }
         const data = response.notification.request.content.data as any;
         const parsed = parseEncounterNotifyPayload(data);
         const actorUid = parsed?.actorUid ?? data?.actorUid;
@@ -215,9 +222,33 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
       },
     );
 
+    let coldStartPoll: ReturnType<typeof setInterval> | null = null;
+    let coldStartPollEnd: ReturnType<typeof setTimeout> | null = null;
+    let coldOpenRead = false;
+    if (Platform.OS === 'android') {
+      const stopColdStartPoll = () => {
+        if (coldStartPoll) clearInterval(coldStartPoll);
+        if (coldStartPollEnd) clearTimeout(coldStartPollEnd);
+      };
+      // The Home tab can mount after onReady, without a state change to report it.
+      coldStartPoll = setInterval(() => {
+        alertPushOpens.flush();
+        if (coldOpenRead && !alertPushOpens.hasPending()) stopColdStartPoll();
+      }, 500);
+      coldStartPollEnd = setTimeout(stopColdStartPoll, PUSH_OPEN_MAX_WAIT_MS);
+      void alertPushOpens
+        .startColdOpen()
+        .catch(() => {})
+        .finally(() => {
+          coldOpenRead = true;
+        });
+    }
+
     return () => {
       receivedSub.remove();
       responseSub.remove();
+      if (coldStartPoll) clearInterval(coldStartPoll);
+      if (coldStartPollEnd) clearTimeout(coldStartPollEnd);
     };
   }, []);
 
@@ -245,7 +276,12 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
           !hasChosenTheme ? 'dark' : theme === 'dark' ? 'light' : 'dark'
         }
       />
-      <NavigationContainer ref={navigationRef} theme={navTheme}>
+      <NavigationContainer
+        ref={navigationRef}
+        theme={navTheme}
+        onReady={() => alertPushOpens.flush()}
+        onStateChange={() => alertPushOpens.flush()}
+      >
         <AppNavigator />
       </NavigationContainer>
       <AppUpdateNoticeHost />
