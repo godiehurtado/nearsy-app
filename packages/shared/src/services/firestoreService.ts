@@ -1,4 +1,5 @@
 // src/services/firestoreService.ts  ✅ Web Firestore + RNFirebase Auth
+import { noteProfileWrite } from '../analytics';
 import { firestoreDb } from '../config/firebaseConfig';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { isProfileDocumentComplete } from '../utils/profileDocumentComplete';
@@ -256,7 +257,9 @@ export async function updateUserProfilePartial(
   uid: string,
   patch: Record<string, any>,
 ) {
-  return upsertUserProfile(uid, patch);
+  const result = await upsertUserProfile(uid, patch);
+  noteProfileWrite(uid, patch);
+  return result;
 }
 
 export const isProfileComplete = async (uid: string): Promise<boolean> => {
