@@ -28,6 +28,7 @@ const {
 const {
   resolveIosBinaryVersionOverride,
 } = require('./scripts/iosBinaryVersionOverride.cjs');
+const { assertAnalyticsBuildConfig } = require('./scripts/analyticsBuildConfig.cjs');
 
 const FUNCTIONS_REGION = 'us-central1';
 const DEV_PLIST = './GoogleService-Info.development.plist';
@@ -316,6 +317,9 @@ module.exports = ({ config }) => {
   const associatedDomains = resolveAttributionAssociatedDomains(
     process.env.NEARSY_ATTRIBUTION_ASSOCIATED_DOMAINS,
   );
+
+  // A profile that declares analytics must carry its token. Others need none.
+  assertAnalyticsBuildConfig(process.env);
 
   // Set only by a build profile that numbers its own binary (today: beta).
   const binaryOverride = resolveIosBinaryVersionOverride(process.env);

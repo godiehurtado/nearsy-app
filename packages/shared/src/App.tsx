@@ -131,6 +131,7 @@ function LinkedInA3ResumeBridge() {
           uid: result.session.uid,
           sessionEmail: result.session.email,
           profileHints: result.profileHints,
+          accountSignal: result.accountSignal,
         });
         if (cancelled) return;
         if (finalized.status !== 'authenticated') {

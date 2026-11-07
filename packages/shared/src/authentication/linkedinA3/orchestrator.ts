@@ -69,7 +69,7 @@ export type LinkedInA3FlowResult =
       status: 'authenticated';
       session: LinkedInA3AuthSession;
       profileHints?: LinkedInAuthProfileHints;
-      accountCreation?: LinkedInAuthExchangeResult['accountCreation'];
+      accountSignal?: LinkedInAuthExchangeResult['accountSignal'];
     } & LinkedInA3TerminalMeta)
   | ({
       status: Exclude<LinkedInA3FlowStatus, 'authenticated'>;
@@ -404,8 +404,8 @@ export async function runLinkedInA3BrowserAuthFlow(
         status: 'authenticated',
         session,
         profileHints: exchangeResult.profileHints,
-        ...(exchangeResult.accountCreation
-          ? { accountCreation: exchangeResult.accountCreation }
+        ...(exchangeResult.accountSignal
+          ? { accountSignal: exchangeResult.accountSignal }
           : {}),
       });
     } catch (err) {

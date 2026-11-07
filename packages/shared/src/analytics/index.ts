@@ -32,6 +32,10 @@ import {
   profileWriteAffectsAnalytics,
 } from './profileProperties';
 import { toIsoCreationTime } from './client';
+import {
+  decideLinkedInSignup,
+  type LinkedInAccountSignal,
+} from '../authentication/linkedinA3/accountCreationSignal';
 
 export { createDiscoveryEntryTracker } from './discoveryTracking';
 export {
@@ -134,15 +138,23 @@ export function trackSocialAuthSession(
   trackSignupCompleted({ uid: session.uid, method });
 }
 
-export type LinkedInAccountCreationSignal = 'created' | 'existing' | 'unknown';
 
-/** LinkedIn counts only with an explicit Identity signal. Unknown emits nothing. */
+/**
+ * LinkedIn counts only with the Identity signal: outcome `created` and a creation
+ * time that matches the signed-in Firebase user, which ties it to this account
+ * generation. No signal, `existing` or another generation emit nothing.
+ * Dedupe is the same as every signup: UID + Firebase creation time.
+ */
 export function trackLinkedInAuthSession(
   uid: string,
-  signal: LinkedInAccountCreationSignal,
+  signal: LinkedInAccountSignal | null,
 ): void {
-  if (signal !== 'created') return;
-  trackSignupCompleted({ uid, method: 'linkedin' });
+  if (!uid || !signal) return;
+  safely((s) => {
+    const creationTime = s.client.sessionFor(uid)?.creationTime ?? null;
+    if (decideLinkedInSignup(signal, creationTime) !== 'emit') return;
+    trackSignupCompleted({ uid, method: 'linkedin' });
+  });
 }
 
 export function trackOnboardingStepCompleted(

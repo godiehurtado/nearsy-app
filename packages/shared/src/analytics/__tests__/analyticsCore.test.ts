@@ -41,10 +41,7 @@ import {
 } from '../index';
 import { createEventLedger } from '../ledger';
 import type { StringStore } from '../lifecycle';
-import {
-  LINKEDIN_ACCOUNT_CREATION_FIELD,
-  readLinkedInAccountCreationSignal,
-} from '../../authentication/linkedinA3/accountCreationSignal';
+import type { LinkedInAccountSignal } from '../../authentication/linkedinA3/accountCreationSignal';
 import { assertLinkedInAuthExchangeResult } from '../../authentication/linkedinA3/types';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -72,6 +69,14 @@ const USER_B: AuthSnapshot = {
 };
 
 const NOW = Date.parse('2026-11-03T10:30:00Z');
+
+/** Identity fixture: created, with the Auth creation time of that generation. */
+function created(creationTime: string | null, offsetMs = 250): LinkedInAccountSignal {
+  return {
+    accountOutcome: 'created',
+    authCreationTimeMs: Date.parse(String(creationTime)) + offsetMs,
+  };
+}
 
 export function memoryStore(): StringStore & { data: Map<string, string> } {
   const data = new Map<string, string>();
@@ -597,7 +602,7 @@ describe('signup_completed', () => {
     bindFacade(first.client, store);
     await first.client.start();
     first.client.reportAuthState(USER_A);
-    trackLinkedInAuthSession('uidA', 'created');
+    trackLinkedInAuthSession('uidA', created(USER_A.creationTime));
     await settle();
     assert.equal(first.fake.captured('signup_completed').length, 1);
 
@@ -608,7 +613,7 @@ describe('signup_completed', () => {
       ...USER_A,
       creationTime: 'Fri, 06 Nov 2026 10:00:00 GMT',
     });
-    trackLinkedInAuthSession('uidA', 'created');
+    trackLinkedInAuthSession('uidA', created('Fri, 06 Nov 2026 10:00:00 GMT'));
     await settle();
     assert.equal(recreated.fake.captured('signup_completed').length, 1);
   });
@@ -639,39 +644,136 @@ describe('signup_completed', () => {
   });
 });
 
-describe('LinkedIn account creation seam', () => {
-  it('has no fixed contract yet: everything reads as unknown', () => {
-    assert.equal(LINKEDIN_ACCOUNT_CREATION_FIELD, null);
-    assert.equal(
-      readLinkedInAccountCreationSignal({ accountCreated: true, isNewAccount: true }),
-      'unknown',
-    );
-  });
-
-  it('reads an explicit value only once a field is configured', () => {
-    const field = 'candidateField';
-    assert.equal(readLinkedInAccountCreationSignal({ candidateField: true }, field), 'created');
-    assert.equal(readLinkedInAccountCreationSignal({ candidateField: false }, field), 'existing');
-    assert.equal(readLinkedInAccountCreationSignal({}, field), 'unknown');
-    assert.equal(readLinkedInAccountCreationSignal({ candidateField: 'true' }, field), 'unknown');
-  });
-
-  it('exchange parsing is unchanged for current backends', () => {
-    assert.deepEqual(
-      assertLinkedInAuthExchangeResult({ customToken: 'token-123', extra: true }),
-      { customToken: 'token-123' },
-    );
-  });
-
-  it('unknown and existing emit no signup', async () => {
+describe('LinkedIn signup from the Identity signal', () => {
+  it('created for this generation: one signup, identify before it', async () => {
     const { fake, client } = setup();
     bindFacade(client, memoryStore());
     await client.start();
     client.reportAuthState(USER_A);
-    trackLinkedInAuthSession('uidA', 'unknown');
-    trackLinkedInAuthSession('uidA', 'existing');
+    trackLinkedInAuthSession('uidA', created(USER_A.creationTime));
+    await settle();
+    const [event] = fake.captured('signup_completed');
+    assert.equal(event?.properties.signup_method, 'linkedin');
+    assert.equal(event?.distinctId, 'uidA');
+    const identify = fake.calls.findIndex((c) => c.op === 'identify');
+    const capture = fake.calls.findIndex((c) => c.op === 'capture' && c.event === 'signup_completed');
+    assert.ok(identify >= 0 && identify < capture);
+  });
+
+  it('login of an existing account emits nothing', async () => {
+    const { fake, client } = setup();
+    bindFacade(client, memoryStore());
+    await client.start();
+    client.reportAuthState(USER_A);
+    trackLinkedInAuthSession('uidA', {
+      accountOutcome: 'existing',
+      authCreationTimeMs: Date.parse(USER_A.creationTime ?? ''),
+    });
     await settle();
     assert.equal(fake.captured('signup_completed').length, 0);
+  });
+
+  it('an old response without the signal emits nothing', async () => {
+    const { fake, client } = setup();
+    bindFacade(client, memoryStore());
+    await client.start();
+    client.reportAuthState(USER_A);
+    trackLinkedInAuthSession('uidA', null);
+    await settle();
+    assert.equal(fake.captured('signup_completed').length, 0);
+  });
+
+  it('created with the time of another generation emits nothing', async () => {
+    const { fake, client } = setup();
+    bindFacade(client, memoryStore());
+    await client.start();
+    client.reportAuthState(USER_A);
+    trackLinkedInAuthSession('uidA', created(USER_A.creationTime, 1000));
+    trackLinkedInAuthSession('uidA', created('Fri, 06 Nov 2026 10:00:00 GMT'));
+    await settle();
+    assert.equal(fake.captured('signup_completed').length, 0);
+  });
+
+  it('without a Firebase creation time nothing is claimed', async () => {
+    const { fake, client } = setup();
+    bindFacade(client, memoryStore());
+    await client.start();
+    client.reportAuthState({ ...USER_A, creationTime: null });
+    trackLinkedInAuthSession('uidA', created(USER_A.creationTime));
+    await settle();
+    assert.equal(fake.captured('signup_completed').length, 0);
+  });
+
+  it('resume or a repeated finalize counts once (UID + creation time)', async () => {
+    const store = memoryStore();
+    const first = setup();
+    bindFacade(first.client, store);
+    await first.client.start();
+    first.client.reportAuthState(USER_A);
+    trackLinkedInAuthSession('uidA', created(USER_A.creationTime));
+    trackLinkedInAuthSession('uidA', created(USER_A.creationTime));
+    await settle();
+    const resumed = setup();
+    bindFacade(resumed.client, store);
+    await resumed.client.start();
+    resumed.client.reportAuthState(USER_A);
+    trackLinkedInAuthSession('uidA', created(USER_A.creationTime));
+    await settle();
+    assert.equal(first.fake.captured('signup_completed').length, 1);
+    assert.equal(resumed.fake.captured('signup_completed').length, 0);
+  });
+
+  it('a recreated account (same UID, new generation) counts again', async () => {
+    const store = memoryStore();
+    const first = setup();
+    bindFacade(first.client, store);
+    await first.client.start();
+    first.client.reportAuthState(USER_A);
+    trackLinkedInAuthSession('uidA', created(USER_A.creationTime));
+    await settle();
+    const recreatedAt = 'Fri, 06 Nov 2026 10:00:00 GMT';
+    const second = setup();
+    bindFacade(second.client, store);
+    await second.client.start();
+    second.client.reportAuthState({ ...USER_A, creationTime: recreatedAt });
+    trackLinkedInAuthSession('uidA', created(recreatedAt));
+    await settle();
+    assert.equal(first.fake.captured('signup_completed').length, 1);
+    assert.equal(second.fake.captured('signup_completed').length, 1);
+  });
+
+  it('account change: a signal for A never lands on B', async () => {
+    const { fake, client } = setup();
+    bindFacade(client, memoryStore());
+    await client.start();
+    client.reportAuthState(USER_B);
+    trackLinkedInAuthSession('uidA', created(USER_A.creationTime));
+    trackLinkedInAuthSession('uidB', created(USER_A.creationTime));
+    await settle();
+    assert.equal(fake.captured('signup_completed').length, 0);
+    trackLinkedInAuthSession('uidB', created(USER_B.creationTime));
+    await settle();
+    assert.deepEqual(fake.captured('signup_completed').map((e) => e.distinctId), ['uidB']);
+  });
+
+  it('a pending campaign link becomes its acquisition', async () => {
+    const store = memoryStore();
+    const { fake, client } = setup();
+    const services = bindFacade(client, store);
+    await client.start();
+    const link = parseCampaignLink(
+      'https://go.example.com/c/x?utm_medium=qr&utm_campaign=launch',
+      services.attributionHosts,
+      NOW,
+    );
+    assert.ok(link);
+    await services.attribution.save(link);
+    client.reportAuthState(USER_A);
+    trackLinkedInAuthSession('uidA', created(USER_A.creationTime));
+    await settle();
+    const [event] = fake.captured('signup_completed');
+    assert.equal(event?.properties.signup_source, 'qr');
+    assert.equal(event?.properties.signup_campaign, 'launch');
   });
 });
 

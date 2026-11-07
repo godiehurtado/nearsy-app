@@ -1,6 +1,6 @@
 import {
-  readLinkedInAccountCreationSignal,
-  type LinkedInAccountCreationSignal,
+  readLinkedInAccountSignal,
+  type LinkedInAccountSignal,
 } from './accountCreationSignal';
 
 export type LinkedInA3Platform = 'ios' | 'android';
@@ -32,8 +32,8 @@ export type LinkedInAuthProfileHints = {
 export type LinkedInAuthExchangeResult = {
   customToken: string;
   profileHints?: LinkedInAuthProfileHints;
-  /** Omitted while Identity has not confirmed it. See accountCreationSignal.ts. */
-  accountCreation?: Exclude<LinkedInAccountCreationSignal, 'unknown'>;
+  /** Only when both additive fields are valid. See accountCreationSignal.ts. */
+  accountSignal?: LinkedInAccountSignal;
 };
 
 export function assertLinkedInAuthStartInput(
@@ -118,7 +118,8 @@ function parseOptionalProfileHints(
 
 /**
  * Accepts current backends `{ customToken }` and optional `profileHints`.
- * Malformed hints are ignored; a valid customToken still succeeds.
+ * Malformed hints are ignored; a valid customToken still succeeds. The additive
+ * `accountOutcome` + `authCreationTimeMs` pair is kept only when both are valid.
  */
 export function assertLinkedInAuthExchangeResult(
   data: unknown,
@@ -132,10 +133,10 @@ export function assertLinkedInAuthExchangeResult(
     throw new Error('invalid customToken');
   }
   const profileHints = parseOptionalProfileHints(record.profileHints);
-  const accountCreation = readLinkedInAccountCreationSignal(record);
+  const accountSignal = readLinkedInAccountSignal(record);
   return {
     customToken,
     ...(profileHints ? { profileHints } : {}),
-    ...(accountCreation !== 'unknown' ? { accountCreation } : {}),
+    ...(accountSignal ? { accountSignal } : {}),
   };
 }

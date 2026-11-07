@@ -62,6 +62,8 @@ The `beta` profile is in `apps/nearsy-ios/eas.json`. It extends `production`, so
 
 **Before the first Beta build:**
 
+`app.config.js` refuses to build a profile that declares analytics without a valid token. The `beta` profile therefore stops with a message naming `EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN` until the token exists, so a QA build cannot ship without analytics. Profiles that declare nothing need no token. The message never includes the token.
+
 1. **Token.** Create it once in the EAS `production` environment, which the `beta` profile inherits. The `production` profile also receives it, and stays off because it declares no channel.
    ```bash
    eas env:create --environment production --name EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN --value <phc_token> --visibility sensitive
@@ -271,18 +273,31 @@ Analytics follows three states published by the deletion modules. It subscribes 
 
 - **A request already on the wire cannot be recalled,** including the SDK's automatic retries of that batch. It holds only events captured before the intent, since the intent stops new ones. It can still reach PostHog after Functions deleted the person, and PostHog would then create the person again from it.
 - **PostHog ingestion is asynchronous.** Events accepted just before the deletion call may be processed after it, with the same effect.
-- **What Functions must keep:** the UID alone does not identify a deleted account. A LinkedIn account recreated with the same UID is a different account generation, and its events must not be deleted with the old one. Any later cleanup of a recreated person has to check the generation first, for example the person's `account_created_at` against the deleted account's Firebase creation time. Only events of the deleted generation should go.
-- **One option for Functions:** after the deletion, check again later and delete only what belongs to that generation: events with a timestamp up to the deletion, on a person whose `account_created_at` is the deleted one. A person that now belongs to a recreated account stays.
-- Deleting the PostHog person belongs to Functions and is not implemented in iOS.
+- **The UID alone does not identify a deleted account.** A LinkedIn account recreated with the same UID is a different account generation, and it shares the PostHog `distinct_id`, so it is the same PostHog person.
+- **`account_created_at` can help detect a recreation, nothing more.** The recreated account's `signup_completed` and `profile_completed` carry its own creation time, which differs from the deleted one. The person property itself is `$set_once`, so it can still show the deleted account's value. None of this separates the two generations' data, makes deleting that person safe, or closes the race above.
+- **Not solvable here without a decision in Functions:** once a recreated account shares the person, deleting it also deletes the new account's data, and leaving it keeps late events of the deleted one. How to treat that case is for Functions and Product to decide.
 
 ### LinkedIn
 
-Evidence, read-only from `nearsy-identity-functions`: `linkedInFirebaseUid(iss, sub)` derives the UID from the provider subject, so a deleted and recreated account gets the same UID. `resolveOrCreateUser` already knows `created`, but the callback discards it and Exchange does not return it.
+Evidence, read-only from `nearsy-identity-functions`: `linkedInFirebaseUid(iss, sub)` derives the UID from the provider subject, so a deleted and recreated account gets the same UID.
 
-- Local dedupe uses **UID + Firebase creation time**, so a recreated account can report its own signup and onboarding. Without a valid creation time, dedupe is memory-only.
-- `accountCreationSignal.ts` has `LINKEDIN_ACCOUNT_CREATION_FIELD = null`. Today every LinkedIn sign-in is `unknown` and emits no signup.
-- When the field is agreed with Identity, set that one constant. A missing field stays unknown. The contract is not invented here.
-- Until then the signup count excludes LinkedIn, while its onboarding events are sent, which inflates `profile_completed / signups`.
+**Additive Exchange signal (consumer ready, Identity is confirming the final contract):**
+
+| Field | Type | Accepted |
+|---|---|---|
+| `accountOutcome` | string | Exactly `created` or `existing` |
+| `authCreationTimeMs` | number | A positive safe integer, Unix milliseconds |
+
+- **Parsing:** both fields travel together. Missing, partial or malformed: no signal, and sign-in works exactly as before. Implemented in `accountCreationSignal.ts`, used by `assertLinkedInAuthExchangeResult`.
+- **Propagation:** the signal goes from Exchange to the authenticated result through both the live flow and durable resume, then to `finalizeLinkedInA3AuthenticatedSession`. Exchange is still called once, and a repeated callback is still skipped.
+- **`signup_completed` (method `linkedin`)** is emitted only when:
+  - `accountOutcome` is `created`, and
+  - `authCreationTimeMs` matches the signed-in Firebase user's creation time, read after the Auth reload.
+- **Precision:** Firebase exposes `metadata.creationTime` as an HTTP date, in whole seconds, so both are compared by second. A value carrying milliseconds is compared exactly. There is no tolerance window: the next second is another generation, and emits nothing.
+- **`existing`, no signal, or another generation:** nothing is emitted.
+- **Dedupe:** UID + Firebase creation time, like every signup. Resume or a repeated finalize counts once. A recreated account with a new creation time counts again. Without a creation time nothing is claimed.
+- **Order:** identify runs before the event, and a pending campaign link becomes the acquisition, as for other providers.
+- **Until Identity deploys the fields,** LinkedIn signups are not counted while its onboarding events are, which inflates `profile_completed / signups`.
 
 ## app_opened
 
@@ -423,7 +438,7 @@ Still needed from each provider: matching method and data sent, ATT by flow, App
 | Item | Owner | Effect while pending |
 |---|---|---|
 | Project token | Product | Analytics stays off |
-| Account creation signal | Identity | No LinkedIn `signup_completed` |
+| Deploy of `accountOutcome` and `authCreationTimeMs` in Exchange | Identity | No LinkedIn `signup_completed`; the consumer is ready |
 | `alert_sent`, `alertId` in payload | Functions | No sent counts; `alert_id` omitted |
 | `event_cohort` | Functions | Not assigned |
 | Attribution domain and AASA | Infrastructure | No Universal Links |

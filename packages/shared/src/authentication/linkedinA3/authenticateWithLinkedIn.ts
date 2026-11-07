@@ -5,6 +5,7 @@
 
 import { signInWithCustomToken } from 'firebase/auth';
 import { trackLinkedInAuthSession } from '../../analytics';
+import type { LinkedInAccountSignal } from './accountCreationSignal';
 import { getUserProfile, isProfileComplete } from '../../services/firestoreService';
 import { firebaseAuth } from '../../config/firebaseConfig';
 import { withPushTokenReleaseAroundSessionReplace } from '../../services/pushTokenBeforeAuthReplace';
@@ -85,7 +86,8 @@ export async function finalizeLinkedInA3AuthenticatedSession(input: {
   uid: string;
   sessionEmail: string | null;
   profileHints?: LinkedInAuthProfileHints;
-  accountCreation?: 'created' | 'existing';
+  /** From Exchange, live or resumed. Absent means no signup is reported. */
+  accountSignal?: LinkedInAccountSignal;
 }): Promise<LinkedInA3SignInOutcome> {
   const uid = input.uid;
   if (!firebaseAuth.currentUser || firebaseAuth.currentUser.uid !== uid) {
@@ -115,7 +117,8 @@ export async function finalizeLinkedInA3AuthenticatedSession(input: {
     };
   }
 
-  trackLinkedInAuthSession(uid, input.accountCreation ?? 'unknown');
+  // After reload, so the Firebase creation time compared is the signed-in user's.
+  trackLinkedInAuthSession(uid, input.accountSignal ?? null);
 
   let complete = false;
   try {
@@ -204,6 +207,6 @@ export async function signInWithLinkedInA3(): Promise<LinkedInA3SignInOutcome> {
     uid: flow.session.uid,
     sessionEmail: flow.session.email,
     profileHints: flow.profileHints,
-    accountCreation: flow.accountCreation,
+    accountSignal: flow.accountSignal,
   });
 }

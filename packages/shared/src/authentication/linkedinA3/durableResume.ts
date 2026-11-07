@@ -207,8 +207,8 @@ export async function resumeLinkedInA3FromReturnUrl(
       status: 'authenticated',
       session,
       profileHints: exchangeResult.profileHints,
-      ...(exchangeResult.accountCreation
-        ? { accountCreation: exchangeResult.accountCreation }
+      ...(exchangeResult.accountSignal
+        ? { accountSignal: exchangeResult.accountSignal }
         : {}),
     });
   } catch (err) {
