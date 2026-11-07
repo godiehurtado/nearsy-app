@@ -146,7 +146,7 @@ export function classifyAttributionAccess(input: {
   creationTime: string | null;
   nowMs: number;
   acquisitionAlreadyRecorded: boolean;
-}): 'late_acquisition' | 'campaign_access' {
+}): 'late_acquisition' | 'campaign_accessed' {
   const created = input.creationTime ? Date.parse(input.creationTime) : NaN;
   if (
     !input.acquisitionAlreadyRecorded &&
@@ -156,5 +156,5 @@ export function classifyAttributionAccess(input: {
   ) {
     return 'late_acquisition';
   }
-  return 'campaign_access';
+  return 'campaign_accessed';
 }

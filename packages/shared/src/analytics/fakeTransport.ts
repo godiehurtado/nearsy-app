@@ -17,6 +17,7 @@ export type FakeTransportCall =
     }
   | { op: 'unsetPerson'; names: readonly string[]; distinctId: string | null }
   | { op: 'reset' }
+  | { op: 'discard'; distinctId: string }
   | { op: 'flush' };
 
 export type FakeTransport = AnalyticsTransport & {
@@ -66,6 +67,11 @@ export function createFakeTransport(
       guard('reset');
       identified = null;
       calls.push({ op: 'reset' });
+    },
+    discardQueuedEventsFor(distinctId) {
+      guard('discard');
+      calls.push({ op: 'discard', distinctId });
+      return 0;
     },
     getIdentifiedId: () => identified,
     getSessionId: () => fake.sessionId,

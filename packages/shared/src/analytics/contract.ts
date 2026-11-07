@@ -7,10 +7,12 @@
  * Pure module: no React Native or Expo imports.
  */
 
-export const TRACKING_PLAN_VERSION = '2026-11-06.1';
+export const TRACKING_PLAN_VERSION = '2026-11-06.2';
 
 export type PropertyRule =
   | { kind: 'boolean' }
+  /** Only ever true: a false can never overwrite the classification. */
+  | { kind: 'trueOnly' }
   | { kind: 'int'; min: number; max: number }
   | { kind: 'number'; min: number; max: number }
   | { kind: 'enum'; values: readonly string[] }
@@ -64,7 +66,8 @@ export const SOCIAL_PLATFORMS = [
 ] as const;
 export type AnalyticsSocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
 
-export const MATCH_SCORE_RANGES = ['0-50', '50-75', '75-100'] as const;
+/** low=[0,50), medium=[50,75), high=[75,100]. */
+export const MATCH_SCORE_RANGES = ['low', 'medium', 'high'] as const;
 export type MatchScoreRange = (typeof MATCH_SCORE_RANGES)[number];
 
 export const AGE_RANGES = [
@@ -77,8 +80,12 @@ export const AGE_RANGES = [
 ] as const;
 export type AgeRange = (typeof AGE_RANGES)[number];
 
+/** Channels allowed to capture. General capture has no channel yet, so it stays off. */
+export const DISTRIBUTION_CHANNELS = ['beta'] as const;
+export type DistributionChannel = (typeof DISTRIBUTION_CHANNELS)[number];
+
 const SLUG: PropertyRule = { kind: 'id', maxLength: 64 };
-const MATCH_SCORE: PropertyRule = { kind: 'int', min: 0, max: 100 };
+const MATCH_SCORE: PropertyRule = { kind: 'number', min: 0, max: 100 };
 const MATCH_RANGE: PropertyRule = { kind: 'enum', values: MATCH_SCORE_RANGES };
 const COUNT: PropertyRule = { kind: 'int', min: 0, max: 100000 };
 const SOCIAL_PLATFORM: PropertyRule = { kind: 'enum', values: SOCIAL_PLATFORMS };
@@ -106,7 +113,7 @@ export const EVENT_RULES = {
     ...ACQUISITION_RULES,
   },
   acquisition_attributed: { ...ACQUISITION_RULES },
-  campaign_access: {
+  campaign_accessed: {
     campaign_source: SLUG,
     campaign_name: SLUG,
     campaign_content: SLUG,
@@ -169,6 +176,8 @@ export const ANALYTICS_EVENT_NAMES = Object.keys(
 /** Sent with every event. platform stays iOS; social networks use social_platform. */
 export const SUPER_PROPERTY_RULES = {
   platform: { kind: 'enum', values: ['iOS'] },
+  distribution_channel: { kind: 'enum', values: DISTRIBUTION_CHANNELS },
+  is_test_user: { kind: 'trueOnly' },
   app_version: { kind: 'id', maxLength: 32 },
   app_build: { kind: 'id', maxLength: 32 },
   environment: { kind: 'enum', values: ['development', 'production'] },
@@ -222,11 +231,11 @@ export const PERSON_PROPERTY_RULES = {
   affiliations_count: COUNT,
   affiliations_truncated: { kind: 'boolean' },
   socials_connected: socialList,
-  socials_manual: socialList,
-  socials_verified: socialList,
+  social_platforms_manual: socialList,
+  social_platforms_verified: socialList,
   has_socials: { kind: 'boolean' },
-  foreground_location: { kind: 'boolean' },
-  background_location: { kind: 'boolean' },
+  foreground_location_granted: { kind: 'boolean' },
+  background_location_granted: { kind: 'boolean' },
 } as const satisfies Record<string, PropertyRule>;
 
 export type PersonPropertyName = keyof typeof PERSON_PROPERTY_RULES;
@@ -266,8 +275,8 @@ export function isAllowedOutgoingEvent(name: string): boolean {
 
 export function matchScoreRange(score: number): MatchScoreRange | null {
   if (!Number.isFinite(score) || score < 0 || score > 100) return null;
-  if (score < 50) return '0-50';
-  if (score < 75) return '50-75';
-  return '75-100';
+  if (score < 50) return 'low';
+  if (score < 75) return 'medium';
+  return 'high';
 }
 export type PropertyRuleMap = Readonly<Record<string, PropertyRule>>;

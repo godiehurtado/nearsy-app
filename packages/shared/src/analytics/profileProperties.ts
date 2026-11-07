@@ -377,13 +377,13 @@ export function buildPersonProperties(
   const manual = manualSocialPlatforms(
     doc[mode === 'professional' ? 'socialLinksProfessional' : 'socialLinksPersonal'],
   );
-  set.socials_manual = manual;
+  set.social_platforms_manual = manual;
   if (verified) {
     const verifiedList = (
       Object.keys(verified) as AnalyticsSocialPlatform[]
     ).filter((platform) => verified[platform] === true);
     const connected = [...new Set([...manual, ...verifiedList])];
-    set.socials_verified = verifiedList;
+    set.social_platforms_verified = verifiedList;
     set.socials_connected = connected;
     set.has_socials = connected.length > 0;
   }

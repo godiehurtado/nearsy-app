@@ -15,6 +15,8 @@ export function isValidValue(rule: PropertyRule, value: unknown): boolean {
   switch (rule.kind) {
     case 'boolean':
       return typeof value === 'boolean';
+    case 'trueOnly':
+      return value === true;
     case 'int':
       return (
         typeof value === 'number' &&

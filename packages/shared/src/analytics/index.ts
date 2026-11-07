@@ -332,7 +332,7 @@ export async function resolvePendingAttribution(
   }
   s.client.captureForUser(
     user.uid,
-    'campaign_access',
+    'campaign_accessed',
     campaignAccessProperties(attribution),
   );
 }

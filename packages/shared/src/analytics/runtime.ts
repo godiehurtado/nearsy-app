@@ -10,6 +10,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 
 import { firebaseAuth } from '../config/firebaseConfig';
+import {
+  getAccountDeletionClosure,
+  subscribeAccountDeletionClosure,
+} from '../services/accountDeletionSession';
 import { HAS_SEEN_WELCOME_STORAGE_KEY } from '../onboarding/welcomeStorage';
 import { getUserProfile } from '../services/firestoreService';
 import { APPEARANCE_STORAGE_KEY } from '../theme/themeStorage';
@@ -137,6 +141,7 @@ export function startAnalyticsRuntime(): void {
 
   const config = resolveAnalyticsConfig({
     enabledFlag: process.env.EXPO_PUBLIC_POSTHOG_ENABLED,
+    distributionChannel: process.env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL,
     allowDevelopmentFlag: process.env.EXPO_PUBLIC_POSTHOG_ALLOW_DEVELOPMENT,
     token: process.env.EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN,
     firebaseEnv: process.env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV,
@@ -224,8 +229,8 @@ export function startAnalyticsRuntime(): void {
       if (key === lastPermissionPerson) return;
       lastPermissionPerson = key;
       client.setPersonProperties(user.uid, {
-        foreground_location: readings.foreground.granted,
-        background_location: readings.background.granted,
+        foreground_location_granted: readings.foreground.granted,
+        background_location_granted: readings.background.granted,
       });
     },
   });
@@ -287,6 +292,13 @@ export function startAnalyticsRuntime(): void {
     foregroundReady = true;
     bindAnalyticsServices(services);
     void client.start();
+    // Before the Auth listener, so a closure already set wins over its first report.
+    const discardClosedAccount = () => {
+      const closure = getAccountDeletionClosure();
+      if (closure) client.discardAccount(closure.uid);
+    };
+    subscribeAccountDeletionClosure(discardClosedAccount);
+    discardClosedAccount();
     firebaseAuth.onAuthStateChanged((user: unknown) => {
       onAuthChanged(toSnapshot(user));
     });

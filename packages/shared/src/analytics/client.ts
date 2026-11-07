@@ -75,6 +75,15 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
   let auth: AuthSnapshot | null | undefined;
   let identifiedUid: string | null = null;
   let afterAuthReady: (() => void)[] = [];
+  /** Account generation closed by deletion. A recreated account is not it. */
+  let closedAccount: { uid: string; creationTime: string | null } | null = null;
+
+  function isClosed(session: AuthSnapshot): boolean {
+    return (
+      closedAccount?.uid === session.uid &&
+      closedAccount.creationTime === session.creationTime
+    );
+  }
 
   function run(op: Op): void {
     if (!enabled || failed) return;
@@ -132,6 +141,9 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
       app_version: binary.appVersion,
       app_build: binary.appBuild,
       environment: deps.config.environment,
+      distribution_channel: deps.config.distributionChannel,
+      // Never false: a build outside Beta cannot clear this on a person.
+      is_test_user: deps.config.isTestInstall ? true : undefined,
       tracking_plan_version: TRACKING_PLAN_VERSION,
     }).values;
   }
@@ -162,7 +174,7 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
   function sessionOwnedBy(uid: string): boolean {
     if (auth && auth.uid === uid) return true;
     const live = deps.readSession?.() ?? null;
-    if (live?.uid !== uid) return false;
+    if (live?.uid !== uid || isClosed(live)) return false;
     reportAuthState(live);
     return true;
   }
@@ -175,8 +187,10 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     }
   }
 
-  function reportAuthState(next: AuthSnapshot | null): void {
+  function reportAuthState(reported: AuthSnapshot | null): void {
     if (!enabled) return;
+    // A deleted account can stay in Firebase until sign-out finishes.
+    const next = reported && isClosed(reported) ? null : reported;
     auth = next;
     applyIdentity(next);
     const ready = afterAuthReady;
@@ -276,8 +290,30 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     return true;
   }
 
+  /**
+   * The account was deleted: reset does not empty the SDK queue, so its events
+   * are removed explicitly and nothing more is accepted for this generation.
+   * Events of other identities stay queued. Never throws into the deletion flow.
+   */
+  function discardAccount(uid: string): void {
+    if (!enabled || !uid) return;
+    const session =
+      auth?.uid === uid ? auth : (deps.readSession?.() ?? null);
+    closedAccount = {
+      uid,
+      creationTime: session?.uid === uid ? session.creationTime : null,
+    };
+    if (auth?.uid === uid) auth = null;
+    if (identifiedUid === uid) identifiedUid = null;
+    run((t) => {
+      t.discardQueuedEventsFor(uid);
+      if (t.getIdentifiedId() === uid) t.reset();
+    });
+  }
+
   return {
     isEnabled: () => enabled && !failed,
+    discardAccount,
     start,
     reportAuthState,
     runWhenAuthKnown,

@@ -415,8 +415,8 @@ describe('socials', () => {
       { youtube: true, tiktok: true, instagram: false, x: false },
       NOW,
     );
-    assert.deepEqual(set.socials_manual, ['linkedin', 'youtube']);
-    assert.deepEqual(set.socials_verified, ['youtube', 'tiktok']);
+    assert.deepEqual(set.social_platforms_manual, ['linkedin', 'youtube']);
+    assert.deepEqual(set.social_platforms_verified, ['youtube', 'tiktok']);
     assert.deepEqual(set.socials_connected, ['linkedin', 'youtube', 'tiktok']);
     assert.equal(set.has_socials, true);
   });
@@ -427,10 +427,10 @@ describe('socials', () => {
       null,
       NOW,
     );
-    assert.deepEqual(set.socials_manual, []);
+    assert.deepEqual(set.social_platforms_manual, []);
     assert.equal('socials_connected' in set, false);
     assert.equal('has_socials' in set, false);
-    assert.equal('socials_verified' in set, false);
+    assert.equal('social_platforms_verified' in set, false);
   });
 
   it('no connection gives false', () => {
@@ -642,12 +642,12 @@ describe('discovery measurement', () => {
   });
 
   it('applies the approved score ranges', () => {
-    assert.equal(matchScoreRange(0), '0-50');
-    assert.equal(matchScoreRange(49), '0-50');
-    assert.equal(matchScoreRange(50), '50-75');
-    assert.equal(matchScoreRange(74), '50-75');
-    assert.equal(matchScoreRange(75), '75-100');
-    assert.equal(matchScoreRange(100), '75-100');
+    assert.equal(matchScoreRange(0), 'low');
+    assert.equal(matchScoreRange(49), 'low');
+    assert.equal(matchScoreRange(50), 'medium');
+    assert.equal(matchScoreRange(74), 'medium');
+    assert.equal(matchScoreRange(75), 'high');
+    assert.equal(matchScoreRange(100), 'high');
     assert.equal(matchScoreRange(101), null);
     assert.equal(matchScoreRange(-1), null);
   });
@@ -657,7 +657,7 @@ describe('discovery measurement', () => {
     assert.deepEqual(buildScoreProperties(null), {});
     assert.deepEqual(buildScoreProperties(0), {
       match_score: 0,
-      match_score_range: '0-50',
+      match_score_range: 'low',
     });
   });
 
@@ -889,7 +889,7 @@ describe('attribution classification', () => {
         nowMs: base + 2 * 86400000,
         acquisitionAlreadyRecorded: false,
       }),
-      'campaign_access',
+      'campaign_accessed',
     );
     assert.equal(
       classifyAttributionAccess({
@@ -897,7 +897,7 @@ describe('attribution classification', () => {
         nowMs: base + 1000,
         acquisitionAlreadyRecorded: true,
       }),
-      'campaign_access',
+      'campaign_accessed',
     );
     assert.equal(
       classifyAttributionAccess({
@@ -905,7 +905,7 @@ describe('attribution classification', () => {
         nowMs: base,
         acquisitionAlreadyRecorded: false,
       }),
-      'campaign_access',
+      'campaign_accessed',
     );
   });
 });

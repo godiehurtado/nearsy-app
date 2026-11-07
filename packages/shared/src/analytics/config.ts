@@ -1,7 +1,16 @@
 /**
  * Remote delivery is off unless every switch below is set explicitly, in
  * production too. A missing token never fails the app, it keeps analytics off.
+ *
+ * The only channel that can capture today is Beta: TestFlight on production
+ * Firebase, declared by configuration because TestFlight is not auto-detected.
+ * Without a declared channel nothing is sent, so general capture stays off.
  */
+import {
+  DISTRIBUTION_CHANNELS,
+  type DistributionChannel,
+} from './contract';
+
 export const POSTHOG_HOST = 'https://us.i.posthog.com';
 export const POSTHOG_PROJECT_ID = 716015;
 
@@ -12,12 +21,16 @@ export type AnalyticsConfig = {
   token: string | null;
   host: string;
   environment: AnalyticsEnvironment;
+  distributionChannel: DistributionChannel | null;
+  /** This install is Beta: every event says so, anonymous ones too. */
+  isTestInstall: boolean;
   /** Universal Link hosts accepted for campaign attribution. Empty = off. */
   attributionHosts: readonly string[];
 };
 
 export type AnalyticsConfigInput = {
   enabledFlag?: string | null;
+  distributionChannel?: string | null;
   allowDevelopmentFlag?: string | null;
   token?: string | null;
   firebaseEnv?: string | null;
@@ -25,14 +38,17 @@ export type AnalyticsConfigInput = {
   attributionHosts?: string | null;
 };
 
-function resolveEnvironment(input: AnalyticsConfigInput): AnalyticsEnvironment {
-  const raw = String(input.firebaseEnv ?? '')
+/** Same reading as app.config.js: empty means production. */
+function isProductionFirebase(raw: string | null | undefined): boolean {
+  const value = String(raw ?? '')
     .trim()
     .toLowerCase();
-  if (input.isDevBundle || raw === 'development' || raw === 'dev') {
-    return 'development';
-  }
-  return 'production';
+  return value === 'production' || value === 'prod' || value === '';
+}
+
+function resolveChannel(raw: string | null | undefined): DistributionChannel | null {
+  const value = String(raw ?? '').trim();
+  return DISTRIBUTION_CHANNELS.find((channel) => channel === value) ?? null;
 }
 
 export function parseAttributionHosts(raw: string | null | undefined): string[] {
@@ -47,18 +63,29 @@ export function parseAttributionHosts(raw: string | null | undefined): string[] 
 export function resolveAnalyticsConfig(
   input: AnalyticsConfigInput,
 ): AnalyticsConfig {
-  const environment = resolveEnvironment(input);
+  const environment: AnalyticsEnvironment = input.isDevBundle
+    ? 'development'
+    : 'production';
+  const channel = resolveChannel(input.distributionChannel);
   const token = String(input.token ?? '').trim();
   const flagOn = String(input.enabledFlag ?? '').trim() === 'true';
-  const developmentAllowed =
+  const bundleAllowed =
     environment === 'production' ||
     String(input.allowDevelopmentFlag ?? '').trim() === 'true';
-  const enabled = flagOn && developmentAllowed && token.startsWith('phc_');
+  const enabled =
+    flagOn &&
+    channel !== null &&
+    bundleAllowed &&
+    // Beta identities are real production UIDs. nearsy-dev UIDs must never mix in.
+    isProductionFirebase(input.firebaseEnv) &&
+    token.startsWith('phc_');
   return {
     enabled,
     token: enabled ? token : null,
     host: POSTHOG_HOST,
     environment,
+    distributionChannel: enabled ? channel : null,
+    isTestInstall: enabled && channel === 'beta',
     attributionHosts: enabled
       ? parseAttributionHosts(input.attributionHosts)
       : [],
@@ -70,5 +97,7 @@ export const DISABLED_ANALYTICS_CONFIG: AnalyticsConfig = {
   token: null,
   host: POSTHOG_HOST,
   environment: 'production',
+  distributionChannel: null,
+  isTestInstall: false,
   attributionHosts: [],
 };

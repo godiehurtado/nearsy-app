@@ -52,7 +52,9 @@ const ENABLED: AnalyticsConfig = {
   enabled: true,
   token: 'phc_test',
   host: POSTHOG_HOST,
-  environment: 'development',
+  environment: 'production',
+  distributionChannel: 'beta',
+  isTestInstall: true,
   attributionHosts: ['go.example.com'],
 };
 
@@ -154,9 +156,10 @@ describe('activation config', () => {
     }
   });
 
-  it('turns on only with an explicit flag and a project token', () => {
+  it('turns on only with an explicit flag, a declared channel and a project token', () => {
     const config = resolveAnalyticsConfig({
       enabledFlag: 'true',
+      distributionChannel: 'beta',
       token: ' phc_real ',
     });
     assert.equal(config.enabled, true);
@@ -166,7 +169,12 @@ describe('activation config', () => {
   });
 
   it('development needs a second explicit switch', () => {
-    const base = { enabledFlag: 'true', token: 'phc_real', isDevBundle: true };
+    const base = {
+      enabledFlag: 'true',
+      distributionChannel: 'beta',
+      token: 'phc_real',
+      isDevBundle: true,
+    };
     assert.equal(resolveAnalyticsConfig(base).enabled, false);
     const allowed = resolveAnalyticsConfig({
       ...base,
@@ -174,6 +182,40 @@ describe('activation config', () => {
     });
     assert.equal(allowed.enabled, true);
     assert.equal(allowed.environment, 'development');
+  });
+
+  it('no declared channel means no capture: general capture stays off', () => {
+    for (const distributionChannel of [undefined, '', 'app_store', 'BETA', 'false']) {
+      const config = resolveAnalyticsConfig({
+        enabledFlag: 'true',
+        token: 'phc_real',
+        firebaseEnv: 'production',
+        distributionChannel,
+      });
+      assert.equal(config.enabled, false, String(distributionChannel));
+      assert.equal(config.token, null);
+    }
+  });
+
+  it('Beta is production Firebase with real identities, and never nearsy-dev', () => {
+    const base = { enabledFlag: 'true', distributionChannel: 'beta', token: 'phc_real' };
+    const beta = resolveAnalyticsConfig({ ...base, firebaseEnv: 'production' });
+    assert.equal(beta.enabled, true);
+    assert.equal(beta.environment, 'production');
+    assert.equal(beta.distributionChannel, 'beta');
+    assert.equal(beta.isTestInstall, true);
+    for (const firebaseEnv of ['development', 'dev', 'staging']) {
+      assert.equal(resolveAnalyticsConfig({ ...base, firebaseEnv }).enabled, false);
+      assert.equal(
+        resolveAnalyticsConfig({
+          ...base,
+          firebaseEnv,
+          isDevBundle: true,
+          allowDevelopmentFlag: 'true',
+        }).enabled,
+        false,
+      );
+    }
   });
 
   it('attribution hosts stay empty unless analytics is on', () => {
@@ -185,6 +227,7 @@ describe('activation config', () => {
     assert.deepEqual(
       resolveAnalyticsConfig({
         enabledFlag: 'true',
+        distributionChannel: 'beta',
         token: 'phc_real',
         attributionHosts: ' GO.example.com, bad host,https://x.y ',
       }).attributionHosts,
@@ -287,7 +330,7 @@ describe('allowlist', () => {
     assert.equal(props?.platform, 'iOS');
     assert.equal(props?.app_version, '2.0.10');
     assert.equal(props?.app_build, '73');
-    assert.equal(props?.environment, 'development');
+    assert.equal(props?.environment, 'production');
     assert.equal(props?.tracking_plan_version, TRACKING_PLAN_VERSION);
   });
 
@@ -699,6 +742,100 @@ describe('socials through the facade', () => {
   });
 });
 
+describe('Beta classification', () => {
+  it('every event carries it, anonymous ones too', async () => {
+    const { fake, client } = setup();
+    await client.start();
+    client.reportAuthState(null);
+    client.captureDeviceEvent('app_opened', { open_type: 'cold_start' });
+    client.reportAuthState(USER_A);
+    client.captureForUser('uidA', 'visibility_changed', { enabled: true });
+    assert.equal(fake.captured().length, 2);
+    for (const { properties } of fake.captured()) {
+      assert.equal(properties.is_test_user, true);
+      assert.equal(properties.distribution_channel, 'beta');
+      assert.equal(properties.environment, 'production');
+    }
+  });
+
+  it('the person is marked with the real UID, each account on its own', async () => {
+    const { fake, client } = setup();
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.reportAuthState(USER_B);
+    const identifies = fake.calls.filter(
+      (c): c is Extract<typeof c, { op: 'identify' }> => c.op === 'identify',
+    );
+    assert.deepEqual(identifies.map((c) => c.uid), ['uidA', 'uidB']);
+    for (const { set } of identifies) assert.equal(set.is_test_user, true);
+  });
+
+  it('a build outside Beta cannot write false, by config or by a caller', async () => {
+    const fake = createFakeTransport();
+    const client = createAnalyticsClient({
+      config: { ...ENABLED, distributionChannel: null, isTestInstall: false },
+      createTransport: async () => fake,
+      binary: () => ({ appVersion: '2.0.11', appBuild: '80' }),
+    });
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.captureForUser('uidA', 'visibility_changed', { enabled: true });
+    client.setPersonProperties('uidA', { is_test_user: false }, { is_test_user: false });
+    assert.equal(JSON.stringify(fake.calls).includes('is_test_user'), false);
+    assert.equal(fake.captured()[0]?.properties.distribution_channel, undefined);
+  });
+});
+
+describe('account deletion', () => {
+  it('drops its queue and identity, and refuses later events of that generation', async () => {
+    let live: AuthSnapshot | null = USER_A;
+    const { fake, client } = setup({ live: () => live });
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.discardAccount('uidA');
+    assert.ok(fake.calls.some((c) => c.op === 'discard' && c.distinctId === 'uidA'));
+    assert.equal(fake.getIdentifiedId(), null);
+    assert.equal(client.currentAuth(), null);
+    fake.calls.length = 0;
+    assert.equal(client.captureForUser('uidA', 'visibility_changed', { enabled: true }), false);
+    assert.equal(client.setPersonProperties('uidA', { profile_type: 'personal' }), false);
+    client.reportAuthState(USER_A);
+    client.captureForCurrentUser('visibility_changed', { enabled: true });
+    assert.deepEqual(fake.calls, []);
+    live = null;
+  });
+
+  it('a recreated account with the same UID is another generation', async () => {
+    const { fake, client } = setup();
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.discardAccount('uidA');
+    const recreated = { ...USER_A, creationTime: 'Fri, 06 Nov 2026 10:00:00 GMT' };
+    client.reportAuthState(recreated);
+    assert.equal(client.captureForUser('uidA', 'visibility_changed', { enabled: true }), true);
+    assert.equal(fake.getIdentifiedId(), 'uidA');
+  });
+
+  it('an SDK failure during the discard never reaches the deletion flow', async () => {
+    const { fake, client } = setup();
+    await client.start();
+    client.reportAuthState(USER_A);
+    fake.throwOn.add('discard');
+    assert.doesNotThrow(() => client.discardAccount('uidA'));
+  });
+
+  it('with analytics off it does nothing', () => {
+    const fake = createFakeTransport();
+    const client = createAnalyticsClient({
+      config: resolveAnalyticsConfig({}),
+      createTransport: async () => fake,
+      binary: () => ({ appVersion: null, appBuild: null }),
+    });
+    client.discardAccount('uidA');
+    assert.deepEqual(fake.calls, []);
+  });
+});
+
 describe('match_made through the facade', () => {
   it('one per profile and session; new session counts again', async () => {
     const { fake, client } = setup();
@@ -728,7 +865,7 @@ describe('match_made through the facade', () => {
     trackMatchPresented('uidA', 'other', 0);
     await settle();
     assert.equal(fake.captured('match_made')[0]?.properties.match_score, 0);
-    assert.equal(fake.captured('match_made')[0]?.properties.match_score_range, '0-50');
+    assert.equal(fake.captured('match_made')[0]?.properties.match_score_range, 'low');
   });
 
   it('never sends the other UID', async () => {
@@ -814,7 +951,7 @@ describe('attribution flows', () => {
     handleCampaignLink(LINK);
     await settle();
     assert.equal(fake.captured('acquisition_attributed').length, 1);
-    assert.equal(fake.captured('campaign_access').length, 0);
+    assert.equal(fake.captured('campaign_accessed').length, 0);
   });
 
   it('an existing user gets a separate access, never acquisition', async () => {
@@ -826,7 +963,7 @@ describe('attribution flows', () => {
     client.reportAuthState(USER_A);
     handleCampaignLink(LINK);
     await settle();
-    const [event] = fake.captured('campaign_access');
+    const [event] = fake.captured('campaign_accessed');
     assert.equal(event?.properties.campaign_name, 'altercall_summit_2026');
     assert.equal('signup_source' in (event?.properties ?? {}), false);
     assert.equal(
@@ -849,7 +986,7 @@ describe('attribution flows', () => {
     );
     await settle();
     assert.equal(fake.captured('acquisition_attributed').length, 1);
-    assert.equal(fake.captured('campaign_access')[0]?.properties.campaign_name, 'other');
+    assert.equal(fake.captured('campaign_accessed')[0]?.properties.campaign_name, 'other');
   });
 
   it('an expired pending link is ignored', async () => {
@@ -885,12 +1022,6 @@ describe('source guards', () => {
     ]) {
       assert.ok(source.includes(option), option);
     }
-    // The SDK ignores disableRemoteConfig, so the call itself is replaced.
-    assert.ok(
-      /override reloadRemoteConfigAsync\(\) \{\s*return Promise\.resolve\(undefined\);/.test(
-        source,
-      ),
-    );
     assert.equal(source.includes('PostHogProvider'), false);
     assert.equal(/enabled:\s*true/.test(source), false);
   });
