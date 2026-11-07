@@ -8,7 +8,7 @@ Tracking Plan v1, Android only. Remote sending is off in every build, production
 |---|---|
 | Implemented | Everything in this document, except what "Pending" lists |
 | Tested with mocks | The suites in `packages/shared/src/analytics/__tests__` |
-| Real SDK executed | Only under Node, with `react-native` stubbed and the network scripted (`analyticsRealSdk.test.ts`, `analyticsBetaTransport.test.ts`). Not under Hermes, with no native module |
+| Real SDK executed | Only under Node, with `react-native` stubbed and the network scripted (`analyticsRealSdk.test.ts`, `analyticsBetaTransport.test.ts`, `analyticsBetaBuild.test.ts`). Not under Hermes, with no native module |
 | Tested on a device | No |
 | Received in PostHog | No. Nothing has been sent |
 
@@ -37,29 +37,47 @@ Beta is tested through the Google Play internal track, on production Firebase, a
 project Nearsy 716015 (US Cloud), with real Firebase UIDs and no prefix. It needs no `nearsy-dev`, no
 synthetic domain and no `sdk_intercept`.
 
-Exact configuration of the future build, as EAS build variables. The token stays out of Git:
+Profile `beta` in `apps/nearsy-android/eas.json` extends `production`, so it is a store bundle on production
+Firebase, with no Dev Client. It adds `NEARSY_ANALYTICS_BETA_ENABLED=true`,
+`NEARSY_ANALYTICS_DISTRIBUTION_CHANNEL=beta`, `NEARSY_ANALYTICS_ENV=production` and
+`NEARSY_ANALYTICS_ENABLED=false`. Its submit profile is the same as `production` on track `internal`.
 
-| Variable | Value |
-|---|---|
-| `NEARSY_ANALYTICS_BETA_ENABLED` | `true` |
-| `NEARSY_ANALYTICS_DISTRIBUTION_CHANNEL` | `beta` |
-| `NEARSY_ANALYTICS_ENV` | `production` |
-| `NEARSY_POSTHOG_TOKEN` | Project token of Nearsy 716015 (`phc_...`) |
-| `NEARSY_FIREBASE_ENV` | `production` |
-| `NEARSY_DEV_CLIENT` | `false` |
-| `NEARSY_ANALYTICS_ENABLED` | Unset. General capture stays off |
+The only value missing is the token, which never goes in Git. It lives in the EAS `production`
+environment, which `beta` inherits. The `production` profile can read it too, but without a declared mode
+the build config does not embed it. Use `sensitive`, not `secret`: a secret is not available when EAS
+resolves `app.config.js`.
 
-Nothing else in code changes. Requirements checked at runtime: a release build, no Dev Client, and
-`nearsy-pj` both in the build setting and in the **initialized Firebase app**. The token only shows a
-valid format: nothing in the app can confirm it belongs to project 716015, so check that once.
+```bash
+eas env:create production --name NEARSY_POSTHOG_TOKEN --value <project token of Nearsy 716015> --visibility sensitive --scope project
+```
+
+Do not create any other `NEARSY_ANALYTICS_*` variable in EAS: the Expo docs do not state whether an EAS variable
+or a profile `env` value wins. A project token is public by design: it ends up inside the app.
+
+From `apps/nearsy-android`, when authorized:
+
+```bash
+eas build --platform android --profile beta
+```
+
+```bash
+eas submit --platform android --profile beta --latest
+```
+
+- `autoIncrement` comes from `production`, so each Beta build consumes a version code of the shared remote counter.
+- The release reaches Play as a `draft`, as in `production`. Testers get it after publishing it in Play Console.
+- `eas submit` uses the Play service account stored in Expo, unless one is set. That this app has one was not checked.
+
+Requirements checked at runtime: a release build, no Dev Client, and `nearsy-pj` both in the build setting
+and in the **initialized Firebase app**. The token only shows a valid format: nothing in the app can confirm
+it belongs to project 716015, so check that once.
 
 Rules that follow from it:
 
 - `distribution_channel=beta` is **declared by the build**. The app does not detect the Play track.
 - **Do not promote a Beta build to production in Play.** Promotion keeps the same binary, so its
   events would stay marked as tests. General capture needs its own build.
-- The current `production` EAS profile sets none of these variables, and this branch does not change
-  `eas.json`.
+- The `production` EAS profile sets none of these variables and did not change.
 
 ### Installation and account are different things
 
@@ -84,7 +102,14 @@ What happens:
 | A Beta install is updated to a general build | New events lose the marks, although the SDK persisted them. Events already queued keep them |
 
 No code path can write `is_test_user=false`: general builds do not write the property, and the outgoing
-filter removes a false value from any person update.
+filter removes a false value from any person update. Because of set_once, the first value stays, so a
+person already marked stays marked after other builds, devices and restarts. The SDK side is tested with the
+real class; PostHog applying set_once is checked in QA, after the first events arrive.
+
+**`is_test_user` absent does not mean `false`, and `false` is never sent.** Real users and events simply do not
+have the property. A filter of the form `is_test_user = false` would match nothing and lose every real user.
+Future Marketing filters must **exclude `true` and keep absent values**. In PostHog, confirm that the
+chosen operator keeps events and persons without the property.
 
 **Consequence to decide when analyzing:** a real user who signs in once on a tester's device stays
 marked as a person. To measure by build, filter on the event property. To drop test people entirely,
@@ -157,56 +182,107 @@ to `off` unless it is declared as Beta. A token enters the build only when its m
 ## Contract
 
 `before_send` drops any event outside this table and, on these events, any custom property it does
-not list. SDK `$` keys and the technical properties stay. The app does not send autocapture,
-screens, replay, exceptions, flags, surveys or GeoIP.
+not list. SDK `$` keys stay. The app does not send autocapture, screens, replay, exceptions, flags,
+surveys or GeoIP. Event names are final: the app reports these exact ones.
 
-Every event also carries `platform`, `app_version`, `app_build`, `environment` and
-`tracking_plan_version`. Beta builds add `is_test_user=true` and `distribution_channel=beta`, with
-`environment=production`. Other builds remove those two.
+### Properties on every event
 
-| Event | Properties | Fires |
+| Property | Type | Values |
 |---|---|---|
-| `app_opened` | `session_id` | First foreground, or a qualifying return |
-| `signup_completed` | none | Account creation confirmed: email, Google, Facebook |
-| `profile_completed` | `completion_time_min` | Final CRJ save succeeded |
-| `onboarding_step_completed` | `step_name`, `step_number`, `skipped`, `profile_type`, `item_count`, `catalog_count`, `custom_count`, `manual_count`, `verified_count` | Milestone saved |
-| `social_linked` | `social_platform`, `connection_type` (`manual`, `verified`), `profile_type` | A connection was added |
-| `match_social_tapped` | `social_platform`, `score`, `match_score_range`, `open_result` | Tap on a network of a Discovery profile |
-| `foreground_location`, `background_location` | `granted`, `trigger` (`request`, `state_change`) | Request result, or a change on return |
-| `visibility_changed` | `enabled` | Activate or deactivate succeeded |
-| `discovery_opened` | `load_time_sec`, `people_shown` | First successful load of an entry |
-| `profile_viewed` | `score`, `match_score_range` | Discovery profile loaded |
-| `match_made` | `score`, `match_score_range`, `presented_in`, `session_id` | Compatibility discovered on a presented profile |
-| `alert_opened` | `source` (`push`, `inbox`), `alert_id` | Alert opened |
-| `campaign_accessed` | `campaign_source`, `campaign_name`, `campaign_content`, `campaign_tool`, `attribution_method` | Campaign link by an existing account |
+| `platform` | string | `Android` |
+| `app_version` | string | Binary version; omitted if unreadable |
+| `app_build` | string | Binary build; omitted if unreadable |
+| `environment` | string | `production` (`beta`, `remote`); `development`, `sdk_intercept` locally |
+| `tracking_plan_version` | string | `v1` |
+| `is_test_user` | boolean | `true` on Beta builds. **Absent otherwise**, never `false` |
+| `distribution_channel` | string | `beta` on Beta builds. **Absent otherwise** |
+
+### Events
+
+"When" is the capture rule. Optional properties are omitted when unknown, never sent as `null` or `0`.
+
+| Event | Who | When |
+|---|---|---|
+| `app_opened` | Anonymous or signed in | First foreground of the process, or return after 30 s or more away. Own flows do not count |
+| `signup_completed` | Signed in | `additionalUserInfo.isNewUser` confirmed, or email account created. Email, Google, Facebook. LinkedIn pending |
+| `profile_completed` | Signed in | Final CRJ save succeeded |
+| `onboarding_step_completed` | Signed in | A milestone was saved; once per milestone, account and process |
+| `social_linked` | Signed in | A connection was added. Not on hydration or on an edit |
+| `match_social_tapped` | Anonymous or signed in | Tap on a network of a Discovery profile |
+| `foreground_location`, `background_location` | Anonymous or signed in | Answered request, or a change on return. Not the first reading of the process |
+| `visibility_changed` | Signed in | Activate or deactivate succeeded. Not automatic recovery |
+| `discovery_opened` | Signed in | First successful load of an entry to Nearby, also when empty |
+| `profile_viewed` | Signed in | Discovery profile loaded, once per screen visit |
+| `match_made` | Signed in | Card 50% visible or profile opened, with a valid score; once per profile, user and SDK session |
+| `alert_opened` | Anonymous or signed in | Inbox row or push tapped; a push needs `actorUid` or `alertId` |
+| `campaign_accessed` | Signed in | Campaign link opened by an account older than 2 minutes |
+
+| Event | Property | Type | Values | Sent |
+|---|---|---|---|---|
+| `app_opened` | `session_id` | string | SDK session id | If available |
+| `profile_completed` | `completion_time_min` | number | Minutes since Auth creation, 1 decimal | If the date is valid |
+| `onboarding_step_completed` | `step_name` | string | `profile_type`, `basics`, `about`, `affiliations`, `interests`, `socials` | Always |
+| | `step_number` | integer | 1 to 6, in that order | Always |
+| | `skipped` | boolean | `true` when it ended without content | Always |
+| | `profile_type` | string | `personal`, `professional` | `profile_type` step |
+| | `item_count` | integer | Total | `affiliations`, `interests`, `socials` |
+| | `catalog_count`, `custom_count` | integer | Parts of the total | `affiliations`, `interests` |
+| | `manual_count` | integer | Manual links | `socials` |
+| | `verified_count` | integer | Verified networks | `socials`, if known |
+| `social_linked` | `social_platform` | string | `linkedin`, `instagram`, `facebook`, `youtube`, `x`, `tiktok`, `snapchat`, `website` | Always |
+| | `connection_type` | string | `manual`, `verified` | Always |
+| | `profile_type` | string | `personal`, `professional` | Always |
+| `match_social_tapped` | `social_platform` | string | As in `social_linked` | Always |
+| | `score` | number | 0 to 100 | If known |
+| | `match_score_range` | string | `low` [0,50), `medium` [50,75), `high` [75,100] | If known |
+| | `open_result` | string | `opened`, `invalid`, `failed`; only whether the OS accepted the link | Always |
+| `foreground_location`, `background_location` | `granted` | boolean | | Always |
+| | `trigger` | string | `request`, `state_change` | Always |
+| `visibility_changed` | `enabled` | boolean | | Always |
+| `discovery_opened` | `load_time_sec` | number | Seconds, 1 decimal | Always |
+| | `people_shown` | integer | Results of that load, before text filters | Always |
+| `profile_viewed` | `score`, `match_score_range` | number, string | As above | If known |
+| `match_made` | `score`, `match_score_range` | number, string | As above | Always |
+| | `presented_in` | string | `nearby_list`, `discovery_profile` | Always |
+| | `session_id` | string | SDK session id | If available |
+| `alert_opened` | `source` | string | `push`, `inbox` | Always |
+| | `alert_id` | string | `data.alertId` of the push | Push that carries it. None does yet |
+| `campaign_accessed` | `campaign_source`, `campaign_name`, `campaign_content`, `campaign_tool` | string | Safe tokens, up to 64 characters | Those present in the link |
+| | `attribution_method` | string | `custom_scheme`, `app_link` | Always |
+
+`signup_completed` has no properties of its own.
 
 ### Person properties (active mode)
 
-A confirmed empty value is sent explicitly (`[]`, `null`). An unknown one is never written as empty.
-See "Changing mode" for what happens to its stored value.
+The person id is the Firebase UID, unprefixed. A confirmed empty value is sent explicitly (`[]`, `null`). An
+unknown one is never written as empty. See "Changing mode" for what happens to its stored value.
 
-| Property | Source |
-|---|---|
-| `email`, `platform`, `app_version` | Auth and build |
-| `profile_type`, `occupation` | Active mode |
-| `languages` | `languageCodes` |
-| `country_birth` | `birthCountryCode`; Product treats origin as birth |
-| `country_live` | `currentCity.countryCode`; never GPS or IP |
-| `age_range` | `birthDate`: `18-24`, `25-34`, `35-44`, `45-54`, `55-64`, `65+` |
-| `interests`, `affiliations` | Stable catalog or provider ids |
-| `interests_custom`, `affiliations_custom` | Original custom text |
-| `interests_custom_normalized`, `affiliations_custom_normalized` | Trim, collapsed spaces, lowercase |
-| `interests_count`, `interests_catalog_count`, `interests_custom_count` | Real totals; same for `affiliations_*` |
-| `social_platforms_manual` | Valid links of the mode's bag, Website included |
-| `social_platforms_verified` | Confirmed Identity reads |
-| `socials_connected`, `has_socials` | Union of both; only when both are known |
-| `foreground_location_granted`, `background_location_granted` | Current permission |
-| `is_test_user` | Beta builds only, set_once, always `true` |
-| `signup_source`, `signup_campaign`, `signup_content`, `signup_tool`, `attribution_method` | set_once, confirmed signup with evidence |
+| Property | Type | Values | Source |
+|---|---|---|---|
+| `email` | string | | Auth, then document |
+| `platform` | string | `Android` | Build |
+| `app_version` | string | | Build |
+| `profile_type` | string | `personal`, `professional` | Active mode |
+| `occupation` | string or null | | Active mode, then top level |
+| `languages` | string[] | Language codes | `languageCodes` |
+| `country_birth` | string or null | Upper-case ISO alpha-2 | `birthCountryCode`; Product treats origin as birth |
+| `country_live` | string or null | Upper-case ISO alpha-2 | `currentCity.countryCode`; never GPS or IP |
+| `age_range` | string or null | `18-24`, `25-34`, `35-44`, `45-54`, `55-64`, `65+`; `null` under 18 | `birthDate` |
+| `interests`, `affiliations` | string[] | Stable catalog or provider ids | Active mode |
+| `interests_custom`, `affiliations_custom` | string[] | Original custom text | Active mode |
+| `interests_custom_normalized`, `affiliations_custom_normalized` | string[] | Trim, collapsed spaces, lowercase | Active mode |
+| `interests_count`, `interests_catalog_count`, `interests_custom_count` | integer | Real totals; same for `affiliations_*` | Active mode |
+| `social_platforms_manual` | string[] | Valid links of the mode, Website included; `custom` for any custom network | Active mode |
+| `social_platforms_verified` | string[] | `instagram`, `tiktok`, `x`, `youtube` | Confirmed Identity reads |
+| `socials_connected` | string[] | Union of both | Only when both are known |
+| `has_socials` | boolean | | Only when both are known |
+| `foreground_location_granted`, `background_location_granted` | boolean | | Current permission |
+| `is_test_user` | boolean | `true`, set_once. **Beta builds only; absent is not `false`** | Build |
+| `signup_source`, `signup_campaign`, `signup_content`, `signup_tool` | string | Safe tokens, set_once | Confirmed signup with evidence |
+| `attribution_method` | string | `custom_scheme`, `app_link`, `install_referrer`, set_once | Same |
 
 Details:
 
-- A person under 18 gets `age_range: null`. Age validation is unchanged.
 - A custom id embeds typed text (`custom_music_<slug>_<ts>`), so it never enters `interests` or
   `affiliations`. `*_other` and `*_group_*` are excluded, as in the product's own count.
 - Analytics limits: 100 items per list, 120 characters per text. Counts stay real, and the profile is
@@ -377,7 +453,8 @@ Sources:
 | Account recreation | Identity and iOS | No permanent dedupe by UID is used here, and the iOS report differs. A recreated account counts as a new signup |
 | `data.alertId` on push | Functions | Optional field |
 | `event_cohort` | Server | Assigned by venue and window, not by link or date. The app does not send it |
-| Beta activation | Product | Authorize; set the build variables of "Beta" in EAS; confirm the token is project 716015 |
+| Beta activation | Product | Authorize; create `NEARSY_POSTHOG_TOKEN` in EAS; confirm the token is project 716015; confirm the Play service account and the internal testers |
+| Marketing filters | Marketing | Exclude `is_test_user = true` and keep absent values; do not filter on `false` |
 
 Out of scope: gender, seniority, industry, monetization, backfills, new Firestore rules or fields.
 
@@ -477,6 +554,7 @@ the build of "Beta". In PostHog, activity of project 716015, filtered by `distri
 | Airplane mode, use the app, reconnect | Queued events arrive |
 | Close the app, reopen, check `app_version`, `app_build` | Real values of the Play build |
 | Any screen | No `$screen`, `Application Opened`, `$exception` or `$push_*` events |
+| Person of that account, with the property already `true`: use a production install | Stays `true`; events there have no marks |
 | Device logs | No `[analytics:transport]` with `batch_rejected`; no `[analytics] off:` line |
 
 If `[analytics] off: firebase_environment_mismatch` appears, the runtime project check did not see
@@ -494,5 +572,5 @@ If `[analytics] off: firebase_environment_mismatch` appears, the runtime project
 From `packages/shared`:
 
 ```bash
-node --experimental-strip-types --test --test-force-exit src/analytics/__tests__/analyticsFoundation.test.ts src/analytics/__tests__/analyticsTrackingPlan.test.ts src/analytics/__tests__/analyticsRealSdk.test.ts src/analytics/__tests__/analyticsBetaTransport.test.ts
+node --experimental-strip-types --test --test-force-exit src/analytics/__tests__/analyticsFoundation.test.ts src/analytics/__tests__/analyticsTrackingPlan.test.ts src/analytics/__tests__/analyticsRealSdk.test.ts src/analytics/__tests__/analyticsBetaTransport.test.ts src/analytics/__tests__/analyticsBetaBuild.test.ts
 ```
