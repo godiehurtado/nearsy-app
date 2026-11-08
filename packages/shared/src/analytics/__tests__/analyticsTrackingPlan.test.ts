@@ -52,7 +52,6 @@ import {
 import { describeInterceptedRequest } from '../analyticsSdkTransport.ts';
 import {
   createPendingVerificationMarkers,
-  createVerifiedSocialTracker,
   readManualPlatforms,
   socialProperties,
   toSocialPlatformName,
@@ -629,17 +628,6 @@ describe('social properties', () => {
   it('unknown verified state does not clear socials', () => {
     const props = socialProperties(['website'], undefined);
     assert.deepEqual(props, { social_platforms_manual: ['website'] });
-  });
-
-  it('verified is known only once every network of the mode was confirmed', () => {
-    const tracker = createVerifiedSocialTracker();
-    tracker.note('personal', 'youtube', true);
-    tracker.note('personal', 'tiktok', false);
-    tracker.note('personal', 'x', false);
-    assert.equal(tracker.verifiedFor('personal'), undefined);
-    tracker.note('personal', 'instagram', false);
-    assert.deepEqual(tracker.verifiedFor('personal'), ['youtube']);
-    assert.equal(tracker.verifiedFor('professional'), undefined);
   });
 
   it('social_linked is wired to adding, never to hydration, edit or pending', () => {

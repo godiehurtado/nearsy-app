@@ -3,7 +3,8 @@
  * Does not write the social bag or copy canonicalUrl.
  */
 import { VERIFIED_SOCIAL_PLATFORMS } from '../analytics/analyticsSocial.ts';
-import { noteSocialOwnership } from '../analytics/analytics';
+import { noteSocialOwnership, noteSocialOwnershipFailed } from '../analytics/analytics';
+import { firebaseAuth } from '../config/firebaseConfig.android';
 import { getInstagramOwnershipState } from './instagramOwnership/instagramOwnership.android.ts';
 import { getTiktokOwnershipState } from './tiktokOwnership/tiktokOwnership.android.ts';
 import { getXOwnershipState } from './xOwnership/xOwnership.android.ts';
@@ -26,6 +27,8 @@ export type OwnProfileSocialOwnershipGetters = {
   getTiktok?: OwnProfileSocialOwnershipGetter;
   getInstagram?: OwnProfileSocialOwnershipGetter;
   getX?: OwnProfileSocialOwnershipGetter;
+  /** Account the reads are made for; defaults to the signed-in one. */
+  getUid?: () => string | null;
 };
 
 async function presenceForMode(
@@ -55,6 +58,9 @@ export const OWN_PROFILE_SOCIAL_OVERLAY_SOURCE = 'android-identity-gets' as cons
 export async function loadOwnProfileSocialOwnershipOverlay(
   getters?: OwnProfileSocialOwnershipGetters,
 ): Promise<OwnershipPresenceByMode> {
+  // Analytics belongs to the account that asked: a result arriving after a
+  // logout or an account change is dropped there.
+  const ownerUid = (getters?.getUid ?? (() => firebaseAuth.currentUser?.uid ?? null))();
   const [youtube, tiktok, instagram, x] = await Promise.all([
     presenceByMode(getters?.getYoutube ?? getYoutubeOwnershipState),
     presenceByMode(getters?.getTiktok ?? getTiktokOwnershipState),
@@ -76,9 +82,12 @@ export async function loadOwnProfileSocialOwnershipOverlay(
   for (const mode of ['personal', 'professional'] as const) {
     for (const platform of VERIFIED_SOCIAL_PLATFORMS) {
       const status = out[mode][platform];
-      // An error stays unknown: it must not clear a stored network.
+      if (!ownerUid) continue;
+      // An error stays unknown: it must not clear a stored network, nor hide the others.
       if (status === 'verified' || status === 'not_linked') {
-        noteSocialOwnership(mode, platform, status === 'verified');
+        noteSocialOwnership(mode, platform, status === 'verified', ownerUid);
+      } else {
+        noteSocialOwnershipFailed(mode, platform, ownerUid);
       }
     }
   }

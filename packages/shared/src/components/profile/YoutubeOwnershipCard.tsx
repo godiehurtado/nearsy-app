@@ -3,7 +3,12 @@
  * being edited (Personal XOR Professional). Connect/unlink only that mode.
  * No dual publish toggles.
  */
-import { noteSocialOwnership, trackSocialLinked } from '../../analytics/analytics';
+import {
+  noteSocialOwnership,
+  noteSocialOwnershipFailed,
+  noteSocialVerificationPending,
+  trackSocialLinked,
+} from '../../analytics/analytics';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -195,6 +200,8 @@ export function YoutubeOwnershipCard({
         if (gen !== requestGenRef.current || forMode !== modeRef.current) {
           return;
         }
+        // Unknown, not disconnected: it must not hide the other networks.
+        noteSocialOwnershipFailed(forMode, 'youtube');
         setConnected(null);
         setPhase('idle');
         Alert.alert(t('common.error'), errorMessage(err), [
@@ -278,6 +285,9 @@ export function YoutubeOwnershipCard({
     const forMode = mode;
     const gen = ++requestGenRef.current;
     setPhase('connecting');
+    // Open until a read settles it: a failed finalizer whose connection the
+    // reconciliation confirms still counts once.
+    noteSocialVerificationPending(forMode, 'youtube');
     try {
       const outcome = await api.connectYoutubeOwnership(forMode);
       if (gen !== requestGenRef.current || forMode !== modeRef.current) {

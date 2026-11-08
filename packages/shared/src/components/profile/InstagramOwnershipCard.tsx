@@ -3,7 +3,11 @@
  * Own Profile mode being edited. Start / Get / Unlink only. No inbox admin.
  */
 import { withOwnExternalFlow } from '../../analytics/ownExternalFlow.ts';
-import { noteSocialOwnership, noteSocialVerificationPending } from '../../analytics/analytics';
+import {
+  noteSocialOwnership,
+  noteSocialOwnershipFailed,
+  noteSocialVerificationPending,
+} from '../../analytics/analytics';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -144,6 +148,7 @@ export function InstagramOwnershipCard({
       }
       const presented = presentInstagramGetResponse(state);
       if (presented.verified && presented.verified.mode !== forMode) {
+        noteSocialOwnershipFailed(forMode, 'instagram');
         setVerified(null);
         setChallenge(null);
         setHint(null);
@@ -203,6 +208,8 @@ export function InstagramOwnershipCard({
         if (gen !== requestGenRef.current || forMode !== modeRef.current) {
           return;
         }
+        // Unknown, not disconnected: it must not hide the other networks.
+        noteSocialOwnershipFailed(forMode, 'instagram');
         if (challengeRef.current) return;
         setVerified(null);
         setChallenge(null);

@@ -61,9 +61,9 @@ import {
 } from './analyticsSdkTransport';
 import { decideLinkedInAccount } from './linkedinNewAccountSignal';
 import {
-  createPendingVerificationMarkers,
-  createVerifiedSocialTracker,
+  createVerifiedSocialController,
   toSocialPlatformName,
+  type VerifiedSocialPlatform,
 } from './analyticsSocial';
 import {
   isLocationRequestInFlight,
@@ -189,10 +189,7 @@ let sessionResolved = false;
 let session: Session | null = null;
 let extras: AnalyticsExtras = {};
 let lastProfileDoc: { uid: string; doc: unknown } | null = null;
-const verifiedSocials = createVerifiedSocialTracker();
 const onboardingMilestones = createOnboardingMilestoneTracker();
-const linkedThisProcess = new Set<string>();
-let verifiedOwnerUid: string | null = null;
 
 function personModeMemory() {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -200,21 +197,31 @@ function personModeMemory() {
   return createPersonModeMemory(storage);
 }
 
-function pendingVerificationMarkers() {
+let verifiedSocialController: ReturnType<typeof createVerifiedSocialController> | null = null;
+
+/** Created on first use, once the session exists. */
+function verifiedSocials() {
+  if (verifiedSocialController) return verifiedSocialController;
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const storage = require('@react-native-async-storage/async-storage').default;
-  return createPendingVerificationMarkers(storage);
+  verifiedSocialController = createVerifiedSocialController({
+    storage,
+    currentUid,
+    emitLinked: (uid, platform, mode) => {
+      getSession()?.trackForUser(uid, () => ({
+        event: 'social_linked',
+        properties: { social_platform: platform, link_type: 'verified', profile_type: mode },
+      }));
+    },
+    syncPerson: (uid) => {
+      if (lastProfileDoc?.uid === uid) getSession()?.syncPersonProfile(uid, lastProfileDoc.doc);
+    },
+  });
+  return verifiedSocialController;
 }
 
-function pendingVerificationKey(uid: string, mode: string, platform: string): string {
-  return `${uid}:${mode}:${platform}`;
-}
-
-function alignSocialOwner(uid: string): void {
-  if (verifiedOwnerUid === uid) return;
-  verifiedOwnerUid = uid;
-  verifiedSocials.clear();
-  linkedThisProcess.clear();
+function isVerifiedPlatform(name: string | undefined): name is VerifiedSocialPlatform {
+  return name === 'instagram' || name === 'youtube' || name === 'tiktok' || name === 'x';
 }
 
 function getSession(): Session | null {
@@ -257,8 +264,7 @@ function getSession(): Session | null {
           authEmail: user.email,
           appVersion,
           normalizeLanguages: normalizeLanguageCodes,
-          verifiedSocialsFor: (mode) =>
-            verifiedOwnerUid === user.uid ? verifiedSocials.verifiedFor(mode) : undefined,
+          verifiedSocialsFor: (mode) => verifiedSocials().verifiedFor(mode, user.uid),
         }),
       profileKeysToUnset: async (user, doc, properties) =>
         personKeysToUnset({
@@ -550,11 +556,11 @@ export const trackOnboardingStep: AnalyticsApi['trackOnboardingStep'] = safely((
   const active = getSession();
   if (!active || !onboardingMilestones.claim(uid, input.step)) return;
   const mode =
-    input.step === 'socials' && verifiedOwnerUid === uid
-      ? (lastProfileDoc?.doc as { mode?: unknown } | undefined)?.mode
+    input.step === 'socials' && lastProfileDoc?.uid === uid
+      ? (lastProfileDoc.doc as { mode?: unknown } | undefined)?.mode
       : undefined;
   const verified =
-    typeof mode === 'string' ? verifiedSocials.verifiedFor(mode) : undefined;
+    typeof mode === 'string' ? verifiedSocials().verifiedFor(mode, uid) : undefined;
   const properties = buildOnboardingStepProperties(input, verified?.length);
   active.trackForUser(uid, () => ({
     event: 'onboarding_step_completed',
@@ -566,35 +572,27 @@ export const noteSocialOwnership: AnalyticsApi['noteSocialOwnership'] = safely((
   mode,
   platform,
   connected,
+  ownerUid,
 ) => {
-  const active = getSession();
-  const uid = currentUid();
-  if (!active || !uid) return;
-  alignSocialOwner(uid);
-  if (!connected) linkedThisProcess.delete(`${mode}:${platform}`);
-  const changed = verifiedSocials.note(mode, platform, connected);
-  if (changed && lastProfileDoc?.uid === uid) {
-    active.syncPersonProfile(uid, lastProfileDoc.doc);
-  }
-  if (connected) {
-    void pendingVerificationMarkers()
-      .consume(pendingVerificationKey(uid, mode, platform))
-      .then((wasPending) => {
-        if (wasPending) trackSocialLinked(platform, 'verified', mode);
-      })
-      .catch(() => {});
-  }
+  if (!getSession()) return;
+  verifiedSocials().note(mode, platform, connected, ownerUid);
+});
+
+export const noteSocialOwnershipFailed: AnalyticsApi['noteSocialOwnershipFailed'] = safely((
+  mode,
+  platform,
+  ownerUid,
+) => {
+  if (!getSession()) return;
+  verifiedSocials().fail(mode, platform, ownerUid);
 });
 
 export const noteSocialVerificationPending: AnalyticsApi['noteSocialVerificationPending'] = safely((
   mode,
   platform,
 ) => {
-  const uid = currentUid();
-  if (!getSession() || !uid) return;
-  void pendingVerificationMarkers()
-    .mark(pendingVerificationKey(uid, mode, platform))
-    .catch(() => {});
+  if (!getSession()) return;
+  verifiedSocials().markPending(mode, platform);
 });
 
 export const trackSocialLinked: AnalyticsApi['trackSocialLinked'] = safely((
@@ -606,11 +604,10 @@ export const trackSocialLinked: AnalyticsApi['trackSocialLinked'] = safely((
   const uid = currentUid();
   const name = toSocialPlatformName(platform);
   if (!active || !uid || !name) return;
-  alignSocialOwner(uid);
   if (connectionType === 'verified') {
-    const key = `${mode}:${name}`;
-    if (linkedThisProcess.has(key)) return;
-    linkedThisProcess.add(key);
+    // One emission per connection, shared with the reconciliation of an attempt.
+    if (isVerifiedPlatform(name)) verifiedSocials().linked(mode, name);
+    return;
   }
   active.trackForUser(uid, () => ({
     event: 'social_linked',

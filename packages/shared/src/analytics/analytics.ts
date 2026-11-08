@@ -14,6 +14,7 @@ export const syncAnalyticsPersonProfile: AnalyticsApi['syncAnalyticsPersonProfil
 export const noteOnboardingResume: AnalyticsApi['noteOnboardingResume'] = () => {};
 export const trackOnboardingStep: AnalyticsApi['trackOnboardingStep'] = () => {};
 export const noteSocialOwnership: AnalyticsApi['noteSocialOwnership'] = () => {};
+export const noteSocialOwnershipFailed: AnalyticsApi['noteSocialOwnershipFailed'] = () => {};
 export const noteSocialVerificationPending: AnalyticsApi['noteSocialVerificationPending'] =
   () => {};
 export const trackSocialLinked: AnalyticsApi['trackSocialLinked'] = () => {};

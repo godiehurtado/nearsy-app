@@ -23,13 +23,26 @@ export type AnalyticsApi = {
   noteOnboardingResume(uid: string, stepKind: string): void;
   trackOnboardingStep(uid: string, input: OnboardingStepInput): void;
 
-  /** A confirmed verified status of the mode. Pending or failed reads are not. */
+  /**
+   * A confirmed verified status of the mode. Pending or failed reads are not.
+   * `ownerUid`: the account the read was made for; dropped if it is no longer signed in.
+   */
   noteSocialOwnership(
     mode: string,
     platform: VerifiedSocialPlatform,
     connected: boolean,
+    ownerUid?: string | null,
   ): void;
-  /** A verification started; its first verified read later counts as linked. */
+  /** A failed or rejected read: unknown, never a disconnection. */
+  noteSocialOwnershipFailed(
+    mode: string,
+    platform: VerifiedSocialPlatform,
+    ownerUid?: string | null,
+  ): void;
+  /**
+   * A verification or OAuth connection attempt started. Its first confirmed
+   * connected read counts as linked, once, even when the finalizer failed.
+   */
   noteSocialVerificationPending(mode: string, platform: VerifiedSocialPlatform): void;
   /** A connection was just added. Never call it for hydration or an edit. */
   trackSocialLinked(

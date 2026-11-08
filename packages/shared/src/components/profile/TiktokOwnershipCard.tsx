@@ -3,7 +3,12 @@
  * being edited (Personal XOR Professional). Connect/unlink only that mode.
  * No channel picker. No dual publish toggles.
  */
-import { noteSocialOwnership, trackSocialLinked } from '../../analytics/analytics';
+import {
+  noteSocialOwnership,
+  noteSocialOwnershipFailed,
+  noteSocialVerificationPending,
+  trackSocialLinked,
+} from '../../analytics/analytics';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -181,6 +186,8 @@ export function TiktokOwnershipCard({
         if (gen !== requestGenRef.current || forMode !== modeRef.current) {
           return;
         }
+        // Unknown, not disconnected: it must not hide the other networks.
+        noteSocialOwnershipFailed(forMode, 'tiktok');
         setConnected(null);
         setPhase('idle');
         Alert.alert(t('common.error'), errorMessage(err), [
@@ -248,6 +255,9 @@ export function TiktokOwnershipCard({
     const forMode = mode;
     const gen = ++requestGenRef.current;
     setPhase('connecting');
+    // Open until a read settles it: a failed finalizer whose connection the
+    // reconciliation confirms still counts once.
+    noteSocialVerificationPending(forMode, 'tiktok');
     try {
       const outcome = await api.connectTiktokOwnership(forMode);
       if (gen !== requestGenRef.current || forMode !== modeRef.current) {

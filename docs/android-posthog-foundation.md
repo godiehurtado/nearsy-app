@@ -315,9 +315,9 @@ Profile documents are never modified or migrated by analytics. For each property
 | | Only legacy rows, which have no stable ids | **Unset**, all six of each family |
 | `social_platforms_manual` | Valid or absent bag | Set |
 | | Malformed bag | **Unset**, with `socials_connected` and `has_socials` |
-| `social_platforms_verified`, `socials_connected`, `has_socials` | All four reads confirmed | Set |
-| | Read pending or failed, **same mode as the last update** | Omitted: the last confirmed value stays |
-| | Read pending or failed, **another mode or none known** | **Unset**, until a read confirms |
+| `social_platforms_verified`, `socials_connected`, `has_socials` | All four networks read once (confirmed, failed or rejected) | Set. A failed or rejected network keeps its last confirmed value on this device, or is left out |
+| | A network not read yet, **same mode as the last update** | Omitted: the last confirmed value stays |
+| | A network not read yet, **another mode or none known** | **Unset**, until the reads finish |
 | All of the above | Document without a valid mode | **Unset** only if this device wrote for another mode |
 | All | Document could not be read | Nothing changes, `profile_type` included |
 
@@ -381,6 +381,18 @@ Dedupe limits:
   the first verified Instagram read after a pending one. A local marker keeps that pending state
   across a closed card or a restart. Never on hydration, on editing a link, or while pending.
 - Removing and adding again counts as a new connection.
+- Verified networks (Instagram, X, YouTube, TikTok), in the profile editor and in onboarding, which mount
+  the same cards:
+  - A connect attempt leaves a local marker per account, mode and network. If the finalizer fails
+    and the following read (reconciliation) confirms the connection, `social_linked` fires once. The
+    direct path and the reconciliation share one key, so they never both fire.
+  - A read that confirms not connected closes the attempt. Instagram pending reads as not connected
+    and keeps its attempt open.
+  - A confirmed disconnection updates the person and emits nothing.
+  - A failed read, or a rejection such as `*_NOT_ENABLED` (YouTube outside its allowlist), is unknown:
+    never a disconnection. It keeps the last confirmed value, remembered per account on the device,
+    and does not hide the other networks.
+  - Another account starts clean. A read made for an account that is no longer signed in is dropped.
 - `match_social_tapped` does not mean a connection between people. `open_result` only says whether
   the OS accepted the link (`opened`, `invalid`, `failed`).
 
