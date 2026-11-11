@@ -309,9 +309,9 @@ export const es: TranslationResources = {
       saved: 'Rango de edad de visibilidad actualizado',
     },
     nearbyNotices: {
-      title: 'Avisos de intereses cercanos',
+      title: 'Intereses y afiliaciones compartidos',
       description:
-        'Recibe un aviso cuando alguien cerca comparte un interés oficial contigo.',
+        'Recibe un aviso cuando alguien cerca comparte contigo un interés oficial o una afiliación.',
     },
     contactsSync: {
       title: 'Sincronizar contactos',

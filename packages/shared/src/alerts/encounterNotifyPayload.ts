@@ -3,7 +3,17 @@
  * Binary-compatible with kind=contact_nearby + actorUid on current Play binaries.
  */
 
-export type EncounterNotifyMotive = 'interest' | 'contact' | 'both';
+/**
+ * Why the server notified (Functions contract). `unknown` is a motive this
+ * binary does not know yet: the push is still received and opens the profile.
+ */
+export type EncounterNotifyMotive =
+  | 'interest'
+  | 'contact'
+  | 'both'
+  | 'affiliation'
+  | 'contact_affiliation'
+  | 'unknown';
 
 export type EncounterNotifyPayload = {
   kind: 'contact_nearby';
@@ -17,6 +27,15 @@ const MOTIVES: readonly EncounterNotifyMotive[] = [
   'interest',
   'contact',
   'both',
+  'affiliation',
+  'contact_affiliation',
+];
+
+/** Motives that include the contacts signal. */
+const CONTACT_MOTIVES: readonly EncounterNotifyMotive[] = [
+  'contact',
+  'both',
+  'contact_affiliation',
 ];
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -35,7 +54,8 @@ export function parseEncounterNotifyMotive(
 
 /**
  * One notification. Motive is optional; fromContacts remains for old payloads.
- * Missing/invalid motive falls back: fromContacts true → contact, else interest.
+ * A missing motive falls back: fromContacts true → contact, else interest.
+ * A motive this binary does not know is `unknown`, never a parse failure.
  */
 export function parseEncounterNotifyPayload(
   data: unknown,
@@ -44,22 +64,27 @@ export function parseEncounterNotifyPayload(
   if (!row) return null;
   if (row.kind !== 'contact_nearby') return null;
   if (typeof row.actorUid !== 'string' || !row.actorUid.trim()) return null;
-  const motive =
+  const motive: EncounterNotifyMotive =
     parseEncounterNotifyMotive(row.motive) ??
-    (row.fromContacts === true ? 'contact' : 'interest');
+    (typeof row.motive === 'string' && row.motive.trim()
+      ? 'unknown'
+      : row.fromContacts === true
+        ? 'contact'
+        : 'interest');
   return {
     kind: 'contact_nearby',
     actorUid: row.actorUid.trim(),
     ...(typeof row.actorName === 'string' && row.actorName.trim()
       ? { actorName: row.actorName.trim() }
       : {}),
-    fromContacts: row.fromContacts === true || motive === 'contact' || motive === 'both',
+    fromContacts: row.fromContacts === true || CONTACT_MOTIVES.includes(motive),
     motive,
   };
 }
 
+/** Copy key per motive; `generic` when the motive is not known. */
 export function encounterNotifyCopyKey(
   motive: EncounterNotifyMotive,
-): 'interest' | 'contact' | 'both' {
-  return motive;
+): Exclude<EncounterNotifyMotive, 'unknown'> | 'generic' {
+  return motive === 'unknown' ? 'generic' : motive;
 }

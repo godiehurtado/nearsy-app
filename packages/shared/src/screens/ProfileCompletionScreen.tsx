@@ -162,6 +162,10 @@ import {
   type OnboardingSelectedAffiliation,
 } from '../affiliations/onboardingAffiliationCatalog';
 import { buildCrjAffiliationPersistencePatch } from '../affiliations/onboardingAffiliationPersistence';
+import {
+  affiliationFieldsChanged,
+  reevaluateAfterAffiliationSave,
+} from '../affiliations/affiliationReevaluate';
 import { readOnboardingAffiliationsFromDoc } from '../affiliations/postCrjAffiliationEditor';
 import {
   emptyCrjSocialDraftValues,
@@ -978,6 +982,11 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     setSelectedAffiliations(resolved);
     const patch = buildCrjAffiliationPersistencePatch(mode, resolved);
     await updateUserProfilePartial(uid, patch);
+    // Compared with the document as last written, so continuing without edits asks nothing.
+    reevaluateAfterAffiliationSave(
+      affiliationFieldsChanged(patch, shellData),
+      scheduleReevaluateProximityNotices,
+    );
     setShellData((prev) => ({
       ...(prev ?? {}),
       mode,

@@ -34,6 +34,11 @@ import {
 } from '../affiliations/postCrjAffiliationEditor';
 import { buildPostCrjAffiliationPersistencePatch } from '../affiliations/onboardingAffiliationPersistence';
 import {
+  affiliationFieldsChanged,
+  reevaluateAfterAffiliationSave,
+} from '../affiliations/affiliationReevaluate';
+import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
+import {
   IDLE_AFFILIATION_SEARCH_UI,
   resolvePendingAffiliationSearchUi,
   type AffiliationSearchUiSnapshot,
@@ -184,6 +189,10 @@ export default function AffiliationsScreen() {
         .collection('users')
         .doc(uid)
         .set({ ...patch, updatedAt: Date.now() }, { merge: true });
+      reevaluateAfterAffiliationSave(
+        affiliationFieldsChanged(patch, buildPostCrjAffiliationPersistencePatch(mode, snapshot)),
+        scheduleReevaluateProximityNotices,
+      );
       setSnapshot(resolved);
       navigation.goBack();
     } catch (e: any) {

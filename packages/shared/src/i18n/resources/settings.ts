@@ -46,9 +46,9 @@ export default {
     saved: 'Visibility age updated',
   },
   nearbyNotices: {
-    title: 'Interest nearby notices',
+    title: 'Shared interests and affiliations',
     description:
-      'Get notified when someone nearby shares an official interest with you.',
+      'Get notified when someone nearby shares an official interest or an affiliation with you.',
   },
   contactsSync: {
     title: 'Sync contacts',
