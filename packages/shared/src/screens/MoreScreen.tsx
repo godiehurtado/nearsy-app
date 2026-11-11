@@ -141,9 +141,11 @@ import {
   createContactsOperationTrace,
   traceContactsAddressBook,
   traceContactsSession,
+  traceContactsStep,
   type ContactsOperationTrace,
 } from '../contacts/contactsDiagnostics';
 import { isContactsDiagnosticsVisible } from '../contacts/contactsDiagnosticsFlag';
+import { resolveDefaultPhoneRegion } from '../contacts/identifiers';
 import { getContactsHmacClient } from '../contacts/iosContactsFoundation';
 import { createContactsSessionStore } from '../contacts/iosContactsSession';
 
@@ -583,6 +585,17 @@ export default function MoreScreen() {
     client: await getContactsHmacClient(trace),
     session: traceContactsSession(createContactsSessionStore(uid), trace),
     book: traceContactsAddressBook(createContactsAddressBookPort(), trace),
+    // National numbers are read only in the country of the OTP-verified phone.
+    readDefaultPhoneRegion: () =>
+      traceContactsStep(trace, 'phone_region', async () => {
+        const snap = await getDoc(doc(firestoreDb, 'users', uid));
+        if (!snap.exists()) return null;
+        const data = snap.data() as ProfileDoc;
+        return resolveDefaultPhoneRegion({
+          phone: data.phone,
+          phoneVerified: data.phoneVerified,
+        });
+      }),
     isCancelled: () => !isCurrent() || firebaseAuth.currentUser?.uid !== uid,
     reevaluatePending: createReevaluatePendingPort(uid),
     // Reevaluate is best-effort and separate from Identity sync success. The

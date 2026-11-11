@@ -6,7 +6,11 @@
  * Over-cap is a hard reject — Identity does not silent-truncate.
  */
 
-import { ParseError, parsePhoneNumberWithError } from 'libphonenumber-js/max';
+import {
+  ParseError,
+  parsePhoneNumberWithError,
+  type CountryCode,
+} from 'libphonenumber-js/max';
 
 import {
   CONTACT_EMAIL_MAX_CHARS,
@@ -40,22 +44,20 @@ export function tryNormalizeEmail(raw: string): string | null {
 }
 
 /**
- * Same rules as Identity's normalizeContactPhone (libphonenumber-js/max, same
- * version): international form only, possible and valid, sent as E.164.
- * Anything Identity would refuse is skipped here instead of failing the sync.
+ * Identity's normalizeContactPhone rules (libphonenumber-js/max, same version):
+ * starts with "+", at most 28 characters, no letters, possible and valid, and an
+ * E.164 of at most 20 characters. Returns that E.164 or null.
  */
-export function tryNormalizePhone(raw: string): string | null {
-  if (typeof raw !== 'string') return null;
-  const trimmed = raw.replace(FORMAT_MARKS_RE, '').trim();
+function identityAcceptedE164(candidate: string): string | null {
   if (
-    !trimmed.startsWith('+') ||
-    trimmed.length > CONTACT_PHONE_MAX_CHARS + 8 ||
-    /[A-Za-z]/.test(trimmed)
+    !candidate.startsWith('+') ||
+    candidate.length > CONTACT_PHONE_MAX_CHARS + 8 ||
+    /[A-Za-z]/.test(candidate)
   ) {
     return null;
   }
   try {
-    const parsed = parsePhoneNumberWithError(trimmed, { extract: false });
+    const parsed = parsePhoneNumberWithError(candidate, { extract: false });
     if (!parsed.isPossible() || !parsed.isValid()) return null;
     const e164 = parsed.format('E.164');
     return e164.length <= CONTACT_PHONE_MAX_CHARS ? e164 : null;
@@ -66,12 +68,47 @@ export function tryNormalizePhone(raw: string): string | null {
   }
 }
 
+/**
+ * Normalizes one address-book phone to the E.164 Identity accepts.
+ *
+ * - A number written with "+" keeps its own country; the default region is
+ *   never applied to it.
+ * - A national number (no "+") is read in `defaultRegion` only when one is
+ *   given. That region is an interpretation rule, not a fact about the
+ *   contact's country. Without it, nothing is prefixed and the number is
+ *   skipped.
+ * - Every result is checked again with Identity's rules before it is kept.
+ */
+export function tryNormalizePhone(
+  raw: string,
+  defaultRegion?: CountryCode | null,
+): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.replace(FORMAT_MARKS_RE, '').trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('+')) return identityAcceptedE164(trimmed);
+  if (!defaultRegion || trimmed.length > CONTACT_PHONE_MAX_CHARS + 8 || /[A-Za-z]/.test(trimmed)) {
+    return null;
+  }
+  try {
+    const parsed = parsePhoneNumberWithError(trimmed, {
+      defaultCountry: defaultRegion,
+      extract: false,
+    });
+    if (!parsed.isPossible() || !parsed.isValid()) return null;
+    return identityAcceptedE164(parsed.format('E.164'));
+  } catch {
+    return null;
+  }
+}
+
 export function tryNormalizeIdentifier(
   kind: ContactIdentifierKind,
   value: string,
+  defaultRegion?: CountryCode | null,
 ): string | null {
   if (kind === 'email') return tryNormalizeEmail(value);
-  if (kind === 'phone') return tryNormalizePhone(value);
+  if (kind === 'phone') return tryNormalizePhone(value, defaultRegion);
   return null;
 }
 
@@ -93,13 +130,14 @@ const hasText = (value: unknown): boolean =>
  */
 export function selectUploadableIdentifiers(
   rows: readonly AddressBookContactRow[],
+  options: { defaultRegion?: CountryCode | null } = {},
 ): SelectIdentifiersResult {
   const unique = new Map<string, ContactIdentifierInput>();
   let present = 0;
   for (const row of rows) {
     for (const phone of row.phoneNumbers ?? []) {
       if (hasText(phone?.number)) present += 1;
-      const value = tryNormalizePhone(phone?.number ?? '');
+      const value = tryNormalizePhone(phone?.number ?? '', options.defaultRegion);
       if (!value) continue;
       unique.set(`phone:${value}`, { kind: 'phone', value });
     }
@@ -161,4 +199,25 @@ export function createSourceId(randomHex: string): string {
   const compact = randomHex.replace(/[^A-Za-z0-9]/g, '');
   const id = `ios_${compact}`.slice(0, 32);
   return id.length >= 8 ? id : `ios_${compact}src0000`.slice(0, 16);
+}
+
+/**
+ * Default region for national numbers: only the country of the account's own
+ * phone, and only when OTP verified it. Never language, locale or SIM.
+ * Null when there is no verified phone or it has no single country.
+ */
+export function resolveDefaultPhoneRegion(input: {
+  phone: unknown;
+  phoneVerified: unknown;
+}): CountryCode | null {
+  if (input.phoneVerified !== true || typeof input.phone !== 'string') return null;
+  const own = input.phone.trim();
+  if (!own.startsWith('+')) return null;
+  try {
+    const parsed = parsePhoneNumberWithError(own, { extract: false });
+    if (!parsed.isValid()) return null;
+    return parsed.country ?? null;
+  } catch {
+    return null;
+  }
 }

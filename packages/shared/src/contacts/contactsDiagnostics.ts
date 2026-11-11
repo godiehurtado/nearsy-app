@@ -28,6 +28,7 @@ const CONTACTS_DIAGNOSTIC_STAGES = [
   'session_read',
   'session_write',
   'permission',
+  'phone_region',
   'contacts_read',
   'other',
 ] as const;
@@ -322,6 +323,15 @@ export function createTracedFetch(
       throw err;
     }
   };
+}
+
+/** Runs one traced step from outside this module. */
+export function traceContactsStep<T>(
+  trace: ContactsOperationTrace,
+  stage: ContactsDiagnosticStage,
+  work: () => Promise<T>,
+): Promise<T> {
+  return step(trace, stage, work);
 }
 
 async function step<T>(

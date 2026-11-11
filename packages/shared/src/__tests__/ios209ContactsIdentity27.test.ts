@@ -1561,3 +1561,40 @@ describe('A book whose identifiers are all invalid keeps the last sync', () => {
     assert.deepEqual(last?.data.identifiers, []);
   });
 });
+
+describe('National numbers use only the verified-phone region', () => {
+  it('uploads a national number as E.164 in the region the port returns', async () => {
+    const stack = createStack({ identity: createIdentityDouble() });
+    stack.book.rows = [{ phoneNumbers: [{ number: '300 123 4567' }] }];
+    stack.ports.readDefaultPhoneRegion = async () => 'CO';
+    const out = await enableAndSyncContacts(stack.ports);
+    assert.equal(out.ok && out.bookSynced, true);
+    assert.deepEqual(stack.named('syncContactHashes').at(-1)?.data.identifiers, [
+      { kind: 'phone', value: '+573001234567' },
+    ]);
+  });
+
+  it('without a region the same book is all invalid and nothing is sent', async () => {
+    const stack = createStack({ identity: createIdentityDouble() });
+    await enableAndSyncContacts(stack.ports);
+    const sentBefore = stack.named('syncContactHashes').length;
+    stack.book.rows = [{ phoneNumbers: [{ number: '300 123 4567' }] }];
+    stack.ports.readDefaultPhoneRegion = async () => null;
+    const out = await syncGrantedAddressBook(stack.ports);
+    assert.equal(out.ok === false && out.reason, 'contacts-identifier-invalid');
+    assert.equal(stack.named('syncContactHashes').length, sentBefore);
+  });
+
+  it('a failed region read fails the sync instead of uploading under another rule', async () => {
+    const stack = createStack({ identity: createIdentityDouble() });
+    await enableAndSyncContacts(stack.ports);
+    const sentBefore = stack.named('syncContactHashes').length;
+    const sessionBefore = await stack.session.load();
+    stack.ports.readDefaultPhoneRegion = async () => {
+      throw new Error('firestore unavailable');
+    };
+    await assert.rejects(syncGrantedAddressBook(stack.ports));
+    assert.equal(stack.named('syncContactHashes').length, sentBefore);
+    assert.deepEqual(await stack.session.load(), sessionBefore);
+  });
+});

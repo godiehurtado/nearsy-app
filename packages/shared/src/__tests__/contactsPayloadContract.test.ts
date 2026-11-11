@@ -14,6 +14,7 @@ import { parsePhoneNumberWithError } from 'libphonenumber-js/max';
 
 import { BANNED_CONTACTS_WIRE_FIELDS, CONTACT_PHONE_MAX_CHARS } from '../contacts/domain';
 import {
+  resolveDefaultPhoneRegion,
   selectUploadableIdentifiers,
   tryNormalizeEmail,
   tryNormalizePhone,
@@ -195,5 +196,86 @@ describe('reading the iOS book', () => {
     assert.match(source, /throw new Error\('contacts-read-incomplete'\)/);
     assert.equal(/readRows\(\)[\s\S]*?return \[\];/.test(source), false);
     assert.equal(/rows\.length > \d/.test(source), false, 'no silent truncation');
+  });
+});
+
+describe('national numbers and the verified-phone region', () => {
+  it('the region comes only from an OTP-verified account phone', () => {
+    assert.equal(resolveDefaultPhoneRegion({ phone: '+57 300 123 4567', phoneVerified: true }), 'CO');
+    assert.equal(resolveDefaultPhoneRegion({ phone: '+14155552671', phoneVerified: true }), 'US');
+    for (const input of [
+      { phone: '+573001234567', phoneVerified: false },
+      { phone: '+573001234567', phoneVerified: 'true' },
+      { phone: '+573001234567', phoneVerified: undefined },
+      { phone: '3001234567', phoneVerified: true },
+      { phone: '+1 555 555 0100', phoneVerified: true },
+      { phone: '+800 1234 5678', phoneVerified: true }, // no single country
+      { phone: null, phoneVerified: true },
+    ]) {
+      assert.equal(resolveDefaultPhoneRegion(input), null, JSON.stringify(input));
+    }
+  });
+
+  it('a national number is read in the default region and sent as E.164', () => {
+    assert.equal(tryNormalizePhone('300 123 4567', 'CO'), '+573001234567');
+    assert.equal(tryNormalizePhone('(601) 555 0100', 'CO'), '+576015550100');
+    assert.equal(tryNormalizePhone('(415) 555-2671', 'US'), '+14155552671');
+    assert.equal(tryNormalizePhone('612 34 56 78', 'ES'), '+34612345678');
+  });
+
+  it('an explicit country is kept whatever the default region', () => {
+    assert.equal(tryNormalizePhone('+1 415 555 2671', 'CO'), '+14155552671');
+    assert.equal(tryNormalizePhone('+57 300 123 4567', 'US'), '+573001234567');
+  });
+
+  it('without a region nothing is prefixed', () => {
+    for (const raw of ['300 123 4567', '(415) 555-2671', '612 34 56 78']) {
+      assert.equal(tryNormalizePhone(raw), null, raw);
+      assert.equal(tryNormalizePhone(raw, null), null, raw);
+    }
+  });
+
+  it('a national number invalid in that region is skipped', () => {
+    for (const [raw, region] of [
+      ['123', 'CO'],
+      ['300 123 4567', 'US'],
+      ['0057 300 123 4567', 'CO'],
+      ['300 123 4567 ext 2', 'CO'],
+      ['*611', 'US'],
+    ] as const) {
+      assert.equal(tryNormalizePhone(raw, region), null, `${raw} ${region}`);
+    }
+  });
+
+  it('every result passes Identity as sent', () => {
+    for (const [raw, region] of [
+      ['300 123 4567', 'CO'],
+      ['(601) 555 0100', 'CO'],
+      ['(415) 555-2671', 'US'],
+      ['+1 415 555 2671', 'CO'],
+    ] as const) {
+      const sent = tryNormalizePhone(raw, region)!;
+      assert.equal(identityAcceptsPhone(sent), sent, raw);
+    }
+  });
+
+  it('dedupes after normalizing, so both spellings send one identifier', () => {
+    const result = selectUploadableIdentifiers(
+      [
+        { phoneNumbers: [{ number: '300 123 4567' }] },
+        { phoneNumbers: [{ number: '+57 300 123 4567' }, { number: '+573001234567' }] },
+      ],
+      { defaultRegion: 'CO' },
+    );
+    assert.deepEqual(result.ok && result.identifiers, [{ kind: 'phone', value: '+573001234567' }]);
+  });
+
+  it('a book of only national numbers without a region is all invalid, never empty', () => {
+    const rows = [{ phoneNumbers: [{ number: '300 123 4567' }] }];
+    assert.deepEqual(selectUploadableIdentifiers(rows), { ok: false, reason: 'contacts-identifier-invalid' });
+    assert.deepEqual(selectUploadableIdentifiers(rows, { defaultRegion: 'CO' }), {
+      ok: true,
+      identifiers: [{ kind: 'phone', value: '+573001234567' }],
+    });
   });
 });

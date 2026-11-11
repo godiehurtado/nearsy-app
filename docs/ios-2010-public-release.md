@@ -97,3 +97,33 @@ eas submit --platform ios --profile production --id <BUILD_ID>
 - With a shared affiliation, the row uses a generic text, even if interests are also shared: "{name} is near you and you share affiliations." / "{name} está cerca y comparte afiliaciones contigo." No affiliation names or logos.
 - Discovery filters, navigation and `alert_opened` are unchanged. The inbox stays independent of the push preference and does not include Contacts. No extra calls per profile.
 - Integrated check pending the Functions deploy of the field.
+
+## National numbers: default region (aligned with Android)
+
+- A number written with `+` keeps its own country.
+- A national number is read in a **default region taken only from the account's own phone, when OTP verified it** (`phone` with `phoneVerified === true` on the user document). No language, locale or SIM.
+- **The default region is an interpretation rule, not a guarantee of each contact's country.** A contact saved in national form from another country will be read in the account's country, or skipped if the number is not valid there.
+- Without that region nothing is prefixed and national numbers are skipped.
+- Every result is checked again with Identity's rules (`libphonenumber-js/max` 1.13.11) before it is kept, and identifiers are deduplicated after normalizing.
+- A failed region read fails the sync instead of uploading a book read with a different rule. Empty book, all-invalid and read-failure handling are unchanged.
+- Sending E.164 does not change Identity's contract.
+
+## Contacts diagnostic result: `Ref: session_read/other` (build 75)
+
+**Proven:**
+- **Keys:** every per-UID key matches the installed `expo-secure-store` 15.0.8 rule `^[\w.-]+$` for any UID shape. Only per-UID keys are read, with default options; legacy global keys from earlier builds are never read.
+- **What `session_read` covers:** the dynamic import of `expo-secure-store`, up to six sequential `getItemAsync` reads, and parsers that cannot throw. There is no migration.
+- **Never `other` from the store:** any native or JS failure of `getItemAsync` is wrapped and reported as its native code (`err-key-chain`, `err-invalid-key`, `err-missing-plist-key`, `err-sec-access-control`) or `session-unavailable`. Sessions from earlier builds and corrupt values do not fail the read.
+- **Compiled code:** the project Babel preset keeps the session store's `read()` method as written; it does not shadow the key-reading helper.
+
+**Therefore** the failure was not an exception inside the session read. The reference shows the last step entered (`session_read`) and `other`, which is what the trace prints when the error was raised outside a traced step or not recorded. The exact source is still unproven, so nothing in SecureStore was changed.
+
+**Trace limitations found:** a later step clears an earlier recorded failure, and the reference does not say whether the error came from inside a step or after it.
+
+**Minimal next evidence (no build):** Identity's log for this account around 21:48 Miami (02:48 UTC, November 11): whether `enableContactsSync` or `refreshVerifiedActorKeys` reached it.
+
+**Minimal next diagnostic (only if that log is not conclusive), one internal build and the same single test:** keep the first failure across steps, and add to the reference whether it was raised inside or after the step, the error kind from a closed list (`error`, `typeerror`, `rangeerror`, `syntaxerror`, `coded`, `non-object`), the previous step, and for `session_read` which read failed (`import`, `key-1`…`key-6`).
+
+## Public App Store version
+
+The App Store lookup for `com.nearsy.app.client` (app `6759302206`) reports **version 2.0.9**, released on 2026-11-05 08:02 UTC. The public API does not give the build number. EAS has production builds of 2.0.9 numbered 63 to 70; the release-candidate commit locks 2.0.9 (70) (`f5053a4`), built on 2026-11-04. **Which build is attached to the 2.0.9 release can only be confirmed in App Store Connect** (App Store › 2.0.9 › Build). The push analysis of `f5053a4` holds for every 2.0.9 build from 63 on only if their push handling matches; that was checked for 70.

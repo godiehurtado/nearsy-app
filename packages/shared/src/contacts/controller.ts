@@ -41,6 +41,7 @@ import type {
   ContactsSessionStore,
 } from './port';
 import type { ContactIdentifierInput } from './domain';
+import type { CountryCode } from 'libphonenumber-js/max';
 import { decideContactsPermissionAction } from './syncPolicy';
 import type { ContactsWireResult } from './wireTypes';
 
@@ -64,6 +65,12 @@ export type ContactsControllerPorts = {
   session: ContactsSessionStore;
   book: ContactsAddressBookPort;
   createRandomHex?: () => string;
+  /**
+   * Region for national numbers, from the account's OTP-verified phone only.
+   * Null: no region, national numbers are skipped. A failed read fails the
+   * sync instead of uploading a book read with a different rule.
+   */
+  readDefaultPhoneRegion?: () => Promise<CountryCode | null>;
   /** Asks for a reevaluate. The controller decides when one is owed. */
   afterIdentity?: (result: ContactsWireResult) => Promise<void>;
   reevaluatePending?: ContactsReevaluatePendingPort;
@@ -297,7 +304,13 @@ export async function syncGrantedAddressBook(
   }
   if (isCancelled(ports)) return skipped();
 
-  const selected = selectUploadableIdentifiers(await ports.book.readRows());
+  const defaultRegion = ports.readDefaultPhoneRegion
+    ? await ports.readDefaultPhoneRegion()
+    : null;
+  if (isCancelled(ports)) return skipped();
+  const selected = selectUploadableIdentifiers(await ports.book.readRows(), {
+    defaultRegion,
+  });
   if (selected.ok === false) return fail(selected.reason);
   if (isCancelled(ports)) return skipped();
 
