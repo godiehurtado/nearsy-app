@@ -15,6 +15,8 @@ export default {
     interestsSuffix: ' ({{interests}})',
     nearbyOnly: '{{name}} is near you.',
     affiliationNearby: '{{name}} is near you and you share affiliations.',
+    affiliationNearbyOne: '{{name}} is near you and you share an affiliation.',
+    affiliationMore: 'and {{count}} more',
   },
   time: {
     minutes: '{{count}}m',

@@ -221,3 +221,29 @@ Prepared on the branch only; no build, merge or deploy. The 5,000 decision reach
 - A sync in a new process with no server answer yet, and a book over 500, makes one `refreshVerifiedActorKeys` to learn the limit before refusing.
 - "Contacts synced." still requires `syncCommitted=true`.
 - Deploy order: Functions, then Identity, then clients. A client without this change keeps 500 and stays compatible.
+
+## Inbox: shared affiliation names (client ready, server field pending)
+
+Product now wants the push and the inbox to show the shared affiliation. Functions builds the push. The inbox reads an
+optional `discoverNearby` result field, proposed to Functions as `sharedAffiliationNames: string[]` (server order,
+server-resolved display names). Until Functions publishes its contract the name is a proposal; only
+`parseSharedAffiliationNames` in `visibility/callables/parse.ts` reads it.
+
+- Parsing: non-array → absent. Each entry is trimmed; bidi controls, zero-width space, soft hyphen and BOM are removed
+  (ZWJ/ZWNJ kept); control characters become spaces; empty or over 160 characters are dropped; case-insensitive
+  duplicates kept once; at most 10. No valid entry → absent. Never an error for the rest of the response.
+- Row: affiliation still wins over interests, one row per uid. With names, the main sentence names only the person
+  ("…you share an affiliation." when exactly one is shared), and a second line shows the first name on one line
+  (truncated) followed by "and N more" / "y N más", which never truncates. N = max(count, names) − 1.
+  VoiceOver reads the full, untruncated text.
+- Fallback: names absent or invalid → today's generic sentence, no second line. Older servers keep working.
+- No text matching against the viewer's affiliations and no extra per-profile calls.
+
+## Push diagnosis, 2026-11-11 20:10–20:18 UTC (two nearby iOS accounts, receiver locked)
+
+Functions (read-only, both directions, logs 20:00–20:30Z): both accounts were eligible, but nothing was sent. The
+pair has one encounter open since 2026-11-02 20:44:47Z (generation 1, never left), which already used its one push
+(motive `interest`, Expo tickets ok=2). Hiding and showing visibility pauses and resumes the same encounter. A new push
+needs the pair to separate past 71 m with fresh locations and meet again. Not an iOS issue: no send reached Expo or
+APNs. Functions sends with Expo priority `default` (APNs priority 5 on iOS) and `sound: null`, and does not store
+ticket ids or fetch receipts.

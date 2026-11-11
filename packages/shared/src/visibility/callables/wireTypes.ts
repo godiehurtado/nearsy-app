@@ -129,6 +129,12 @@ export type DiscoverNearbyResult = {
    * computed by the server. Absent on older backends.
    */
   sharedAffiliationCount?: number;
+  /**
+   * Additive: display names of the shared affiliations, as the server
+   * resolved them (never matched by text on the client). Present only when
+   * at least one valid name survives parsing; absent on older backends.
+   */
+  sharedAffiliationNames?: string[];
 };
 
 export type ActivateVisibilityResponse = {

@@ -282,6 +282,9 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
     value.sharedAffiliationCount >= 0
       ? value.sharedAffiliationCount
       : undefined;
+  const sharedAffiliationNames = parseSharedAffiliationNames(
+    value.sharedAffiliationNames,
+  );
   return {
     uid: requireNonEmptyString(value.uid, 'result.uid'),
     distanceMeters: requireNonNegativeNumber(
@@ -292,7 +295,39 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
     ...(compatibility !== undefined ? { compatibility } : {}),
     ...(appearanceKey ? { appearanceKey } : {}),
     ...(sharedAffiliationCount !== undefined ? { sharedAffiliationCount } : {}),
+    ...(sharedAffiliationNames ? { sharedAffiliationNames } : {}),
   };
+}
+
+export const SHARED_AFFILIATION_NAME_MAX_CHARS = 160;
+export const SHARED_AFFILIATION_NAMES_MAX = 10;
+
+/**
+ * Server-resolved names, in server order. Control and bidi characters are
+ * removed, whitespace collapsed, empty or oversized entries dropped and
+ * case-insensitive duplicates kept once. Anything unusable is left out, never
+ * an error, so the row falls back to the generic text.
+ */
+export function parseSharedAffiliationNames(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of value) {
+    if (typeof raw !== 'string') continue;
+    const name = raw
+      // Bidi controls, zero-width space, soft hyphen, BOM (ZWJ/ZWNJ are kept).
+      .replace(/[\u00AD\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '')
+      .replace(/[\p{Cc}\u2028\u2029]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!name || [...name].length > SHARED_AFFILIATION_NAME_MAX_CHARS) continue;
+    const key = name.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+    if (out.length === SHARED_AFFILIATION_NAMES_MAX) break;
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 function parseGallery(value: unknown): DiscoveryGalleryItem[] {

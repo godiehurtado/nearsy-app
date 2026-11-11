@@ -16,6 +16,10 @@ export type AlertItem = {
   sharedInterests?: string[];
   /** Server-computed: at least one stable affiliation identity is shared. */
   sharedAffiliations?: boolean;
+  /** Server-resolved names of the shared affiliations; absent → generic copy. */
+  sharedAffiliationNames?: string[];
+  /** How many affiliations are shared, never less than the names shown. */
+  sharedAffiliationTotal?: number;
   at: number;
   fromContacts?: boolean;
   appearanceKey?: string;
@@ -83,10 +87,15 @@ export function mapDiscoverResultsToAlerts(
       myInterestIds.has(id),
     );
     // Only a non-negative integer from the server counts; absent means none.
-    const sharedAffiliations =
+    const count =
       typeof r.sharedAffiliationCount === 'number' &&
       Number.isSafeInteger(r.sharedAffiliationCount) &&
-      r.sharedAffiliationCount > 0;
+      r.sharedAffiliationCount > 0
+        ? r.sharedAffiliationCount
+        : 0;
+    // Names come only from the server (already parsed); never matched by text.
+    const names = r.sharedAffiliationNames?.length ? r.sharedAffiliationNames : undefined;
+    const sharedAffiliations = count > 0 || names !== undefined;
     if (shared.length === 0 && !sharedAffiliations) continue;
     seenUids.add(r.uid);
     out.push({
@@ -96,6 +105,12 @@ export function mapDiscoverResultsToAlerts(
       avatar: r.profile.profileImage,
       kind: sharedAffiliations ? 'affiliation_nearby' : 'interest_nearby',
       ...(sharedAffiliations ? { sharedAffiliations: true } : {}),
+      ...(names
+        ? {
+            sharedAffiliationNames: names,
+            sharedAffiliationTotal: Math.max(count, names.length),
+          }
+        : {}),
       distanceFt: Math.round(metersToFeet(r.distanceMeters)),
       sharedInterests: shared.slice(0, 3),
       at,

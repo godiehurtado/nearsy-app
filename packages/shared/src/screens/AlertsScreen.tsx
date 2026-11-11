@@ -31,6 +31,8 @@ import {
   useAppTheme,
 } from '../theme';
 import {
+  buildAlertAccessibilityLabel,
+  buildAlertAffiliationDetail,
   buildAlertRowMessage,
   formatAlertRelativeTime,
   NOTIFICATION_AVATAR_SIZE,
@@ -113,12 +115,13 @@ export default function AlertsScreen() {
 
   const renderItem = ({ item }: { item: AlertItem }) => {
     const message = rowMessage(item);
+    const affiliation = buildAlertAffiliationDetail(item, t);
     const timeLabel = formatAlertRelativeTime(item.at, Date.now(), t);
 
     return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={message}
+        accessibilityLabel={buildAlertAccessibilityLabel(message, affiliation)}
         onPress={() => openDiscoveryProfile(item)}
         style={({ pressed }) => [
           styles.row,
@@ -162,6 +165,32 @@ export default function AlertsScreen() {
           >
             {message}
           </Text>
+          {affiliation ? (
+            <View style={styles.affiliationLine}>
+              <Ionicons
+                name="ribbon-outline"
+                size={14}
+                color={palette.textSecondary}
+                style={styles.affiliationIcon}
+              />
+              {/* The name shrinks to one line; "and N more" always stays visible. */}
+              <Text
+                style={[styles.affiliationName, { color: palette.textSecondary }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {affiliation.name}
+              </Text>
+              {affiliation.more ? (
+                <Text
+                  style={[styles.affiliationMore, { color: palette.textSecondary }]}
+                  numberOfLines={1}
+                >
+                  {affiliation.more}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
         </View>
 
         <Text style={[styles.time, { color: palette.textMuted }]}>
@@ -365,6 +394,25 @@ const styles = StyleSheet.create({
     fontSize: fontSize.base,
     fontWeight: fontWeight.semibold,
     lineHeight: fontSize.base * 1.35,
+  },
+  affiliationLine: {
+    marginTop: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  affiliationIcon: {
+    marginRight: 4,
+  },
+  affiliationName: {
+    flexShrink: 1,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.medium,
+  },
+  affiliationMore: {
+    flexShrink: 0,
+    marginLeft: 4,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.medium,
   },
   time: {
     fontSize: fontSize.xs,

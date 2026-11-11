@@ -28,9 +28,12 @@ export function buildAlertRowMessage(
   t: Translate,
   translateItem: TranslateItem,
 ): string {
-  // Affiliations first, generic: never names or logos.
+  // Affiliations first. The affiliation names go on their own line
+  // (buildAlertAffiliationDetail) so a long name never hides the person.
   if (alert.sharedAffiliations) {
-    return t('notifications.messages.affiliationNearby', { name: alert.name });
+    return alert.sharedAffiliationNames?.length && alert.sharedAffiliationTotal === 1
+      ? t('notifications.messages.affiliationNearbyOne', { name: alert.name })
+      : t('notifications.messages.affiliationNearby', { name: alert.name });
   }
   const sharedIds = alert.sharedInterests ?? [];
   if (sharedIds.length > 0) {
@@ -50,6 +53,35 @@ export function buildAlertRowMessage(
   }
 
   return t('notifications.messages.nearbyOnly', { name: alert.name });
+}
+
+export type AlertAffiliationDetail = {
+  /** First server-resolved name; the UI may truncate it to one line. */
+  name: string;
+  /** "and 2 more" / "y 2 más"; never truncated. Absent when only one. */
+  more?: string;
+};
+
+/** The shared affiliation line, or null when the server sent no valid names. */
+export function buildAlertAffiliationDetail(
+  alert: AlertItem,
+  t: Translate,
+): AlertAffiliationDetail | null {
+  const names = alert.sharedAffiliationNames;
+  if (!alert.sharedAffiliations || !names?.length) return null;
+  const others = Math.max(alert.sharedAffiliationTotal ?? names.length, names.length) - 1;
+  return others > 0
+    ? { name: names[0], more: t('notifications.messages.affiliationMore', { count: others }) }
+    : { name: names[0] };
+}
+
+/** Full text for VoiceOver: the message plus the untruncated affiliation line. */
+export function buildAlertAccessibilityLabel(
+  message: string,
+  detail: AlertAffiliationDetail | null,
+): string {
+  if (!detail) return message;
+  return [message, [detail.name, detail.more].filter(Boolean).join(' ')].join(' ');
 }
 
 export function formatAlertDistance(
