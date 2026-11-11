@@ -222,20 +222,24 @@ Prepared on the branch only; no build, merge or deploy. The 5,000 decision reach
 - "Contacts synced." still requires `syncCommitted=true`.
 - Deploy order: Functions, then Identity, then clients. A client without this change keeps 500 and stays compatible.
 
-## Inbox: shared affiliation names (client ready, server field pending)
+## Inbox: shared affiliation names (client ready, server field published, not deployed)
 
-Product now wants the push and the inbox to show the shared affiliation. Functions builds the push. The inbox reads an
-optional `discoverNearby` result field, proposed to Functions as `sharedAffiliationNames: string[]` (server order,
-server-resolved display names). Until Functions publishes its contract the name is a proposal; only
-`parseSharedAffiliationNames` in `visibility/callables/parse.ts` reads it.
+Product now wants the push and the inbox to show the shared affiliation. Functions builds the push (English only,
+name in the body, title `Nearsy`, `data` unchanged). The inbox reads the optional `discoverNearby` result field
+`sharedAffiliationNames: string[]`, per the Functions contract §3a (`functions` `feature/posthog-server` @ `8ac49f5`,
+`docs/operations/proximity-affiliation-alerts-contract.md`): the viewer's own saved names for the shared stable
+identities, in the viewer's profile order, 1–3 entries of 1–80 characters, present only with
+`sharedAffiliationCount > 0`. Only `parseSharedAffiliationNames` in `visibility/callables/parse.ts` reads it.
 
-- Parsing: non-array → absent. Each entry is trimmed; bidi controls, zero-width space, soft hyphen and BOM are removed
-  (ZWJ/ZWNJ kept); control characters become spaces; empty or over 160 characters are dropped; case-insensitive
-  duplicates kept once; at most 10. No valid entry → absent. Never an error for the rest of the response.
-- Row: affiliation still wins over interests, one row per uid. With names, the main sentence names only the person
-  ("…you share an affiliation." when exactly one is shared), and a second line shows the first name on one line
-  (truncated) followed by "and N more" / "y N más", which never truncates. N = max(count, names) − 1.
-  VoiceOver reads the full, untruncated text.
+- Parsing (defensive, same rules as the server): non-array → absent. NFC; bidi controls, zero-width space, soft hyphen
+  and BOM removed (ZWJ/ZWNJ kept); control characters become spaces; whitespace collapsed; over 80 characters cut with
+  "…"; case-insensitive duplicates kept once; at most 3, and never more than `sharedAffiliationCount`. Names next to
+  a missing or zero count are ignored. Never an error for the rest of the response.
+- Row: only `sharedAffiliationCount > 0` (or shared interests) qualifies a row; names never do. Affiliation still wins
+  over interests, one row per uid. With names, the main sentence names only the person ("…you share an affiliation."
+  when the count is 1), and a second line shows the first name on one line (truncated) followed by "and N more" /
+  "y N más", which never truncates. N = `sharedAffiliationCount` − 1. VoiceOver reads the full, untruncated text.
+- Names are display-only: never sent to analytics or logs, never used for a match, count or category.
 - Fallback: names absent or invalid → today's generic sentence, no second line. Older servers keep working.
 - No text matching against the viewer's affiliations and no extra per-profile calls.
 

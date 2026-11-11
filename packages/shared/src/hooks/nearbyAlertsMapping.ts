@@ -18,7 +18,7 @@ export type AlertItem = {
   sharedAffiliations?: boolean;
   /** Server-resolved names of the shared affiliations; absent → generic copy. */
   sharedAffiliationNames?: string[];
-  /** How many affiliations are shared, never less than the names shown. */
+  /** sharedAffiliationCount; "and N more" uses N = total − 1. */
   sharedAffiliationTotal?: number;
   at: number;
   fromContacts?: boolean;
@@ -93,9 +93,13 @@ export function mapDiscoverResultsToAlerts(
       r.sharedAffiliationCount > 0
         ? r.sharedAffiliationCount
         : 0;
-    // Names come only from the server (already parsed); never matched by text.
-    const names = r.sharedAffiliationNames?.length ? r.sharedAffiliationNames : undefined;
-    const sharedAffiliations = count > 0 || names !== undefined;
+    // Only the count qualifies a row. Names come only from the server, next to
+    // a positive count (contract §3a), and are display-only, never matched.
+    const sharedAffiliations = count > 0;
+    const names =
+      sharedAffiliations && r.sharedAffiliationNames?.length
+        ? r.sharedAffiliationNames.slice(0, count)
+        : undefined;
     if (shared.length === 0 && !sharedAffiliations) continue;
     seenUids.add(r.uid);
     out.push({
@@ -108,7 +112,7 @@ export function mapDiscoverResultsToAlerts(
       ...(names
         ? {
             sharedAffiliationNames: names,
-            sharedAffiliationTotal: Math.max(count, names.length),
+            sharedAffiliationTotal: count,
           }
         : {}),
       distanceFt: Math.round(metersToFeet(r.distanceMeters)),

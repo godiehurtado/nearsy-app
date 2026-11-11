@@ -69,6 +69,7 @@ export function buildAlertAffiliationDetail(
 ): AlertAffiliationDetail | null {
   const names = alert.sharedAffiliationNames;
   if (!alert.sharedAffiliations || !names?.length) return null;
+  // Contract §3a: N = sharedAffiliationCount − 1 (names never outnumber it).
   const others = Math.max(alert.sharedAffiliationTotal ?? names.length, names.length) - 1;
   return others > 0
     ? { name: names[0], more: t('notifications.messages.affiliationMore', { count: others }) }

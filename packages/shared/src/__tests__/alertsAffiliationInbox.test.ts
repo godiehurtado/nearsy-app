@@ -173,15 +173,25 @@ describe('sharedAffiliationNames (optional, server-resolved)', () => {
         42,
         null,
         'Line\nbreak',
-        'x'.repeat(SHARED_AFFILIATION_NAME_MAX_CHARS + 1),
-        'x'.repeat(SHARED_AFFILIATION_NAME_MAX_CHARS),
       ]),
-      ['Miami Dade College', 'MDC Alumni', 'Line break', 'x'.repeat(SHARED_AFFILIATION_NAME_MAX_CHARS)],
+      ['Miami Dade College', 'MDC Alumni', 'Line break'],
     );
-    // ZWJ sequences survive.
-    assert.deepEqual(parseSharedAffiliationNames(['Club 👩‍💻']), ['Club 👩‍💻']);
+    // Contract §3a limits: 3 entries, 80 characters.
+    assert.equal(SHARED_AFFILIATION_NAMES_MAX, 3);
+    assert.equal(SHARED_AFFILIATION_NAME_MAX_CHARS, 80);
     const many = Array.from({ length: 25 }, (_, i) => `Org ${i}`);
-    assert.equal(parseSharedAffiliationNames(many)?.length, SHARED_AFFILIATION_NAMES_MAX);
+    assert.deepEqual(parseSharedAffiliationNames(many), ['Org 0', 'Org 1', 'Org 2']);
+    // Exactly 80 stays; longer is cut to 80 with "…" (defensive, the server already cuts).
+    assert.deepEqual(parseSharedAffiliationNames(['x'.repeat(80)]), ['x'.repeat(80)]);
+    const [cut] = parseSharedAffiliationNames(['y'.repeat(200)])!;
+    assert.equal([...cut].length, 80);
+    assert.ok(cut.endsWith('…'));
+    // NFC: decomposed and composed forms are one name.
+    assert.deepEqual(parseSharedAffiliationNames(['Universidad de Bogotá', 'universidad de bogotá']), [
+      'Universidad de Bogotá',
+    ]);
+    // ZWJ sequences survive.
+    assert.deepEqual(parseSharedAffiliationNames(['Club \u{1F469}‍\u{1F4BB}']), ['Club \u{1F469}‍\u{1F4BB}']);
     for (const bad of [undefined, null, 'Org', {}, 3, [], ['', 7, null]]) {
       assert.equal(parseSharedAffiliationNames(bad), undefined, JSON.stringify(bad));
     }
@@ -212,13 +222,21 @@ describe('sharedAffiliationNames (optional, server-resolved)', () => {
     );
   });
 
-  it('more shared than names: "and N more" uses the larger of count and names', () => {
-    const [row] = inbox([named('p', ['Miami Dade College'], { count: 3 })]);
+  it('"and N more" is sharedAffiliationCount − 1, counting unnamed rows too', () => {
+    const [row] = inbox([named('p', ['Acme University', 'Chess Club'], { count: 4 })]);
     assert.equal(buildAlertRowMessage(row, tEn, translateItem), 'Name p is near you and you share affiliations.');
-    assert.deepEqual(buildAlertAffiliationDetail(row, tEn), { name: 'Miami Dade College', more: 'and 2 more' });
-    assert.deepEqual(buildAlertAffiliationDetail(row, tEs), { name: 'Miami Dade College', more: 'y 2 más' });
-    const [noCount] = inbox([named('q', ['A', 'B'])]);
-    assert.deepEqual(buildAlertAffiliationDetail(noCount, tEn), { name: 'A', more: 'and 1 more' });
+    assert.deepEqual(buildAlertAffiliationDetail(row, tEn), { name: 'Acme University', more: 'and 3 more' });
+    assert.deepEqual(buildAlertAffiliationDetail(row, tEs), { name: 'Acme University', more: 'y 3 más' });
+  });
+
+  it('names never outnumber the count', () => {
+    const [row] = parseDiscoverNearbyResponse({
+      contractVersion: 1,
+      nextCursor: null,
+      serverTime: 1,
+      results: [named('p', ['A', 'B', 'C'], { count: 2 })],
+    }).results;
+    assert.deepEqual(row.sharedAffiliationNames, ['A', 'B']);
   });
 
   it('names win over interests, one row per uid', () => {
@@ -228,9 +246,23 @@ describe('sharedAffiliationNames (optional, server-resolved)', () => {
     assert.doesNotMatch(buildAlertRowMessage(rows[0], tEn, translateItem), /interests/);
   });
 
-  it('names alone are enough to show the row (count absent or zero)', () => {
-    assert.equal(inbox([named('p', ['A'])])[0]?.kind, 'affiliation_nearby');
-    assert.equal(inbox([named('p', ['A'], { count: 0 })])[0]?.kind, 'affiliation_nearby');
+  it('names without a positive count are ignored and never create a row', () => {
+    for (const count of [undefined, 0, -1, '2']) {
+      const opts = count === undefined ? {} : { count };
+      assert.deepEqual(inbox([named('p', ['A'], opts)]), [], String(count));
+    }
+    // With shared interests the row stays, generic interests copy, no names.
+    const [row] = inbox([named('p', ['A'], { count: 0, interests: ['sports_outdoors_soccer'] })]);
+    assert.equal(row.kind, 'interest_nearby');
+    assert.equal(row.sharedAffiliationNames, undefined);
+  });
+
+  it('names are never sent to analytics', () => {
+    const screen = read('screens/AlertsScreen.tsx');
+    for (const call of screen.match(/track\w+\([^)]*\)/g) ?? []) {
+      assert.equal(/affiliation/i.test(call), false, call);
+    }
+    assert.match(screen, /trackAlertOpened\(\{ source: 'inbox' \}\)/);
   });
 
   it('missing or invalid names: generic text, no detail line (older servers)', () => {

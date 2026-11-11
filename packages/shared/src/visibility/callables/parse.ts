@@ -282,9 +282,14 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
     value.sharedAffiliationCount >= 0
       ? value.sharedAffiliationCount
       : undefined;
-  const sharedAffiliationNames = parseSharedAffiliationNames(
-    value.sharedAffiliationNames,
-  );
+  // Contract §3a: names only next to a positive count, never more than it.
+  const sharedAffiliationNames =
+    sharedAffiliationCount !== undefined && sharedAffiliationCount > 0
+      ? parseSharedAffiliationNames(value.sharedAffiliationNames)?.slice(
+          0,
+          sharedAffiliationCount,
+        )
+      : undefined;
   return {
     uid: requireNonEmptyString(value.uid, 'result.uid'),
     distanceMeters: requireNonNegativeNumber(
@@ -299,14 +304,17 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
   };
 }
 
-export const SHARED_AFFILIATION_NAME_MAX_CHARS = 160;
-export const SHARED_AFFILIATION_NAMES_MAX = 10;
+/** Functions contract §3a (feature/posthog-server 8ac49f5): 1–3 entries, 1–80 chars. */
+export const SHARED_AFFILIATION_NAME_MAX_CHARS = 80;
+export const SHARED_AFFILIATION_NAMES_MAX = 3;
 
 /**
- * Server-resolved names, in server order. Control and bidi characters are
- * removed, whitespace collapsed, empty or oversized entries dropped and
- * case-insensitive duplicates kept once. Anything unusable is left out, never
- * an error, so the row falls back to the generic text.
+ * Server-resolved names (the viewer's own saved text), in server order.
+ * The server already cleans them; the client re-applies the same rules
+ * defensively: NFC, control and bidi characters removed, whitespace
+ * collapsed, over-long entries cut with "…", case-insensitive duplicates kept
+ * once. Anything unusable is left out, never an error, so the row falls back
+ * to the generic text. Display only: never a match, count or category.
  */
 export function parseSharedAffiliationNames(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
@@ -314,13 +322,19 @@ export function parseSharedAffiliationNames(value: unknown): string[] | undefine
   const seen = new Set<string>();
   for (const raw of value) {
     if (typeof raw !== 'string') continue;
-    const name = raw
+    const clean = raw
+      .normalize('NFC')
       // Bidi controls, zero-width space, soft hyphen, BOM (ZWJ/ZWNJ are kept).
       .replace(/[\u00AD\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '')
       .replace(/[\p{Cc}\u2028\u2029]/gu, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    if (!name || [...name].length > SHARED_AFFILIATION_NAME_MAX_CHARS) continue;
+    if (!clean) continue;
+    const chars = [...clean];
+    const name =
+      chars.length > SHARED_AFFILIATION_NAME_MAX_CHARS
+        ? `${chars.slice(0, SHARED_AFFILIATION_NAME_MAX_CHARS - 1).join('').trimEnd()}…`
+        : clean;
     const key = name.toLocaleLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
