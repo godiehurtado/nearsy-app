@@ -16,8 +16,12 @@ export type AlertItem = {
   avatar?: string | null;
   kind: AlertKind;
   sharedInterests?: string[];
-  /** Functions counted at least one shared stable affiliation (no names). */
+  /** Functions counted at least one shared stable affiliation. */
   sharesAffiliation?: boolean;
+  /** How many Functions counted, with sharesAffiliation. */
+  sharedAffiliationCount?: number;
+  /** Names Functions sent for that match (display only, already validated). */
+  sharedAffiliationNames?: string[];
   at: number;
   appearanceKey?: string;
   unseen?: boolean;
@@ -98,7 +102,16 @@ export function mapDiscoverResultsToInterestAlerts(
       avatar: r.profile.profileImage,
       kind: 'interest_nearby',
       sharedInterests: shared.slice(0, 3),
-      ...(sharesAffiliation ? { sharesAffiliation: true } : {}),
+      ...(sharesAffiliation
+        ? {
+            sharesAffiliation: true,
+            sharedAffiliationCount: count,
+            // The match comes from the count; names only describe it.
+            ...(r.sharedAffiliationNames?.length
+              ? { sharedAffiliationNames: r.sharedAffiliationNames.slice(0, 3) }
+              : {}),
+          }
+        : {}),
       at,
       ...(r.appearanceKey ? { appearanceKey: r.appearanceKey } : {}),
     });

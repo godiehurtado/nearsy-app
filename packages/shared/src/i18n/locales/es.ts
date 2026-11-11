@@ -246,6 +246,9 @@ export const es: TranslationResources = {
       interestsSuffix: ' ({{interests}})',
       nearbyOnly: '{{name}} está cerca.',
       affiliationNearby: '{{name}} está cerca y compartís una afiliación.',
+      affiliationNearbyNamed: '{{name}} está cerca y compartís {{affiliation}}.',
+      affiliationNearbyNamedMore:
+        '{{name}} está cerca y compartís {{affiliation}} y {{count}} más.',
     },
     time: {
       minutes: '{{count}}m',

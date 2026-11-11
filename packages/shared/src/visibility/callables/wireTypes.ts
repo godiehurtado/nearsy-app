@@ -130,6 +130,12 @@ export type DiscoverNearbyResult = {
    * absent or invalid never counts as a shared affiliation.
    */
   sharedAffiliationCount?: number;
+  /**
+   * Display names of those affiliations, chosen by Functions (additive). Kept
+   * only with sharedAffiliationCount > 0, at most 3, each 1-80 characters; a
+   * match is never derived from these names.
+   */
+  sharedAffiliationNames?: string[];
 };
 
 export type ActivateVisibilityResponse = {

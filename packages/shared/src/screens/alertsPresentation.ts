@@ -23,14 +23,43 @@ export function formatAlertRelativeTime(
   return t('notifications.time.hours', { count: hours });
 }
 
+/** Longest affiliation name shown in a row, in characters (not UTF-16 units). */
+export const ALERT_AFFILIATION_NAME_MAX = 40;
+
+/** Keeps a long name from pushing the person's name out of a 2-line row. */
+export function shortenAffiliationName(name: string): string {
+  const chars = Array.from(name.trim());
+  return chars.length <= ALERT_AFFILIATION_NAME_MAX
+    ? chars.join('')
+    : `${chars.slice(0, ALERT_AFFILIATION_NAME_MAX - 1).join('').trimEnd()}…`;
+}
+
 export function buildAlertRowMessage(
   alert: AlertItem,
   t: Translate,
   translateItem: TranslateItem,
 ): string {
-  // An affiliation match takes priority, as in the push; its names are never shown.
+  // An affiliation match takes priority, as in the push.
   if (alert.sharesAffiliation) {
-    return t('notifications.messages.affiliationNearby', { name: alert.name });
+    const first = alert.sharedAffiliationNames?.[0];
+    if (!first) {
+      return t('notifications.messages.affiliationNearby', { name: alert.name });
+    }
+    const affiliation = shortenAffiliationName(first);
+    const total = Math.max(
+      alert.sharedAffiliationCount ?? 0,
+      alert.sharedAffiliationNames?.length ?? 0,
+    );
+    return total > 1
+      ? t('notifications.messages.affiliationNearbyNamedMore', {
+          name: alert.name,
+          affiliation,
+          count: total - 1,
+        })
+      : t('notifications.messages.affiliationNearbyNamed', {
+          name: alert.name,
+          affiliation,
+        });
   }
   const sharedIds = alert.sharedInterests ?? [];
   if (sharedIds.length > 0) {

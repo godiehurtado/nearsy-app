@@ -301,6 +301,34 @@ export function parseDiscoveryProfileDetail(
   };
 }
 
+const MAX_SHARED_AFFILIATION_NAMES = 3;
+const MAX_SHARED_AFFILIATION_NAME_CHARS = 80;
+// C0/C1 controls, line/paragraph separators and bidi overrides break a row.
+const NAME_FORBIDDEN_CHARS = /[\u0000-\u001F\u007F-\u009F\u2028-\u2029\u202A-\u202E\u2066-\u2069]/;
+
+/**
+ * Additive and display-only: invalid entries are dropped, never an error. With
+ * nothing valid left the field is absent and the row keeps its generic copy.
+ */
+function parseSharedAffiliationNames(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of value) {
+    if (typeof raw !== 'string') continue;
+    const name = raw.trim();
+    const chars = Array.from(name).length;
+    if (chars < 1 || chars > MAX_SHARED_AFFILIATION_NAME_CHARS) continue;
+    if (NAME_FORBIDDEN_CHARS.test(name)) continue;
+    const key = name.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+    if (names.length === MAX_SHARED_AFFILIATION_NAMES) break;
+  }
+  return names.length > 0 ? names : undefined;
+}
+
 function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
   if (!isPlainObject(value)) {
     throw createContractResponseError('result must be an object', value);
@@ -320,6 +348,11 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
     value.sharedAffiliationCount >= 0
       ? value.sharedAffiliationCount
       : undefined;
+  // Names describe a counted match; without one they are ignored.
+  const sharedAffiliationNames =
+    sharedAffiliationCount !== undefined && sharedAffiliationCount > 0
+      ? parseSharedAffiliationNames(value.sharedAffiliationNames)
+      : undefined;
   return {
     uid: requireNonEmptyString(value.uid, 'result.uid'),
     distanceMeters: requireNonNegativeNumber(
@@ -330,6 +363,7 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
     ...(compatibility !== undefined ? { compatibility } : {}),
     ...(appearanceKey ? { appearanceKey } : {}),
     ...(sharedAffiliationCount !== undefined ? { sharedAffiliationCount } : {}),
+    ...(sharedAffiliationNames ? { sharedAffiliationNames } : {}),
   };
 }
 
