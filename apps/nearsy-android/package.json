@@ -4,6 +4,7 @@
   "main": "index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "check:metro-imports": "node scripts/metroAndroidImportCheck.cjs",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
