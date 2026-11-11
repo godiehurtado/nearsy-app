@@ -222,7 +222,12 @@ Prepared on the branch only; no build, merge or deploy. The 5,000 decision reach
 - "Contacts synced." still requires `syncCommitted=true`.
 - Deploy order: Functions, then Identity, then clients. A client without this change keeps 500 and stays compatible.
 
-## Inbox: shared affiliation names (client ready, server field published, not deployed)
+## Inbox: shared affiliation names (client ready, server deployed)
+
+Deployed in `nearsy-pj` from Functions `8ac49f5`: `discoverNearby` returns `sharedAffiliationNames` since
+2026-11-11 20:37Z (`discovernearby-00012-yuw`), and the push names the affiliation since 20:35Z. Builds 79 and 2.0.9
+ignore the field safely (they only reject the forbidden location and private keys). The inbox names line needs the
+next candidate, built from `7d35228` or later.
 
 Product now wants the push and the inbox to show the shared affiliation. Functions builds the push (English only,
 name in the body, title `Nearsy`, `data` unchanged). The inbox reads the optional `discoverNearby` result field
@@ -251,3 +256,27 @@ pair has one encounter open since 2026-11-02 20:44:47Z (generation 1, never left
 needs the pair to separate past 71 m with fresh locations and meet again. Not an iOS issue: no send reached Expo or
 APNs. Functions sends with Expo priority `default` (APNs priority 5 on iOS) and `sound: null`, and does not store
 ticket ids or fetch receipts.
+
+## Encounter rules (Product, 2026-11-11): no iOS change
+
+Functions contract `docs/operations/encounter-notify-contracts-v1.md` §3 (`feature/posthog-server` @ `54e36d9`, not
+deployed yet):
+
+- Turning visibility off ends the encounter in both directions. Any `deactivateVisibility` counts: the Home toggle
+  and the client's automatic deactivate when foreground location permission is revoked, since both write
+  `visibility = false`. No reason field or contract bump.
+- 30 minutes without a valid location update ends the previous encounter. Validity and freshness use the server's
+  `confirmedAt` (receive time). `observedAt` is only checked for clock skew. Accuracy limit 100 m on both sides
+  (`MAX_LOCATION_ACCURACY_METERS`).
+- Logout and account deletion stop publishing without a deactivate, so they end through the 30-minute rule.
+- Known product behaviour, flagged to the Owner: a stationary phone that iOS leaves without fixes for 30+ minutes gets
+  a new encounter (and push) on its next fix, without the pair separating. Not mirrored on the client.
+
+## Next candidate contents (not built yet)
+
+Built from `feature/ios-posthog` at `7d35228` or later, on top of build 79 (`ed0fc06`):
+
+- Inbox shows server-resolved shared affiliation names (`d0757c6`, `7d35228`).
+- Already in 79 and kept: app version as the first row of About (`d28d79f`), Contacts fixes (`155c7a9`, `423ef4f`,
+  `dce7e49`, `ac62049`, `602cfac`), affiliation notices and motives.
+- Out of scope: push priority, sound and Expo receipt tracking (Owner decision, Functions side).
