@@ -1463,7 +1463,7 @@ describe('source guards', () => {
     assert.deepEqual(eas.build.production.env, {
       EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'production',
       NEARSY_IOS_VERSION: '2.0.10',
-      NEARSY_IOS_BUILD_NUMBER: '77',
+      NEARSY_IOS_BUILD_NUMBER: '78',
     });
     assert.equal(eas.build.production.environment, 'production');
     assert.equal(eas.build.production.autoIncrement, false);

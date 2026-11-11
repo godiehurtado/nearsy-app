@@ -31,7 +31,7 @@
       "env": {
         "EXPO_PUBLIC_NEARSY_FIREBASE_ENV": "production",
         "NEARSY_IOS_VERSION": "2.0.10",
-        "NEARSY_IOS_BUILD_NUMBER": "77"
+        "NEARSY_IOS_BUILD_NUMBER": "78"
       }
     },
     "testflight-contacts-diagnostics": {
