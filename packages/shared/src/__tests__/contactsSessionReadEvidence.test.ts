@@ -156,13 +156,13 @@ describe('what session_read covers and what it can report', () => {
 
   it('a native SecureStore failure names its code or session-unavailable, never other', async () => {
     for (const [failGet, expected] of [
-      [Object.assign(new Error('x'), { code: 'ERR_KEY_CHAIN' }), 'session_read/err-key-chain'],
-      [Object.assign(new Error('x'), { code: 'ERR_INVALID_KEY' }), 'session_read/err-invalid-key'],
-      [Object.assign(new Error('x'), { code: 'ERR_MISSING_PLIST_KEY' }), 'session_read/err-missing-plist-key'],
-      [Object.assign(new Error('x'), { code: 'ERR_SEC_ACCESS_CONTROL' }), 'session_read/err-sec-access-control'],
-      [Object.assign(new Error('x'), { code: 'ERR_SOMETHING_NEW' }), 'session_read/session-unavailable'],
-      [new Error('x'), 'session_read/session-unavailable'],
-      ['not an error object', 'session_read/session-unavailable'],
+      [Object.assign(new Error('x'), { code: 'ERR_KEY_CHAIN' }), 'session_read/err-key-chain/k-coded'],
+      [Object.assign(new Error('x'), { code: 'ERR_INVALID_KEY' }), 'session_read/err-invalid-key/k-coded'],
+      [Object.assign(new Error('x'), { code: 'ERR_MISSING_PLIST_KEY' }), 'session_read/err-missing-plist-key/k-coded'],
+      [Object.assign(new Error('x'), { code: 'ERR_SEC_ACCESS_CONTROL' }), 'session_read/err-sec-access-control/k-coded'],
+      [Object.assign(new Error('x'), { code: 'ERR_SOMETHING_NEW' }), 'session_read/session-unavailable/k-coded'],
+      [new Error('x'), 'session_read/session-unavailable/k-error'],
+      ['not an error object', 'session_read/session-unavailable/k-non-object'],
     ] as const) {
       const { ref, alert } = await enableOnce({}, failGet);
       assert.equal(ref, expected);

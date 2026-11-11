@@ -127,3 +127,21 @@ eas submit --platform ios --profile production --id <BUILD_ID>
 ## Public App Store version
 
 The App Store lookup for `com.nearsy.app.client` (app `6759302206`) reports **version 2.0.9**, released on 2026-11-05 08:02 UTC. The public API does not give the build number. EAS has production builds of 2.0.9 numbered 63 to 70; the release-candidate commit locks 2.0.9 (70) (`f5053a4`), built on 2026-11-04. **Which build is attached to the 2.0.9 release can only be confirmed in App Store Connect** (App Store › 2.0.9 › Build). The push analysis of `f5053a4` holds for every 2.0.9 build from 63 on only if their push handling matches; that was checked for 70.
+
+### Identity logs for the build 75 test (02:43–02:53 UTC, November 11)
+
+Identity found **no Contacts request from any platform between 01:45 and 03:45 UTC**: no `refreshVerifiedActorKeys`, `enableContactsSync`, `syncContactHashes`, `disableContactsSync` or `removeContactSource`, not even rejected ones (no 401 or 403). Build 75 (`Nearsy/75` user agent) did reach the backend at 02:47 (`getAppUpdatePolicy`, `publishLocation`, `discoverNearby`). So the failure happened on the device before the first Contacts callable. The logs cannot tie requests to an account, and a request that never left the device leaves no trace.
+
+With the trace in build 75, `session_read` was only the last step entered; it does not prove that the session read failed. SecureStore on the device is **not** ruled out: the test double only shows that the app's own code would report a native SecureStore failure with its code or `session-unavailable`.
+
+### Trace v2 (in the branch, not built)
+
+- **First failure kept:** a later step or failure never replaces it.
+- **Causing step vs running step:** a failure caught inside a step names that step. A failure caught outside any step (gaps between steps, runner, coordinator) shows `unknown`, plus `after-<last finished step>` or `during-<step still running>`.
+- **No exception:** when the operation ends with a returned failure, the reference is `unknown/<outcome reason>/k-none/...`.
+- **Error kind:** `k-typeerror`, `k-rangeerror`, `k-referenceerror`, `k-syntaxerror`, `k-coded`, `k-error`, `k-non-object` or `k-none`. Our wrappers report the kind of what they wrap.
+- **Closed lists only:** stages, codes, outcome reasons, kinds and HTTP or Firebase statuses. No messages or data.
+
+Examples: `session_read/err-key-chain/k-coded` (the read itself failed), `unknown/other/k-typeerror/after-session_read` (an error after a successful read), `unknown/contacts-timeout/k-none/during-session_read` (the read never finished).
+
+**Next minimal step:** one internal TestFlight build with trace v2 and the same single test (open More, turn Contacts on once, capture the alert). That separates a failing session read from an error after it, and names the error kind.

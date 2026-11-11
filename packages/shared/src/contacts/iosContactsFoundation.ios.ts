@@ -172,7 +172,7 @@ async function invokeTraced(
     const idToken = await user.getIdToken();
     // Normal (cached) App Check token, as before.
     trace.enter('app_check_token');
-    return await port.withToken((appCheckToken) => {
+    const result = await port.withToken((appCheckToken) => {
       trace.enter('endpoint');
       return invokeContactsHmacCallableHttp(
         {
@@ -189,8 +189,11 @@ async function invokeTraced(
         { fetchImpl: createTracedFetch(trace, (url, init) => fetch(url, init)) },
       );
     });
+    trace.done();
+    return result;
   } catch (err) {
     trace.fail(err);
+    trace.done();
     throw err;
   }
 }
@@ -203,8 +206,10 @@ export async function getContactsHmacClient(
   let composition: Composition;
   try {
     composition = await getComposition();
+    trace.done();
   } catch (err) {
     trace.fail(err);
+    trace.done();
     throw err;
   }
   return createContactsHmacCallableClient({

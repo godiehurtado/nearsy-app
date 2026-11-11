@@ -15,6 +15,7 @@ import {
   traceAppCheckPort,
   traceContactsAddressBook,
   traceContactsSession,
+  traceContactsStep,
   type ContactsDiagnosticStage,
 } from '../contacts/contactsDiagnostics';
 import { invokeContactsHmacCallableHttp } from '../contacts/contactsCallableHttp';
@@ -72,7 +73,7 @@ describe('App Check steps are told apart', () => {
       ensureToken: async () => {},
     }).catch((e) => e);
     trace.fail(err);
-    assert.equal(trace.reference(), 'app_check_init/app-check-failed');
+    assert.equal(trace.reference(), 'app_check_init/app-check-failed/k-coded');
   });
 
   it('forced refresh failure, with HTTP and Firebase status and exchange', async () => {
@@ -87,14 +88,14 @@ describe('App Check steps are told apart', () => {
       },
     }).catch((e) => e);
     trace.fail(err);
-    assert.equal(trace.reference(), 'app_check_force/token-error/http-403/permission-denied/app-attest');
+    assert.equal(trace.reference(), 'app_check_force/token-error/http-403/permission-denied/app-attest/k-coded');
   });
 
   it('normal (cached) token failure at call time', async () => {
     const trace = createContactsOperationTrace();
     trace.enter('app_check_token');
     trace.fail(nativeError('token-null'));
-    assert.equal(trace.reference(), 'app_check_token/token-null');
+    assert.equal(trace.reference(), 'app_check_token/token-null/k-coded');
   });
 });
 
@@ -113,7 +114,7 @@ describe('SecureStore, permission, book, Auth and HTTP', () => {
       trace,
     );
     await assert.rejects(failing.load(), /contacts-session-unavailable/);
-    assert.equal(trace.reference(), 'session_read/err-key-chain');
+    assert.equal(trace.reference(), 'session_read/err-key-chain/k-coded');
   });
 
   it('permission and book read failures', async () => {
@@ -137,7 +138,7 @@ describe('SecureStore, permission, book, Auth and HTTP', () => {
         trace,
       );
       await assert.rejects(method === 'getPermission' ? book.getPermission() : book.readRows());
-      assert.equal(trace.reference(), `${stage}/${code}`);
+      assert.equal(trace.reference(), `${stage}/${code}/k-error`);
     }
   });
 
@@ -145,7 +146,7 @@ describe('SecureStore, permission, book, Auth and HTTP', () => {
     const trace = createContactsOperationTrace();
     trace.enter('auth_token');
     trace.fail({ code: 'auth/network-request-failed', message: 'ana@example.com' });
-    assert.equal(trace.reference(), 'auth_token/network-request-failed');
+    assert.equal(trace.reference(), 'auth_token/network-request-failed/k-coded');
   });
 
   it('transport: no response vs an HTTP response from Identity', async () => {
@@ -167,7 +168,7 @@ describe('SecureStore, permission, book, Auth and HTTP', () => {
         },
       ),
     );
-    assert.equal(offline.reference(), 'fetch/network');
+    assert.equal(offline.reference(), 'fetch/network/k-typeerror');
 
     const rejected = createContactsOperationTrace();
     const err = await invokeContactsHmacCallableHttp(
@@ -200,7 +201,7 @@ describe('the reference never carries private data', () => {
     trace.enter('endpoint');
     trace.fail(Object.assign(new Error(PRIVATE.join(' ')), { code: PRIVATE[2], reason: PRIVATE[0] }));
     assertSanitized(trace.reference());
-    assert.equal(trace.reference(), 'endpoint/other');
+    assert.equal(trace.reference(), 'endpoint/other/k-coded');
   });
 
   it('the error is rethrown untouched', async () => {
@@ -247,5 +248,92 @@ describe('visibility', () => {
     assert.match(foundation, /port\.withToken\(\(appCheckToken\) =>/);
     assert.match(foundation, /tagContactsFailureStage\(err, stage\)/);
     assert.match(foundation, /compositionPromise = null;\s*throw err;/);
+  });
+});
+
+describe('trace v2: first failure, causing step, unknown', () => {
+  const okSession = () =>
+    traceContactsSession(createMemoryContactsSessionStore(), createContactsOperationTrace());
+
+  it('an error after a successful session read is never reported as session_read', async () => {
+    const trace = createContactsOperationTrace();
+    const session = traceContactsSession(createMemoryContactsSessionStore(), trace);
+    await session.load();
+    // Gap between steps, thrown and caught by the outer runner.
+    const gap = new TypeError('x');
+    trace.failOutside(gap);
+    assert.equal(trace.reference(), 'unknown/other/k-typeerror/after-session_read');
+  });
+
+  it('a failure returned without an exception shows unknown and the outcome reason', async () => {
+    const trace = createContactsOperationTrace();
+    const session = traceContactsSession(createMemoryContactsSessionStore(), trace);
+    await session.load();
+    assert.equal(
+      trace.reference({ reason: 'contacts-invalid-response' }),
+      'unknown/contacts-invalid-response/k-none/after-session_read',
+    );
+    // A reason outside the closed list is never printed.
+    assert.equal(trace.reference({ reason: 'secret ana@example.com' }), 'unknown/other/k-none/after-session_read');
+  });
+
+  it('a step still running when the operation ends is named as running, not as the cause', () => {
+    const trace = createContactsOperationTrace();
+    trace.enter('session_read');
+    assert.equal(
+      trace.reference({ reason: 'contacts-timeout' }),
+      'unknown/contacts-timeout/k-none/during-session_read',
+    );
+  });
+
+  it('the first failure survives later steps and later failures', async () => {
+    const trace = createContactsOperationTrace();
+    trace.enter('auth_token');
+    trace.fail({ code: 'auth/network-request-failed' });
+    trace.done();
+    const session = traceContactsSession(createMemoryContactsSessionStore(), trace);
+    await session.load();
+    await session.update((c) => c ?? ({} as any)).catch(() => {});
+    trace.failOutside(new RangeError('later'));
+    assert.equal(trace.reference(), 'auth_token/network-request-failed/k-coded');
+  });
+
+  it('a failure inside a step names that step', async () => {
+    const trace = createContactsOperationTrace();
+    await assert.rejects(
+      traceContactsStep(trace, 'phone_region', async () => {
+        throw new TypeError('x');
+      }),
+    );
+    assert.equal(trace.reference(), 'phone_region/other/k-typeerror');
+  });
+
+  it('wrappers keep the kind of what they wrap', async () => {
+    const { ContactsHmacClientError } = await import('../contacts/errors');
+    const { createContactsHmacCallableClient } = await import('../contacts/adapter');
+    const trace = createContactsOperationTrace();
+    const client = createContactsHmacCallableClient({
+      invoke: async () => {
+        throw new TypeError('inner');
+      },
+    });
+    const err = await client.refreshVerifiedActorKeys({}).catch((e) => e);
+    assert.ok(err instanceof ContactsHmacClientError);
+    trace.failOutside(err);
+    assert.equal(trace.reference(), 'unknown/contacts-invalid-response/k-typeerror');
+    void okSession;
+  });
+
+  it('an operation that ran no step has no reference', () => {
+    assert.equal(createContactsOperationTrace().reference({ reason: 'contacts-invalid-response' }), null);
+  });
+
+  it('More records outside failures as outside and passes the outcome reason', () => {
+    const more = read('screens/MoreScreen.tsx');
+    assert.match(more, /trace\.failOutside\(err\);/);
+    assert.equal(/catch \(err\) \{\s*trace\.fail\(err\);/.test(more), false);
+    assert.match(more, /reference: trace\.reference\(\{ reason \}\)/);
+    const foundation = read('contacts/iosContactsFoundation.ios.ts');
+    assert.equal(foundation.match(/trace\.done\(\);/g)?.length, 4);
   });
 });

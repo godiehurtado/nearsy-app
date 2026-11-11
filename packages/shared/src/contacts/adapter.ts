@@ -24,11 +24,14 @@ export type ContactsHmacInvoke = (
 function mapInvokeError(err: unknown): never {
   if (err instanceof ContactsHmacClientError) throw err;
   const reason = parseContactsHmacFailReason(err) ?? 'contacts-invalid-response';
-  throw new ContactsHmacClientError(
+  const wrapped = new ContactsHmacClientError(
     reason,
     'Contacts Identity callable failed.',
     reason === 'contacts-rate-limited' || reason === 'contacts-hmac-unavailable',
   );
+  // Kept for the diagnostic kind only; callers use the reason above.
+  (wrapped as ContactsHmacClientError & { cause?: unknown }).cause = err;
+  throw wrapped;
 }
 
 export function createContactsHmacCallableClient(input: {

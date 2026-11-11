@@ -88,6 +88,10 @@ const CODES = new Set<string>([
   'contacts-auth-lookup-failed',
   'contacts-rate-limited',
   'contacts-invalid-response',
+  // Outcome reasons the coordinator can end with.
+  'contacts-timeout',
+  'contacts-disable-pending',
+  'contacts-os-denied',
 ]);
 
 const FIREBASE_STATUSES = new Set<string>([
@@ -194,6 +198,7 @@ function exchangeOperationOf(fields: ErrorFields | null): string | null {
  */
 const failureStages = new WeakMap<object, ContactsDiagnosticStage>();
 
+/** Composition failures carry their step, because several operations share one. */
 export function tagContactsFailureStage(
   err: unknown,
   stage: ContactsDiagnosticStage,
@@ -201,80 +206,155 @@ export function tagContactsFailureStage(
   if (err !== null && typeof err === 'object') failureStages.set(err, stage);
 }
 
+/** Closed list of error kinds. Never the message. */
+const ERROR_KINDS = [
+  'typeerror',
+  'rangeerror',
+  'referenceerror',
+  'syntaxerror',
+  'coded',
+  'error',
+  'non-object',
+] as const;
+export type ContactsErrorKind = (typeof ERROR_KINDS)[number];
+
+function kindOf(err: unknown): ContactsErrorKind {
+  const fields = asFields(err);
+  if (!fields) return 'non-object';
+  if (typeof fields.code === 'string' && fields.code) return 'coded';
+  const name = typeof fields.name === 'string' ? fields.name.toLowerCase() : '';
+  return (ERROR_KINDS as readonly string[]).includes(name)
+    ? (name as ContactsErrorKind)
+    : 'error';
+}
+
+/**
+ * Kind of the error that actually happened: our own wrappers (fixed messages
+ * with a `cause`) report the kind of what they wrap, so a wrap never hides it.
+ */
+export function contactsErrorKind(err: unknown): ContactsErrorKind {
+  const fields = asFields(err);
+  const cause = fields?.cause;
+  const wrapsCause =
+    fields !== null &&
+    cause !== undefined &&
+    (OWN_MESSAGE_CODES[String(fields.message)] !== undefined ||
+      fields.name === 'ContactsHmacClientError');
+  return wrapsCause ? kindOf(cause) : kindOf(err);
+}
+
 type RecordedFailure = {
-  stage: ContactsDiagnosticStage;
+  /** The step that caught it, or `unknown` when no step was running. */
+  stage: ContactsDiagnosticStage | 'unknown';
   code: string;
+  kind: ContactsErrorKind;
   firebaseStatus: string | null;
   exchangeOperation: string | null;
   httpStatus: number | null;
+  /** Context when the step is unknown: the last step that finished. */
+  after: ContactsDiagnosticStage | null;
 };
 
 export type ContactsOperationTrace = {
-  /** Starts a step. What an earlier step recorded no longer speaks for this one. */
+  /** Starts a step. It never clears a failure already recorded. */
   enter(stage: ContactsDiagnosticStage): void;
-  /** Records the first failure of the current step; outer rewraps do not replace it. */
+  /** The running step finished without error. */
+  done(): void;
+  /** Records a failure caught inside the running step. Only the first one counts. */
   fail(err: unknown): void;
+  /** Records a failure caught outside any step (runner, coordinator, gaps). */
+  failOutside(err: unknown): void;
   /** Records a fetch that got no response, so there is never an HTTP status. */
   failTransport(err: unknown): void;
-  /** Records a real HTTP response. */
+  /** Records a real HTTP response; the response is then being handled. */
   noteResponse(status: number): void;
-  /** Null when this operation ran no step, such as a double tap that joined one. */
-  reference(): string | null;
+  /**
+   * Null when this operation ran no step. With no recorded failure, the stage is
+   * `unknown`, the code is the outcome reason when it is a listed one, and the
+   * last finished (or still running) step is given as context.
+   */
+  reference(outcome?: { reason?: string | null }): string | null;
 };
 
+function contextPart(
+  running: ContactsDiagnosticStage | null,
+  last: ContactsDiagnosticStage | null,
+): string | null {
+  if (running) return `during-${running}`;
+  if (last) return `after-${last}`;
+  return null;
+}
+
 export function createContactsOperationTrace(): ContactsOperationTrace {
-  let stage: ContactsDiagnosticStage | null = null;
+  /** Step in progress; null between steps. */
+  let running: ContactsDiagnosticStage | null = null;
+  let lastDone: ContactsDiagnosticStage | null = null;
+  let touched = false;
   let responseStatus: number | null = null;
   let failure: RecordedFailure | null = null;
 
-  const record = (err: unknown, code: string) => {
+  const record = (err: unknown, code: string, inside: boolean) => {
     if (failure) return;
     const fields = asFields(err);
     const tagged =
       err !== null && typeof err === 'object' ? failureStages.get(err) : undefined;
-    const failedStage = tagged ?? stage ?? 'other';
+    const stage = tagged ?? (inside ? running : null);
     failure = {
-      stage: STAGES.has(failedStage) ? failedStage : 'other',
+      stage: stage && STAGES.has(stage) ? stage : 'unknown',
       code,
+      kind: contactsErrorKind(err),
       firebaseStatus: firebaseStatusOf(fields),
       exchangeOperation: exchangeOperationOf(fields),
-      httpStatus: responseStatus ?? validHttpStatus(fields?.diagnostic?.httpStatus),
+      httpStatus: (inside ? responseStatus : null) ?? validHttpStatus(fields?.diagnostic?.httpStatus),
+      after: stage ? null : running ?? lastDone,
     };
   };
 
   return {
     enter(next) {
-      stage = next;
+      touched = true;
+      if (running && running !== next) lastDone = running;
+      running = next;
       responseStatus = null;
-      failure = null;
+    },
+    done() {
+      if (running) lastDone = running;
+      running = null;
+      responseStatus = null;
     },
     fail(err) {
-      record(err, normalizeContactsDiagnosticCode(err));
+      record(err, normalizeContactsDiagnosticCode(err), true);
+    },
+    failOutside(err) {
+      touched = true;
+      record(err, normalizeContactsDiagnosticCode(err), false);
     },
     failTransport(err) {
-      record(err, asFields(err)?.name === 'AbortError' ? 'aborted' : 'network');
+      record(err, asFields(err)?.name === 'AbortError' ? 'aborted' : 'network', true);
     },
     noteResponse(status) {
-      stage = 'response';
-      failure = null;
+      touched = true;
+      if (running && running !== 'response') lastDone = running;
+      running = 'response';
       responseStatus = validHttpStatus(status);
     },
-    reference() {
-      if (stage === null && failure === null) return null;
-      const current: RecordedFailure = failure ?? {
-        stage: stage ?? 'other',
-        code: 'other',
-        firebaseStatus: null,
-        exchangeOperation: null,
-        httpStatus: responseStatus,
-      };
-      return [
-        current.stage,
-        current.code,
-        current.httpStatus === null ? null : `http-${current.httpStatus}`,
-        current.firebaseStatus,
-        current.exchangeOperation,
-      ]
+    reference(outcome) {
+      if (!touched && !failure) return null;
+      if (failure) {
+        return [
+          failure.stage,
+          failure.code,
+          failure.httpStatus === null ? null : `http-${failure.httpStatus}`,
+          failure.firebaseStatus,
+          failure.exchangeOperation,
+          `k-${failure.kind}`,
+          failure.stage === 'unknown' ? contextPart(null, failure.after) : null,
+        ]
+          .filter((part): part is string => part !== null)
+          .join('/');
+      }
+      const reason = normalizeCode(outcome?.reason ?? null) ?? 'other';
+      return ['unknown', reason, 'k-none', contextPart(running, lastDone)]
         .filter((part): part is string => part !== null)
         .join('/');
     },
@@ -283,7 +363,9 @@ export function createContactsOperationTrace(): ContactsOperationTrace {
 
 export const NOOP_CONTACTS_TRACE: ContactsOperationTrace = {
   enter() {},
+  done() {},
   fail() {},
+  failOutside() {},
   failTransport() {},
   noteResponse() {},
   reference: () => null,
@@ -341,9 +423,12 @@ async function step<T>(
 ): Promise<T> {
   trace.enter(stage);
   try {
-    return await work();
+    const value = await work();
+    trace.done();
+    return value;
   } catch (err) {
     trace.fail(err);
+    trace.done();
     throw err;
   }
 }

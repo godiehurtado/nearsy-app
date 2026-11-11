@@ -648,11 +648,15 @@ export default function MoreScreen() {
   };
 
   /** Internal diagnostic builds only: appends the sanitized step reference. */
-  const withContactsReference = (message: string, trace: ContactsOperationTrace) =>
+  const withContactsReference = (
+    message: string,
+    trace: ContactsOperationTrace,
+    reason: string | null,
+  ) =>
     appendContactsDiagnosticReference(message, {
       visible: isContactsDiagnosticsVisible(),
       generic: true,
-      reference: trace.reference(),
+      reference: trace.reference({ reason }),
     });
 
   const applyContactsView = (
@@ -687,6 +691,7 @@ export default function MoreScreen() {
         const message = withContactsReference(
           t('settings.contacts.enabledNotSynced'),
           trace,
+          view.reason,
         );
         setContactsSyncPhase('pending');
         setContactsSyncError(message);
@@ -701,6 +706,7 @@ export default function MoreScreen() {
             ? `${base} ${t('settings.contacts.stateUnconfirmed')}`
             : base,
           trace,
+          view.reason,
         );
         setContactsSyncPhase('error');
         setContactsSyncError(message);
@@ -733,7 +739,8 @@ export default function MoreScreen() {
             if (kind === 'refresh') return await reconcilePendingDisable(ports);
             return await syncGrantedAddressBook(ports);
           } catch (err) {
-            trace.fail(err);
+            // Outside any step: never attributed to the last step that ran.
+            trace.failOutside(err);
             throw err;
           }
         },
