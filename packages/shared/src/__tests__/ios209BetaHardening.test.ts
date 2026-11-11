@@ -75,7 +75,7 @@ function grantedBook(): ContactsAddressBookPort {
   return {
     getPermission: async () => 'granted',
     requestPermission: async () => 'granted',
-    readRows: async () => [{ phoneNumbers: [{ number: '+15555550100' }] }],
+    readRows: async () => [{ phoneNumbers: [{ number: '+14155552671' }] }],
   };
 }
 

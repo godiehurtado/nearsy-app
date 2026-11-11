@@ -198,7 +198,7 @@ Every event also carries `platform` (`iOS`), `app_version`, `app_build`, `enviro
 | `match_made` | `match_id`?, `match_score`, `match_score_range` | See Discovery |
 | `social_linked` | `social_platform`, `link_type` (`manual`, `verified`) | A connection was added |
 | `match_social_tapped` | `social_platform`, `open_result` (`opened`, `invalid`, `failed`, `unknown`), `match_score`?, `match_score_range`? | Tap on a network in a Discovery profile |
-| `alert_opened` | `source` (`push`, `inbox`), `alert_id`?, `alert_motive`? (`interest`, `contact`, `both`) | Tap on a push or an inbox row |
+| `alert_opened` | `source` (`push`, `inbox`), `alert_id`?, `alert_motive`? (`interest`, `contact`, `both`, `affiliation`, `contact_affiliation`; omitted when the payload names a motive this binary does not know) | Tap on a push or an inbox row |
 
 `?` means omitted when unknown, never sent as empty, zero or `unknown`.
 

@@ -180,7 +180,7 @@ describe('Identity Contacts HMAC wire', () => {
 
   it('reuses snapshotVersion for the same normalized identifier set', () => {
     const first = selectUploadableIdentifiers([
-      { phoneNumbers: [{ number: '+15551234567' }], emails: [] },
+      { phoneNumbers: [{ number: '+14155552672' }], emails: [] },
     ]);
     assert.equal(first.ok, true);
     if (!first.ok) return;

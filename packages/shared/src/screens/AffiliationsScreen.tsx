@@ -31,6 +31,7 @@ import {
   type OnboardingSelectedAffiliation,
 } from '../affiliations/onboardingAffiliationCatalog';
 import { buildPostCrjAffiliationPersistencePatch } from '../affiliations/onboardingAffiliationPersistence';
+import { reevaluateAfterAffiliationSave } from '../affiliations/affiliationReevaluation';
 import {
   isPostCrjAffiliationEditorDirty,
   parsePostCrjAffiliationEditorParams,
@@ -240,6 +241,7 @@ export default function AffiliationsScreen() {
       setSelected(resolved);
       const patch = buildPostCrjAffiliationPersistencePatch(editorMode, resolved);
       await updateUserProfilePartial(editorUid, patch);
+      reevaluateAfterAffiliationSave(snapshotRef.current, resolved);
       snapshotRef.current = resolved;
       Keyboard.dismiss();
       navigation.goBack();

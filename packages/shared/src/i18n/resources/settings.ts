@@ -36,9 +36,9 @@ export default {
     saved: 'Date of birth updated',
   },
   nearbyNotices: {
-    title: 'Interest nearby notices',
+    title: 'Shared interests and affiliations',
     description:
-      'Get notified when someone nearby shares an official interest with you.',
+      'Get notified when someone nearby shares an official interest or affiliation with you.',
   },
   contacts: {
     title: 'Contacts nearby',

@@ -26,7 +26,12 @@ export function scheduleReevaluateProximityNotices(): void {
   if (!invokeImpl) return;
   const uid = resolveUidImpl?.() ?? null;
   if (!uid) return;
-  void getReevaluatePendingStore().markPending(uid);
+  // Started now so the mark is durable at once; a failed write is not thrown.
+  try {
+    void getReevaluatePendingStore().markPending(uid).catch(() => {});
+  } catch {
+    /* store unavailable: the scheduled flush still runs */
+  }
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => {
     timer = null;

@@ -118,9 +118,33 @@ describe('one invalid identifier never costs the others', () => {
     assert.deepEqual(result.ok && result.identifiers, [{ kind: 'phone', value: '+573001234567' }]);
   });
 
-  it('a granted book with nothing valid is a real empty book', () => {
-    const result = selectUploadableIdentifiers([{ phoneNumbers: [{ number: '300 123 4567' }] }]);
-    assert.deepEqual(result, { ok: true, identifiers: [] });
+  it('a book with identifiers but none valid fails instead of becoming an empty snapshot', () => {
+    for (const rows of [
+      [{ phoneNumbers: [{ number: '300 123 4567' }] }],
+      [{ phoneNumbers: [{ number: '+1 555 555 0100' }], emails: [{ email: 'nope' }] }],
+      [{ emails: [{ email: 'a..b@x.co' }] }, { phoneNumbers: [{ number: '604 555 0101' }] }],
+    ]) {
+      assert.deepEqual(selectUploadableIdentifiers(rows), {
+        ok: false,
+        reason: 'contacts-identifier-invalid',
+      });
+    }
+  });
+
+  it('only a book with no phone or email at all is a real empty book', () => {
+    for (const rows of [
+      [],
+      [{ phoneNumbers: [], emails: [] }],
+      [{ phoneNumbers: [{ number: '' }, { number: '   ' }, null], emails: [{ email: null }] }],
+    ]) {
+      assert.deepEqual(selectUploadableIdentifiers(rows as never), { ok: true, identifiers: [] });
+    }
+  });
+
+  it('national numbers are never given a country: they are skipped, not prefixed', () => {
+    for (const raw of ['300 123 4567', '(415) 555-2671', '612 34 56 78', '020 7946 0018']) {
+      assert.equal(tryNormalizePhone(raw), null, raw);
+    }
   });
 });
 

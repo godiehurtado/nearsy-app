@@ -151,6 +151,8 @@ import {
   type OnboardingSelectedAffiliation,
 } from '../affiliations/onboardingAffiliationCatalog';
 import { buildCrjAffiliationPersistencePatch } from '../affiliations/onboardingAffiliationPersistence';
+import { reevaluateAfterAffiliationSave } from '../affiliations/affiliationReevaluation';
+import { readOnboardingAffiliationsFromDoc } from '../affiliations/postCrjAffiliationEditor';
 import {
   crjIndexForResolvedStep,
   resolveCrjStep,
@@ -1020,8 +1022,10 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       }),
     );
     setSelectedAffiliations(resolved);
+    const saved = readOnboardingAffiliationsFromDoc(shellData, mode);
     const patch = buildCrjAffiliationPersistencePatch(mode, resolved);
     await updateUserProfilePartial(uid, patch);
+    reevaluateAfterAffiliationSave(saved, resolved);
     setShellData((prev) => ({
       ...(prev ?? {}),
       mode,

@@ -165,7 +165,10 @@ export const EVENT_RULES = {
   alert_opened: {
     source: { kind: 'enum', values: ['push', 'inbox'] },
     alert_id: { kind: 'id', maxLength: 128 },
-    alert_motive: { kind: 'enum', values: ['interest', 'contact', 'both'] },
+    alert_motive: {
+      kind: 'enum',
+      values: ['interest', 'contact', 'both', 'affiliation', 'contact_affiliation'],
+    },
   },
 } as const satisfies Record<string, Record<string, PropertyRule>>;
 

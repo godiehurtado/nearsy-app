@@ -1533,3 +1533,31 @@ describe('A book that cannot be read is never an empty snapshot', () => {
     assert.equal(stack.named('syncContactHashes').length, 0);
   });
 });
+
+describe('A book whose identifiers are all invalid keeps the last sync', () => {
+  it('fails with contacts-identifier-invalid and sends no empty snapshot', async () => {
+    const stack = createStack({ identity: createIdentityDouble() });
+    const first = await enableAndSyncContacts(stack.ports);
+    assert.equal(first.ok && first.bookSynced, true);
+    const sentBefore = stack.named('syncContactHashes').length;
+    const sessionBefore = await stack.session.load();
+
+    stack.book.rows = [{ phoneNumbers: [{ number: '300 123 4567' }] }];
+    const out = await syncGrantedAddressBook(stack.ports);
+    assert.equal(out.ok, false);
+    assert.equal(out.ok === false && out.reason, 'contacts-identifier-invalid');
+    assert.equal(stack.named('syncContactHashes').length, sentBefore);
+    assert.deepEqual(await stack.session.load(), sessionBefore);
+    assert.equal(isContactsSyncRetryable('contacts-identifier-invalid'), false);
+  });
+
+  it('a book with no phones or emails at all still syncs as empty', async () => {
+    const stack = createStack({ identity: createIdentityDouble() });
+    await enableAndSyncContacts(stack.ports);
+    stack.book.rows = [];
+    const out = await syncGrantedAddressBook(stack.ports);
+    assert.equal(out.ok, true);
+    const last = stack.named('syncContactHashes').at(-1);
+    assert.deepEqual(last?.data.identifiers, []);
+  });
+});

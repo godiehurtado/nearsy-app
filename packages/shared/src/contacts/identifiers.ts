@@ -77,23 +77,34 @@ export function tryNormalizeIdentifier(
 
 export type SelectIdentifiersResult =
   | { ok: true; identifiers: ContactIdentifierInput[] }
-  | { ok: false; reason: 'contacts-identifier-cap' };
+  | { ok: false; reason: 'contacts-identifier-cap' | 'contacts-identifier-invalid' };
+
+const hasText = (value: unknown): boolean =>
+  typeof value === 'string' && value.trim().length > 0;
 
 /**
- * Collect unique normalized identifiers. Empty is a valid granted book.
- * More than CONTACT_HASH_CAP unique values → cap (do not truncate).
+ * Collect unique normalized identifiers. More than CONTACT_HASH_CAP unique
+ * values → cap (do not truncate).
+ *
+ * Empty is only valid when the book holds no phone or email at all. A book that
+ * holds some, none of them valid (for example only national numbers), fails as
+ * contacts-identifier-invalid: sending an empty snapshot would erase the
+ * previous sync without evidence that the contacts are gone.
  */
 export function selectUploadableIdentifiers(
   rows: readonly AddressBookContactRow[],
 ): SelectIdentifiersResult {
   const unique = new Map<string, ContactIdentifierInput>();
+  let present = 0;
   for (const row of rows) {
     for (const phone of row.phoneNumbers ?? []) {
+      if (hasText(phone?.number)) present += 1;
       const value = tryNormalizePhone(phone?.number ?? '');
       if (!value) continue;
       unique.set(`phone:${value}`, { kind: 'phone', value });
     }
     for (const email of row.emails ?? []) {
+      if (hasText(email?.email)) present += 1;
       const value = tryNormalizeEmail(email?.email ?? '');
       if (!value) continue;
       unique.set(`email:${value}`, { kind: 'email', value });
@@ -101,6 +112,9 @@ export function selectUploadableIdentifiers(
   }
   if (unique.size > CONTACT_HASH_CAP) {
     return { ok: false, reason: 'contacts-identifier-cap' };
+  }
+  if (unique.size === 0 && present > 0) {
+    return { ok: false, reason: 'contacts-identifier-invalid' };
   }
   const identifiers = [...unique.values()].sort((a, b) => {
     const keyA = `${a.kind}:${a.value}`;

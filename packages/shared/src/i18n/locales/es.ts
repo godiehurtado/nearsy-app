@@ -1718,9 +1718,9 @@ const es: TranslationResources = {
       saved: 'Fecha de nacimiento actualizada',
     },
     nearbyNotices: {
-      title: 'Avisos de intereses cercanos',
+      title: 'Intereses y afiliaciones compartidos',
       description:
-        'Recibe un aviso cuando alguien cerca comparte un interés oficial contigo.',
+        'Recibe un aviso cuando alguien cerca comparte contigo un interés o una afiliación oficial.',
     },
     contacts: {
       title: 'Contactos cercanos',
