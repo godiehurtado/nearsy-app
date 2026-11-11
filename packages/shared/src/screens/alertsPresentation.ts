@@ -28,6 +28,10 @@ export function buildAlertRowMessage(
   t: Translate,
   translateItem: TranslateItem,
 ): string {
+  // An affiliation match takes priority, as in the push; its names are never shown.
+  if (alert.sharesAffiliation) {
+    return t('notifications.messages.affiliationNearby', { name: alert.name });
+  }
   const sharedIds = alert.sharedInterests ?? [];
   if (sharedIds.length > 0) {
     const labels = resolveInterestChips(sharedIds.slice(0, 2), translateItem).map(

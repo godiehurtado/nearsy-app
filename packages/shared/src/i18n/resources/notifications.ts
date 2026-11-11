@@ -20,6 +20,7 @@ export default {
     interestNearby: '{{name}} is near you and you share interests{{interests}}.',
     interestsSuffix: ' ({{interests}})',
     nearbyOnly: '{{name}} is near you.',
+    affiliationNearby: '{{name}} is near you and you share an affiliation.',
   },
   time: {
     minutes: '{{count}}m',
@@ -28,6 +29,7 @@ export default {
   distance: '{{count}} ft',
   kinds: {
     interestNearby: 'Shared interest nearby',
+    affiliationNearby: 'Shared affiliation nearby',
   },
   unseen: 'Unread alert',
   push: {

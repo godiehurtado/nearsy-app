@@ -16,6 +16,8 @@ export type AlertItem = {
   avatar?: string | null;
   kind: AlertKind;
   sharedInterests?: string[];
+  /** Functions counted at least one shared stable affiliation (no names). */
+  sharesAffiliation?: boolean;
   at: number;
   appearanceKey?: string;
   unseen?: boolean;
@@ -77,12 +79,18 @@ export function mapDiscoverResultsToInterestAlerts(
   viewerUid: string,
 ): AlertItem[] {
   const out: AlertItem[] = [];
+  const seen = new Set<string>();
   for (const r of results) {
-    if (!r.uid || r.uid === viewerUid) continue;
+    if (!r.uid || r.uid === viewerUid || seen.has(r.uid)) continue;
     const shared = (r.profile.interestIds ?? []).filter((id) =>
       myInterestIds.has(id),
     );
-    if (shared.length === 0) continue;
+    // Only a non-negative integer from Functions counts; absent or invalid does not.
+    const count = r.sharedAffiliationCount;
+    const sharesAffiliation =
+      typeof count === 'number' && Number.isSafeInteger(count) && count > 0;
+    if (shared.length === 0 && !sharesAffiliation) continue;
+    seen.add(r.uid);
     out.push({
       id: r.uid,
       uid: r.uid,
@@ -90,6 +98,7 @@ export function mapDiscoverResultsToInterestAlerts(
       avatar: r.profile.profileImage,
       kind: 'interest_nearby',
       sharedInterests: shared.slice(0, 3),
+      ...(sharesAffiliation ? { sharesAffiliation: true } : {}),
       at,
       ...(r.appearanceKey ? { appearanceKey: r.appearanceKey } : {}),
     });

@@ -245,6 +245,7 @@ export const es: TranslationResources = {
         '{{name}} está cerca y compartís intereses{{interests}}.',
       interestsSuffix: ' ({{interests}})',
       nearbyOnly: '{{name}} está cerca.',
+      affiliationNearby: '{{name}} está cerca y compartís una afiliación.',
     },
     time: {
       minutes: '{{count}}m',
@@ -253,6 +254,7 @@ export const es: TranslationResources = {
     distance: '{{count}} ft',
     kinds: {
       interestNearby: 'Interés compartido cercano',
+      affiliationNearby: 'Afiliación compartida cercana',
     },
     unseen: 'Alerta no leída',
     push: {
