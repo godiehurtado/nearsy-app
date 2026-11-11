@@ -1235,22 +1235,23 @@ export default function MoreScreen() {
         </SettingsSection>
 
         <SettingsSection title={t('settings.sections.about')}>
+          {/* Informational only: no onPress, so no chevron and no action. */}
+          {installedVersion ? (
+            <SettingsRow
+              icon="information-circle-outline"
+              title={t('settings.about.versionTitle')}
+              value={formatInstalledAppVersion(installedVersion)}
+              wrapValue
+            />
+          ) : null}
           <SettingsRow
             icon="globe-outline"
             title={t('settings.about.cityDataTitle')}
             description={t('settings.about.geonamesAttribution')}
             onPress={handleOpenGeoNames}
             accessibilityHint={t('settings.about.openGeoNamesHint')}
-            isLast={!installedVersion}
+            isLast
           />
-          {installedVersion ? (
-            <SettingsRow
-              icon="information-circle-outline"
-              title={t('settings.about.versionTitle')}
-              value={formatInstalledAppVersion(installedVersion)}
-              isLast
-            />
-          ) : null}
         </SettingsSection>
 
         <View style={styles.actions}>

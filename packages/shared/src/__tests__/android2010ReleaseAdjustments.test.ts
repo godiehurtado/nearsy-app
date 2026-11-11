@@ -40,9 +40,21 @@ describe('More: installed version', () => {
     assert.ok(reader.includes("require('expo-application')"));
   });
 
+  it('is the first, informational row of About, shown once', () => {
+    const more = src('screens/MoreScreen.tsx');
+    const about = more.slice(more.indexOf("title={t('settings.sections.about')}"));
+    const section = about.slice(0, about.indexOf('</SettingsSection>'));
+    const version = section.indexOf("t('settings.about.versionTitle')");
+    assert.ok(version > 0 && version < section.indexOf("t('settings.about.cityDataTitle')"));
+    const row = section.slice(section.lastIndexOf('<SettingsRow', version), section.indexOf('/>', version));
+    assert.doesNotMatch(row, /onPress|showChevron/);
+    assert.equal(more.split('formatInstalledAppVersion(').length - 1, 1);
+    assert.equal(more.split("settings.about.versionTitle").length - 1, 1);
+  });
+
   it('both languages have the label', () => {
-    assert.ok(src('i18n/resources/settings.ts').includes("versionTitle: 'Version'"));
-    assert.ok(src('i18n/locales/es.ts').includes("versionTitle: 'Versión'"));
+    assert.ok(src('i18n/resources/settings.ts').includes("versionTitle: 'App version'"));
+    assert.ok(src('i18n/locales/es.ts').includes("versionTitle: 'Versión de la app'"));
   });
 });
 
