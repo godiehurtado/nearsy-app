@@ -44,14 +44,21 @@ describe('iOS binary version override', () => {
     assert.match(appConfig, /\.\.\.\(binaryOverride\.buildNumber \? \{ buildNumber: binaryOverride\.buildNumber \} : \{\}\)/);
   });
 
-  it('only the beta profile numbers itself; app.json and other profiles are untouched', () => {
+  it('production and beta number themselves apart; app.json and other profiles are untouched', () => {
     assert.equal(eas.cli.appVersionSource, 'local');
     assert.equal(appJson.expo.version, '2.0.9');
     assert.equal(appJson.expo.ios.buildNumber, '70');
     assert.equal(eas.build.beta.env.NEARSY_IOS_VERSION, '2.0.10');
     assert.equal(eas.build.beta.env.NEARSY_IOS_BUILD_NUMBER, '74');
+    assert.equal(eas.build.production.env.NEARSY_IOS_VERSION, '2.0.10');
+    assert.equal(eas.build.production.env.NEARSY_IOS_BUILD_NUMBER, '75');
+    // Both binaries share one App Store build number space.
+    assert.notEqual(
+      eas.build.production.env.NEARSY_IOS_BUILD_NUMBER,
+      eas.build.beta.env.NEARSY_IOS_BUILD_NUMBER,
+    );
     for (const [name, profile] of Object.entries(eas.build)) {
-      if (name === 'beta') continue;
+      if (name === 'beta' || name === 'production') continue;
       const env = profile.env ?? {};
       assert.equal('NEARSY_IOS_VERSION' in env, false, name);
       assert.equal('NEARSY_IOS_BUILD_NUMBER' in env, false, name);

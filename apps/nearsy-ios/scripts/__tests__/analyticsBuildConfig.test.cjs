@@ -68,6 +68,28 @@ describe('analytics build guard', () => {
     }
   });
 
+  it('the public production profile keeps PostHog in the binary with capture off', () => {
+    const env = eas.build.production.env;
+    for (const key of Object.keys(env)) {
+      assert.equal(key.startsWith('EXPO_PUBLIC_POSTHOG_'), false, key);
+    }
+    // Even with the EAS token injected, no channel means nothing is declared.
+    assert.deepEqual(
+      assertAnalyticsBuildConfig({ ...BUILDER, ...env, EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN: FAKE }),
+      { declared: false },
+    );
+    assert.equal(env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV, 'production');
+  });
+
+  it('only the beta profile, separate from production, marks test users', () => {
+    assert.equal(eas.build.beta.extends, 'production');
+    assert.equal(eas.build.beta.env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL, 'beta');
+    for (const [name, profile] of Object.entries(eas.build)) {
+      if (name === 'beta') continue;
+      assert.equal('EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL' in (profile.env ?? {}), false, name);
+    }
+  });
+
   it('app.config runs the guard', () => {
     assert.match(appConfig, /assertAnalyticsBuildConfig\(process\.env\)/);
   });

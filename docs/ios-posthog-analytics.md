@@ -45,7 +45,7 @@ Beta is TestFlight on **production Firebase** and PostHog project 716015. It rep
 - **Event values:** `environment=production`, `distribution_channel=beta`, `is_test_user=true`.
 - **Declared, not detected:** the app does not try to detect TestFlight. The channel comes only from the build profile.
 
-The `beta` profile is in `apps/nearsy-ios/eas.json`. It extends `production`, so it uses the same EAS environment (`production`), Firebase production and signing. The `production` profile is unchanged.
+The `beta` profile is in `apps/nearsy-ios/eas.json`. It extends `production`, so it uses the same EAS environment (`production`), Firebase production and signing. The `production` profile declares no channel, so its binary keeps PostHog with capture off.
 
 ```json
 "beta": {
@@ -73,7 +73,7 @@ The `beta` profile is in `apps/nearsy-ios/eas.json`. It extends `production`, so
    An `EXPO_PUBLIC_` value is compiled into the app, so it is not a secret from the binary. Visibility only keeps it out of logs and the dashboard.
 2. **Version and build number.**
    - **Source:** `appVersionSource` is `local` and `autoIncrement` is `false`. EAS has no remote counter for this app and takes both values from the resolved app config.
-   - **The `beta` profile numbers itself** with `NEARSY_IOS_VERSION` and `NEARSY_IOS_BUILD_NUMBER`, which `app.config.js` applies to that build only. `app.json` stays at 2.0.9 (70), which every other profile still reads.
+   - **The `beta` profile numbers itself** with `NEARSY_IOS_VERSION` and `NEARSY_IOS_BUILD_NUMBER`, which `app.config.js` applies to that build only. The public `production` profile numbers itself the same way, as 2.0.10 (75). `app.json` stays at 2.0.9 (70), which the remaining profiles still read. Beta and production share one App Store build number space, so the next Beta needs 76 or higher.
    - **History checked on 2026-11-07 with `eas build:list`:** the highest iOS build is 2.0.10 (72), from the `testflight-contacts-diagnostics` profile on another branch. 2.0.9 already has builds up to 71. So the first Beta used **2.0.10 (73)**. Rechecked before the second Beta: the highest was still 73, so it uses **2.0.10 (74)**.
    - **Still to confirm in App Store Connect:** that no build above 72 was uploaded outside EAS (Xcode or Transporter), and that the 2.0.10 version is still open for builds. If either fails, change only the two values in the `beta` profile.
 
@@ -100,7 +100,7 @@ Use `--id` with the Beta build's ID rather than `--latest`, so a different build
 
 Distribution is complete. Physical QA and receipt of events in PostHog are still pending.
 
-**Do not promote a Beta binary to the App Store.** The channel is compiled into the bundle, so every store user would be reported as `is_test_user=true`. Build the store version from the `production` profile.
+**Do not promote a Beta binary to the App Store.** The channel is compiled into the bundle, so every store user would be reported as `is_test_user=true`. Build the store version from the `production` profile. See [ios-2010-public-release.md](ios-2010-public-release.md).
 
 **Local bundles and the Metro cache:** Metro can reuse a cached transform that already holds other `EXPO_PUBLIC_` values. When switching configuration locally, start Metro or `expo export` with `--clear`. EAS builds start from a clean cache.
 

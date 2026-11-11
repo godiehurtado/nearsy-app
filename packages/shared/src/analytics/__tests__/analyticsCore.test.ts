@@ -1458,10 +1458,12 @@ describe('source guards', () => {
     }
   });
 
-  it('eas.json today: Beta declared, production unchanged and off', () => {
+  it('eas.json today: Beta declared, public production numbered and off', () => {
     const eas = JSON.parse(read('apps/nearsy-ios/eas.json'));
     assert.deepEqual(eas.build.production.env, {
       EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'production',
+      NEARSY_IOS_VERSION: '2.0.10',
+      NEARSY_IOS_BUILD_NUMBER: '75',
     });
     assert.equal(eas.build.production.environment, 'production');
     assert.equal(eas.build.production.autoIncrement, false);
@@ -1471,7 +1473,7 @@ describe('source guards', () => {
       EXPO_PUBLIC_POSTHOG_ENABLED: 'true',
       EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL: 'beta',
       NEARSY_IOS_VERSION: '2.0.10',
-      NEARSY_IOS_BUILD_NUMBER: '73',
+      NEARSY_IOS_BUILD_NUMBER: '74',
     });
     const config = resolveAnalyticsConfig({
       enabledFlag: eas.build.beta.env.EXPO_PUBLIC_POSTHOG_ENABLED,
