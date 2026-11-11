@@ -38,6 +38,7 @@ import {
 } from './contactsSyncStatus.ts';
 import {
   applyLateIdentityResult,
+  identifierCapForState,
   runDisable,
   runEnableThenSync,
   withConfirmedEpoch,
@@ -169,6 +170,7 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
       errorKey: session.errorKey,
       notifyEffective: session.notifyEffective,
       resultSeq: session.resultSeq,
+      identifierLimit: identifierCapForState(session.state),
     };
   }
 
@@ -489,7 +491,7 @@ export function createContactsSyncSession(deps: ContactsSessionDeps) {
     return {
       getPermission: guard(() => book.getPermission()),
       requestPermission: guard(() => book.requestPermission()),
-      readRecords: guard(() => book.readRecords()),
+      readRecords: (options) => guard(() => book.readRecords(options))(),
     };
   }
 

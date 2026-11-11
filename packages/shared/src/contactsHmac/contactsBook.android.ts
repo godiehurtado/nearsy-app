@@ -55,7 +55,7 @@ export function createAndroidContactsBook(
       const snap = await withOwnExternalFlow(() => Contacts.requestPermissionsAsync());
       return mapPermission(snap.status);
     },
-    async readRecords() {
+    async readRecords(readOptions) {
       // An empty list is a real empty book to Identity, so never invent one.
       if (!Contacts) {
         throw new ContactsHmacError('generic', 'Contacts are not available.');
@@ -84,6 +84,7 @@ export function createAndroidContactsBook(
       }
       const collected = collectContactIdentifiers(records, {
         reliableRegion: options.reliableRegion?.() ?? null,
+        identifierCap: readOptions?.identifierCap,
       });
       // Aggregate counts only: never a phone, email, hash or UID.
       console.info('[contacts] identifiers', JSON.stringify(collected.stats));

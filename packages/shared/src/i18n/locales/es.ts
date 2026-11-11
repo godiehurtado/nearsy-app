@@ -341,9 +341,9 @@ export const es: TranslationResources = {
         sourceCap:
           'Esta cuenta ya tiene el máximo de 8 dispositivos sincronizados. Quita uno e inténtalo de nuevo.',
         identifierCap:
-          'Esta sincronización supera 500 contactos. Los contactos no se actualizaron.',
+          'Tu agenda tiene más de {{max}} teléfonos y correos, el máximo que admite la sincronización de contactos. No se envió nada; tu sincronización anterior se mantiene.',
         unionCap:
-          'Los contactos sincronizados entre tus dispositivos superarían 500 entradas únicas. Los contactos no se actualizaron.',
+          'Entre tus dispositivos sincronizados habría más de {{max}} teléfonos y correos únicos, el máximo que admite la sincronización de contactos. No cambió nada; tu sincronización anterior se mantiene.',
         identifierInvalid:
           'Algunos contactos no se pudieron sincronizar. Revisa números y correos.',
         hashRejected:

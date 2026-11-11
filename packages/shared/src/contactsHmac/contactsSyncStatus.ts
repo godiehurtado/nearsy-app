@@ -45,6 +45,8 @@ export type ContactsSyncStatus = {
   notifyEffective: boolean | null;
   /** Grows on every Identity result, so the UI can pick up late ones. */
   resultSeq: number;
+  /** Effective identifier limit, for the limit copy ({{max}}); 500 when absent. */
+  identifierLimit?: number;
 };
 
 export const CONTACTS_STATUS_SIGNED_OUT: ContactsSyncStatus = {
@@ -166,6 +168,19 @@ export function contactsCanRetryRead(status: ContactsSyncStatus): boolean {
   return !status.stateConfirmed && status.readFailed;
 }
 
+/** Failures that leave the current book unsent and need more than a plain retry. */
+const BOOK_NOT_SENT_ERRORS = new Set<ContactsErrorI18nKey>([
+  'identifierCap',
+  'unionCap',
+  'identifierInvalid',
+  'sourceCap',
+]);
+
+/** Values for the copy that names the limit. */
+export function contactsCopyParams(status: ContactsSyncStatus): { max: number } {
+  return { max: status.identifierLimit ?? 500 };
+}
+
 /** Relative i18n key under settings.contactsSync; null keeps the description. */
 export function contactsStatusCopyKey(
   status: ContactsSyncStatus,
@@ -192,6 +207,10 @@ export function contactsStatusCopyKey(
         : 'status.disableUncertain';
     case 'enabled':
       break;
+  }
+  // This book was not sent: an earlier snapshot is not "your contacts are synced".
+  if (status.errorKey && BOOK_NOT_SENT_ERRORS.has(status.errorKey)) {
+    return `errors.${status.errorKey}`;
   }
   if (status.errorKey === 'rateLimited') {
     return status.snapshot === 'synced'

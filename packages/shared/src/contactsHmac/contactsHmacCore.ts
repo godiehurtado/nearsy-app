@@ -1,6 +1,7 @@
 import {
   BANNED_CONTACTS_WIRE_FIELDS,
   CONTACT_HASH_CAP,
+  CONTACT_IDENTIFIER_CLIENT_MAX,
   CONTACTS_HMAC_FAIL_REASONS,
   DISABLE_CONTACTS_SYNC,
   ENABLE_CONTACTS_SYNC,
@@ -235,8 +236,10 @@ function identifierKey(row: ContactIdentifierInput): string {
  */
 export function collectContactIdentifiers(
   records: readonly RawContactRecord[],
-  options: { reliableRegion?: string | null } = {},
+  options: { reliableRegion?: string | null; identifierCap?: number } = {},
 ): CollectIdentifiersResult {
+  // Over the limit nothing is sent: never a truncated or split snapshot.
+  const cap = effectiveIdentifierCap(options.identifierCap);
   const stats = emptyIdentifierStats();
   const seen = new Set<string>();
   const identifiers: ContactIdentifierInput[] = [];
@@ -277,7 +280,7 @@ export function collectContactIdentifiers(
       keep({ kind: 'phone', value: phone.value });
     }
   }
-  if (identifiers.length > CONTACT_HASH_CAP) {
+  if (identifiers.length > cap) {
     return { ok: false, reason: 'contacts-identifier-cap', stats };
   }
   if (identifiers.length === 0 && stats.emailsSeen + stats.phonesSeen > 0) {
@@ -381,16 +384,25 @@ export function buildRefreshRequest(): Record<string, never> {
   return {};
 }
 
-/** Identity rejects the whole request for one bad row: never send one. */
+/**
+ * Identity rejects the whole request for one bad row: never send one. Duplicates
+ * count toward Identity's limit, so the list must already be unique.
+ */
 export function assertWireIdentifiers(raw: unknown): ContactIdentifierInput[] {
   if (
     !Array.isArray(raw) ||
-    raw.length > CONTACT_HASH_CAP ||
-    !raw.every((row) => isWireValidIdentifier(row))
+    !raw.every((row) => isWireValidIdentifier(row)) ||
+    new Set(raw.map((row: ContactIdentifierInput) => identifierKey(row))).size !== raw.length
   ) {
     throw new ContactsHmacError(
       'contacts-identifier-invalid',
       'One or more contact identifiers are invalid. (contacts-identifier-invalid)',
+    );
+  }
+  if (raw.length > CONTACT_IDENTIFIER_CLIENT_MAX) {
+    throw new ContactsHmacError(
+      'contacts-identifier-cap',
+      'Too many identifiers in this snapshot. (contacts-identifier-cap)',
     );
   }
   return raw.map((row: ContactIdentifierInput) => ({ kind: row.kind, value: row.value }));
@@ -492,7 +504,23 @@ export function parseContactsWireResult(raw: unknown): ContactsWireResult {
     }
     out.keyCount = raw.keyCount;
   }
+  // Additive: an invalid value is ignored (as if absent), never a failed reply.
+  const cap = raw.identifierCap;
+  if (typeof cap === 'number' && Number.isSafeInteger(cap) && cap >= 1) {
+    out.identifierCap = cap;
+  }
   return out;
+}
+
+/**
+ * Identifiers one snapshot may hold: what Identity announced, never above what
+ * this client supports; 500 when the server does not announce it.
+ */
+export function effectiveIdentifierCap(announced: number | null | undefined): number {
+  if (typeof announced !== 'number' || !Number.isSafeInteger(announced) || announced < 1) {
+    return CONTACT_HASH_CAP;
+  }
+  return Math.min(announced, CONTACT_IDENTIFIER_CLIENT_MAX);
 }
 
 /** Identity write stays even if Functions reevaluate fails. */

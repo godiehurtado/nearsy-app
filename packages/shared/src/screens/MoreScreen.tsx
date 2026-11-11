@@ -56,6 +56,7 @@ import {
   bindContactsUserDoc,
   contactsCanRetry,
   contactsCanRetryRead,
+  contactsCopyParams,
   contactsEpochFromUserDoc,
   contactsHmacAvailable,
   contactsReliablePhoneRegion,
@@ -560,7 +561,10 @@ export default function MoreScreen() {
     const key = contactsHmacErrorToI18nKey(op.error.reason);
     Alert.alert(
       t('common.error'),
-      t(`settings.contactsSync.errors.${key}` as 'settings.contactsSync.errors.generic'),
+      t(
+        `settings.contactsSync.errors.${key}` as 'settings.contactsSync.errors.generic',
+        contactsCopyParams(getContactsSyncStatus()),
+      ),
     );
   };
 
@@ -1144,7 +1148,10 @@ export default function MoreScreen() {
                 title={t('settings.contactsSync.title')}
                 description={
                   contactsCopyKey
-                    ? t(`settings.contactsSync.${contactsCopyKey}` as 'settings.contactsSync.description')
+                    ? t(
+                        `settings.contactsSync.${contactsCopyKey}` as 'settings.contactsSync.description',
+                        contactsCopyParams(contactsStatus),
+                      )
                     : t('settings.contactsSync.description')
                 }
                 value={contactsToggleValue(contactsStatus)}

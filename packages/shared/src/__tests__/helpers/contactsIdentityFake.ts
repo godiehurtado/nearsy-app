@@ -28,6 +28,17 @@ export class FakeIdentity {
   /** Rule applied to the next calls: return a promise to hold, throw to fail. */
   intercept: ((name: string, data: any) => unknown) | null = null;
   uid = 'uid-a';
+  /** `identifierCap` on enable/refresh/sync replies; undefined = older server. */
+  announcedCap: unknown = undefined;
+  /** Limit Identity enforces per request and on the union of live sources. */
+  serverCap = 500;
+  private sourceKeys = new Map<string, Set<string>>();
+
+  private withCap(reply: Record<string, unknown>) {
+    return this.announcedCap === undefined
+      ? reply
+      : { ...reply, identifierCap: this.announcedCap };
+  }
 
   wire(extra: Record<string, unknown>) {
     return {
@@ -57,9 +68,10 @@ export class FakeIdentity {
         if (first) {
           this.enabled = true;
           this.sources.clear();
+          this.sourceKeys.clear();
           this.fences.clear();
         }
-        return this.wire({ result: 'enabled', reevaluateRequired: first });
+        return this.withCap(this.wire({ result: 'enabled', reevaluateRequired: first }));
       }
       case SYNC_CONTACT_HASHES: {
         if (!this.enabled) throw identityRejects('contacts-not-enabled');
@@ -68,6 +80,18 @@ export class FakeIdentity {
         if (fence != null && data.snapshotVersion <= fence) {
           throw identityRejects('contacts-source-removed');
         }
+        // Duplicates count toward the per-request limit.
+        if (data.identifiers.length > this.serverCap) {
+          throw identityRejects('contacts-identifier-cap');
+        }
+        const keys = new Set<string>(
+          data.identifiers.map((row: any) => `${row.kind}:${row.value}`),
+        );
+        const union = new Set(keys);
+        for (const [id, other] of this.sourceKeys) {
+          if (id !== data.sourceId) for (const key of other) union.add(key);
+        }
+        if (union.size > this.serverCap) throw identityRejects('contacts-union-cap');
         const fingerprint = identifiersFingerprint(data.identifiers);
         const existing = this.sources.get(data.sourceId);
         if (existing && data.snapshotVersion < existing.version) {
@@ -77,23 +101,28 @@ export class FakeIdentity {
           if (existing.fingerprint !== fingerprint) {
             throw identityRejects('contacts-snapshot-conflict');
           }
-          return this.wire({
-            result: 'idempotent',
-            sourceId: data.sourceId,
-            snapshotVersion: data.snapshotVersion,
-          });
+          return this.withCap(
+            this.wire({
+              result: 'idempotent',
+              sourceId: data.sourceId,
+              snapshotVersion: data.snapshotVersion,
+            }),
+          );
         }
         this.fences.delete(data.sourceId);
         this.sources.set(data.sourceId, {
           version: data.snapshotVersion,
           fingerprint,
         });
-        return this.wire({
-          result: 'synced',
-          sourceId: data.sourceId,
-          snapshotVersion: data.snapshotVersion,
-          reevaluateRequired: true,
-        });
+        this.sourceKeys.set(data.sourceId, keys);
+        return this.withCap(
+          this.wire({
+            result: 'synced',
+            sourceId: data.sourceId,
+            snapshotVersion: data.snapshotVersion,
+            reevaluateRequired: true,
+          }),
+        );
       }
       case REMOVE_CONTACT_SOURCE: {
         if (!this.enabled) throw identityRejects('contacts-not-enabled');
@@ -113,6 +142,7 @@ export class FakeIdentity {
           Math.max(existing?.version ?? 0, fenced, known ?? 0),
         );
         this.sources.delete(data.sourceId);
+        this.sourceKeys.delete(data.sourceId);
         return this.wire({
           result: existing ? 'removed' : 'absent',
           sourceId: data.sourceId,
@@ -127,11 +157,12 @@ export class FakeIdentity {
         this.enabled = false;
         this.epoch += 1;
         this.sources.clear();
+        this.sourceKeys.clear();
         this.fences.clear();
         return this.wire({ result: 'disabled', reevaluateRequired: hadEffect });
       }
       case REFRESH_VERIFIED_ACTOR_KEYS:
-        return this.wire({ result: 'refreshed' });
+        return this.withCap(this.wire({ result: 'refreshed' }));
       default:
         throw new Error(`unexpected ${name}`);
     }

@@ -3,6 +3,7 @@ import {
   ContactsFlowStateError,
   ContactsHmacError,
   ContactsSyncAfterEnableError,
+  effectiveIdentifierCap,
   identifiersFingerprint,
   isConfirmedSnapshotResult,
   isContactsOutcomeUncertain,
@@ -30,7 +31,10 @@ export type ContactsEnableStage =
 export type ContactsBookPort = {
   getPermission: () => Promise<ContactsPermissionStatus>;
   requestPermission: () => Promise<ContactsPermissionStatus>;
-  readRecords: () => Promise<ContactIdentifierInput[] | { capExceeded: true }>;
+  /** `identifierCap` is the effective limit; over it the book reports capExceeded. */
+  readRecords: (options?: {
+    identifierCap?: number;
+  }) => Promise<ContactIdentifierInput[] | { capExceeded: true }>;
 };
 
 /** A write whose outcome is unknown until a retry or a late result settles it. */
@@ -72,7 +76,39 @@ export type ContactsLocalState = {
   sentSnapshot?: { epoch: number; version: number } | null;
   /** Set only by the user's own action on this device, never inferred. */
   userConsent?: boolean;
+  /**
+   * `identifierCap` from Identity's last enable, refresh or sync reply; null when
+   * that reply did not announce one (older server, so 500 applies).
+   */
+  identifierCap?: number | null;
 };
+
+/** Enable, refresh and sync replies announce the limit; its absence means 500. */
+function withAnnouncedCap(
+  state: ContactsLocalState,
+  result: ContactsWireResult,
+): ContactsLocalState {
+  return { ...state, identifierCap: result.identifierCap ?? null };
+}
+
+/** The limit the next snapshot must fit in, from the last announcement. */
+export function identifierCapForState(state: ContactsLocalState): number {
+  return effectiveIdentifierCap(state.identifierCap);
+}
+
+/**
+ * Reads the book against the effective limit. Over it nothing is sent: no
+ * truncation, no split into requests that would replace one another.
+ */
+async function readBookWithinCap(
+  book: ContactsBookPort,
+  state: ContactsLocalState,
+): Promise<ContactIdentifierInput[] | null> {
+  const identifierCap = identifierCapForState(state);
+  const records = await book.readRecords({ identifierCap });
+  if ('capExceeded' in records || records.length > identifierCap) return null;
+  return records;
+}
 
 export type ContactsFlowOutcome = {
   /** Null when nothing was sent, e.g. a reconciliation without OS permission. */
@@ -228,7 +264,7 @@ function applySnapshotAck(
   fingerprint: string,
 ): ContactsLocalState {
   return {
-    ...withConfirmedEpoch(intent, result.contactsEpoch),
+    ...withAnnouncedCap(withConfirmedEpoch(intent, result.contactsEpoch), result),
     lastAckedVersion: version,
     lastAckedFingerprint: fingerprint,
     lastAckedEpoch: result.contactsEpoch,
@@ -302,7 +338,7 @@ export function applyLateIdentityResult(
       if (!result.syncCommitted || !result.contactsSyncEnabled) return state;
       if (state.uncertainOp === 'disable') return state;
       return {
-        ...withConfirmedEpoch(state, result.contactsEpoch),
+        ...withAnnouncedCap(withConfirmedEpoch(state, result.contactsEpoch), result),
         enablementConfirmed: true,
         uncertainOp: state.uncertainOp === 'enable' ? null : state.uncertainOp,
       };
@@ -347,7 +383,7 @@ function applyLiveState(
 ): ContactsLocalState {
   if (live.contactsEpoch < state.contactsEpoch) return state;
   const next: ContactsLocalState = {
-    ...withConfirmedEpoch(state, live.contactsEpoch),
+    ...withAnnouncedCap(withConfirmedEpoch(state, live.contactsEpoch), live),
     enablementConfirmed: live.contactsSyncEnabled,
   };
   if (state.uncertainOp === 'enable' && live.contactsSyncEnabled) {
@@ -464,7 +500,7 @@ async function uploadSnapshot(input: {
     return {
       result,
       state: {
-        ...withConfirmedEpoch(intent, result.contactsEpoch),
+        ...withAnnouncedCap(withConfirmedEpoch(intent, result.contactsEpoch), result),
         uncertainOp: null,
       },
       scheduleReevaluate: false,
@@ -615,14 +651,14 @@ async function syncAfterConfirmedEnable(input: {
     }
   }
 
-  let records: ContactIdentifierInput[] | { capExceeded: true };
+  let records: ContactIdentifierInput[] | null;
   try {
     input.onStage?.('reading');
-    records = await input.book.readRecords();
+    records = await readBookWithinCap(input.book, state);
   } catch (err) {
     throw failure(asHmacError(err), state, permission);
   }
-  if ('capExceeded' in records) {
+  if (!records) {
     throw failure(
       new ContactsHmacError(
         'contacts-identifier-cap',
@@ -781,7 +817,7 @@ export async function runEnableThenSync(input: {
     enableResult: enabled,
     knownPermission: osPermission,
     state: {
-      ...withConfirmedEpoch(base, enabled.contactsEpoch),
+      ...withAnnouncedCap(withConfirmedEpoch(base, enabled.contactsEpoch), enabled),
       enablementConfirmed: true,
       uncertainOp: input.state.uncertainOp === 'sync' ? 'sync' : null,
       reevaluateOwed: owedFromEnable,
@@ -842,8 +878,8 @@ export async function runResyncGrantedBook(input: {
       permission,
     };
   }
-  const records = await input.book.readRecords();
-  if ('capExceeded' in records) {
+  const records = await readBookWithinCap(input.book, input.state);
+  if (!records) {
     throw new ContactsFlowStateError(
       new ContactsHmacError(
         'contacts-identifier-cap',

@@ -74,9 +74,9 @@ export default {
       sourceCap:
         'This account already has the maximum of 8 synced devices. Remove one and try again.',
       identifierCap:
-        'This sync has more than 500 contacts. Contacts were not updated.',
+        'Your address book has more than {{max}} phone numbers and emails, the most Contacts sync supports. Nothing was sent; your previous sync stays as it was.',
       unionCap:
-        'Synced contacts across your devices would exceed 500 unique entries. Contacts were not updated.',
+        'Together, your synced devices would have more than {{max}} unique phone numbers and emails, the most Contacts sync supports. Nothing changed; your previous sync stays as it was.',
       identifierInvalid: 'Some saved contacts could not be synced. Check numbers and emails.',
       hashRejected: 'Contacts sync rejected an invalid payload. Please try again.',
       unavailable: 'Contacts sync is temporarily unavailable. Try again later.',

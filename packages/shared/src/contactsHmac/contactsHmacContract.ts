@@ -18,7 +18,13 @@ export const DISABLE_CONTACTS_SYNC = 'disableContactsSync' as const;
 export const REMOVE_CONTACT_SOURCE = 'removeContactSource' as const;
 export const REFRESH_VERIFIED_ACTOR_KEYS = 'refreshVerifiedActorKeys' as const;
 
+/**
+ * Identifier limit when Identity does not announce `identifierCap` (older
+ * server). Identity's own limit per request and for the union of live sources.
+ */
 export const CONTACT_HASH_CAP = 500;
+/** Highest `identifierCap` this client accepts; a larger announcement is clamped. */
+export const CONTACT_IDENTIFIER_CLIENT_MAX = 5000;
 export const CONTACT_SOURCE_CAP = 8;
 export const CONTACT_SOURCE_ID_MIN = 8;
 export const CONTACT_SOURCE_ID_MAX = 128;
@@ -104,6 +110,11 @@ export type ContactsWireResult = {
   snapshotVersion?: number;
   identifierCount?: number;
   keyCount?: number;
+  /**
+   * Additive v1: most entries one `identifiers[]` may hold, and most unique
+   * hashes across the account's live sources. Only a safe integer >= 1 is kept.
+   */
+  identifierCap?: number;
   syncCommitted: boolean;
   reevaluateRequired: boolean;
 };

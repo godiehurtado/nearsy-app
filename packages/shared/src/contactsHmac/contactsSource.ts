@@ -179,6 +179,8 @@ export async function loadContactsLocalState(
       epochStale: parsed.epochStale === true,
       sentSnapshot: sanitizeSentSnapshot(parsed.sentSnapshot),
       userConsent: parsed.userConsent === true,
+      // Re-checked on use; anything else falls back to the server default.
+      identifierCap: asPositiveInt(parsed.identifierCap),
     };
     if (typeof parsed.enablementConfirmed === 'boolean') {
       state.enablementConfirmed = parsed.enablementConfirmed;
@@ -210,6 +212,7 @@ export async function persistContactsLocalState(
     epochStale: state.epochStale === true,
     sentSnapshot: sanitizeSentSnapshot(state.sentSnapshot),
     userConsent: state.userConsent === true,
+    identifierCap: asPositiveInt(state.identifierCap),
   };
   if (typeof state.enablementConfirmed === 'boolean') {
     safe.enablementConfirmed = state.enablementConfirmed;

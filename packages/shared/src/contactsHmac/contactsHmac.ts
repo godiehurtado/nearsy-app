@@ -30,6 +30,7 @@ export {
 export {
   contactsCanRetry,
   contactsCanRetryRead,
+  contactsCopyParams,
   contactsOperationInFlight,
   contactsStatusCopyKey,
   contactsToggleLocked,
