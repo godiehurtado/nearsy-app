@@ -64,7 +64,8 @@ export function createContactsAddressBookPort(): ContactsAddressBookPort {
     },
     async readRows() {
       const Contacts = await loadModule();
-      if (!Contacts) return [];
+      // An unreadable book is a failure, never an empty snapshot.
+      if (!Contacts) throw new Error('contacts-read-unavailable');
       const rows: Array<{
         phoneNumbers?: Array<{ number?: string | null } | null> | null;
         emails?: Array<{ email?: string | null } | null> | null;
@@ -77,15 +78,18 @@ export function createContactsAddressBookPort(): ContactsAddressBookPort {
           pageSize,
           pageOffset,
         });
-        for (const row of page.data ?? []) {
+        const data = page.data ?? [];
+        for (const row of data) {
           rows.push({
             phoneNumbers: row.phoneNumbers ?? [],
             emails: row.emails ?? [],
           });
         }
         if (!page.hasNextPage) break;
-        pageOffset += pageSize;
-        if (rows.length > 20_000) break;
+        // A page that promises more but returns nothing cannot be read to the
+        // end: fail rather than send a partial book as if it were complete.
+        if (data.length === 0) throw new Error('contacts-read-incomplete');
+        pageOffset += data.length;
       }
       return rows;
     },

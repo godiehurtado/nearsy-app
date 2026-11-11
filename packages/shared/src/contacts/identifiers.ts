@@ -1,8 +1,12 @@
 /**
  * Client-side identifier filter. Identity still normalizes and HMACs.
- * Invalid rows are skipped (not uploaded). Over-cap is a hard reject —
- * Identity does not silent-truncate.
+ * Invalid identifiers are skipped one by one, never the whole contact, and
+ * the rest still upload. Identity rejects the whole request when any single
+ * identifier is invalid, so the client applies the same rules first.
+ * Over-cap is a hard reject — Identity does not silent-truncate.
  */
+
+import { ParseError, parsePhoneNumberWithError } from 'libphonenumber-js/max';
 
 import {
   CONTACT_EMAIL_MAX_CHARS,
@@ -13,7 +17,8 @@ import {
 } from './domain';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const E164_RE = /^\+[1-9]\d{6,14}$/;
+/** Invisible format marks iOS can keep around numbers (bidi, BOM, zero-width). */
+const FORMAT_MARKS_RE = /[​-‏‪-‮⁠-⁩﻿]/g;
 
 export type AddressBookContactRow = {
   phoneNumbers?: Array<{ number?: string | null } | null> | null;
@@ -21,6 +26,7 @@ export type AddressBookContactRow = {
 };
 
 export function tryNormalizeEmail(raw: string): string | null {
+  if (typeof raw !== 'string') return null;
   const email = raw.trim().toLowerCase();
   if (
     !email ||
@@ -33,14 +39,31 @@ export function tryNormalizeEmail(raw: string): string | null {
   return email;
 }
 
+/**
+ * Same rules as Identity's normalizeContactPhone (libphonenumber-js/max, same
+ * version): international form only, possible and valid, sent as E.164.
+ * Anything Identity would refuse is skipped here instead of failing the sync.
+ */
 export function tryNormalizePhone(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith('+') || /[A-Za-z]/.test(trimmed)) return null;
-  const compact = trimmed.replace(/[\s()-]/g, '');
-  if (!E164_RE.test(compact) || compact.length > CONTACT_PHONE_MAX_CHARS) {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.replace(FORMAT_MARKS_RE, '').trim();
+  if (
+    !trimmed.startsWith('+') ||
+    trimmed.length > CONTACT_PHONE_MAX_CHARS + 8 ||
+    /[A-Za-z]/.test(trimmed)
+  ) {
     return null;
   }
-  return compact;
+  try {
+    const parsed = parsePhoneNumberWithError(trimmed, { extract: false });
+    if (!parsed.isPossible() || !parsed.isValid()) return null;
+    const e164 = parsed.format('E.164');
+    return e164.length <= CONTACT_PHONE_MAX_CHARS ? e164 : null;
+  } catch (err) {
+    // ParseError is an invalid number; anything else must not break the sync.
+    if (err instanceof ParseError) return null;
+    return null;
+  }
 }
 
 export function tryNormalizeIdentifier(

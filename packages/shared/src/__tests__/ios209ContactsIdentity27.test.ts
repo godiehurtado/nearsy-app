@@ -275,10 +275,12 @@ function createStack(input: {
 
   const book = {
     permission: input.permission ?? ('granted' as ContactsPermissionStatus),
-    rows: [{ phoneNumbers: [{ number: '+15555550100' }] }] as Array<{
+    rows: [{ phoneNumbers: [{ number: '+14155552671' }] }] as Array<{
       phoneNumbers: Array<{ number: string }>;
     }>,
     log: [] as string[],
+    /** Reading the book fails with this error when set. */
+    readError: null as Error | null,
   };
   const pendingStore = createSecureReevaluatePendingStore(async () => keychain.store);
   const reevaluate = { scheduled: 0 };
@@ -298,6 +300,7 @@ function createStack(input: {
       },
       readRows: async () => {
         book.log.push('readRows');
+        if (book.readError) throw book.readError;
         return book.rows;
       },
     },
@@ -600,7 +603,7 @@ describe('Lost response', () => {
     await seedEpoch(stack, 0);
     stack.loseResponse.add('syncContactHashes');
     await syncGrantedAddressBook(stack.ports);
-    stack.book.rows = [{ phoneNumbers: [{ number: '+15555550199' }] }];
+    stack.book.rows = [{ phoneNumbers: [{ number: '+14155552672' }] }];
     const retry = await syncGrantedAddressBook(stack.ports);
     assert.equal(retry.ok && retry.result.result, 'synced');
     assert.deepEqual(
@@ -808,7 +811,7 @@ describe('removeContactSource', () => {
     const stack = createStack({ identity });
     await seedEpoch(stack, 0);
     await syncGrantedAddressBook(stack.ports);
-    stack.book.rows = [{ phoneNumbers: [{ number: '+15555550199' }] }];
+    stack.book.rows = [{ phoneNumbers: [{ number: '+14155552672' }] }];
     stack.net.down = true;
     await syncGrantedAddressBook(stack.ports);
     assert.equal(identity.state.sources.size, 1);
@@ -1504,5 +1507,29 @@ describe('contacts-epoch-required', () => {
       presentContactsSyncError('contacts-auth-lookup-failed', t),
       'settings.contacts.errors.unavailable',
     );
+  });
+});
+
+// ---------- Book read failures ----------
+
+describe('A book that cannot be read is never an empty snapshot', () => {
+  it('a read failure after enable sends no syncContactHashes and keeps the last snapshot', async () => {
+    const stack = createStack({ identity: createIdentityDouble() });
+    const first = await enableAndSyncContacts(stack.ports);
+    assert.equal(first.ok && first.bookSynced, true);
+    const sentBefore = stack.named('syncContactHashes').length;
+    const sessionBefore = await stack.session.load();
+
+    stack.book.readError = new Error('contacts-read-unavailable');
+    await assert.rejects(syncGrantedAddressBook(stack.ports));
+    assert.equal(stack.named('syncContactHashes').length, sentBefore);
+    assert.deepEqual(await stack.session.load(), sessionBefore);
+  });
+
+  it('a read failure on first enable never uploads an empty book', async () => {
+    const stack = createStack({ identity: createIdentityDouble() });
+    stack.book.readError = new Error('contacts-read-incomplete');
+    await assert.rejects(enableAndSyncContacts(stack.ports));
+    assert.equal(stack.named('syncContactHashes').length, 0);
   });
 });
