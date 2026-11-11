@@ -1393,6 +1393,13 @@ export default function MoreScreen() {
         </SettingsSection>
 
         <SettingsSection title={t('settings.sections.about')}>
+          {binaryVersion ? (
+            <SettingsRow
+              icon="information-circle-outline"
+              title={t('settings.about.appVersionTitle')}
+              value={t('settings.about.appVersionValue', binaryVersion)}
+            />
+          ) : null}
           <SettingsRow
             icon="globe-outline"
             title={t('settings.about.cityDataTitle')}
@@ -1438,14 +1445,6 @@ export default function MoreScreen() {
           </Pressable>
         </View>
 
-        {binaryVersion ? (
-          <Text
-            style={[styles.binaryVersion, { color: palette.textMuted }]}
-            accessibilityRole="text"
-          >
-            {t('settings.about.binaryVersion', binaryVersion)}
-          </Text>
-        ) : null}
       </ScrollView>
 
       <Modal
@@ -1966,11 +1965,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     fontSize: fontSize.base,
-  },
-  binaryVersion: {
-    marginTop: spacing.lg,
-    textAlign: 'center',
-    fontSize: fontSize.xs,
   },
   hint: {
     marginTop: spacing.md,

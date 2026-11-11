@@ -1696,7 +1696,8 @@ const es: TranslationResources = {
         'Datos de ciudades © GeoNames (https://www.geonames.org), con licencia CC BY 4.0. Modificados: filtrados y reindexados por Nearsy.',
       openGeoNamesHint: 'Abre geonames.org en tu navegador',
       openLinkError: 'No pudimos abrir el enlace. Inténtalo más tarde.',
-      binaryVersion: 'Versión {{version}} ({{build}})',
+      appVersionTitle: 'Versión de la app',
+      appVersionValue: '{{version}} ({{build}})',
     },
     email: {
       title: 'Correo electrónico',

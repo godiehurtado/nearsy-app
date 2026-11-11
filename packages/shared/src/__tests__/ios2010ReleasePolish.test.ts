@@ -40,13 +40,30 @@ describe('More shows the installed binary version', () => {
     }
     const more = read('screens/MoreScreen.tsx');
     assert.match(more, /readBinaryVersion\(\)/);
-    assert.match(more, /t\('settings\.about\.binaryVersion', binaryVersion\)/);
+    assert.match(more, /t\('settings\.about\.appVersionValue', binaryVersion\)/);
     assert.equal(/\d+\.\d+\.\d+ \(\d+\)/.test(more), false, 'no hard-coded version');
   });
 
+  it('is the first, informational row of the About card, above City data, with no footer', () => {
+    const more = read('screens/MoreScreen.tsx');
+    const about = more.slice(
+      more.indexOf("<SettingsSection title={t('settings.sections.about')}>"),
+      more.indexOf('</SettingsSection>', more.indexOf("t('settings.sections.about')")),
+    );
+    const versionAt = about.indexOf("t('settings.about.appVersionTitle')");
+    assert.ok(versionAt > 0 && versionAt < about.indexOf("t('settings.about.cityDataTitle')"));
+    const versionRow = about.slice(about.indexOf('<SettingsRow'), about.indexOf('/>') + 2);
+    assert.match(versionRow, /appVersionTitle/);
+    assert.equal(/onPress|showChevron|accessibilityRole|isLast/.test(versionRow), false, versionRow);
+    assert.equal(/settings\.about\.binaryVersion|styles\.binaryVersion/.test(more), false, 'old footer removed');
+  });
+
   it('has copy in both languages', () => {
-    assert.equal(enSettings.about.binaryVersion, 'Version {{version}} ({{build}})');
-    assert.equal((es as any).settings.about.binaryVersion, 'Versión {{version}} ({{build}})');
+    assert.equal(enSettings.about.appVersionTitle, 'App version');
+    assert.equal((es as any).settings.about.appVersionTitle, 'Versión de la app');
+    assert.equal(enSettings.about.appVersionValue, '{{version}} ({{build}})');
+    assert.equal((es as any).settings.about.appVersionValue, '{{version}} ({{build}})');
+    assert.equal('binaryVersion' in enSettings.about, false);
   });
 });
 
