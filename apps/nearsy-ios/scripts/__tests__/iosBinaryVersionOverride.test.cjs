@@ -51,7 +51,7 @@ describe('iOS binary version override', () => {
     assert.equal(eas.build.beta.env.NEARSY_IOS_VERSION, '2.0.10');
     assert.equal(eas.build.beta.env.NEARSY_IOS_BUILD_NUMBER, '74');
     assert.equal(eas.build.production.env.NEARSY_IOS_VERSION, '2.0.10');
-    assert.equal(eas.build.production.env.NEARSY_IOS_BUILD_NUMBER, '78');
+    assert.equal(eas.build.production.env.NEARSY_IOS_BUILD_NUMBER, '79');
     const diagnostics = eas.build['testflight-contacts-diagnostics'].env;
     assert.equal(diagnostics.NEARSY_IOS_VERSION, '2.0.10');
     assert.equal(diagnostics.NEARSY_IOS_BUILD_NUMBER, '76');
