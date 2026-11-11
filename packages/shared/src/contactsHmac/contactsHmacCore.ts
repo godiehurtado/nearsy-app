@@ -1,10 +1,6 @@
 import {
   BANNED_CONTACTS_WIRE_FIELDS,
-  CONTACT_E164_RE,
-  CONTACT_EMAIL_MAX_CHARS,
-  CONTACT_EMAIL_RE,
   CONTACT_HASH_CAP,
-  CONTACT_PHONE_MAX_CHARS,
   CONTACTS_HMAC_FAIL_REASONS,
   DISABLE_CONTACTS_SYNC,
   ENABLE_CONTACTS_SYNC,
@@ -19,6 +15,13 @@ import {
   type RemoveContactSourceRequest,
   type SyncContactHashesRequest,
 } from './contactsHmacContract.ts';
+import {
+  emptyIdentifierStats,
+  isWireValidIdentifier,
+  normalizeContactEmail,
+  normalizeContactPhone,
+  type IdentifierStats,
+} from './contactsIdentifierNormalize.ts';
 import type {
   ContactsLocalState,
   ContactsPermissionStatus,
@@ -190,28 +193,21 @@ export function assertContactsEpoch(raw: unknown): number {
   return raw;
 }
 
+/** Identity's email rule; null when Identity would reject it. */
 export function normalizeClientEmail(raw: string): string | null {
-  const email = raw.trim().toLowerCase();
-  if (
-    !email ||
-    email.length > CONTACT_EMAIL_MAX_CHARS ||
-    !CONTACT_EMAIL_RE.test(email) ||
-    email.includes('..')
-  ) {
-    return null;
-  }
-  return email;
+  return normalizeContactEmail(raw);
 }
 
-/** Conservative E.164 filter. Identity still validates with libphonenumber. */
-export function normalizeClientPhone(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith('+') || trimmed.length > CONTACT_PHONE_MAX_CHARS) {
-    return null;
-  }
-  if (/[A-Za-z]/.test(trimmed)) return null;
-  if (!CONTACT_E164_RE.test(trimmed)) return null;
-  return trimmed;
+/**
+ * Identity's phone rule (libphonenumber, valid for its country), in E.164.
+ * National numbers need a reliable region; without one they are left out.
+ */
+export function normalizeClientPhone(
+  raw: string,
+  reliableRegion?: string | null,
+): string | null {
+  const phone = normalizeContactPhone(raw, reliableRegion);
+  return phone.ok ? phone.value : null;
 }
 
 export type RawContactRecord = {
@@ -220,42 +216,74 @@ export type RawContactRecord = {
 };
 
 export type CollectIdentifiersResult =
-  | { ok: true; identifiers: ContactIdentifierInput[] }
-  | { ok: false; reason: 'contacts-identifier-cap' };
+  | { ok: true; identifiers: ContactIdentifierInput[]; stats: IdentifierStats }
+  | { ok: false; reason: 'contacts-identifier-cap'; stats: IdentifierStats }
+  /**
+   * The book has identifiers but none can be sent. That is not an empty book:
+   * uploading nothing would erase the previous snapshot.
+   */
+  | { ok: false; reason: 'contacts-identifier-invalid'; stats: IdentifierStats };
 
 function identifierKey(row: ContactIdentifierInput): string {
   return `${row.kind}:${row.value}`;
 }
 
+/**
+ * Normalizes every identifier on its own: one that cannot be sent is left out
+ * without taking the valid ones of the same contact with it. Duplicates are
+ * removed after normalization, so two spellings of one number count once.
+ */
 export function collectContactIdentifiers(
   records: readonly RawContactRecord[],
+  options: { reliableRegion?: string | null } = {},
 ): CollectIdentifiersResult {
+  const stats = emptyIdentifierStats();
   const seen = new Set<string>();
   const identifiers: ContactIdentifierInput[] = [];
+  const keep = (item: ContactIdentifierInput) => {
+    const key = identifierKey(item);
+    if (seen.has(key)) {
+      stats.duplicates += 1;
+      return;
+    }
+    seen.add(key);
+    identifiers.push(item);
+    if (item.kind === 'email') stats.emailsKept += 1;
+    else stats.phonesKept += 1;
+  };
   for (const record of records) {
     for (const row of record.emails ?? []) {
-      const email = normalizeClientEmail(row?.email ?? '');
-      if (!email) continue;
-      const item: ContactIdentifierInput = { kind: 'email', value: email };
-      const key = identifierKey(item);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      identifiers.push(item);
+      const raw = typeof row?.email === 'string' ? row.email : '';
+      if (!raw.trim()) continue;
+      stats.emailsSeen += 1;
+      const email = normalizeContactEmail(raw);
+      if (!email) {
+        stats.emailsInvalid += 1;
+        continue;
+      }
+      keep({ kind: 'email', value: email });
     }
     for (const row of record.phoneNumbers ?? []) {
-      const phone = normalizeClientPhone(row?.number ?? '');
-      if (!phone) continue;
-      const item: ContactIdentifierInput = { kind: 'phone', value: phone };
-      const key = identifierKey(item);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      identifiers.push(item);
+      const raw = typeof row?.number === 'string' ? row.number : '';
+      if (!raw.trim()) continue;
+      stats.phonesSeen += 1;
+      const phone = normalizeContactPhone(raw, options.reliableRegion);
+      if ('reason' in phone) {
+        if (phone.reason === 'no_region') stats.phonesNoRegion += 1;
+        else if (phone.reason === 'extension') stats.phonesExtension += 1;
+        else stats.phonesInvalid += 1;
+        continue;
+      }
+      keep({ kind: 'phone', value: phone.value });
     }
   }
   if (identifiers.length > CONTACT_HASH_CAP) {
-    return { ok: false, reason: 'contacts-identifier-cap' };
+    return { ok: false, reason: 'contacts-identifier-cap', stats };
   }
-  return { ok: true, identifiers };
+  if (identifiers.length === 0 && stats.emailsSeen + stats.phonesSeen > 0) {
+    return { ok: false, reason: 'contacts-identifier-invalid', stats };
+  }
+  return { ok: true, identifiers, stats };
 }
 
 /** Local ack digest only — never persist or log raw phones/emails. */
@@ -353,6 +381,21 @@ export function buildRefreshRequest(): Record<string, never> {
   return {};
 }
 
+/** Identity rejects the whole request for one bad row: never send one. */
+export function assertWireIdentifiers(raw: unknown): ContactIdentifierInput[] {
+  if (
+    !Array.isArray(raw) ||
+    raw.length > CONTACT_HASH_CAP ||
+    !raw.every((row) => isWireValidIdentifier(row))
+  ) {
+    throw new ContactsHmacError(
+      'contacts-identifier-invalid',
+      'One or more contact identifiers are invalid. (contacts-identifier-invalid)',
+    );
+  }
+  return raw.map((row: ContactIdentifierInput) => ({ kind: row.kind, value: row.value }));
+}
+
 export function buildSyncRequest(
   input: SyncContactHashesRequest,
 ): SyncContactHashesRequest {
@@ -368,7 +411,7 @@ export function buildSyncRequest(
     sourceId: assertSourceId(input.sourceId),
     snapshotVersion: assertSnapshotVersion(input.snapshotVersion),
     contactsEpoch: assertContactsEpoch(input.contactsEpoch),
-    identifiers: input.identifiers,
+    identifiers: assertWireIdentifiers(input.identifiers),
   };
 }
 

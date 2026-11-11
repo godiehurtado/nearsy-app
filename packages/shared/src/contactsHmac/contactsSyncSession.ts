@@ -76,6 +76,11 @@ export type ContactsUserDocFacts = {
   contactsSyncEnabled: boolean;
   /** Null when the document has no such field: that is not epoch 0. */
   contactsEpoch: number | null;
+  /**
+   * Region of the account's own verified phone, used to read national numbers
+   * of the book. Null when there is none: those numbers are then left out.
+   */
+  reliablePhoneRegion?: string | null;
 };
 
 export type ContactsSessionDeps = {

@@ -39,7 +39,9 @@ function mapPermission(status: string | undefined): ContactsPermissionStatus {
   return 'denied';
 }
 
-export function createAndroidContactsBook(): ContactsBookPort {
+export function createAndroidContactsBook(
+  options: { reliableRegion?: () => string | null } = {},
+): ContactsBookPort {
   const Contacts = loadExpoContacts();
   return {
     // A missing module is not the user's denial: it must not withdraw a source.
@@ -80,8 +82,22 @@ export function createAndroidContactsBook(): ContactsBookPort {
         hasNext = page.hasNextPage === true;
         pageOffset += pageSize;
       }
-      const collected = collectContactIdentifiers(records);
-      if (!collected.ok) return { capExceeded: true };
+      const collected = collectContactIdentifiers(records, {
+        reliableRegion: options.reliableRegion?.() ?? null,
+      });
+      // Aggregate counts only: never a phone, email, hash or UID.
+      console.info('[contacts] identifiers', JSON.stringify(collected.stats));
+      if (!collected.ok && collected.reason === 'contacts-identifier-cap') {
+        return { capExceeded: true };
+      }
+      if (!collected.ok) {
+        // Identifiers exist but none can be sent: a failure, not an empty book.
+        // Nothing is uploaded, so the previous snapshot stays.
+        throw new ContactsHmacError(
+          'contacts-identifier-invalid',
+          'No contact identifier could be normalized. (contacts-identifier-invalid)',
+        );
+      }
       return collected.identifiers as ContactIdentifierInput[];
     },
   };

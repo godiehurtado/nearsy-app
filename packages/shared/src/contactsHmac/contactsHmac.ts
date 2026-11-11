@@ -97,6 +97,10 @@ export function refreshContactsActorKeys(): Promise<ContactsOpResult> {
   return unavailable();
 }
 
+export function contactsReliablePhoneRegion(_phone: unknown, _phoneVerified: unknown): string | null {
+  return null;
+}
+
 export function contactsHmacAvailable(): boolean {
   return false;
 }

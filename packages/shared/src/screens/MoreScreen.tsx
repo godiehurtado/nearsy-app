@@ -58,6 +58,7 @@ import {
   contactsCanRetryRead,
   contactsEpochFromUserDoc,
   contactsHmacAvailable,
+  contactsReliablePhoneRegion,
   contactsHmacErrorToI18nKey,
   contactsOperationInFlight,
   contactsStatusCopyKey,
@@ -225,6 +226,8 @@ function contactsFactsFromProfile(data: ProfileDoc) {
       typeof data.contactsEpoch === 'number'
         ? contactsEpochFromUserDoc(data.contactsEpoch)
         : null,
+    // Reads national numbers of the book; never guessed from the device language.
+    reliablePhoneRegion: contactsReliablePhoneRegion(data.phone, data.phoneVerified),
   };
 }
 

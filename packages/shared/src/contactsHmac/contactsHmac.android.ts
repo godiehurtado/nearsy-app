@@ -18,6 +18,7 @@ import {
 import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
 import { createAndroidContactsBook } from './contactsBook.android.ts';
 import { ContactsHmacError } from './contactsHmacCore.ts';
+import { reliableRegionFromVerifiedPhone } from './contactsIdentifierNormalize.ts';
 import {
   createContactsSyncSession,
   type ContactsDisclosureAcceptance,
@@ -81,6 +82,9 @@ async function ensureAppCheckReady(): Promise<void> {
   }
 }
 
+/** Reliable phone region per account, from its own user document. */
+const reliableRegionByUid = new Map<string, string | null>();
+
 const session = createContactsSyncSession({
   currentUid: () => firebaseAuth.currentUser?.uid ?? null,
   store: AsyncStorage,
@@ -90,7 +94,13 @@ const session = createContactsSyncSession({
     const result = await getIdentityFunctions().httpsCallable(name)(data ?? {});
     return result.data;
   },
-  createBook: createAndroidContactsBook,
+  createBook: () =>
+    createAndroidContactsBook({
+      reliableRegion: () => {
+        const uid = firebaseAuth.currentUser?.uid;
+        return uid ? reliableRegionByUid.get(uid) ?? null : null;
+      },
+    }),
   ensureAppCheck: ensureAppCheckReady,
   scheduleReevaluate: scheduleReevaluateProximityNotices,
   timeoutMs: CONTACTS_CALLABLE_TIMEOUT_MS,
@@ -123,6 +133,9 @@ export function bindContactsUserDoc(
   doc: ContactsUserDocFacts,
   options?: { readOnly?: boolean },
 ): Promise<void> {
+  if (doc.reliablePhoneRegion !== undefined) {
+    reliableRegionByUid.set(uid, doc.reliablePhoneRegion);
+  }
   return bound().bindUserDoc(uid, doc, options);
 }
 
@@ -152,6 +165,11 @@ export function disableContactsIntegration(): Promise<ContactsOpResult> {
 
 export function refreshContactsActorKeys(): Promise<ContactsOpResult> {
   return bound().refreshKeys();
+}
+
+/** Region of the account's own verified phone; null when there is none. */
+export function contactsReliablePhoneRegion(phone: unknown, phoneVerified: unknown): string | null {
+  return reliableRegionFromVerifiedPhone(phone, phoneVerified);
 }
 
 export function contactsHmacAvailable(): boolean {

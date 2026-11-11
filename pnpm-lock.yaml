@@ -171,6 +171,9 @@ importers:
       i18next:
         specifier: ^26.3.3
         version: 26.3.3(typescript@5.9.3)
+      libphonenumber-js:
+        specifier: 1.13.11
+        version: 1.13.11
       posthog-react-native:
         specifier: 4.85.3
         version: 4.85.3(opxyjhuclbgsv6mjb2igeneqv4)
@@ -3213,6 +3216,9 @@ packages:
   leven@3.1.0:
     resolution: {integrity: sha512-qsda+H8jTaUaN/x5vzW2rzc+8Rw4TAQ/4KjB46IwK5VH+IlVeeeje/EoZRpiXvIqjFgK84QffqPztGI3VBLG1A==}
     engines: {node: '>=6'}
+
+  libphonenumber-js@1.13.11:
+    resolution: {integrity: sha512-ETER2kMaIFTI/Nh1a8Gk03dUF/SL0VZqtI+CcVHZxp5WIHYwNS7S+uiYZDYCvLy3lOR4/DAD5jf0h5WkePPpqg==}
 
   lighthouse-logger@1.4.2:
     resolution: {integrity: sha512-gPWxznF6TKmUHrOQjlVo2UbaL2EJ71mb2CCeRs/2qBpi4L/g4LUVc9+3lKQ6DTUZwJswfM7ainGrLO1+fOqa2g==}
@@ -8788,6 +8794,8 @@ snapshots:
       shell-quote: 1.8.3
 
   leven@3.1.0: {}
+
+  libphonenumber-js@1.13.11: {}
 
   lighthouse-logger@1.4.2:
     dependencies:
