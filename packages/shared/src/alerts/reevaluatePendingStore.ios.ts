@@ -2,11 +2,22 @@
  * SecureStore-backed pending reevaluate flag. Never stores address-book rows.
  */
 
-import type { ReevaluatePendingStore } from './reevaluatePendingStore';
+// Explicit .ts: on iOS, Metro resolves './reevaluatePendingStore' to this file,
+// so an extensionless import here would import itself.
+import type { ReevaluatePendingStore } from './reevaluatePendingStore.ts';
 import {
   createMemoryReevaluatePendingStore,
   registerReevaluatePendingStore,
-} from './reevaluatePendingStore';
+} from './reevaluatePendingStore.ts';
+
+// Shared modules import './reevaluatePendingStore' without an extension and get
+// this file on iOS: it must expose the same API.
+export {
+  createMemoryReevaluatePendingStore,
+  getReevaluatePendingStore,
+  registerReevaluatePendingStore,
+  type ReevaluatePendingStore,
+} from './reevaluatePendingStore.ts';
 
 /** Single slot from before per-UID markers. Still honored for its own UID. */
 const LEGACY_KEY = 'nearsy.alerts.v1.reevaluatePendingUid';

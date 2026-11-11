@@ -145,3 +145,27 @@ With the trace in build 75, `session_read` was only the last step entered; it do
 Examples: `session_read/err-key-chain/k-coded` (the read itself failed), `unknown/other/k-typeerror/after-session_read` (an error after a successful read), `unknown/contacts-timeout/k-none/during-session_read` (the read never finished).
 
 **Next minimal step:** one internal TestFlight build with trace v2 and the same single test (open More, turn Contacts on once, capture the alert). That separates a failing session read from an error after it, and names the error kind.
+
+## Contacts root cause (proven)
+
+**Evidence:**
+- **Build 76:** `Ref: unknown/contacts-invalid-response/k-none/after-session_read`. Identity saw **no** Contacts request from 03:30 to 04:00 UTC, as with build 75.
+- **Reproduction:** Metro's real resolver (`metro-resolver` 0.83.3, platform `ios`) and transform (`babel-preset-expo`) reproduce that exact reference with 0 Identity calls.
+
+**Cause:**
+1. `alerts/reevaluateProximityNotices.ts` imports `getReevaluatePendingStore` from `./reevaluatePendingStore`. On iOS, Metro resolves that to `reevaluatePendingStore.ios.ts`, which did not export it.
+2. `reevaluatePendingStore.ios.ts` imported `./reevaluatePendingStore` too, which on iOS resolves to itself. So registering the SecureStore pending store threw a `TypeError` at app start, which was swallowed; later calls skip registration.
+3. In `identityCall`, `pending.isPending()` called the missing function and threw a **synchronous** `TypeError`. `quietly()` only catches a rejected promise, so the error escaped before any request was sent. The controller caught it and returned `contacts-invalid-response`. The error was never inside a traced step, which is why the reference shows `unknown` after the last finished step.
+
+**Scope:** introduced in `d41f76e` (2026-11-02). It is in every iOS build since then, including 2.0.9 (69) and 2.0.9 (70); it is not in 2.0.9 (68). Node tests resolve the plain `.ts` files, so they never saw it.
+
+**Fix:**
+- `reevaluatePendingStore.ios.ts` imports `./reevaluatePendingStore.ts` explicitly, as `reevaluateProximityNotices.ios.ts` already did, and re-exports the shared API.
+- The same self-import existed in `settings/binaryVersion.ios.ts`; it would have hidden the version line in More. It is fixed the same way.
+- No change to SecureStore, App Check, the session, consent or versioning.
+
+**Tests that fail before and pass after:** `iosPlatformResolution.test.ts`:
+- an audit of every `.ios` variant: missing exports and self-imports;
+- the enable flow under iOS resolution and Metro's transform: the store registers, Identity is reached 3 times, and the outcome succeeds.
+
+**Still to validate on a device:** a build with this fix, the same single test, and Identity seeing the Contacts calls.
