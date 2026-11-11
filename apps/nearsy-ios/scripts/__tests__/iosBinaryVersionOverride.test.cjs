@@ -51,10 +51,10 @@ describe('iOS binary version override', () => {
     assert.equal(eas.build.beta.env.NEARSY_IOS_VERSION, '2.0.10');
     assert.equal(eas.build.beta.env.NEARSY_IOS_BUILD_NUMBER, '74');
     assert.equal(eas.build.production.env.NEARSY_IOS_VERSION, '2.0.10');
-    assert.equal(eas.build.production.env.NEARSY_IOS_BUILD_NUMBER, '76');
+    assert.equal(eas.build.production.env.NEARSY_IOS_BUILD_NUMBER, '77');
     const diagnostics = eas.build['testflight-contacts-diagnostics'].env;
     assert.equal(diagnostics.NEARSY_IOS_VERSION, '2.0.10');
-    assert.equal(diagnostics.NEARSY_IOS_BUILD_NUMBER, '75');
+    assert.equal(diagnostics.NEARSY_IOS_BUILD_NUMBER, '76');
     const numbers = [eas.build.beta.env, eas.build.production.env, diagnostics].map((env) => env.NEARSY_IOS_BUILD_NUMBER);
     assert.equal(new Set(numbers).size, numbers.length, 'one App Store build number space');
     // Both binaries share one App Store build number space.

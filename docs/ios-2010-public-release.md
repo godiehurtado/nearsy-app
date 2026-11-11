@@ -6,9 +6,9 @@ Branch `feature/ios-posthog`. Nothing here was built, submitted or published.
 
 | Profile | Binary | Analytics | Use |
 |---|---|---|---|
-| `production` | 2.0.10 (76) | PostHog included, capture **off** (no channel declared) | App Store |
-| `testflight-contacts-diagnostics` | 2.0.10 (75) | Off, like `production` | Internal TestFlight only: Contacts diagnostic reference for 7 days after the build |
-| `beta` | 2.0.10 (74) today; next Beta needs 77+ | On, `distribution_channel=beta`, `is_test_user=true` | TestFlight QA only |
+| `production` | 2.0.10 (77) | PostHog included, capture **off** (no channel declared) | App Store |
+| `testflight-contacts-diagnostics` | 2.0.10 (76), trace v2 (75 was the first diagnostic) | Off, like `production` | Internal TestFlight only: Contacts diagnostic reference for 7 days after the build |
+| `beta` | 2.0.10 (74) today; next Beta needs 78+ | On, `distribution_channel=beta`, `is_test_user=true` | TestFlight QA only |
 
 - `beta` extends `production`; `production` never inherits the Beta channel.
 - Never promote a Beta binary to the App Store: every store user would be marked `is_test_user=true`.
@@ -22,7 +22,7 @@ eas submit --platform ios --profile production --id <BUILD_ID>
 
 ## Binary version in More
 
-More shows `Version 2.0.10 (76)` from the native bundle (`CFBundleShortVersionString`, `CFBundleVersion`) through `expo-application`. It never reads the app config or an update manifest. Android, without that module, shows nothing.
+More shows `Version 2.0.10 (77)` from the native bundle (`CFBundleShortVersionString`, `CFBundleVersion`) through `expo-application`. It never reads the app config or an update manifest. Android, without that module, shows nothing.
 
 ## Affiliations: custom logo button
 
