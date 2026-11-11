@@ -97,6 +97,7 @@ import {
 import { birthDigitsFromParts } from '../settings/settingsPhoneCountries';
 import { resolveSettingsPhoneDisplay } from '../settings/settingsPhoneDisplay';
 import { openGeoNamesAttribution } from '../settings/geonamesAttribution';
+import { readBinaryVersion } from '../settings/binaryVersion';
 import {
   fontSize,
   fontWeight,
@@ -229,6 +230,8 @@ export default function MoreScreen() {
   const { t, i18n } = useTranslation();
   const { height: windowHeight } = useWindowDimensions();
   const NativeDateTimePicker = useMemo(() => loadIosDateTimePicker(), []);
+  // Read once from the native bundle; never from config or an update manifest.
+  const binaryVersion = useMemo(() => readBinaryVersion(), []);
   const inlinePickerHeight = Math.min(
     380,
     Math.max(300, Math.round(windowHeight * 0.42)),
@@ -1376,6 +1379,15 @@ export default function MoreScreen() {
             </Text>
           </Pressable>
         </View>
+
+        {binaryVersion ? (
+          <Text
+            style={[styles.binaryVersion, { color: palette.textMuted }]}
+            accessibilityRole="text"
+          >
+            {t('settings.about.binaryVersion', binaryVersion)}
+          </Text>
+        ) : null}
       </ScrollView>
 
       <Modal
@@ -1896,6 +1908,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     fontSize: fontSize.base,
+  },
+  binaryVersion: {
+    marginTop: spacing.lg,
+    textAlign: 'center',
+    fontSize: fontSize.xs,
   },
   hint: {
     marginTop: spacing.md,

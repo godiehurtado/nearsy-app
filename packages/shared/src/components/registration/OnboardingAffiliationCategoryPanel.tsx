@@ -54,6 +54,7 @@ import {
   AFFILIATION_SELECTED_LOGO_SIZE,
 } from '../../affiliations/affiliationLogo';
 import { AffiliationLogoMark } from '../../affiliations/AffiliationLogoMark';
+import { PrimaryButton } from '../PrimaryButton';
 
 type Props = {
   categoryId: OnboardingAffiliationCategoryId;
@@ -115,6 +116,8 @@ export function OnboardingAffiliationCategoryPanel({
   const [query, setQuery] = useState('');
   const [pickedName, setPickedName] = useState<string | null>(null);
   const [draftImage, setDraftImage] = useState<string | null>(null);
+  const [pickingLogo, setPickingLogo] = useState(false);
+  const pickingLogoRef = useRef(false);
   const [results, setResults] = useState<AffiliationEntitySearchResult[]>([]);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [suggestionsUnavailable, setSuggestionsUnavailable] = useState(false);
@@ -334,16 +337,25 @@ export function OnboardingAffiliationCategoryPanel({
   }
 
   async function pickOwnLogo() {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) return;
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85,
-    });
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      setDraftImage(result.assets[0].uri);
+    // One picker at a time: the button shows the busy state while it is open.
+    if (pickingLogoRef.current) return;
+    pickingLogoRef.current = true;
+    setPickingLogo(true);
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) return;
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setDraftImage(result.assets[0].uri);
+      }
+    } finally {
+      pickingLogoRef.current = false;
+      setPickingLogo(false);
     }
   }
 
@@ -756,29 +768,20 @@ export function OnboardingAffiliationCategoryPanel({
           ) : null}
 
           <View style={styles.searchActions}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t(
+            {/* Enabled Nearsy action: filled gradient with white label; the dashed
+                disabled look only while the picker is really open. */}
+            <PrimaryButton
+              label={t(
                 freeTextCategory
-                  ? ('onboarding.profileCompletion.affiliations.identityUploadA11y' as any)
-                  : ('onboarding.profileCompletion.affiliations.uploadA11y' as any),
+                  ? ('onboarding.profileCompletion.affiliations.identityUpload' as any)
+                  : ('onboarding.profileCompletion.affiliations.upload' as any),
               )}
               onPress={() => {
                 void pickOwnLogo();
               }}
-              style={[
-                styles.uploadBtn,
-                { borderColor: palette.accentBorder },
-              ]}
-            >
-              <Text style={{ color: palette.textSecondary, fontWeight: fontWeight.bold, fontSize: 12.5 }}>
-                {t(
-                  freeTextCategory
-                    ? ('onboarding.profileCompletion.affiliations.identityUpload' as any)
-                    : ('onboarding.profileCompletion.affiliations.upload' as any),
-                )}
-              </Text>
-            </Pressable>
+              loading={pickingLogo}
+              style={styles.uploadBtn}
+            />
           </View>
         </View>
       ) : null}
@@ -976,12 +979,5 @@ const styles = StyleSheet.create({
   },
   uploadBtn: {
     flex: 1,
-    minHeight: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 8,
   },
 });
