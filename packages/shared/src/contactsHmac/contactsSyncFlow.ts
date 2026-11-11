@@ -1,4 +1,8 @@
-import type { ContactIdentifierInput, ContactsWireResult } from './contactsHmacContract.ts';
+import {
+  CONTACT_IDENTIFIER_CLIENT_MAX,
+  type ContactIdentifierInput,
+  type ContactsWireResult,
+} from './contactsHmacContract.ts';
 import {
   ContactsFlowStateError,
   ContactsHmacError,
@@ -96,18 +100,52 @@ export function identifierCapForState(state: ContactsLocalState): number {
   return effectiveIdentifierCap(state.identifierCap);
 }
 
+const contactsCapLog = (fields: Record<string, string | number>) =>
+  // Stage, limits and counts only: never an identifier, hash or UID.
+  console.info('[contacts] cap', JSON.stringify(fields));
+
 /**
  * Reads the book against the effective limit. Over it nothing is sent: no
  * truncation, no split into requests that would replace one another.
+ *
+ * The stored limit can be older than Identity's: an account turned on before
+ * Identity announced identifierCap has none (500), and a retry or a
+ * reconciliation calls nothing before reading. So when the book is over a limit
+ * below the client maximum, Identity is asked once (refresh, read-only) and
+ * this same operation reads again with the limit it announces. One refresh at
+ * most, and only for that case: never a loop.
  */
-async function readBookWithinCap(
+async function readBookWithCurrentCap(
+  functions: ContactsHmacFunctionsPort,
   book: ContactsBookPort,
   state: ContactsLocalState,
-): Promise<ContactIdentifierInput[] | null> {
-  const identifierCap = identifierCapForState(state);
-  const records = await book.readRecords({ identifierCap });
-  if ('capExceeded' in records || records.length > identifierCap) return null;
-  return records;
+): Promise<{ records: ContactIdentifierInput[] | null; state: ContactsLocalState }> {
+  const cap = identifierCapForState(state);
+  const first = await book.readRecords({ identifierCap: cap });
+  if (!('capExceeded' in first) && first.length <= cap) {
+    return { records: first, state };
+  }
+  if (cap >= CONTACT_IDENTIFIER_CLIENT_MAX) {
+    contactsCapLog({ stage: 'over', cap });
+    return { records: null, state };
+  }
+  const live = await refreshVerifiedActorKeys(functions);
+  if (!live.contactsSyncEnabled) {
+    throw new ContactsFlowStateError(
+      new ContactsHmacError('contacts-not-enabled', 'Contacts sync is off. (contacts-not-enabled)'),
+      applyStoppedOff(state, live),
+    );
+  }
+  const refreshed = applyLiveState(state, live);
+  const fresh = identifierCapForState(refreshed);
+  contactsCapLog({ stage: 'refreshed', from: cap, to: fresh });
+  if (fresh <= cap) return { records: null, state: refreshed };
+  const second = await book.readRecords({ identifierCap: fresh });
+  if ('capExceeded' in second || second.length > fresh) {
+    contactsCapLog({ stage: 'over', cap: fresh });
+    return { records: null, state: refreshed };
+  }
+  return { records: second, state: refreshed };
 }
 
 export type ContactsFlowOutcome = {
@@ -651,20 +689,25 @@ async function syncAfterConfirmedEnable(input: {
     }
   }
 
-  let records: ContactIdentifierInput[] | null;
+  let read: { records: ContactIdentifierInput[] | null; state: ContactsLocalState };
   try {
     input.onStage?.('reading');
-    records = await readBookWithinCap(input.book, state);
+    read = await readBookWithCurrentCap(input.functions, input.book, state);
   } catch (err) {
-    throw failure(asHmacError(err), state, permission);
+    throw failure(
+      asHmacError(err),
+      err instanceof ContactsFlowStateError ? err.state : state,
+      permission,
+    );
   }
+  const records = read.records;
   if (!records) {
     throw failure(
       new ContactsHmacError(
         'contacts-identifier-cap',
         'Too many identifiers in this snapshot. (contacts-identifier-cap)',
       ),
-      state,
+      read.state,
       permission,
     );
   }
@@ -674,7 +717,7 @@ async function syncAfterConfirmedEnable(input: {
     const synced = await uploadWithEpochRecovery({
       functions: input.functions,
       book: input.book,
-      state,
+      state: read.state,
       identifiers: records,
       fingerprint: identifiersFingerprint(records),
       save,
@@ -688,7 +731,7 @@ async function syncAfterConfirmedEnable(input: {
   } catch (err) {
     throw failure(
       asHmacError(err),
-      err instanceof ContactsFlowStateError ? err.state : state,
+      err instanceof ContactsFlowStateError ? err.state : read.state,
       permission,
     );
   }
@@ -878,14 +921,23 @@ export async function runResyncGrantedBook(input: {
       permission,
     };
   }
-  const records = await readBookWithinCap(input.book, input.state);
+  let read: { records: ContactIdentifierInput[] | null; state: ContactsLocalState };
+  try {
+    read = await readBookWithCurrentCap(input.functions, input.book, input.state);
+  } catch (err) {
+    if (err instanceof ContactsFlowStateError) {
+      throw new ContactsFlowStateError(err, err.state, { permission });
+    }
+    throw err;
+  }
+  const records = read.records;
   if (!records) {
     throw new ContactsFlowStateError(
       new ContactsHmacError(
         'contacts-identifier-cap',
         'Too many identifiers in this snapshot. (contacts-identifier-cap)',
       ),
-      input.state,
+      read.state,
       { permission },
     );
   }
@@ -893,7 +945,7 @@ export async function runResyncGrantedBook(input: {
     const synced = await uploadWithEpochRecovery({
       functions: input.functions,
       book: input.book,
-      state: input.state,
+      state: read.state,
       identifiers: records,
       fingerprint: identifiersFingerprint(records),
       save: input.saveState ?? noSave,

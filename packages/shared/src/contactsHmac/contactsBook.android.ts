@@ -87,7 +87,10 @@ export function createAndroidContactsBook(
         identifierCap: readOptions?.identifierCap,
       });
       // Aggregate counts only: never a phone, email, hash or UID.
-      console.info('[contacts] identifiers', JSON.stringify(collected.stats));
+      console.info(
+        '[contacts] identifiers',
+        JSON.stringify({ ...collected.stats, cap: readOptions?.identifierCap ?? null }),
+      );
       if (!collected.ok && collected.reason === 'contacts-identifier-cap') {
         return { capExceeded: true };
       }

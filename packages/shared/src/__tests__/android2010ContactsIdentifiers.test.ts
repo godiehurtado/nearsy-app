@@ -300,7 +300,10 @@ describe('reliable region', () => {
 
   it('the book logs counts only and refuses to upload when nothing is valid', () => {
     const book = src('contactsHmac/contactsBook.android.ts');
-    assert.ok(book.includes("console.info('[contacts] identifiers', JSON.stringify(collected.stats))"));
+    // Aggregate counts plus the limit used: nothing from the book itself.
+    assert.ok(book.includes("'[contacts] identifiers'"));
+    assert.ok(book.includes('JSON.stringify({ ...collected.stats, cap: readOptions?.identifierCap ?? null })'));
+    assert.equal(book.split('console.').length - 1, 1, 'that is the only log line');
     assert.ok(book.includes("'contacts-identifier-invalid'"));
   });
 });
