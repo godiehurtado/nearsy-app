@@ -3,6 +3,7 @@
  * Field is contactsEpoch. Never the previous Functions epoch field. Never client hashes.
  */
 
+import { parseIdentifierCap } from './identifierCap';
 import {
   BANNED_CONTACTS_WIRE_FIELDS,
   CONTACT_IDENTIFIER_KINDS,
@@ -207,6 +208,9 @@ export function parseContactsWireResult(data: unknown): ContactsWireResult {
   if (identifierCount !== undefined) result.identifierCount = identifierCount;
   const keyCount = optionalInteger(data.keyCount, 'keyCount');
   if (keyCount !== undefined) result.keyCount = keyCount;
+  // Additive: an invalid value is ignored, never a failed response.
+  const identifierCap = parseIdentifierCap(data.identifierCap);
+  if (identifierCap !== null) result.identifierCap = identifierCap;
   return result;
 }
 

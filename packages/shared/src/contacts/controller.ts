@@ -11,6 +11,7 @@
  * - If reevaluate fails, the Identity write stays.
  */
 
+import { currentIdentifierCap, noteServerIdentifierCap } from './identifierCap';
 import {
   ContactsHmacClientError,
   isDefiniteContactsRejection,
@@ -157,6 +158,7 @@ async function identityCall(
     throw err;
   }
 
+  noteServerIdentifierCap(result);
   await ports.session.update((current) =>
     observeContactsEpoch(current, result.contactsEpoch),
   );
@@ -308,9 +310,21 @@ export async function syncGrantedAddressBook(
     ? await ports.readDefaultPhoneRegion()
     : null;
   if (isCancelled(ports)) return skipped();
-  const selected = selectUploadableIdentifiers(await ports.book.readRows(), {
-    defaultRegion,
-  });
+  const rows = await ports.book.readRows();
+  let limit = currentIdentifierCap();
+  let selected = selectUploadableIdentifiers(rows, { defaultRegion, cap: limit.cap });
+  if (
+    selected.ok === false &&
+    selected.reason === 'contacts-identifier-cap' &&
+    !limit.serverAnswered
+  ) {
+    // No Identity answer yet in this process: learn the current limit once
+    // before refusing, instead of assuming the old 500.
+    await refreshLiveState(ports);
+    if (isCancelled(ports)) return skipped();
+    limit = currentIdentifierCap();
+    selected = selectUploadableIdentifiers(rows, { defaultRegion, cap: limit.cap });
+  }
   if (selected.ok === false) return fail(selected.reason);
   if (isCancelled(ports)) return skipped();
 

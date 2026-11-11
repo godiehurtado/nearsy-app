@@ -208,3 +208,16 @@ Examples: `session_read/err-key-chain/k-coded` (the read itself failed), `unknow
 6. **Over the limit:** still a hard, explicit failure with consent on and nothing uploaded, as now.
 
 **Decisions needed:** the limit value (Product, from real book sizes), the daily replacement budget, and the Identity and Functions changes with their deploy order (server first, then the client that reads `identifierCap`).
+
+### identifierCap in the client (contract v1, additive)
+
+Prepared on the branch only; no build, merge or deploy. The 5,000 decision reached iOS through the Identity session.
+
+- `identifierCap` from `enableContactsSync`, `refreshVerifiedActorKeys` and `syncContactHashes` (idempotent included) is accepted only as a safe integer >= 1. An invalid value is ignored, never a failed response.
+- Effective limit: `min(identifierCap, 5000)`; 500 when the field is missing or invalid (older server).
+- Kept in memory from the latest successful response only, never persisted.
+- Identifiers are normalized (E.164, lowercase email) and deduplicated before counting, so duplicates never use the limit.
+- Over the effective limit: nothing is sent, the visible error stays, the previous snapshot is kept, and the book is never truncated.
+- A sync in a new process with no server answer yet, and a book over 500, makes one `refreshVerifiedActorKeys` to learn the limit before refusing.
+- "Contacts synced." still requires `syncCommitted=true`.
+- Deploy order: Functions, then Identity, then clients. A client without this change keeps 500 and stays compatible.

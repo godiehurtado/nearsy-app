@@ -41,4 +41,6 @@ export type ContactsWireResult = {
   keyCount?: number;
   syncCommitted: boolean;
   reevaluateRequired: boolean;
+  /** Additive: address-book limit, valid safe integer >= 1 only. */
+  identifierCap?: number;
 };

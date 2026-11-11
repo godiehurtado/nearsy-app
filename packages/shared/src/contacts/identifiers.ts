@@ -130,8 +130,9 @@ const hasText = (value: unknown): boolean =>
  */
 export function selectUploadableIdentifiers(
   rows: readonly AddressBookContactRow[],
-  options: { defaultRegion?: CountryCode | null } = {},
+  options: { defaultRegion?: CountryCode | null; cap?: number } = {},
 ): SelectIdentifiersResult {
+  const cap = options.cap ?? CONTACT_HASH_CAP;
   const unique = new Map<string, ContactIdentifierInput>();
   let present = 0;
   for (const row of rows) {
@@ -148,7 +149,8 @@ export function selectUploadableIdentifiers(
       unique.set(`email:${value}`, { kind: 'email', value });
     }
   }
-  if (unique.size > CONTACT_HASH_CAP) {
+  // Counted after normalizing and deduplicating; over the limit nothing is sent.
+  if (unique.size > cap) {
     return { ok: false, reason: 'contacts-identifier-cap' };
   }
   if (unique.size === 0 && present > 0) {
