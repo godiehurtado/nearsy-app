@@ -6,8 +6,9 @@ Branch `feature/ios-posthog`. Nothing here was built, submitted or published.
 
 | Profile | Binary | Analytics | Use |
 |---|---|---|---|
-| `production` | 2.0.10 (75) | PostHog included, capture **off** (no channel declared) | App Store |
-| `beta` | 2.0.10 (74) today; next Beta needs 76+ | On, `distribution_channel=beta`, `is_test_user=true` | TestFlight QA only |
+| `production` | 2.0.10 (76) | PostHog included, capture **off** (no channel declared) | App Store |
+| `testflight-contacts-diagnostics` | 2.0.10 (75) | Off, like `production` | Internal TestFlight only: Contacts diagnostic reference for 7 days after the build |
+| `beta` | 2.0.10 (74) today; next Beta needs 77+ | On, `distribution_channel=beta`, `is_test_user=true` | TestFlight QA only |
 
 - `beta` extends `production`; `production` never inherits the Beta channel.
 - Never promote a Beta binary to the App Store: every store user would be marked `is_test_user=true`.
@@ -21,7 +22,7 @@ eas submit --platform ios --profile production --id <BUILD_ID>
 
 ## Binary version in More
 
-More shows `Version 2.0.10 (75)` from the native bundle (`CFBundleShortVersionString`, `CFBundleVersion`) through `expo-application`. It never reads the app config or an update manifest. Android, without that module, shows nothing.
+More shows `Version 2.0.10 (76)` from the native bundle (`CFBundleShortVersionString`, `CFBundleVersion`) through `expo-application`. It never reads the app config or an update manifest. Android, without that module, shows nothing.
 
 ## Affiliations: custom logo button
 
@@ -44,7 +45,7 @@ Still open, both specific to Contacts and both before the request:
 
 Not proven. App Check is not presented as the cause.
 
-**Builds 73, 74 and this branch have no diagnostic reference.** The only build that has it is **2.0.10 (72)** (`44423b2`, profile `testflight-contacts-diagnostics`), until 23:59 Miami time on November 12, 2026.
+**Builds 73 and 74 have no diagnostic reference.** 2.0.10 (72) had one but is not available to the Owner in TestFlight, so this branch adds a new internal build, **2.0.10 (75)**, described below.
 
 **One physical test, no new build:** install 2.0.10 (72) from TestFlight on the affected iPhone, sign in with the affected account, open More, turn Contacts on once, and photograph the alert. Its `Ref:` line names the stage (`app_check_init`, `app_check_force`, `session_read`, etc.). If 72 is no longer installable, the reference has to be ported to a new TestFlight-only build.
 
@@ -69,3 +70,22 @@ Checked against `nearsy-identity-functions` `origin/main` (`a193ff7`): `normaliz
 - The `notifyNearbyInterests` setting is now titled "Shared interests and affiliations" / "Intereses y afiliaciones compartidos". The stored field and its default are unchanged.
 - Saving a real affiliation change (CRJ or profile editing) schedules the existing debounced proximity reevaluation; an unchanged save does not. A scheduling failure never fails the save.
 - **Public binary (2.0.9 (70), `f5053a4`):** the response listener only parses the payload for `actorUid` and navigates; an unknown motive falls back without error. It creates no local notification text: iOS shows the remote push title and body. It therefore tolerates the new motives.
+
+## Contacts diagnostic build 2.0.10 (75)
+
+**Internal TestFlight only. Never submit it for App Store review or release it.**
+
+- **What it adds:** every Contacts error alert in More ends with `Ref: <stage>/<code>[/http-NNN][/firebase-status][/exchange]`, built only from closed lists. No native messages, tokens, UIDs, emails, phones, URLs or contact data.
+- **Stages:** `env_config`, `project_js`, `native_port`, `project_native` (client composition); `app_check_init`, `app_check_force`, `app_check_token` (App Check initial, forced refresh, normal token); `session_read`, `session_write` (SecureStore); `permission`; `auth_token`; `contacts_read`; `endpoint`, `fetch`, `response` (HTTP transport).
+- **Reused from `feature/ios-209-contacts-diagnostic`:** only `contactsDiagnostics.ts` and `contactsDiagnosticsFlag.ts`. The old composition module was not restored: the current `iosContactsFoundation.ios.ts` keeps its steps, checks, caching and errors and only reports which step runs.
+- **Unchanged:** reasons, toggle, consent, retries, persistence, network calls and App Check protections.
+- **Expiry:** the profile declares `NEARSY_CONTACTS_DIAGNOSTICS_DAYS=7`; the EAS builder embeds the instant seven days after compiling. Any other profile that declares it fails the build. The public profile has no reference.
+- **PostHog:** off, like the public candidate.
+
+```bash
+cd apps/nearsy-ios
+eas build --platform ios --profile testflight-contacts-diagnostics --clear-cache
+eas submit --platform ios --profile production --id <BUILD_ID>
+```
+
+**Test for the Owner:** install 2.0.10 (75) from TestFlight, sign in with the affected account, open More, turn Contacts on once, and take a screenshot of the whole alert including the `Ref:` line.

@@ -140,10 +140,13 @@ function toTransportError(err: unknown): never {
     );
   }
   if (isFirebaseCallableHttpError(err)) {
-    throw new ContactsHmacClientError(
+    const failure = new ContactsHmacClientError(
       parseContactsHmacFailReason(err) ?? 'contacts-invalid-response',
       'Contacts Identity callable failed.',
     );
+    // Kept for the diagnostic code only; the reason above is what callers use.
+    (failure as ContactsHmacClientError & { cause?: unknown }).cause = err;
+    throw failure;
   }
   throw new ContactsHmacClientError(
     'contacts-hmac-unavailable',

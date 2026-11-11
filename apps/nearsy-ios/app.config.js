@@ -29,6 +29,10 @@ const {
   resolveIosBinaryVersionOverride,
 } = require('./scripts/iosBinaryVersionOverride.cjs');
 const { assertAnalyticsBuildConfig } = require('./scripts/analyticsBuildConfig.cjs');
+const {
+  CONTACTS_DIAGNOSTICS_UNTIL_EXTRA,
+  resolveContactsDiagnosticsUntil,
+} = require('./scripts/contactsDiagnosticsConfig.cjs');
 
 const FUNCTIONS_REGION = 'us-central1';
 const DEV_PLIST = './GoogleService-Info.development.plist';
@@ -297,6 +301,12 @@ module.exports = ({ config }) => {
       throw new Error(
         '[app.config] Production builds must use EXPO_PUBLIC_FIREBASE_PROJECT_ID=nearsy-pj',
       );
+    }
+
+    // Internal diagnostic profile only; absent (off) in every other build.
+    const contactsDiagnosticsUntil = resolveContactsDiagnosticsUntil(process.env);
+    if (contactsDiagnosticsUntil) {
+      extraBase[CONTACTS_DIAGNOSTICS_UNTIL_EXTRA] = contactsDiagnosticsUntil;
     }
   }
 
