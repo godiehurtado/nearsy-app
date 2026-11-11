@@ -303,8 +303,8 @@ export function parseDiscoveryProfileDetail(
 
 const MAX_SHARED_AFFILIATION_NAMES = 3;
 const MAX_SHARED_AFFILIATION_NAME_CHARS = 80;
-// C0/C1 controls, line/paragraph separators and bidi overrides break a row.
-const NAME_FORBIDDEN_CHARS = /[\u0000-\u001F\u007F-\u009F\u2028-\u2029\u202A-\u202E\u2066-\u2069]/;
+// Controls, format chars (zero-width, bidi, soft hyphen) and line/paragraph separators. Explicit ranges, no Unicode property escapes (Hermes).
+const NAME_FORBIDDEN_CHARS = /[\u0000-\u001F\u007F-\u009F\u00AD\u0600-\u0605\u061C\u06DD\u070F\u180E\u200B-\u200F\u2028-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]/;
 
 /**
  * Additive and display-only: invalid entries are dropped, never an error. With

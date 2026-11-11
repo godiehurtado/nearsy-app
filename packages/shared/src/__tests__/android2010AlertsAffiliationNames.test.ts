@@ -72,6 +72,17 @@ describe('the field', () => {
     assert.deepEqual(response.results[0].sharedAffiliationNames, ['Club Atlético', 'Universidad', 'Colegio']);
   });
 
+  it('drops names with zero-width format characters', () => {
+    const { response } = inbox([
+      {
+        profile: profile([]),
+        sharedAffiliationCount: 2,
+        sharedAffiliationNames: [`Cl${String.fromCharCode(0x200b)}ub`, 'Club'],
+      },
+    ]);
+    assert.deepEqual(response.results[0].sharedAffiliationNames, ['Club']);
+  });
+
   it('drops names with control or bidi characters, or over 80 characters', () => {
     const { response } = inbox([
       {
