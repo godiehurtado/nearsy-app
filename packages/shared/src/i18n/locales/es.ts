@@ -1764,7 +1764,7 @@ const es: TranslationResources = {
         timeout:
           'La sincronización de contactos está tardando demasiado. El servidor puede haber escrito igual — reintenta para reconciliar.',
         capAction:
-          'Tu libreta supera el límite de sincronización. Quita contactos en la app Teléfono y luego reintenta.',
+          'Tu libreta tiene más contactos de los que Nearsy puede sincronizar por ahora, así que no se subió nada.',
       },
     },
     visibilityAge: {

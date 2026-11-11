@@ -71,3 +71,33 @@ describe('Affiliations: the custom logo button is an enabled Nearsy action', () 
     assert.match(read('screens/AffiliationsScreen.tsx'), /AffiliationCategoryAccordionList/);
   });
 });
+
+describe('More: Contacts copy and states', () => {
+  const more = read('screens/MoreScreen.tsx');
+  const lookup = (root: any, key: string) => key.split('.').reduce((cur, part) => cur?.[part], root);
+
+  it('every literal translation key used in More exists in English and Spanish', async () => {
+    const en = (await import('../i18n/locales/en')).default as any;
+    const keys = [...new Set([...more.matchAll(/\bt\(\s*'([a-zA-Z0-9_.]+)'/g)].map((m) => m[1]))];
+    assert.ok(keys.length > 20);
+    for (const key of keys) {
+      assert.equal(typeof lookup(en, key), 'string', `en: ${key}`);
+      assert.equal(typeof lookup(es, key), 'string', `es: ${key}`);
+    }
+    assert.equal(more.includes("t('common.ok')"), false);
+  });
+
+  it('the address-book limit never asks to delete contacts', () => {
+    for (const text of [enSettings.contacts.errors.capAction, (es as any).settings.contacts.errors.capAction]) {
+      assert.equal(/remove contacts|quita contactos|delete|borra/i.test(text), false, text);
+    }
+  });
+
+  it('an error with Contacts on says the address book is not synced; success only when synced', () => {
+    assert.match(
+      more,
+      /view\.enabled === true\s*\?\s*`\$\{t\('settings\.contacts\.enabledNotSynced'\)\} \$\{base\}`/,
+    );
+    assert.match(more, /contactsSyncPhase === 'synced'\s*\?\s*t\('settings\.contacts\.syncSuccess'\)/);
+  });
+});

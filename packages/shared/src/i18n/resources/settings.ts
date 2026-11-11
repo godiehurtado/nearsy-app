@@ -76,7 +76,7 @@ export default {
       timeout:
         'Contacts sync is taking too long. The server may still have written — retry to reconcile.',
       capAction:
-        'Your address book exceeds the sync limit. Remove contacts in the Phone app, then retry.',
+        'Your address book has more contacts than Nearsy can sync right now, so nothing was uploaded.',
     },
   },
   visibilityAge: {

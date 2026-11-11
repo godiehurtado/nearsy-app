@@ -169,3 +169,42 @@ Examples: `session_read/err-key-chain/k-coded` (the read itself failed), `unknow
 - the enable flow under iOS resolution and Metro's transform: the store registers, Identity is reached 3 times, and the outcome succeeds.
 
 **Still to validate on a device:** a build with this fix, the same single test, and Identity seeing the Contacts calls.
+
+## Build 77 test: address-book limit
+
+**Result (04:18 UTC, November 11):** Identity received `refreshVerifiedActorKeys` 200 (`refreshed`) and `enableContactsSync` 200 (`enabled`). `syncContactHashes` **never arrived**. `reevaluateProximityNotices` 200 also confirms the pending-store fix on the device. Only consent is on; there is no snapshot.
+
+**Cause:** the client found **more than 500 unique valid identifiers** and stopped locally with `contacts-identifier-cap`, before sending, in `selectUploadableIdentifiers`. The exact count is not known: no build reports it.
+
+**Deployed contract (Identity `4fa6e35`):**
+- At most 500 identifiers per request (`normalize.ts:113`).
+- At most 8 sources per account (`service.ts:306`).
+- At most 500 unique hashes in the union of all live sources (`service.ts:341`, `contacts-union-cap`).
+- Each `syncContactHashes` **replaces the full snapshot** of its `sourceId`. There is no batch protocol. Splitting a book over calls with one `sourceId` replaces it; splitting over several `sourceId`s still hits the 500 union.
+- Functions #40 uses the same 500 on purpose. Larger books need a contract change in Identity **and** Functions; a client-only change cannot do it.
+
+**Fixed in the client:**
+- The alert button showed the raw key `common.ok`. It now uses `common.buttons.ok`, and a test checks every literal key used in More exists in English and Spanish.
+- The limit copy no longer asks to delete contacts.
+- When Identity confirms Contacts is on but the book was not synced, the message says so ("Contacts nearby is on, but your address book is not synced yet." plus the reason). "Contacts synced." appears only after a confirmed snapshot.
+
+### Proposal: larger address books (needs Identity and Functions approval before any deploy)
+
+1. **One full snapshot per call, unchanged.** No batching, no truncation, no deletion prompts.
+2. **Raise the per-snapshot and union limit from 500 to one agreed value**, in Identity and Functions #40 in lockstep. 5,000 unique identifiers is a starting point for Product to confirm against real address-book sizes. The 8-source limit stays.
+3. **Size and cost at 5,000:**
+   - Request: about 200–300 KB of JSON.
+   - Identity: about 5,000 HMACs per full sync.
+   - Storage: one source document of about 250–350 KB, under Firestore's 1 MiB limit. The union check reads at most 8 such documents.
+   - Functions #40 reads the larger union when matching.
+4. **Abuse limits:**
+   - Keep the write rate limits (2 s minimum interval, 40 writes per 10 min).
+   - Add a daily limit on full replacements per account.
+   - Matches are never returned to the client; they only drive proximity notices.
+5. **Client discovery of the limit:** an additive `identifierCap` field in the `enableContactsSync`, `refreshVerifiedActorKeys` and `syncContactHashes` responses.
+   - The client uses it when it is a positive integer up to a compiled ceiling, and keeps 500 when it is absent.
+   - That lets Identity raise the limit without another iOS build, once a build that reads the field ships.
+   - Builds up to 77 keep 500 locally.
+6. **Over the limit:** still a hard, explicit failure with consent on and nothing uploaded, as now.
+
+**Decisions needed:** the limit value (Product, from real book sizes), the daily replacement budget, and the Identity and Functions changes with their deploy order (server first, then the client that reads `identifierCap`).

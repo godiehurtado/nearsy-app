@@ -643,7 +643,7 @@ export default function MoreScreen() {
             },
           },
         ]
-      : [{ text: t('common.ok') }];
+      : [{ text: t('common.buttons.ok') }];
     Alert.alert(t('settings.contacts.syncFailedTitle'), message, buttons);
   };
 
@@ -700,11 +700,14 @@ export default function MoreScreen() {
       }
       case 'error': {
         const base = presentContactsSyncError(view.reason ?? '', t);
-        // Server state unreadable → say so instead of implying ON/OFF.
+        // Server state unreadable → say so instead of implying ON/OFF. On but not
+        // synced → say both, so consent is never read as a synced address book.
         const message = withContactsReference(
           view.enabled === null
             ? `${base} ${t('settings.contacts.stateUnconfirmed')}`
-            : base,
+            : view.enabled === true
+              ? `${t('settings.contacts.enabledNotSynced')} ${base}`
+              : base,
           trace,
           view.reason,
         );
