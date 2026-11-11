@@ -116,6 +116,9 @@ export function OnboardingAffiliationCategoryPanel({
   const [query, setQuery] = useState('');
   const [pickedName, setPickedName] = useState<string | null>(null);
   const [draftImage, setDraftImage] = useState<string | null>(null);
+  /** The permission prompt or the image picker is open. */
+  const [pickingLogo, setPickingLogo] = useState(false);
+  const pickingLogoRef = useRef(false);
   const [results, setResults] = useState<AffiliationEntitySearchResult[]>([]);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [suggestionsUnavailable, setSuggestionsUnavailable] = useState(false);
@@ -306,16 +309,25 @@ export function OnboardingAffiliationCategoryPanel({
   }
 
   async function pickOwnLogo() {
-    const perm = await withOwnExternalFlow(() => ImagePicker.requestMediaLibraryPermissionsAsync());
-    if (!perm.granted) return;
-    const result = await withOwnExternalFlow(() => ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85,
-    }));
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      setDraftImage(result.assets[0].uri);
+    // A second tap while the picker is opening would open it twice.
+    if (pickingLogoRef.current) return;
+    pickingLogoRef.current = true;
+    setPickingLogo(true);
+    try {
+      const perm = await withOwnExternalFlow(() => ImagePicker.requestMediaLibraryPermissionsAsync());
+      if (!perm.granted) return;
+      const result = await withOwnExternalFlow(() => ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      }));
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setDraftImage(result.assets[0].uri);
+      }
+    } finally {
+      pickingLogoRef.current = false;
+      setPickingLogo(false);
     }
   }
 
@@ -755,15 +767,22 @@ export function OnboardingAffiliationCategoryPanel({
                   ? ('onboarding.profileCompletion.affiliations.uploadOwnImageA11y' as any)
                   : ('onboarding.profileCompletion.affiliations.uploadA11y' as any),
               )}
+              accessibilityState={{ disabled: pickingLogo, busy: pickingLogo }}
+              disabled={pickingLogo}
               onPress={() => {
                 void pickOwnLogo();
               }}
-              style={[
+              style={({ pressed }) => [
                 styles.uploadBtn,
-                { borderColor: palette.accentBorder },
+                {
+                  // Same filled treatment as the other enabled Nearsy buttons.
+                  backgroundColor: palette.primary,
+                  borderColor: palette.primary,
+                  opacity: pickingLogo ? 0.55 : pressed ? 0.85 : 1,
+                },
               ]}
             >
-              <Text style={{ color: palette.textSecondary, fontWeight: fontWeight.bold, fontSize: 12.5 }}>
+              <Text style={{ color: '#FFFFFF', fontWeight: fontWeight.bold, fontSize: 12.5 }}>
                 {t(
                   freeText
                     ? ('onboarding.profileCompletion.affiliations.uploadOwnImage' as any)
@@ -960,7 +979,6 @@ const styles = StyleSheet.create({
     minHeight: 44,
     borderRadius: 12,
     borderWidth: 1,
-    borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,

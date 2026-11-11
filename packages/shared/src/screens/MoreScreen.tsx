@@ -32,6 +32,10 @@ import * as Location from 'expo-location';
 import { SettingsSection } from '../components/settings/SettingsSection';
 import { SettingsRow } from '../components/settings/SettingsRow';
 import { SettingsToggleRow } from '../components/settings/SettingsToggleRow';
+import {
+  formatInstalledAppVersion,
+  readInstalledAppVersion,
+} from '../settings/installedAppVersion';
 import { firebaseAuth } from '../config/firebaseConfig';
 import { unregisterCurrentDevicePushToken } from '../services/pushTokens';
 import { clearPendingSocialProfilePrefill } from '../authentication/social';
@@ -230,6 +234,7 @@ export default function MoreScreen() {
   const insets = useSafeAreaInsets();
   const { palette, theme, commitTheme } = useAppTheme();
   const { t, i18n } = useTranslation();
+  const installedVersion = useMemo(() => readInstalledAppVersion(), []);
   const { height: windowHeight } = useWindowDimensions();
   const NativeDateTimePicker = useMemo(() => loadIosDateTimePicker(), []);
   const inlinePickerHeight = Math.min(
@@ -1226,8 +1231,16 @@ export default function MoreScreen() {
             description={t('settings.about.geonamesAttribution')}
             onPress={handleOpenGeoNames}
             accessibilityHint={t('settings.about.openGeoNamesHint')}
-            isLast
+            isLast={!installedVersion}
           />
+          {installedVersion ? (
+            <SettingsRow
+              icon="information-circle-outline"
+              title={t('settings.about.versionTitle')}
+              value={formatInstalledAppVersion(installedVersion)}
+              isLast
+            />
+          ) : null}
         </SettingsSection>
 
         <View style={styles.actions}>

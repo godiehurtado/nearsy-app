@@ -130,11 +130,15 @@ describe('Android prod Firebase native env upload guard', () => {
     assert.equal(eas.submit?.production?.android?.releaseStatus, 'draft');
   });
 
-  it('app.json versionName 2.0.9 documents remote versionCode 40', () => {
+  it('app.json versionName is 2.0.10; versionCode comes from the EAS remote counter', () => {
     const appJson = JSON.parse(readRepo('apps/nearsy-android/app.json')) as {
       expo?: { version?: string; android?: { versionCode?: number } };
     };
-    assert.equal(appJson.expo?.version, '2.0.9');
-    assert.equal(appJson.expo?.android?.versionCode, 40);
+    assert.equal(appJson.expo?.version, '2.0.10');
+    // The app.json value is ignored with appVersionSource remote; EAS assigns it.
+    const eas = JSON.parse(readRepo('apps/nearsy-android/eas.json')) as {
+      cli?: { appVersionSource?: string };
+    };
+    assert.equal(eas.cli?.appVersionSource, 'remote');
   });
 });
