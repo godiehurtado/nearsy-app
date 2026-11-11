@@ -6,9 +6,9 @@ Branch `feature/ios-posthog`. Nothing here was built, submitted or published.
 
 | Profile | Binary | Analytics | Use |
 |---|---|---|---|
-| `production` | 2.0.10 (79) (77 and 78 were earlier public candidates) | PostHog included, capture **off** (no channel declared) | App Store |
+| `production` | 2.0.10 (80) (77, 78 and 79 were earlier public candidates) | PostHog included, capture **off** (no channel declared) | App Store |
 | `testflight-contacts-diagnostics` | 2.0.10 (76), trace v2 (75 was the first diagnostic) | Off, like `production` | Internal TestFlight only: Contacts diagnostic reference for 7 days after the build |
-| `beta` | 2.0.10 (74) today; next Beta needs 80+ | On, `distribution_channel=beta`, `is_test_user=true` | TestFlight QA only |
+| `beta` | 2.0.10 (74) today; next Beta needs 81+ | On, `distribution_channel=beta`, `is_test_user=true` | TestFlight QA only |
 
 - `beta` extends `production`; `production` never inherits the Beta channel.
 - Never promote a Beta binary to the App Store: every store user would be marked `is_test_user=true`.
@@ -22,7 +22,7 @@ eas submit --platform ios --profile production --id <BUILD_ID>
 
 ## Binary version in More
 
-More shows the installed version as the first row of the About card (`App version` · `2.0.10 (79)`; ES `Versión de la app`), informational, no chevron or action, read from the native bundle (`CFBundleShortVersionString`, `CFBundleVersion`) through `expo-application`. It never reads the app config or an update manifest. Android, without that module, shows nothing.
+More shows the installed version as the first row of the About card (`App version` · `2.0.10 (80)`; ES `Versión de la app`), informational, no chevron or action, read from the native bundle (`CFBundleShortVersionString`, `CFBundleVersion`) through `expo-application`. It never reads the app config or an update manifest. Android, without that module, shows nothing.
 
 ## Affiliations: custom logo button
 
@@ -272,7 +272,7 @@ deployed yet):
 - Known product behaviour, flagged to the Owner: a stationary phone that iOS leaves without fixes for 30+ minutes gets
   a new encounter (and push) on its next fix, without the pair separating. Not mirrored on the client.
 
-## Next candidate contents (not built yet)
+## Candidate 2.0.10 (80) contents
 
 Built from `feature/ios-posthog` at `7d35228` or later, on top of build 79 (`ed0fc06`):
 
