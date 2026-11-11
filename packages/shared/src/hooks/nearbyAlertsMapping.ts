@@ -4,7 +4,7 @@
  */
 import type { DiscoverNearbyResult } from '../visibility/callables/wireTypes';
 
-export type AlertKind = 'interest_nearby' | 'contact_nearby';
+export type AlertKind = 'interest_nearby' | 'affiliation_nearby' | 'contact_nearby';
 
 export type AlertItem = {
   id: string;
@@ -14,6 +14,8 @@ export type AlertItem = {
   kind: AlertKind;
   distanceFt?: number;
   sharedInterests?: string[];
+  /** Server-computed: at least one stable affiliation identity is shared. */
+  sharedAffiliations?: boolean;
   at: number;
   fromContacts?: boolean;
   appearanceKey?: string;
@@ -72,17 +74,28 @@ export function mapDiscoverResultsToAlerts(
   metersToFeet: (meters: number) => number,
 ): AlertItem[] {
   const out: AlertItem[] = [];
+  const seenUids = new Set<string>();
   for (const r of results) {
     if (!r.uid || r.uid === viewerUid) continue;
+    // One row per person, whatever the server returns.
+    if (seenUids.has(r.uid)) continue;
     const shared = (r.profile.interestIds ?? []).filter((id) =>
       myInterestIds.has(id),
     );
+    // Only a non-negative integer from the server counts; absent means none.
+    const sharedAffiliations =
+      typeof r.sharedAffiliationCount === 'number' &&
+      Number.isSafeInteger(r.sharedAffiliationCount) &&
+      r.sharedAffiliationCount > 0;
+    if (shared.length === 0 && !sharedAffiliations) continue;
+    seenUids.add(r.uid);
     out.push({
       id: r.uid,
       uid: r.uid,
       name: r.profile.displayName || 'Unnamed',
       avatar: r.profile.profileImage,
-      kind: shared.length > 0 ? 'interest_nearby' : 'contact_nearby',
+      kind: sharedAffiliations ? 'affiliation_nearby' : 'interest_nearby',
+      ...(sharedAffiliations ? { sharedAffiliations: true } : {}),
       distanceFt: Math.round(metersToFeet(r.distanceMeters)),
       sharedInterests: shared.slice(0, 3),
       at,

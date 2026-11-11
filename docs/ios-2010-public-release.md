@@ -89,3 +89,11 @@ eas submit --platform ios --profile production --id <BUILD_ID>
 ```
 
 **Test for the Owner:** install 2.0.10 (75) from TestFlight, sign in with the affected account, open More, turn Contacts on once, and take a screenshot of the whole alert including the `Ref:` line.
+
+## Alerts inbox: shared affiliations (next candidate, not in 2.0.10 (75))
+
+- `discoverNearby` results may carry the additive `sharedAffiliationCount`, computed by the server from stable affiliation identities shared between both active modes. Only a non-negative integer counts; absent or invalid means no affiliation match and never breaks the response.
+- The inbox shows a candidate only when they share interests or `sharedAffiliationCount > 0`, one row per uid. Nearby people with neither are no longer listed.
+- With a shared affiliation, the row uses a generic text, even if interests are also shared: "{name} is near you and you share affiliations." / "{name} está cerca y comparte afiliaciones contigo." No affiliation names or logos.
+- Discovery filters, navigation and `alert_opened` are unchanged. The inbox stays independent of the push preference and does not include Contacts. No extra calls per profile.
+- Integrated check pending the Functions deploy of the field.

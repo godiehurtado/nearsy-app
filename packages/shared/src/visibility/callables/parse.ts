@@ -274,6 +274,14 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
     typeof value.appearanceKey === 'string' && value.appearanceKey.trim()
       ? value.appearanceKey.trim()
       : undefined;
+  // Only a non-negative integer counts. Anything else is left out, never an error,
+  // so a malformed field cannot break the rest of the response.
+  const sharedAffiliationCount =
+    typeof value.sharedAffiliationCount === 'number' &&
+    Number.isSafeInteger(value.sharedAffiliationCount) &&
+    value.sharedAffiliationCount >= 0
+      ? value.sharedAffiliationCount
+      : undefined;
   return {
     uid: requireNonEmptyString(value.uid, 'result.uid'),
     distanceMeters: requireNonNegativeNumber(
@@ -283,6 +291,7 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
     profile: parseDiscoveryProfileSummary(value.profile),
     ...(compatibility !== undefined ? { compatibility } : {}),
     ...(appearanceKey ? { appearanceKey } : {}),
+    ...(sharedAffiliationCount !== undefined ? { sharedAffiliationCount } : {}),
   };
 }
 

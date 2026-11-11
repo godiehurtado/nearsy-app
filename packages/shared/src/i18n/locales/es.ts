@@ -1652,6 +1652,7 @@ const es: TranslationResources = {
         '{{name}} está cerca y compartís intereses{{interests}}.',
       interestsSuffix: ' ({{interests}})',
       nearbyOnly: '{{name}} está cerca.',
+      affiliationNearby: '{{name}} está cerca y comparte afiliaciones contigo.',
     },
     time: {
       minutes: '{{count}}m',

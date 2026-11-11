@@ -124,6 +124,11 @@ export type DiscoverNearbyResult = {
   compatibility?: DiscoveryCompatibility;
   /** Functions #40 additive; absent on older backends. */
   appearanceKey?: string;
+  /**
+   * Additive: stable affiliation identities shared between both active modes,
+   * computed by the server. Absent on older backends.
+   */
+  sharedAffiliationCount?: number;
 };
 
 export type ActivateVisibilityResponse = {
