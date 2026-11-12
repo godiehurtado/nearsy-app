@@ -292,7 +292,7 @@ describe('screen wiring', () => {
 
   it('editor saves through the ordered flow behind a single-flight guard', () => {
     assert.match(editor, /persistOwnProfileThenSyncDiscovery\(\{/);
-    assert.match(editor, /patches: \[modePatch, contextPatch\]/);
+    assert.match(editor, /patches: \[modePatch, contextPatch, industryPatch\]/);
     assert.match(editor, /await saveFlightRef\.current\.run\(persistOwnProfile\)/);
     assert.doesNotMatch(editor, /await updateUserProfilePartial\(uid, contextPatch\)/);
   });

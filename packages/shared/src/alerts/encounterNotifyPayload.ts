@@ -9,7 +9,9 @@ export type EncounterNotifyMotive =
   | 'contact'
   | 'both'
   | 'affiliation'
-  | 'contact_affiliation';
+  | 'contact_affiliation'
+  /** Industry contract §3: beats every other motive; fromContacts still says if the actor is a contact. */
+  | 'industry';
 
 export type EncounterNotifyPayload = {
   kind: 'contact_nearby';
@@ -26,6 +28,7 @@ export const ENCOUNTER_NOTIFY_MOTIVES: readonly EncounterNotifyMotive[] = [
   'both',
   'affiliation',
   'contact_affiliation',
+  'industry',
 ];
 
 const CONTACT_MOTIVES: ReadonlySet<EncounterNotifyMotive> = new Set([

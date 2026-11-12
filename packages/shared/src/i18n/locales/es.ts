@@ -1113,6 +1113,14 @@ const es: TranslationResources = {
       content: 'Contenido del perfil',
       context: 'Información personal',
     },
+    industry: {
+      label: 'Industria',
+      placeholder: 'Selecciona tu industria',
+      searchPlaceholder: 'Buscar industrias',
+      notSpecified: 'Sin especificar',
+      noResults: 'No hay industrias que coincidan con tu búsqueda.',
+      openHint: 'Abre la lista de industrias',
+    },
     context: {
       birthCountry: 'País de origen',
       birthCountryPlaceholder: 'Selecciona el país de origen',
@@ -1566,6 +1574,7 @@ const es: TranslationResources = {
     distanceAwayM: 'a {{value}} m',
     occupation: 'Ocupación',
     company: 'Empresa',
+    industry: 'Industria',
     biography: 'Biografía',
     interests: 'Intereses',
     viewInterests: 'Ver intereses',
@@ -1665,6 +1674,7 @@ const es: TranslationResources = {
       affiliationNearby: '{{name}} está cerca y comparten afiliaciones.',
       affiliationNearbyOne: '{{name}} está cerca y comparten una afiliación.',
       affiliationMore: 'y {{count}} más',
+      industryNearby: '{{name}} está cerca y comparten industria: {{industry}}.',
     },
     time: {
       minutes: '{{count}}m',
@@ -1735,6 +1745,11 @@ const es: TranslationResources = {
       title: 'Intereses y afiliaciones compartidos',
       description:
         'Recibe un aviso cuando alguien cerca comparte contigo un interés o una afiliación oficial.',
+    },
+    nearbyIndustryNotices: {
+      title: 'Industria compartida',
+      description:
+        'Recibe un aviso cuando alguien cerca trabaja en tu industria. Solo entre perfiles profesionales.',
     },
     notificationPermission: {
       title: 'Notificaciones del iPhone',

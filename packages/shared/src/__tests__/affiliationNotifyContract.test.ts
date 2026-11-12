@@ -64,7 +64,7 @@ describe('encounter motives', () => {
 
   it('analytics accepts the new motives', () => {
     const values = (EVENT_RULES.alert_opened.alert_motive as { values: readonly string[] }).values;
-    assert.deepEqual([...values], ['interest', 'contact', 'both', 'affiliation', 'contact_affiliation']);
+    assert.deepEqual([...values], ['interest', 'contact', 'both', 'affiliation', 'contact_affiliation', 'industry']);
   });
 });
 

@@ -41,6 +41,11 @@ export default {
     description:
       'Get notified when someone nearby shares an official interest or affiliation with you.',
   },
+  nearbyIndustryNotices: {
+    title: 'Shared industry',
+    description:
+      'Get notified when someone nearby works in your industry. Only between professional profiles.',
+  },
   notificationPermission: {
     title: 'iPhone notifications',
     values: {

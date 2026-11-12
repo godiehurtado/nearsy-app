@@ -414,6 +414,7 @@ describe('Own Profile dirty state', () => {
       'languageCodes',
       'lastName',
       'occupation',
+      'professionalIndustryId',
       'profileImage',
       'realName',
     ]);

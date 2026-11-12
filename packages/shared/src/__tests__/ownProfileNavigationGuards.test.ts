@@ -28,7 +28,7 @@ describe('Own Profile navigation and source guards', () => {
     assert.doesNotMatch(src, /replace\(\s*['"]MainTabs['"]\s*\)/);
     assert.doesNotMatch(src, /profileSetupCompleted:\s*true/);
     assert.match(src, /buildOwnProfileSavePatch/);
-    assert.match(src, /patches: \[modePatch, contextPatch\]/);
+    assert.match(src, /patches: \[modePatch, contextPatch, industryPatch\]/);
     assert.match(src, /write: \(patch\) => updateUserProfilePartial\(uid, patch\)/);
   });
 

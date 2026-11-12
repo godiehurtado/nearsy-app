@@ -3,8 +3,13 @@
  * No Firebase / UI imports (safe for Node tests).
  */
 import type { DiscoverNearbyResult } from '../visibility/callables/wireTypes';
+import type { IndustryRef } from '../industries/industryRef';
 
-export type AlertKind = 'interest_nearby' | 'affiliation_nearby' | 'contact_nearby';
+export type AlertKind =
+  | 'interest_nearby'
+  | 'affiliation_nearby'
+  | 'industry_nearby'
+  | 'contact_nearby';
 
 export type AlertItem = {
   id: string;
@@ -20,6 +25,11 @@ export type AlertItem = {
   sharedAffiliationNames?: string[];
   /** sharedAffiliationCount; "and N more" uses N = total − 1. */
   sharedAffiliationTotal?: number;
+  /**
+   * Industry contract §4: server-computed shared professional industry (catalog
+   * id + English name as a fallback). Highest row priority.
+   */
+  sharedIndustry?: IndustryRef;
   at: number;
   fromContacts?: boolean;
   appearanceKey?: string;
@@ -100,14 +110,22 @@ export function mapDiscoverResultsToAlerts(
       sharedAffiliations && r.sharedAffiliationNames?.length
         ? r.sharedAffiliationNames.slice(0, count)
         : undefined;
-    if (shared.length === 0 && !sharedAffiliations) continue;
+    // Industry contract §4: only the server's sharedIndustry qualifies; never text.
+    const sharedIndustry = r.sharedIndustry;
+    if (shared.length === 0 && !sharedAffiliations && !sharedIndustry) continue;
     seenUids.add(r.uid);
     out.push({
       id: r.uid,
       uid: r.uid,
       name: r.profile.displayName || 'Unnamed',
       avatar: r.profile.profileImage,
-      kind: sharedAffiliations ? 'affiliation_nearby' : 'interest_nearby',
+      // Priority (Product): industry, then affiliation, then interests.
+      kind: sharedIndustry
+        ? 'industry_nearby'
+        : sharedAffiliations
+          ? 'affiliation_nearby'
+          : 'interest_nearby',
+      ...(sharedIndustry ? { sharedIndustry } : {}),
       ...(sharedAffiliations ? { sharedAffiliations: true } : {}),
       ...(names
         ? {

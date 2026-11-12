@@ -12,6 +12,7 @@ import type { ProfileMode } from '../types';
 import type { DiscoveryPublicAffiliation } from '../discoveryAffiliations';
 import type { DiscoveryCompatibility } from '../discoveryCompatibility';
 import type { DiscoveryPublicSocialLink } from '../discoverySocialLinks';
+import type { IndustryRef } from '../../industries/industryRef';
 
 export type { ZodiacSign };
 
@@ -94,6 +95,11 @@ export type DiscoveryProfileSummary = {
   profileImage: string | null;
   occupation: string;
   interestIds: string[];
+  /**
+   * Industry contract §4: present only when the person is listed in
+   * professional mode with a catalog id. Absent on older backends.
+   */
+  industry?: IndustryRef;
 };
 
 /**
@@ -135,6 +141,12 @@ export type DiscoverNearbyResult = {
    * at least one valid name survives parsing; absent on older backends.
    */
   sharedAffiliationNames?: string[];
+  /**
+   * Industry contract §4: both people in professional mode with the same
+   * catalog id, behind the server switch. Absent otherwise and on older
+   * backends. Never matched by text on the client.
+   */
+  sharedIndustry?: IndustryRef;
 };
 
 export type ActivateVisibilityResponse = {

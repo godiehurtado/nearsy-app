@@ -37,6 +37,8 @@ import { RegistrationFadeSlideIn } from '../components/registration/Registration
 import { FormInput } from '../components/registration/FormInput';
 import { CitySearchField } from '../components/profile/CitySearchField';
 import { CountrySearchField } from '../components/profile/CountrySearchField';
+import { IndustrySearchField } from '../components/profile/IndustrySearchField';
+import { readProfessionalIndustryId } from '../profile/ownProfileEditorState';
 import { LanguageMultiSelectField } from '../components/profile/LanguageMultiSelectField';
 import ProfileAvatarImage from '../components/profile/ProfileAvatarImage';
 import { OnboardingInterestCategoryPanel } from '../components/registration/OnboardingInterestCategoryPanel';
@@ -394,6 +396,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [occupation, setOccupation] = useState('');
   const [company, setCompany] = useState('');
+  // Industry contract §2: top-level, professional only, null = not specified.
+  const [professionalIndustryId, setProfessionalIndustryId] = useState<string | null>(null);
+  const persistedIndustryIdRef = useRef<string | null>(null);
   const [bio, setBio] = useState('');
   const [selectedInterests, setSelectedInterests] = useState<
     OnboardingSelectedInterest[]
@@ -536,6 +541,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     setLanguageCodes(ctx.languageCodes);
     setOccupation(presentation.occupation ?? '');
     setCompany(presentation.company ?? '');
+    const industryId = readProfessionalIndustryId(data);
+    persistedIndustryIdRef.current = industryId;
+    setProfessionalIndustryId(industryId);
     setBio(presentation.bio ?? '');
 
     // Never wipe a Google/user wizard photo with an empty mode shell.
@@ -977,15 +985,30 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     const contextPatch = buildProfileContextWritePatch({
       languageCodes,
     });
+    // Professional only; written when it changed ("Not specified" writes null).
+    const industryChanged =
+      mode === 'professional' && professionalIndustryId !== persistedIndustryIdRef.current;
+    const industryPatch = industryChanged
+      ? { professionalIndustryId: professionalIndustryId ?? null }
+      : {};
     await updateUserProfilePartial(uid, {
       ...patch,
       ...contextPatch,
+      ...industryPatch,
       profileSetupCompleted: false,
     });
+    if (industryChanged) {
+      persistedIndustryIdRef.current = professionalIndustryId ?? null;
+      const { scheduleReevaluateProximityNotices } = await import(
+        '../alerts/reevaluateProximityNotices'
+      );
+      scheduleReevaluateProximityNotices();
+    }
     setShellData((prev) => ({
       ...(prev ?? {}),
       ...patch,
       ...contextPatch,
+      ...industryPatch,
       mode,
       profileSetupCompleted: false,
     }));
@@ -2274,6 +2297,13 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                     value={company}
                     onChangeText={setCompany}
                     autoCapitalize="words"
+                  />
+                ) : null}
+                {mode === 'professional' ? (
+                  <IndustrySearchField
+                    value={professionalIndustryId}
+                    onChange={setProfessionalIndustryId}
+                    disabled={submitting}
                   />
                 ) : null}
                 <FormInput

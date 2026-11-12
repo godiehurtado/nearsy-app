@@ -35,6 +35,7 @@ import { trackMatchPresented, trackProfileViewed } from '../analytics';
 import { firebaseAuth } from '../config/firebaseConfig';
 import type { HomeStackParamList } from '../navigation/HomeStack';
 import { useTranslation } from '../i18n';
+import { industryIonicon, industryLabel, industryLocale } from '../industries/catalog';
 import { MVP_FREE_SHOW_PROFILE_CONNECT_CTA } from '../product/mvpFreePresentation';
 import { DiscoveryAffiliationsCard } from '../components/profileExploration/DiscoveryAffiliationsCard';
 import { DiscoverySocialMediaRow } from '../components/profileExploration/DiscoverySocialMediaRow';
@@ -83,7 +84,7 @@ export default function DiscoveryProfileScreen() {
     useNavigation<NativeStackNavigationProp<HomeStackParamList>>();
   const insets = useSafeAreaInsets();
   const { palette, theme } = useAppTheme();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const uid = route.params?.uid;
   const profileViewedUidRef = useRef<string | null>(null);
 
@@ -359,6 +360,12 @@ export default function DiscoveryProfileScreen() {
   const mode = profile.mode as ProfileMode;
   const showOccupation = shouldShowOccupation(profile.occupation);
   const showCompany = shouldShowCompany(mode, profile.company);
+  // Industry contract §4: professional face only; label from the bundled catalog,
+  // the server's English name only for an id this build does not know.
+  const industryText =
+    mode === 'professional' && profile.industry
+      ? industryLabel(profile.industry.id, industryLocale(i18n.language), profile.industry.name)
+      : null;
   const showBio = shouldShowBio(profile.bio);
   const heroUri =
     !heroFailed && profile.profileImage ? profile.profileImage : null;
@@ -437,7 +444,7 @@ export default function DiscoveryProfileScreen() {
           />
 
           {/* 5. Profile information (occupation / company / biography) */}
-          {showOccupation || showCompany || showBio ? (
+          {showOccupation || showCompany || industryText || showBio ? (
             <View
               style={[
                 styles.card,
@@ -495,6 +502,39 @@ export default function DiscoveryProfileScreen() {
                 </>
               ) : null}
 
+              {industryText && profile.industry ? (
+                <>
+                  <Text
+                    style={[
+                      styles.sectionLabel,
+                      {
+                        color: palette.textMuted,
+                        marginTop: showOccupation || showCompany ? spacing.lg : 0,
+                      },
+                    ]}
+                  >
+                    {t('discoveryProfile.industry')}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5 }}>
+                    <Ionicons
+                      name={industryIonicon(profile.industry.id) as React.ComponentProps<typeof Ionicons>['name']}
+                      size={16}
+                      color={palette.textSecondary}
+                    />
+                    <Text
+                      style={{
+                        flex: 1,
+                        color: palette.textPrimary,
+                        fontWeight: fontWeight.semibold,
+                        fontSize: fontSize.md,
+                      }}
+                    >
+                      {industryText}
+                    </Text>
+                  </View>
+                </>
+              ) : null}
+
               {showBio ? (
                 <>
                   <Text
@@ -503,7 +543,7 @@ export default function DiscoveryProfileScreen() {
                       {
                         color: palette.textMuted,
                         marginTop:
-                          showOccupation || showCompany ? spacing.lg : 0,
+                          showOccupation || showCompany || industryText ? spacing.lg : 0,
                       },
                     ]}
                   >

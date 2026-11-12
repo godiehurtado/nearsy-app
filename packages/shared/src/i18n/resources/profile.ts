@@ -11,6 +11,14 @@ export default {
     content: 'Profile content',
     context: 'Background',
   },
+  industry: {
+    label: 'Industry',
+    placeholder: 'Select your industry',
+    searchPlaceholder: 'Search industries',
+    notSpecified: 'Not specified',
+    noResults: 'No industries match your search.',
+    openHint: 'Opens the industry list',
+  },
   context: {
     birthCountry: 'Country of origin',
     birthCountryPlaceholder: 'Select country of origin',

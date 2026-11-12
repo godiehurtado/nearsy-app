@@ -7,6 +7,7 @@ import {
 } from './currentCity';
 import { buildCurrentCityWritePatch } from './currentCityWrite';
 import { normalizeLanguageCodes } from './languageCatalog';
+import { isIndustryId } from '../industries/industryRef';
 import {
   buildProfileContextWritePatch,
   parseUserProfileContext,
@@ -141,7 +142,15 @@ export function createOwnProfileDraftFromDoc(
     birthCountryCode: ctx.birthCountryCode,
     currentCity: ctx.currentCity,
     languageCodes: ctx.languageCodes,
+    professionalIndustryId: readProfessionalIndustryId(doc),
   });
+}
+
+/** Top-level users/{uid}.professionalIndustryId (Industry contract §2); absent → null. */
+export function readProfessionalIndustryId(doc: unknown): string | null {
+  if (!doc || typeof doc !== 'object') return null;
+  const value = (doc as Record<string, unknown>).professionalIndustryId;
+  return isIndustryId(value) ? value : null;
 }
 
 /** Editable Own Profile fields for the active face. Status and topBar are excluded. */
@@ -155,6 +164,11 @@ export type OwnProfileDraft = {
   birthCountryCode: string | null;
   currentCity: CurrentCity | null;
   languageCodes: string[];
+  /**
+   * Professional Industry (catalog id or null = not specified). Top-level and
+   * kept while Personal is active; edited and saved only in professional mode.
+   */
+  professionalIndustryId?: string | null;
 };
 
 export type OwnProfileValidationField =
@@ -184,6 +198,9 @@ export function normalizeOwnProfileDraft(
     birthCountryCode: normalizeCountryCode(draft.birthCountryCode),
     currentCity: parseCurrentCity(draft.currentCity),
     languageCodes: normalizeLanguageCodes(draft.languageCodes),
+    professionalIndustryId: isIndustryId(draft.professionalIndustryId)
+      ? draft.professionalIndustryId
+      : null,
   };
 }
 
@@ -206,6 +223,12 @@ export function isOwnProfileDraftDirty(
   if (current.occupation !== snapshot.occupation) return true;
   if (current.bio !== snapshot.bio) return true;
   if (mode === 'professional' && current.company !== snapshot.company) {
+    return true;
+  }
+  if (
+    mode === 'professional' &&
+    current.professionalIndustryId !== (snapshot.professionalIndustryId ?? null)
+  ) {
     return true;
   }
   if (current.birthCountryCode !== snapshot.birthCountryCode) return true;
@@ -327,6 +350,21 @@ export function buildOwnProfileContextSavePatch(
       persisted?.currentCity ?? null,
     ),
   };
+}
+
+/**
+ * Industry contract §2: professional mode only, written when it changed.
+ * "Not specified" writes null (never deleteField). Personal never touches it.
+ */
+export function buildOwnProfileIndustrySavePatch(
+  draft: OwnProfileDraft,
+  persisted: OwnProfileDraft | null,
+  mode: ProfileMode,
+): { professionalIndustryId?: string | null } {
+  if (mode !== 'professional') return {};
+  const next = normalizeOwnProfileDraft(draft).professionalIndustryId ?? null;
+  const previous = persisted?.professionalIndustryId ?? null;
+  return next === previous ? {} : { professionalIndustryId: next };
 }
 
 const FORBIDDEN_OWN_PROFILE_SAVE_KEYS = [

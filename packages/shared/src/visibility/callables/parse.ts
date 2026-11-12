@@ -18,6 +18,7 @@ import { parseDiscoveryAffiliations } from '../discoveryAffiliations';
 import { parseDiscoveryCompatibility } from '../discoveryCompatibility';
 import { parseDiscoverySocialLinks } from '../discoverySocialLinks';
 import { createContractResponseError } from './errors';
+import { parseIndustryRef } from '../../industries/industryRef';
 import type {
   ActivateVisibilityResponse,
   BlockedPerson,
@@ -172,12 +173,16 @@ function parseSummaryFields(
     );
   }
 
+  // Industry contract §4: professional mode only; malformed is ignored, never an error.
+  const industry = mode === 'professional' ? parseIndustryRef(value.industry) : undefined;
+
   return {
     mode,
     displayName,
     profileImage,
     occupation: value.occupation,
     interestIds,
+    ...(industry ? { industry } : {}),
   };
 }
 
@@ -290,17 +295,23 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
           sharedAffiliationCount,
         )
       : undefined;
+  const profile = parseDiscoveryProfileSummary(value.profile);
+  // Industry contract §4: only when the person is professional (the server also
+  // requires the viewer to be). Malformed is ignored, never an error.
+  const sharedIndustry =
+    profile.mode === 'professional' ? parseIndustryRef(value.sharedIndustry) : undefined;
   return {
     uid: requireNonEmptyString(value.uid, 'result.uid'),
     distanceMeters: requireNonNegativeNumber(
       value.distanceMeters,
       'result.distanceMeters',
     ),
-    profile: parseDiscoveryProfileSummary(value.profile),
+    profile,
     ...(compatibility !== undefined ? { compatibility } : {}),
     ...(appearanceKey ? { appearanceKey } : {}),
     ...(sharedAffiliationCount !== undefined ? { sharedAffiliationCount } : {}),
     ...(sharedAffiliationNames ? { sharedAffiliationNames } : {}),
+    ...(sharedIndustry ? { sharedIndustry } : {}),
   };
 }
 

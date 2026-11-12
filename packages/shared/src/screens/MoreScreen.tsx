@@ -115,9 +115,11 @@ import {
 } from '../alerts/reevaluateProximityNotices';
 import {
   buildNotifyNearbyContactsMutePatch,
+  buildNotifyNearbyIndustryPatch,
   buildNotifyNearbyInterestsPatch,
   resolveContactsSyncEnabled,
   resolveNotifyNearbyContacts,
+  resolveNotifyNearbyIndustry,
   resolveNotifyNearbyInterests,
 } from '../alerts/notifyPrefs';
 import {
@@ -168,6 +170,7 @@ type ProfileDoc = {
   bgVisible?: boolean;
   visibility?: boolean;
   notifyNearbyInterests?: boolean;
+  notifyNearbyIndustry?: boolean;
   contactsSyncEnabled?: boolean;
   notifyNearbyContacts?: boolean;
 };
@@ -278,6 +281,7 @@ export default function MoreScreen() {
   const [bgVisible, setBgVisible] = useState(false);
   const [visibilityOn, setVisibilityOn] = useState(false);
   const [notifyNearbyInterests, setNotifyNearbyInterests] = useState(true);
+  const [notifyNearbyIndustry, setNotifyNearbyIndustry] = useState(true);
   // iOS permission only; the notice-type toggles below stay separate.
   const notificationPermission = useNotificationPermissionRow(Platform.OS === 'ios');
   const [contactsSyncEnabled, setContactsSyncEnabled] = useState(false);
@@ -383,6 +387,7 @@ export default function MoreScreen() {
     );
     setVisibilityOn(!!data.visibility);
     setNotifyNearbyInterests(resolveNotifyNearbyInterests(data.notifyNearbyInterests));
+    setNotifyNearbyIndustry(resolveNotifyNearbyIndustry(data.notifyNearbyIndustry));
     const serverContactsEnabled = resolveContactsSyncEnabled(
       data.contactsSyncEnabled,
     );
@@ -803,6 +808,24 @@ export default function MoreScreen() {
       scheduleReevaluateProximityNotices();
     } catch (e: any) {
       setNotifyNearbyInterests(previous);
+      Alert.alert(t('common.error'), e?.message || t('common.error'));
+    }
+  };
+
+  const handleToggleNotifyNearbyIndustry = async (enabled: boolean) => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) return;
+    const previous = notifyNearbyIndustry;
+    setNotifyNearbyIndustry(enabled);
+    try {
+      await setDoc(
+        doc(firestoreDb, 'users', uid),
+        { ...buildNotifyNearbyIndustryPatch(enabled), updatedAt: Date.now() },
+        { merge: true },
+      );
+      scheduleReevaluateProximityNotices();
+    } catch (e: any) {
+      setNotifyNearbyIndustry(previous);
       Alert.alert(t('common.error'), e?.message || t('common.error'));
     }
   };
@@ -1334,6 +1357,13 @@ export default function MoreScreen() {
             description={t('settings.nearbyNotices.description')}
             value={notifyNearbyInterests}
             onValueChange={handleToggleNotifyNearbyInterests}
+          />
+          <SettingsToggleRow
+            icon="briefcase-outline"
+            title={t('settings.nearbyIndustryNotices.title')}
+            description={t('settings.nearbyIndustryNotices.description')}
+            value={notifyNearbyIndustry}
+            onValueChange={handleToggleNotifyNearbyIndustry}
           />
           <SettingsToggleRow
             icon="people-circle-outline"

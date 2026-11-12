@@ -22,6 +22,7 @@ import type { RootTabsParamList } from '../navigation/RootTabs';
 import { registerPushToken } from '../services/pushTokens';
 import { useNearbyAlerts, type AlertItem } from '../hooks/useNearbyAlerts';
 import { useTranslation } from '../i18n';
+import { industryLocale } from '../industries/catalog';
 import {
   fontSize,
   fontWeight,
@@ -45,7 +46,8 @@ export default function AlertsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const insets = useSafeAreaInsets();
   const { palette } = useAppTheme();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = industryLocale(i18n.language);
 
   const translateItem = useCallback(
     (nameKey: string, fallback: string) =>
@@ -71,8 +73,8 @@ export default function AlertsScreen() {
   const inactive = !me?.visibility;
 
   const rowMessage = useCallback(
-    (item: AlertItem) => buildAlertRowMessage(item, t, translateItem),
-    [t, translateItem],
+    (item: AlertItem) => buildAlertRowMessage(item, t, translateItem, locale),
+    [t, translateItem, locale],
   );
 
   const listBottomPad = useMemo(

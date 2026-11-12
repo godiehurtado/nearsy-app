@@ -25,6 +25,7 @@ import ProfileQuickActions from '../components/ProfileQuickActions';
 import OwnProfileHero from '../components/profile/OwnProfileHero';
 import OwnProfileDetails from '../components/profile/OwnProfileDetails';
 import OwnProfileContextCard from '../components/profile/OwnProfileContextCard';
+import { IndustrySearchField } from '../components/profile/IndustrySearchField';
 import OwnProfileSaveBar from '../components/profile/OwnProfileSaveBar';
 import {
   InterestAffiliations,
@@ -64,6 +65,7 @@ import {
 import { resolveModePresentation, type ProfileMode } from '../profile/profileModeFields';
 import {
   buildOwnProfileContextSavePatch,
+  buildOwnProfileIndustrySavePatch,
   buildOwnProfileSavePatch,
   buildPersistedOwnProfileDraftAfterUpload,
   classifyOwnProfileLoadResult,
@@ -147,6 +149,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   >(null);
   const [occupation, setOccupation] = useState('');
   const [company, setCompany] = useState('');
+  const [professionalIndustryId, setProfessionalIndustryId] = useState<string | null>(null);
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [birthCountryCode, setBirthCountryCode] = useState<string | null>(null);
   const [currentCity, setCurrentCity] = useState<CurrentCity | null>(null);
@@ -216,6 +219,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     setOccupation(draft.occupation);
     setBio(draft.bio);
     setCompany(draft.company);
+    setProfessionalIndustryId(draft.professionalIndustryId ?? null);
     profileImageRef.current = draft.profileImage;
     setProfileImage(draft.profileImage);
     setBirthCountryCode(draft.birthCountryCode);
@@ -254,6 +258,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       birthCountryCode,
       currentCity,
       languageCodes,
+      professionalIndustryId,
     }),
     [
       realName,
@@ -265,6 +270,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       birthCountryCode,
       currentCity,
       languageCodes,
+      professionalIndustryId,
     ],
   );
 
@@ -963,9 +969,15 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         persistedDraft,
         savedSnapshotRef.current,
       );
+      // Industry contract §2/§5: professional only, written when changed.
+      const industryPatch = buildOwnProfileIndustrySavePatch(
+        persistedDraft,
+        savedSnapshotRef.current,
+        mode,
+      );
 
       const syncStatus = await persistOwnProfileThenSyncDiscovery({
-        patches: [modePatch, contextPatch],
+        patches: [modePatch, contextPatch, industryPatch],
         write: (patch) => updateUserProfilePartial(uid, patch),
         onPersisted: () => {
           applyDraftToForm(persistedDraft);
@@ -974,6 +986,12 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         expectedCity: persistedDraft.currentCity,
         sync: syncDiscoveryContextNow,
       });
+      if (Object.keys(industryPatch).length > 0) {
+        const { scheduleReevaluateProximityNotices } = await import(
+          '../alerts/reevaluateProximityNotices'
+        );
+        scheduleReevaluateProximityNotices();
+      }
       if (
         syncStatus === 'failed' &&
         mountedRef.current &&
@@ -986,6 +1004,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         ...(profileDoc ?? {}),
         ...modePatch,
         ...contextPatch,
+        ...industryPatch,
         currentCity: persistedDraft.currentCity,
         profiles: {
           ...((profileDoc?.profiles as any) ?? {}),
@@ -1293,6 +1312,16 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 onChangeCompany={setCompany}
               />
 
+              {activeMode === 'professional' ? (
+                <View style={styles.industryField}>
+                  <IndustrySearchField
+                    value={professionalIndustryId}
+                    onChange={setProfessionalIndustryId}
+                    disabled={!editorWritable}
+                  />
+                </View>
+              ) : null}
+
               <OwnProfileContextCard
                 values={{
                   birthCountryCode,
@@ -1369,6 +1398,9 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  industryField: {
+    marginTop: 16,
   },
   flex: {
     flex: 1,

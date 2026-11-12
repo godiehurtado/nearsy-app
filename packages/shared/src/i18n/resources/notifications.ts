@@ -17,6 +17,7 @@ export default {
     affiliationNearby: '{{name}} is near you and you share affiliations.',
     affiliationNearbyOne: '{{name}} is near you and you share an affiliation.',
     affiliationMore: 'and {{count}} more',
+    industryNearby: '{{name}} is nearby. You both work in {{industry}}.',
   },
   time: {
     minutes: '{{count}}m',

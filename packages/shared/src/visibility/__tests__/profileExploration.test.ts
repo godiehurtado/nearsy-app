@@ -877,7 +877,7 @@ describe('profile exploration screen composition (static V1.4E)', () => {
     // Info card no longer wraps Interests; empty occ/company/bio omits the card.
     assert.match(
       screenSrc,
-      /showOccupation \|\| showCompany \|\| showBio \? \(/,
+      /showOccupation \|\| showCompany \|\| industryText \|\| showBio \? \(/,
     );
   });
 

@@ -9,6 +9,11 @@ export function resolveNotifyNearbyInterests(value: unknown): boolean {
   return value !== false;
 }
 
+/** Industry contract §2: absent → true; only an explicit false turns it off. */
+export function resolveNotifyNearbyIndustry(value: unknown): boolean {
+  return value !== false;
+}
+
 export function resolveContactsSyncEnabled(value: unknown): boolean {
   return value === true;
 }
@@ -24,12 +29,20 @@ export function resolveNotifyNearbyContacts(input: {
 export type EncounterNotifyPrefsPatch = {
   notifyNearbyInterests?: boolean;
   notifyNearbyContacts?: boolean;
+  notifyNearbyIndustry?: boolean;
 };
 
 export function buildNotifyNearbyInterestsPatch(
   enabled: boolean,
 ): EncounterNotifyPrefsPatch {
   return { notifyNearbyInterests: enabled };
+}
+
+/** Written only when the person toggles it, never at sign-up. */
+export function buildNotifyNearbyIndustryPatch(
+  enabled: boolean,
+): EncounterNotifyPrefsPatch {
+  return { notifyNearbyIndustry: enabled };
 }
 
 /** Mute without deleting Identity hashes / sources. */

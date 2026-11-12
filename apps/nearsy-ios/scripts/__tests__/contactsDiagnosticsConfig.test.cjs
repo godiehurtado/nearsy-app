@@ -64,8 +64,10 @@ describe('Contacts diagnostic build gate', () => {
   it('keeps PostHog off, Firebase production and the public profile underneath', () => {
     assert.equal(diag.extends, 'production');
     assert.equal(diag.env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV, 'production');
+    // 2.1.0: production captures, so this profile (which extends it) may only
+    // switch PostHog off explicitly, with empty values.
     for (const key of Object.keys(diag.env)) {
-      assert.equal(key.startsWith('EXPO_PUBLIC_POSTHOG_'), false, key);
+      if (key.startsWith('EXPO_PUBLIC_POSTHOG_')) assert.equal(diag.env[key], '', key);
     }
     assert.deepEqual(
       assertAnalyticsBuildConfig({

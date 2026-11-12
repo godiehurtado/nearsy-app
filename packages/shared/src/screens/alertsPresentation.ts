@@ -3,6 +3,7 @@
  */
 import type { AlertItem } from '../hooks/useNearbyAlerts';
 import { resolveInterestChips } from '../visibility/interestDisplay';
+import { industryShortLabel, type IndustryLocale } from '../industries/catalog';
 
 export const NOTIFICATION_AVATAR_SIZE = 38;
 
@@ -27,8 +28,21 @@ export function buildAlertRowMessage(
   alert: AlertItem,
   t: Translate,
   translateItem: TranslateItem,
+  locale: IndustryLocale = 'en',
 ): string {
-  // Affiliations first. The affiliation names go on their own line
+  // Industry first (Product priority). The label comes from the bundled catalog
+  // by id; the server's English name is only a fallback for unknown ids.
+  if (alert.sharedIndustry) {
+    const industry = industryShortLabel(
+      alert.sharedIndustry.id,
+      locale,
+      alert.sharedIndustry.name,
+    );
+    if (industry) {
+      return t('notifications.messages.industryNearby', { name: alert.name, industry });
+    }
+  }
+  // Then affiliations. The affiliation names go on their own line
   // (buildAlertAffiliationDetail) so a long name never hides the person.
   if (alert.sharedAffiliations) {
     return alert.sharedAffiliationNames?.length && alert.sharedAffiliationTotal === 1
@@ -68,6 +82,8 @@ export function buildAlertAffiliationDetail(
   t: Translate,
 ): AlertAffiliationDetail | null {
   const names = alert.sharedAffiliationNames;
+  // One motive per row: an Industry row shows no affiliation line.
+  if (alert.sharedIndustry) return null;
   if (!alert.sharedAffiliations || !names?.length) return null;
   // Contract §3a: N = sharedAffiliationCount − 1 (names never outnumber it).
   const others = Math.max(alert.sharedAffiliationTotal ?? names.length, names.length) - 1;
