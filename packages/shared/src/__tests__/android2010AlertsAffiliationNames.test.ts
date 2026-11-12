@@ -163,7 +163,7 @@ describe('copy and privacy', () => {
       assert.deepEqual(placeholders(esMessages[key]), placeholders(en[key]));
     }
     assert.equal(en.affiliationNearbyNamed, '{{name}} is near you and you share {{affiliation}}.');
-    assert.equal(esMessages.affiliationNearbyNamed, '{{name}} está cerca y compartís {{affiliation}}.');
+    assert.equal(esMessages.affiliationNearbyNamed, '{{name}} está cerca y comparten {{affiliation}}.');
   });
 
   it('no analytics or log code reads the names, and no extra per-profile call exists', () => {

@@ -139,7 +139,7 @@ describe('Alerts inbox: copy, navigation and instrumentation', () => {
       '{{name}} is near you and you share an affiliation.',
     );
     const es = src('i18n/locales/es.ts');
-    assert.ok(es.includes("affiliationNearby: '{{name}} está cerca y compartís una afiliación.'"));
+    assert.ok(es.includes("affiliationNearby: '{{name}} está cerca y comparten una afiliación.'"));
     assert.ok(es.includes("affiliationNearby: 'Afiliación compartida cercana'"));
   });
 

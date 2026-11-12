@@ -242,13 +242,13 @@ export const es: TranslationResources = {
     },
     messages: {
       interestNearby:
-        '{{name}} está cerca y compartís intereses{{interests}}.',
+        '{{name}} está cerca y comparten intereses{{interests}}.',
       interestsSuffix: ' ({{interests}})',
       nearbyOnly: '{{name}} está cerca.',
-      affiliationNearby: '{{name}} está cerca y compartís una afiliación.',
-      affiliationNearbyNamed: '{{name}} está cerca y compartís {{affiliation}}.',
+      affiliationNearby: '{{name}} está cerca y comparten una afiliación.',
+      affiliationNearbyNamed: '{{name}} está cerca y comparten {{affiliation}}.',
       affiliationNearbyNamedMore:
-        '{{name}} está cerca y compartís {{affiliation}} y {{count}} más.',
+        '{{name}} está cerca y comparten {{affiliation}} y {{count}} más.',
     },
     time: {
       minutes: '{{count}}m',
