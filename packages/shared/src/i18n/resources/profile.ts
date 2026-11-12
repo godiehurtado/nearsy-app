@@ -101,6 +101,16 @@ const en = {
     stay: 'Keep editing',
     discard: 'Discard',
   },
+  industry: {
+    label: 'Industry',
+    title: 'Choose your industry',
+    unspecified: 'Not specified',
+    searchPlaceholder: 'Search industries',
+    noResults: 'No industry matches your search.',
+    openHint: 'Opens the list of industries',
+    hint: 'Only for your professional profile. People in the same industry nearby can be notified.',
+    saveError: 'Could not save your industry. Try again.',
+  },
   errors: {
     saveFailed: 'Could not save profile.',
     uploadFailed: 'Could not upload profile photo.',
@@ -504,6 +514,16 @@ const es = {
       body: 'Tienes cambios de perfil sin guardar. Si sales, se perderán.',
       stay: 'Seguir editando',
       discard: 'Descartar',
+    },
+    industry: {
+      label: 'Industria',
+      title: 'Elige tu industria',
+      unspecified: 'Sin especificar',
+      searchPlaceholder: 'Buscar industrias',
+      noResults: 'Ninguna industria coincide con tu búsqueda.',
+      openHint: 'Abre la lista de industrias',
+      hint: 'Solo para tu perfil profesional. Las personas cercanas de la misma industria pueden recibir un aviso.',
+      saveError: 'No se pudo guardar tu industria. Inténtalo de nuevo.',
     },
     errors: {
       saveFailed: 'No se pudo guardar el perfil.',

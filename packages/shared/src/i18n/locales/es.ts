@@ -114,6 +114,7 @@ export const es: TranslationResources = {
     distanceAwayM: 'a {{value}} m',
     occupation: 'Ocupación',
     company: 'Empresa',
+    industry: 'Industria',
     biography: 'Biografía',
     interests: 'Intereses',
     viewInterests: 'Ver intereses',
@@ -249,6 +250,7 @@ export const es: TranslationResources = {
       affiliationNearbyNamed: '{{name}} está cerca y comparten {{affiliation}}.',
       affiliationNearbyNamedMore:
         '{{name}} está cerca y comparten {{affiliation}} y {{count}} más.',
+      industryNearby: '{{name}} está cerca y comparten industria: {{industry}}.',
     },
     time: {
       minutes: '{{count}}m',
@@ -395,6 +397,11 @@ export const es: TranslationResources = {
       title: 'Avisos de contactos cercanos',
       description:
         'Recibe un aviso cuando uno de tus contactos sincronizados está cerca. Apagar esto no borra tus contactos sincronizados.',
+    },
+    industryNotices: {
+      title: 'Avisos de misma industria',
+      description:
+        'Recibe un aviso cuando alguien cerca trabaja en tu industria. Solo aplica cuando ambos están en modo profesional.',
     },
     notificationAccess: {
       title: 'Notificaciones',

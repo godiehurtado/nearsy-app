@@ -515,7 +515,10 @@ referrer, and neither is validated.
 | Beta activation | Product | Authorize; create `NEARSY_POSTHOG_TOKEN` in EAS; confirm the token is project 716015; confirm the Play service account and the internal testers |
 | Marketing filters | Marketing | Exclude `is_test_user = true` and keep absent values; do not filter on `false` |
 
-Out of scope: gender, seniority, industry, monetization, backfills, new Firestore rules or fields.
+Out of scope: gender, seniority, monetization, backfills, new Firestore rules or fields.
+Since 2.1.0, `industry` is a person property under the Industry contract (Functions
+`docs/industries/INDUSTRY_CONTRACT.md` §6): the professional id, kept on a switch to Personal,
+`$unset` on an explicit "Not specified". It is never an event or super property.
 
 ## Unrelated hypothesis: Home, return from Settings
 

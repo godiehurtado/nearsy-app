@@ -65,6 +65,18 @@ function readPersonName(value: unknown): string | undefined {
   return chars.length > PERSON_NAME_MAX ? chars.slice(0, PERSON_NAME_MAX).join('').trim() : name;
 }
 
+/**
+ * Industry contract §6: `industry` = the professional id (top-level
+ * professionalIndustryId). Kept when switching to Personal; removed with $unset
+ * only when the document holds an explicit "Not specified". Absent: untouched.
+ */
+const INDUSTRY_ID = /^[a-z][a-z0-9_]{1,40}$/;
+function readIndustry(row: Record<string, unknown>): string | null | undefined {
+  if (!('professionalIndustryId' in row)) return undefined;
+  const value = row.professionalIndustryId;
+  return typeof value === 'string' && INDUSTRY_ID.test(value) ? value : null;
+}
+
 const COUNTRY_CODE = /^[A-Za-z]{2}$/;
 
 function toCountryCode(value: unknown): string | null {
@@ -197,7 +209,15 @@ export function personKeysToUnset(input: {
   const row = input.doc as { mode?: unknown } | null | undefined;
   const absent = (key: string) => !(key in input.properties);
   // Account names do not depend on the mode: the complete document has none.
-  const names = row && typeof row === 'object' ? PERSON_NAME_KEYS.filter(absent) : [];
+  const names: string[] = row && typeof row === 'object' ? PERSON_NAME_KEYS.filter(absent) : [];
+  if (
+    row &&
+    typeof row === 'object' &&
+    readIndustry(row as Record<string, unknown>) === null &&
+    absent('industry')
+  ) {
+    names.push('industry');
+  }
   if (!isProfileMode(row?.mode)) {
     return [
       ...names,
@@ -264,6 +284,8 @@ export function buildPersonProperties(input: {
   if (firstName !== undefined) out.first_name = firstName;
   const lastName = readPersonName(row.lastName);
   if (lastName !== undefined) out.last_name = lastName;
+  const industry = readIndustry(row);
+  if (industry) out.industry = industry;
   if (isProfileMode(row.mode)) {
     out.profile_type = row.mode;
     const occupation = readOccupation(row, row.mode);

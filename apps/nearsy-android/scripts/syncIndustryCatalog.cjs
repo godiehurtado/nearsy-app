@@ -25,7 +25,12 @@ if (!Number.isInteger(data.version) || data.status !== 'approved') {
 }
 if (fs.existsSync(target)) {
   const previous = fs.readFileSync(target, 'utf8');
-  const ids = [...previous.matchAll(/"id": "([a-z][a-z0-9_]*)",\n\s+"sector"/g)].map((m) => m[1]);
+  // CRLF on Windows checkouts.
+  const ids = [...previous.matchAll(/"id": "([a-z][a-z0-9_]*)",\r?\n\s+"sector"/g)].map((m) => m[1]);
+  if (ids.length === 0) {
+    console.error('could not read the bundled ids; refusing to overwrite');
+    process.exit(1);
+  }
   const next = new Set(data.industries.map((item) => item.id));
   const dropped = ids.filter((id) => !next.has(id));
   if (dropped.length > 0) {

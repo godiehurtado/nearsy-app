@@ -93,6 +93,9 @@ import {
 } from '../profile/ownProfileEditorState';
 import { extractOwnProfileQuickActionBagCounts } from '../profile/ownProfileQuickActionBagCounts';
 import { useOwnProfileSocialSummary } from '../social/useOwnProfileSocialSummary';
+import { IndustrySelectField } from '../components/industry/IndustrySelectField';
+import { readIndustryId } from '../industries/industryCatalog.ts';
+import { saveProfessionalIndustry } from '../industries/saveProfessionalIndustry.ts';
 
 const NAME_MAX = 40;
 const OCCUPATION_MAX = 60;
@@ -176,6 +179,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     useState(0);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [industrySaving, setIndustrySaving] = useState(false);
   const [modeSwitchLoading, setModeSwitchLoading] = useState(false);
   const [profileDoc, setProfileDoc] = useState<Record<string, unknown> | null>(
     null,
@@ -982,6 +986,22 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const activeMode = (editorMode ?? mode ?? 'personal') as
     | 'personal'
     | 'professional';
+  // Top-level and professional only; kept when the person switches to Personal.
+  const professionalIndustryId = readIndustryId(profileDoc?.professionalIndustryId);
+  const changeIndustry = async (next: string | null) => {
+    const uid = getUid();
+    if (!uid || industrySaving) return;
+    setIndustrySaving(true);
+    try {
+      await saveProfessionalIndustry(uid, next);
+      if (!aliveRef.current) return;
+      setProfileDoc((prev) => ({ ...(prev ?? {}), professionalIndustryId: next }));
+    } catch {
+      if (aliveRef.current) Alert.alert(t('common.error'), t('profile.industry.saveError'));
+    } finally {
+      if (aliveRef.current) setIndustrySaving(false);
+    }
+  };
   const modeContextLabel =
     activeMode === 'professional'
       ? t('profile.mode.contextProfessional')
@@ -1163,6 +1183,19 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 onChangeCurrentCity={setCurrentCity}
                 onChangeLanguages={setLanguageCodes}
               />
+
+              {activeMode === 'professional' ? (
+                <View style={{ marginHorizontal: screenPadding.horizontal, marginBottom: spacing.lg }}>
+                  <IndustrySelectField
+                    label={t('profile.industry.label')}
+                    value={professionalIndustryId}
+                    onChange={(next) => void changeIndustry(next)}
+                    editable={editorWritable}
+                    saving={industrySaving}
+                    hint={t('profile.industry.hint')}
+                  />
+                </View>
+              ) : null}
 
               <ProfileQuickActions
                 sectionTitle={t('profile.sections.content')}

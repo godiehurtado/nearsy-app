@@ -122,6 +122,11 @@ export default {
     description:
       'Get notified when one of your synced contacts is nearby. Turning this off does not delete your synced contacts.',
   },
+  industryNotices: {
+    title: 'Same-industry notices',
+    description:
+      'Get notified when someone nearby works in your industry. Applies only when you are both in professional mode.',
+  },
   notificationAccess: {
     title: 'Notifications',
     status: {

@@ -54,6 +54,10 @@ import {
 import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
 import { useAndroidNotificationAccess } from '../notifications/useAndroidNotificationAccess';
 import {
+  buildNotifyNearbyIndustryPatch,
+  resolveNotifyNearbyIndustry,
+} from '../industries/industryProfileWrite.ts';
+import {
   bindContactsUserDoc,
   contactsCanRetry,
   contactsCanRetryRead,
@@ -158,6 +162,7 @@ type ProfileDoc = {
   contactsSyncEnabled?: boolean;
   contactsEpoch?: number;
   notifyNearbyContacts?: boolean;
+  notifyNearbyIndustry?: boolean;
 };
 
 type EditorKind = 'birthDate' | 'visibilityAge' | null;
@@ -277,6 +282,8 @@ export default function MoreScreen() {
   const [bgVisible, setBgVisible] = useState(false);
   const [notifyNearbyInterests, setNotifyNearbyInterests] = useState(true);
   const [notifyNearbyContacts, setNotifyNearbyContacts] = useState(false);
+  // Absent reads as true; written only when the person toggles it.
+  const [notifyNearbyIndustry, setNotifyNearbyIndustry] = useState(true);
   // Read only: More never prompts by itself, and notice preferences stay as they are.
   const notificationAccess = useAndroidNotificationAccess();
   const handleNotificationAccessPress = useCallback(() => {
@@ -380,6 +387,7 @@ export default function MoreScreen() {
       typeof data.visibleToMaxAge === 'number' ? data.visibleToMaxAge : null,
     );
     setNotifyNearbyInterests(data.notifyNearbyInterests !== false);
+    setNotifyNearbyIndustry(resolveNotifyNearbyIndustry(data.notifyNearbyIndustry));
     setNotifyNearbyContacts(
       resolveNotifyNearbyContacts({
         contactsSyncEnabled: data.contactsSyncEnabled,
@@ -683,6 +691,20 @@ export default function MoreScreen() {
       scheduleReevaluateProximityNotices();
     } catch (e: any) {
       setNotifyNearbyInterests(previous);
+      Alert.alert(t('common.error'), e?.message || t('settings.saveError'));
+    }
+  };
+
+  const handleToggleNotifyNearbyIndustry = async (enabled: boolean) => {
+    const uid = firebaseAuth.currentUser?.uid;
+    if (!uid) return;
+    const previous = notifyNearbyIndustry;
+    setNotifyNearbyIndustry(enabled);
+    try {
+      await updateUserProfilePartial(uid, buildNotifyNearbyIndustryPatch(enabled));
+      scheduleReevaluateProximityNotices();
+    } catch (e: any) {
+      setNotifyNearbyIndustry(previous);
       Alert.alert(t('common.error'), e?.message || t('settings.saveError'));
     }
   };
@@ -1213,6 +1235,13 @@ export default function MoreScreen() {
                 value={notifyNearbyContacts}
                 onValueChange={handleToggleNotifyNearbyContacts}
                 disabled={!contactsSyncEnabled || contactsBusy}
+              />
+              <SettingsToggleRow
+                icon="briefcase-outline"
+                title={t('settings.industryNotices.title')}
+                description={t('settings.industryNotices.description')}
+                value={notifyNearbyIndustry}
+                onValueChange={handleToggleNotifyNearbyIndustry}
               />
             </>
           ) : null}

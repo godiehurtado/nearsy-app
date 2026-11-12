@@ -1341,8 +1341,16 @@ describe('out of scope stays out', () => {
     ]
       .map(src)
       .join('\n');
-    for (const name of ['gender', 'seniority', 'industry', 'subscription', 'event_cohort', 'alert_sent']) {
+    for (const name of ['gender', 'seniority', 'subscription', 'event_cohort', 'alert_sent']) {
       assert.ok(!code.includes(name), name);
     }
+  });
+
+  it('2.1.0: industry is only the person property of the Industry contract (§6)', () => {
+    const contract = src('analytics/analyticsContract.ts');
+    const binding = src('analytics/analytics.android.ts');
+    assert.ok(!contract.includes('industry'), 'never an event property');
+    assert.ok(!binding.includes('industry'), 'never a super property');
+    assert.match(src('analytics/analyticsPersonProperties.ts'), /out.industry = industry/);
   });
 });

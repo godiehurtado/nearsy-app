@@ -139,6 +139,9 @@ import { CountrySelectField } from '../components/profileContext/CountrySelectFi
 import { CurrentCityField } from '../components/profileContext/CurrentCityField';
 import { firestoreDeleteField } from '../services/firestoreFieldDelete';
 import { LanguageMultiSelectField } from '../components/profileContext/LanguageMultiSelectField';
+import { IndustrySelectField } from '../components/industry/IndustrySelectField';
+import { readIndustryId } from '../industries/industryCatalog.ts';
+import { buildProfessionalIndustryPatch } from '../industries/industryProfileWrite.ts';
 import {
   buildCrjDetailsPresentation,
   isCrjProfileDetailsValid,
@@ -329,6 +332,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [occupation, setOccupation] = useState('');
   const [company, setCompany] = useState('');
+  // Top-level, professional only. Written only when the person picks a value.
+  const [industryId, setIndustryId] = useState<string | null>(null);
+  const industryTouchedRef = useRef(false);
   const [bio, setBio] = useState('');
   const [birthCountryCode, setBirthCountryCode] = useState<string | null>(null);
   const [currentCity, setCurrentCity] = useState<CurrentCity | null>(null);
@@ -511,6 +517,9 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     setLastName((prev) => presentation.lastName || prev);
     setOccupation(presentation.occupation ?? '');
     setCompany(presentation.company ?? '');
+    if (!industryTouchedRef.current) {
+      setIndustryId(readIndustryId(data?.professionalIndustryId));
+    }
     setBio(presentation.bio ?? '');
 
     // Never wipe a Google/user wizard photo with an empty mode shell.
@@ -919,11 +928,17 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       birthCountryCode,
       languageCodes,
     });
+    const industryPatch =
+      mode === 'professional' && industryTouchedRef.current
+        ? buildProfessionalIndustryPatch(industryId)
+        : {};
     await updateUserProfilePartial(uid, {
       ...patch,
       ...contextPatch,
+      ...industryPatch,
       profileSetupCompleted: false,
     });
+    if ('professionalIndustryId' in industryPatch) scheduleReevaluateProximityNotices();
 
     const client = await getVisibilityDiscoveryClient();
     void syncDiscoveryProfileContextAfterSave(client);
@@ -947,6 +962,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         ...(prev ?? {}),
         ...patch,
         ...contextPatch,
+        ...industryPatch,
         mode,
         profileSetupCompleted: false,
       };
@@ -2191,6 +2207,17 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                     value={company}
                     onChangeText={setCompany}
                     autoCapitalize="words"
+                  />
+                ) : null}
+                {mode === 'professional' ? (
+                  <IndustrySelectField
+                    label={t('profile.industry.label')}
+                    value={industryId}
+                    onChange={(next) => {
+                      industryTouchedRef.current = true;
+                      setIndustryId(next);
+                    }}
+                    hint={t('profile.industry.hint')}
                   />
                 ) : null}
                 <FormInput
