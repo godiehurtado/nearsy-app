@@ -96,10 +96,15 @@ describe('Dependency and lockfile', () => {
 describe('Permissions', () => {
   it('READ_CONTACTS is allowed; WRITE_CONTACTS stays blocked', () => {
     const android = appJson.expo.android;
+    // 2.0.10 (51) also blocks the broad media permissions (Play photo policy).
     assert.deepEqual([...android.blockedPermissions].sort(), [
+      'android.permission.READ_MEDIA_IMAGES',
+      'android.permission.READ_MEDIA_VIDEO',
+      'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
       'android.permission.WRITE_CONTACTS',
     ]);
     assert.ok(android.permissions.includes('android.permission.READ_CONTACTS'));
+    assert.ok(!android.blockedPermissions.includes('android.permission.READ_CONTACTS'));
   });
 
   it('registers the expo-contacts plugin on Android', () => {
