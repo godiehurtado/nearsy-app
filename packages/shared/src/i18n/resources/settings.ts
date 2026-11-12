@@ -122,6 +122,32 @@ export default {
     description:
       'Get notified when one of your synced contacts is nearby. Turning this off does not delete your synced contacts.',
   },
+  notificationAccess: {
+    title: 'Notifications',
+    status: {
+      enabled: 'On',
+      not_requested: 'Not allowed',
+      denied: 'Blocked',
+      app_off: 'Off',
+      channel_off: 'Muted',
+      unknown: 'Not checked',
+    },
+    description: {
+      enabled: 'Nearsy can send you notifications. Choose which notices you get below.',
+      not_requested: 'Allow notifications so Nearsy can tell you when someone is nearby.',
+      denied: 'Notifications are blocked for Nearsy. You can allow them in Settings.',
+      app_off: 'Notifications are turned off for Nearsy. Turn them on in Settings.',
+      channel_off:
+        'The notification category Nearsy uses is turned off. Turn it on in Settings.',
+      unknown: 'Could not check notifications. Tap to try again.',
+    },
+    hint: {
+      request: 'Asks Android to allow notifications',
+      settings: 'Opens notification settings',
+      refresh: 'Checks again',
+    },
+    error: 'Could not open notification settings. Open Settings, then Apps, Nearsy, Notifications.',
+  },
   backgroundVisibility: {
     title: 'Stay visible in background',
     description:

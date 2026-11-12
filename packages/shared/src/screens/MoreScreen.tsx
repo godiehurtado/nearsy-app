@@ -52,6 +52,7 @@ import {
   resolveNotifyNearbyContacts,
 } from '../alerts/notifyPrefs';
 import { scheduleReevaluateProximityNotices } from '../alerts/reevaluateProximityNotices';
+import { useAndroidNotificationAccess } from '../notifications/useAndroidNotificationAccess';
 import {
   bindContactsUserDoc,
   contactsCanRetry,
@@ -276,6 +277,13 @@ export default function MoreScreen() {
   const [bgVisible, setBgVisible] = useState(false);
   const [notifyNearbyInterests, setNotifyNearbyInterests] = useState(true);
   const [notifyNearbyContacts, setNotifyNearbyContacts] = useState(false);
+  // Read only: More never prompts by itself, and notice preferences stay as they are.
+  const notificationAccess = useAndroidNotificationAccess();
+  const handleNotificationAccessPress = useCallback(() => {
+    void notificationAccess.run().then((ok) => {
+      if (!ok) Alert.alert(t('common.error'), t('settings.notificationAccess.error'));
+    });
+  }, [notificationAccess, t]);
   const [contactsStatus, setContactsStatus] = useState(getContactsSyncStatus);
   // Only Identity's confirmation counts; the toggle position alone does not.
   const contactsSyncEnabled = contactsStatus.enablement === 'enabled';
@@ -1134,6 +1142,32 @@ export default function MoreScreen() {
         </SettingsSection>
 
         <SettingsSection title={t('settings.sections.privacy')}>
+          {Platform.OS === 'android' && notificationAccess.state ? (
+            <SettingsRow
+              icon="notifications"
+              title={t('settings.notificationAccess.title')}
+              value={t(`settings.notificationAccess.status.${notificationAccess.state}` as 'settings.notificationAccess.status.enabled')}
+              wrapValue
+              description={t(
+                `settings.notificationAccess.description.${notificationAccess.state}` as 'settings.notificationAccess.description.enabled',
+              )}
+              onPress={
+                notificationAccess.action === 'none' || notificationAccess.busy
+                  ? undefined
+                  : handleNotificationAccessPress
+              }
+              showChevron={notificationAccess.action !== 'none'}
+              accessibilityHint={
+                notificationAccess.action === 'request'
+                  ? t('settings.notificationAccess.hint.request')
+                  : notificationAccess.action === 'refresh'
+                    ? t('settings.notificationAccess.hint.refresh')
+                    : notificationAccess.action === 'none'
+                      ? undefined
+                      : t('settings.notificationAccess.hint.settings')
+              }
+            />
+          ) : null}
           <SettingsToggleRow
             icon="notifications-outline"
             title={t('settings.nearbyNotices.title')}

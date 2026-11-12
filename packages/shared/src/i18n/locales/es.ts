@@ -396,6 +396,33 @@ export const es: TranslationResources = {
       description:
         'Recibe un aviso cuando uno de tus contactos sincronizados está cerca. Apagar esto no borra tus contactos sincronizados.',
     },
+    notificationAccess: {
+      title: 'Notificaciones',
+      status: {
+        enabled: 'Activadas',
+        not_requested: 'Sin permitir',
+        denied: 'Bloqueadas',
+        app_off: 'Desactivadas',
+        channel_off: 'Silenciadas',
+        unknown: 'Sin comprobar',
+      },
+      description: {
+        enabled: 'Nearsy puede enviarte notificaciones. Elige abajo qué avisos recibir.',
+        not_requested: 'Permite las notificaciones para que Nearsy te avise cuando alguien esté cerca.',
+        denied: 'Las notificaciones de Nearsy están bloqueadas. Puedes permitirlas en Ajustes.',
+        app_off: 'Las notificaciones de Nearsy están desactivadas. Actívalas en Ajustes.',
+        channel_off:
+          'La categoría de notificaciones que usa Nearsy está desactivada. Actívala en Ajustes.',
+        unknown: 'No se pudieron comprobar las notificaciones. Toca para intentarlo de nuevo.',
+      },
+      hint: {
+        request: 'Pide a Android permitir las notificaciones',
+        settings: 'Abre los ajustes de notificaciones',
+        refresh: 'Vuelve a comprobar',
+      },
+      error:
+        'No se pudieron abrir los ajustes de notificaciones. Abre Ajustes, luego Aplicaciones, Nearsy, Notificaciones.',
+    },
     backgroundVisibility: {
       title: 'Permanecer visible en segundo plano',
       description:
