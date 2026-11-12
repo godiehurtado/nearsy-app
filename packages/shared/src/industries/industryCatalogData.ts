@@ -1,13 +1,13 @@
 /**
  * Industry catalog, version 1 (status "approved"), bundled at build time.
  * GENERATED: do not edit by hand. Source: Functions repo
- * docs/industries/industry-catalog.v1.json at 5c1e11585ee1e058eb5f843e1f6cd883746a6115
- * (sha256 of the JSON: 17c501fbffc5c25a77286e9b2f4336cb5340a5ad1eb7ef68a49472c6c9e292ea).
+ * docs/industries/industry-catalog.v1.json at b574639e3fac68f87fafb816b2455b1dddf9ba85
+ * (sha256 of the JSON: ee5bf4215604077aecea72f1404716a496aa233f7702b6ede9ae22174c9b6147).
  * Pinned by the integer version; there is no runtime download.
  */
 import type { IndustryCatalogData } from './industryCatalogTypes.ts';
 
-export const INDUSTRY_CATALOG_SOURCE_SHA256 = '17c501fbffc5c25a77286e9b2f4336cb5340a5ad1eb7ef68a49472c6c9e292ea';
+export const INDUSTRY_CATALOG_SOURCE_SHA256 = 'ee5bf4215604077aecea72f1404716a496aa233f7702b6ede9ae22174c9b6147';
 
 export const INDUSTRY_CATALOG_DATA: IndustryCatalogData = {
   "catalog": "nearsy-industries",
@@ -560,6 +560,7 @@ export const INDUSTRY_CATALOG_DATA: IndustryCatalogData = {
           "solar",
           "eólica",
           "renovables",
+          "energía renovable",
           "energías limpias",
           "gas natural"
         ]
@@ -1561,8 +1562,8 @@ export const INDUSTRY_CATALOG_DATA: IndustryCatalogData = {
         "459"
       ],
       "label": {
-        "en": "Sports, Books and Hobby Retail",
-        "es": "Deportes, libros y pasatiempos"
+        "en": "Hobby, Sports and Book Retail",
+        "es": "Pasatiempos, deportes y libros"
       },
       "shortLabel": {
         "en": "Specialty Retail",
@@ -1913,6 +1914,7 @@ export const INDUSTRY_CATALOG_DATA: IndustryCatalogData = {
           "machine learning",
           "data science",
           "video games",
+          "gaming",
           "game development",
           "blockchain",
           "web3"
@@ -2072,7 +2074,9 @@ export const INDUSTRY_CATALOG_DATA: IndustryCatalogData = {
           "redes sociales",
           "creador de contenido",
           "influencer",
-          "pódcast"
+          "pódcast",
+          "medios",
+          "medios de comunicación"
         ]
       },
       "iconKey": "broadcast"
@@ -2150,7 +2154,9 @@ export const INDUSTRY_CATALOG_DATA: IndustryCatalogData = {
           "capital de riesgo",
           "bolsa",
           "comisionista",
-          "corretaje"
+          "corretaje",
+          "cripto",
+          "criptomonedas"
         ]
       },
       "iconKey": "chart"
@@ -2520,13 +2526,15 @@ export const INDUSTRY_CATALOG_DATA: IndustryCatalogData = {
           "market research",
           "branding",
           "seo",
-          "communications"
+          "communications",
+          "pr"
         ],
         "es": [
           "agencia de publicidad",
           "marketing digital",
           "marketing",
           "mercadeo",
+          "mercadotecnia",
           "relaciones públicas",
           "investigación de mercados",
           "branding",
@@ -3009,13 +3017,16 @@ export const INDUSTRY_CATALOG_DATA: IndustryCatalogData = {
         "en": [
           "hospital",
           "health system",
-          "medical center"
+          "medical center",
+          "healthcare",
+          "health care"
         ],
         "es": [
           "hospital",
           "clínica",
           "centro médico",
-          "ips"
+          "ips",
+          "salud"
         ]
       },
       "iconKey": "hospital"
@@ -3100,11 +3111,11 @@ export const INDUSTRY_CATALOG_DATA: IndustryCatalogData = {
       ],
       "label": {
         "en": "Mental Health and Therapy",
-        "es": "Salud mental y terapias"
+        "es": "Terapias y salud mental"
       },
       "shortLabel": {
         "en": "Mental Health and Therapy",
-        "es": "Salud mental y terapias"
+        "es": "Terapias y salud mental"
       },
       "synonyms": {
         "en": [
@@ -3307,12 +3318,14 @@ export const INDUSTRY_CATALOG_DATA: IndustryCatalogData = {
           "sports teams",
           "athletes",
           "sports clubs",
-          "racing"
+          "racing",
+          "sports"
         ],
         "es": [
           "equipos deportivos",
           "deportistas",
-          "clubes deportivos"
+          "clubes deportivos",
+          "deportes"
         ]
       },
       "iconKey": "trophy"
@@ -3471,6 +3484,8 @@ export const INDUSTRY_CATALOG_DATA: IndustryCatalogData = {
         "en": [
           "restaurant",
           "cafe",
+          "coffee",
+          "coffee shop",
           "bar",
           "catering",
           "food truck"
@@ -3634,7 +3649,8 @@ export const INDUSTRY_CATALOG_DATA: IndustryCatalogData = {
           "pet grooming",
           "pet sitting",
           "parking",
-          "household services"
+          "household services",
+          "wedding planning"
         ],
         "es": [
           "lavandería",
@@ -3643,7 +3659,9 @@ export const INDUSTRY_CATALOG_DATA: IndustryCatalogData = {
           "cuidado de mascotas",
           "estacionamientos",
           "parqueadero",
-          "servicio doméstico"
+          "servicio doméstico",
+          "bodas",
+          "organización de bodas"
         ]
       },
       "iconKey": "laundry"

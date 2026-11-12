@@ -1,5 +1,5 @@
 /**
- * Industry 2.1.0 (Functions INDUSTRY_CONTRACT.md at 5c1e115, catalog v1
+ * Industry 2.1.0 (Functions INDUSTRY_CONTRACT.md at 5c1e115, catalog v1 at b574639
  * approved). Real modules, synthetic responses.
  */
 import assert from 'node:assert/strict';
@@ -76,7 +76,7 @@ describe('bundled catalog', () => {
     if (!existsSync(functions)) return t.skip('Functions repo not present');
     const raw = execFileSync(
       'git',
-      ['-C', functions, 'show', '5c1e11585ee1e058eb5f843e1f6cd883746a6115:docs/industries/industry-catalog.v1.json'],
+      ['-C', functions, 'show', 'b574639e3fac68f87fafb816b2455b1dddf9ba85:docs/industries/industry-catalog.v1.json'],
       { encoding: 'utf8' },
     );
     assert.deepEqual(INDUSTRY_CATALOG_DATA, JSON.parse(raw));
