@@ -310,12 +310,92 @@ describe('PostHog person properties: first_name / last_name', () => {
       }
       assert.equal(FORBIDDEN_PROPERTY_NAMES.has(name), false);
     }
-    // Industry stays excluded until its field and catalog are agreed.
-    assert.equal(FORBIDDEN_PROPERTY_NAMES.has('industry'), true);
   });
 
   it('a name save triggers a person sync', () => {
     assert.equal(profileWriteAffectsAnalytics({ realName: 'Ana' }), true);
     assert.equal(profileWriteAffectsAnalytics({ lastName: 'Cruz' }), true);
+  });
+});
+
+describe('PostHog person property: industry (Product decision 2.1.0)', () => {
+  const at = new Date('2026-11-12T00:00:00Z');
+  const professional = { mode: 'professional', professionalIndustryId: 'technology' };
+
+  it('sends the professional catalog id', () => {
+    const { set, unset } = buildPersonProperties(professional, null, at);
+    assert.equal(set.industry, 'technology');
+    assert.equal(unset.includes('industry'), false);
+    assert.equal(set.profile_type, 'professional');
+  });
+
+  it('is kept while the personal mode is active; profile_type segments it', () => {
+    const { set, unset } = buildPersonProperties(
+      { ...professional, mode: 'personal' },
+      null,
+      at,
+    );
+    assert.equal(set.industry, 'technology');
+    assert.equal(set.profile_type, 'personal');
+    assert.equal(unset.includes('industry'), false);
+  });
+
+  it('a mode switch alone never changes it', () => {
+    const asProfessional = buildPersonProperties(professional, null, at);
+    const asPersonal = buildPersonProperties({ ...professional, mode: 'personal' }, null, at);
+    assert.equal(asProfessional.set.industry, asPersonal.set.industry);
+    assert.equal(profileWriteAffectsAnalytics({ mode: 'personal' }), true);
+  });
+
+  it('clearing the selection (null, "Not specified") unsets it', () => {
+    for (const cleared of [null, undefined, '', '   ']) {
+      const { set, unset } = buildPersonProperties(
+        { mode: 'personal', professionalIndustryId: cleared },
+        null,
+        at,
+      );
+      assert.equal('industry' in set, false);
+      assert.ok(unset.includes('industry'));
+    }
+  });
+
+  it('only a well-formed id is sent; malformed values unset it', () => {
+    for (const bad of ['Technology', '1tech', 't', 'tech-x', 'a'.repeat(42), 42]) {
+      const { set, unset } = buildPersonProperties(
+        { mode: 'professional', professionalIndustryId: bad },
+        null,
+        at,
+      );
+      assert.equal('industry' in set, false, String(bad));
+      assert.ok(unset.includes('industry'));
+    }
+    const ok = buildPersonProperties(
+      { mode: 'professional', professionalIndustryId: 'a'.repeat(41) },
+      null,
+      at,
+    );
+    assert.deepEqual(sanitizeProperties(PERSON_PROPERTY_RULES, { industry: ok.set.industry }).droppedNames, []);
+  });
+
+  it('never reads the affiliation category or a bare "industry" field', () => {
+    const { set } = buildPersonProperties(
+      {
+        mode: 'professional',
+        industry: 'technology',
+        professionalOnboardingAffiliations: [{ id: 'x', category: 'industry' }],
+      },
+      null,
+      at,
+    );
+    assert.equal('industry' in set, false);
+  });
+
+  it('is person-only and a selection save triggers a sync', () => {
+    assert.equal('industry' in SUPER_PROPERTY_RULES, false);
+    for (const rules of Object.values(EVENT_RULES)) {
+      assert.equal('industry' in (rules as Record<string, unknown>), false);
+    }
+    assert.equal(FORBIDDEN_PROPERTY_NAMES.has('industry'), false);
+    assert.equal(profileWriteAffectsAnalytics({ professionalIndustryId: null }), true);
   });
 });

@@ -12,6 +12,7 @@
 import {
   AGE_RANGES,
   OCCUPATION_MAX_LENGTH,
+  INDUSTRY_ID_PATTERN,
   PERSON_NAME_MAX_LENGTH,
   PROFILE_ID_ITEM_MAX_LENGTH,
   PROFILE_LIST_MAX_ITEMS,
@@ -399,6 +400,14 @@ export function buildPersonProperties(
     else unset.push(property);
   }
 
+  // Professional Industry: a professional attribute kept while the personal
+  // mode is active (profile_type segments it), so it is not mode-scoped.
+  // Cleared (null), absent or malformed → unset. Only a well-formed catalog id
+  // is sent; never the affiliation category or any other "industry" field.
+  const industryId = trimmedString(doc.professionalIndustryId);
+  if (INDUSTRY_ID_PATTERN.test(industryId)) set.industry = industryId;
+  else unset.push('industry');
+
   const age = computeAgeRange(doc, now);
   set.age_range_status = age.status;
   if (age.status === 'valid' && AGE_RANGES.includes(age.range)) {
@@ -491,6 +500,7 @@ const PROFILE_WRITE_KEYS = [
   'mode',
   'realName',
   'lastName',
+  'professionalIndustryId',
   'occupation',
   'profiles',
   'birthCountryCode',

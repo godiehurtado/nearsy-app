@@ -55,61 +55,62 @@ Everything validated in 2.0.10 (80) is kept: Contacts at 5000, affiliations, aff
 **App Store:**
 - App Privacy labels and the privacy policy must cover product analytics, now including name (Contact Info › Name, linked to the user, Analytics purpose).
 
-## 2. Person properties
-
-**Agreed (iOS, Android, Functions):**
+## 2. Person properties (done in iOS)
 
 | Property | Source | Clear |
 |---|---|---|
-| `first_name` | top-level `realName` (account copy of the active face) | `$unset` |
-| `last_name` | top-level `lastName` | `$unset` |
-| `industry` | stable catalog id (see 3); not implemented yet | `$unset` |
+| `first_name` | top-level `realName` | `$unset` when removed |
+| `last_name` | top-level `lastName` | `$unset` when removed |
+| `industry` | top-level `professionalIndustryId` (catalog id, pattern `^[a-z][a-z0-9_]{1,40}$`) | `$unset` when the selection is cleared, absent or malformed |
 
 - Never split from a display name.
-- Person-only: never in logs, super-properties or events.
-- Capped at 80 characters.
-- Implemented in iOS for the two names; synced on login, every app open, name saves and mode changes.
+- Person-only: never in logs, super-properties or events. Names are capped at 80 characters.
+- Synced on login, every app open, profile saves (`realName`, `lastName`, `professionalIndustryId`) and mode changes.
+- **Industry and mode (Product decision):**
+  - Firestore keeps the professional Industry when switching to Personal.
+  - The PostHog `industry` attribute also stays while the personal mode is active; `profile_type` segments it.
+  - Only an explicit clear removes it.
+- Nothing writes `professionalIndustryId` yet. The attribute starts flowing once the selector ships.
 
-**Two separate questions:**
-- **Firestore data:** switching to personal must not erase the professional Industry. The storage proposal guarantees it, since personal saves never touch `professionalIndustryId`.
-- **PostHog attribute:** what the `industry` person property shows while the personal mode is active is a separate, open Product decision. Android proposes unsetting it, like `occupation`; iOS proposes keeping the professional value. Nothing is implemented until Product decides.
+## 3. Industry in the professional profile
 
-## 3. Industry in the professional profile: proposal for Product
+**Approved by Product:**
+- A field of the professional profile only. Single selection, optional.
+- A broad catalog with stable ids. Functions proposes it and closes the contract; iOS builds no provisional catalog.
+- Matching only when both people are in the professional mode.
+- An independent preference `notifyNearbyIndustry`; its initial value must be explicit in the contract.
+- Kept in the profile, and as the PostHog attribute, when switching to Personal (see 2).
+- **Selector:** a modal with search, a list with local icons, a check mark and a "Sin especificar / Not specified" option (writes `null`). Search covers EN/ES labels and synonyms. No free text, no Logo.dev.
 
-Nothing exists today. "industry" is only an affiliation category (`types/profile.ts:49`, Functions `catalog.ts:60`), so the new field must not reuse that id.
+**Agreed with Functions (storage and validation):**
+- Storage: top-level `professionalIndustryId: string | null`. It is outside the affiliation category `industry` and outside the per-mode dotted-key defect.
+- Rules: id pattern or `null`; `notifyNearbyIndustry` with its own `is bool` rule.
+- The server ignores unknown ids.
+- The client calls `reevaluateProximityNotices` after saving.
 
-| Decision | Proposal | Why |
-|---|---|---|
-| Storage | top-level `professionalIndustryId: string \| null` on `users/{uid}` | Same convention as `professionalAffiliations`; no collision with the affiliation category. Personal saves never touch it. |
-| Catalog | about 20 stable ids, owned by Functions with EN/ES names, mirrored in the apps (e.g. `technology`, `finance`, `healthcare`, `education`, `government`, `legal`, `real_estate_construction`, `manufacturing`, `energy`, `retail_ecommerce`, `hospitality_food`, `media_entertainment`, `marketing_advertising`, `consulting`, `transport_logistics`, `agriculture`, `nonprofit`, `arts_design`, `science_research`, `telecommunications`) | Push text can only name a server-known industry. |
-| Selection | single | Clear text ("both work in X") and a single motive. |
-| Required | optional in the CRJ and Edit | Older professional profiles stay valid; no new sign-up friction. |
-| Alerts preference | new toggle `notifyNearbyIndustry`, default on when absent | The user can turn it off without losing interests or affiliations. Alternative: reuse `notifyNearbyInterests`. |
-| Display | professional face: own profile and DiscoveryProfile, under occupation/company | Professional profile only. |
-
-**Discovery (Functions, additive and optional):**
-- `profile.industryId` on the professional face, for display.
-- `sharedIndustry: { id, name }` only when both professional faces hold the same id.
-
-**Validation:**
-- Firestore rules check the id pattern; the server checks the catalog.
-- The client calls `reevaluateProximityNotices` after saving Industry.
+**Requested from Functions to close the contract:**
+- Catalog entries: id, EN/ES label and synonyms, a suggested icon key (mapped to local icons), and how the apps receive the catalog (versioned).
+- Preference: what absent means, and whether it is written at sign-up.
+- Fallback when the receiver turned `notifyNearbyIndustry` off: next eligible motive, or no push.
+- Locale of `sharedIndustry.name`. iOS renders the label from its catalog by id and uses `name` as a fallback.
 
 **Not in scope:** match score and search filters.
 
-## 4. Alerts and push for Industry: draft contract
+## 4. Alerts and push for Industry (agreed draft; iOS implements once the catalog is closed)
 
-- **Motive:** `industry`. It has priority over contact, affiliation and interest; there are no combined values. `fromContacts` keeps its value.
+- **Motive:** `industry`. It has priority over contact, affiliation and interest, with no combined values. `fromContacts` keeps its value.
 - **Limits:** one push per receiver and encounter, one row per person.
 - **Payload keys unchanged:** `kind=contact_nearby`, `actorUid`, `actorName`, `fromContacts`, `motive`, `alertId`, with a server-built title and body. Public 2.0.9 and 2.0.10 only read `actorUid` and fall back on unknown motives, so the push is safe for them.
+- **Discovery (additive, optional):**
+  - `profile.industryId` on the professional face;
+  - `sharedIndustry: { id, name }` only when both are professional.
 - **Copy:**
-  - Server push EN: "{{name}} is nearby. You both work in {{industry}}."
-  - Proposed ES: "{{name}} está cerca y comparten la industria {{industry}}."
+  - Push EN: "{{name}} is nearby. You both work in {{industry}}."
+  - Push ES: "{{name}} está cerca y comparten la industria {{industry}}." Live pushes are EN only today.
   - Inbox EN: "{{name}} is nearby and you both work in {{industry}}."
   - Inbox ES: "{{name}} está cerca y comparten la industria {{industry}}."
-- **Activation:** Functions switch `PROXIMITY_INDUSTRY_ALERTS`, off by default. Turn it on only after iOS and Android 2.1.0 are public and confirm the new motive in the inbox.
-- **Analytics:** add `industry` to `alert_motive` (client) and to `alert_sent` (server).
-- **iOS implementation:** after Product approves the decisions in 3. The parser already ignores unknown keys and motives.
+- **Activation:** `PROXIMITY_INDUSTRY_ALERTS` is off by default. Turn it on only after iOS and Android 2.1.0 are public.
+- **Analytics:** `industry` is added to `alert_motive` (client) and `alert_sent` (server).
 
 ## 5. More › iPhone notifications (done)
 
@@ -135,28 +136,44 @@ Nothing exists today. "industry" is only an affiliation category (`types/profile
 - Android changes its 4 lines the same way.
 - Server push ES table: not used live (pushes are EN); Functions aligns it if Product wants.
 
-## Pending decisions and dependencies (joint list, iOS and Functions)
+## Status (joint list, iOS and Functions)
 
-| | Owner of the decision | Item |
+### Resolved decisions
+
+| Decision | Resolution |
+|---|---|
+| Industry scope | Professional profile only, single, optional, broad catalog with stable ids (Functions closes it), matching only professional ↔ professional, priority over the other motives, one push per receiver and encounter. |
+| Industry preference | Independent `notifyNearbyIndustry`. Its initial value goes into the contract. |
+| Industry and mode | Kept in Firestore and as the PostHog `industry` attribute when switching to Personal (`profile_type` segments it). An explicit clear removes the attribute. |
+| Industry selector | Modal with search, local icons, check mark, "Sin especificar". EN/ES labels and synonyms. No free text, no Logo.dev. |
+| PostHog production | Capture for normal users in the `production` profile (done in iOS). Server events and `alertId` for all users are part of the scope. |
+| Test users | The existing Beta list only (client Beta channel; server-only `POSTHOG_BETA_UIDS`). The admin custom claim is not approved. |
+| Per-mode profile saves | Separate defect, out of 2.1.0. No fix or migration without a later decision based on its impact. |
+
+### Technical dependencies (do not block the independent work)
+
+| | Who | Item |
 |---|---|---|
-| A | Product | Industry: catalog, single or multiple, required, which preference controls alerts, and whether `sharedIndustry` requires both people in the professional face. |
-| B | Product | What the PostHog `industry` property shows while the personal mode is active (keep the professional value or unset it). Firestore always keeps the professional value. |
-| C | Owner/Legal | The PostHog deletion block when a LinkedIn account is recreated with the same UID. Every other deleted account is already covered (active since 2026-11-07). |
-| D | Owner | App Privacy labels and the privacy policy for product analytics, including name. |
-| E | Owner | The EAS sensitive variable `EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN` in the `production` environment; the build fails without it. |
-| F | Owner → Functions | Server capture for every user, `alertId` for every user, `is_test_user` from the Beta list only. Agreed design; code starts when the Owner confirms in the Functions session (about half a day). |
-| G | Owner | Proposal, not approved: an admin test-user mark (claim `nearsyTestUser`). |
-| H | Owner | Separate defect: per-mode profile fields saved as literal dotted names. Needs authorization to read test documents before any decision. |
-| I | Functions, iOS, Android | After A: the Industry contract, catalog, rules (id pattern, `notifyNearbyIndustry` bool), Discovery projection, and `PROXIMITY_INDUSTRY_ALERTS` off until both 2.1.0 apps are public. |
-| J | Owner | Activation order: server capture only after the production apps capture (2.1.0 public) and after D. |
-| K | Owner | PostHog event volume and cost in the project with capture for everyone (`alert_sent` is one event per accepted push). |
+| T1 | Functions | Server capture for every user, `alertId` for every user, `is_test_user` only from the Beta list (never `false`). Authorized by the Owner in the Functions session, **implemented** at `42d8c95` (`feature/posthog-server`, `POSTHOG_CAPTURE_MODE=all`). **Not deployed, not active.** PostHog failures never change an alert; no client change needed (`alertId` stays optional). Activation follows P4. |
+| T2 | Functions | Close the Industry contract: catalog (ids, EN/ES labels, synonyms, icon keys, distribution), `notifyNearbyIndustry` initial value, fallback when it is off, rules, Discovery projection, motive and copy. |
+| T3 | iOS | After T2: the selector in the CRJ and Edit (professional), the display on the professional profile, the More toggle, parsing `sharedIndustry` / `profile.industryId`, the inbox row with priority, `alert_motive: industry`, and `reevaluateProximityNotices` after saving. |
+| T4 | Android | The same contracts on its own branch, when its Owner opens 2.1.0. |
+| T5 | Functions | Keep `PROXIMITY_INDUSTRY_ALERTS` off until both 2.1.0 apps are public. |
 
-- **Separate defect, not in 2.1.0:** per-mode profile fields are saved as literal dotted names. See [defect-profile-mode-dotted-keys.md](defect-profile-mode-dotted-keys.md). No code change, migration or document repair until the Owner authorizes checking real data.
-- **Functions review of the Industry proposal:** compatible.
-  - Rules: id pattern `^[a-z][a-z0-9_]{1,40}$` or null.
-  - A new `notifyNearbyIndustry` needs its own `is bool` rule.
-  - `sharedIndustry` only when both people are in the professional face.
-  - Live pushes are EN only.
+### Pending before publication or before opening capture
+
+| | Who | Item |
+|---|---|---|
+| P1 | Owner | App Privacy labels and the privacy policy for product analytics, including name and Industry. |
+| P2 | Owner | The EAS sensitive variable `EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN` in the `production` environment (the build fails without it). |
+| P3 | Owner/Legal | The PostHog deletion block when a LinkedIn account is recreated with the same UID. Every other deleted account is already covered (active since 2026-11-07). |
+| P4 | Owner | Activation order: server capture (T1) only after the 2.1.0 apps capture in public and P1 is settled. |
+| P5 | Owner | PostHog event volume and cost with capture for everyone. |
+| P6 | Owner | Authorize the 2.1.0 candidate build, numbering and submission. |
+
+P1–P3 do not block the independent work, but must be resolved before capture is opened.
+
+**Separate defect, not in 2.1.0:** see [defect-profile-mode-dotted-keys.md](defect-profile-mode-dotted-keys.md).
 
 ## Physical validation (when a candidate is authorized)
 

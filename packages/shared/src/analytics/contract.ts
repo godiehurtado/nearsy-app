@@ -1,7 +1,7 @@
 /**
  * Nearsy analytics contract: the only events and properties that may leave the
  * app. Anything absent here is dropped by the client and by the PostHog
- * `before_send` guard. Excluded on purpose: gender, seniority, industry,
+ * `before_send` guard. Excluded on purpose: gender, seniority,
  * monetization events and `event_cohort` (assigned by the server).
  *
  * Pure module: no React Native or Expo imports.
@@ -34,6 +34,9 @@ export const PROFILE_TEXT_ITEM_MAX_LENGTH = 80;
 export const PROFILE_ID_ITEM_MAX_LENGTH = 120;
 export const OCCUPATION_MAX_LENGTH = 120;
 export const PERSON_NAME_MAX_LENGTH = 80;
+/** Agreed Industry id pattern (Functions contract): ^[a-z][a-z0-9_]{1,40}$. */
+export const INDUSTRY_ID_PATTERN = /^[a-z][a-z0-9_]{1,40}$/;
+export const INDUSTRY_ID_MAX_LENGTH = 41;
 
 export const SIGNUP_METHODS = [
   'email',
@@ -217,6 +220,12 @@ export const PERSON_PROPERTY_RULES = {
   /** Account name parts (top-level realName / lastName); $unset when removed. */
   first_name: { kind: 'text', maxLength: PERSON_NAME_MAX_LENGTH },
   last_name: { kind: 'text', maxLength: PERSON_NAME_MAX_LENGTH },
+  /**
+   * Professional Industry catalog id (users/{uid}.professionalIndustryId).
+   * Kept while the personal mode is active (profile_type segments it);
+   * $unset only when the selection is cleared.
+   */
+  industry: { kind: 'id', maxLength: INDUSTRY_ID_MAX_LENGTH },
   country_birth: { kind: 'country' },
   country_live: { kind: 'country' },
   languages: { kind: 'list', item: 'id', maxItems: 50, maxItemLength: 16 },
@@ -253,7 +262,6 @@ export type PersonPropertyName = keyof typeof PERSON_PROPERTY_RULES;
 export const FORBIDDEN_PROPERTY_NAMES: ReadonlySet<string> = new Set([
   'gender',
   'seniority',
-  'industry',
   'event_cohort',
   'birthDate',
   'birth_date',

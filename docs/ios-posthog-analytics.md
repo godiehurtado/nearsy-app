@@ -204,7 +204,13 @@ Every event also carries `platform` (`iOS`), `app_version`, `app_build`, `enviro
 
 `signup_method`, `open_type`, `link_type`, `open_result`, `alert_motive`, `acquisition_attributed`, `campaign_accessed` and `visibility_changed` are additions to the Tracking Plan document. `social_platform` replaces the plan's `platform` on social events.
 
-**Not sent:** `gender`, `seniority`, `industry`, monetization events. `alert_sent` (accepted by Expo, not delivered) and `event_cohort` (server, by presence at venue and time window) belong to Functions.
+**2.1.0 person properties:**
+- `first_name` / `last_name`: top-level `realName` / `lastName`; `$unset` when removed.
+- `industry`: the `professionalIndustryId` catalog id. It is kept while the personal mode is active (`profile_type` segments it), and `$unset` when the selection is cleared.
+
+All three are person-only, never on events.
+
+**Not sent:** `gender`, `seniority`, monetization events. `alert_sent` (accepted by Expo, not delivered) and `event_cohort` (server, by presence at venue and time window) belong to Functions.
 
 ## Person properties
 

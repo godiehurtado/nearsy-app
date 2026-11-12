@@ -364,12 +364,17 @@ describe('allowlist', () => {
     ]) {
       assert.equal(ANALYTICS_EVENT_NAMES.includes(excluded as never), false);
     }
-    for (const name of ['gender', 'seniority', 'industry', 'event_cohort']) {
+    for (const name of ['gender', 'seniority', 'event_cohort']) {
       assert.equal(name in PERSON_PROPERTY_RULES, false);
       assert.equal(FORBIDDEN_PROPERTY_NAMES.has(name), true);
       for (const rules of Object.values(EVENT_RULES)) {
         assert.equal(name in rules, false);
       }
+    }
+    // 2.1.0: industry is a person property only (professional catalog id).
+    assert.equal('industry' in PERSON_PROPERTY_RULES, true);
+    for (const rules of Object.values(EVENT_RULES)) {
+      assert.equal('industry' in rules, false);
     }
   });
 
