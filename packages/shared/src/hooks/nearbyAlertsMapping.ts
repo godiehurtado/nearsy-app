@@ -5,7 +5,10 @@
  */
 import type { AlertSeenRecord } from '../alerts/alertAppearance.ts';
 import { isAlertUnseen } from '../alerts/alertAppearance.ts';
-import type { DiscoverNearbyResult } from '../visibility/callables/wireTypes.ts';
+import type {
+  DiscoverNearbyResult,
+  DiscoveryIndustryRef,
+} from '../visibility/callables/wireTypes.ts';
 
 export type AlertKind = 'interest_nearby';
 
@@ -22,6 +25,8 @@ export type AlertItem = {
   sharedAffiliationCount?: number;
   /** Names Functions sent for that match (display only, already validated). */
   sharedAffiliationNames?: string[];
+  /** Same industry, both professional (Functions); beats every other motive. */
+  sharedIndustry?: DiscoveryIndustryRef;
   at: number;
   appearanceKey?: string;
   unseen?: boolean;
@@ -93,7 +98,8 @@ export function mapDiscoverResultsToInterestAlerts(
     const count = r.sharedAffiliationCount;
     const sharesAffiliation =
       typeof count === 'number' && Number.isSafeInteger(count) && count > 0;
-    if (shared.length === 0 && !sharesAffiliation) continue;
+    const sharedIndustry = r.sharedIndustry;
+    if (shared.length === 0 && !sharesAffiliation && !sharedIndustry) continue;
     seen.add(r.uid);
     out.push({
       id: r.uid,
@@ -112,6 +118,7 @@ export function mapDiscoverResultsToInterestAlerts(
               : {}),
           }
         : {}),
+      ...(sharedIndustry ? { sharedIndustry } : {}),
       at,
       ...(r.appearanceKey ? { appearanceKey: r.appearanceKey } : {}),
     });

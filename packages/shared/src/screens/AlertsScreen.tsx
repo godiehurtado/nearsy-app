@@ -46,7 +46,7 @@ export default function AlertsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const insets = useSafeAreaInsets();
   const { palette } = useAppTheme();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const translateItem = useCallback(
     (nameKey: string, fallback: string) =>
@@ -73,8 +73,8 @@ export default function AlertsScreen() {
   const hasError = !inactive && errorKind != null;
 
   const rowMessage = useCallback(
-    (item: AlertItem) => buildAlertRowMessage(item, t, translateItem),
-    [t, translateItem],
+    (item: AlertItem) => buildAlertRowMessage(item, t, translateItem, i18n.language),
+    [t, translateItem, i18n.language],
   );
 
   const listBottomPad = useMemo(

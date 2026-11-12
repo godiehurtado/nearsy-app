@@ -8,6 +8,7 @@ export default {
   distanceAwayM: '{{value}} m away',
   occupation: 'Occupation',
   company: 'Company',
+  industry: 'Industry',
   biography: 'Biography',
   interests: 'Interests',
   viewInterests: 'View interests',

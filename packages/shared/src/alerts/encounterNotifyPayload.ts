@@ -13,6 +13,8 @@ export type EncounterNotifyMotive =
   | 'both'
   | 'affiliation'
   | 'contact_affiliation'
+  /** Industry contract §3: same industry, both professional; beats every other motive. */
+  | 'industry'
   | 'unknown';
 
 export type EncounterNotifyPayload = {
@@ -29,6 +31,7 @@ const MOTIVES: readonly EncounterNotifyMotive[] = [
   'both',
   'affiliation',
   'contact_affiliation',
+  'industry',
 ];
 
 /** Motives that include the contacts signal. */

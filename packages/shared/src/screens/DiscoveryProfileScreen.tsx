@@ -65,6 +65,7 @@ import {
   discoveryProfileLoadMode,
 } from '../visibility/discoveryProfileReloadCore';
 import { blockCandidateUser } from '../visibility/blockCandidate';
+import { industryLabel, industryLang } from '../industries/industryCatalog.ts';
 import {
   shouldShowBio,
   shouldShowCompany,
@@ -366,6 +367,11 @@ export default function DiscoveryProfileScreen() {
   const mode = profile.mode as ProfileMode;
   const showOccupation = shouldShowOccupation(profile.occupation);
   const showCompany = shouldShowCompany(mode, profile.company);
+  // Professional only; label from the bundle by id, else the English name sent.
+  const industryText =
+    mode === 'professional' && profile.industry
+      ? industryLabel(profile.industry.id, industryLang(i18n.language), profile.industry.name)
+      : null;
   const showBio = shouldShowBio(profile.bio);
   const heroUri =
     !heroFailed && profile.profileImage ? profile.profileImage : null;
@@ -442,7 +448,7 @@ export default function DiscoveryProfileScreen() {
           />
 
           {/* 5. Profile information (Occupation / Company / Biography) */}
-          {showOccupation || showCompany || showBio ? (
+          {showOccupation || showCompany || industryText || showBio ? (
             <View
               style={[
                 styles.card,
@@ -500,6 +506,32 @@ export default function DiscoveryProfileScreen() {
                 </>
               ) : null}
 
+              {industryText ? (
+                <>
+                  <Text
+                    style={[
+                      styles.sectionLabel,
+                      {
+                        color: palette.textMuted,
+                        marginTop: showOccupation || showCompany ? spacing.lg : 0,
+                      },
+                    ]}
+                  >
+                    {t('discoveryProfile.industry')}
+                  </Text>
+                  <Text
+                    style={{
+                      color: palette.textPrimary,
+                      marginTop: 5,
+                      fontWeight: fontWeight.semibold,
+                      fontSize: fontSize.md,
+                    }}
+                  >
+                    {industryText}
+                  </Text>
+                </>
+              ) : null}
+
               {showBio ? (
                 <>
                   <Text
@@ -508,7 +540,7 @@ export default function DiscoveryProfileScreen() {
                       {
                         color: palette.textMuted,
                         marginTop:
-                          showOccupation || showCompany ? spacing.lg : 0,
+                          showOccupation || showCompany || industryText ? spacing.lg : 0,
                       },
                     ]}
                   >

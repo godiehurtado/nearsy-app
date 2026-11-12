@@ -25,6 +25,7 @@ import type {
   DiscoverNearbyResponse,
   DiscoverNearbyResult,
   DiscoveryGalleryItem,
+  DiscoveryIndustryRef,
   DiscoveryProfileDetail,
   DiscoveryProfileSummary,
   GetBlockedPeopleResponse,
@@ -172,13 +173,32 @@ function parseSummaryFields(
     );
   }
 
+  const industry = parseIndustryRef(value.industry);
   return {
     mode,
     displayName,
     profileImage,
     occupation: value.occupation,
     interestIds,
+    ...(industry ? { industry } : {}),
   };
+}
+
+const INDUSTRY_REF_ID = /^[a-z][a-z0-9_]{1,40}$/;
+const MAX_INDUSTRY_NAME_CHARS = 80;
+
+/**
+ * Industry contract §4: `{ id, name }`, name = English label. Additive and
+ * display-only: anything else is dropped, never an error.
+ */
+function parseIndustryRef(value: unknown): DiscoveryIndustryRef | undefined {
+  if (!isPlainObject(value)) return undefined;
+  const id = value.id;
+  const name = typeof value.name === 'string' ? value.name.trim() : '';
+  if (typeof id !== 'string' || !INDUSTRY_REF_ID.test(id)) return undefined;
+  const chars = Array.from(name).length;
+  if (chars < 1 || chars > MAX_INDUSTRY_NAME_CHARS || NAME_FORBIDDEN_CHARS.test(name)) return undefined;
+  return { id, name };
 }
 
 export function parseDiscoveryProfileSummary(
@@ -353,6 +373,7 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
     sharedAffiliationCount !== undefined && sharedAffiliationCount > 0
       ? parseSharedAffiliationNames(value.sharedAffiliationNames)
       : undefined;
+  const sharedIndustry = parseIndustryRef(value.sharedIndustry);
   return {
     uid: requireNonEmptyString(value.uid, 'result.uid'),
     distanceMeters: requireNonNegativeNumber(
@@ -364,6 +385,7 @@ function parseDiscoverNearbyResult(value: unknown): DiscoverNearbyResult {
     ...(appearanceKey ? { appearanceKey } : {}),
     ...(sharedAffiliationCount !== undefined ? { sharedAffiliationCount } : {}),
     ...(sharedAffiliationNames ? { sharedAffiliationNames } : {}),
+    ...(sharedIndustry ? { sharedIndustry } : {}),
   };
 }
 

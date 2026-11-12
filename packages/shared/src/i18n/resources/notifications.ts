@@ -24,6 +24,8 @@ export default {
     affiliationNearbyNamed: '{{name}} is near you and you share {{affiliation}}.',
     affiliationNearbyNamedMore:
       '{{name}} is near you and you share {{affiliation}} and {{count}} more.',
+    /** Industry contract §0 (EN), {{industry}} = shortLabel. */
+    industryNearby: '{{name}} is nearby. You both work in {{industry}}.',
   },
   time: {
     minutes: '{{count}}m',

@@ -3,6 +3,7 @@
  */
 import type { AlertItem } from '../hooks/nearbyAlertsMapping';
 import { resolveInterestChips } from '../visibility/interestDisplay';
+import { industryLang, industryShortLabel } from '../industries/industryCatalog.ts';
 
 export const NOTIFICATION_AVATAR_SIZE = 38;
 
@@ -38,8 +39,20 @@ export function buildAlertRowMessage(
   alert: AlertItem,
   t: Translate,
   translateItem: TranslateItem,
+  language?: string,
 ): string {
-  // An affiliation match takes priority, as in the push.
+  // Industry beats every other motive, as in the push (contract §3).
+  if (alert.sharedIndustry) {
+    const industry = industryShortLabel(
+      alert.sharedIndustry.id,
+      industryLang(language),
+      alert.sharedIndustry.name,
+    );
+    if (industry) {
+      return t('notifications.messages.industryNearby', { name: alert.name, industry });
+    }
+  }
+  // Then an affiliation match, as in the push.
   if (alert.sharesAffiliation) {
     const first = alert.sharedAffiliationNames?.[0];
     if (!first) {

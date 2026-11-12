@@ -95,7 +95,12 @@ export type DiscoveryProfileSummary = {
   profileImage: string | null;
   occupation: string;
   interestIds: string[];
+  /** Industry contract §4: listed in professional mode with a catalog id. Additive. */
+  industry?: DiscoveryIndustryRef;
 };
+
+/** `name` is the English label; apps render the label from their bundle by id. */
+export type DiscoveryIndustryRef = { id: string; name: string };
 
 /**
  * Profile Detail wire profile = Summary + company + bio + public context.
@@ -136,6 +141,11 @@ export type DiscoverNearbyResult = {
    * match is never derived from these names.
    */
   sharedAffiliationNames?: string[];
+  /**
+   * Same industry, both in professional mode (Functions, behind
+   * PROXIMITY_INDUSTRY_ALERTS). Additive; invalid is dropped.
+   */
+  sharedIndustry?: DiscoveryIndustryRef;
 };
 
 export type ActivateVisibilityResponse = {
