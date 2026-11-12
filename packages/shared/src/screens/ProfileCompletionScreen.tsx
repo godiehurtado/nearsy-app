@@ -27,6 +27,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import {
+  pickImageFromSystemLibrary,
+  type SystemImagePickOutcome,
+} from '../media/systemImagePicker.ts';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -690,30 +694,35 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   }, [hydrated, step.kind, applyNamePrefillFromPending]);
 
   async function pickFromLibrary() {
-    const perm = await withOwnExternalFlow(() => ImagePicker.requestMediaLibraryPermissionsAsync());
-    if (!perm.granted) return;
-    const result = await withOwnExternalFlow(() => ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85,
-    }));
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      setWizardPhoto(result.assets[0].uri);
+    try {
+      const picked = await pickImageFromSystemLibrary({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+      if (picked.kind === 'picked') {
+        setWizardPhoto(picked.uri);
+      }
+    } catch {
+      Alert.alert(t('common.error'), t('profile.errors.pickImage'));
     }
   }
 
   async function takePhoto() {
-    const perm = await withOwnExternalFlow(() => ImagePicker.requestCameraPermissionsAsync());
-    if (!perm.granted) return;
-    const result = await withOwnExternalFlow(() => ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85,
-    }));
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      setWizardPhoto(result.assets[0].uri);
+    try {
+      const perm = await withOwnExternalFlow(() => ImagePicker.requestCameraPermissionsAsync());
+      if (!perm.granted) return;
+      const result = await withOwnExternalFlow(() => ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      }));
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setWizardPhoto(result.assets[0].uri);
+      }
+    } catch {
+      Alert.alert(t('common.error'), t('profile.errors.openCamera'));
     }
   }
 
@@ -1070,19 +1079,20 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
 
   async function addGalleryPhoto() {
     if (!uid || !mode || galleryItems.length >= CRJ_GALLERY_UX_CAP) return;
-    const perm = await withOwnExternalFlow(() => ImagePicker.requestMediaLibraryPermissionsAsync());
-    if (!perm.granted) {
+    let picked: SystemImagePickOutcome;
+    try {
+      picked = await pickImageFromSystemLibrary({ allowsEditing: true, quality: 0.8 });
+    } catch {
+      Alert.alert(t('common.error'), t('profile.errors.pickImage'));
+      return;
+    }
+    if (picked.kind === 'denied') {
       setGalleryPermissionDenied(true);
       return;
     }
     setGalleryPermissionDenied(false);
-    const result = await withOwnExternalFlow(() => ImagePicker.launchImageLibraryAsync({
-      allowsEditing: true,
-      quality: 0.8,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-    }));
-    if (result.canceled || result.assets.length === 0) return;
-    const asset = result.assets[0]!;
+    if (picked.kind !== 'picked') return;
+    const asset = { uri: picked.uri };
     const localId = `local-${Date.now()}`;
     const pending: CrjGalleryItem = {
       id: localId,

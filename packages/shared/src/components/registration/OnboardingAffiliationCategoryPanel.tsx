@@ -1,4 +1,3 @@
-import { withOwnExternalFlow } from '../../analytics/ownExternalFlow.ts';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -9,8 +8,9 @@ import {
   TextInput,
   Keyboard,
   ScrollView,
+  Alert,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { pickImageFromSystemLibrary } from '../../media/systemImagePicker.ts';
 import Constants from 'expo-constants';
 import { useReducedMotion } from 'react-native-reanimated';
 import { useAppTheme } from '../../theme/ThemeContext.tsx';
@@ -314,17 +314,16 @@ export function OnboardingAffiliationCategoryPanel({
     pickingLogoRef.current = true;
     setPickingLogo(true);
     try {
-      const perm = await withOwnExternalFlow(() => ImagePicker.requestMediaLibraryPermissionsAsync());
-      if (!perm.granted) return;
-      const result = await withOwnExternalFlow(() => ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      const picked = await pickImageFromSystemLibrary({
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.85,
-      }));
-      if (!result.canceled && result.assets?.[0]?.uri) {
-        setDraftImage(result.assets[0].uri);
+      });
+      if (picked.kind === 'picked') {
+        setDraftImage(picked.uri);
       }
+    } catch {
+      Alert.alert(t('common.error'), t('profile.errors.pickImage'));
     } finally {
       pickingLogoRef.current = false;
       setPickingLogo(false);

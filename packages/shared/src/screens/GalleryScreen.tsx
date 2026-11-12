@@ -1,4 +1,3 @@
-import { withOwnExternalFlow } from '../analytics/ownExternalFlow.ts';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -11,7 +10,7 @@ import {
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
+import { pickImageFromSystemLibrary } from '../media/systemImagePicker.ts';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { firebaseAuth } from '../config/firebaseConfig';
@@ -171,27 +170,22 @@ export default function GalleryScreen() {
     let uploadedPath: string | null = null;
 
     try {
-      const perm = await withOwnExternalFlow(() => ImagePicker.requestMediaLibraryPermissionsAsync());
-      if (!perm.granted) {
+      const picked = await pickImageFromSystemLibrary({
+        allowsEditing: true,
+        quality: 0.8,
+      });
+      if (picked.kind === 'denied') {
         Alert.alert(
           t('profile.gallery.permissionTitle'),
           t('profile.gallery.permissionBody'),
         );
         return;
       }
+      if (picked.kind !== 'picked') return;
 
-      const result = await withOwnExternalFlow(() => ImagePicker.launchImageLibraryAsync({
-        allowsEditing: true,
-        quality: 0.8,
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      }));
+      setPendingPreviewUri(picked.uri);
 
-      if (result.canceled || result.assets.length === 0) return;
-
-      const asset = result.assets[0]!;
-      setPendingPreviewUri(asset.uri);
-
-      const uploaded = await uploadGalleryImage(editorUid, asset.uri, editorMode);
+      const uploaded = await uploadGalleryImage(editorUid, picked.uri, editorMode);
       uploadedPath = uploaded.path;
 
       const newPhoto: GalleryPhoto = {

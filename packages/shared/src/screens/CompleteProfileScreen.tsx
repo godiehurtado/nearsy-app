@@ -10,6 +10,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { firebaseAuth } from '../config/firebaseConfig';
 import * as ImagePicker from 'expo-image-picker';
+import { pickImageFromSystemLibrary } from '../media/systemImagePicker.ts';
 import {
   View,
   Text,
@@ -535,22 +536,20 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 
   const pickImage = async () => {
     try {
-      const perm = await withOwnExternalFlow(() => ImagePicker.requestMediaLibraryPermissionsAsync());
-      if (!perm.granted) {
+      const picked = await pickImageFromSystemLibrary({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (picked.kind === 'denied') {
         Alert.alert(
           t('profile.permission.required'),
           t('profile.photo.permissionPhotos'),
         );
         return;
       }
-      const result = await withOwnExternalFlow(() => ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      }));
-      if (!result.canceled && result.assets.length > 0) {
-        setProfileImage(result.assets[0].uri);
+      if (picked.kind === 'picked') {
+        setProfileImage(picked.uri);
       }
     } catch {
       Alert.alert(t('common.error'), t('profile.errors.pickImage'));

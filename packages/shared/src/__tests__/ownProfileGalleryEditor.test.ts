@@ -275,7 +275,7 @@ describe('post-CRJ Gallery editor screen contract', () => {
     const screen = readShared('screens/GalleryScreen.tsx');
     const mountBlock = screen.slice(0, screen.indexOf('const handleAddPhoto'));
     assert.doesNotMatch(mountBlock, /requestMediaLibraryPermissionsAsync/);
-    assert.match(screen, /requestMediaLibraryPermissionsAsync/);
+    assert.match(screen, /pickImageFromSystemLibrary/);
   });
 
   it('CompleteProfileScreen refreshes gallery summaries without full reload when dirty', () => {
