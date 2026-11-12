@@ -139,7 +139,18 @@ Nothing exists today. "industry" is only an affiliation category (`types/profile
   - production server capture and `ALERT_ID_SCOPE=all`;
   - an `is_test_user` source (proposed Auth custom claim `nearsyTestUser`, Admin-only, with a one-time backfill of Beta accounts; clients can read it, never write it);
   - Industry contract and catalog.
-- **To verify:** profile saves use `setDoc(merge)` with dotted keys (`profiles.professional.company`). In the web SDK, `setDoc` keeps dots literally, so these may be stored as literal top-level field names rather than nested ones. Functions should check one real `users/{uid}` document. Industry avoids the question by using a top-level field.
+- **Dotted profile keys (confirmed from code by Functions; not yet seen on a real document):**
+  - Profile saves use `setDoc(merge)` with keys like `profiles.professional.company`. `setDoc` does not expand field paths, so these are stored as literal top-level field names.
+  - Functions reads only the nested `profiles` map (filled with empty strings by the account shell) and falls back to the top-level copies. In practice it uses the top-level fields, which hold only the active face.
+  - `first_name`/`last_name` read those same top-level fields. Industry uses a top-level field and is not affected.
+  - The fix (`updateDoc`, or a nested object with set-merge) would start filling the nested maps, which Functions would then prefer. It needs its own change and a test pass, outside this scope.
+  - Reading one real test document requires Owner authorization; Functions would list field names only.
+- **Functions review of the Industry proposal:** compatible.
+  - Rules: id pattern `^[a-z][a-z0-9_]{1,40}$` or null.
+  - A new `notifyNearbyIndustry` needs its own `is bool` rule.
+  - `sharedIndustry` only when both people are in the professional face.
+  - Live pushes are EN only.
+  - Production server capture, the `nearsyTestUser` claim and `ALERT_ID_SCOPE=all` are behind Owner approval. Do not count on them for 2.1.0 until confirmed.
 
 ## Physical validation (when a candidate is authorized)
 
