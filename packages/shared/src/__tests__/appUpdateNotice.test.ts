@@ -14,7 +14,7 @@ import {
 } from '../appUpdateNotice/contract';
 import { createAppUpdateNoticeController } from '../appUpdateNotice/controller';
 import { decideAppUpdateNotice } from '../appUpdateNotice/decision';
-import { readInstalledNativeVersionFromConstants } from '../appUpdateNotice/nativeVersion';
+import { readInstalledNativeVersionFromApplication } from '../appUpdateNotice/nativeVersion';
 import {
   isSensitiveUpdateNoticeUrl,
   shouldConsultOnAppStateChange,
@@ -165,23 +165,15 @@ describe('app update notice version compare', () => {
     assert.equal(compareNumericAppVersions('2.0.9-rc', '2.0.8'), null);
   });
 
-  it('reads CFBundleShortVersionString and never the JS bundle version', () => {
+  it('reads CFBundleShortVersionString from expo-application, never the JS bundle version', () => {
     assert.equal(
-      readInstalledNativeVersionFromConstants({
-        nativeAppVersion: '2.0.9',
-        expoConfig: { version: '9.9.9' },
-      }),
+      readInstalledNativeVersionFromApplication({ nativeApplicationVersion: '2.0.9' }),
       '2.0.9',
     );
-    assert.equal(
-      readInstalledNativeVersionFromConstants({
-        expoConfig: { version: '2.0.10' },
-      }),
-      null,
-    );
+    assert.equal(readInstalledNativeVersionFromApplication({}), null);
     const native = readShared('appUpdateNotice/nativeVersion.ts');
-    assert.equal(native.includes('expoConfig.version'), false);
-    assert.match(native, /nativeAppVersion/);
+    assert.equal(native.includes('expoConfig'), false);
+    assert.match(native, /require\('expo-application'\)/);
   });
 });
 
@@ -572,7 +564,8 @@ describe('app update notice wiring', () => {
     assert.match(app, /AppUpdateNoticeHost/);
     const host = readShared('appUpdateNotice/AppUpdateNoticeHost.tsx');
     assert.match(host, /Platform\.OS !== 'ios'/);
-    assert.match(host, /readInstalledNativeVersionFromConstants\(Constants\)/);
+    assert.match(host, /readInstalledNativeVersion: \(\) => readInstalledNativeVersion\(\)/);
+    assert.equal(host.includes('expo-constants'), false);
     assert.match(host, /isOfficialIosStoreUrl\(storeUrl\)/);
     assert.equal(host.includes('expoConfig.version'), false);
     const foundation = readShared(

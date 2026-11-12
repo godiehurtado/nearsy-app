@@ -1,6 +1,5 @@
 import React, { useEffect, useRef } from 'react';
 import { Alert, AppState, Linking, Platform } from 'react-native';
-import Constants from 'expo-constants';
 
 import { getLinkedInA3OrchestratorBusy } from '../authentication/linkedinA3/orchestrator';
 import { useTranslation } from '../i18n';
@@ -8,7 +7,7 @@ import { isLocationPermissionJourneyActive } from '../visibility/locationPermiss
 import { createAsyncStorageSnoozeStore } from './asyncStorageSnooze';
 import { createAppUpdateNoticeController } from './controller';
 import { loadAppUpdateNoticeFromFunctions } from './iosAppUpdateNoticeFoundation';
-import { readInstalledNativeVersionFromConstants } from './nativeVersion';
+import { readInstalledNativeVersion } from './nativeVersion';
 import {
   isSensitiveUpdateNoticeUrl,
   shouldSuppressUpdateNoticeModal,
@@ -29,8 +28,8 @@ export function AppUpdateNoticeHost() {
     const controller = createAppUpdateNoticeController({
       nowMs: () => Date.now(),
       platform: 'ios',
-      readInstalledNativeVersion: () =>
-        readInstalledNativeVersionFromConstants(Constants),
+      // expo-application (CFBundleShortVersionString); see nativeVersion.ts.
+      readInstalledNativeVersion: () => readInstalledNativeVersion(),
       loadNotice: loadAppUpdateNoticeFromFunctions,
       snoozeStore,
       isSensitiveSession: () =>
