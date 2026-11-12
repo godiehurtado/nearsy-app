@@ -252,7 +252,7 @@ describe('eas.json', () => {
     assert.ok(!raw.includes('phc_'));
   });
 
-  it('production keeps its behaviour', () => {
+  it('production declares general capture (2.1.0), never Beta', () => {
     const eas = JSON.parse(readFileSync(join(appDir, 'eas.json'), 'utf8'));
     assert.deepEqual(eas.build.production, {
       autoIncrement: true,
@@ -260,7 +260,12 @@ describe('eas.json', () => {
       distribution: 'store',
       prebuildCommand: 'npx expo prebuild --platform android --clean',
       node: '22.23.4',
-      env: { NEARSY_FIREBASE_ENV: 'production', NEARSY_DEV_CLIENT: 'false' },
+      env: {
+        NEARSY_FIREBASE_ENV: 'production',
+        NEARSY_DEV_CLIENT: 'false',
+        NEARSY_ANALYTICS_ENABLED: 'true',
+        NEARSY_ANALYTICS_ENV: 'production',
+      },
       android: { buildType: 'app-bundle' },
     });
     assert.deepEqual(eas.submit.production, {
@@ -541,14 +546,9 @@ describe('LinkedIn account outcome', () => {
   });
 });
 
-describe('general capture, ready by configuration only', () => {
-  it('a later build with general capture sends production events, with no Beta marks', async () => {
-    const env = {
-      ...profileEnv('production'),
-      NEARSY_ANALYTICS_ENABLED: 'true',
-      NEARSY_ANALYTICS_ENV: 'production',
-      NEARSY_POSTHOG_TOKEN: FAKE_TOKEN,
-    };
+describe('production profile capture (2.1.0)', () => {
+  it('the production profile sends production events, with no Beta marks', async () => {
+    const env = { ...profileEnv('production'), NEARSY_POSTHOG_TOKEN: FAKE_TOKEN };
     const { binding, constructed, server, signIn } = await startBuild(extrasFor(env));
     assert.equal(constructed.length, 1);
     await signIn({ uid: REAL_UID });
@@ -569,8 +569,13 @@ describe('general capture, ready by configuration only', () => {
 describe('builds that must send nothing', () => {
   const cases: Array<[string, () => Record<string, string>]> = [
     ['no analytics variables', () => ({})],
-    ['production profile, even with the token available', () => ({
+    ['preview profile, even with the token available', () => ({
+      ...profileEnv('preview'),
+      NEARSY_POSTHOG_TOKEN: FAKE_TOKEN,
+    })],
+    ['production profile on a development Firebase', () => ({
       ...profileEnv('production'),
+      NEARSY_FIREBASE_ENV: 'development',
       NEARSY_POSTHOG_TOKEN: FAKE_TOKEN,
     })],
     ['beta and general capture together', () => ({
@@ -609,17 +614,47 @@ describe('builds that must send nothing', () => {
     assert.ok(warned.some((line) => String(line).includes('NEARSY_POSTHOG_TOKEN')));
   });
 
-  it('builds that do not declare Beta still work without the token', () => {
-    for (const env of [{}, profileEnv('production'), profileEnv('preview')]) {
+  it('builds that declare no capture still work without the token', () => {
+    for (const env of [{}, profileEnv('preview')]) {
       const extra = extrasFor(env);
       assert.equal((extra.nearsyAnalytics as { enabled: unknown }).enabled, false);
+    }
+  });
+
+  it('a production build without a valid token fails clearly on the EAS worker, without printing it', () => {
+    for (const token of [undefined, '', 'phx_personal_api_key_shape_000000', 'phc_short']) {
+      const env: Record<string, string> = { ...profileEnv('production'), EAS_BUILD: 'true' };
+      if (token !== undefined) env.NEARSY_POSTHOG_TOKEN = token;
+      assert.throws(
+        () => extrasFor(env),
+        (error: Error) =>
+          /Production build declared without a valid NEARSY_POSTHOG_TOKEN/.test(error.message) &&
+          (!token || !error.message.includes(token)),
+      );
+    }
+  });
+
+  it('a local production config read only warns, and the binary would stay off', async () => {
+    const original = console.warn;
+    console.warn = () => {};
+    try {
+      const extra = extrasFor(profileEnv('production'));
+      assert.equal((extra.nearsyAnalytics as { token?: unknown }).token, '');
+      const { binding, constructed, server, signIn } = await startBuild(extra);
+      await signIn({ uid: REAL_UID });
+      binding.trackSignupCompleted(REAL_UID);
+      await tick(30);
+      assert.deepEqual(constructed, []);
+      assert.deepEqual(server.requests, []);
+    } finally {
+      console.warn = original;
     }
   });
 
   for (const [name, env] of cases) {
     it(name, async () => {
       const extra = extrasFor(env());
-      if (name !== 'beta on a development Firebase') {
+      if (!/development Firebase/.test(name)) {
         assert.ok(!JSON.stringify(extra).includes('phc_'), 'no token in the app config');
       }
       const { binding, constructed, server, signIn } = await startBuild(extra);

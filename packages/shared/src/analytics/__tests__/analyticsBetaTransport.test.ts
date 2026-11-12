@@ -838,10 +838,17 @@ describe('person properties across modes', () => {
   });
 
   it('a document without a mode removes values only if this device wrote some', async () => {
+    // Account names are not mode values: a complete document without them clears them.
     const unset = (previousMode: string | null) =>
       personKeysToUnset({ doc: {}, properties: {}, previousMode });
-    assert.deepEqual(unset(null), []);
-    assert.deepEqual(unset('personal'), [...MODE_SCOPED_PERSON_PROPERTIES]);
+    assert.deepEqual(unset(null), ['first_name', 'last_name']);
+    assert.deepEqual(unset('personal'), ['first_name', 'last_name', ...MODE_SCOPED_PERSON_PROPERTIES]);
+    const named = personKeysToUnset({
+      doc: {},
+      properties: { first_name: 'Ana', last_name: 'Gómez' },
+      previousMode: null,
+    });
+    assert.deepEqual(named, []);
     assert.ok(!unset('personal').includes('email'));
     assert.ok(!unset('personal').includes('languages'));
     assert.ok(!unset('personal').includes('is_test_user'));

@@ -108,7 +108,7 @@ function resolveBetaMode(input: {
 export function resolveAnalyticsConfig(input: {
   extras: AnalyticsExtras | null | undefined;
   isDev: boolean;
-  /** Project of the initialized Firebase app; only beta mode uses it. */
+  /** Project of the initialized Firebase app; Beta and production capture require nearsy-pj. */
   runtimeFirebaseProjectId?: unknown;
 }): AnalyticsConfig {
   // Development builds never reach production PostHog data.
@@ -129,7 +129,10 @@ export function resolveAnalyticsConfig(input: {
   }
   if (
     input.extras?.nearsyFirebaseEnv !== 'production' ||
-    input.extras?.nearsyDevClient === true
+    input.extras?.nearsyDevClient === true ||
+    input.extras?.nearsyFirebaseProjectId !== PRODUCTION_FIREBASE_PROJECT_ID ||
+    // As in Beta: real users are counted only from the production Firebase app.
+    input.runtimeFirebaseProjectId !== PRODUCTION_FIREBASE_PROJECT_ID
   ) {
     return { mode: 'off', reason: 'firebase_environment_mismatch' };
   }

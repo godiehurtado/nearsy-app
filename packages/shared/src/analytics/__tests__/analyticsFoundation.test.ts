@@ -186,8 +186,10 @@ describe('remote activation', () => {
   const production = {
     nearsyFirebaseEnv: 'production',
     nearsyDevClient: false,
+    nearsyFirebaseProjectId: 'nearsy-pj',
     nearsyAnalytics: { enabled: true, environment: 'production', token: VALID_TOKEN },
   };
+  const RUNTIME = 'nearsy-pj';
 
   it('is off by default, including production', () => {
     assert.equal(resolveAnalyticsConfig({ extras: null, isDev: false }).mode, 'off');
@@ -210,9 +212,20 @@ describe('remote activation', () => {
       { ...production, nearsyAnalytics: { ...production.nearsyAnalytics, environment: '' } },
       { ...production, nearsyFirebaseEnv: 'development' },
       { ...production, nearsyDevClient: true },
+      { ...production, nearsyFirebaseProjectId: 'nearsy-dev' },
     ];
     for (const extras of cases) {
-      assert.equal(resolveAnalyticsConfig({ extras, isDev: false }).mode, 'off');
+      assert.equal(
+        resolveAnalyticsConfig({ extras, isDev: false, runtimeFirebaseProjectId: RUNTIME }).mode,
+        'off',
+      );
+    }
+    // The initialized Firebase app decides too: a stale extra cannot widen it.
+    for (const runtimeFirebaseProjectId of [undefined, 'nearsy-dev']) {
+      assert.deepEqual(
+        resolveAnalyticsConfig({ extras: production, isDev: false, runtimeFirebaseProjectId }),
+        { mode: 'off', reason: 'firebase_environment_mismatch' },
+      );
     }
   });
 
@@ -224,7 +237,11 @@ describe('remote activation', () => {
   });
 
   it('needs every condition and always uses the US host', () => {
-    const config = resolveAnalyticsConfig({ extras: production, isDev: false });
+    const config = resolveAnalyticsConfig({
+      extras: production,
+      isDev: false,
+      runtimeFirebaseProjectId: RUNTIME,
+    });
     assert.equal(config.mode, 'remote');
     assert.equal(config.mode === 'remote' && config.host, 'https://us.i.posthog.com');
   });

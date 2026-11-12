@@ -98,10 +98,12 @@ describe('2.0.10 release config', () => {
     assert.equal(eas.build.production.autoIncrement, true);
   });
 
-  it('production declares no Beta and no general capture', () => {
+  it('production declares no Beta (2.1.0 adds general capture)', () => {
     const eas = JSON.parse(readFileSync(path.join(appDir, 'eas.json'), 'utf8'));
     const env = eas.build.production.env as Record<string, string>;
-    for (const key of Object.keys(env)) assert.ok(!key.startsWith('NEARSY_ANALYTICS_'), key);
+    const analytics = Object.keys(env).filter((key) => key.startsWith('NEARSY_ANALYTICS_')).sort();
+    assert.deepEqual(analytics, ['NEARSY_ANALYTICS_ENABLED', 'NEARSY_ANALYTICS_ENV']);
+    assert.equal(env.NEARSY_ANALYTICS_ENABLED, 'true');
     assert.equal(env.NEARSY_FIREBASE_ENV, 'production');
   });
 });

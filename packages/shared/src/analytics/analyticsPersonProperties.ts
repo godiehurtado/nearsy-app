@@ -49,6 +49,22 @@ function readOccupation(
   return nonBlank(nested);
 }
 
+/** Agreed with iOS and Functions: person properties only, at most 80 characters. */
+export const PERSON_NAME_MAX = 80;
+/** Removed with $unset when the account field is blank; never written as null. */
+export const PERSON_NAME_KEYS = ['first_name', 'last_name'] as const;
+
+/**
+ * Account field as stored (top-level `realName` / `lastName`). A display name is
+ * never split to produce one. Cut by characters, not UTF-16 units.
+ */
+function readPersonName(value: unknown): string | undefined {
+  const name = nonBlank(value);
+  if (name === null) return undefined;
+  const chars = Array.from(name);
+  return chars.length > PERSON_NAME_MAX ? chars.slice(0, PERSON_NAME_MAX).join('').trim() : name;
+}
+
 const COUNTRY_CODE = /^[A-Za-z]{2}$/;
 
 function toCountryCode(value: unknown): string | null {
@@ -179,11 +195,16 @@ export function personKeysToUnset(input: {
   previousMode: string | null;
 }): string[] {
   const row = input.doc as { mode?: unknown } | null | undefined;
-  if (!isProfileMode(row?.mode)) {
-    return input.previousMode === null ? [] : [...MODE_SCOPED_PERSON_PROPERTIES];
-  }
   const absent = (key: string) => !(key in input.properties);
-  const unset = MODE_KEYS_FROM_DOCUMENT.filter(absent);
+  // Account names do not depend on the mode: the complete document has none.
+  const names = row && typeof row === 'object' ? PERSON_NAME_KEYS.filter(absent) : [];
+  if (!isProfileMode(row?.mode)) {
+    return [
+      ...names,
+      ...(input.previousMode === null ? [] : MODE_SCOPED_PERSON_PROPERTIES),
+    ];
+  }
+  const unset: string[] = [...names, ...MODE_KEYS_FROM_DOCUMENT.filter(absent)];
   const verifiedStale = absent(VERIFIED_KEY) && input.previousMode !== row?.mode;
   if (verifiedStale) unset.push(VERIFIED_KEY);
   if (verifiedStale || absent('social_platforms_manual')) {
@@ -239,6 +260,10 @@ export function buildPersonProperties(input: {
     docEmail: row.email,
     appVersion: input.appVersion,
   });
+  const firstName = readPersonName(row.realName);
+  if (firstName !== undefined) out.first_name = firstName;
+  const lastName = readPersonName(row.lastName);
+  if (lastName !== undefined) out.last_name = lastName;
   if (isProfileMode(row.mode)) {
     out.profile_type = row.mode;
     const occupation = readOccupation(row, row.mode);
