@@ -18,7 +18,7 @@ import {
 } from './contract.ts';
 import {
   ANDROID_APP_UPDATE_POLICY_REQUEST,
-  parseStoreVersion,
+  storeVersionFromApplication,
 } from './parsePolicy.ts';
 
 async function ensureAppCheckReady(): Promise<void> {
@@ -42,15 +42,11 @@ export async function fetchAppUpdatePolicy(_request?: {
   return result.data;
 }
 
+/** versionName of the installed binary, the same source as More > About. */
 export function readNativeStoreVersion(): string | null {
   try {
-    const Constants =
-      require('expo-constants').default ?? require('expo-constants');
-    const raw =
-      typeof Constants?.nativeAppVersion === 'string'
-        ? Constants.nativeAppVersion
-        : '';
-    return parseStoreVersion(raw);
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return storeVersionFromApplication(require('expo-application'));
   } catch {
     return null;
   }

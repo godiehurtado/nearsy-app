@@ -20,7 +20,9 @@ describe('209 optional Play update notice wiring', () => {
     assert.match(android, /APP_UPDATE_CALLABLE_NAME/);
     assert.match(android, /getAppUpdatePolicy/);
     assert.match(android, /us-central1/);
-    assert.match(android, /nativeAppVersion/);
+    // 2.1.0: installed version from expo-application (nativeAppVersion is gone).
+    assert.match(android, /require\('expo-application'\)/);
+    assert.doesNotMatch(android, /nativeAppVersion/);
     assert.match(android, /ensureAppCheckInitialized/);
     assert.doesNotMatch(android, /getIdentityFunctions/);
     assert.doesNotMatch(android, /currentUser/);

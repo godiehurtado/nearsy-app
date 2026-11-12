@@ -13,6 +13,17 @@ export function parseStoreVersion(raw: string | undefined | null): string | null
   return trimmed;
 }
 
+/**
+ * Installed store version (Android versionName) from expo-application.
+ * expo-constants 18 no longer exposes `nativeAppVersion`; reading it there
+ * returned nothing, so the notice was never shown.
+ */
+export function storeVersionFromApplication(
+  application: { nativeApplicationVersion?: string | null } | null | undefined,
+): string | null {
+  return parseStoreVersion(application?.nativeApplicationVersion);
+}
+
 /** Exact Android callable JSON. Extra keys are `invalid-argument` on the server. */
 export const ANDROID_APP_UPDATE_POLICY_REQUEST: AppUpdatePolicyRequest = {
   platform: 'android',
