@@ -41,14 +41,16 @@ Everything validated in 2.0.10 (80) is kept: Contacts at 5000, affiliations, aff
 - It is not limited to Beta. Every Auth deletion schedules PostHog person and events deletion (`POSTHOG_PERSON_DELETION_ENABLED=true` in nearsy-pj since 2026-11-07).
 - Open: if an account with the same UID exists again (LinkedIn, deterministic UID), nothing is deleted and the case stays open. Legal/Owner must accept or resolve this before opening capture to everyone.
 
-**Server events and correlation (Functions, pending code):**
-- `alert_sent` and `event_cohort_joined` are captured only for `POSTHOG_BETA_UIDS`.
-- `data.alertId` is sent only to Beta UIDs (`POSTHOG_ALERT_ID_SCOPE=beta`).
-- For production consistency, Functions needs:
-  - a capture mode for all users;
-  - a real `is_test_user` source (today `toSinkMessage` hard-codes `true`);
-  - `POSTHOG_ALERT_ID_SCOPE=all`.
-- Until then `alert_opened` from normal users carries no `alert_id`.
+**Server events and correlation (in scope; Functions implementation pending the Owner's direct go-ahead in that session):**
+- **Today:** `alert_sent` and `event_cohort_joined` are captured only for `POSTHOG_BETA_UIDS`, and `data.alertId` goes only to Beta UIDs.
+- **Agreed design:**
+  - `POSTHOG_CAPTURE_MODE=all` captures for every user, with `distinct_id` = Firebase uid, and sends `alertId` to every receiver (`POSTHOG_ALERT_ID_SCOPE` becomes redundant).
+  - `is_test_user` is `true` only for uids in the server-only Beta list, otherwise omitted (never `false`). On the person it stays `$set_once`.
+- **Unchanged:** deletion (person and events by `distinct_id`) and per-account isolation.
+- **Client:** no change needed. `alert_opened` already reads `alertId` from the push; inbox taps carry none.
+- **Effort and activation:** about half a day of Functions code, tests and docs. Activation is env-only plus an Owner deploy of the proximity and event-cohort functions.
+- **Until then:** `alert_opened` from normal users carries no `alert_id`.
+- **The admin test-user mark** (Auth claim `nearsyTestUser`) is an extra proposal, not an approved contract.
 
 **App Store:**
 - App Privacy labels and the privacy policy must cover product analytics, now including name (Contact Info › Name, linked to the user, Analytics purpose).
@@ -68,7 +70,9 @@ Everything validated in 2.0.10 (80) is kept: Contacts at 5000, affiliations, aff
 - Capped at 80 characters.
 - Implemented in iOS for the two names; synced on login, every app open, name saves and mode changes.
 
-**Open:** Android proposes `industry` mode-scoped (unset when switching to personal). iOS proposes keeping it while the professional profile has it. Product asked that switching to personal must not erase the professional data. Product decides.
+**Two separate questions:**
+- **Firestore data:** switching to personal must not erase the professional Industry. The storage proposal guarantees it, since personal saves never touch `professionalIndustryId`.
+- **PostHog attribute:** what the `industry` person property shows while the personal mode is active is a separate, open Product decision. Android proposes unsetting it, like `occupation`; iOS proposes keeping the professional value. Nothing is implemented until Product decides.
 
 ## 3. Industry in the professional profile: proposal for Product
 
@@ -131,26 +135,28 @@ Nothing exists today. "industry" is only an affiliation category (`types/profile
 - Android changes its 4 lines the same way.
 - Server push ES table: not used live (pushes are EN); Functions aligns it if Product wants.
 
-## Pending
+## Pending decisions and dependencies (joint list, iOS and Functions)
 
-- **Product:** Industry decisions (3), `industry` mode scoping (2), ES push copy.
-- **Owner/Legal:** LinkedIn same-UID deletion case; privacy labels and policy; EAS production token.
-- **Functions:**
-  - production server capture and `ALERT_ID_SCOPE=all`;
-  - an `is_test_user` source (proposed Auth custom claim `nearsyTestUser`, Admin-only, with a one-time backfill of Beta accounts; clients can read it, never write it);
-  - Industry contract and catalog.
-- **Dotted profile keys (confirmed from code by Functions; not yet seen on a real document):**
-  - Profile saves use `setDoc(merge)` with keys like `profiles.professional.company`. `setDoc` does not expand field paths, so these are stored as literal top-level field names.
-  - Functions reads only the nested `profiles` map (filled with empty strings by the account shell) and falls back to the top-level copies. In practice it uses the top-level fields, which hold only the active face.
-  - `first_name`/`last_name` read those same top-level fields. Industry uses a top-level field and is not affected.
-  - The fix (`updateDoc`, or a nested object with set-merge) would start filling the nested maps, which Functions would then prefer. It needs its own change and a test pass, outside this scope.
-  - Reading one real test document requires Owner authorization; Functions would list field names only.
+| | Owner of the decision | Item |
+|---|---|---|
+| A | Product | Industry: catalog, single or multiple, required, which preference controls alerts, and whether `sharedIndustry` requires both people in the professional face. |
+| B | Product | What the PostHog `industry` property shows while the personal mode is active (keep the professional value or unset it). Firestore always keeps the professional value. |
+| C | Owner/Legal | The PostHog deletion block when a LinkedIn account is recreated with the same UID. Every other deleted account is already covered (active since 2026-11-07). |
+| D | Owner | App Privacy labels and the privacy policy for product analytics, including name. |
+| E | Owner | The EAS sensitive variable `EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN` in the `production` environment; the build fails without it. |
+| F | Owner → Functions | Server capture for every user, `alertId` for every user, `is_test_user` from the Beta list only. Agreed design; code starts when the Owner confirms in the Functions session (about half a day). |
+| G | Owner | Proposal, not approved: an admin test-user mark (claim `nearsyTestUser`). |
+| H | Owner | Separate defect: per-mode profile fields saved as literal dotted names. Needs authorization to read test documents before any decision. |
+| I | Functions, iOS, Android | After A: the Industry contract, catalog, rules (id pattern, `notifyNearbyIndustry` bool), Discovery projection, and `PROXIMITY_INDUSTRY_ALERTS` off until both 2.1.0 apps are public. |
+| J | Owner | Activation order: server capture only after the production apps capture (2.1.0 public) and after D. |
+| K | Owner | PostHog event volume and cost in the project with capture for everyone (`alert_sent` is one event per accepted push). |
+
+- **Separate defect, not in 2.1.0:** per-mode profile fields are saved as literal dotted names. See [defect-profile-mode-dotted-keys.md](defect-profile-mode-dotted-keys.md). No code change, migration or document repair until the Owner authorizes checking real data.
 - **Functions review of the Industry proposal:** compatible.
   - Rules: id pattern `^[a-z][a-z0-9_]{1,40}$` or null.
   - A new `notifyNearbyIndustry` needs its own `is bool` rule.
   - `sharedIndustry` only when both people are in the professional face.
   - Live pushes are EN only.
-  - Production server capture, the `nearsyTestUser` claim and `ALERT_ID_SCOPE=all` are behind Owner approval. Do not count on them for 2.1.0 until confirmed.
 
 ## Physical validation (when a candidate is authorized)
 
