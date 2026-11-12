@@ -98,6 +98,7 @@ import { birthDigitsFromParts } from '../settings/settingsPhoneCountries';
 import { resolveSettingsPhoneDisplay } from '../settings/settingsPhoneDisplay';
 import { openGeoNamesAttribution } from '../settings/geonamesAttribution';
 import { readBinaryVersion } from '../settings/binaryVersion';
+import { useNotificationPermissionRow } from '../settings/useNotificationPermissionRow';
 import {
   fontSize,
   fontWeight,
@@ -277,6 +278,8 @@ export default function MoreScreen() {
   const [bgVisible, setBgVisible] = useState(false);
   const [visibilityOn, setVisibilityOn] = useState(false);
   const [notifyNearbyInterests, setNotifyNearbyInterests] = useState(true);
+  // iOS permission only; the notice-type toggles below stay separate.
+  const notificationPermission = useNotificationPermissionRow(Platform.OS === 'ios');
   const [contactsSyncEnabled, setContactsSyncEnabled] = useState(false);
   const [notifyNearbyContacts, setNotifyNearbyContacts] = useState(false);
   const [contactsBusy, setContactsBusy] = useState(false);
@@ -1305,6 +1308,26 @@ export default function MoreScreen() {
         </SettingsSection>
 
         <SettingsSection title={t('settings.sections.privacy')}>
+          {Platform.OS === 'ios' && notificationPermission.row ? (
+            <SettingsRow
+              icon="notifications-circle-outline"
+              title={t('settings.notificationPermission.title')}
+              value={t(notificationPermission.row.valueKey)}
+              note={t(notificationPermission.row.noteKey)}
+              onPress={
+                notificationPermission.row.action === 'none' || notificationPermission.busy
+                  ? undefined
+                  : () => void notificationPermission.onPress()
+              }
+              accessibilityHint={
+                notificationPermission.row.action === 'request'
+                  ? t('settings.notificationPermission.requestHint')
+                  : notificationPermission.row.action === 'openSettings'
+                    ? t('settings.notificationPermission.openSettingsHint')
+                    : undefined
+              }
+            />
+          ) : null}
           <SettingsToggleRow
             icon="notifications-outline"
             title={t('settings.nearbyNotices.title')}

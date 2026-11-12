@@ -41,6 +41,29 @@ export default {
     description:
       'Get notified when someone nearby shares an official interest or affiliation with you.',
   },
+  notificationPermission: {
+    title: 'iPhone notifications',
+    values: {
+      notDetermined: 'Not requested',
+      authorized: 'Allowed',
+      provisional: 'Delivered quietly',
+      denied: 'Off',
+      unknown: 'Unavailable',
+    },
+    notes: {
+      notDetermined:
+        'Tap to let Nearsy send you notifications. Choose notice types below.',
+      authorized:
+        'Nearsy can send you notifications. You can change this in Settings. Choose notice types below.',
+      provisional:
+        'Notifications arrive silently in Notification Center. To get alerts, turn them on in Settings.',
+      denied:
+        'Notifications from Nearsy are off. Tap to open Settings and turn them on.',
+      unknown: "Couldn't check the permission. Try again later.",
+    },
+    openSettingsHint: 'Opens Settings',
+    requestHint: 'Asks for permission to send notifications',
+  },
   contacts: {
     title: 'Contacts nearby',
     description:

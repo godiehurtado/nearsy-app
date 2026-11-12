@@ -14,9 +14,15 @@ const BUILDER = { EAS_BUILD: 'true' };
 describe('analytics build guard', () => {
   it('profiles that declare nothing build without a token', () => {
     assert.deepEqual(assertAnalyticsBuildConfig({}), { declared: false });
-    for (const name of ['development', 'preview', 'production']) {
+    for (const name of ['development', 'preview']) {
       assert.deepEqual(assertAnalyticsBuildConfig({ ...eas.build[name].env }), { declared: false }, name);
     }
+    // EAS merges env over the extended profile: the diagnostics build switches capture off.
+    const diagnostics = { ...eas.build.production.env, ...eas.build['testflight-contacts-diagnostics'].env };
+    assert.deepEqual(
+      assertAnalyticsBuildConfig({ ...BUILDER, ...diagnostics, EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN: FAKE }),
+      { declared: false },
+    );
   });
 
   it('on the EAS builder, the beta profile without a token fails with a clear message', () => {
@@ -68,25 +74,28 @@ describe('analytics build guard', () => {
     }
   });
 
-  it('the public production profile keeps PostHog in the binary with capture off', () => {
+  it('2.1.0: the public production profile captures, and cannot build without the token', () => {
     const env = eas.build.production.env;
-    for (const key of Object.keys(env)) {
-      assert.equal(key.startsWith('EXPO_PUBLIC_POSTHOG_'), false, key);
-    }
-    // Even with the EAS token injected, no channel means nothing is declared.
+    assert.equal(env.EXPO_PUBLIC_POSTHOG_ENABLED, 'true');
+    assert.equal(env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL, 'production');
+    assert.equal(env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV, 'production');
+    assert.throws(
+      () => assertAnalyticsBuildConfig({ ...BUILDER, ...env }),
+      /declares analytics \(channel "production"\) but EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN is missing/,
+    );
     assert.deepEqual(
       assertAnalyticsBuildConfig({ ...BUILDER, ...env, EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN: FAKE }),
-      { declared: false },
+      { declared: true, channel: 'production', tokenChecked: true },
     );
-    assert.equal(env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV, 'production');
   });
 
-  it('only the beta profile, separate from production, marks test users', () => {
+  it('only the beta profile marks test users; production is the normal-user channel', () => {
     assert.equal(eas.build.beta.extends, 'production');
     assert.equal(eas.build.beta.env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL, 'beta');
     for (const [name, profile] of Object.entries(eas.build)) {
       if (name === 'beta') continue;
-      assert.equal('EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL' in (profile.env ?? {}), false, name);
+      const channel = (profile.env ?? {}).EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL;
+      assert.ok(channel === undefined || channel === '' || (name === 'production' && channel === 'production'), name);
     }
   });
 

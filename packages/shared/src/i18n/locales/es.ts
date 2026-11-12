@@ -1659,11 +1659,11 @@ const es: TranslationResources = {
     },
     messages: {
       interestNearby:
-        '{{name}} está cerca y compartís intereses{{interests}}.',
+        '{{name}} está cerca y comparten intereses{{interests}}.',
       interestsSuffix: ' ({{interests}})',
       nearbyOnly: '{{name}} está cerca.',
-      affiliationNearby: '{{name}} está cerca y comparte afiliaciones contigo.',
-      affiliationNearbyOne: '{{name}} está cerca y comparte una afiliación contigo.',
+      affiliationNearby: '{{name}} está cerca y comparten afiliaciones.',
+      affiliationNearbyOne: '{{name}} está cerca y comparten una afiliación.',
       affiliationMore: 'y {{count}} más',
     },
     time: {
@@ -1735,6 +1735,29 @@ const es: TranslationResources = {
       title: 'Intereses y afiliaciones compartidos',
       description:
         'Recibe un aviso cuando alguien cerca comparte contigo un interés o una afiliación oficial.',
+    },
+    notificationPermission: {
+      title: 'Notificaciones del iPhone',
+      values: {
+        notDetermined: 'Sin solicitar',
+        authorized: 'Permitidas',
+        provisional: 'Entrega silenciosa',
+        denied: 'Desactivadas',
+        unknown: 'No disponible',
+      },
+      notes: {
+        notDetermined:
+          'Toca para permitir que Nearsy te envíe notificaciones. Los tipos de aviso se eligen abajo.',
+        authorized:
+          'Nearsy puede enviarte notificaciones. Puedes cambiarlo en Ajustes. Los tipos de aviso se eligen abajo.',
+        provisional:
+          'Las notificaciones llegan sin sonido al Centro de notificaciones. Para recibir alertas, actívalas en Ajustes.',
+        denied:
+          'Las notificaciones de Nearsy están desactivadas. Toca para abrir Ajustes y activarlas.',
+        unknown: 'No se pudo consultar el permiso. Vuelve a intentarlo más tarde.',
+      },
+      openSettingsHint: 'Abre Ajustes',
+      requestHint: 'Solicita permiso para enviar notificaciones',
     },
     contacts: {
       title: 'Contactos cercanos',

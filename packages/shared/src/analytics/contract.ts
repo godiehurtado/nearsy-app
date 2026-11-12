@@ -33,6 +33,7 @@ export const PROFILE_LIST_MAX_ITEMS = 50;
 export const PROFILE_TEXT_ITEM_MAX_LENGTH = 80;
 export const PROFILE_ID_ITEM_MAX_LENGTH = 120;
 export const OCCUPATION_MAX_LENGTH = 120;
+export const PERSON_NAME_MAX_LENGTH = 80;
 
 export const SIGNUP_METHODS = [
   'email',
@@ -213,6 +214,9 @@ export const PERSON_PROPERTY_RULES = {
   profile_type: { kind: 'enum', values: ['personal', 'professional'] },
   occupation: { kind: 'text', maxLength: OCCUPATION_MAX_LENGTH },
   occupation_truncated: { kind: 'boolean' },
+  /** Account name parts (top-level realName / lastName); $unset when removed. */
+  first_name: { kind: 'text', maxLength: PERSON_NAME_MAX_LENGTH },
+  last_name: { kind: 'text', maxLength: PERSON_NAME_MAX_LENGTH },
   country_birth: { kind: 'country' },
   country_live: { kind: 'country' },
   languages: { kind: 'list', item: 'id', maxItems: 50, maxItemLength: 16 },

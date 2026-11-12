@@ -97,7 +97,7 @@ describe('Alerts inbox', () => {
     assert.equal(row.kind, 'affiliation_nearby');
     assert.equal(row.sharedAffiliations, true);
     assert.equal(buildAlertRowMessage(row, tEn, translateItem), 'Name p is near you and you share affiliations.');
-    assert.equal(buildAlertRowMessage(row, tEs, translateItem), 'Name p está cerca y comparte afiliaciones contigo.');
+    assert.equal(buildAlertRowMessage(row, tEs, translateItem), 'Name p está cerca y comparten afiliaciones.');
   });
 
   it('interest only: shown with the interests text', () => {
@@ -214,7 +214,7 @@ describe('sharedAffiliationNames (optional, server-resolved)', () => {
     assert.equal(row.kind, 'affiliation_nearby');
     assert.deepEqual(row.sharedAffiliationNames, ['Miami Dade College']);
     assert.equal(buildAlertRowMessage(row, tEn, translateItem), 'Name p is near you and you share an affiliation.');
-    assert.equal(buildAlertRowMessage(row, tEs, translateItem), 'Name p está cerca y comparte una afiliación contigo.');
+    assert.equal(buildAlertRowMessage(row, tEs, translateItem), 'Name p está cerca y comparten una afiliación.');
     assert.deepEqual(buildAlertAffiliationDetail(row, tEn), { name: 'Miami Dade College' });
     assert.equal(
       buildAlertAccessibilityLabel(buildAlertRowMessage(row, tEn, translateItem), buildAlertAffiliationDetail(row, tEn)),

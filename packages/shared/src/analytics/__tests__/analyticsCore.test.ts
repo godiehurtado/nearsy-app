@@ -1452,19 +1452,34 @@ describe('source guards', () => {
       const keys = Object.keys(profile.env ?? {}).filter((k) => k.includes('POSTHOG'));
       for (const key of keys) assert.ok(allowed.has(key), `${name}: ${key}`);
       if (keys.length === 0) continue;
+      // A profile that extends production may only switch capture off explicitly.
+      if (
+        profile.env.EXPO_PUBLIC_POSTHOG_ENABLED === '' &&
+        profile.env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL === ''
+      ) {
+        assert.equal(name in channelFor, false, `${name} must not switch its own channel off`);
+        continue;
+      }
       assert.ok(name in channelFor, `${name} cannot declare analytics`);
       assert.equal(profile.env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL, channelFor[name], name);
       assert.notEqual(profile.env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV, 'development', name);
     }
   });
 
-  it('eas.json today: Beta declared, public production numbered and off', () => {
+  it('eas.json 2.1.0: production captures for normal users, diagnostics stays off', () => {
     const eas = JSON.parse(read('apps/nearsy-ios/eas.json'));
     assert.deepEqual(eas.build.production.env, {
       EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'production',
+      EXPO_PUBLIC_POSTHOG_ENABLED: 'true',
+      EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL: 'production',
       NEARSY_IOS_VERSION: '2.0.10',
       NEARSY_IOS_BUILD_NUMBER: '80',
     });
+    // Extends production: must not inherit capture as if it were the public app.
+    const diagnostics = eas.build['testflight-contacts-diagnostics'];
+    assert.equal(diagnostics.extends, 'production');
+    assert.equal(diagnostics.env.EXPO_PUBLIC_POSTHOG_ENABLED, '');
+    assert.equal(diagnostics.env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL, '');
     assert.equal(eas.build.production.environment, 'production');
     assert.equal(eas.build.production.autoIncrement, false);
     assert.equal(eas.build.beta.extends, 'production');
@@ -1487,6 +1502,24 @@ describe('source guards', () => {
       resolveAnalyticsConfig({ ...eas.build.beta.env, token: 'phc_fake' }).enabled,
       false,
       'the token alone, or the profile without a token, never turns it on',
+    );
+    const production = resolveAnalyticsConfig({
+      enabledFlag: eas.build.production.env.EXPO_PUBLIC_POSTHOG_ENABLED,
+      distributionChannel: eas.build.production.env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL,
+      firebaseEnv: eas.build.production.env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV,
+      token: 'phc_fake',
+    });
+    assert.equal(production.enabled, true);
+    assert.equal(production.isTestInstall, false, 'normal users are never marked is_test_user');
+    const diagnosticsEnv = eas.build['testflight-contacts-diagnostics'].env;
+    assert.equal(
+      resolveAnalyticsConfig({
+        enabledFlag: diagnosticsEnv.EXPO_PUBLIC_POSTHOG_ENABLED,
+        distributionChannel: diagnosticsEnv.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL,
+        firebaseEnv: diagnosticsEnv.EXPO_PUBLIC_NEARSY_FIREBASE_ENV,
+        token: 'phc_fake',
+      }).enabled,
+      false,
     );
   });
 

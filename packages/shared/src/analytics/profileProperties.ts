@@ -12,6 +12,7 @@
 import {
   AGE_RANGES,
   OCCUPATION_MAX_LENGTH,
+  PERSON_NAME_MAX_LENGTH,
   PROFILE_ID_ITEM_MAX_LENGTH,
   PROFILE_LIST_MAX_ITEMS,
   PROFILE_TEXT_ITEM_MAX_LENGTH,
@@ -386,6 +387,18 @@ export function buildPersonProperties(
     );
   }
 
+  // Account name parts as the user saved them (top-level realName / lastName,
+  // the account copy of the active face). Never split from a display name;
+  // a removed value is unset so PostHog keeps nothing stale.
+  for (const [property, field] of [
+    ['first_name', 'realName'],
+    ['last_name', 'lastName'],
+  ] as const) {
+    const value = trimmedString(doc[field]).slice(0, PERSON_NAME_MAX_LENGTH).trim();
+    if (value) set[property] = value;
+    else unset.push(property);
+  }
+
   const age = computeAgeRange(doc, now);
   set.age_range_status = age.status;
   if (age.status === 'valid' && AGE_RANGES.includes(age.range)) {
@@ -476,6 +489,8 @@ export function diffPersonProperties(
 
 const PROFILE_WRITE_KEYS = [
   'mode',
+  'realName',
+  'lastName',
   'occupation',
   'profiles',
   'birthCountryCode',
