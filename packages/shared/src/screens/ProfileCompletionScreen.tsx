@@ -17,9 +17,16 @@ import {
   ScrollView,
   Alert,
   Linking,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import {
+  CRJ_PHOTO_PICKER_OPTIONS,
+  crjPhotoOutcomeAlert,
+  runCrjIosPhotoPick,
+  type CrjPhotoSource,
+} from '../onboarding/crjPhotoPicker';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -702,7 +709,37 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     applyNamePrefillFromPending();
   }, [hydrated, step.kind, applyNamePrefillFromPending]);
 
+  // iOS: no silent exits (crjPhotoPicker). Android keeps its own path below.
+  async function pickCrjPhotoIos(source: CrjPhotoSource) {
+    const outcome = await runCrjIosPhotoPick(source, {
+      launchLibrary: () =>
+        ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          ...CRJ_PHOTO_PICKER_OPTIONS,
+        }),
+      launchCamera: () =>
+        ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          ...CRJ_PHOTO_PICKER_OPTIONS,
+        }),
+      requestCameraPermission: () => ImagePicker.requestCameraPermissionsAsync(),
+    });
+    if (outcome.kind === 'picked') {
+      setWizardPhoto(outcome.uri);
+      return;
+    }
+    if (outcome.kind === 'error' && __DEV__) {
+      // Code only: never the photo, its URI or the user.
+      console.warn('[crj-photo]', outcome.source, outcome.stage, outcome.code ?? 'unknown');
+    }
+    const alert = crjPhotoOutcomeAlert(outcome, t, () => {
+      Linking.openSettings().catch(() => undefined);
+    });
+    if (alert) Alert.alert(alert.title, alert.message, alert.buttons);
+  }
+
   async function pickFromLibrary() {
+    if (Platform.OS === 'ios') return pickCrjPhotoIos('library');
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) return;
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -717,6 +754,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
   }
 
   async function takePhoto() {
+    if (Platform.OS === 'ios') return pickCrjPhotoIos('camera');
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) return;
     const result = await ImagePicker.launchCameraAsync({

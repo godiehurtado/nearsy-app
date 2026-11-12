@@ -56,6 +56,15 @@ export default {
       photoRequired: 'A profile photo is required to continue',
       takePhoto: 'Take photo',
       uploadPhoto: 'Upload',
+      access: {
+        cameraBlockedTitle: 'Camera access is off',
+        cameraBlockedBody:
+          'To take a photo, allow camera access for Nearsy in Settings. If camera access is restricted on this device, Settings may not let you change it. You can still upload a photo from your library.',
+        openSettings: 'Open Settings',
+        cameraErrorTitle: "Couldn't open the camera",
+        libraryErrorTitle: "Couldn't open your photos",
+        errorBody: 'Please try again. If it keeps happening, close Nearsy and open it again.',
+      },
     },
     details: {
       title: 'Tell us about yourself',

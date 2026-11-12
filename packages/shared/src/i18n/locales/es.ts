@@ -436,6 +436,16 @@ const es: TranslationResources = {
         photoRequired: 'Se requiere una foto de perfil para continuar',
         takePhoto: 'Tomar foto',
         uploadPhoto: 'Subir',
+        access: {
+          cameraBlockedTitle: 'El acceso a la cámara está desactivado',
+          cameraBlockedBody:
+            'Para tomar una foto, permite el acceso a la cámara para Nearsy en Ajustes. Si el acceso a la cámara está restringido en este dispositivo, es posible que Ajustes no te permita cambiarlo. Aún puedes subir una foto desde tu biblioteca.',
+          openSettings: 'Abrir Ajustes',
+          cameraErrorTitle: 'No se pudo abrir la cámara',
+          libraryErrorTitle: 'No se pudieron abrir tus fotos',
+          errorBody:
+            'Inténtalo de nuevo. Si sigue ocurriendo, cierra Nearsy y vuelve a abrirla.',
+        },
       },
       details: {
         title: 'Cuéntanos sobre ti',
