@@ -55,7 +55,17 @@ describe('iOS binary version override', () => {
     const diagnostics = eas.build['testflight-contacts-diagnostics'].env;
     assert.equal(diagnostics.NEARSY_IOS_VERSION, '2.0.10');
     assert.equal(diagnostics.NEARSY_IOS_BUILD_NUMBER, '76');
-    const numbers = [eas.build.beta.env, eas.build.production.env, diagnostics].map((env) => env.NEARSY_IOS_BUILD_NUMBER);
+    // 2.1.0 QA (2b): extends beta with only the QA cutover and its own number.
+    const qa = eas.build['qa-generation-ids'];
+    assert.equal(qa.extends, 'beta');
+    assert.deepEqual(Object.keys(qa.env).sort(), [
+      'EXPO_PUBLIC_POSTHOG_GENERATION_ID_SINCE_MS',
+      'NEARSY_IOS_BUILD_NUMBER',
+      'NEARSY_IOS_VERSION',
+    ]);
+    assert.equal(qa.env.NEARSY_IOS_VERSION, '2.1.0');
+    assert.equal(qa.env.NEARSY_IOS_BUILD_NUMBER, '81');
+    const numbers = [eas.build.beta.env, eas.build.production.env, diagnostics, qa.env].map((env) => env.NEARSY_IOS_BUILD_NUMBER);
     assert.equal(new Set(numbers).size, numbers.length, 'one App Store build number space');
     // Both binaries share one App Store build number space.
     assert.notEqual(
@@ -63,7 +73,7 @@ describe('iOS binary version override', () => {
       eas.build.beta.env.NEARSY_IOS_BUILD_NUMBER,
     );
     for (const [name, profile] of Object.entries(eas.build)) {
-      if (name === 'beta' || name === 'production' || name === 'testflight-contacts-diagnostics') continue;
+      if (['beta', 'production', 'testflight-contacts-diagnostics', 'qa-generation-ids'].includes(name)) continue;
       const env = profile.env ?? {};
       assert.equal('NEARSY_IOS_VERSION' in env, false, name);
       assert.equal('NEARSY_IOS_BUILD_NUMBER' in env, false, name);

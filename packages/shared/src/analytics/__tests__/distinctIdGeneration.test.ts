@@ -280,9 +280,21 @@ describe('Proposal G: durable deletion records', () => {
 });
 
 describe('Proposal G: build configuration', () => {
-  it('no eas.json profile sets the cutover; app.config checks it; runtime reads it', () => {
-    const eas = readFileSync(join(repoRoot, 'apps/nearsy-ios/eas.json'), 'utf8');
-    assert.equal(eas.includes('GENERATION_ID_SINCE'), false);
+  it('only qa-generation-ids sets the QA cutover; app.config checks it; runtime reads it', () => {
+    const eas = JSON.parse(readFileSync(join(repoRoot, 'apps/nearsy-ios/eas.json'), 'utf8'));
+    const key = 'EXPO_PUBLIC_POSTHOG_GENERATION_ID_SINCE_MS';
+    for (const [name, profile] of Object.entries(eas.build) as [string, any][]) {
+      const env = profile.env ?? {};
+      if (name === 'qa-generation-ids') continue;
+      assert.equal(key in env, false, `${name} must not set the cutover`);
+    }
+    // QA cutover (Owner, 2b; same value as Android and the server): 2026-11-16T00:00:00Z.
+    const qa = eas.build['qa-generation-ids'];
+    assert.equal(qa.extends, 'beta');
+    assert.equal(qa.env[key], '1794787200000');
+    assert.equal(parseGenerationIdSinceMs(qa.env[key]).sinceMs, Date.UTC(2026, 10, 16));
+    assert.equal(eas.build.beta.extends, 'production');
+    assert.equal(eas.build.beta.env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL, 'beta');
     const appConfig = readFileSync(join(repoRoot, 'apps/nearsy-ios/app.config.js'), 'utf8');
     assert.match(appConfig, /checkGenerationIdSince\(process\.env\)/);
     const runtime = readFileSync(join(repoRoot, 'packages/shared/src/analytics/runtime.ts'), 'utf8');

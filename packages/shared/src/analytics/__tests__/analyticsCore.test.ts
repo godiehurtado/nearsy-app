@@ -1447,7 +1447,12 @@ describe('source guards', () => {
     ]);
     const channelFor: Record<string, string> = { beta: 'beta', production: 'production' };
     for (const [name, profile] of Object.entries(eas.build) as [string, any][]) {
-      const keys = Object.keys(profile.env ?? {}).filter((k) => k.includes('POSTHOG'));
+      // The QA cutover is allowed only in qa-generation-ids, which inherits beta's channel.
+      const keys = Object.keys(profile.env ?? {}).filter(
+        (k) =>
+          k.includes('POSTHOG') &&
+          !(name === 'qa-generation-ids' && k === 'EXPO_PUBLIC_POSTHOG_GENERATION_ID_SINCE_MS'),
+      );
       for (const key of keys) assert.ok(allowed.has(key), `${name}: ${key}`);
       if (keys.length === 0) continue;
       // A profile that extends production may only switch capture off explicitly.
