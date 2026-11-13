@@ -7,7 +7,7 @@
  * Pure module: no React Native or Expo imports.
  */
 
-export const TRACKING_PLAN_VERSION = '2026-11-07.1';
+export const TRACKING_PLAN_VERSION = '2026-11-13.1';
 
 export type PropertyRule =
   | { kind: 'boolean' }
@@ -148,8 +148,8 @@ export const EVENT_RULES = {
     people_shown: COUNT,
   },
   profile_viewed: { match_score: MATCH_SCORE, match_score_range: MATCH_RANGE },
+  /** Product 2026-11-13: no pair id (match_id withdrawn); score and range only. */
   match_made: {
-    match_id: { kind: 'id', maxLength: 64 },
     match_score: MATCH_SCORE,
     match_score_range: MATCH_RANGE,
   },
@@ -275,6 +275,8 @@ export const FORBIDDEN_PROPERTY_NAMES: ReadonlySet<string> = new Set([
   'other_uid',
   'actor_uid',
   'actorUid',
+  /** Withdrawn 2026-11-13: a pair id derived from both UIDs outlives a deletion. */
+  'match_id',
 ]);
 
 /** Events the SDK itself may produce and that the guard lets through. */

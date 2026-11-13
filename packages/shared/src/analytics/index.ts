@@ -14,12 +14,7 @@ import {
 } from './attribution';
 import type { AnalyticsClient, AuthSnapshot } from './client';
 import type { AnalyticsSocialPlatform, OnboardingStep, SignupMethod } from './contract';
-import {
-  buildScoreProperties,
-  createMatchSessionDedupe,
-  matchIdSeed,
-  MATCH_ID_LENGTH,
-} from './discoveryTracking';
+import { buildScoreProperties, createMatchSessionDedupe } from './discoveryTracking';
 import type { EventLedger } from './ledger';
 import type { LocationPermissionKind } from './locationPermissions';
 import {
@@ -52,7 +47,6 @@ export type AnalyticsServices = {
   attribution: PendingAttributionStore;
   attributionHosts: readonly string[];
   now: () => number;
-  sha256Hex: (input: string) => Promise<string>;
   scheduleProfileSync: (uid: string) => void;
   noteVerifiedSocialsChanged: (uid: string) => void;
   observeLocationPermissions: (kind: LocationPermissionKind | null) => void;
@@ -264,15 +258,8 @@ export function trackMatchPresented(
     await s.client.start();
     const sessionId = s.client.getSessionId();
     if (!sessionId || !matchDedupe.claim(sessionId, viewerUid, otherUid)) return;
-    // match_id is a convenience for this emitter: the event stands without it.
-    const matchId = await s
-      .sha256Hex(matchIdSeed(viewerUid, otherUid))
-      .then((digest) => digest.slice(0, MATCH_ID_LENGTH))
-      .catch(() => undefined);
-    s.client.captureForUser(viewerUid, 'match_made', {
-      match_id: matchId,
-      ...scoreProperties,
-    });
+    // Score and range only: no pair id (Product, 2026-11-13).
+    s.client.captureForUser(viewerUid, 'match_made', { ...scoreProperties });
   });
 }
 

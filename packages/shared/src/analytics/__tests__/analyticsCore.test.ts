@@ -21,7 +21,7 @@ import {
   TRACKING_PLAN_VERSION,
 } from '../contract';
 import { createFakeTransport, type FakeTransport } from '../fakeTransport';
-import { isValidValue } from '../sanitize';
+import { isValidValue, sanitizeProperties } from '../sanitize';
 import {
   bindAnalyticsServices,
   handleCampaignLink,
@@ -127,8 +127,6 @@ function bindFacade(
     attribution: createPendingAttributionStore(store),
     attributionHosts: ENABLED.attributionHosts,
     now: () => NOW,
-    sha256Hex: async (input: string) =>
-      Buffer.from(input).toString('hex').padEnd(64, '0'),
     scheduleProfileSync: (uid: string) => {
       syncs.push(uid);
     },
@@ -1141,34 +1139,29 @@ describe('match_made through the facade', () => {
     );
   });
 
-  it('match_id is optional: a failed hash still reports the event', async () => {
+  it('match_made sends score and range only: no match_id, never the other UID', async () => {
     const { fake, client } = setup();
-    bindFacade(client, memoryStore(), {
-      sha256Hex: async () => {
-        throw new Error('no crypto');
-      },
-    });
-    await client.start();
-    client.reportAuthState(USER_A);
-    trackMatchPresented('uidA', 'other', 80);
-    await settle();
-    const [event] = fake.captured('match_made');
-    assert.equal(event?.properties.match_score, 80);
-    assert.equal('match_id' in (event?.properties ?? {}), false);
-  });
-
-  it('never sends the other UID', async () => {
-    const { fake, client } = setup();
-    bindFacade(client, memoryStore(), {
-      sha256Hex: async () => 'ab'.repeat(32),
-    });
+    bindFacade(client, memoryStore());
     await client.start();
     client.reportAuthState(USER_A);
     trackMatchPresented('uidA', 'otherSecretUid', 90);
     await settle();
     const [event] = fake.captured('match_made');
-    assert.equal(event?.properties.match_id, 'ab'.repeat(16));
+    assert.equal(event?.properties.match_score, 90);
+    assert.equal(event?.properties.match_score_range, 'high');
+    assert.equal('match_id' in (event?.properties ?? {}), false);
     assert.equal(JSON.stringify(event).includes('otherSecretUid'), false);
+  });
+
+  it('match_id is withdrawn from the contract and blocked even if a caller sends it', () => {
+    assert.equal('match_id' in EVENT_RULES.match_made, false);
+    assert.equal(FORBIDDEN_PROPERTY_NAMES.has('match_id'), true);
+    const { values } = sanitizeProperties(EVENT_RULES.match_made, {
+      match_id: 'ab'.repeat(16),
+      match_score: 60,
+      match_score_range: 'medium',
+    });
+    assert.deepEqual(values, { match_score: 60, match_score_range: 'medium' });
   });
 });
 

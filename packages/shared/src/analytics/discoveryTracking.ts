@@ -40,7 +40,7 @@ export function buildScoreProperties(
 /**
  * Initial rule: one match_made per viewer, profile and SDK session. A new session
  * can count again, and each account has its own count. The other user's UID is
- * only hashed into match_id, which is pseudonymous and stable, not anonymous.
+ * only a local dedupe key: it never leaves the device, not even hashed.
  */
 export function createMatchSessionDedupe() {
   const seen = new Set<string>();
@@ -54,8 +54,3 @@ export function createMatchSessionDedupe() {
   };
 }
 
-export function matchIdSeed(viewerUid: string, otherUid: string): string {
-  return `nearsy.match.v1|${viewerUid}|${otherUid}`;
-}
-
-export const MATCH_ID_LENGTH = 32;

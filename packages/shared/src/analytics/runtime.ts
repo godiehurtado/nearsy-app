@@ -263,13 +263,6 @@ export function startAnalyticsRuntime(): void {
     attribution: createPendingAttributionStore(store),
     attributionHosts: config.attributionHosts,
     now: () => Date.now(),
-    sha256Hex: async (input) => {
-      const Crypto = require('expo-crypto') as typeof import('expo-crypto');
-      return Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        input,
-      );
-    },
     scheduleProfileSync,
     noteVerifiedSocialsChanged: (uid) => {
       verifiedGeneration += 1;

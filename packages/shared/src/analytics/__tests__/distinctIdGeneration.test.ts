@@ -218,6 +218,39 @@ describe('Proposal G: analytics client', () => {
   });
 });
 
+describe('Proposal G: user_id is a person property only (Product 2026-11-13)', () => {
+  it('two LinkedIn generations share user_id (the UID) but have different distinct_ids', async () => {
+    const { fake, client } = setup(SINCE);
+    await client.start();
+    client.reportAuthState(LI_NEW);
+    client.reportAuthState(null);
+    client.reportAuthState({ ...LI_NEW, creationTime: new Date(1795187046000).toUTCString() });
+    const identifies = fake.calls.filter((c) => c.op === 'identify');
+    assert.equal(identifies.length, 2);
+    const [first, second] = identifies.map((c) => (c.op === 'identify' ? c : null));
+    assert.notEqual(first?.uid, second?.uid, 'distinct_ids differ');
+    assert.equal(first?.set.user_id, LI_NEW.uid);
+    assert.equal(second?.set.user_id, LI_NEW.uid, 'user_id is shared, as Product decided');
+    for (const c of identifies) {
+      if (c.op === 'identify') assert.notEqual(c.uid, c.set.user_id, 'user_id is never the identity');
+    }
+  });
+
+  it('no alias, group or alternative identity call exists anywhere in analytics', () => {
+    const dir = join(repoRoot, 'packages/shared/src/analytics');
+    for (const file of ['transport.ts', 'postHogTransport.ios.ts', 'client.ts', 'runtime.ts', 'index.ts']) {
+      const source = readFileSync(join(dir, file), 'utf8');
+      assert.equal(/\.alias\(|\.group\(|\$create_alias|\$groupidentify/.test(source), false, file);
+    }
+    const transport = readFileSync(join(dir, 'postHogTransport.ios.ts'), 'utf8');
+    // The SDK identify receives the derived distinct id; user_id only travels inside $set.
+    assert.match(transport, /client\.identify\(uid, \{\s*\$set: \{ \.\.\.set \},/);
+    const client = readFileSync(join(dir, 'client.ts'), 'utf8');
+    assert.match(client, /t\.identify\(nextId, set, setOnce\)/);
+    assert.equal((client.match(/user_id/g) ?? []).length, 1, 'user_id is only set as a property');
+  });
+});
+
 describe('Proposal G: durable deletion records', () => {
   it('purges every recorded id with the same time bound; old records without ids still work', async () => {
     const store = memoryStore();

@@ -190,7 +190,7 @@ Everything validated in 2.0.10 (80) is kept: Contacts at 5000, affiliations, aff
 |---|---|---|
 | P1 | Owner | App Privacy labels and the privacy policy for product analytics, including name and Industry. |
 | P2 | Owner | **Present** (checked 2026-11-12, name and visibility only): `EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN`, project scope, Sensitive, EAS environment `production` (used by production, beta and diagnostics). The Owner confirms in the EAS dashboard that it is the token of PostHog project 716015. |
-| P3 | Owner/Legal | The PostHog deletion block when a LinkedIn account is recreated with the same UID. Every other deleted account is already covered (active since 2026-11-07). Direction approved: proposal G (T6); it takes effect only after QA, a common cutover and `POSTHOG_DELETION_GENERATION_IDS=on` in Functions. Recommendation pending on `user_id` and `match_id`. |
+| P3 | Owner/Legal | The PostHog deletion block when a LinkedIn account is recreated with the same UID. Every other deleted account is already covered (active since 2026-11-07). Direction approved: proposal G (T6); it takes effect only after QA, a common cutover and `POSTHOG_DELETION_GENERATION_IDS=on` in Functions. Product (2026-11-13): `user_id` stays the UID as a person property only (two generations can share it with different `distinct_id`s); `match_id` is withdrawn from new `match_made` events, with no change to past events. |
 | P4 | Owner | Activation order: server capture (T1) only after the 2.1.0 apps capture in public and P1 is settled. |
 | P5 | Owner | PostHog event volume and cost with capture for everyone. |
 | P6 | Owner | Authorize the 2.1.0 candidate build, numbering and submission. |

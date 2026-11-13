@@ -267,7 +267,6 @@ async function setup() {
     attribution: createPendingAttributionStore(store),
     attributionHosts: [],
     now: () => NOW.getTime(),
-    sha256Hex: async (input: string) => Buffer.from(input).toString('hex').padEnd(64, '0'),
     scheduleProfileSync: () => {},
     noteVerifiedSocialsChanged: (uid) => {
       changed.push(uid);

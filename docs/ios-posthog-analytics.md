@@ -1,6 +1,6 @@
 # Nearsy iOS: PostHog analytics
 
-Project Nearsy, ID 716015, US Cloud, host `https://us.i.posthog.com`. Plan version `2026-11-07.1`.
+Project Nearsy, ID 716015, US Cloud, host `https://us.i.posthog.com`. Plan version `2026-11-13.1` (2.1.0: names, Industry, proposal G, `match_id` withdrawn; `2026-11-07.1` before).
 
 **Remote delivery is off, in production too.** Only the `beta` build profile declares capture, and it still needs a token that is not in the repository. No build has been made with it. No event has been received in PostHog and no physical test has been run for this work.
 
@@ -195,7 +195,7 @@ Every event also carries `platform` (`iOS`), `app_version`, `app_build`, `enviro
 | `visibility_changed` | `enabled` | Successful activate or deactivate call |
 | `discovery_opened` | `load_time_sec`, `people_shown` | First successful load of an entry |
 | `profile_viewed` | `match_score`?, `match_score_range`? | Successful profile load, once per screen |
-| `match_made` | `match_id`?, `match_score`, `match_score_range` | See Discovery |
+| `match_made` | `match_score`, `match_score_range` | See Discovery. `match_id` withdrawn (Product, 2026-11-13) |
 | `social_linked` | `social_platform`, `link_type` (`manual`, `verified`) | A connection was added |
 | `match_social_tapped` | `social_platform`, `open_result` (`opened`, `invalid`, `failed`, `unknown`), `match_score`?, `match_score_range`? | Tap on a network in a Discovery profile |
 | `alert_opened` | `source` (`push`, `inbox`), `alert_id`?, `alert_motive`? (`interest`, `contact`, `both`, `affiliation`, `contact_affiliation`; omitted when the payload names a motive this binary does not know) | Tap on a push or an inbox row |
@@ -216,7 +216,7 @@ All three are person-only, never on events.
 
 | Property | Source and rule |
 |---|---|
-| `user_id` | Firebase UID. Also the `distinct_id`, except for a LinkedIn account created after the proposal G cutover (see below). Under review: a recommendation to remove it is pending a decision |
+| `user_id` | Firebase UID, always (Product, 2026-11-13). A person property only: never the identity, an alias or a group. It equals the `distinct_id` except for a LinkedIn account created after the proposal G cutover. Two LinkedIn generations of the same UID can share `user_id` while having different `distinct_id`s |
 | `email` | Firebase Auth when present. May be an Apple relay address |
 | `account_created_at` | `$set_once` from Firebase creation time. Separates accounts older than the launch |
 | `platform`, `app_version`, `app_build`, `environment`, `tracking_plan_version` | As in events |
@@ -308,6 +308,7 @@ Contract: Functions `docs/analytics/ANALYTICS_DISTINCT_ID_CONTRACT.md` @ `37af79
 - **Creation time:** Firebase Auth `user.metadata.creationTime` only.
 - **Client:** the same-account checks stay on the UID; `reset()` as before. With a cutover set, an `li_` account whose creation time cannot be read is not identified: account events and person updates are dropped, and device events stay anonymous. It identifies once the time is readable and is not re-derived during that sign-in.
 - **Deletion:** the live discard and the durable deletion records cover the UID and every derived id seen for it, with the same time bound.
+- **`user_id` stays the UID** (Product, 2026-11-13). It is only a person property in `$set`: identify, events and deletion use the `distinct_id`, and the app has no alias or group call. So two LinkedIn generations of one UID are separate persons with different `distinct_id`s that can share the same `user_id` value. Tests in `distinctIdGeneration.test.ts` pin both points. Android adds the same property.
 - **SHA-256:** a small synchronous implementation, so identity changes keep their order. It is tested against Node crypto and the 5 shared vectors. No new dependency.
 
 ### LinkedIn
@@ -397,11 +398,7 @@ An open is a real arrival to foreground.
   - **Ranges:** `low` [0,50), `medium` [50,75), `high` [75,100].
   - **Initial rule:** one per viewer, other profile and SDK session. Row and later opening share one count. A new SDK session can count again. A→B counts separately.
   - **Other user:** the UID is never sent.
-- **`match_id`** is optional in the contract, so other emitters are not required to send it.
-  - **Construction here:** the first 32 hex characters of SHA-256 of `nearsy.match.v1|<viewerUid>|<otherUid>`.
-  - **Unit:** one directed pair, viewer to profile. It repeats across sessions, so distinct `match_id` counts pairs and event totals count presentations per session.
-  - **Privacy:** stable and pseudonymous, not anonymous. Nothing is written to Firestore.
-  - **Failure:** if hashing fails, the event is sent without it.
+- **`match_id` withdrawn** (Product, 2026-11-13). New `match_made` events carry only `match_score` and `match_score_range`. The pair id was derived from both UIDs, so it stayed on other people's events after a deletion and across LinkedIn generations. It is removed from the contract and on the forbidden list, so a stale caller cannot send it. Events already in PostHog are not modified, and no remote cleanup is run.
 - **Verified `social_linked`:** fires from both onboarding and the profile social editor when the backend confirms a connection. For Instagram, only a pending challenge that turns verified counts; opening the editor or a restart never does. Each unlink refreshes the person properties without an event, and a relink reports again.
 - **Instagram `social_linked`:** if verification finishes while the app is closed, no event fires because the app only sees it as existing state. `social_platforms_verified` still updates. For X, if the finalizer fails but the reconciliation Get confirms the link, it reports once, only when X was not connected before that attempt. An event for an account that is no longer signed in is dropped.
 - **`match_social_tapped`:** a tap on any Discovery profile. It does not prove a connection between people. If the open has not resolved in 1.5 s, it reports `unknown`.
