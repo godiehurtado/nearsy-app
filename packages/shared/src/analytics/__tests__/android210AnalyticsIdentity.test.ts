@@ -119,7 +119,7 @@ describe('proposal G: the shared rule', () => {
     );
   });
 
-  it('the cutover is a build setting, unset in every eas.json profile', () => {
+  it('the cutover is a build setting, set only in the tester-only qa profile', () => {
     const { resolveAnalyticsExtras } = require(join(appRoot, 'plugins', 'analyticsBuildConfig.js'));
     assert.equal('generationIdSinceMs' in resolveAnalyticsExtras({}), false);
     assert.equal(
@@ -141,8 +141,27 @@ describe('proposal G: the shared rule', () => {
     assert.equal(warnings.length, 2);
     assert.equal(resolveGenerationIdSinceMs({ nearsyAnalytics: { generationIdSinceMs: SINCE } }), SINCE);
     assert.equal(resolveGenerationIdSinceMs({}), null);
-    const eas = readFileSync(join(appRoot, 'eas.json'), 'utf8');
-    assert.doesNotMatch(eas, /GENERATION_ID_SINCE_MS/);
+    // Only the tester-only "qa" profile (extends beta) may carry a cutover, and
+    // only the QA one; production, beta and the rest keep every account on its UID.
+    const eas = JSON.parse(readFileSync(join(appRoot, 'eas.json'), 'utf8')) as {
+      build: Record<string, { extends?: string; env?: Record<string, string> }>;
+      submit?: Record<string, unknown>;
+    };
+    for (const [name, profile] of Object.entries(eas.build)) {
+      if (name === 'qa') continue;
+      assert.equal(profile.env?.NEARSY_POSTHOG_GENERATION_ID_SINCE_MS, undefined, name);
+    }
+    assert.deepEqual(eas.build.qa, {
+      extends: 'beta',
+      env: { NEARSY_POSTHOG_GENERATION_ID_SINCE_MS: '1794787200000' },
+    });
+    assert.equal(new Date(1794787200000).toISOString(), '2026-11-16T00:00:00.000Z');
+    assert.equal(eas.submit?.qa, undefined);
+    assert.equal(
+      resolveAnalyticsExtras({ NEARSY_POSTHOG_GENERATION_ID_SINCE_MS: eas.build.qa.env!.NEARSY_POSTHOG_GENERATION_ID_SINCE_MS })
+        .generationIdSinceMs,
+      1794787200000,
+    );
   });
 });
 

@@ -90,9 +90,9 @@ describe('Affiliations: add own logo button', () => {
 describe('2.0.10 release config', () => {
   const appDir = path.join(repo, 'apps', 'nearsy-android');
 
-  it('versionName is 2.0.10; versionCode stays with the EAS remote counter', () => {
+  it('versionName is 2.1.0; versionCode stays with the EAS remote counter', () => {
     const app = JSON.parse(readFileSync(path.join(appDir, 'app.json'), 'utf8'));
-    assert.equal(app.expo.version, '2.0.10');
+    assert.equal(app.expo.version, '2.1.0');
     const eas = JSON.parse(readFileSync(path.join(appDir, 'eas.json'), 'utf8'));
     assert.equal(eas.cli.appVersionSource, 'remote');
     assert.equal(eas.build.production.autoIncrement, true);

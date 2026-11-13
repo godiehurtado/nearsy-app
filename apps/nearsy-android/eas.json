@@ -53,6 +53,12 @@
         "NEARSY_ANALYTICS_ENV": "production",
         "NEARSY_ANALYTICS_ENABLED": "false"
       }
+    },
+    "qa": {
+      "extends": "beta",
+      "env": {
+        "NEARSY_POSTHOG_GENERATION_ID_SINCE_MS": "1794787200000"
+      }
     }
   },
   "submit": {

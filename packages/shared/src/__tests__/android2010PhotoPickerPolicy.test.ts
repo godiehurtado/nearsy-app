@@ -180,7 +180,7 @@ describe('the Android manifest config', () => {
     assert.equal(app.android.blockedPermissions.includes('android.permission.WRITE_EXTERNAL_STORAGE'), false);
   });
 
-  it('versionName stays 2.0.10', () => {
-    assert.equal(app.version, '2.0.10');
+  it('versionName is 2.1.0', () => {
+    assert.equal(app.version, '2.1.0');
   });
 });
