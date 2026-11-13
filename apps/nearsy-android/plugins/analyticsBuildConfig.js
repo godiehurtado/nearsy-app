@@ -22,6 +22,23 @@ function optionalNumber(env, name) {
   return Number.isFinite(value) ? value : undefined;
 }
 
+/**
+ * PostHog generation-id cutover (Functions ANALYTICS_DISTINCT_ID_CONTRACT.md):
+ * trimmed digits, no leading zero, a safe integer. Anything else is null, with a
+ * warning; unset is null and changes nothing (every account keeps its UID).
+ */
+const GENERATION_SINCE = /^[1-9][0-9]{0,15}$/;
+function resolveGenerationIdSinceMs(env) {
+  const raw = text(env, 'NEARSY_POSTHOG_GENERATION_ID_SINCE_MS');
+  if (!raw) return null;
+  const value = Number(raw);
+  if (GENERATION_SINCE.test(raw) && Number.isSafeInteger(value)) return value;
+  console.warn(
+    '[analytics] NEARSY_POSTHOG_GENERATION_ID_SINCE_MS is not a valid millisecond time; ignored.',
+  );
+  return null;
+}
+
 const HOST = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/;
 /** A dedicated prefix: `/` alone would capture every link of the domain. */
 const PATH_PREFIX = /^\/[a-z0-9_-]+(?:\/[a-z0-9_-]+)*\/?$/i;
@@ -71,8 +88,10 @@ function resolveAnalyticsExtras(env) {
     'NEARSY_ATTRIBUTION_EXPIRY_HOURS',
   );
   const appLinks = resolveAppLinks(env);
+  const generationIdSinceMs = resolveGenerationIdSinceMs(env);
   return {
     enabled: remoteEnabled,
+    ...(generationIdSinceMs !== null ? { generationIdSinceMs } : {}),
     ...(remoteEnabled
       ? {
           environment,
@@ -121,4 +140,8 @@ function resolveAppLinkIntentFilters(env) {
   ];
 }
 
-module.exports = { resolveAnalyticsExtras, resolveAppLinkIntentFilters };
+module.exports = {
+  resolveAnalyticsExtras,
+  resolveAppLinkIntentFilters,
+  resolveGenerationIdSinceMs,
+};

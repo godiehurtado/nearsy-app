@@ -310,6 +310,16 @@ export type DeleteAccountFlowDeps = {
   exitBarrier?: AccountDeletionExitBarrier;
   /** Codes and reasons only — never tokens, emails, UIDs or passwords. */
   logDev?: (entry: DeleteAccountDevLog) => void;
+  /**
+   * PostHog queue of the account: held before the callable, released when the
+   * account is known to still exist, purged once the deletion is confirmed (or
+   * the person leaves the pending state). Best effort; never blocks the flow.
+   */
+  analyticsDeletion?: {
+    hold: (uid: string) => Promise<void>;
+    release: (uid: string) => Promise<void>;
+    confirm: (uid: string) => Promise<void>;
+  };
 };
 
 function failed(kind: DeleteAccountFailureKind): DeleteAccountOutcome {
@@ -341,6 +351,14 @@ export function createDeleteAccountFlow(deps: DeleteAccountFlowDeps) {
     }
   };
 
+  const analytics = async (step: 'hold' | 'release' | 'confirm', uid: string) => {
+    try {
+      await deps.analyticsDeletion?.[step](uid);
+    } catch {
+      // Analytics never affects the deletion.
+    }
+  };
+
   const currentUid = (): string | null => {
     const uid = deps.getCurrentUser()?.uid;
     return typeof uid === 'string' && uid ? uid : null;
@@ -363,6 +381,8 @@ export function createDeleteAccountFlow(deps: DeleteAccountFlowDeps) {
     alreadyDeleted: boolean,
   ): Promise<DeleteAccountOutcome> {
     barrier?.confirmDeletion();
+    // Before the signOut in the cleanup: purge, then reset.
+    await analytics('confirm', uid);
     try {
       await deps.cleanupAfterDeletion(uid);
     } catch (err) {
@@ -383,6 +403,7 @@ export function createDeleteAccountFlow(deps: DeleteAccountFlowDeps) {
     if (auth === 'gone') return finishDeleted(uid, true);
     if (auth === 'exists' && !pending) {
       barrier?.abandonRequest();
+      await analytics('release', uid);
       return failed(kind);
     }
     barrier?.markUnresolved();
@@ -411,7 +432,10 @@ export function createDeleteAccountFlow(deps: DeleteAccountFlowDeps) {
         reason: readReason(err) || undefined,
       });
       if (!rejectedBeforeData) return settleAmbiguous(uid, kind, pending);
-      if (!pending) barrier?.abandonRequest();
+      if (!pending) {
+        barrier?.abandonRequest();
+        await analytics('release', uid);
+      }
       return failed(kind);
     }
 
@@ -454,6 +478,9 @@ export function createDeleteAccountFlow(deps: DeleteAccountFlowDeps) {
     try {
       const uid = currentUid();
       barrier?.confirmDeletion();
+      // The outcome is unknown: treated as a deletion. A later sign-in of this
+      // account ends the record, so analytics resumes if it still exists.
+      if (uid) await analytics('confirm', uid);
       try {
         if (uid) await deps.cleanupAfterDeletion(uid);
       } catch (err) {
@@ -498,6 +525,7 @@ export function createDeleteAccountFlow(deps: DeleteAccountFlowDeps) {
 
       if (deps.getCurrentUser()?.uid !== uid) return failed('uid_changed');
 
+      await analytics('hold', uid);
       await barrier?.beginRequest();
       return await callBackend(uid, request.method === 'recent_session', false);
     } finally {

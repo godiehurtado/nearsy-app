@@ -10,6 +10,8 @@
  * | beta            | release     | yes      | PostHog, events marked as tests  |
  * | remote          | release     | yes      | PostHog                          |
  */
+import { parseGenerationIdSinceMs } from './analyticsDistinctId.ts';
+
 export const POSTHOG_US_HOST = 'https://us.i.posthog.com';
 
 /** `.invalid` never resolves (RFC 2606): a second barrier behind the interception. */
@@ -55,6 +57,8 @@ export type AnalyticsExtras = {
     } | null;
     appOpenedMinBackgroundSec?: unknown;
     attribution?: unknown;
+    /** Build-time NEARSY_POSTHOG_GENERATION_ID_SINCE_MS; absent means no cutover. */
+    generationIdSinceMs?: unknown;
   } | null;
   nearsyFirebaseEnv?: unknown;
   nearsyFirebaseProjectId?: unknown;
@@ -148,6 +152,20 @@ export function resolveAnalyticsConfig(input: {
     token: settings.token,
     host: POSTHOG_US_HOST,
   };
+}
+
+/**
+ * The generation-id cutover, validated again at runtime with the shared parser.
+ * Null (no cutover) keeps every account on its UID, as before proposal G.
+ */
+export function resolveGenerationIdSinceMs(
+  extras: AnalyticsExtras | null | undefined,
+): number | null {
+  const raw = extras?.nearsyAnalytics?.generationIdSinceMs;
+  if (raw === undefined || raw === null) return null;
+  const value = parseGenerationIdSinceMs(raw);
+  if (value === null) console.warn('[analytics] generation id cutover is invalid; ignored');
+  return value;
 }
 
 export function resolveAppOpenedMinBackgroundMs(

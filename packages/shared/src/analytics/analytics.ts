@@ -24,3 +24,7 @@ export const trackDiscoveryOpened: AnalyticsApi['trackDiscoveryOpened'] = () => 
 export const trackProfileViewed: AnalyticsApi['trackProfileViewed'] = () => {};
 export const trackMatchPresented: AnalyticsApi['trackMatchPresented'] = () => {};
 export const trackAlertOpened: AnalyticsApi['trackAlertOpened'] = () => {};
+export const holdAnalyticsForDeletion: AnalyticsApi['holdAnalyticsForDeletion'] = async () => {};
+export const releaseAnalyticsDeletionHold: AnalyticsApi['releaseAnalyticsDeletionHold'] =
+  async () => {};
+export const confirmAnalyticsDeletion: AnalyticsApi['confirmAnalyticsDeletion'] = async () => {};

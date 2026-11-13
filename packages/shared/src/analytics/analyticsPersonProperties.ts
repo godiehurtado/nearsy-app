@@ -20,12 +20,24 @@ function nonBlank(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/**
+ * `user_id`: the Firebase UID, as a person property only (same meaning as iOS).
+ * It does not replace distinct_id, is never an alias joining two generations
+ * (proposal G), and is not registered on events.
+ */
+function readUserId(uid: unknown): string | null {
+  return typeof uid === 'string' && uid.trim() ? uid.trim() : null;
+}
+
 export function buildBasePersonProperties(input: {
+  uid?: unknown;
   authEmail: unknown;
   docEmail?: unknown;
   appVersion?: string;
 }): AnalyticsProperties {
   const out: AnalyticsProperties = { platform: 'Android' };
+  const userId = readUserId(input.uid);
+  if (userId) out.user_id = userId;
   if (input.appVersion) out.app_version = input.appVersion;
   const email = nonBlank(input.authEmail) ?? nonBlank(input.docEmail);
   if (email) out.email = email;
@@ -264,6 +276,8 @@ export function createPersonModeMemory(storage: {
 
 export function buildPersonProperties(input: {
   doc: unknown;
+  /** Firebase UID of the signed-in account, sent as `user_id`. */
+  uid?: unknown;
   authEmail: unknown;
   appVersion?: string;
   normalizeLanguages: (values: unknown) => string[];
@@ -276,6 +290,7 @@ export function buildPersonProperties(input: {
   const row = doc as Record<string, unknown>;
 
   const out = buildBasePersonProperties({
+    uid: input.uid,
     authEmail: input.authEmail,
     docEmail: row.email,
     appVersion: input.appVersion,

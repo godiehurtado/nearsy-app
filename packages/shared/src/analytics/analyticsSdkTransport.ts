@@ -33,7 +33,21 @@ type SdkClient = {
   register(properties: unknown): void | Promise<void>;
   capture(event: string, properties?: unknown): void | Promise<void>;
   flush(): Promise<void>;
+  getPersistedProperty(key: string): unknown;
+  setPersistedProperty(key: string, value: unknown): void;
+  flushStorage?(): Promise<void>;
 };
+
+/** The SDK's persisted event queue (PostHogPersistedProperty.Queue). */
+const SDK_QUEUE_KEY = 'queue';
+
+/** Decides, per distinct_id, whether a queued event may leave (see analyticsDeletionGuard). */
+export type DeliveryGuard = {
+  decide(distinctId: unknown): 'send' | 'drop' | 'defer';
+  version(): number;
+};
+
+type SdkMessage = { distinct_id?: unknown } | undefined;
 
 type SdkClass = new (token: string, options: Record<string, unknown>) => SdkClient;
 
@@ -137,13 +151,18 @@ function guardedSubclass(input: {
   token: string;
   onInterceptedRequest?: (request: InterceptedRequest) => void;
   onTransportIssue?: (issue: TransportIssue) => void;
+  deliveryGuard?: DeliveryGuard;
 }): SdkClass {
   const Base = input.PostHog as unknown as new (
     token: string,
     options: Record<string, unknown>,
   ) => SdkClient & {
     fetch(url: string, options?: SdkFetchOptions): Promise<{ status: number }>;
+    sendBatch(messages: SdkMessage[], retryOptions?: unknown, route?: unknown): Promise<void>;
   };
+  const guard = input.deliveryGuard;
+  /** The batch being sent: the SDK flushes one batch at a time. */
+  let batchInFlight: { defer: boolean; version: number } | null = null;
   const report = (issue: TransportIssue) => {
     try {
       input.onTransportIssue?.(issue);
@@ -152,8 +171,40 @@ function guardedSubclass(input: {
     }
   };
   return class GuardedPostHog extends Base {
+    /**
+     * Every batch, including one loaded from disk after a restart, passes the
+     * guard before it is built. Dropped events are left out; when nothing is left
+     * the batch counts as handled and the SDK removes it from its queue. A held
+     * event keeps the whole batch queued (see `fetch`).
+     */
+    async sendBatch(messages: SdkMessage[], retryOptions?: unknown, route?: unknown) {
+      if (!guard) return super.sendBatch(messages, retryOptions, route);
+      const decisions = messages.map((message) => guard.decide(message?.distinct_id));
+      const defer = decisions.includes('defer');
+      const kept = defer ? messages : messages.filter((_, index) => decisions[index] === 'send');
+      if (!defer && kept.length === 0) return;
+      batchInFlight = { defer, version: guard.version() };
+      try {
+        return await super.sendBatch(kept, retryOptions, route);
+      } finally {
+        batchInFlight = null;
+      }
+    }
+
     async fetch(url: string, options?: SdkFetchOptions) {
       const kind = classifySdkRequest(url, input);
+      // A held batch, or one built before the guard changed (a retry of a request
+      // that failed): refused locally. The SDK treats it as a network failure and
+      // keeps the events, so the next flush decides again. A request that already
+      // left cannot be recalled.
+      if (
+        kind === 'batch' &&
+        guard &&
+        batchInFlight &&
+        (batchInFlight.defer || batchInFlight.version !== guard.version())
+      ) {
+        throw new Error('PostHog batch held by the deletion guard');
+      }
       if (input.onInterceptedRequest) {
         try {
           input.onInterceptedRequest(describeInterceptedRequest(url, options));
@@ -194,15 +245,23 @@ export async function createSdkTransport(input: {
   onTransportIssue?: (issue: TransportIssue) => void;
   /** Declared by a Beta build; stamped on every event of this install. */
   installClassification?: InstallClassification;
+  /** Account deletion: events of a held or deleted account never leave. */
+  deliveryGuard?: DeliveryGuard;
   /** Timing and storage overrides for tests. */
   sdkOptions?: Record<string, unknown>;
-}): Promise<AnalyticsTransport & { flush(): Promise<void> }> {
+}): Promise<
+  AnalyticsTransport & {
+    flush(): Promise<void>;
+    purgeQueued(distinctIds: string[]): Promise<number>;
+  }
+> {
   const Client = guardedSubclass({
     PostHog: input.PostHog as SdkClass,
     host: input.host,
     token: input.token,
     onInterceptedRequest: input.onInterceptedRequest,
     onTransportIssue: input.onTransportIssue,
+    deliveryGuard: input.deliveryGuard,
   });
   const client = new Client(input.token, {
     host: input.host,
@@ -242,5 +301,22 @@ export async function createSdkTransport(input: {
     register: (properties) => client.register(properties),
     capture: (event, properties) => client.capture(event, properties),
     flush: () => client.flush(),
+    purgeQueued: async (distinctIds) => {
+      if (distinctIds.length === 0) return 0;
+      const drop = new Set(distinctIds);
+      const queue = client.getPersistedProperty(SDK_QUEUE_KEY);
+      if (!Array.isArray(queue)) return 0;
+      // A flush that is running removes what it sent by uuid against the stored
+      // queue, so rewriting it here does not race with that removal.
+      const next = queue.filter(
+        (item: { message?: SdkMessage } | undefined) => !drop.has(item?.message?.distinct_id as string),
+      );
+      const removed = queue.length - next.length;
+      if (removed > 0) {
+        client.setPersistedProperty(SDK_QUEUE_KEY, next);
+        await client.flushStorage?.();
+      }
+      return removed;
+    },
   };
 }

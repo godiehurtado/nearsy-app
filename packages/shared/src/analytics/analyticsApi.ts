@@ -71,4 +71,11 @@ export type AnalyticsApi = {
     presentedIn: MatchPresentedIn,
   ): void;
   trackAlertOpened(source: AlertOpenSource, alertId?: string): void;
+
+  /** Before `deleteMyAccount`: nothing new of this account is sent; queued events wait. */
+  holdAnalyticsForDeletion(uid: string): Promise<void>;
+  /** The backend rejected the deletion or the account still exists: everything resumes. */
+  releaseAnalyticsDeletionHold(uid: string): Promise<void>;
+  /** Deletion confirmed: queued events of the account are purged, then the SDK is reset. */
+  confirmAnalyticsDeletion(uid: string): Promise<void>;
 };

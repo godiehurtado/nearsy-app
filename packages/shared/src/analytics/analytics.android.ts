@@ -28,9 +28,16 @@ import {
   INTERCEPT_TOKEN,
   resolveAnalyticsConfig,
   resolveAppOpenedMinBackgroundMs,
+  resolveGenerationIdSinceMs,
   type AnalyticsConfig,
   type AnalyticsExtras,
 } from './analyticsConfig';
+import {
+  createAnalyticsDeletionGuard,
+  readAuthSessionMarks,
+  type AnalyticsDeletionGuard,
+} from './analyticsDeletionGuard';
+import { resolveAccountDistinctId } from './analyticsDistinctId';
 import {
   buildMatchMadeEvent,
   describeForInspection,
@@ -39,7 +46,11 @@ import {
   TRACKING_PLAN_VERSION,
   type AnalyticsProperties,
 } from './analyticsContract';
-import { createAnalyticsSession, type AnalyticsTransport } from './analyticsCore';
+import {
+  createAnalyticsSession,
+  type AnalyticsAuthUser,
+  type AnalyticsTransport,
+} from './analyticsCore';
 import {
   createLocationPermissionObserver,
   createVisibilityObserver,
@@ -153,36 +164,81 @@ function logTransportIssue(issue: TransportIssue): void {
   console.warn('[analytics:transport]', issue);
 }
 
+let deletionGuardInstance: AnalyticsDeletionGuard | null = null;
+
+/** Persisted account-deletion records (see analyticsDeletionGuard). */
+function deletionGuard(): AnalyticsDeletionGuard {
+  if (deletionGuardInstance) return deletionGuardInstance;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const storage = require('@react-native-async-storage/async-storage').default;
+  deletionGuardInstance = createAnalyticsDeletionGuard({ storage, now: () => Date.now() });
+  return deletionGuardInstance;
+}
+
+/** Lowercase hex SHA-256 of the UTF-8 text (expo-crypto). */
+async function sha256Hex(text: string): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const Crypto = require('expo-crypto');
+  return Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, text);
+}
+
 async function createTransport(config: AnalyticsConfig): Promise<AnalyticsTransport> {
   if (config.mode === 'off' || config.mode === 'inspect') {
     return createInspectTransport();
   }
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const PostHog = require('posthog-react-native').default;
-  if (config.mode === 'sdk_intercept') {
-    return createSdkTransport({
-      PostHog,
-      token: INTERCEPT_TOKEN,
-      host: INTERCEPT_HOST,
-      persistence: 'memory',
-      onInterceptedRequest: logInterceptedRequest,
-    });
+  // Deletion records are read before the SDK exists, so nothing queued by a
+  // deleted account can be sent, even right after a restart.
+  const guard = deletionGuard();
+  await guard.load();
+  const transport =
+    config.mode === 'sdk_intercept'
+      ? await createSdkTransport({
+          PostHog,
+          token: INTERCEPT_TOKEN,
+          host: INTERCEPT_HOST,
+          persistence: 'memory',
+          onInterceptedRequest: logInterceptedRequest,
+          deliveryGuard: guard,
+        })
+      : await createSdkTransport({
+          PostHog,
+          token: config.token,
+          host: config.host,
+          persistence: 'file',
+          onTransportIssue: logTransportIssue,
+          deliveryGuard: guard,
+          ...(config.mode === 'beta'
+            ? {
+                installClassification: {
+                  is_test_user: true,
+                  distribution_channel: config.distributionChannel,
+                },
+              }
+            : {}),
+        });
+  try {
+    await transport.purgeQueued(guard.droppedIds());
+  } catch {
+    // The delivery guard still keeps those events from leaving.
   }
-  return createSdkTransport({
-    PostHog,
-    token: config.token,
-    host: config.host,
-    persistence: 'file',
-    onTransportIssue: logTransportIssue,
-    ...(config.mode === 'beta'
-      ? {
-          installClassification: {
-            is_test_user: true,
-            distribution_channel: config.distributionChannel,
-          },
-        }
-      : {}),
-  });
+  return transport;
+}
+
+/** Auth fields the session reads; RNFirebase's metadata getters may throw. */
+function toAuthUser(user: {
+  uid: string;
+  email?: string | null;
+  metadata?: unknown;
+}): AnalyticsAuthUser {
+  const marks = readAuthSessionMarks(user);
+  return {
+    uid: user.uid,
+    email: user.email,
+    creationTime: marks.creationTime,
+    lastSignInTime: marks.lastSignInTime,
+  };
 }
 
 let sessionResolved = false;
@@ -249,18 +305,36 @@ function getSession(): Session | null {
       ...(appBuild ? { app_build: appBuild } : {}),
     };
 
+    const generationIdSinceMs = resolveGenerationIdSinceMs(extras);
     session = createAnalyticsSession({
       loadTransport: () => createTransport(config),
       getAuthUser: () => {
         const user = firebaseAuth.currentUser;
-        return user ? { uid: user.uid, email: user.email } : null;
+        return user ? toAuthUser(user) : null;
       },
       readCreationTime: () => firebaseAuth.currentUser?.metadata?.creationTime,
+      // Proposal G: the UID unless a cutover is set (none in any profile today).
+      resolveDistinctId: (user) =>
+        resolveAccountDistinctId({
+          uid: user.uid,
+          creationTime: user.creationTime,
+          sinceMs: generationIdSinceMs,
+          sha256Hex,
+        }),
+      gateAccount: async (user) => {
+        const guard = deletionGuard();
+        await guard.load();
+        return guard.noteSession(user.uid, {
+          lastSignInTime: typeof user.lastSignInTime === 'string' ? user.lastSignInTime : null,
+          creationTime: typeof user.creationTime === 'string' ? user.creationTime : null,
+        });
+      },
       buildBaseProperties: (user) =>
-        buildBasePersonProperties({ authEmail: user.email, appVersion }),
+        buildBasePersonProperties({ uid: user.uid, authEmail: user.email, appVersion }),
       buildProfileProperties: (user, doc) =>
         buildPersonProperties({
           doc,
+          uid: user.uid,
           authEmail: user.email,
           appVersion,
           normalizeLanguages: normalizeLanguageCodes,
@@ -685,6 +759,56 @@ export const trackMatchPresented: AnalyticsApi['trackMatchPresented'] = safely((
     buildMatchMadeEvent({ peerUid, score, presentedIn, sessionId }),
   );
 });
+
+/**
+ * Account deletion (Functions contract, Android milestone 1). Called by the
+ * deletion flow; never throws and never delays the deletion on analytics work.
+ * With analytics off there is no SDK queue and nothing to do.
+ */
+export const holdAnalyticsForDeletion: AnalyticsApi['holdAnalyticsForDeletion'] = async (uid) => {
+  try {
+    const active = getSession();
+    if (!active) return;
+    const user = firebaseAuth.currentUser;
+    const ids =
+      user && user.uid === uid ? await active.accountIds(toAuthUser(user)) : [uid];
+    const guard = deletionGuard();
+    await guard.load();
+    await guard.hold(uid, ids, readAuthSessionMarks(user && user.uid === uid ? user : null));
+  } catch {
+    // The deletion goes ahead; the persisted record is best effort.
+  }
+};
+
+export const releaseAnalyticsDeletionHold: AnalyticsApi['releaseAnalyticsDeletionHold'] = async (
+  uid,
+) => {
+  try {
+    if (!getSession()) return;
+    const guard = deletionGuard();
+    await guard.load();
+    await guard.release(uid);
+  } catch {
+    // A record left behind ends with the next session of this account or its expiry.
+  }
+};
+
+export const confirmAnalyticsDeletion: AnalyticsApi['confirmAnalyticsDeletion'] = async (uid) => {
+  try {
+    const active = getSession();
+    if (!active) return;
+    const user = firebaseAuth.currentUser;
+    const signedIn = user && user.uid === uid ? user : null;
+    const extra = signedIn ? await active.accountIds(toAuthUser(signedIn)) : [];
+    const guard = deletionGuard();
+    await guard.load();
+    const ids = await guard.confirm(uid, extra, readAuthSessionMarks(signedIn));
+    // Queued before the signOut that follows, so the purge precedes the reset.
+    active.forgetAccount(uid, ids);
+  } catch {
+    // The record, when written, still purges at the next start.
+  }
+};
 
 export const trackAlertOpened: AnalyticsApi['trackAlertOpened'] = safely((source, alertId) => {
   getSession()?.trackForCurrent(() => ({
