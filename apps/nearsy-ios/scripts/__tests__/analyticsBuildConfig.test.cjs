@@ -58,6 +58,11 @@ describe('analytics build guard', () => {
 
   it('half a configuration fails instead of building off by accident', () => {
     assert.throws(() => assertAnalyticsBuildConfig({ EXPO_PUBLIC_POSTHOG_ENABLED: 'true' }), /half configured/);
+    // An explicit off wins over an inherited channel (profiles extending production).
+    assert.deepEqual(
+      assertAnalyticsBuildConfig({ ...BUILDER, EXPO_PUBLIC_POSTHOG_ENABLED: 'false', EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL: 'production' }),
+      { declared: false },
+    );
     assert.throws(
       () => assertAnalyticsBuildConfig({ EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL: 'beta' }),
       /half configured/,
@@ -95,7 +100,7 @@ describe('analytics build guard', () => {
     for (const [name, profile] of Object.entries(eas.build)) {
       if (name === 'beta') continue;
       const channel = (profile.env ?? {}).EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL;
-      assert.ok(channel === undefined || channel === '' || (name === 'production' && channel === 'production'), name);
+      assert.ok(channel === undefined || channel === 'off' || (name === 'production' && channel === 'production'), name);
     }
   });
 

@@ -8,6 +8,10 @@
  * The EAS CLI also reads app.config on this machine before uploading, without
  * those variables, so that local read only checks the profile is complete.
  *
+ * A profile that extends a capturing one switches capture off with
+ * ENABLED=false (EAS rejects empty env values in eas.json). That explicit off
+ * wins over any inherited channel.
+ *
  * Never prints the token or any part of it.
  */
 const ENABLED_ENV = 'EXPO_PUBLIC_POSTHOG_ENABLED';
@@ -15,8 +19,10 @@ const CHANNEL_ENV = 'EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL';
 const TOKEN_ENV = 'EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN';
 
 function assertAnalyticsBuildConfig(env) {
-  const enabled = String(env[ENABLED_ENV] ?? '').trim() === 'true';
+  const flag = String(env[ENABLED_ENV] ?? '').trim();
+  const enabled = flag === 'true';
   const channel = String(env[CHANNEL_ENV] ?? '').trim();
+  if (flag === 'false') return { declared: false };
   if (!enabled && !channel) return { declared: false };
   if (!enabled || !channel) {
     throw new Error(

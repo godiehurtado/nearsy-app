@@ -6,7 +6,7 @@
  * because TestFlight is not auto-detected:
  * - beta: TestFlight. Every event and the person are marked is_test_user=true.
  * - production: App Store. Nothing is marked, and nothing writes false either.
- * Without a declared channel nothing is sent. No build declares production yet.
+ * Without a declared channel nothing is sent. 2.1.0 declares production (eas.json).
  */
 import {
   DISTRIBUTION_CHANNELS,

@@ -1459,8 +1459,8 @@ describe('source guards', () => {
       if (keys.length === 0) continue;
       // A profile that extends production may only switch capture off explicitly.
       if (
-        profile.env.EXPO_PUBLIC_POSTHOG_ENABLED === '' &&
-        profile.env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL === ''
+        profile.env.EXPO_PUBLIC_POSTHOG_ENABLED === 'false' &&
+        profile.env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL === 'off'
       ) {
         assert.equal(name in channelFor, false, `${name} must not switch its own channel off`);
         continue;
@@ -1483,8 +1483,14 @@ describe('source guards', () => {
     // Extends production: must not inherit capture as if it were the public app.
     const diagnostics = eas.build['testflight-contacts-diagnostics'];
     assert.equal(diagnostics.extends, 'production');
-    assert.equal(diagnostics.env.EXPO_PUBLIC_POSTHOG_ENABLED, '');
-    assert.equal(diagnostics.env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL, '');
+    assert.equal(diagnostics.env.EXPO_PUBLIC_POSTHOG_ENABLED, 'false');
+    assert.equal(diagnostics.env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL, 'off');
+    // EAS validates eas.json and rejects any empty env value, failing every command.
+    for (const [name, profile] of Object.entries(eas.build) as [string, any][]) {
+      for (const [key, value] of Object.entries(profile.env ?? {})) {
+        assert.notEqual(String(value).trim(), '', `${name}.env.${key} must not be empty`);
+      }
+    }
     assert.equal(eas.build.production.environment, 'production');
     assert.equal(eas.build.production.autoIncrement, false);
     assert.equal(eas.build.beta.extends, 'production');

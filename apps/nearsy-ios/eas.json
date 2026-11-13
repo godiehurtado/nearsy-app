@@ -40,8 +40,8 @@
       "extends": "production",
       "env": {
         "EXPO_PUBLIC_NEARSY_FIREBASE_ENV": "production",
-        "EXPO_PUBLIC_POSTHOG_ENABLED": "",
-        "EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL": "",
+        "EXPO_PUBLIC_POSTHOG_ENABLED": "false",
+        "EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL": "off",
         "NEARSY_CONTACTS_DIAGNOSTICS_PROFILE": "testflight-contacts-diagnostics",
         "NEARSY_CONTACTS_DIAGNOSTICS_DAYS": "7",
         "NEARSY_IOS_VERSION": "2.0.10",
