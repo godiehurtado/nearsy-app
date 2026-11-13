@@ -88,7 +88,7 @@ Everything validated in 2.0.10 (80) is kept: Contacts at 5000, affiliations, aff
 - The server ignores unknown ids.
 - The client calls `reevaluateProximityNotices` after saving.
 
-**Contract closed (Owner-approved, Functions `5c1e115`; latest canonical catalog `b574639`, `docs/industries/INDUSTRY_CONTRACT.md`):**
+**Contract closed (Owner-approved, Functions `5c1e115`; catalog frozen at `b574639` by the Owner on 2026-11-12 (decision record `d6cb364`), `docs/industries/INDUSTRY_CONTRACT.md`):**
 - **Catalog v1:** NAICS 2022 / SCIAN 2023, 20 groups, 108 industries.
   - Each item: id, EN/ES `label` (≤ 40) and `shortLabel` (≤ 32), synonyms, and an icon key with Material and Ionicons names.
   - Apps bundle the JSON pinned by version.
@@ -103,7 +103,7 @@ Everything validated in 2.0.10 (80) is kept: Contacts at 5000, affiliations, aff
   - `{{industry}}` = `shortLabel`.
 - **Icons:** where Ionicons has no fitting glyph, the sector icon is used (no misleading icons).
 
-**Implemented in iOS (pending the final wording freeze of v1):**
+**Implemented in iOS (on the frozen v1 catalog):**
 - **Catalog:** `packages/shared/src/industries/industry-catalog.v1.json`, a verbatim copy of `b574639` pinned by the hash of its parsed content. `b574639` adds the search synonyms from the iOS review and rewords two labels; ids, groups and codes are unchanged.
 - **Catalog module:** lookup, labels by language, Ionicons with the generic icon as the fallback, picker sections, and search ranked exactly as the contract.
 - **Picker:** `IndustrySearchField`: a modal with search, sector headers, local icons, a check mark and "Sin especificar" (`null`).
@@ -178,7 +178,7 @@ Everything validated in 2.0.10 (80) is kept: Contacts at 5000, affiliations, aff
 | | Who | Item |
 |---|---|---|
 | T1 | Functions | Server capture for every user, `alertId` for every user, `is_test_user` only from the Beta list (never `false`). Authorized by the Owner in the Functions session, **implemented** at `42d8c95` (`feature/posthog-server`, `POSTHOG_CAPTURE_MODE=all`). **Not deployed, not active.** PostHog failures never change an alert; no client change needed (`alertId` stays optional). Activation follows P4. |
-| T2 | Functions → Owner | **Closed:** Industry contract approved by the Owner and implemented in Functions at `5c1e115` (not deployed, not active). The catalog's latest canonical copy is `b574639` (version 1, iOS review applied), **not frozen yet**: the Owner still has to confirm two consolidations (software + cloud, and oil_gas). Any change means a new canonical JSON for both apps to re-copy; the iOS hash test flags it. |
+| T2 | Functions → Owner | **Closed:** Industry contract approved by the Owner and implemented in Functions at `5c1e115` (not deployed, not active). Catalog v1 **frozen** at `b574639` (Owner, 2026-11-12; decision record `d6cb364`). Both consolidations kept: software = software + cloud + data centers; oil_gas = extraction + refining + pipelines. v1 files are not edited again; the iOS hash test pins the copy. |
 | T3 | iOS | **Implemented** (see 3 and 4): picker, CRJ and Edit field, Discovery display, More toggle, parsing, inbox priority, push motive, analytics. Re-copy the JSON if v1 wording changes before the freeze. |
 | T4 | Android | The same contracts on its own branch, when its Owner opens 2.1.0. |
 | T5 | Functions | Keep `PROXIMITY_INDUSTRY_ALERTS` off until both 2.1.0 apps are public. |

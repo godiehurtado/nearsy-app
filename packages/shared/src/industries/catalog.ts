@@ -3,7 +3,8 @@
  *
  * `industry-catalog.v1.json` is a verbatim copy of the Owner-approved catalog
  * from Functions (`docs/industries/industry-catalog.v1.json`, version 1, commit
- * b574639; latest, not frozen yet). Never edit it here: regenerate in Functions and copy it again.
+ * b574639, frozen by the Owner on 2026-11-12, decision record d6cb364). Never
+ * edit it here: v1 is closed; a later catalog is a new version from Functions.
  *
  * Pure module: no React Native imports.
  */
