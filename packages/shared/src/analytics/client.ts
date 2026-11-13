@@ -5,6 +5,8 @@
  * - Operations run in call order, so an event cannot overtake an identity
  *   change. Until the transport is ready they wait in a small bounded queue.
  * - Account-scoped events name their uid and are dropped if the session moved.
+ * - PostHog distinct_id = analyticsDistinctId(uid, creationTime) (Functions
+ *   proposal G). The same-account checks stay on the UID.
  */
 import {
   EVENT_RULES,
@@ -15,6 +17,7 @@ import {
   type PropertyRuleMap,
 } from './contract';
 import type { AnalyticsConfig } from './config';
+import { deviceAnalyticsDistinctId } from './distinctId';
 import { sanitizeProperties } from './sanitize';
 import {
   silentAnalyticsLogger,
@@ -42,6 +45,12 @@ export type AnalyticsClientDeps = {
   /** Live Firebase session; sign-in can complete before the auth listener runs. */
   readSession?: () => AuthSnapshot | null;
   logger?: AnalyticsLogger;
+  /**
+   * PostHog distinct_id for a session; null = cannot be identified yet (an
+   * li_ account without a readable creation time after the cutover).
+   * Defaults to the shared contract function.
+   */
+  distinctIdFor?: (session: AuthSnapshot) => string | null;
 };
 
 const MAX_PENDING_OPS = 100;
@@ -74,6 +83,8 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
   /** Latest Firebase session known to the client; undefined until first report. */
   let auth: AuthSnapshot | null | undefined;
   let identifiedUid: string | null = null;
+  /** Ids this process identified each UID with (UID itself or its nag1_ id). */
+  const distinctIdsByUid = new Map<string, Set<string>>();
   let afterAuthReady: (() => void)[] = [];
   /** Account generation closed by deletion. A recreated account is not it. */
   let closedAccount: { uid: string; creationTime: string | null } | null = null;
@@ -151,16 +162,60 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     }).values;
   }
 
-  /** Aligns SDK identity with the session. Reset always precedes A→B. */
+  function resolveDistinctId(session: AuthSnapshot): string | null {
+    try {
+      const resolve =
+        deps.distinctIdFor ??
+        ((s: AuthSnapshot) =>
+          deviceAnalyticsDistinctId(
+            s.uid,
+            s.creationTime,
+            deps.config.generationIdSinceMs ?? null,
+          ));
+      const id = resolve(session);
+      return typeof id === 'string' && id.length > 0 ? id : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function rememberDistinctId(uid: string, id: string): void {
+    const ids = distinctIdsByUid.get(uid) ?? new Set<string>();
+    ids.add(id);
+    distinctIdsByUid.set(uid, ids);
+  }
+
+  /** Every id this UID's events may be queued under on this device. */
+  function distinctIdsFor(uid: string, session?: AuthSnapshot | null): string[] {
+    const ids = new Set<string>([uid, ...(distinctIdsByUid.get(uid) ?? [])]);
+    if (session?.uid === uid) {
+      const derived = resolveDistinctId(session);
+      if (derived) ids.add(derived);
+    }
+    return [...ids];
+  }
+
+  /**
+   * Aligns SDK identity with the session. Reset always precedes A→B. An account
+   * that cannot be identified yet stays anonymous (never under its UID) and is
+   * retried on the next report.
+   */
   function applyIdentity(next: AuthSnapshot | null): void {
     const nextUid = next?.uid ?? null;
     if (nextUid === identifiedUid && nextUid !== null) return;
+    const nextId = next ? resolveDistinctId(next) : null;
     run((t) => {
       const persisted = t.getIdentifiedId();
-      if (persisted && persisted !== nextUid) t.reset();
+      if (persisted && persisted !== nextId) t.reset();
     }, true);
+    if (next && !nextId) {
+      identifiedUid = null;
+      log('identity_pending');
+      return;
+    }
     identifiedUid = nextUid;
-    if (!next) return;
+    if (!next || !nextId) return;
+    rememberDistinctId(next.uid, nextId);
     const createdAt = toIsoCreationTime(next.creationTime);
     const { values: set } = sanitizeProperties(PERSON_PROPERTY_RULES, {
       ...superProperties(),
@@ -170,7 +225,7 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     const { values: setOnce } = sanitizeProperties(PERSON_PROPERTY_RULES, {
       account_created_at: createdAt ?? undefined,
     });
-    run((t) => t.identify(next.uid, set, setOnce), true);
+    run((t) => t.identify(nextId, set, setOnce), true);
   }
 
   /** Adopts the live session when it already owns this uid. */
@@ -253,6 +308,10 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
       return false;
     }
     applyIdentity(auth);
+    if (identifiedUid !== uid) {
+      log('event_dropped_identity_pending', { event });
+      return false;
+    }
     const payload = buildEvent(event, properties);
     run((t) => t.capture(event, payload));
     return true;
@@ -281,6 +340,10 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
       return false;
     }
     applyIdentity(auth);
+    if (identifiedUid !== uid) {
+      log('person_update_dropped_identity_pending');
+      return false;
+    }
     const cleanSet = sanitizeProperties(PERSON_PROPERTY_RULES, set);
     const cleanOnce = sanitizeProperties(PERSON_PROPERTY_RULES, setOnce);
     const dropped = [...cleanSet.droppedNames, ...cleanOnce.droppedNames];
@@ -313,15 +376,19 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     const session = live?.uid === uid ? live : null;
     // Later closure phases repeat the uid, often after the session is gone.
     if (closedAccount?.uid === uid && (!session || isClosed(session))) return;
+    const ids = distinctIdsFor(uid, session);
     closedAccount = { uid, creationTime: session?.creationTime ?? null };
     if (auth?.uid === uid) auth = null;
     if (identifiedUid === uid) identifiedUid = null;
     if (heldUid === uid) heldUid = null;
     run((t) => {
-      void Promise.resolve(t.discardQueuedEventsFor(uid)).catch((error: unknown) => {
-        log('discard_failed', { name: errorName(error) });
-      });
-      if (t.getIdentifiedId() === uid) t.reset();
+      for (const id of ids) {
+        void Promise.resolve(t.discardQueuedEventsFor(id)).catch((error: unknown) => {
+          log('discard_failed', { name: errorName(error) });
+        });
+      }
+      const identified = t.getIdentifiedId();
+      if (identified && ids.includes(identified)) t.reset();
     }, true);
   }
 
@@ -349,6 +416,9 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     discardAccount,
     clearClosedAccount,
     holdAccount,
+    /** UID plus every derived id seen for it, for durable deletion records. */
+    distinctIdsFor: (uid: string): string[] =>
+      distinctIdsFor(uid, auth?.uid === uid ? auth : (deps.readSession?.() ?? null)),
     start,
     reportAuthState,
     runWhenAuthKnown,

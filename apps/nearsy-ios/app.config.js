@@ -28,7 +28,10 @@ const {
 const {
   resolveIosBinaryVersionOverride,
 } = require('./scripts/iosBinaryVersionOverride.cjs');
-const { assertAnalyticsBuildConfig } = require('./scripts/analyticsBuildConfig.cjs');
+const {
+  assertAnalyticsBuildConfig,
+  checkGenerationIdSince,
+} = require('./scripts/analyticsBuildConfig.cjs');
 const {
   CONTACTS_DIAGNOSTICS_UNTIL_EXTRA,
   resolveContactsDiagnosticsUntil,
@@ -330,6 +333,7 @@ module.exports = ({ config }) => {
 
   // A profile that declares analytics must carry its token. Others need none.
   assertAnalyticsBuildConfig(process.env);
+  checkGenerationIdSince(process.env);
 
   // Set only by a build profile that numbers its own binary (today: beta).
   const binaryOverride = resolveIosBinaryVersionOverride(process.env);

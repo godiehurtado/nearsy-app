@@ -143,7 +143,9 @@ export function startAnalyticsRuntime(): void {
     firebaseEnv: process.env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV,
     isDevBundle: __DEV__,
     attributionHosts: process.env.EXPO_PUBLIC_ATTRIBUTION_LINK_HOSTS,
+    generationIdSince: process.env.EXPO_PUBLIC_POSTHOG_GENERATION_ID_SINCE_MS,
   });
+  if (config.generationIdSinceInvalid) log('generation_id_since_invalid');
   if (!config.enabled) return;
   markAnalyticsConfigured();
 
@@ -322,7 +324,9 @@ export function startAnalyticsRuntime(): void {
     const syncAccountDeletion = () => {
       const closure = getAccountDeletionClosure();
       if (closure) {
-        void deletionRecords.record(closure.uid, 'confirmed', Date.now()).catch(() => {});
+        void deletionRecords
+          .record(closure.uid, 'confirmed', Date.now(), client.distinctIdsFor(closure.uid))
+          .catch(() => {});
         void verifiedMemory.forget(closure.uid).catch(() => {});
         recordedIntentUid = null;
         client.holdAccount(null);
@@ -340,7 +344,9 @@ export function startAnalyticsRuntime(): void {
       client.holdAccount(holdUid);
       if (holdUid && holdUid !== recordedIntentUid) {
         recordedIntentUid = holdUid;
-        void deletionRecords.record(holdUid, 'intent', Date.now()).catch(() => {});
+        void deletionRecords
+          .record(holdUid, 'intent', Date.now(), client.distinctIdsFor(holdUid))
+          .catch(() => {});
       } else if (!holdUid && recordedIntentUid) {
         void deletionRecords.cancelIntent(recordedIntentUid).catch(() => {});
         recordedIntentUid = null;

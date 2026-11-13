@@ -17,6 +17,22 @@
 const ENABLED_ENV = 'EXPO_PUBLIC_POSTHOG_ENABLED';
 const CHANNEL_ENV = 'EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL';
 const TOKEN_ENV = 'EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN';
+const GENERATION_SINCE_ENV = 'EXPO_PUBLIC_POSTHOG_GENERATION_ID_SINCE_MS';
+
+/**
+ * Proposal G cutover. Same parse rule as the app and Functions: trim;
+ * /^[1-9][0-9]{0,15}$/ and a safe integer. Anything else is ignored (null)
+ * with a build warning; it is not a secret, so the warning may name it.
+ */
+function checkGenerationIdSince(env, warn = console.warn) {
+  const raw = env[GENERATION_SINCE_ENV];
+  if (raw === undefined || String(raw).trim() === '') return { sinceMs: null, invalid: false };
+  const value = String(raw).trim();
+  const ms = Number(value);
+  if (/^[1-9][0-9]{0,15}$/.test(value) && Number.isSafeInteger(ms)) return { sinceMs: ms, invalid: false };
+  warn(`[app.config] ${GENERATION_SINCE_ENV} is not a positive integer in milliseconds; ignored (generation ids stay off).`);
+  return { sinceMs: null, invalid: true };
+}
 
 function assertAnalyticsBuildConfig(env) {
   const flag = String(env[ENABLED_ENV] ?? '').trim();
@@ -40,4 +56,11 @@ function assertAnalyticsBuildConfig(env) {
   );
 }
 
-module.exports = { assertAnalyticsBuildConfig, CHANNEL_ENV, ENABLED_ENV, TOKEN_ENV };
+module.exports = {
+  assertAnalyticsBuildConfig,
+  checkGenerationIdSince,
+  CHANNEL_ENV,
+  ENABLED_ENV,
+  GENERATION_SINCE_ENV,
+  TOKEN_ENV,
+};

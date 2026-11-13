@@ -216,7 +216,7 @@ All three are person-only, never on events.
 
 | Property | Source and rule |
 |---|---|
-| `user_id` | Firebase UID, also the `distinct_id` |
+| `user_id` | Firebase UID. Also the `distinct_id`, except for a LinkedIn account created after the proposal G cutover (see below). Under review: a recommendation to remove it is pending a decision |
 | `email` | Firebase Auth when present. May be an Apple relay address |
 | `account_created_at` | `$set_once` from Firebase creation time. Separates accounts older than the launch |
 | `platform`, `app_version`, `app_build`, `environment`, `tracking_plan_version` | As in events |
@@ -295,9 +295,20 @@ Analytics follows three states published by the deletion modules. It subscribes 
 
 - **A request already on the wire cannot be recalled,** including the SDK's automatic retries of that batch. It holds only events captured before the intent, since the intent stops new ones. It can still reach PostHog after Functions deleted the person, and PostHog would then create the person again from it.
 - **PostHog ingestion is asynchronous.** Events accepted just before the deletion call may be processed after it, with the same effect.
-- **The UID alone does not identify a deleted account.** A LinkedIn account recreated with the same UID is a different account generation, and it shares the PostHog `distinct_id`, so it is the same PostHog person.
+- **The UID alone does not identify a deleted account.** A LinkedIn account recreated with the same UID is a different account generation. Without a cutover it shares the PostHog `distinct_id`, so it is the same PostHog person. Proposal G (below) separates generations once the cutover is set.
 - **`account_created_at` can help detect a recreation, nothing more.** The recreated account's `signup_completed` and `profile_completed` carry its own creation time, which differs from the deleted one. The person property itself is `$set_once`, so it can still show the deleted account's value. None of this separates the two generations' data, makes deleting that person safe, or closes the race above.
 - **Not solvable here without a decision in Functions:** once a recreated account shares the person, deleting it also deletes the new account's data, and leaving it keeps late events of the deleted one. How to treat that case is for Functions and Product to decide.
+
+### distinct_id per account generation (proposal G)
+
+Contract: Functions `docs/analytics/ANALYTICS_DISTINCT_ID_CONTRACT.md` @ `37af793` (approved 2026-11-12). Code: `packages/shared/src/analytics/distinctId.ts`.
+
+- **Rule:** `distinct_id = analyticsDistinctId(uid, authCreationTimeMs, sinceMs)`. It is the UID, except for an `li_` account created at or after the cutover, which gets `nag1_` + the first 32 hex characters of SHA-256(`nearsy-analytics-distinct-id:v1:<uid>:<seconds>`).
+- **Cutover:** build-time `EXPO_PUBLIC_POSTHOG_GENERATION_ID_SINCE_MS`. It is set in no `eas.json` profile; unset means every account keeps its UID, exactly as before. Parse rule: trim, `^[1-9][0-9]{0,15}$` and a safe integer; anything else is ignored with a build warning (`checkGenerationIdSince`) and a runtime log code (`generation_id_since_invalid`).
+- **Creation time:** Firebase Auth `user.metadata.creationTime` only.
+- **Client:** the same-account checks stay on the UID; `reset()` as before. With a cutover set, an `li_` account whose creation time cannot be read is not identified: account events and person updates are dropped, and device events stay anonymous. It identifies once the time is readable and is not re-derived during that sign-in.
+- **Deletion:** the live discard and the durable deletion records cover the UID and every derived id seen for it, with the same time bound.
+- **SHA-256:** a small synchronous implementation, so identity changes keep their order. It is tested against Node crypto and the 5 shared vectors. No new dependency.
 
 ### LinkedIn
 

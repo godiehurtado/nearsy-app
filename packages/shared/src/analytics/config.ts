@@ -8,6 +8,7 @@
  * - production: App Store. Nothing is marked, and nothing writes false either.
  * Without a declared channel nothing is sent. 2.1.0 declares production (eas.json).
  */
+import { parseGenerationIdSinceMs } from './distinctId';
 import {
   DISTRIBUTION_CHANNELS,
   type DistributionChannel,
@@ -28,6 +29,13 @@ export type AnalyticsConfig = {
   isTestInstall: boolean;
   /** Universal Link hosts accepted for campaign attribution. Empty = off. */
   attributionHosts: readonly string[];
+  /**
+   * LinkedIn generation-id cutover (proposal G). null/absent = off, every
+   * account is identified by its UID.
+   */
+  generationIdSinceMs?: number | null;
+  /** The setting was present but did not parse: treated as off. */
+  generationIdSinceInvalid?: boolean;
 };
 
 export type AnalyticsConfigInput = {
@@ -38,6 +46,7 @@ export type AnalyticsConfigInput = {
   firebaseEnv?: string | null;
   isDevBundle?: boolean;
   attributionHosts?: string | null;
+  generationIdSince?: string | null;
 };
 
 /** Same reading as app.config.js: empty means production. */
@@ -91,6 +100,18 @@ export function resolveAnalyticsConfig(
     attributionHosts: enabled
       ? parseAttributionHosts(input.attributionHosts)
       : [],
+    ...generationFields(enabled, input.generationIdSince),
+  };
+}
+
+function generationFields(
+  enabled: boolean,
+  raw: string | null | undefined,
+): Pick<AnalyticsConfig, 'generationIdSinceMs' | 'generationIdSinceInvalid'> {
+  const parsed = parseGenerationIdSinceMs(raw);
+  return {
+    generationIdSinceMs: enabled ? parsed.sinceMs : null,
+    generationIdSinceInvalid: parsed.invalid,
   };
 }
 

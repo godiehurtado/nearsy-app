@@ -182,14 +182,15 @@ Everything validated in 2.0.10 (80) is kept: Contacts at 5000, affiliations, aff
 | T3 | iOS | **Implemented** (see 3 and 4): picker, CRJ and Edit field, Discovery display, More toggle, parsing, inbox priority, push motive, analytics. Re-copy the JSON if v1 wording changes before the freeze. |
 | T4 | Android | The same contracts on its own branch, when its Owner opens 2.1.0. |
 | T5 | Functions | Keep `PROXIMITY_INDUSTRY_ALERTS` off until both 2.1.0 apps are public. |
+| T6 | iOS | **Implemented:** proposal G, `distinct_id` per LinkedIn account generation (contract approved, Functions `37af793`; milestone 1 of `POSTHOG_210_PLAN.md`). Inactive: the cutover `EXPO_PUBLIC_POSTHOG_GENERATION_ID_SINCE_MS` is in no `eas.json` profile. The QA profile with a QA cutover is milestone 2. Details in [ios-posthog-analytics.md](ios-posthog-analytics.md). |
 
 ### Pending before publication or before opening capture
 
 | | Who | Item |
 |---|---|---|
 | P1 | Owner | App Privacy labels and the privacy policy for product analytics, including name and Industry. |
-| P2 | Owner | The EAS sensitive variable `EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN` in the `production` environment (the build fails without it). |
-| P3 | Owner/Legal | The PostHog deletion block when a LinkedIn account is recreated with the same UID. Every other deleted account is already covered (active since 2026-11-07). |
+| P2 | Owner | **Present** (checked 2026-11-12, name and visibility only): `EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN`, project scope, Sensitive, EAS environment `production` (used by production, beta and diagnostics). The Owner confirms in the EAS dashboard that it is the token of PostHog project 716015. |
+| P3 | Owner/Legal | The PostHog deletion block when a LinkedIn account is recreated with the same UID. Every other deleted account is already covered (active since 2026-11-07). Direction approved: proposal G (T6); it takes effect only after QA, a common cutover and `POSTHOG_DELETION_GENERATION_IDS=on` in Functions. Recommendation pending on `user_id` and `match_id`. |
 | P4 | Owner | Activation order: server capture (T1) only after the 2.1.0 apps capture in public and P1 is settled. |
 | P5 | Owner | PostHog event volume and cost with capture for everyone. |
 | P6 | Owner | Authorize the 2.1.0 candidate build, numbering and submission. |
