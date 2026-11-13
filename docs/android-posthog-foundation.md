@@ -503,6 +503,35 @@ Real coverage today: a signed-out person who already has the app, opens a `nears
 signs up on that device within 7 days. Acquisition of people without the app needs App Links or the
 referrer, and neither is validated.
 
+## Identity and deletion (2.1.0, milestone 1)
+
+Contract: Functions `docs/analytics/ANALYTICS_DISTINCT_ID_CONTRACT.md` (approved at 37af793,
+`user_id` section at e393cb0).
+
+- **distinct_id (proposal G):** `analyticsDistinctId.ts`.
+  - It is the UID unless the build sets `NEARSY_POSTHOG_GENERATION_ID_SINCE_MS` and the account is
+    `li_` created at or after it. Then it is `nag1_` plus a SHA-256 prefix (expo-crypto).
+  - No `eas.json` profile sets the cutover, so today every account stays on its UID.
+  - The creation time is only Firebase Auth `metadata.creationTime`.
+  - An `li_` account with a cutover set and no readable creation time is not identified. Its account
+    events and person updates are dropped; device events stay anonymous. It is derived once per
+    sign-in.
+  - The "same account" checks stay on the UID.
+- **`user_id`:** the Firebase UID, as a person property.
+  - Sent with `$set` at identify, after a reset and on an account switch, and on profile syncs.
+  - It is never the identity: there is no alias, merge or group call (a test checks this).
+  - It is not registered on events and is redacted in inspect logs.
+- **Deletion:** `analyticsDeletionGuard.ts`, driven by the deletion flow.
+  - **Hold before `deleteMyAccount`:** new events of the account are dropped, and batches that hold
+    its queued events wait.
+  - **Release** when the backend rejects the request or Auth says the account exists.
+  - **Confirm** on success, when Auth says the user is gone, or when the person leaves the pending
+    state: queued events of the UID and its own id are purged, then `reset()`.
+  - **Restarts:** records are persisted and read before the SDK sends. After a restart every
+    recorded id is dropped.
+  - **When a record ends:** with a later Auth session of that UID, or after 30 days.
+  - A request already sent cannot be recalled. A failed one is not retried for a deleted account.
+
 ## Pending and external
 
 | Item | Owner | Needed |

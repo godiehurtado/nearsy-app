@@ -132,8 +132,15 @@ describe('Callable adapter', () => {
     const flow = codeOnly(core.slice(core.indexOf('export function createDeleteAccountFlow')));
     // Cleanup only behind the exit barrier: confirmed reply, Auth gone, or an explicit exit.
     assert.equal(flow.match(/deps\.cleanupAfterDeletion\(uid\)/g)?.length, 2);
-    assert.match(flow, /barrier\?\.confirmDeletion\(\);\s*try \{\s*await deps\.cleanupAfterDeletion\(uid\);/);
-    assert.match(flow, /barrier\?\.confirmDeletion\(\);\s*try \{\s*if \(uid\) await deps\.cleanupAfterDeletion\(uid\);/);
+    // The analytics purge runs between the barrier and the cleanup's signOut.
+    assert.match(
+      flow,
+      /barrier\?\.confirmDeletion\(\);\s*await analytics\('confirm', uid\);\s*try \{\s*await deps\.cleanupAfterDeletion\(uid\);/,
+    );
+    assert.match(
+      flow,
+      /barrier\?\.confirmDeletion\(\);\s*if \(uid\) await analytics\('confirm', uid\);\s*try \{\s*if \(uid\) await deps\.cleanupAfterDeletion\(uid\);/,
+    );
     assert.equal(flow.match(/finishDeleted\(uid, /g)?.length, 3);
     assert.match(flow, /if \(auth === 'gone'\) return finishDeleted\(uid, true\);/);
     assert.match(flow, /if \(!status\) \{[\s\S]*?\}\s*return finishDeleted\(uid, status === 'ALREADY_DELETED'\);/);

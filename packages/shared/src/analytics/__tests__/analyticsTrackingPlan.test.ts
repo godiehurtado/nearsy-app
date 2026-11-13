@@ -1290,9 +1290,22 @@ describe('product flows are protected', () => {
     const binding = src('analytics/analytics.android.ts');
     const exports = binding.match(/^export const \w+: AnalyticsApi\['\w+'\] = .*$/gm) ?? [];
     assert.ok(exports.length >= 13);
+    // The deletion hooks are awaited by the deletion flow, so they are async and
+    // catch everything themselves instead of going through `safely`.
+    const deletionHooks = [
+      'holdAnalyticsForDeletion',
+      'releaseAnalyticsDeletionHold',
+      'confirmAnalyticsDeletion',
+    ];
     for (const line of exports) {
       if (line.includes('startAnalytics')) continue;
+      if (deletionHooks.some((name) => line.includes(`export const ${name}:`))) continue;
       assert.ok(line.includes('= safely('), line);
+    }
+    for (const name of deletionHooks) {
+      const start = binding.indexOf(`export const ${name}:`);
+      assert.ok(start >= 0, name);
+      assert.match(binding.slice(start, start + 300), /= async \([^)]*\) => \{\s*try \{/, name);
     }
   });
 
