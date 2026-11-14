@@ -4,7 +4,10 @@ import { noteLocationPermissionResolved } from '../analytics';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-import { BG_LOCATION_TASK } from '../background/locationTask';
+import {
+  BG_LOCATION_TASK,
+  clearPendingBackgroundLocation,
+} from '../background/locationTask';
 
 type StartOpts = {
   uid: string;
@@ -156,6 +159,8 @@ export async function startBackgroundLocation({
 }
 
 export async function stopBackgroundLocation() {
+  // Never send a kept fix after stop / sign-out / account change.
+  clearPendingBackgroundLocation();
   try {
     const hasStarted =
       await Location.hasStartedLocationUpdatesAsync(BG_LOCATION_TASK);

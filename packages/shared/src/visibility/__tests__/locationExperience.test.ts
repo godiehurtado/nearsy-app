@@ -312,7 +312,10 @@ describe('ENH-LOC-01 journey wiring (same-pass connection)', () => {
   it('task publish blocked without matching runtime-allowed UID', () => {
     const task = readShared('background/locationTask.ios.ts');
     assert.match(task, /NEARSY_BG_RUNTIME_ALLOWED/);
-    assert.match(task, /allowedUid !== uid/);
+    // QA 2.1.0: the gate moved into readGateUid, used by the 15 s throttle on
+    // every delivery and again right before each publish.
+    assert.match(task, /return allowedUid === uid \? uid : null;/);
+    assert.match(task, /readGateUid,/);
     assert.equal(BG_RUNTIME_ALLOWED_KEY, 'NEARSY_BG_RUNTIME_ALLOWED');
   });
 });

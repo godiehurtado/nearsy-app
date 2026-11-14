@@ -6,6 +6,10 @@ import { firestoreDb } from '../config/firebaseConfig';
 
 export const BG_LOCATION_TASK = 'nearsy-bg-location';
 
+/** iOS-only publish throttle (locationTask.ios.ts); no-ops here. */
+export function flushPendingBackgroundLocation(): void {}
+export function clearPendingBackgroundLocation(): void {}
+
 type LocationTaskData = {
   locations?: Location.LocationObject[];
 };

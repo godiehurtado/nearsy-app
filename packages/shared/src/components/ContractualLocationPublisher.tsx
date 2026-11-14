@@ -7,6 +7,7 @@ import { useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import * as Location from 'expo-location';
 import { firebaseAuth } from '../config/firebaseConfig';
+import { flushPendingBackgroundLocation } from '../background/locationTask';
 import { dbOnUserSnapshot } from '../services/db';
 import { getVisibilityDiscoveryClient } from '../visibility/iosVisibilityFoundation';
 import {
@@ -77,6 +78,9 @@ export default function ContractualLocationPublisher() {
       if (wasBg && isActive && activeRef.current) {
         void tryContractualPublish(false);
       }
+      // A background fix kept by the 15 s spacing goes out on any app state
+      // change, so it never waits on a suspended timer.
+      flushPendingBackgroundLocation();
     });
     return () => sub.remove();
   }, []);
@@ -85,6 +89,7 @@ export default function ContractualLocationPublisher() {
   useEffect(() => {
     const id = setInterval(() => {
       if (AppState.currentState !== 'active') return;
+      flushPendingBackgroundLocation();
       if (!activeRef.current) return;
       void tryContractualPublish(false);
     }, FOREGROUND_CONTRACTUAL_CADENCE_MS);

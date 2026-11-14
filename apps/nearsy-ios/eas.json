@@ -63,7 +63,7 @@
       "env": {
         "EXPO_PUBLIC_POSTHOG_GENERATION_ID_SINCE_MS": "1794787200000",
         "NEARSY_IOS_VERSION": "2.1.0",
-        "NEARSY_IOS_BUILD_NUMBER": "81"
+        "NEARSY_IOS_BUILD_NUMBER": "82"
       }
     }
   },
