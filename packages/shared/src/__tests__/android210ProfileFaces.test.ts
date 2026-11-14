@@ -110,6 +110,28 @@ describe('C3 read precedence', () => {
   });
 });
 
+describe('same normalization as the server resolver (Functions C5 @ 91f4730)', () => {
+  it('an absent or invalid stored mode is personal for the top-level fallback', () => {
+    for (const mode of [undefined, 'bogus', null]) {
+      const doc: Doc = { realName: 'Top', ...(mode === undefined ? {} : { mode }) };
+      assert.equal(readFaceField(doc, 'personal', 'realName'), 'Top', String(mode));
+      assert.equal(readFaceField(doc, 'professional', 'realName'), null, String(mode));
+    }
+  });
+
+  it('company exists only on the professional face', () => {
+    const doc: Doc = {
+      mode: 'personal',
+      company: 'TopCo',
+      [literalFaceKey('personal', 'company')]: 'LitCo',
+      profiles: { personal: { company: 'NestCo' }, professional: { company: 'ProCo' } },
+    };
+    assert.equal(readFaceField(doc, 'personal', 'company'), null);
+    assert.equal(resolveModePresentation(doc, 'personal').company, '');
+    assert.equal(readFaceField(doc, 'professional', 'company'), 'ProCo');
+  });
+});
+
 describe('C1/C2 write payload', () => {
   it('writes a real nested face and deletes only the written literal twins', () => {
     const patch = buildActiveProfileSavePatch({

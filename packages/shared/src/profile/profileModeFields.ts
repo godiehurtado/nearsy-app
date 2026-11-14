@@ -104,18 +104,30 @@ function nestedFace(
  *   2. nested profiles.<mode>.<field>;
  *   3. top level, ONLY when <mode> is the stored active mode.
  * Absent or blank values fall through; the inactive face never borrows top level.
+ * Same as the server resolver (Functions C5, faceResolver.ts @ 91f4730): the
+ * stored active mode is professional only when `mode === 'professional'`, any
+ * other or absent value is personal; `company` exists only on professional.
  */
 export function readFaceField(
   data: Record<string, unknown> | null | undefined,
   mode: ProfileMode,
   field: FaceField,
 ): string | null {
+  if (!data || typeof data !== 'object') return null;
+  if (field === 'company' && mode !== 'professional') return null;
   const pick = field === 'profileImage' ? nonEmptyUri : nonEmptyString;
-  const literal = pick(data?.[literalFaceKey(mode, field)]);
+  const literal = pick(data[literalFaceKey(mode, field)]);
   if (literal) return literal;
   const nested = pick(nestedFace(data, mode)[field]);
   if (nested) return nested;
-  return data?.mode === mode ? pick(data?.[field]) : null;
+  return storedActiveFaceMode(data) === mode ? pick(data[field]) : null;
+}
+
+/** The stored active mode as the server normalizes it (absent or invalid = personal). */
+export function storedActiveFaceMode(
+  data: Record<string, unknown> | null | undefined,
+): ProfileMode {
+  return data?.mode === 'professional' ? 'professional' : 'personal';
 }
 
 /** Presentation for one mode, by the C3 precedence (see readFaceField). */
