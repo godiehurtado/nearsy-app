@@ -897,3 +897,20 @@ describe('Unit 4B — visibility reconciliation semantics', () => {
     assert.equal(isActiveFaceIncomplete(response), true);
   });
 });
+
+describe('C5b PROFILE_SHAPE_INVALID (Functions 1688782)', () => {
+  it('is a generic, non-retryable failure, never an incomplete destination', async () => {
+    const { normalizeVisibilityCallableError, isProfileIncompleteModeError } = await import('../callables');
+    for (const code of ['functions/invalid-argument', 'invalid-argument']) {
+      const err = normalizeVisibilityCallableError({
+        code,
+        message: 'Per-mode profile shape is invalid.',
+        details: { reason: 'invalid-request', retryable: false, code: 'PROFILE_SHAPE_INVALID' },
+      });
+      assert.equal(isProfileIncompleteModeError(err), false, code);
+      const presentation = presentActiveProfileModeError(resolveLocale(en), err);
+      assert.equal(presentation.userMessage, en.activeProfileMode.errors.generic, code);
+      assert.equal(presentation.retryable, false, code);
+    }
+  });
+});

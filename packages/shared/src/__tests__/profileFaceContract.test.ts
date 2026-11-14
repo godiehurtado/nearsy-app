@@ -205,3 +205,18 @@ describe('wiring', () => {
     assert.doesNotMatch(crj, /\.\.\.\(prev \?\? \{\}\),\s*\.\.\.patch,\s*\.\.\.contextPatch/);
   });
 });
+
+describe('mode switch refresh (C5b)', () => {
+  it('after a confirmed switch the editor re-reads the stored doc as its base, not the form', () => {
+    const edit = read('screens/CompleteProfileScreen.tsx');
+    const sw = edit.slice(edit.indexOf('const runModeSwitch = async'), edit.indexOf('const openDestinationOrSwitch'));
+    const refresh = sw.indexOf('void getUserProfile(uid)');
+    assert.ok(refresh > sw.indexOf('setProfileDoc(nextDoc);'), 'refresh after the confirmed switch');
+    const block = sw.slice(refresh, sw.indexOf('.catch(() => {});', refresh));
+    assert.match(block, /mountedRef\.current/);
+    assert.match(block, /getUid\(\) !== uid/);
+    assert.match(block, /\.mode !== response\.mode/);
+    assert.match(block, /setProfileDoc\(fresh/);
+    assert.doesNotMatch(block, /applyDraftToForm|applyModeFields|commitSnapshot/);
+  });
+});

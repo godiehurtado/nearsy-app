@@ -743,6 +743,16 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
           resolveModePresentation(nextDoc, response.mode),
         ),
       );
+      // C5b: the server may have moved the previous face into its nested map
+      // and rewritten the mirror. Refresh the base doc (not the form) so a
+      // later toggle back reads the stored faces, not a stale local mirror.
+      void getUserProfile(uid)
+        .then((fresh) => {
+          if (!fresh || !mountedRef.current || getUid() !== uid) return;
+          if ((fresh as any).mode !== response.mode) return;
+          setProfileDoc(fresh as any);
+        })
+        .catch(() => {});
 
       if (!response.targetProfileComplete) {
         Alert.alert(
