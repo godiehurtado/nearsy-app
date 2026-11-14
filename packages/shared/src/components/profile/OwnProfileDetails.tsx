@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, type ScrollView } from 'react-native';
 import { FormInput } from '../registration/FormInput';
 import OwnProfileBackgroundCard from './OwnProfileBackgroundCard';
 import { useAppTheme } from '../../theme/ThemeContext';
@@ -75,6 +75,8 @@ type Props = {
   companyMaxLength: number;
   /** Extra field for the professional face, shown under Company and before Biography. */
   professionalField?: React.ReactNode;
+  /** Screen scroll view, passed to Languages for the keyboard reveal. */
+  scrollRef?: React.RefObject<ScrollView | null>;
 };
 
 export default function OwnProfileDetails({
@@ -99,6 +101,7 @@ export default function OwnProfileDetails({
   occupationMaxLength,
   companyMaxLength,
   professionalField,
+  scrollRef,
 }: Props) {
   const { palette } = useAppTheme();
   const editable = editorWritable;
@@ -218,6 +221,7 @@ export default function OwnProfileDetails({
         onChangeBirthCountry={onChangeBirthCountry}
         onChangeCurrentCity={onChangeCurrentCity}
         onChangeLanguages={onChangeLanguages}
+        scrollRef={scrollRef}
       />
     </>
   );

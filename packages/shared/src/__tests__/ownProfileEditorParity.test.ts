@@ -111,14 +111,15 @@ describe('Field labels are caps; section titles are not', () => {
     assert.match(styleBlock(formInput, 'label'), /textTransform: 'uppercase'/);
   });
 
-  it('country and language fields opt in to caps labels in Background only', () => {
+  it('country and language fields opt in to caps labels (Background, and CRJ Languages)', () => {
     for (const src of [countryField, languageField]) {
       assert.match(src, /uppercaseLabel = false/);
       assert.match(styleBlock(src, 'labelCaps'), /textTransform: 'uppercase'/);
       assert.doesNotMatch(styleBlock(src, 'label'), /textTransform/);
     }
     assert.equal((background.match(/\n\s+uppercaseLabel\r?\n/g) ?? []).length, 3);
-    assert.doesNotMatch(crj, /uppercaseLabel/);
+    // QA 2.1.0: field labels are caps in CRJ too (EN/ES), never the values.
+    assert.equal((crj.match(/\n\s+uppercaseLabel\r?\n/g) ?? []).length, 1);
   });
 
   it('section titles keep their normal case', () => {
@@ -213,7 +214,10 @@ describe('Theme, large fonts and order', () => {
     for (const src of [countryField, languageField]) {
       assert.doesNotMatch(styleBlock(src, 'labelCaps'), /(?<![a-zA-Z])height:/);
     }
-    assert.match(screen, /paddingBottom: isDirty \? 120 \+ bottomBarInset : spacing\.xxxl/);
+    assert.match(
+      screen,
+      /paddingBottom:\s*\(isDirty \? 120 \+ bottomBarInset : spacing\.xxxl\) \+\s*keyboardRevealPadding\(keyboardHeight\)/,
+    );
   });
 
   it('Profile details → Background → Profile content', () => {

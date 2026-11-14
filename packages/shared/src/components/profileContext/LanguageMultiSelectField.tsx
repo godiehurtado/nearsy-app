@@ -2,7 +2,7 @@
  * Searchable multi-select languages (CRJ + Edit Profile).
  * Shows all selected chips; no +N collapse.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Keyboard,
   Pressable,
@@ -25,6 +25,7 @@ import {
   searchLanguageEntries,
   type LanguageSearchEntry,
 } from '../../profileContext/languageCatalog';
+import { RESULTS_MAX_HEIGHT, revealScrollY, useKeyboardHeight } from './keyboardReveal';
 
 type Props = {
   label: string;
@@ -38,6 +39,11 @@ type Props = {
   editable?: boolean;
   max?: number;
   onChange: (codes: string[]) => void;
+  /**
+   * Screen scroll view. While the search is focused, the field is scrolled to
+   * the top of the visible area so the text and results stay above the keyboard.
+   */
+  scrollRef?: React.RefObject<ScrollView | null>;
 };
 
 const BLUR_HIDE_MS = 180;
@@ -53,6 +59,7 @@ export function LanguageMultiSelectField({
   editable = true,
   max = MAX_PROFILE_LANGUAGE_CODES,
   onChange,
+  scrollRef,
 }: Props) {
   const { palette } = useAppTheme();
   const [query, setQuery] = useState('');
@@ -90,6 +97,31 @@ export function LanguageMultiSelectField({
 
   const atLimit = selectedCodes.length >= max;
   const showResults = focused && query.trim().length > 0;
+  const keyboardHeight = useKeyboardHeight();
+  const inputRef = useRef<TextInput>(null);
+
+  const revealInput = useCallback(() => {
+    const scroll = scrollRef?.current;
+    const input = inputRef.current;
+    if (!scroll || !input) return;
+    const target = (scroll as unknown as { getInnerViewRef?: () => unknown }).getInnerViewRef?.() ?? scroll;
+    try {
+      input.measureLayout(
+        target as never,
+        (_x, y) => scroll.scrollTo({ y: revealScrollY(y), animated: true }),
+        () => undefined,
+      );
+    } catch {
+      // Layout not ready; the next keyboard or results change tries again.
+    }
+  }, [scrollRef]);
+
+  // Reveal once the keyboard is up, and again when results appear under it.
+  useEffect(() => {
+    if (!focused || keyboardHeight <= 0) return;
+    const frame = requestAnimationFrame(revealInput);
+    return () => cancelAnimationFrame(frame);
+  }, [focused, keyboardHeight, showResults, revealInput]);
 
   const clearBlurHideTimer = () => {
     if (blurHideTimer.current) {
@@ -175,6 +207,7 @@ export function LanguageMultiSelectField({
       {editable && !atLimit ? (
         <>
           <TextInput
+            ref={inputRef}
             value={query}
             onChangeText={(text) => {
               setQuery(text);
@@ -303,11 +336,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     borderWidth: 1,
     borderRadius: radius.md,
-    maxHeight: 220,
+    maxHeight: RESULTS_MAX_HEIGHT,
     overflow: 'hidden',
   },
   resultsScroll: {
-    maxHeight: 220,
+    maxHeight: RESULTS_MAX_HEIGHT,
   },
   resultRow: {
     paddingHorizontal: spacing.md,

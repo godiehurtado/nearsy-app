@@ -39,6 +39,10 @@ import {
   type ProfileContextFields,
 } from '../profileContext';
 import { useDiscoveryContextSyncRetry } from '../profileContext/useDiscoveryContextSyncRetry';
+import {
+  keyboardRevealPadding,
+  useKeyboardHeight,
+} from '../components/profileContext/keyboardReveal';
 import { firestoreDeleteField } from '../services/firestoreFieldDelete';
 import { containsObjectionableContent } from '../profile/profileTextModeration';
 import {
@@ -108,6 +112,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
   const { palette } = useAppTheme();
 
   const scrollRef = useRef<ScrollView | null>(null);
+  const keyboardHeight = useKeyboardHeight();
   const modeSwitchSessionRef = useRef(createActiveProfileModeSwitchSession());
   const mountedRef = useRef(true);
   const {
@@ -1073,7 +1078,9 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
           style={styles.flex}
           contentContainerStyle={{
             paddingTop: insets.top + spacing.md,
-            paddingBottom: isDirty ? 120 + bottomBarInset : spacing.xxxl,
+            paddingBottom:
+              (isDirty ? 120 + bottomBarInset : spacing.xxxl) +
+              keyboardRevealPadding(keyboardHeight),
           }}
           keyboardShouldPersistTaps="handled"
           scrollIndicatorInsets={{ top: insets.top }}
@@ -1182,6 +1189,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 onChangeBirthCountry={setBirthCountryCode}
                 onChangeCurrentCity={setCurrentCity}
                 onChangeLanguages={setLanguageCodes}
+                scrollRef={scrollRef}
                 professionalField={
                   <IndustrySelectField
                     label={t('profile.industry.label')}

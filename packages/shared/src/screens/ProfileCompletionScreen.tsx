@@ -139,6 +139,10 @@ import { CountrySelectField } from '../components/profileContext/CountrySelectFi
 import { CurrentCityField } from '../components/profileContext/CurrentCityField';
 import { firestoreDeleteField } from '../services/firestoreFieldDelete';
 import { LanguageMultiSelectField } from '../components/profileContext/LanguageMultiSelectField';
+import {
+  keyboardRevealPadding,
+  useKeyboardHeight,
+} from '../components/profileContext/keyboardReveal';
 import { IndustrySelectField } from '../components/industry/IndustrySelectField';
 import { readIndustryId } from '../industries/industryCatalog.ts';
 import { buildProfessionalIndustryPatch } from '../industries/industryProfileWrite.ts';
@@ -350,6 +354,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     useState<AffiliationSearchUiSnapshot>(IDLE_AFFILIATION_SEARCH_UI);
   const affiliationAddRef = useRef<(() => void) | null>(null);
   const stepScrollRef = useRef<ScrollView>(null);
+  const keyboardHeight = useKeyboardHeight();
   const [socialDraft, setSocialDraft] = useState<CrjSocialDraftValues>(
     emptyCrjSocialDraftValues,
   );
@@ -1918,6 +1923,10 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
           step.kind === 'affiliation' && affiliationSearchUi.hideJourneyFooter
             ? styles.stepBodySearch
             : null,
+          // Room to scroll Languages and its results above the keyboard.
+          step.kind === 'details' && keyboardHeight > 0
+            ? { paddingBottom: spacing.xl + keyboardRevealPadding(keyboardHeight) }
+            : null,
         ]}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="none"
@@ -2237,6 +2246,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                   label={t(
                     'onboarding.profileCompletion.details.languagesLabel',
                   )}
+                  uppercaseLabel
+                  scrollRef={stepScrollRef}
                   searchPlaceholder={t(
                     'onboarding.profileCompletion.details.languagesPlaceholder',
                   )}

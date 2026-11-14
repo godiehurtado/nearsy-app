@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, type ScrollView } from 'react-native';
 import { CountrySelectField } from '../profileContext/CountrySelectField';
 import { CurrentCityField } from '../profileContext/CurrentCityField';
 import { LanguageMultiSelectField } from '../profileContext/LanguageMultiSelectField';
@@ -42,6 +42,8 @@ type Props = {
   onChangeBirthCountry: (value: string | null) => void;
   onChangeCurrentCity: (value: CurrentCity | null) => void;
   onChangeLanguages: (codes: string[]) => void;
+  /** Screen scroll view, so Languages can scroll above the keyboard. */
+  scrollRef?: React.RefObject<ScrollView | null>;
 };
 
 /** Origin, the city where the user lives today (optional), and languages. */
@@ -54,6 +56,7 @@ export default function OwnProfileBackgroundCard({
   onChangeBirthCountry,
   onChangeCurrentCity,
   onChangeLanguages,
+  scrollRef,
 }: Props) {
   const { palette } = useAppTheme();
 
@@ -107,6 +110,7 @@ export default function OwnProfileBackgroundCard({
           locale={locale}
           editable={editable}
           onChange={onChangeLanguages}
+          scrollRef={scrollRef}
         />
       </View>
     </View>
