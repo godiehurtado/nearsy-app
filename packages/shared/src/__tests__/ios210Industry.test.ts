@@ -27,6 +27,11 @@ import {
 } from '../industries/catalog';
 import { parseIndustryRef } from '../industries/industryRef';
 import {
+  INDUSTRY_SECTOR_COLORS,
+  INTEREST_ICON_PALETTE,
+  industryIconColor,
+} from '../industries/industryColors';
+import {
   parseDiscoverNearbyResponse,
   parseDiscoveryProfileDetail,
   parseDiscoveryProfileSummary,
@@ -408,7 +413,15 @@ describe('screen wiring', () => {
 
   it('edit screen: professional field, save patch and reevaluation', () => {
     const edit = read('screens/CompleteProfileScreen.tsx');
-    assert.match(edit, /activeMode === 'professional' \? \(\s*<View style=\{styles\.industryField\}>\s*<IndustrySearchField/);
+    // QA 2.1.0: Industry is a field of the details card (after Company, before
+    // Biography), not a block outside it.
+    assert.match(edit, /professionalExtraField=\{\s*<IndustrySearchField/);
+    assert.doesNotMatch(edit, /styles\.industryField/);
+    const details = read('components/profile/OwnProfileDetails.tsx');
+    const company = details.indexOf('label={labels.company}');
+    const extra = details.indexOf("mode === 'professional' ? professionalExtraField");
+    const biography = details.indexOf('label={labels.biography}');
+    assert.ok(company > 0 && company < extra && extra < biography, 'Company → Industry → Biography');
     assert.match(edit, /buildOwnProfileIndustrySavePatch\(/);
     assert.match(edit, /patches: \[modePatch, contextPatch, industryPatch\]/);
     assert.match(edit, /Object\.keys\(industryPatch\)\.length > 0/);
@@ -434,5 +447,31 @@ describe('screen wiring', () => {
 
   it('Alerts passes the UI locale for the short label', () => {
     assert.match(read('screens/AlertsScreen.tsx'), /buildAlertRowMessage\(item, t, translateItem, locale\)/);
+  });
+});
+
+describe('picker icon colors (QA 2.1.0)', () => {
+  it('every v1 sector has one color from the Interests palette; neighbours differ', () => {
+    const sectors = [...(catalogJson as any).sectors].sort((a: any, b: any) => a.order - b.order);
+    assert.deepEqual(Object.keys(INDUSTRY_SECTOR_COLORS).sort(), sectors.map((s: any) => s.id).sort());
+    for (const s of sectors) assert.ok((INTEREST_ICON_PALETTE as readonly string[]).includes(INDUSTRY_SECTOR_COLORS[s.id]!), s.id);
+    for (let i = 1; i < sectors.length; i++) {
+      assert.notEqual(INDUSTRY_SECTOR_COLORS[sectors[i].id], INDUSTRY_SECTOR_COLORS[sectors[i - 1].id], sectors[i].id);
+    }
+  });
+
+  it('the palette is the Interests one, verbatim', () => {
+    const interests = read('interests/customInterestIconCatalog.ts');
+    const block = interests.slice(interests.indexOf('const PALETTE = ['), interests.indexOf('] as const;', interests.indexOf('const PALETTE = [')));
+    assert.deepEqual(block.match(/#[0-9A-F]{6}/g), [...INTEREST_ICON_PALETTE]);
+  });
+
+  it('items take their sector color; unknown or null ids keep the fallback', () => {
+    const item = (catalogJson as any).industries.find((i: any) => i.status === 'active');
+    assert.equal(industryIconColor(item.id, 'x'), INDUSTRY_SECTOR_COLORS[item.sector]);
+    assert.equal(industryIconColor(null, 'x'), 'x');
+    assert.equal(industryIconColor('not_an_industry', 'x'), 'x');
+    const field = read('components/profile/IndustrySearchField.tsx');
+    assert.equal(field.split('industryIconColor(').length - 1, 2);
   });
 });

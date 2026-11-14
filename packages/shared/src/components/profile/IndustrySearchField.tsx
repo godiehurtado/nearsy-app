@@ -1,7 +1,8 @@
 /**
  * Professional Industry: single, optional selection (Industry contract §0).
  *
- * Modal with search, sector sections, local Ionicons, a check mark and a
+ * Modal with search, sector sections, local Ionicons colored per sector with
+ * the Interests palette (industryColors.ts), a check mark and a
  * "Not specified" option that stores null. Search covers EN/ES labels and
  * synonyms (catalog.searchIndustries). No free text, no remote logos.
  */
@@ -30,6 +31,7 @@ import {
   searchIndustries,
   type Industry,
 } from '../../industries/catalog';
+import { industryIconColor } from '../../industries/industryColors';
 import { fontSize, fontWeight, radius, spacing, useAppTheme } from '../../theme';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -101,7 +103,7 @@ export function IndustrySearchField({
         <Ionicons
           name={industryIonicon(item.id) as IoniconName}
           size={20}
-          color={palette.textSecondary}
+          color={industryIconColor(item.id, palette.textSecondary)}
         />
         <Text style={[styles.optionName, { color: palette.textPrimary }]} numberOfLines={2}>
           {name}
@@ -156,7 +158,7 @@ export function IndustrySearchField({
             <Ionicons
               name={industryIonicon(value) as IoniconName}
               size={18}
-              color={palette.textSecondary}
+              color={industryIconColor(value, palette.textSecondary)}
             />
             <Text style={[styles.valueText, { color: palette.textPrimary }]} numberOfLines={1}>
               {selectedLabel}
@@ -273,7 +275,8 @@ const styles = StyleSheet.create({
   field: {
     width: '100%',
     minHeight: 52,
-    paddingVertical: 14,
+    // Same box as FormInput, so it reads as one more field of the card.
+    paddingVertical: 15,
     paddingHorizontal: 16,
     borderRadius: radius.lg,
     borderWidth: 1,
@@ -281,7 +284,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  valueText: { flex: 1, fontSize: fontSize.md, fontWeight: fontWeight.semibold },
+  valueText: { flex: 1, fontSize: fontSize.md },
   placeholderText: { flex: 1, fontSize: fontSize.md },
   modalRoot: { flex: 1 },
   modalHeader: {
@@ -309,11 +312,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     fontSize: fontSize.md,
   },
+  // Section title (sector): shown as the catalog writes it, not uppercased.
   sectionHeader: {
-    fontSize: fontSize.xs,
+    fontSize: fontSize.sm,
     fontWeight: fontWeight.bold,
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
     marginTop: spacing.lg,
     marginBottom: spacing.xs,
     paddingHorizontal: spacing.sm,

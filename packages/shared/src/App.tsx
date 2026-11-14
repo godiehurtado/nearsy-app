@@ -29,6 +29,7 @@ import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 
 import * as Notifications from 'expo-notifications';
 import { createPushOpenCoordinator } from './alerts/pushOpenCoordinator';
+import { notePushAlertOpened } from './alerts/alertSeenSync';
 import { trackAlertOpened } from './analytics';
 import { startAnalyticsRuntime } from './analytics/runtime';
 import {
@@ -88,8 +89,18 @@ const pushOpenCoordinator = createPushOpenCoordinator({
       params: { uid },
     });
   },
-  onAlertOpened: ({ alertId, motive }) => {
+  onAlertOpened: ({ actorUid, alertId, motive }) => {
     trackAlertOpened({ source: 'push', alertId, motive });
+    // QA 2.1.0: a push open reads its alert (resolved once it is listed).
+    // On a cold start Auth may not have reported yet; wait for it.
+    if (!actorUid) return;
+    const openedAt = Date.now();
+    const note = () => {
+      const viewerUid = firebaseAuth.currentUser?.uid;
+      if (viewerUid) notePushAlertOpened(viewerUid, actorUid, openedAt);
+    };
+    if (firebaseAuth.currentUser) note();
+    else void (firebaseAuth as any).authStateReady?.().then(note, () => {});
   },
   now: () => Date.now(),
 });

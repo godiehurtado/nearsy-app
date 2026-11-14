@@ -197,7 +197,7 @@ Everything validated in 2.0.10 (80) is kept: Contacts at 5000, affiliations, aff
 
 P1–P3 do not block the independent work, but must be resolved before capture is opened.
 
-**Separate defect, not in 2.1.0:** see [defect-profile-mode-dotted-keys.md](defect-profile-mode-dotted-keys.md).
+**Per-mode profile defect, now in 2.1.0 (QA 81 blocker):** see [defect-profile-mode-dotted-keys.md](defect-profile-mode-dotted-keys.md), section Fix (2.1.0).
 
 ## Physical validation (when a candidate is authorized)
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { ScrollView, View, Text, StyleSheet } from 'react-native';
 
 import { CitySearchField } from './CitySearchField';
 import { CountrySearchField } from './CountrySearchField';
@@ -40,6 +40,8 @@ type Props = {
   onChangeBirthCountry: (code: string | null) => void;
   onChangeCurrentCity: (city: CurrentCity | null) => void;
   onChangeLanguages: (codes: string[]) => void;
+  /** The editor's ScrollView, so Languages can keep its results in view. */
+  scrollRef?: React.RefObject<ScrollView | null>;
 };
 
 export default function OwnProfileContextCard({
@@ -50,6 +52,7 @@ export default function OwnProfileContextCard({
   onChangeBirthCountry,
   onChangeCurrentCity,
   onChangeLanguages,
+  scrollRef,
 }: Props) {
   const { palette } = useAppTheme();
   const editable = editorWritable;
@@ -92,6 +95,7 @@ export default function OwnProfileContextCard({
           placeholder={placeholders.languages}
           searchPlaceholder={placeholders.searchLanguage}
           disabled={!editable}
+          scrollRef={scrollRef}
         />
       </View>
     </View>

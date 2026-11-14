@@ -1,5 +1,5 @@
 export default {
-  myProfileTitle: 'My Profile',
+  myProfileTitle: 'My profile',
   title: 'Profile',
   save: 'Save changes',
   cancel: 'Cancel',

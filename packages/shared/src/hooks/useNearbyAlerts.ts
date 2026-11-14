@@ -2,6 +2,10 @@
  * Nearby alerts from discoverNearby (no peer users queries, no peer coords).
  * Periodic refresh is silent once a list exists — same rules as Discovery.
  * Viewed state is written on row open via alertSeen, not tab enter.
+ *
+ * QA 2.1.0: every instance (bell badge, Alerts screen) shares opens through
+ * alertSeenSync, a refresh never undoes a newer local open, and a push open
+ * marks its alert read once the alert is listed. State is per signed-in uid.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -12,6 +16,12 @@ import {
   type AlertSeenRecord,
 } from '../alerts/alertAppearance';
 import { loadAlertSeenMap, writeAlertSeen } from '../alerts/alertSeenStore';
+import {
+  mergeSeenMaps,
+  publishAlertOpened,
+  subscribeAlertOpened,
+  takeResolvedPushOpens,
+} from '../alerts/alertSeenSync';
 import { firebaseAuth } from '../config/firebaseConfig';
 import { dbOnUserSnapshot } from '../services/db';
 import { buildDiscoverNearbyRequest, metersToFeet } from '../visibility';
@@ -58,6 +68,44 @@ export function useNearbyAlerts() {
   const meRef = useRef<UserDoc | null>(null);
   const requestIdRef = useRef(0);
   const inFlightRef = useRef(false);
+  /** Opens made or received in this process, for this uid only. */
+  const localSeenRef = useRef<{ uid: string | null; seen: Record<string, AlertSeenRecord> }>({
+    uid: null,
+    seen: {},
+  });
+
+  const localSeenFor = useCallback((uid: string) => {
+    if (localSeenRef.current.uid !== uid) localSeenRef.current = { uid, seen: {} };
+    return localSeenRef.current.seen;
+  }, []);
+
+  const applyOpen = useCallback(
+    (uid: string, peerUid: string, record: AlertSeenRecord) => {
+      if (firebaseAuth.currentUser?.uid !== uid) return;
+      const local = localSeenFor(uid);
+      const current = local[peerUid];
+      if (!current || record.seenAt >= current.seenAt) local[peerUid] = record;
+      setSeenByPeer((prev) => mergeSeenMaps(prev, { [peerUid]: record }));
+      setAlerts((prev) =>
+        prev.map((row) =>
+          row.uid === peerUid && row.appearanceKey === record.appearanceKey
+            ? { ...row, unseen: false }
+            : row.uid === peerUid && !record.appearanceKey
+              ? { ...row, unseen: false }
+              : row,
+        ),
+      );
+    },
+    [localSeenFor],
+  );
+
+  useEffect(
+    () =>
+      subscribeAlertOpened(({ viewerUid, peerUid, record }) => {
+        applyOpen(viewerUid, peerUid, record);
+      }),
+    [applyOpen],
+  );
   const interestFingerprint = fingerprintActiveModeInterests(me);
 
   useEffect(() => {
@@ -139,7 +187,7 @@ export function useNearbyAlerts() {
           uid,
           metersToFeet,
         );
-        const seen = await loadAlertSeenMap(uid);
+        const loadedSeen = await loadAlertSeenMap(uid);
         if (
           !shouldApplyNearbyLoadResult({
             requestId,
@@ -148,6 +196,14 @@ export function useNearbyAlerts() {
         ) {
           return;
         }
+        if (firebaseAuth.currentUser?.uid !== uid) return;
+        // Pushes opened for alerts that are now listed count as read.
+        for (const open of takeResolvedPushOpens(uid, mapped, Date.now())) {
+          localSeenFor(uid)[open.peerUid] = open.record;
+          void writeAlertSeen(uid, open.peerUid, open.record).catch(() => {});
+          publishAlertOpened({ viewerUid: uid, ...open });
+        }
+        const seen = mergeSeenMaps(loadedSeen, localSeenFor(uid));
         setSeenByPeer(seen);
         setAlerts(
           mapped.map((item) => ({
@@ -206,12 +262,8 @@ export function useNearbyAlerts() {
     const peerUid = item.uid;
     if (!uid || !peerUid) return;
     const record = buildAlertSeenWrite(item.appearanceKey, Date.now());
-    setSeenByPeer((prev) => ({ ...prev, [peerUid]: record }));
-    setAlerts((prev) =>
-      prev.map((row) =>
-        row.uid === peerUid ? { ...row, unseen: false } : row,
-      ),
-    );
+    // Updates this instance and the bell badge at once.
+    publishAlertOpened({ viewerUid: uid, peerUid, record });
     try {
       await writeAlertSeen(uid, peerUid, record);
     } catch {

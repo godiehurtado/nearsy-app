@@ -40,6 +40,7 @@ import { CountrySearchField } from '../components/profile/CountrySearchField';
 import { IndustrySearchField } from '../components/profile/IndustrySearchField';
 import { readProfessionalIndustryId } from '../profile/ownProfileEditorState';
 import { LanguageMultiSelectField } from '../components/profile/LanguageMultiSelectField';
+import { useKeyboardHeight } from '../hooks/useKeyboardHeight';
 import ProfileAvatarImage from '../components/profile/ProfileAvatarImage';
 import { OnboardingInterestCategoryPanel } from '../components/registration/OnboardingInterestCategoryPanel';
 import { OnboardingAffiliationCategoryPanel } from '../components/registration/OnboardingAffiliationCategoryPanel';
@@ -120,6 +121,7 @@ import {
   sanitizeSocialPhotoUrl,
 } from '../authentication/social';
 import {
+  applyFaceSaveToDoc,
   buildActiveProfileSavePatch,
   resolveModePresentation,
   type ProfileMode,
@@ -419,6 +421,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     >
   >({});
   const stepScrollRef = useRef<ScrollView>(null);
+  const keyboardHeight = useKeyboardHeight();
   const [socialDraft, setSocialDraft] = useState<CrjSocialDraftValues>(
     emptyCrjSocialDraftValues,
   );
@@ -900,8 +903,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     });
     persistedCurrentCityRef.current = currentCity;
     setShellData((prev) => ({
-      ...(prev ?? {}),
-      ...patch,
+      ...applyFaceSaveToDoc(prev, patch),
       ...contextPatch,
       currentCity: currentCity ?? null,
       mode,
@@ -953,8 +955,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     });
     setWizardPhoto(imageUrl);
     setShellData((prev) => ({
-      ...(prev ?? {}),
-      ...patch,
+      ...applyFaceSaveToDoc(prev, patch),
       mode,
       profileSetupCompleted: false,
       profiles: {
@@ -1005,8 +1006,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       scheduleReevaluateProximityNotices();
     }
     setShellData((prev) => ({
-      ...(prev ?? {}),
-      ...patch,
+      ...applyFaceSaveToDoc(prev, patch),
       ...contextPatch,
       ...industryPatch,
       mode,
@@ -1040,8 +1040,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       setShellData((prev) =>
         applyActiveProfileModeResponseToUserDoc(
           {
-            ...(prev ?? {}),
-            ...patch,
+            ...applyFaceSaveToDoc(prev, patch),
             ...contextPatch,
             mode: outcome.response.mode,
             profileSetupCompleted: false,
@@ -2024,6 +2023,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
           step.kind === 'affiliation' && affiliationSearchUi.hideJourneyFooter
             ? styles.stepBodySearch
             : null,
+          // QA 2.1.0: room under the details form while the keyboard is up, so
+          // Languages and its results can scroll above it (the affiliation
+          // search keeps its own keyboard handling).
+          step.kind === 'details' && keyboardHeight > 0
+            ? { paddingBottom: keyboardHeight + spacing.lg }
+            : null,
         ]}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="none"
@@ -2331,6 +2336,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
                   searchPlaceholder={t(
                     'onboarding.profileCompletion.details.languagesSearchPlaceholder',
                   )}
+                  scrollRef={stepScrollRef}
                 />
               </View>
             </>

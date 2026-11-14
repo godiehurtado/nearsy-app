@@ -1,9 +1,17 @@
 /**
  * Multi-select languages field with searchable catalog and wrapped chips.
+ *
+ * Keyboard (QA 2.1.0): with a parent scrollRef, focusing the search, the
+ * keyboard appearing and each new query scroll the field to the top of the
+ * visible area, so the input and its results stay above the keyboard. Results
+ * scroll inside a capped list; the form itself stays scrollable.
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Keyboard,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -33,7 +41,14 @@ export type LanguageMultiSelectFieldProps = {
   searchPlaceholder: string;
   maxLanguages?: number;
   disabled?: boolean;
+  /** The form's ScrollView, so the field can bring itself into view. */
+  scrollRef?: React.RefObject<ScrollView | null>;
 };
+
+/** Gap kept above the field when it is scrolled into view. */
+export const LANGUAGE_FIELD_SCROLL_MARGIN = 12;
+/** Results list height cap (about six rows); it scrolls inside. */
+export const LANGUAGE_RESULTS_MAX_HEIGHT = 264;
 
 export function LanguageMultiSelectField({
   value,
@@ -43,6 +58,7 @@ export function LanguageMultiSelectField({
   searchPlaceholder,
   maxLanguages = MAX_PROFILE_LANGUAGES,
   disabled = false,
+  scrollRef,
 }: LanguageMultiSelectFieldProps) {
   const { palette } = useAppTheme();
   const { i18n, t } = useTranslation();
@@ -50,6 +66,45 @@ export function LanguageMultiSelectField({
 
   const [query, setQuery] = useState('');
   const [focused, setFocused] = useState(false);
+  const wrapRef = useRef<View | null>(null);
+
+  const scrollIntoView = useCallback(() => {
+    const scroll = scrollRef?.current;
+    const wrap = wrapRef.current;
+    if (!scroll || !wrap) return;
+    const inner = (scroll as any).getInnerViewRef?.() ?? null;
+    if (!inner) return;
+    // Two frames: let the keyboard inset and the results layout settle first.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        try {
+          wrap.measureLayout(
+            inner,
+            (_x, y) =>
+              scroll.scrollTo({
+                y: Math.max(0, y - LANGUAGE_FIELD_SCROLL_MARGIN),
+                animated: true,
+              }),
+            () => {},
+          );
+        } catch {
+          // Measuring is best effort; the form stays scrollable by hand.
+        }
+      }),
+    );
+  }, [scrollRef]);
+
+  useEffect(() => {
+    if (!focused) return;
+    const event = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const sub = Keyboard.addListener(event, scrollIntoView);
+    return () => sub.remove();
+  }, [focused, scrollIntoView]);
+
+  const hasQuery = query.trim().length > 0;
+  useEffect(() => {
+    if (focused && hasQuery) scrollIntoView();
+  }, [focused, hasQuery, scrollIntoView]);
 
   const selected = useMemo(
     () => (Array.isArray(value) ? value.filter(Boolean) : []),
@@ -91,7 +146,7 @@ export function LanguageMultiSelectField({
   );
 
   return (
-    <View style={styles.wrap}>
+    <View ref={wrapRef} style={styles.wrap} collapsable={false}>
       <Text style={[styles.label, { color: palette.textMuted }]}>{label}</Text>
 
       {selectedChips.length > 0 ? (
@@ -125,7 +180,10 @@ export function LanguageMultiSelectField({
         editable={!disabled}
         autoCorrect={false}
         autoCapitalize="none"
-        onFocus={() => setFocused(true)}
+        onFocus={() => {
+          setFocused(true);
+          scrollIntoView();
+        }}
         onBlur={() => setFocused(false)}
         style={[
           styles.searchInput,
@@ -160,7 +218,12 @@ export function LanguageMultiSelectField({
               {t('profile.context.noLanguageResults')}
             </Text>
           ) : (
-            results.map((item) => (
+            <ScrollView
+              style={styles.resultsList}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+            >
+            {results.map((item) => (
               <Pressable
                 key={item.code}
                 accessibilityRole="button"
@@ -179,7 +242,8 @@ export function LanguageMultiSelectField({
                   {item.name}
                 </Text>
               </Pressable>
-            ))
+            ))}
+            </ScrollView>
           )}
         </View>
       ) : null}
@@ -221,6 +285,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.lg,
     overflow: 'hidden',
+  },
+  resultsList: {
+    maxHeight: LANGUAGE_RESULTS_MAX_HEIGHT,
   },
   optionRow: {
     paddingVertical: 13,

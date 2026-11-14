@@ -1,7 +1,8 @@
 // src/services/firestoreService.ts  ✅ Web Firestore + RNFirebase Auth
 import { noteProfileWrite } from '../analytics';
 import { firestoreDb } from '../config/firebaseConfig';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { deleteField, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { buildUserProfileSetPayload } from '../profile/userProfileSetPayload';
 import { isProfileDocumentComplete } from '../utils/profileDocumentComplete';
 
 import {
@@ -230,10 +231,11 @@ async function upsertUserProfile(uid: string, patch: Record<string, any>) {
   try {
     const ref = doc(firestoreDb, 'users', uid);
 
+    // Per-mode face contract C1/C2: nested faces, written literals deleted.
     await setDoc(
       ref,
       {
-        ...patch,
+        ...buildUserProfileSetPayload(patch, deleteField),
         updatedAt: serverTimestamp(),
       },
       { merge: true },

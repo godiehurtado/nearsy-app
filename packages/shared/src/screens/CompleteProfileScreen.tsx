@@ -62,7 +62,11 @@ import {
   persistOwnProfileThenSyncDiscovery,
   syncDiscoveryContextSafely,
 } from '../profile/ownProfileSaveFlow';
-import { resolveModePresentation, type ProfileMode } from '../profile/profileModeFields';
+import {
+  applyFaceSaveToDoc,
+  resolveModePresentation,
+  type ProfileMode,
+} from '../profile/profileModeFields';
 import {
   buildOwnProfileContextSavePatch,
   buildOwnProfileIndustrySavePatch,
@@ -1000,26 +1004,12 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
         showDiscoverySyncError(uid);
       }
 
+      // Local copy mirrors the server after C1/C2: nested face, no literals.
       let nextProfileDoc: Record<string, unknown> = {
-        ...(profileDoc ?? {}),
-        ...modePatch,
+        ...applyFaceSaveToDoc(profileDoc, modePatch),
         ...contextPatch,
         ...industryPatch,
         currentCity: persistedDraft.currentCity,
-        profiles: {
-          ...((profileDoc?.profiles as any) ?? {}),
-          [mode]: {
-            ...(((profileDoc?.profiles as any)?.[mode] as object) ?? {}),
-            realName: persistedDraft.realName,
-            lastName: persistedDraft.lastName,
-            profileImage: persistedDraft.profileImage,
-            occupation: persistedDraft.occupation,
-            bio: persistedDraft.bio,
-            ...(mode === 'professional'
-              ? { company: persistedDraft.company }
-              : {}),
-          },
-        },
       };
 
       // BUG-PROFILE-02: after a successful Professional face save, re-run the
@@ -1310,17 +1300,14 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 onChangeOccupation={setOccupation}
                 onChangeBio={setBio}
                 onChangeCompany={setCompany}
-              />
-
-              {activeMode === 'professional' ? (
-                <View style={styles.industryField}>
+                professionalExtraField={
                   <IndustrySearchField
                     value={professionalIndustryId}
                     onChange={setProfessionalIndustryId}
                     disabled={!editorWritable}
                   />
-                </View>
-              ) : null}
+                }
+              />
 
               <OwnProfileContextCard
                 values={{
@@ -1345,6 +1332,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 onChangeBirthCountry={setBirthCountryCode}
                 onChangeCurrentCity={setCurrentCity}
                 onChangeLanguages={setLanguageCodes}
+                scrollRef={scrollRef}
               />
 
               <ProfileQuickActions
@@ -1398,9 +1386,6 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-  },
-  industryField: {
-    marginTop: 16,
   },
   flex: {
     flex: 1,

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { type ReactNode } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { FormInput } from '../registration/FormInput';
 import { useAppTheme } from '../../theme/ThemeContext';
@@ -49,6 +49,11 @@ type Props = {
   lastNameMaxLength: number;
   occupationMaxLength: number;
   companyMaxLength: number;
+  /**
+   * Shown in the professional mode only: right after Company and before Biography, as
+   * one more field of this card (QA 2.1.0: Industry belongs with the details).
+   */
+  professionalExtraField?: ReactNode;
 };
 
 export default function OwnProfileDetails({
@@ -67,6 +72,7 @@ export default function OwnProfileDetails({
   lastNameMaxLength,
   occupationMaxLength,
   companyMaxLength,
+  professionalExtraField,
 }: Props) {
   const { palette } = useAppTheme();
   const editable = editorWritable;
@@ -135,6 +141,7 @@ export default function OwnProfileDetails({
             returnKeyType="next"
           />
         ) : null}
+        {mode === 'professional' ? professionalExtraField ?? null : null}
         <View>
           <FormInput
             label={labels.biography}
