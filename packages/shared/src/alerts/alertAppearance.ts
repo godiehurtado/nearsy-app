@@ -36,6 +36,23 @@ export function buildAlertSeenWrite(
     : { seenAt };
 }
 
+/**
+ * Loaded alertSeen map plus this session's local opens (QA 2.1.0 item 5).
+ * Per peer the newer seenAt wins, so a refresh, a late snapshot or a failed
+ * write never brings back an alert the person already opened.
+ */
+export function mergeSeenMaps(
+  loaded: Record<string, AlertSeenRecord>,
+  local: Record<string, AlertSeenRecord>,
+): Record<string, AlertSeenRecord> {
+  const out: Record<string, AlertSeenRecord> = { ...loaded };
+  for (const [peer, record] of Object.entries(local)) {
+    const current = out[peer];
+    if (!current || record.seenAt > current.seenAt) out[peer] = record;
+  }
+  return out;
+}
+
 export function countUnseenAlerts(
   items: ReadonlyArray<{ appearanceKey?: string; uid?: string }>,
   seenByPeer: Record<string, AlertSeenRecord | undefined>,

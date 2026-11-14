@@ -21,9 +21,11 @@ import {
 import {
   buildAlertSeenWrite,
   countUnseenAlerts,
+  mergeSeenMaps,
   type AlertSeenRecord,
 } from '../alerts/alertAppearance';
 import { subscribeAlertSeenMap, writeAlertSeen } from '../alerts/alertSeenStore';
+import { pushOpenNotes } from '../alerts/pushOpenNotes';
 import {
   applyUnseenFlags,
   collectActiveModeInterestIds,
@@ -100,6 +102,16 @@ export function useNearbyAlertsState(): NearbyAlertsState {
   const meRef = useRef<UserDoc | null>(null);
   const alertsRef = useRef<AlertItem[]>([]);
   const seenByPeerRef = useRef<Record<string, AlertSeenRecord>>({});
+  /**
+   * This session's opens for the signed-in uid. Merged into every loaded map
+   * (newer seenAt wins), so a refresh, a late snapshot or a failed write never
+   * brings an opened alert back into the badge. Reset on account change.
+   */
+  const localOpensRef = useRef<{ uid: string | null; map: Record<string, AlertSeenRecord> }>({
+    uid: null,
+    map: {},
+  });
+  const [pushNotesTick, setPushNotesTick] = useState(0);
 
   meRef.current = me;
   alertsRef.current = alerts;
@@ -122,8 +134,13 @@ export function useNearbyAlertsState(): NearbyAlertsState {
     return () => unsub();
   }, []);
 
+  useEffect(() => pushOpenNotes.subscribe(() => setPushNotesTick((n) => n + 1)), []);
+
   useEffect(() => {
     requestGenerationRef.current += 1;
+    if (localOpensRef.current.uid !== authUid) {
+      localOpensRef.current = { uid: authUid, map: {} };
+    }
     if (!authUid) {
       setLoading(false);
       setMe(null);
@@ -141,8 +158,11 @@ export function useNearbyAlertsState(): NearbyAlertsState {
       if (data?.topBarColor) setTopColor(data.topBarColor);
       setMe(data ? { ...data, uid: authUid } : null);
     });
-    const unsubSeen = subscribeAlertSeenMap(authUid, (map) => {
+    const unsubSeen = subscribeAlertSeenMap(authUid, (loaded) => {
       if (firebaseAuth.currentUser?.uid !== authUid) return;
+      const local =
+        localOpensRef.current.uid === authUid ? localOpensRef.current.map : {};
+      const map = mergeSeenMaps(loaded, local);
       seenByPeerRef.current = map;
       setSeenByPeer(map);
       setAlerts((prev) => applyUnseenFlags(prev, map));
@@ -259,18 +279,37 @@ export function useNearbyAlertsState(): NearbyAlertsState {
     const peerUid = item.uid;
     if (!uid || !peerUid) return;
     const record = buildAlertSeenWrite(item.appearanceKey, Date.now());
+    if (localOpensRef.current.uid !== uid) {
+      localOpensRef.current = { uid, map: {} };
+    }
+    localOpensRef.current.map[peerUid] = record;
+    // Refreshes that resolve before the next render already see the open.
+    seenByPeerRef.current = { ...seenByPeerRef.current, [peerUid]: record };
     setSeenByPeer((prev) => ({ ...prev, [peerUid]: record }));
     setAlerts((prev) =>
       prev.map((row) =>
         row.uid === peerUid ? { ...row, unseen: false } : row,
       ),
     );
+    // The rules require appearanceKey: without a live key the mark stays local.
+    if (!record.appearanceKey) return;
     try {
       await writeAlertSeen(uid, peerUid, record);
     } catch {
-      /* Functions #40 rules may not be deployed yet. */
+      /* Kept locally; the next session reads the server state again. */
     }
   }, [authUid]);
+
+  // A push open counts once that peer's alert is listed with its live key.
+  useEffect(() => {
+    if (!authUid) return;
+    for (const actorUid of pushOpenNotes.pendingFor(authUid)) {
+      const row = alerts.find((a) => a.uid === actorUid);
+      if (!row) continue;
+      pushOpenNotes.resolve(authUid, actorUid);
+      if (row.unseen !== false) void markAlertOpened(row);
+    }
+  }, [alerts, authUid, pushNotesTick, markAlertOpened]);
 
   const unseenCount = countUnseenAlerts(alerts, seenByPeer);
 

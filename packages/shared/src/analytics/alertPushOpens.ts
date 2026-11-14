@@ -9,6 +9,7 @@ import type { NavigationContainerRefWithCurrent } from '@react-navigation/native
 import { firebaseAuth } from '../config/firebaseConfig';
 import { trackAlertOpened } from './analytics';
 import { createPushOpenCoordinator, isRouteReachable } from './pushOpenCoordinator';
+import { pushOpenNotes } from '../alerts/pushOpenNotes';
 
 const LAST_HANDLED_KEY = 'NEARSY_LAST_HANDLED_PUSH_RESPONSE';
 
@@ -22,11 +23,14 @@ export function createAlertPushOpens(
       navigationRef.isReady() &&
       isRouteReachable(navigationRef.getRootState(), 'Home'),
     // DiscoveryProfile uses getDiscoveryProfile (no peer users/{uid} read).
-    openProfile: (actorUid) =>
+    openProfile: (actorUid) => {
       (navigationRef as any).navigate('Home', {
         screen: 'DiscoveryProfile',
         params: { uid: actorUid },
-      }),
+      });
+      // The detail is open: that peer's alert counts as read once it is listed.
+      pushOpenNotes.note(firebaseAuth.currentUser?.uid ?? null, actorUid);
+    },
     emitOpened: (alertId) => trackAlertOpened('push', alertId),
     readLastHandledId: () => AsyncStorage.getItem(LAST_HANDLED_KEY),
     writeLastHandledId: (id) => AsyncStorage.setItem(LAST_HANDLED_KEY, id),
