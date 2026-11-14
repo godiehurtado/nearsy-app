@@ -88,19 +88,14 @@ const pushOpenCoordinator = createPushOpenCoordinator({
       screen: 'DiscoveryProfile',
       params: { uid },
     });
+    // QA 2.1.0 (same rule as Android): a push reads its alert only when its
+    // detail actually opens; resolved once the alert is listed. The
+    // coordinator navigates only with a signed-in session in MainTabs.
+    const viewerUid = firebaseAuth.currentUser?.uid;
+    if (viewerUid) notePushAlertOpened(viewerUid, uid, Date.now());
   },
-  onAlertOpened: ({ actorUid, alertId, motive }) => {
+  onAlertOpened: ({ alertId, motive }) => {
     trackAlertOpened({ source: 'push', alertId, motive });
-    // QA 2.1.0: a push open reads its alert (resolved once it is listed).
-    // On a cold start Auth may not have reported yet; wait for it.
-    if (!actorUid) return;
-    const openedAt = Date.now();
-    const note = () => {
-      const viewerUid = firebaseAuth.currentUser?.uid;
-      if (viewerUid) notePushAlertOpened(viewerUid, actorUid, openedAt);
-    };
-    if (firebaseAuth.currentUser) note();
-    else void (firebaseAuth as any).authStateReady?.().then(note, () => {});
   },
   now: () => Date.now(),
 });

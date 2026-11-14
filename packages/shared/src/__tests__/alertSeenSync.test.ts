@@ -88,7 +88,10 @@ describe('alerts read state (QA 2.1.0)', () => {
     assert.match(hook, /takeResolvedPushOpens\(uid, mapped, Date\.now\(\)\)/);
     assert.match(hook, /firebaseAuth\.currentUser\?\.uid !== uid/);
     const app = read('App.tsx');
-    assert.match(app, /notePushAlertOpened\(viewerUid, actorUid, openedAt\)/);
+    // Same rule as Android: noted only when the detail actually opens.
+    const nav = app.slice(app.indexOf('navigateToProfile: (uid) =>'), app.indexOf('onAlertOpened:'));
+    assert.match(nav, /notePushAlertOpened\(viewerUid, uid, Date\.now\(\)\)/);
+    assert.equal(app.split('notePushAlertOpened(').length - 1, 1);
     const tabs = read('navigation/RootTabs.tsx');
     assert.match(tabs, /const \{ unseenCount \} = useNearbyAlerts\(\)/);
   });
