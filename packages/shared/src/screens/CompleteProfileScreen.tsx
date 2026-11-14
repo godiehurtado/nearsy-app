@@ -70,7 +70,11 @@ import {
   clearPendingSocialProfilePrefill,
   mergeCompleteProfilePrefill,
 } from '../authentication/social';
-import { resolveModePresentation, type ProfileMode } from '../profile/profileModeFields';
+import {
+  applyProfileSavePatchToDoc,
+  resolveModePresentation,
+  type ProfileMode,
+} from '../profile/profileModeFields';
 import {
   draftForOwnProfileFace,
   evaluateOwnProfileModeActivation,
@@ -832,6 +836,9 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       const modePatch = buildOwnProfileSavePatch({
         mode: faceMode,
         draft: persistedDraft,
+        // Top level only when the saved face is the stored active one (C1).
+        activeMode: mode,
+        literalDelete: firestoreDeleteField(),
       });
       const contextPatch = buildProfileContextSavePatch(contextDraft);
       const nextContext = normalizeProfileContext(contextDraft);
@@ -866,26 +873,16 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
       if (syncStatus === 'failed') offerDiscoverySyncRetry(nextContext.currentCity);
 
       const { currentCity: _previousCity, ...docWithoutCity } = profileDoc ?? {};
-      let nextDoc: Record<string, unknown> = {
-        ...docWithoutCity,
-        ...modePatch,
-        ...contextPatch,
-        ...(nextContext.currentCity ? { currentCity: nextContext.currentCity } : {}),
-        profiles: {
-          ...((profileDoc?.profiles as any) ?? {}),
-          [faceMode]: {
-            ...(((profileDoc?.profiles as any)?.[faceMode] as object) ?? {}),
-            realName: persistedDraft.realName,
-            lastName: persistedDraft.lastName,
-            profileImage: persistedDraft.profileImage,
-            occupation: persistedDraft.occupation,
-            bio: persistedDraft.bio,
-            ...(faceMode === 'professional'
-              ? { company: persistedDraft.company }
-              : {}),
-          },
+      // Local doc from what was written: nested face merged, the other face and
+      // this face's unsaved fields kept, literal twins removed (never a spread).
+      let nextDoc: Record<string, unknown> = applyProfileSavePatchToDoc(
+        {
+          ...docWithoutCity,
+          ...contextPatch,
+          ...(nextContext.currentCity ? { currentCity: nextContext.currentCity } : {}),
         },
-      };
+        modePatch,
+      );
 
       // BUG-PROFILE-02: restore Discovery projection after complete Professional save.
       const client = await getVisibilityDiscoveryClient().catch(() => null);

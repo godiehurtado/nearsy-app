@@ -28,6 +28,9 @@ const completeDraft: OwnProfileDraft = {
   company: 'Nearsy',
 };
 
+/** Stands in for FieldValue.delete() in pure tests. */
+const DEL = Symbol('delete');
+
 function patchKeys(patch: Record<string, unknown>): string[] {
   return Object.keys(patch).sort();
 }
@@ -117,6 +120,8 @@ describe('Own Profile lifecycle safety', () => {
     const patch = buildOwnProfileSavePatch({
       mode: 'personal',
       draft: completeDraft,
+      activeMode: 'personal',
+      literalDelete: DEL,
     });
     assert.equal(ownProfileSaveOmitsForbiddenKeys(patch), true);
     assert.equal(
@@ -154,7 +159,9 @@ describe('Own Profile lifecycle safety', () => {
         status: 'should not persist',
       },
       includeModeInPatch: false,
+      literalDelete: DEL,
     });
+    assert.equal(Object.prototype.hasOwnProperty.call((patch.profiles as any).personal, 'status'), false);
     assert.equal(patch.status, undefined);
     assert.equal(patch['profiles.personal.status'], undefined);
     assert.equal(
@@ -169,12 +176,15 @@ describe('Own Profile mode isolation', () => {
     const patch = buildOwnProfileSavePatch({
       mode: 'personal',
       draft: completeDraft,
+      activeMode: 'personal',
+      literalDelete: DEL,
     });
     assert.deepEqual(patchKeys(patch), [
       'bio',
       'lastName',
       'occupation',
       'profileImage',
+      'profiles',
       'profiles.personal.bio',
       'profiles.personal.lastName',
       'profiles.personal.occupation',
@@ -182,6 +192,11 @@ describe('Own Profile mode isolation', () => {
       'profiles.personal.realName',
       'realName',
     ]);
+    // Real nested face; the literal twins are only deletions (C1/C2).
+    assert.deepEqual(Object.keys(patch.profiles as object), ['personal']);
+    for (const key of Object.keys(patch).filter((k) => k.startsWith('profiles.'))) {
+      assert.equal(patch[key], DEL, key);
+    }
     for (const key of Object.keys(patch)) {
       assert.equal(key.startsWith('profiles.professional.'), false, key);
     }
@@ -192,6 +207,8 @@ describe('Own Profile mode isolation', () => {
     const patch = buildOwnProfileSavePatch({
       mode: 'professional',
       draft: completeDraft,
+      activeMode: 'professional',
+      literalDelete: DEL,
     });
     assert.deepEqual(patchKeys(patch), [
       'bio',
@@ -199,6 +216,7 @@ describe('Own Profile mode isolation', () => {
       'lastName',
       'occupation',
       'profileImage',
+      'profiles',
       'profiles.professional.bio',
       'profiles.professional.company',
       'profiles.professional.lastName',
@@ -238,9 +256,12 @@ describe('Own Profile last name', () => {
     const patch = buildOwnProfileSavePatch({
       mode: 'personal',
       draft: { ...completeDraft, lastName: '  García  ' },
+      activeMode: 'personal',
+      literalDelete: DEL,
     });
     assert.equal(patch.lastName, 'García');
-    assert.equal(patch['profiles.personal.lastName'], 'García');
+    assert.equal((patch.profiles as any).personal.lastName, 'García');
+    assert.equal(patch['profiles.personal.lastName'], DEL);
   });
 
   it('requires lastName for both modes', () => {
@@ -397,9 +418,11 @@ describe('Own Profile image persistence', () => {
     const patch = buildOwnProfileSavePatch({
       mode: 'personal',
       draft: persisted,
+      activeMode: 'personal',
+      literalDelete: DEL,
     });
     assert.equal(patch.profileImage, remote);
-    assert.equal(patch['profiles.personal.profileImage'], remote);
+    assert.equal((patch.profiles as any).personal.profileImage, remote);
   });
 
   it('upload failure preserves local draft + dirty against prior snapshot', () => {
@@ -427,6 +450,8 @@ describe('Own Profile image persistence', () => {
           ...completeDraft,
           profileImage: 'file:///tmp/bad.jpg',
         },
+        activeMode: 'personal',
+        literalDelete: DEL,
       }),
     );
   });

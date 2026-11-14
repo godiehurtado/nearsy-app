@@ -121,6 +121,7 @@ import {
   sanitizeSocialPhotoUrl,
 } from '../authentication/social';
 import {
+  applyProfileSavePatchToDoc,
   buildActiveProfileSavePatch,
   resolveModePresentation,
   type ProfileMode,
@@ -837,8 +838,10 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         realName: firstName.trim(),
         lastName: lastName.trim(),
       },
+      // CRJ edits the face chosen in its first step, the stored active one.
       projectActiveToTopLevel: true,
       includeModeInPatch: false,
+      literalDelete: firestoreDeleteField(),
     });
     const contextPatch = buildProfileContextSavePatch({
       birthCountryCode,
@@ -860,14 +863,18 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     void getVisibilityDiscoveryClient()
       .then((client) => syncDiscoveryProfileContextAfterSave(client))
       .catch(() => undefined);
-    setShellData((prev) => ({
-      ...(prev ?? {}),
-      ...patch,
-      ...contextPatch,
-      currentCity: nextCity,
-      mode,
-      profileSetupCompleted: false,
-    }));
+    setShellData((prev) =>
+      applyProfileSavePatchToDoc(
+        {
+          ...(prev ?? {}),
+          ...contextPatch,
+          currentCity: nextCity,
+          mode,
+          profileSetupCompleted: false,
+        },
+        patch,
+      ),
+    );
   }
 
   async function persistPhoto() {
@@ -890,8 +897,10 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       presentation: {
         profileImage: imageUrl,
       },
+      // CRJ edits the face chosen in its first step, the stored active one.
       projectActiveToTopLevel: true,
       includeModeInPatch: false,
+      literalDelete: firestoreDeleteField(),
     });
 
     await updateUserProfilePartial(uid, {
@@ -899,21 +908,12 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       profileSetupCompleted: false,
     });
     setWizardPhoto(imageUrl);
-    setShellData((prev) => ({
-      ...(prev ?? {}),
-      ...patch,
-      mode,
-      profileSetupCompleted: false,
-      profiles: {
-        ...((prev?.profiles as object) ?? {}),
-        [mode]: {
-          ...(((prev?.profiles as Record<string, object> | undefined)?.[
-            mode
-          ] as object) ?? {}),
-          profileImage: imageUrl,
-        },
-      },
-    }));
+    setShellData((prev) =>
+      applyProfileSavePatchToDoc(
+        { ...(prev ?? {}), mode, profileSetupCompleted: false },
+        patch,
+      ),
+    );
   }
 
   async function persistDetails() {
@@ -926,8 +926,10 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
         bio,
         company,
       }),
+      // CRJ edits the face chosen in its first step, the stored active one.
       projectActiveToTopLevel: true,
       includeModeInPatch: false,
+      literalDelete: firestoreDeleteField(),
     });
     const contextPatch = buildProfileContextSavePatch({
       birthCountryCode,
@@ -963,14 +965,16 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     });
 
     setShellData((prev) => {
-      let next: Record<string, unknown> = {
-        ...(prev ?? {}),
-        ...patch,
-        ...contextPatch,
-        ...industryPatch,
-        mode,
-        profileSetupCompleted: false,
-      };
+      let next: Record<string, unknown> = applyProfileSavePatchToDoc(
+        {
+          ...(prev ?? {}),
+          ...contextPatch,
+          ...industryPatch,
+          mode,
+          profileSetupCompleted: false,
+        },
+        patch,
+      );
       if (resync.kind === 'synced') {
         next = applyActiveProfileModeResponseToUserDoc(next, resync.response);
       }

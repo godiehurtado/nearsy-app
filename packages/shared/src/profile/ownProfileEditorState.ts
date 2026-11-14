@@ -204,8 +204,17 @@ export function buildOwnProfileSavePresentation(
 }
 
 export function buildOwnProfileSavePatch(input: {
+  /** The face being edited and saved. */
   mode: ProfileMode;
   draft: OwnProfileDraft;
+  /**
+   * The stored, confirmed active mode. Top level is mirrored only when the saved
+   * face IS the active one (C1): saving the inactive face must never overwrite
+   * the active face's top-level fields.
+   */
+  activeMode: ProfileMode | null;
+  /** FieldValue.delete() sentinel; removes this face's literal twins (C2). */
+  literalDelete: unknown;
 }): Record<string, unknown> {
   const presentation = buildOwnProfileSavePresentation(input.draft, input.mode);
   if (isLocalProfileImageUri(presentation.profileImage)) {
@@ -214,8 +223,9 @@ export function buildOwnProfileSavePatch(input: {
   return buildActiveProfileSavePatch({
     mode: input.mode,
     presentation,
-    projectActiveToTopLevel: true,
+    projectActiveToTopLevel: input.activeMode === input.mode,
     includeModeInPatch: false,
+    literalDelete: input.literalDelete,
   });
 }
 
@@ -242,6 +252,10 @@ export function ownProfileSaveOmitsForbiddenKeys(
     Object.prototype.hasOwnProperty.call(patch, 'profiles.professional.status')
   ) {
     return false;
+  }
+  const faces = patch.profiles as Record<string, Record<string, unknown>> | undefined;
+  for (const face of Object.values(faces ?? {})) {
+    if (face && Object.prototype.hasOwnProperty.call(face, 'status')) return false;
   }
   return true;
 }

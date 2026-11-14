@@ -53,6 +53,10 @@ function readOccupation(
   doc: Record<string, unknown>,
   mode: string,
 ): string | null | undefined {
+  // Older builds stored the face as literal "profiles.<mode>.<field>" fields;
+  // a non-blank literal wins, as in profileModeFields.readFaceField (C3).
+  const literal = doc[`profiles.${mode}.occupation`];
+  if (typeof literal === 'string' && nonBlank(literal) !== null) return nonBlank(literal);
   const profiles = doc.profiles as
     | Record<string, Record<string, unknown> | undefined>
     | undefined;
