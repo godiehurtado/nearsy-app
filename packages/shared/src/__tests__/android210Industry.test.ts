@@ -286,3 +286,41 @@ describe('PostHog industry', () => {
     assert.ok(!personKeysToUnset({ doc: never, properties: person(never), previousMode: 'professional' }).includes('industry'));
   });
 });
+
+describe('industry icon colors (agreed with iOS)', async () => {
+  const colors = await import('../industries/industryColors.ts');
+  const palette = read('interests/customInterestIconCatalog.ts');
+
+  it('every catalog v1 sector has a color from the Interests palette', () => {
+    const sectors = [...INDUSTRY_CATALOG_DATA.sectors].sort((a, b) => a.order - b.order);
+    assert.deepEqual(
+      Object.keys(colors.INDUSTRY_SECTOR_COLORS).sort(),
+      sectors.map((s) => s.id).sort(),
+    );
+    for (const s of sectors) {
+      const hex = colors.INDUSTRY_SECTOR_COLORS[s.id]!;
+      assert.match(hex, /^#[0-9A-F]{6}$/);
+      assert.ok(palette.includes(`'${hex}'`), `${s.id} ${hex} is not in the Interests palette`);
+    }
+    for (let i = 1; i < sectors.length; i += 1) {
+      assert.notEqual(
+        colors.INDUSTRY_SECTOR_COLORS[sectors[i]!.id],
+        colors.INDUSTRY_SECTOR_COLORS[sectors[i - 1]!.id],
+        `${sectors[i - 1]!.id} and ${sectors[i]!.id} share a color`,
+      );
+    }
+  });
+
+  it('items take their sector color; none and unknown keep the fallback', () => {
+    const item = INDUSTRY_CATALOG_DATA.industries.find((i) => i.status === 'active')!;
+    assert.equal(colors.industryIconColor(item.id, 'muted'), colors.INDUSTRY_SECTOR_COLORS[item.sector]);
+    assert.equal(colors.industryIconColor(null, 'muted'), 'muted');
+    assert.equal(colors.industryIconColor('not_a_real_industry', 'muted'), 'muted');
+    assert.equal(colors.industrySectorColor('__proto__'), null);
+  });
+
+  it('the picker rows and the field use the sector colors', () => {
+    assert.match(read('components/industry/IndustryPickerModal.tsx'), /color=\{industrySectorColor\(row\.item\.sector\) \?\? palette\.textSecondary\}/);
+    assert.match(read('components/industry/IndustrySelectField.tsx'), /industryIconColor\(value, palette\.textSecondary\)/);
+  });
+});

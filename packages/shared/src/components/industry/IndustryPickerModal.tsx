@@ -21,6 +21,7 @@ import { useAppTheme } from '../../theme/ThemeContext';
 import { fontSize, fontWeight } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
+import { industrySectorColor } from '../../industries/industryColors.ts';
 import {
   industryLang,
   industryMaterialIcon,
@@ -95,7 +96,7 @@ export function IndustryPickerModal({ visible, selectedId, onSelect, onClose }: 
           <MaterialCommunityIcons
             name={industryMaterialIcon(row.item.iconKey) as never}
             size={22}
-            color={palette.textSecondary}
+            color={industrySectorColor(row.item.sector) ?? palette.textSecondary}
             style={styles.rowIcon}
           />
         ) : (

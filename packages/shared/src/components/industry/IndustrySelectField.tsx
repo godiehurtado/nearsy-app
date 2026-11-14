@@ -12,6 +12,7 @@ import { fontSize, fontWeight } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { industryIconFor, industryLabel, industryLang } from '../../industries/industryCatalog.ts';
+import { industryIconColor } from '../../industries/industryColors.ts';
 import { IndustryPickerModal } from './IndustryPickerModal';
 
 type Props = {
@@ -51,7 +52,7 @@ export function IndustrySelectField({ label, value, onChange, editable = true, s
         <MaterialCommunityIcons
           name={(value ? industryIconFor(value) : 'briefcase-outline') as never}
           size={20}
-          color={value ? palette.textSecondary : palette.textMuted}
+          color={value ? industryIconColor(value, palette.textSecondary) : palette.textMuted}
           style={styles.icon}
         />
         <Text
