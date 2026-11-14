@@ -93,3 +93,12 @@ describe('alerts read state (QA 2.1.0)', () => {
     assert.match(tabs, /const \{ unseenCount \} = useNearbyAlerts\(\)/);
   });
 });
+
+describe('alertSeen write (rules require appearanceKey)', () => {
+  it('iOS store never writes a record without appearanceKey', () => {
+    const store = read('alerts/alertSeenStore.ios.ts');
+    const body = store.slice(store.indexOf('export async function writeAlertSeen'));
+    assert.ok(body.indexOf('if (!record.appearanceKey) return;') < body.indexOf('await setDoc('));
+    assert.ok(body.indexOf('if (!record.appearanceKey) return;') > 0);
+  });
+});

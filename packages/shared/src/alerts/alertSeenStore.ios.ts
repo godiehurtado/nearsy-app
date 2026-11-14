@@ -36,6 +36,9 @@ export async function writeAlertSeen(
   if (!viewerUid || !peerUid || firebaseAuth.currentUser?.uid !== viewerUid) {
     return;
   }
+  // Rules require a non-empty appearanceKey; without one the open stays a
+  // local-only mark (same as Android) instead of a write that is rejected.
+  if (!record.appearanceKey) return;
   await setDoc(
     doc(firestoreDb, 'users', viewerUid, 'alertSeen', peerUid),
     {
