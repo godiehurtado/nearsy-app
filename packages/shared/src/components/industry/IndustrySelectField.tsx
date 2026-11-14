@@ -32,7 +32,9 @@ export function IndustrySelectField({ label, value, onChange, editable = true, s
 
   return (
     <View style={styles.wrap}>
-      <Text style={[styles.label, { color: palette.textSecondary }]}>{label}</Text>
+      <Text accessibilityLabel={label} style={[styles.label, { color: palette.textMuted }]}>
+        {label}
+      </Text>
       <Pressable
         onPress={() => setOpen(true)}
         disabled={!editable || saving}
@@ -42,7 +44,7 @@ export function IndustrySelectField({ label, value, onChange, editable = true, s
         accessibilityState={{ disabled: !editable || saving, busy: saving }}
         style={({ pressed }) => [
           styles.field,
-          { backgroundColor: palette.surface, borderColor: palette.border },
+          { backgroundColor: palette.surface, borderColor: palette.borderStrong },
           pressed && { backgroundColor: palette.panel },
         ]}
       >
@@ -78,19 +80,26 @@ export function IndustrySelectField({ label, value, onChange, editable = true, s
   );
 }
 
+// Same label and box as FormInput, so the field reads as one of the form's own.
 const styles = StyleSheet.create({
-  wrap: { gap: spacing.xs },
-  label: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  wrap: { width: '100%' },
+  label: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    marginBottom: 7,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
   field: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 48,
+    minHeight: 52,
     borderWidth: 1,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    borderRadius: radius.lg,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   icon: { marginRight: spacing.sm },
   value: { flex: 1, fontSize: fontSize.md },
-  hint: { fontSize: fontSize.xs },
+  hint: { fontSize: fontSize.xs, marginTop: 6 },
 });

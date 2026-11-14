@@ -1182,10 +1182,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 onChangeBirthCountry={setBirthCountryCode}
                 onChangeCurrentCity={setCurrentCity}
                 onChangeLanguages={setLanguageCodes}
-              />
-
-              {activeMode === 'professional' ? (
-                <View style={{ marginHorizontal: screenPadding.horizontal, marginBottom: spacing.lg }}>
+                professionalField={
                   <IndustrySelectField
                     label={t('profile.industry.label')}
                     value={professionalIndustryId}
@@ -1194,8 +1191,8 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                     saving={industrySaving}
                     hint={t('profile.industry.hint')}
                   />
-                </View>
-              ) : null}
+                }
+              />
 
               <ProfileQuickActions
                 sectionTitle={t('profile.sections.content')}

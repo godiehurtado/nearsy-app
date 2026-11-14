@@ -73,6 +73,8 @@ type Props = {
   lastNameMaxLength: number;
   occupationMaxLength: number;
   companyMaxLength: number;
+  /** Extra field for the professional face, shown under Company and before Biography. */
+  professionalField?: React.ReactNode;
 };
 
 export default function OwnProfileDetails({
@@ -96,6 +98,7 @@ export default function OwnProfileDetails({
   lastNameMaxLength,
   occupationMaxLength,
   companyMaxLength,
+  professionalField,
 }: Props) {
   const { palette } = useAppTheme();
   const editable = editorWritable;
@@ -156,17 +159,20 @@ export default function OwnProfileDetails({
             returnKeyType="next"
           />
           {mode === 'professional' ? (
-            <FormInput
-              label={labels.company}
-              placeholder={placeholders.company}
-              value={values.company}
-              onChangeText={onChangeCompany}
-              editable={editable}
-              maxLength={companyMaxLength}
-              autoCapitalize="words"
-              autoCorrect={false}
-              returnKeyType="next"
-            />
+            <>
+              <FormInput
+                label={labels.company}
+                placeholder={placeholders.company}
+                value={values.company}
+                onChangeText={onChangeCompany}
+                editable={editable}
+                maxLength={companyMaxLength}
+                autoCapitalize="words"
+                autoCorrect={false}
+                returnKeyType="next"
+              />
+              {professionalField ?? null}
+            </>
           ) : null}
           <View>
             <FormInput

@@ -90,7 +90,8 @@ describe('Profile details keeps its fields for Personal and Professional', () =>
   it('company stays Professional-only; Personal keeps the rest', () => {
     assert.match(
       detailsCard,
-      /mode === 'professional' \? \(\s*<FormInput\s+label=\{labels\.company\}/,
+      // Company, then the professional-only slot (Industry), under one condition.
+      /mode === 'professional' \? \(\s*<>\s*<FormInput\s+label=\{labels\.company\}[^]*?\{professionalField \?\? null\}\s*<\/>/,
     );
     assert.equal((detailsCard.match(/mode === 'professional'/g) ?? []).length, 1);
     assert.match(detailsCard, /\{values\.bio\.length\}\/\{bioMaxLength\}/);

@@ -149,7 +149,22 @@ describe('stored values', () => {
     assert.match(crj, /mode === 'professional' && industryTouchedRef\.current/);
     assert.match(crj, /'professionalIndustryId' in industryPatch\) scheduleReevaluateProximityNotices\(\)/);
     const editor = read('screens/CompleteProfileScreen.tsx');
-    assert.match(editor, /activeMode === 'professional' \? \(\s*<View[^]*?<IndustrySelectField/);
+    // Own Profile: Industry is a professional-only slot inside the details card.
+    assert.match(editor, /professionalField=\{\s*<IndustrySelectField/);
+  });
+
+  it('Own Profile shows Industry under Company and before Biography, in the same card', () => {
+    const details = read('components/profile/OwnProfileDetails.tsx');
+    const company = details.indexOf('label={labels.company}');
+    const slot = details.indexOf('{professionalField ?? null}');
+    const biography = details.indexOf('label={labels.biography}');
+    const background = details.indexOf('<OwnProfileBackgroundCard');
+    assert.ok(company > 0 && slot > company && biography > slot && background > biography);
+    // The field label and box follow FormInput (uppercase label, same radius and border).
+    const field = read('components/industry/IndustrySelectField.tsx');
+    assert.match(field, /textTransform: 'uppercase'/);
+    assert.match(field, /borderRadius: radius\.lg/);
+    assert.match(field, /borderColor: palette\.borderStrong/);
   });
 
   it('the picker has no free text or remote logos', () => {
