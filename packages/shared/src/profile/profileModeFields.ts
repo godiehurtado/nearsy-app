@@ -98,12 +98,18 @@ function faceFieldValue(
   field: FaceField,
   pick: (value: unknown) => string | null,
 ): string | null {
+  // Same rules as the server resolver (Functions faceResolver, C5): company is
+  // professional-only, and an absent or invalid stored mode means personal.
+  if (field === 'company' && mode !== 'professional') return null;
   const profiles = (data?.profiles ?? {}) as ProfilesMap;
-  const nested = (profiles[mode] ?? {}) as Record<string, unknown>;
+  const nested = (
+    profiles && typeof profiles === 'object' ? (profiles[mode] ?? {}) : {}
+  ) as Record<string, unknown>;
+  const storedMode: ProfileMode = data?.mode === 'professional' ? 'professional' : 'personal';
   return (
     pick(data?.[literalFaceKey(mode, field)]) ??
     pick(nested[field]) ??
-    (data?.mode === mode ? pick(data?.[field]) : null)
+    (storedMode === mode ? pick(data?.[field]) : null)
   );
 }
 

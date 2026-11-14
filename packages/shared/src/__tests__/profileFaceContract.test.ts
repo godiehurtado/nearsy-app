@@ -172,6 +172,21 @@ describe('QA sequence on controlled data (affected-account shape)', () => {
     assert.deepEqual(literalKeys(local), literalKeys(stored));
   });
 
+  it('same rules as the server resolver (C5): company is professional-only; absent or invalid mode = personal', () => {
+    const doc: Doc = {
+      realName: 'Ana',
+      company: 'TopCo',
+      [literalFaceKey('personal', 'company')]: 'Stray',
+      profiles: { personal: { company: 'Nested' }, professional: { company: 'Acme' } },
+    };
+    assert.equal(face(doc, 'personal').company, '');
+    assert.equal(face(doc, 'professional').company, 'Acme');
+    assert.equal(face(doc, 'personal').realName, 'Ana', 'no mode → personal is the active face');
+    assert.equal(face(doc, 'professional').realName, '');
+    assert.equal(face({ ...doc, mode: 'business' }, 'personal').realName, 'Ana');
+    assert.equal(face({ mode: 'personal', profiles: 'oops', realName: 'Ana' }, 'personal').realName, 'Ana');
+  });
+
   it('pure legacy doc (top level only): only the active face reads it', () => {
     const doc: Doc = { mode: 'personal', realName: 'Ana', bio: 'Personal bio' };
     assert.equal(face(doc, 'personal').realName, 'Ana');
