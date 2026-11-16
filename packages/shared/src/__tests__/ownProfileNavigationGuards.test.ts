@@ -116,7 +116,8 @@ describe('Own Profile navigation and source guards', () => {
     );
     assert.match(toggle, /isDirtyRef\.current/);
     assert.match(toggle, /confirmDiscardChanges/);
-    assert.match(toggle, /openDestinationOrSwitch\(\)/);
+    // QA 2.1.0: the pressed segment is forwarded.
+    assert.match(toggle, /openDestinationOrSwitch\(requested\)/);
     // Callable lives only inside runModeSwitch, not before confirm.
     assert.doesNotMatch(toggle, /switchMode/);
     assert.match(src, /modeSwitchSessionRef\.current\.switchMode/);

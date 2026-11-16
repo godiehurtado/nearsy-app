@@ -1,6 +1,6 @@
 # Nearsy iOS: PostHog analytics
 
-Project Nearsy, ID 716015, US Cloud, host `https://us.i.posthog.com`. Plan version `2026-11-13.1` (2.1.0: names, Industry, proposal G, `match_id` withdrawn; `2026-11-07.1` before).
+Project Nearsy, ID 716015, US Cloud, host `https://us.i.posthog.com`. Plan version `2026-11-16.1` (2.1.0: names, Industry, proposal G, `match_id` and `inbox_item_id` withdrawn, inbox opens once per appearance; `2026-11-13.1` and `2026-11-07.1` before).
 
 **Remote delivery is off, in production too.** Only the `beta` build profile declares capture, and it still needs a token that is not in the repository. No build has been made with it. No event has been received in PostHog and no physical test has been run for this work.
 
@@ -198,7 +198,7 @@ Every event also carries `platform` (`iOS`), `app_version`, `app_build`, `enviro
 | `match_made` | `match_score`, `match_score_range` | See Discovery. `match_id` withdrawn (Product, 2026-11-13) |
 | `social_linked` | `social_platform`, `link_type` (`manual`, `verified`) | A connection was added |
 | `match_social_tapped` | `social_platform`, `open_result` (`opened`, `invalid`, `failed`, `unknown`), `match_score`?, `match_score_range`? | Tap on a network in a Discovery profile |
-| `alert_opened` | `source` (`push`, `inbox`), `alert_id`?, `alert_motive`? (`interest`, `contact`, `both`, `affiliation`, `contact_affiliation`; omitted when the payload names a motive this binary does not know) | Tap on a push or an inbox row |
+| `alert_opened` | `source` (`push`, `inbox`), `alert_id`?, `alert_motive`? (`interest`, `contact`, `both`, `affiliation`, `contact_affiliation`; omitted when the payload names a motive this binary does not know) | Tap on a push (with `alert_id` when the payload has it). From the inbox: only the first tap on an unseen row, once per appearance; reopening it, or a row marked seen by a push tap, sends nothing. A new appearance counts again. Inbox opens carry no identifier: `inbox_item_id` is withdrawn (pair-derived from both UIDs) |
 
 `?` means omitted when unknown, never sent as empty, zero or `unknown`.
 
@@ -258,7 +258,7 @@ Mode-scoped properties are `profile_type`, `occupation*`, `interests*`, `affilia
 
 Unknown is unset rather than left alone, because whatever PostHog holds may belong to the other mode.
 
-- **Occupation:** only the mode's own nested value, `profiles.<mode>.occupation`. The top-level `occupation` of a legacy profile is never sent, because it cannot be shown to belong to the active mode: the switch runs in the backend and does not rewrite it. Without a nested value, `occupation` and `occupation_truncated` are unset. This holds after a process restart too, and Firestore is not changed. The app may still show the top-level value.
+- **Occupation:** only the mode's own value, read like the faces (C3, QA 2.1.0): the legacy literal field `"profiles.<mode>.occupation"`, then the nested `profiles.<mode>.occupation`; blank counts as absent. The top-level `occupation` of a legacy profile is never sent, because it cannot be shown to belong to the active mode: the switch runs in the backend and does not rewrite it. Without a nested value, `occupation` and `occupation_truncated` are unset. This holds after a process restart too, and Firestore is not changed. The app may still show the top-level value.
 - **Verified lookup, one platform at a time:** each network is read separately, and only a successful Get is evidence. Any refusal leaves that network unknown, including `*_NOT_ENABLED`: it means the feature is off for this account (core off, or restricted and not on the allowlist), not that no link exists. One unknown network never hides the others.
 - **Unknown networks keep their last proved value:** the app remembers, per account and mode, the last value each network proved, on the device (`nearsy.analytics.verified.v1`), so a restart with YouTube off does not erase a YouTube link reported earlier. The record is removed when the account deletion is confirmed. A network never proved on this install stays out of `social_platforms_verified`; a value sent from another install is not known here.
 - **Nothing proved at all:** it keeps values only if this mode already confirmed them in this process. Otherwise `social_platforms_verified`, `socials_connected` and `has_socials` are unset.

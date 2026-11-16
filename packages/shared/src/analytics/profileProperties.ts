@@ -20,7 +20,7 @@ import {
   type AgeRange,
   type AnalyticsSocialPlatform,
 } from './contract';
-import { isProfileMode, type ProfileMode } from '../profile/profileModeFields';
+import { literalFaceKey, isProfileMode, type ProfileMode } from '../profile/profileModeFields';
 import { normalizeCountryCode } from '../profile/countryCatalog';
 import { parseCurrentCity } from '../profile/currentCity';
 import {
@@ -353,11 +353,15 @@ function trimmedString(value: unknown): string {
 }
 
 /**
- * Only the mode's own nested value. The top-level occupation of a legacy profile
- * cannot be shown to belong to the active mode (the switch runs in the backend),
- * so it is never reported: the property is unset instead. Firestore is untouched.
+ * Only the mode's own value, with the agreed per-mode read (C3, QA 2.1.0):
+ * the legacy literal field "profiles.<mode>.occupation", then the nested
+ * profiles.<mode>.occupation. Blank values count as absent. The top-level
+ * occupation is never reported (it may belong to the other mode) and nothing
+ * is taken from the other mode: without a value the property is unset.
  */
 function occupationForMode(doc: Record<string, unknown>, mode: ProfileMode): string {
+  const literal = trimmedString(doc[literalFaceKey(mode, 'occupation')]);
+  if (literal) return literal;
   const profiles = asRecord(doc.profiles);
   return trimmedString(asRecord(profiles?.[mode])?.occupation);
 }

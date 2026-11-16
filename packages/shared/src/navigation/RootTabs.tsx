@@ -12,7 +12,7 @@ import type { ProfileStackParamList } from './ProfileStack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // 👇 importa el hook
-import { useNearbyAlerts } from '../hooks/useNearbyAlerts';
+import { NearbyAlertsProvider, useNearbyAlerts } from '../hooks/useNearbyAlerts';
 
 function Placeholder({ label }: { label: string }) {
   return (
@@ -31,7 +31,16 @@ export type RootTabsParamList = {
 
 const Tab = createBottomTabNavigator<RootTabsParamList>();
 
+/** One shared alerts fetch for the bell badge and the inbox (QA 2.1.0). */
 export default function RootTabs() {
+  return (
+    <NearbyAlertsProvider>
+      <RootTabsNavigator />
+    </NearbyAlertsProvider>
+  );
+}
+
+function RootTabsNavigator() {
   const insets = useSafeAreaInsets();
 
   // 👇 usamos el hook aquí para saber cuántas alerts hay

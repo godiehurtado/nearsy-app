@@ -775,7 +775,12 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     }
   };
 
-  const openDestinationOrSwitch = () => {
+  /**
+   * QA 2.1.0: the pressed segment decides. The active mode returns to it; the
+   * other one is activated only when its saved face is complete (server call),
+   * otherwise it opens for editing while the active mode stays as it is.
+   */
+  const openDestinationOrSwitch = (requested?: ProfileMode) => {
     const activeConfirmed: ProfileMode =
       (confirmedMode ?? mode ?? 'personal') === 'professional'
         ? 'professional'
@@ -783,7 +788,7 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     const editing: ProfileMode =
       (mode ?? 'personal') === 'professional' ? 'professional' : 'personal';
     const targetMode: ProfileMode =
-      editing === 'personal' ? 'professional' : 'personal';
+      requested ?? (editing === 'personal' ? 'professional' : 'personal');
 
     const destinationDraft = createOwnProfileDraftFromDoc(
       profileDoc,
@@ -821,18 +826,18 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
     void runModeSwitch(targetMode);
   };
 
-  const handleToggleMode = () => {
+  const handleToggleMode = (requested?: ProfileMode) => {
     if (!editorWritable) return;
     if (modeSwitchLoading || modeSwitchSessionRef.current.isBusy()) {
       return;
     }
     if (isDirtyRef.current) {
       confirmDiscardChanges(() => {
-        openDestinationOrSwitch();
+        openDestinationOrSwitch(requested);
       });
       return;
     }
-    openDestinationOrSwitch();
+    openDestinationOrSwitch(requested);
   };
 
   const validationMessage = (field: OwnProfileValidationField) => {
@@ -1262,7 +1267,8 @@ export default function CompleteProfileScreen({ navigation, route }: any) {
                 profileImage={profileImage}
                 realName={realName}
                 lastName={lastName}
-                mode={activeMode}
+                mode={confirmedActive}
+                editingMode={activeMode}
                 modeContextLabel={modeContextLabel}
                 personalLabel={t('profile.mode.personal')}
                 professionalLabel={t('profile.mode.professional')}

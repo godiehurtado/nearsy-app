@@ -177,7 +177,10 @@ describe('ModeSwitch segmented semantics', () => {
   it('exposes selected tab state and respects disabled/loading', () => {
     const src = readShared('components/ModeSwitch.tsx');
     assert.match(src, /accessibilityState=\{\{ selected, disabled: busy \}\}/);
-    assert.match(src, /if \(selected \|\| busy\) return/);
+    // QA 2.1.0: busy blocks; the active segment is inert only while it is
+    // also the face shown (while an inactive face is edited it leads back).
+    assert.match(src, /if \(busy\) return;/);
+    assert.match(src, /if \(selected && current\) return;/);
     assert.match(src, /loadingOverlay/);
   });
 });

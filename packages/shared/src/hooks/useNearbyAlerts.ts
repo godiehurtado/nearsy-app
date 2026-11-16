@@ -6,8 +6,23 @@
  * QA 2.1.0: every instance (bell badge, Alerts screen) shares opens through
  * alertSeenSync, a refresh never undoes a newer local open, and a push open
  * marks its alert read once the alert is listed. State is per signed-in uid.
+ *
+ * One shared fetch (QA 2.1.0): NearbyAlertsProvider (RootTabs) owns the state;
+ * the badge and the inbox read it with useNearbyAlerts(). Refetch triggers
+ * (foreground proximity push, app foreground, Alerts focus, 30 s fallback)
+ * go through one coalescer, so simultaneous triggers make one call.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { AppState } from 'react-native';
 
 import {
   buildAlertSeenWrite,
@@ -22,6 +37,11 @@ import {
   subscribeAlertOpened,
   takeResolvedPushOpens,
 } from '../alerts/alertSeenSync';
+import {
+  createRefreshCoalescer,
+  subscribeAlertsRefresh,
+  type AlertsRefreshReason,
+} from '../alerts/alertsRefresh';
 import { firebaseAuth } from '../config/firebaseConfig';
 import { dbOnUserSnapshot } from '../services/db';
 import { buildDiscoverNearbyRequest, metersToFeet } from '../visibility';
@@ -56,7 +76,7 @@ type UserDoc = NearbyAlertsViewerDoc & {
   visibility?: boolean;
 };
 
-export function useNearbyAlerts() {
+function useNearbyAlertsState() {
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [seenByPeer, setSeenByPeer] = useState<Record<string, AlertSeenRecord>>(
@@ -135,8 +155,21 @@ export function useNearbyAlerts() {
     return () => unsub?.();
   }, []);
 
+  const coalescerRef = useRef<ReturnType<typeof createRefreshCoalescer> | null>(null);
+  const buildAlertsRef = useRef<(reason?: NearbyLoadReason, force?: boolean) => Promise<void>>(async () => {});
+  if (!coalescerRef.current) {
+    coalescerRef.current = createRefreshCoalescer({
+      schedule: (delayMs, run) => setTimeout(run, delayMs),
+      // Silent refetch (same loader rules as the periodic one).
+      run: () => buildAlertsRef.current('interval', true),
+    });
+  }
+  const requestRefresh = useCallback((_reason?: AlertsRefreshReason) => {
+    coalescerRef.current?.request();
+  }, []);
+
   const buildAlerts = useCallback(
-    async (reason: NearbyLoadReason = 'effect') => {
+    async (reason: NearbyLoadReason = 'effect', force = false) => {
       const uid = firebaseAuth.currentUser?.uid;
       const currentMe = meRef.current;
       if (!uid || !currentMe?.visibility) {
@@ -146,7 +179,7 @@ export function useNearbyAlerts() {
         return;
       }
 
-      if (inFlightRef.current && reason === 'interval') {
+      if (inFlightRef.current && reason === 'interval' && !force) {
         return;
       }
 
@@ -249,12 +282,22 @@ export function useNearbyAlerts() {
     void buildAlerts('effect');
 
     const id = setInterval(() => {
-      void buildAlerts('interval');
+      requestRefresh('interval');
     }, AUTO_REFRESH_MS);
 
     return () => clearInterval(id);
-  }, [me?.uid, me?.visibility, interestFingerprint, buildAlerts]);
+  }, [me?.uid, me?.visibility, interestFingerprint, buildAlerts, requestRefresh]);
 
+  // Push in the foreground, back to the foreground, Alerts focus.
+  useEffect(() => subscribeAlertsRefresh(requestRefresh), [requestRefresh]);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') requestRefresh('foreground');
+    });
+    return () => sub.remove();
+  }, [requestRefresh]);
+
+  buildAlertsRef.current = buildAlerts;
   const refresh = useCallback(() => buildAlerts('ptr'), [buildAlerts]);
 
   const markAlertOpened = useCallback(async (item: AlertItem) => {
@@ -280,6 +323,34 @@ export function useNearbyAlerts() {
     topColor,
     me,
     refresh,
+    requestRefresh,
     markAlertOpened,
   };
+}
+
+export type NearbyAlertsState = ReturnType<typeof useNearbyAlertsState>;
+
+const NearbyAlertsContext = createContext<NearbyAlertsState | null>(null);
+
+/** Owns the one alerts fetch shared by the bell badge and the inbox. */
+export function NearbyAlertsProvider({ children }: { children: ReactNode }) {
+  const state = useNearbyAlertsState();
+  return React.createElement(NearbyAlertsContext.Provider, { value: state }, children);
+}
+
+const EMPTY_ALERTS_STATE: NearbyAlertsState = {
+  loading: false,
+  alerts: [],
+  unseenCount: 0,
+  topColor: '#3B5A85',
+  me: null,
+  refresh: async () => {},
+  requestRefresh: () => {},
+  markAlertOpened: async () => {},
+};
+
+/** Shared alerts state; outside the provider it is empty and inert. */
+export function useNearbyAlerts(): NearbyAlertsState {
+  const state = useContext(NearbyAlertsContext);
+  return useMemo(() => state ?? EMPTY_ALERTS_STATE, [state]);
 }

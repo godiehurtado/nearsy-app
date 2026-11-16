@@ -1157,9 +1157,9 @@ const es: TranslationResources = {
       contextPersonal: 'Editando tu perfil Personal',
       contextProfessional: 'Editando tu perfil Profesional',
       contextInactivePersonal:
-        'Editando Personal — Profesional sigue siendo tu perfil activo. Guarda esta cara antes de cambiar.',
+        'Editando Personal. Profesional sigue activo: guarda y luego toca Personal para activarlo.',
       contextInactiveProfessional:
-        'Editando Profesional — Personal sigue siendo tu perfil activo. Guarda esta cara antes de cambiar.',
+        'Editando Profesional. Personal sigue activo: guarda y luego toca Profesional para activarlo.',
       incompleteDestinationTitle: 'Completa este perfil primero',
       incompleteDestinationBody:
         'Tu perfil actual permanece activo. Completa los campos que faltan, guarda y luego cambia.',

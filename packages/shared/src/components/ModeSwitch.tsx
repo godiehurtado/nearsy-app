@@ -14,8 +14,15 @@ import { fontSize, fontWeight } from '../theme/typography';
 export type ProfileModeValue = 'personal' | 'professional';
 
 type Props = {
+  /** The mode the server confirmed as active: the filled segment. */
   mode: ProfileModeValue;
-  onToggle: () => void;
+  /**
+   * The face being edited when it is not the active one (QA 2.1.0): outlined,
+   * never filled, so editing it never looks like a confirmed switch.
+   */
+  editingMode?: ProfileModeValue;
+  /** The segment pressed: the active mode (back to it) or the other one. */
+  onToggle: (target: ProfileModeValue) => void;
   personalLabel: string;
   professionalLabel: string;
   disabled?: boolean;
@@ -25,6 +32,7 @@ type Props = {
 
 export default function ModeSwitch({
   mode,
+  editingMode,
   onToggle,
   personalLabel,
   professionalLabel,
@@ -49,6 +57,9 @@ export default function ModeSwitch({
     >
       {(['personal', 'professional'] as const).map((option) => {
         const selected = mode === option;
+        const editingInactive =
+          editingMode !== undefined && editingMode !== mode && editingMode === option;
+        const current = (editingMode ?? mode) === option;
         const label =
           option === 'personal' ? personalLabel : professionalLabel;
         return (
@@ -59,14 +70,20 @@ export default function ModeSwitch({
             accessibilityLabel={label}
             disabled={busy}
             onPress={() => {
-              if (selected || busy) return;
-              onToggle();
+              if (busy) return;
+              // Pressing what is already shown, while it is the active mode, does nothing.
+              if (selected && current) return;
+              onToggle(option);
             }}
             style={({ pressed }) => [
               styles.segment,
               selected && {
                 backgroundColor: palette.primary,
                 ...styles.segmentSelected,
+              },
+              editingInactive && {
+                borderWidth: 1.5,
+                borderColor: palette.primary,
               },
               pressed && !busy && styles.pressed,
             ]}
@@ -75,7 +92,11 @@ export default function ModeSwitch({
               style={[
                 styles.segmentText,
                 {
-                  color: selected ? palette.surface : palette.textSecondary,
+                  color: selected
+                    ? palette.surface
+                    : editingInactive
+                      ? palette.primary
+                      : palette.textSecondary,
                 },
               ]}
               numberOfLines={1}

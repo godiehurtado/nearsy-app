@@ -14,13 +14,15 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 
 import type { RootTabsParamList } from '../navigation/RootTabs';
 import { registerPushToken } from '../services/pushTokens';
 import { useNearbyAlerts, type AlertItem } from '../hooks/useNearbyAlerts';
+import { shouldReportInboxOpen } from '../alerts/inboxOpenTracking';
+import { firebaseAuth } from '../config/firebaseConfig';
 import { useTranslation } from '../i18n';
 import { industryLocale } from '../industries/catalog';
 import {
@@ -42,7 +44,15 @@ import {
 export default function AlertsScreen() {
   const navigation =
     useNavigation<BottomTabNavigationProp<RootTabsParamList>>();
-  const { loading, alerts, me, refresh, markAlertOpened } = useNearbyAlerts();
+  const { loading, alerts, me, refresh, requestRefresh, markAlertOpened } =
+    useNearbyAlerts();
+
+  // QA 2.1.0: focusing Alerts refetches the shared state (coalesced).
+  useFocusEffect(
+    useCallback(() => {
+      requestRefresh('focus');
+    }, [requestRefresh]),
+  );
   const [refreshing, setRefreshing] = useState(false);
   const insets = useSafeAreaInsets();
   const { palette } = useAppTheme();
@@ -85,8 +95,11 @@ export default function AlertsScreen() {
   const openDiscoveryProfile = useCallback(
     (item: AlertItem) => {
       if (!item.uid) return;
+      // Once per unseen appearance; decided before the seen mark is applied.
+      if (shouldReportInboxOpen(firebaseAuth.currentUser?.uid, item)) {
+        trackAlertOpened({ source: 'inbox' });
+      }
       void markAlertOpened(item);
-      trackAlertOpened({ source: 'inbox' });
       navigation.navigate('Home', {
         screen: 'DiscoveryProfile',
         params: { uid: item.uid },

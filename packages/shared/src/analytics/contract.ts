@@ -7,7 +7,7 @@
  * Pure module: no React Native or Expo imports.
  */
 
-export const TRACKING_PLAN_VERSION = '2026-11-13.1';
+export const TRACKING_PLAN_VERSION = '2026-11-16.1';
 
 export type PropertyRule =
   | { kind: 'boolean' }
@@ -277,6 +277,12 @@ export const FORBIDDEN_PROPERTY_NAMES: ReadonlySet<string> = new Set([
   'actorUid',
   /** Withdrawn 2026-11-13: a pair id derived from both UIDs outlives a deletion. */
   'match_id',
+  /**
+   * Withdrawn 2026-11-16 (never shipped): a hash of the viewer UID and the
+   * appearanceKey, which holds the other person's UID; pair-derived like
+   * match_id. Inbox opens send no identifier; push opens keep alert_id.
+   */
+  'inbox_item_id',
 ]);
 
 /** Events the SDK itself may produce and that the guard lets through. */

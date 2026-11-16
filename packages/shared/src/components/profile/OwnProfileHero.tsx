@@ -18,7 +18,10 @@ type Props = {
   profileImage: string | null;
   realName: string;
   lastName: string;
+  /** Server-confirmed active mode. */
   mode: ProfileModeValue;
+  /** Face being edited (may be the inactive one). */
+  editingMode?: ProfileModeValue;
   modeContextLabel: string;
   personalLabel: string;
   professionalLabel: string;
@@ -28,7 +31,7 @@ type Props = {
   editorWritable: boolean;
   modeSwitchLoading: boolean;
   onChangePhoto: () => void;
-  onToggleMode: () => void;
+  onToggleMode: (target: ProfileModeValue) => void;
 };
 
 export default function OwnProfileHero({
@@ -36,6 +39,7 @@ export default function OwnProfileHero({
   realName,
   lastName,
   mode,
+  editingMode,
   modeContextLabel,
   personalLabel,
   professionalLabel,
@@ -117,6 +121,7 @@ export default function OwnProfileHero({
 
       <ModeSwitch
         mode={mode}
+        editingMode={editingMode}
         onToggle={onToggleMode}
         personalLabel={personalLabel}
         professionalLabel={professionalLabel}

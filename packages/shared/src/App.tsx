@@ -28,7 +28,8 @@ import { AppUpdateNoticeHost } from './appUpdateNotice/AppUpdateNoticeHost';
 import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 
 import * as Notifications from 'expo-notifications';
-import { createPushOpenCoordinator } from './alerts/pushOpenCoordinator';
+import { createPushOpenCoordinator, parsePushOpenTarget } from './alerts/pushOpenCoordinator';
+import { requestAlertsRefresh } from './alerts/alertsRefresh';
 import { notePushAlertOpened } from './alerts/alertSeenSync';
 import { trackAlertOpened } from './analytics';
 import { startAnalyticsRuntime } from './analytics/runtime';
@@ -287,7 +288,12 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
   }, []);
 
   useEffect(() => {
-    const receivedSub = Notifications.addNotificationReceivedListener(() => {});
+    // QA 2.1.0: a proximity push in the foreground refreshes the shared alerts
+    // fetch at once (the peer is already in range when it is sent).
+    const receivedSub = Notifications.addNotificationReceivedListener((notification) => {
+      const target = parsePushOpenTarget(notification?.request?.content?.data);
+      if (target.actorUid) requestAlertsRefresh('push');
+    });
 
     registerRefreshVerifiedActorKeysInvoker(async () => {
       const uid = firebaseAuth.currentUser?.uid;
