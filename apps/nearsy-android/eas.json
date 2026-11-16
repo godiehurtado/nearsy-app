@@ -39,7 +39,8 @@
         "NEARSY_FIREBASE_ENV": "production",
         "NEARSY_DEV_CLIENT": "false",
         "NEARSY_ANALYTICS_ENABLED": "true",
-        "NEARSY_ANALYTICS_ENV": "production"
+        "NEARSY_ANALYTICS_ENV": "production",
+        "NEARSY_POSTHOG_GENERATION_ID_SINCE_MS": "1794787200000"
       },
       "android": {
         "buildType": "app-bundle"

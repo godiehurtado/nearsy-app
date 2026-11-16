@@ -119,7 +119,7 @@ describe('proposal G: the shared rule', () => {
     );
   });
 
-  it('the cutover is a build setting, set only in the tester-only qa profile', () => {
+  it('the cutover is a build setting: production (and beta, qa) carry the server value', () => {
     const { resolveAnalyticsExtras } = require(join(appRoot, 'plugins', 'analyticsBuildConfig.js'));
     assert.equal('generationIdSinceMs' in resolveAnalyticsExtras({}), false);
     assert.equal(
@@ -141,15 +141,23 @@ describe('proposal G: the shared rule', () => {
     assert.equal(warnings.length, 2);
     assert.equal(resolveGenerationIdSinceMs({ nearsyAnalytics: { generationIdSinceMs: SINCE } }), SINCE);
     assert.equal(resolveGenerationIdSinceMs({}), null);
-    // Only the tester-only "qa" profile (extends beta) may carry a cutover, and
-    // only the QA one; production, beta and the rest keep every account on its UID.
+    // Owner 2026-11-16: 2.1.0 ships generation ids with the server's cutover.
+    // Production (and beta/qa through it) carry exactly that value; development
+    // and preview keep every account on its UID.
     const eas = JSON.parse(readFileSync(join(appRoot, 'eas.json'), 'utf8')) as {
       build: Record<string, { extends?: string; env?: Record<string, string> }>;
       submit?: Record<string, unknown>;
     };
-    for (const [name, profile] of Object.entries(eas.build)) {
-      if (name === 'qa') continue;
-      assert.equal(profile.env?.NEARSY_POSTHOG_GENERATION_ID_SINCE_MS, undefined, name);
+    const resolved = (name: string): Record<string, string> => {
+      const p = eas.build[name]!;
+      return { ...(p.extends ? resolved(p.extends) : {}), ...(p.env ?? {}) };
+    };
+    assert.equal(eas.build.production!.env!.NEARSY_POSTHOG_GENERATION_ID_SINCE_MS, '1794787200000');
+    for (const name of ['production', 'beta', 'qa']) {
+      assert.equal(resolved(name).NEARSY_POSTHOG_GENERATION_ID_SINCE_MS, '1794787200000', name);
+    }
+    for (const name of ['development', 'development-nearsy-dev', 'preview']) {
+      assert.equal(resolved(name).NEARSY_POSTHOG_GENERATION_ID_SINCE_MS, undefined, name);
     }
     assert.deepEqual(eas.build.qa, {
       extends: 'beta',

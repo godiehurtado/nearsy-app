@@ -247,6 +247,8 @@ describe('eas.json', () => {
       NEARSY_ANALYTICS_DISTRIBUTION_CHANNEL: 'beta',
       NEARSY_ANALYTICS_ENV: 'production',
       NEARSY_ANALYTICS_ENABLED: 'false',
+      // Inherited from production (Owner 2026-11-16: same cutover as the server).
+      NEARSY_POSTHOG_GENERATION_ID_SINCE_MS: '1794787200000',
     });
     assert.ok(!raw.includes('NEARSY_POSTHOG_TOKEN'));
     assert.ok(!raw.includes('phc_'));
@@ -265,6 +267,7 @@ describe('eas.json', () => {
         NEARSY_DEV_CLIENT: 'false',
         NEARSY_ANALYTICS_ENABLED: 'true',
         NEARSY_ANALYTICS_ENV: 'production',
+        NEARSY_POSTHOG_GENERATION_ID_SINCE_MS: '1794787200000',
       },
       android: { buildType: 'app-bundle' },
     });
