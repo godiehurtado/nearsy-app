@@ -1447,11 +1447,15 @@ describe('source guards', () => {
     ]);
     const channelFor: Record<string, string> = { beta: 'beta', production: 'production' };
     for (const [name, profile] of Object.entries(eas.build) as [string, any][]) {
-      // The QA cutover is allowed only in qa-generation-ids, which inherits beta's channel.
+      // The generation-id cutover (not a secret) is set in production (2.1.0,
+      // Owner) and repeated in qa-generation-ids; other profiles inherit it.
       const keys = Object.keys(profile.env ?? {}).filter(
         (k) =>
           k.includes('POSTHOG') &&
-          !(name === 'qa-generation-ids' && k === 'EXPO_PUBLIC_POSTHOG_GENERATION_ID_SINCE_MS'),
+          !(
+            (name === 'qa-generation-ids' || name === 'production') &&
+            k === 'EXPO_PUBLIC_POSTHOG_GENERATION_ID_SINCE_MS'
+          ),
       );
       for (const key of keys) assert.ok(allowed.has(key), `${name}: ${key}`);
       if (keys.length === 0) continue;
@@ -1475,8 +1479,9 @@ describe('source guards', () => {
       EXPO_PUBLIC_NEARSY_FIREBASE_ENV: 'production',
       EXPO_PUBLIC_POSTHOG_ENABLED: 'true',
       EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL: 'production',
-      NEARSY_IOS_VERSION: '2.0.10',
-      NEARSY_IOS_BUILD_NUMBER: '80',
+      EXPO_PUBLIC_POSTHOG_GENERATION_ID_SINCE_MS: '1794787200000',
+      NEARSY_IOS_VERSION: '2.1.0',
+      NEARSY_IOS_BUILD_NUMBER: '84',
     });
     // Extends production: must not inherit capture as if it were the public app.
     const diagnostics = eas.build['testflight-contacts-diagnostics'];

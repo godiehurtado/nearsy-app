@@ -32,8 +32,9 @@
         "EXPO_PUBLIC_NEARSY_FIREBASE_ENV": "production",
         "EXPO_PUBLIC_POSTHOG_ENABLED": "true",
         "EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL": "production",
-        "NEARSY_IOS_VERSION": "2.0.10",
-        "NEARSY_IOS_BUILD_NUMBER": "80"
+        "EXPO_PUBLIC_POSTHOG_GENERATION_ID_SINCE_MS": "1794787200000",
+        "NEARSY_IOS_VERSION": "2.1.0",
+        "NEARSY_IOS_BUILD_NUMBER": "84"
       }
     },
     "testflight-contacts-diagnostics": {

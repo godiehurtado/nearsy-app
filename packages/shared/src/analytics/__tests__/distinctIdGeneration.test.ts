@@ -280,14 +280,19 @@ describe('Proposal G: durable deletion records', () => {
 });
 
 describe('Proposal G: build configuration', () => {
-  it('only qa-generation-ids sets the QA cutover; app.config checks it; runtime reads it', () => {
+  it('production and qa-generation-ids set the common cutover; app.config checks it; runtime reads it', () => {
     const eas = JSON.parse(readFileSync(join(repoRoot, 'apps/nearsy-ios/eas.json'), 'utf8'));
     const key = 'EXPO_PUBLIC_POSTHOG_GENERATION_ID_SINCE_MS';
     for (const [name, profile] of Object.entries(eas.build) as [string, any][]) {
       const env = profile.env ?? {};
-      if (name === 'qa-generation-ids') continue;
+      if (name === 'qa-generation-ids' || name === 'production') continue;
+      // beta and diagnostics inherit production's value; they never set their own.
       assert.equal(key in env, false, `${name} must not set the cutover`);
     }
+    // 2.1.0 (Owner, 2026-11-16): generation ids in production with the common
+    // cutover shared with Android and Functions; never a different value.
+    assert.equal(eas.build.production.env[key], '1794787200000');
+    assert.equal(eas.build.production.env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL, 'production');
     // QA cutover (Owner, 2b; same value as Android and the server): 2026-11-16T00:00:00Z.
     const qa = eas.build['qa-generation-ids'];
     assert.equal(qa.extends, 'beta');
