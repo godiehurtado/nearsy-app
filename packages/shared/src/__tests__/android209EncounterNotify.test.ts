@@ -631,7 +631,9 @@ describe('Android wiring', () => {
     const alerts = readSrc('screens/AlertsScreen.tsx');
     const tabs = readSrc('navigation/RootTabs.tsx');
     const app = readSrc('App.tsx');
-    assert.match(alerts, /markAlertOpened/);
+    // Row open marks read through openAlertFromInbox → markAlertOpened.
+    assert.match(alerts, /openAlertFromInbox/);
+    assert.match(readSrc('hooks/useNearbyAlerts.ts'), /void markAlertOpened\(item\)/);
     assert.match(tabs, /unseenCount/);
     assert.match(app, /parseEncounterNotifyPayload/);
     assert.doesNotMatch(readSrc('hooks/useNearbyAlerts.ts'), /READ_CONTACTS/);

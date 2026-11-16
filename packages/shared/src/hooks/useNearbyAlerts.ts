@@ -21,6 +21,7 @@ import {
 import {
   buildAlertSeenWrite,
   countUnseenAlerts,
+  isFirstOpenOfAppearance,
   mergeSeenMaps,
   type AlertSeenRecord,
 } from '../alerts/alertAppearance';
@@ -77,6 +78,12 @@ export type NearbyAlertsState = {
   errorKind: NearbyAlertsErrorKind | null;
   refresh: () => Promise<void>;
   markAlertOpened: (item: AlertItem) => Promise<void>;
+  /**
+   * Inbox row tap: marks the alert read and returns true only when this was the
+   * first open of an unseen appearance (decided before marking, synchronously,
+   * so a quick double tap counts once).
+   */
+  openAlertFromInbox: (item: AlertItem) => boolean;
 };
 
 export function useNearbyAlertsState(): NearbyAlertsState {
@@ -311,6 +318,15 @@ export function useNearbyAlertsState(): NearbyAlertsState {
     }
   }, [alerts, authUid, pushNotesTick, markAlertOpened]);
 
+  const openAlertFromInbox = useCallback(
+    (item: AlertItem): boolean => {
+      const first = isFirstOpenOfAppearance(item, seenByPeerRef.current);
+      void markAlertOpened(item);
+      return first;
+    },
+    [markAlertOpened],
+  );
+
   const unseenCount = countUnseenAlerts(alerts, seenByPeer);
 
   return {
@@ -322,6 +338,7 @@ export function useNearbyAlertsState(): NearbyAlertsState {
     errorKind,
     refresh,
     markAlertOpened,
+    openAlertFromInbox,
   };
 }
 

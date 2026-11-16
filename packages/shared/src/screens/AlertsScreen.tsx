@@ -41,7 +41,7 @@ import {
 export default function AlertsScreen() {
   const navigation =
     useNavigation<BottomTabNavigationProp<RootTabsParamList>>();
-  const { loading, alerts, me, errorKind, refresh, markAlertOpened } =
+  const { loading, alerts, me, errorKind, refresh, openAlertFromInbox } =
     useNearbyAlerts();
   const [refreshing, setRefreshing] = useState(false);
   const insets = useSafeAreaInsets();
@@ -85,14 +85,14 @@ export default function AlertsScreen() {
   const openDiscoveryProfile = useCallback(
     (item: AlertItem) => {
       if (!item.uid) return;
-      void markAlertOpened(item);
-      trackAlertOpened('inbox');
+      // Contract 2026-11-16: only the first open of an unseen appearance counts.
+      if (openAlertFromInbox(item)) trackAlertOpened('inbox');
       navigation.navigate('Home', {
         screen: 'DiscoveryProfile',
         params: { uid: item.uid },
       });
     },
-    [markAlertOpened, navigation],
+    [openAlertFromInbox, navigation],
   );
 
   const showInitialLoader = shouldShowAlertsFullScreenLoading({

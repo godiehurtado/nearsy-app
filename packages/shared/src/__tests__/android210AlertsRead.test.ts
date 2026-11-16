@@ -17,6 +17,7 @@ import {
   buildAlertSeenWrite,
   countUnseenAlerts,
   isAlertUnseen,
+  isFirstOpenOfAppearance,
   mergeSeenMaps,
 } from '../alerts/alertAppearance.ts';
 import { createPushOpenNotes, PUSH_OPEN_NOTE_TTL_MS } from '../alerts/pushOpenNotes.ts';
@@ -89,7 +90,7 @@ describe('wiring', () => {
   it('one shared state feeds the inbox and the badge ("9+")', () => {
     assert.match(read('navigation/RootTabs.tsx'), /<NearbyAlertsProvider>/);
     assert.match(read('navigation/RootTabs.tsx'), /alertsCount > 9 \? '9\+' : alertsCount/);
-    assert.match(read('screens/AlertsScreen.tsx'), /void markAlertOpened\(item\)/);
+    assert.match(read('screens/AlertsScreen.tsx'), /openAlertFromInbox\(item\)/);
   });
 
   it('loaded maps merge local opens; local opens are per uid and reset on account change', () => {
@@ -107,5 +108,78 @@ describe('wiring', () => {
     assert.match(opens, /screen: 'DiscoveryProfile',[^]*?pushOpenNotes\.note\(firebaseAuth\.currentUser\?\.uid \?\? null, actorUid\)/);
     assert.match(hook, /pushOpenNotes\.pendingFor\(authUid\)/);
     assert.match(hook, /pushOpenNotes\.resolve\(authUid, actorUid\);\s*if \(row\.unseen !== false\) void markAlertOpened\(row\)/);
+  });
+});
+
+describe('inbox alert_opened: first open of an unseen appearance only (contract 2026-11-16)', () => {
+  type Seen = Record<string, { appearanceKey?: string; seenAt: number }>;
+
+  /** Replays inbox taps the way openAlertFromInbox does: decide, then mark. */
+  function tap(seen: Seen, item: { uid?: string; appearanceKey?: string }, at: number): boolean {
+    const first = isFirstOpenOfAppearance(item, seen);
+    if (item.uid) seen[item.uid] = buildAlertSeenWrite(item.appearanceKey, at);
+    return first;
+  }
+
+  it('the first tap of an unseen appearance counts; reopening it does not', () => {
+    const seen: Seen = {};
+    const row = { uid: 'peer', appearanceKey: 'peer:1' };
+    assert.equal(tap(seen, row, 1), true);
+    assert.equal(tap(seen, row, 2), false);
+    assert.equal(tap(seen, row, 3), false);
+  });
+
+  it('a new appearance of the same person counts again', () => {
+    const seen: Seen = {};
+    assert.equal(tap(seen, { uid: 'peer', appearanceKey: 'peer:1' }, 1), true);
+    assert.equal(tap(seen, { uid: 'peer', appearanceKey: 'peer:2' }, 2), true);
+    assert.equal(tap(seen, { uid: 'peer', appearanceKey: 'peer:2' }, 3), false);
+  });
+
+  it('a row already seen through a push open sends nothing', () => {
+    const seen: Seen = { peer: buildAlertSeenWrite('peer:4', 10) }; // push-marked
+    assert.equal(tap(seen, { uid: 'peer', appearanceKey: 'peer:4' }, 11), false);
+  });
+
+  it('per signed-in uid: another account starts from its own seen map', () => {
+    const accountA: Seen = {};
+    const accountB: Seen = {};
+    const row = { uid: 'peer', appearanceKey: 'peer:1' };
+    assert.equal(tap(accountA, row, 1), true);
+    assert.equal(tap(accountB, row, 2), true);
+  });
+
+  it('a row without a peer never counts', () => {
+    assert.equal(isFirstOpenOfAppearance({ appearanceKey: 'x:1' }, {}), false);
+  });
+
+  it('wiring: decided before marking, no identifier on inbox, push keeps alert_id', () => {
+    const hook = read('hooks/useNearbyAlerts.ts');
+    assert.match(
+      hook,
+      /const first = isFirstOpenOfAppearance\(item, seenByPeerRef\.current\);\s*void markAlertOpened\(item\);\s*return first;/,
+    );
+    // markAlertOpened updates the ref synchronously, so a quick double tap counts once.
+    assert.match(hook, /seenByPeerRef\.current = \{ \.\.\.seenByPeerRef\.current, \[peerUid\]: record \}/);
+    const screen = read('screens/AlertsScreen.tsx');
+    assert.match(screen, /if \(openAlertFromInbox\(item\)\) trackAlertOpened\('inbox'\);/);
+    assert.equal((screen.match(/trackAlertOpened\(/g) ?? []).length, 1);
+    assert.match(
+      read('analytics/alertPushOpens.ts'),
+      /emitOpened: \(alertId\) => trackAlertOpened\('push', alertId\)/,
+    );
+  });
+
+  it('no inbox_item_id or match_id is ever sent', () => {
+    for (const rel of [
+      'analytics/analytics.android.ts',
+      'analytics/analyticsContract.ts',
+      'analytics/alertPushOpens.ts',
+      'screens/AlertsScreen.tsx',
+      'hooks/useNearbyAlerts.ts',
+    ]) {
+      const code = read(rel).replace(/\/\*[^]*?\*\/|\/\/.*$/gm, '');
+      assert.doesNotMatch(code, /inbox_item_id|match_id/, rel);
+    }
   });
 });

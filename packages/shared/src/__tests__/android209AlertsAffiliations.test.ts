@@ -80,7 +80,9 @@ describe('209 Alerts discoverNearby + shared provider', () => {
     assert.match(screen, /DiscoveryProfile/);
     // Pass the AlertItem so markAlertOpened can persist appearanceKey.
     assert.match(screen, /openDiscoveryProfile\(item\)/);
-    assert.match(screen, /void markAlertOpened\(item\)/);
+    // Marks through the hook, which passes the item on to markAlertOpened.
+    assert.match(screen, /openAlertFromInbox\(item\)/);
+    assert.match(read('hooks/useNearbyAlerts.ts'), /void markAlertOpened\(item\)/);
     assert.match(app, /screen: 'DiscoveryProfile'/);
     assert.doesNotMatch(app, /screen: 'ProfileDetail'/);
   });

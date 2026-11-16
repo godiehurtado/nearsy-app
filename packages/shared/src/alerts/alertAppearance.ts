@@ -53,6 +53,21 @@ export function mergeSeenMaps(
   return out;
 }
 
+/**
+ * Analytics contract 2026-11-16 (Owner-approved, iOS 7c838ca, Functions fa4ae0f):
+ * `alert_opened` with source=inbox is sent only on the first open of an UNSEEN
+ * appearance for the signed-in uid. Reopening it, or a row already seen (also
+ * through a push open), sends nothing; a new appearance of the same person
+ * counts again. No identifier is attached (no inbox_item_id, no match_id).
+ */
+export function isFirstOpenOfAppearance(
+  item: { uid?: string; appearanceKey?: string },
+  seenByPeer: Record<string, AlertSeenRecord | undefined>,
+): boolean {
+  if (!item.uid) return false;
+  return isAlertUnseen(item.appearanceKey, seenByPeer[item.uid]);
+}
+
 export function countUnseenAlerts(
   items: ReadonlyArray<{ appearanceKey?: string; uid?: string }>,
   seenByPeer: Record<string, AlertSeenRecord | undefined>,
