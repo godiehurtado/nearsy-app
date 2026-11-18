@@ -1,3 +1,7 @@
+Operational rules: read `AGENTS.md` at the repository root first. It and the common Nearsy rules it links take precedence over this file; this file only adds coding-style guidance.
+This branch is the Android history (`develop-android`). It is independent from `develop-ios`: never merge, cherry-pick or port changes between them.
+Plan and risk explanations go in the work report; within an authorized task they do not require pausing for a new confirmation.
+
 You are working on the Nearsy mobile application.
 
 Tech stack:
@@ -56,7 +60,7 @@ Engineering workflow:
 - Avoid duplicating Firestore queries.
 - Maintain backward compatibility for existing users.
 - Be careful with profile completion logic and onboarding flow.
-- Always analyze Android and iOS differences before changing Firebase code.
+- Firebase usage in this branch is Android-specific (see AGENTS.md); do not assume it matches the other platform's branch.
 
 Code style:
 
