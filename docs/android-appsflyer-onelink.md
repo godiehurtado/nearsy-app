@@ -24,26 +24,25 @@ Nothing has been validated on a device.
 
 ## nc1: shared table (identical on Android and iOS)
 
-This table was proposed by iOS and checked by Android row by row. Three rows still wait for iOS to
-confirm the Android wording: **OAuth guard** (`refresh_token`), **Campaign access** (a deferred touch
-for an existing account) and **Privacy** (SDK debug). nc1 is not closed until both platforms carry the
-same text.
+Final on both platforms (2026-11-21): Android `feature/android-appsflyer` (godiehurtado/nearsy-app#125)
+and iOS `feature/ios-appsflyer-onelink` `b2a3d8a` (godiehurtado/nearsy-app#124). Both carry this same
+text. Owner approval is still pending, as is the expiry proposal.
 
 | Area | Rule |
 |---|---|
 | Parameters read | Only `deep_link_value` and `deep_link_sub1..5`: sub1 source, sub2 campaign, sub3 content, sub4 tool, and sub5, which must be exactly `nc1`. Everything else (`pid`, `c`, `af_*`, `media_source`, `campaign`) is ignored |
 | Value validation | Slug `^[a-z0-9][a-z0-9._-]{0,63}$` after lowercasing. `organic`, `unknown`, `none`, `null` and `undefined` are refused. An invalid field is dropped on its own; a touch needs a source or a campaign. If sub5 isn't `nc1`, nothing is attributed (navigation is still allowed) |
-| OAuth guard | A payload with `code`, `state`, `token`, `access_token`, `id_token`, `refresh_token`, `transactionId`, `transaction_id`, `result`, `error` or `mode` (any case) is dropped whole: no attribution and no navigation. *(`refresh_token` pending iOS)* |
+| OAuth guard | A payload with `code`, `state`, `token`, `access_token`, `id_token`, `refresh_token`, `transactionId`, `transaction_id`, `result`, `error` or `mode` is dropped whole: no attribution and no navigation. Keys are compared case-insensitively |
 | Confirmed touch | A direct UDL result (`is_deferred=false`) is `onelink_direct`. A deferred one with `match_type=referrer` is `onelink_deferred`. An unknown `is_deferred` counts as deferred |
 | Probabilistic deferred | Never attributed, not even as `campaign_accessed`, and there is no "estimated" value. The destination is still honored (navigation only) |
 | Before signup | A confirmed touch with no session is kept as pending attribution for 7 days; the last touch wins until signup |
 | Acquisition at signup | `signup_completed` carries `signup_source`/`campaign`/`content`/`tool` plus `attribution_method` when the pending touch was captured before the account was created, on this install, and no other account on this install has claimed acquisition. Sent as `$set_once`; never overwritten |
 | Late evidence | `acquisition_attributed` is sent only when all of these hold: the touch was captured before Firebase `creationTime`; the account was created after the install marker; it's the first account on this install to claim (otherwise nothing is sent); no acquisition is recorded yet; and it's ≤ 24 h since creation. The 24 h is a cap, never evidence by itself |
-| Campaign access | A **direct** touch opened with a session, after account creation, or by an existing account becomes `campaign_accessed` with `campaign_source`/`name`/`content`/`tool` plus `attribution_method`. Acquisition is untouched. A deferred touch for an account that already existed is dropped, because it describes an install. *(deferred wording pending iOS)* |
+| Campaign access | A **direct** touch opened with a session, after account creation, or by an existing account becomes `campaign_accessed` with `campaign_source`/`name`/`content`/`tool` plus `attribution_method`. Acquisition is untouched. A **deferred** touch for an account that already existed is dropped, because it describes an install |
 | Deduplication | The same source/campaign/content/tool, direct or deferred, within 10 min counts once. Navigation: the same key isn't consumed twice within 10 min |
 | Account switch | A touch is classified for the account signed in when it arrives and never moves to another account. A touch from a signed-out session goes to the first account that signs in or up. A destination captured with account A is discarded when B signs in; a real sign-out clears it |
 | Navigation | `home` → Home tab, `profile` → own Profile tab, `alerts` → Alerts tab. No parameters. One pending destination; the last one wins. Consumed once by the signed-in account when the main tabs are focused (after login, OAuth and the CRJ). Expiry (**proposal**): 30 min direct, 24 h deferred. Never sent to analytics |
-| Privacy | No customer user ID, no in-app events, no ATT or consent prompt, no clipboard, no advertising IDs. Partner sharing filter: `all`. SDK debug is off on every build *(pending iOS)*. The PostHog mapping applies only when PostHog is on |
+| Privacy | No customer user ID, no in-app events, no ATT or consent prompt, no clipboard, no advertising IDs. Partner sharing filter: `all`. SDK debug is off on every build, nearsy-dev included. The PostHog mapping applies only when PostHog is on |
 | Switch | `NEARSY_APPSFLYER_ENABLED=true` in the profile plus the sensitive EAS variable `NEARSY_APPSFLYER_DEV_KEY`. Off means the SDK isn't linked |
 
 ### Deliberate platform differences
@@ -53,7 +52,8 @@ same text.
 | Install marker | The package manager's first install time (survives Auto Backup restores) | Local marker written at the first analytics launch |
 | Deterministic deferred | Play Install Referrer (`match_type=referrer`) | None: every deferred match on iOS is probabilistic |
 | Conversion-data listener | Fallback with the same rules when UDL found no deferred link | Not registered |
-| SDK input | App Links for the same host and path. `setIntent()` is called only for a OneLink; OAuth returns are excluded. A cold start from a non-OneLink URL skips AppsFlyer for that process | Only https Universal Links on `nearsy.onelink.me/Uxo6`, filtered in AppDelegate; never openURL or launch options |
+| SDK input | App Links for the same host and path. `setIntent()` is called only for a OneLink; OAuth returns are excluded | Only https Universal Links on `nearsy.onelink.me/Uxo6`, filtered in AppDelegate; never openURL or launch options |
+| Cold start from a non-OneLink URL | AppsFlyer is skipped for that process | AppDelegate never forwards it; the SDK still starts |
 | Build with AppsFlyer off | Not linked (`react-native.config.js`) | Unlinked (`react-native.config.js`) |
 | Extras | Merged backup rules; Samsung `READ_APP_INFO` removed; also `setDisableNetworkData(true)`, `disableAppSetId()`, `setCollectAndroidID(false)` | Podfile strict mode |
 
