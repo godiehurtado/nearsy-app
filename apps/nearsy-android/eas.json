@@ -22,7 +22,8 @@
       "developmentClient": false,
       "environment": "development",
       "env": {
-        "NEARSY_APPSFLYER_ENABLED": "true"
+        "NEARSY_APPSFLYER_ENABLED": "true",
+        "NEARSY_ANALYTICS_QA_ENABLED": "true"
       },
       "android": {
         "buildType": "apk"

@@ -27,8 +27,9 @@ development builds and to `off` in release builds.
 | `sdk_intercept` | Dev Client | Real | None | Optional local tool: `NEARSY_ANALYTICS_SDK_INTERCEPT=true` |
 | `beta` | Release | Real | PostHog | See "Beta" below. **Not activated** |
 | `remote` | Release | Real | PostHog | See "Remote" below. **Not activated** |
+| `qa` | Release, nearsy-dev only | Real | PostHog, every event and person marked as a test | `NEARSY_ANALYTICS_QA_ENABLED=true` + token; only profile `appsflyer-nearsy-dev`. See [android-appsflyer-onelink.md](android-appsflyer-onelink.md) |
 
-A build that asks for both `beta` and `remote` resolves to `off` (`ambiguous_mode`) and carries no
+A build that asks for more than one of `beta`, `remote` and `qa` resolves to `off` (`ambiguous_mode`) and carries no
 token. A release build that asked for sending and resolved to `off` logs the reason, never a value.
 
 ### Beta
@@ -196,10 +197,10 @@ surveys or GeoIP. Event names are final: the app reports these exact ones.
 | `platform` | string | `Android` |
 | `app_version` | string | Binary version; omitted if unreadable |
 | `app_build` | string | Binary build; omitted if unreadable |
-| `environment` | string | `production` (`beta`, `remote`); `development`, `sdk_intercept` locally |
+| `environment` | string | `production` (`beta`, `remote`); `development` (`qa`, and `inspect` locally); `sdk_intercept` locally |
 | `tracking_plan_version` | string | `v1` |
-| `is_test_user` | boolean | `true` on Beta builds. **Absent otherwise**, never `false` |
-| `distribution_channel` | string | `beta` on Beta builds. **Absent otherwise** |
+| `is_test_user` | boolean | `true` on Beta and QA builds. **Absent otherwise**, never `false` |
+| `distribution_channel` | string | `beta` on Beta builds, `qa` on QA builds (nearsy-dev). **Absent otherwise** |
 
 ### Events
 
@@ -497,7 +498,7 @@ Sources:
 |---|---|
 | `nearsy://campaign?...` | Parser and rules tested. Only reaches people who **already have the app installed**: a custom scheme does not survive an install |
 | App Links | Configuration only. No filter exists until `NEARSY_APP_LINKS_HOST` and `NEARSY_APP_LINKS_PATH_PREFIX` are set, and no domain or `assetlinks.json` exists. `/` alone is rejected |
-| AppsFlyer OneLink (`onelink_direct`, `onelink_deferred`) | Contract nc1, provisional with iOS. Enabled only in the EAS profile `appsflyer-nearsy-dev` (nearsy-dev, PostHog off), which also needs the dev key. Extra rules on top of this table (deterministic match, install time, one account per install, 24 h cap from Firebase creation). See [android-appsflyer-onelink.md](android-appsflyer-onelink.md). Not validated on a device |
+| AppsFlyer OneLink (`onelink_direct`, `onelink_deferred`) | Contract nc1, provisional with iOS. Enabled only in the EAS profile `appsflyer-nearsy-dev` (nearsy-dev, PostHog in `qa` mode), which also needs the dev key. Extra rules on top of this table (deterministic match, install time, one account per install, 24 h cap from Firebase creation). See [android-appsflyer-onelink.md](android-appsflyer-onelink.md). Not validated on a device |
 | Install Referrer | Parser and rules tested with synthetic strings. Off until `NEARSY_ATTRIBUTION_INSTALL_REFERRER=true`, which the `beta` profile does not set. Read once per install. **Never run against a real Play install**, so it is not validated attribution after install |
 
 Real coverage today: a signed-out person who already has the app, opens a `nearsy://campaign` link and

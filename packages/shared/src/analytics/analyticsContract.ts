@@ -77,13 +77,13 @@ export const SUPER_PROPERTY_KEYS = [
 ] as const;
 
 /**
- * Marks of the installation, declared by the build. A Beta install stamps them on
- * every event, whoever is signed in. Any other build removes them, because the SDK
+ * Marks of the installation, declared by the build. A Beta or QA (nearsy-dev)
+ * install stamps them on every event, whoever is signed in. Any other build removes them, because the SDK
  * persists registered properties across an app update.
  */
 export type InstallClassification = {
   is_test_user: true;
-  distribution_channel: 'beta';
+  distribution_channel: 'beta' | 'qa';
 };
 
 const INSTALL_CLASSIFICATION_KEYS = ['is_test_user', 'distribution_channel'] as const;

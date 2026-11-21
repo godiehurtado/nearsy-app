@@ -215,7 +215,7 @@ async function createTransport(config: AnalyticsConfig): Promise<AnalyticsTransp
           persistence: 'file',
           onTransportIssue: logTransportIssue,
           deliveryGuard: guard,
-          ...(config.mode === 'beta'
+          ...(config.mode === 'beta' || config.mode === 'qa'
             ? {
                 installClassification: {
                   is_test_user: true,
@@ -356,7 +356,9 @@ function getSession(): Session | null {
         personModeMemory().write(user.uid, (doc as { mode?: unknown } | null)?.mode),
       superProperties,
       now: () => Date.now(),
-      ...(config.mode === 'beta' ? { accountClassification: { is_test_user: true } } : {}),
+      ...(config.mode === 'beta' || config.mode === 'qa'
+        ? { accountClassification: { is_test_user: true } }
+        : {}),
     });
   } catch {
     session = null;
