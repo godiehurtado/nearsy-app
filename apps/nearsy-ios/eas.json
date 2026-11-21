@@ -30,6 +30,14 @@
         "NEARSY_IOS_BUILD_NUMBER": "85"
       }
     },
+    "dev-internal-appsflyer": {
+      "extends": "dev-internal",
+      "env": {
+        "NEARSY_APPSFLYER_ENABLED": "true",
+        "NEARSY_IOS_VERSION": "2.1.0",
+        "NEARSY_IOS_BUILD_NUMBER": "86"
+      }
+    },
     "preview": {
       "extends": "base",
       "distribution": "internal",

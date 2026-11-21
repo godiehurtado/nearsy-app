@@ -25,7 +25,7 @@ import {
   isBackgroundPermissionEffectivelyGranted,
   readBackgroundPermissionSnapshot,
 } from '../visibility/backgroundLocationRuntime';
-import { createPendingAttributionStore } from './attribution';
+import { createInstallRecord, createPendingAttributionStore } from './attribution';
 import { createAnalyticsClient, type AuthSnapshot } from './client';
 import { resolveAnalyticsConfig } from './config';
 import type { AnalyticsSocialPlatform } from './contract';
@@ -253,6 +253,9 @@ export function startAnalyticsRuntime(): void {
   });
 
   const foreground = createForegroundTracker();
+  // Written on the first analytics launch of this install (contract nc1, C4).
+  const installRecord = createInstallRecord(store, () => Date.now());
+  void installRecord.markerMs().catch(() => {});
   const services: AnalyticsServices = {
     client,
     noteExternalAuthFlow: (active) => {
@@ -262,6 +265,7 @@ export function startAnalyticsRuntime(): void {
     ledger: createEventLedger(store),
     attribution: createPendingAttributionStore(store),
     attributionHosts: config.attributionHosts,
+    install: installRecord,
     now: () => Date.now(),
     scheduleProfileSync,
     noteVerifiedSocialsChanged: (uid) => {

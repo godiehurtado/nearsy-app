@@ -1245,7 +1245,7 @@ describe('attribution flows', () => {
     assert.equal(fake.calls.some((c) => c.op === 'setPerson'), false);
   });
 
-  it('attribution arriving after signup can still fill acquisition', async () => {
+  it('a link opened after signup is an access, never acquisition (nc1 C5)', async () => {
     const { fake, client } = setup();
     bindFacade(client, memoryStore());
     await client.start();
@@ -1253,6 +1253,20 @@ describe('attribution flows', () => {
     trackSignupCompleted({ uid: 'uidB', method: 'google' });
     await settle();
     handleCampaignLink(LINK);
+    await settle();
+    assert.equal(fake.captured('acquisition_attributed').length, 0);
+    assert.equal(fake.captured('campaign_accessed').length, 1);
+  });
+
+  it('a touch captured before creation that signup missed becomes late acquisition', async () => {
+    const { fake, client } = setup();
+    const services = bindFacade(client, memoryStore());
+    await client.start();
+    const attribution = parseCampaignLink(LINK, ['go.example.com'], Date.parse(USER_B.creationTime!) - 60000);
+    assert.ok(attribution);
+    await services.attribution.save(attribution);
+    client.reportAuthState(USER_B);
+    await resolvePendingAttribution(services, USER_B);
     await settle();
     assert.equal(fake.captured('acquisition_attributed').length, 1);
     assert.equal(fake.captured('campaign_accessed').length, 0);
@@ -1280,10 +1294,13 @@ describe('attribution flows', () => {
 
   it('a second link on a fresh account does not overwrite acquisition', async () => {
     const { fake, client } = setup();
-    bindFacade(client, memoryStore());
+    const services = bindFacade(client, memoryStore());
     await client.start();
+    const first = parseCampaignLink(LINK, ['go.example.com'], Date.parse(USER_B.creationTime!) - 60000);
+    assert.ok(first);
+    await services.attribution.save(first);
     client.reportAuthState(USER_B);
-    handleCampaignLink(LINK);
+    await resolvePendingAttribution(services, USER_B);
     await settle();
     handleCampaignLink(
       'https://go.example.com/c/x?utm_medium=qr&utm_campaign=other',

@@ -33,6 +33,7 @@ import { requestAlertsRefresh } from './alerts/alertsRefresh';
 import { notePushAlertOpened } from './alerts/alertSeenSync';
 import { trackAlertOpened } from './analytics';
 import { startAnalyticsRuntime } from './analytics/runtime';
+import { startNearsyAppsFlyer } from './appsflyer/bootstrap';
 import {
   createReevaluatePendingPort,
   resumePendingReevaluateProximityNotices,
@@ -186,6 +187,12 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
   useEffect(() => {
     startAnalyticsRuntime();
     startAffiliationEntitySearchBootstrap();
+    // After analytics, so an early OneLink touch finds the analytics facade.
+    // No-op unless the build switched AppsFlyer on (NEARSY_APPSFLYER_ENABLED).
+    startNearsyAppsFlyer(navigationRef as any, {
+      currentUid: () => firebaseAuth.currentUser?.uid ?? null,
+      onChange: (cb) => firebaseAuth.onAuthStateChanged((user) => cb(user?.uid ?? null)),
+    });
   }, []);
 
   useEffect(() => {

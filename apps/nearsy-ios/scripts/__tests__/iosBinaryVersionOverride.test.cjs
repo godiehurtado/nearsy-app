@@ -85,8 +85,22 @@ describe('iOS binary version override', () => {
     assert.equal(devInternal.env.NEARSY_IOS_BUILD_NUMBER, '85');
     assert.equal(numbers.includes(devInternal.env.NEARSY_IOS_BUILD_NUMBER), false);
     assert.equal(eas.submit['dev-internal'], undefined);
+    // AppsFlyer test binary: dev-internal plus the switch, its own number, never submitted.
+    const appsFlyer = eas.build['dev-internal-appsflyer'];
+    assert.equal(appsFlyer.extends, 'dev-internal');
+    assert.equal(appsFlyer.env.NEARSY_IOS_VERSION, '2.1.0');
+    assert.equal(appsFlyer.env.NEARSY_IOS_BUILD_NUMBER, '86');
+    assert.equal(
+      [...numbers, devInternal.env.NEARSY_IOS_BUILD_NUMBER].includes(appsFlyer.env.NEARSY_IOS_BUILD_NUMBER),
+      false,
+    );
+    assert.equal(eas.submit['dev-internal-appsflyer'], undefined);
     for (const [name, profile] of Object.entries(eas.build)) {
-      if (['beta', 'production', 'testflight-contacts-diagnostics', 'qa-generation-ids', 'dev-internal'].includes(name)) continue;
+      if (
+        ['beta', 'production', 'testflight-contacts-diagnostics', 'qa-generation-ids', 'dev-internal', 'dev-internal-appsflyer'].includes(name)
+      ) {
+        continue;
+      }
       const env = profile.env ?? {};
       assert.equal('NEARSY_IOS_VERSION' in env, false, name);
       assert.equal('NEARSY_IOS_BUILD_NUMBER' in env, false, name);

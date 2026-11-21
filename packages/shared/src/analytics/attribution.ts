@@ -13,12 +13,26 @@
  */
 import type { StringStore } from './lifecycle';
 
+/**
+ * How the touch was confirmed. Computed by the app, never read from a link.
+ * - universal_link: Nearsy's own /c/ link (off unless configured).
+ * - onelink_direct: AppsFlyer UDL, isDeferred=false (the OS opened the app with the link).
+ * - onelink_deferred: AppsFlyer UDL deferred with a deterministic match only.
+ * Probabilistic matches never become a CampaignAttribution (contract nc1, C3).
+ */
+export const ATTRIBUTION_METHODS = [
+  'universal_link',
+  'onelink_direct',
+  'onelink_deferred',
+] as const;
+export type AttributionMethod = (typeof ATTRIBUTION_METHODS)[number];
+
 export type CampaignAttribution = {
   source?: string;
   campaign?: string;
   content?: string;
   tool?: string;
-  method: 'universal_link';
+  method: AttributionMethod;
   capturedAtMs: number;
 };
 
@@ -43,7 +57,13 @@ function cleanSlug(raw: string | undefined): string | undefined {
   if (raw === undefined) return undefined;
   const decoded = safeDecode(raw);
   if (decoded === null) return undefined;
-  const value = decoded.trim().toLowerCase();
+  return cleanDecodedSlug(decoded);
+}
+
+/** Same slug rule for values that arrive already decoded (AppsFlyer UDL). */
+export function cleanDecodedSlug(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const value = raw.trim().toLowerCase();
   return SLUG_RE.test(value) && !RESERVED_VALUES.has(value) ? value : undefined;
 }
 
@@ -141,20 +161,112 @@ export type PendingAttributionStore = ReturnType<
   typeof createPendingAttributionStore
 >;
 
-/** A fresh account with no recorded acquisition can still receive it. */
+/**
+ * A touch that reaches a signed-in account (contract nc1, C4/C5).
+ *
+ * Late acquisition needs every piece of evidence:
+ * - the touch was captured before the account was created (a link opened with a
+ *   session, or after creation, is an access);
+ * - the account was created on this install (after the local install marker);
+ * - no other account on this install claimed an acquisition (else nothing: F7);
+ * - nothing recorded for this account yet, and at most 24 h since creation
+ *   (the window is only a cap, never evidence on its own).
+ * Clock note: capture uses the device clock, creation the Auth server clock.
+ */
 export function classifyAttributionAccess(input: {
   creationTime: string | null;
   nowMs: number;
+  capturedAtMs: number;
   acquisitionAlreadyRecorded: boolean;
-}): 'late_acquisition' | 'campaign_accessed' {
+  installMarkerMs?: number | null;
+  installClaimedByOtherAccount?: boolean;
+}): 'late_acquisition' | 'campaign_accessed' | 'none' {
   const created = input.creationTime ? Date.parse(input.creationTime) : NaN;
   if (
-    !input.acquisitionAlreadyRecorded &&
-    Number.isFinite(created) &&
-    input.nowMs - created >= 0 &&
-    input.nowMs - created <= ACQUISITION_WINDOW_MS
+    input.acquisitionAlreadyRecorded ||
+    !Number.isFinite(created) ||
+    !(input.capturedAtMs < created)
   ) {
-    return 'late_acquisition';
+    return 'campaign_accessed';
   }
-  return 'campaign_accessed';
+  if (
+    typeof input.installMarkerMs === 'number' &&
+    created < input.installMarkerMs
+  ) {
+    return 'campaign_accessed';
+  }
+  if (input.installClaimedByOtherAccount) return 'none';
+  if (input.nowMs - created < 0 || input.nowMs - created > ACQUISITION_WINDOW_MS) {
+    return 'campaign_accessed';
+  }
+  return 'late_acquisition';
 }
+
+/**
+ * Per-install record: when this install first ran analytics, and which account
+ * generation claimed the install's acquisition. Lives in app storage, so it is
+ * gone after an uninstall. Limit: an iCloud device restore can bring it back,
+ * which only makes the marker older (the capture-before-creation rule still holds).
+ */
+export const INSTALL_RECORD_KEY = 'nearsy.analytics.install.v1';
+
+type InstallRecord = { markerMs: number; acquisitionBy?: string };
+
+export function createInstallRecord(store: StringStore | null, nowMs: () => number) {
+  let memory: InstallRecord | null = null;
+  let chain: Promise<unknown> = Promise.resolve();
+
+  async function load(): Promise<InstallRecord> {
+    if (memory) return memory;
+    let found: InstallRecord | null = null;
+    try {
+      const raw = store ? await store.getItem(INSTALL_RECORD_KEY) : null;
+      const parsed = raw ? (JSON.parse(raw) as Partial<InstallRecord>) : null;
+      if (parsed && typeof parsed.markerMs === 'number' && Number.isFinite(parsed.markerMs)) {
+        found = {
+          markerMs: parsed.markerMs,
+          ...(typeof parsed.acquisitionBy === 'string' ? { acquisitionBy: parsed.acquisitionBy } : {}),
+        };
+      }
+    } catch {
+      found = null;
+    }
+    memory = found ?? { markerMs: nowMs() };
+    if (!found) await persist();
+    return memory;
+  }
+
+  async function persist(): Promise<void> {
+    await store?.setItem(INSTALL_RECORD_KEY, JSON.stringify(memory)).catch(() => {});
+  }
+
+  function serial<T>(fn: () => Promise<T>): Promise<T> {
+    const next = chain.catch(() => {}).then(fn);
+    chain = next;
+    return next;
+  }
+
+  return {
+    /** Creates the marker on first use. */
+    markerMs: (): Promise<number> => serial(async () => (await load()).markerMs),
+    /** True when nobody else claimed this install's acquisition. Does not claim. */
+    isFreeFor: (generation: string): Promise<boolean> =>
+      serial(async () => {
+        const record = await load();
+        return !record.acquisitionBy || record.acquisitionBy === generation;
+      }),
+    /** Claims it for this account generation; false if another one already did. */
+    claimFor: (generation: string): Promise<boolean> =>
+      serial(async () => {
+        const record = await load();
+        if (record.acquisitionBy && record.acquisitionBy !== generation) return false;
+        if (!record.acquisitionBy) {
+          memory = { ...record, acquisitionBy: generation };
+          await persist();
+        }
+        return true;
+      }),
+  };
+}
+
+export type InstallRecordStore = ReturnType<typeof createInstallRecord>;
