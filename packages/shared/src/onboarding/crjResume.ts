@@ -399,14 +399,18 @@ export function resolveCrjResume(
     return { step: { kind: 'type' }, source: 'bag-recovery' };
   }
 
-  const named = decodeCrjResumeStage(doc[CRJ_RESUME_STAGE_FIELD]);
-  if (named) {
-    return { step: named, source: 'named-cursor' };
-  }
-
+  // Every later step saves into the face of the stored mode. With no stored mode
+  // (accounts whose Profile Type was never persisted, incident 2026-11-20) a named
+  // cursor past Profile Type would resume with nothing to save into, so the choice
+  // is asked again and confirmed by setActiveProfileMode before anything else.
   const mode = isProfileMode(doc.mode) ? doc.mode : null;
   if (!mode) {
     return { step: { kind: 'type' }, source: 'legacy-correspondence' };
+  }
+
+  const named = decodeCrjResumeStage(doc[CRJ_RESUME_STAGE_FIELD]);
+  if (named) {
+    return { step: named, source: 'named-cursor' };
   }
 
   return recoverFromBags(doc, mode);

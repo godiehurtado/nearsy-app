@@ -73,8 +73,20 @@ describe('iOS binary version override', () => {
       eas.build.production.env.NEARSY_IOS_BUILD_NUMBER,
       eas.build.beta.env.NEARSY_IOS_BUILD_NUMBER,
     );
+    // CRJ hotfix: ad hoc (internal) build against nearsy-dev, no dev client, no PostHog.
+    // Its number stays clear of every App Store number above; it is never submitted.
+    const devInternal = eas.build['dev-internal'];
+    assert.equal(devInternal.distribution, 'internal');
+    assert.equal(devInternal.developmentClient, undefined);
+    assert.equal(devInternal.environment, 'development');
+    assert.equal(devInternal.env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV, 'development');
+    assert.equal(devInternal.env.EXPO_PUBLIC_POSTHOG_ENABLED, 'false');
+    assert.equal(devInternal.env.NEARSY_IOS_VERSION, '2.1.0');
+    assert.equal(devInternal.env.NEARSY_IOS_BUILD_NUMBER, '85');
+    assert.equal(numbers.includes(devInternal.env.NEARSY_IOS_BUILD_NUMBER), false);
+    assert.equal(eas.submit['dev-internal'], undefined);
     for (const [name, profile] of Object.entries(eas.build)) {
-      if (['beta', 'production', 'testflight-contacts-diagnostics', 'qa-generation-ids'].includes(name)) continue;
+      if (['beta', 'production', 'testflight-contacts-diagnostics', 'qa-generation-ids', 'dev-internal'].includes(name)) continue;
       const env = profile.env ?? {};
       assert.equal('NEARSY_IOS_VERSION' in env, false, name);
       assert.equal('NEARSY_IOS_BUILD_NUMBER' in env, false, name);
