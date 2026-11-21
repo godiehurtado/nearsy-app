@@ -18,6 +18,11 @@ const {
   resolveFacebookAuthConfig,
   withNearsyFacebookAuth,
 } = require('./plugins/facebookAuthConfig');
+const {
+  oneLinkIntentFilters,
+  resolveAppsFlyerExtras,
+  withNearsyAppsFlyer,
+} = require('./plugins/appsflyerConfig');
 
 const firebaseEnv = String(process.env.NEARSY_FIREBASE_ENV || '')
   .trim()
@@ -30,8 +35,15 @@ const nearsyDevClient =
     .trim()
     .toLowerCase() === 'true';
 
+/**
+ * On EAS the nearsy-dev file is never uploaded (.easignore). It arrives as the
+ * EAS file variable GOOGLE_SERVICES_JSON_DEV (environment "development",
+ * visibility Secret), whose value is a path on the builder. Production never
+ * reads it.
+ */
+const devGoogleServicesPath = String(process.env.GOOGLE_SERVICES_JSON_DEV || '').trim();
 const googleServicesFile = useNearsyDev
-  ? './google-services.nearsy-dev.json'
+  ? devGoogleServicesPath || './google-services.nearsy-dev.json'
   : './google-services.json';
 
 /** Canonical labels for JS (never print secrets). */
@@ -66,7 +78,15 @@ if (!facebookAuth.configured) {
  * Each setting is validated again at runtime; see analyticsConfig.ts.
  */
 const nearsyAnalytics = resolveAnalyticsExtras(process.env);
-const nearsyAppLinkFilters = resolveAppLinkIntentFilters(process.env);
+/**
+ * AppsFlyer OneLink: off unless NEARSY_APPSFLYER_ENABLED=true with the
+ * NEARSY_APPSFLYER_DEV_KEY EAS variable. See plugins/appsflyerConfig.js.
+ */
+const nearsyAppsFlyer = resolveAppsFlyerExtras(process.env);
+const nearsyAppLinkFilters = [
+  ...resolveAppLinkIntentFilters(process.env),
+  ...(nearsyAppsFlyer.enabled ? oneLinkIntentFilters() : []),
+];
 
 const expoConfig = {
   ...appJson.expo,
@@ -96,6 +116,8 @@ const expoConfig = {
      */
     nearsyDevClient,
     nearsyAnalytics,
+    /** { enabled: false } unless enabled with a dev key. */
+    nearsyAppsFlyer,
     /** Gates the native Facebook SDK in JS (never the token itself). */
     facebookAuthConfigured: facebookAuth.configured,
     ...(logoDevPublishableKey.startsWith('pk_')
@@ -105,5 +127,8 @@ const expoConfig = {
 };
 
 module.exports = {
-  expo: withNearsyFacebookAuth(expoConfig, facebookAuth),
+  expo: withNearsyAppsFlyer(
+    withNearsyFacebookAuth(expoConfig, facebookAuth),
+    nearsyAppsFlyer,
+  ),
 };

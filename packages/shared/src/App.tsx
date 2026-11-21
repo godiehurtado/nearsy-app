@@ -10,6 +10,7 @@ import { startAffiliationEntitySearchBootstrap } from './affiliations/iosAffilia
 import { initI18n } from './i18n';
 import { useAppUpdateNotice } from './appUpdate/useAppUpdateNotice';
 import { startAnalytics } from './analytics/analytics';
+import { startAppsFlyer } from './attribution/appsflyer';
 import { createAlertPushOpens } from './analytics/alertPushOpens';
 import { PUSH_OPEN_MAX_WAIT_MS } from './analytics/pushOpenCoordinator';
 
@@ -293,6 +294,8 @@ export default function App() {
   const [i18nReady, setI18nReady] = useState(false);
 
   useEffect(() => startAnalytics(), []);
+  // After startAnalytics in the same commit, so OneLink touches find the session.
+  useEffect(() => startAppsFlyer(), []);
 
   // App Check must be ready before future identity Functions callables.
   // Non-blocking: skip/error must not prevent Google/email/Firestore startup.

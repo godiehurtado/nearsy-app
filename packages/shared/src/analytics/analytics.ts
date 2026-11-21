@@ -9,6 +9,7 @@ export const trackSignupCompleted: AnalyticsApi['trackSignupCompleted'] = () => 
 export const noteExistingAccountSignIn: AnalyticsApi['noteExistingAccountSignIn'] = () => {};
 export const noteLinkedInAccountOutcome: AnalyticsApi['noteLinkedInAccountOutcome'] = () => {};
 export const trackProfileCompleted: AnalyticsApi['trackProfileCompleted'] = () => {};
+export const noteOneLinkTouch: AnalyticsApi['noteOneLinkTouch'] = () => {};
 export const syncAnalyticsPersonProfile: AnalyticsApi['syncAnalyticsPersonProfile'] =
   () => {};
 export const noteOnboardingResume: AnalyticsApi['noteOnboardingResume'] = () => {};

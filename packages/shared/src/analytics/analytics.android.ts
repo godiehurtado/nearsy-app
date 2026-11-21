@@ -22,6 +22,12 @@ import {
   type AttributionSettings,
   type CampaignTouch,
 } from './analyticsAttribution';
+import {
+  acceptOneLinkAcquisition,
+  createInstallClaim,
+  DESTINATION_DEDUPE_MS,
+  oneLinkTouchKey,
+} from '../attribution/oneLinkContract.ts';
 import { createAppOpenedTracker } from './appOpenedTracker';
 import {
   INTERCEPT_HOST,
@@ -452,16 +458,92 @@ async function sendLateAcquisition(uid: string, touch: CampaignTouch): Promise<v
 
 async function noteEvidence(touch: CampaignTouch, observedAt: number): Promise<void> {
   const uid = currentUid();
+  const signup = uid ? await signupRecords().read(uid) : null;
   const decision = decideEvidence({
     signedIn: uid !== null,
     touch,
     observedAt,
-    signup: uid ? await signupRecords().read(uid) : null,
+    signup,
   });
   if (decision === 'hold') await campaignStore().save(touch);
   else if (uid && decision === 'campaign_accessed') sendCampaignAccessed(uid, touch);
-  else if (uid && decision === 'acquisition_attributed') await sendLateAcquisition(uid, touch);
+  else if (uid && decision === 'acquisition_attributed') {
+    if (!isOneLinkMethod(touch.method)) {
+      await sendLateAcquisition(uid, touch);
+      return;
+    }
+    const accepted =
+      signup !== null &&
+      (await oneLinkAcquisitionAccepted(uid, touch, observedAt, { now: Date.now() }));
+    if (accepted) {
+      await sendLateAcquisition(uid, touch);
+      await claimInstall(uid);
+    } else if (decideHeldTouchForExistingAccount(touch) === 'campaign_accessed') {
+      sendCampaignAccessed(uid, touch);
+    }
+  }
 }
+
+function isOneLinkMethod(method: CampaignTouch['method']): boolean {
+  return method === 'onelink_direct' || method === 'onelink_deferred';
+}
+
+/** First install time from the package manager: a reinstall resets it, a backup cannot. */
+async function readInstallTime(): Promise<number | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Application = require('expo-application');
+    const value = (await Application.getInstallationTimeAsync())?.getTime?.();
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function installClaim() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const storage = require('@react-native-async-storage/async-storage').default;
+  return createInstallClaim(storage);
+}
+
+async function claimInstall(uid: string): Promise<void> {
+  const installTime = await readInstallTime();
+  if (installTime !== null) await installClaim().claim(installTime, uid);
+}
+
+/** C4 on top of `decideEvidence`: install, creation time and one claim per install. */
+async function oneLinkAcquisitionAccepted(
+  uid: string,
+  touch: CampaignTouch,
+  observedAt: number,
+  late: { now: number } | null,
+): Promise<boolean> {
+  const user = firebaseAuth.currentUser;
+  const created = user?.uid === uid ? Date.parse(user.metadata?.creationTime ?? '') : Number.NaN;
+  const installTime = await readInstallTime();
+  return acceptOneLinkAcquisition({
+    touch,
+    observedAt,
+    accountCreatedAt: Number.isFinite(created) ? created : null,
+    installTime,
+    installClaimedBy: installTime === null ? null : await installClaim().claimedBy(installTime),
+    uid,
+    late,
+  });
+}
+
+/** In-process dedupe: the same touch delivered by UDL and the cold-start resolution. */
+const recentOneLinkTouches = new Map<string, number>();
+
+export const noteOneLinkTouch: AnalyticsApi['noteOneLinkTouch'] = safely((touch, observedAt) => {
+  if (!getSession() || !isOneLinkMethod(touch.method)) return;
+  const key = oneLinkTouchKey(touch);
+  const now = Date.now();
+  const previous = recentOneLinkTouches.get(key);
+  if (previous !== undefined && now - previous < DESTINATION_DEDUPE_MS) return;
+  recentOneLinkTouches.set(key, now);
+  void noteEvidence(touch, observedAt).catch(() => {});
+});
 
 async function noteCampaignLink(url: unknown, observedAt: number): Promise<void> {
   try {
@@ -474,7 +556,13 @@ async function noteCampaignLink(url: unknown, observedAt: number): Promise<void>
 
 /** Held evidence becomes acquisition; the record judges evidence that comes later. */
 async function consumeSignupAttribution(uid: string): Promise<AnalyticsProperties | null> {
-  const touch = await campaignStore().consume();
+  let touch: CampaignTouch | null = await campaignStore().consume();
+  if (touch && isOneLinkMethod(touch.method)) {
+    // Held while signed out, so it precedes this signup by construction.
+    const accepted = await oneLinkAcquisitionAccepted(uid, touch, Number.NEGATIVE_INFINITY, null);
+    if (accepted) await claimInstall(uid);
+    else touch = null;
+  }
   await signupRecords().write(uid, { at: Date.now(), attributed: touch !== null });
   return touch ? signupAttributionProperties(touch) : null;
 }

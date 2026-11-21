@@ -17,6 +17,17 @@
         "NEARSY_DEV_CLIENT": "true"
       }
     },
+    "appsflyer-nearsy-dev": {
+      "extends": "development-nearsy-dev",
+      "developmentClient": false,
+      "environment": "development",
+      "env": {
+        "NEARSY_APPSFLYER_ENABLED": "true"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "prebuildCommand": "npx expo prebuild --platform android --clean",

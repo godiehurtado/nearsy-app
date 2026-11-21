@@ -42,7 +42,7 @@ Este archivo contiene solo las particularidades del componente. Las reglas comun
 ## 4. Particularidades técnicas
 
 - **Firebase:** React Native Firebase para Auth, Firestore, Storage, Functions y App Check, en la región `us-central1`.
-  - App Check usa Play Integrity en producción y el proveedor debug solo en el perfil `development-nearsy-dev`.
+  - App Check usa Play Integrity en producción y el proveedor debug solo en los perfiles de nearsy-dev: `development-nearsy-dev` y `appsflyer-nearsy-dev`. Este último es un APK interno sin dev client, con AppsFlyer habilitado.
   - Falla cerrado; no lo relajes.
 - **Entorno de build:** `NEARSY_FIREBASE_ENV`.
   - `development` usa `nearsy-dev`; cualquier otro valor usa **`nearsy-pj` (producción)**.

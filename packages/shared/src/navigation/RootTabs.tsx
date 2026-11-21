@@ -9,6 +9,7 @@ import AlertsScreen from '../screens/AlertsScreen';
 import type { HomeStackParamList } from './HomeStack';
 import type { ProfileStackParamList } from './ProfileStack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useOneLinkDestination } from './useOneLinkDestination';
 
 import {
   NearbyAlertsProvider,
@@ -25,6 +26,7 @@ export type RootTabsParamList = {
 const Tab = createBottomTabNavigator<RootTabsParamList>();
 
 function RootTabsContent() {
+  useOneLinkDestination();
   const insets = useSafeAreaInsets();
   const { unseenCount } = useNearbyAlerts();
   const alertsCount = unseenCount;
