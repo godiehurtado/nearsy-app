@@ -17,6 +17,19 @@
         "EXPO_PUBLIC_FIREBASE_FUNCTIONS_REGION": "us-central1"
       }
     },
+    "dev-internal": {
+      "extends": "base",
+      "distribution": "internal",
+      "environment": "development",
+      "env": {
+        "EXPO_PUBLIC_NEARSY_FIREBASE_ENV": "development",
+        "EXPO_PUBLIC_FIREBASE_FUNCTIONS_REGION": "us-central1",
+        "EXPO_PUBLIC_POSTHOG_ENABLED": "false",
+        "EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL": "off",
+        "NEARSY_IOS_VERSION": "2.1.0",
+        "NEARSY_IOS_BUILD_NUMBER": "85"
+      }
+    },
     "preview": {
       "extends": "base",
       "distribution": "internal",
