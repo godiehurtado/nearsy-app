@@ -123,7 +123,7 @@ describe('nc1 parsing', () => {
     assert.equal(parseOneLinkResult({ status: 'ERROR', error: 'x' }, NOW), null);
     assert.equal(parseOneLinkResult(null, NOW), null);
     assert.equal(parseOneLinkResult('nope', NOW), null);
-    for (const key of ['code', 'state', 'transactionId', 'error', 'access_token']) {
+    for (const key of ['code', 'state', 'transactionId', 'error', 'access_token', 'refresh_token', 'Refresh_Token']) {
       assert.equal(parseOneLinkResult(direct({ [key]: 'x' }), NOW), null, key);
     }
   });
@@ -322,10 +322,8 @@ function fakeSdk() {
   return { sdk, calls, fireDeepLink: (d: unknown) => deepLink?.(d), fireReady: () => ready?.() };
 }
 
-const RUNTIME_ON = resolveAppsFlyerRuntimeConfig(
-  { NEARSY_APPSFLYER_ENABLED: 'true', NEARSY_APPSFLYER_DEV_KEY: 'synthetickey0123456', NEARSY_APPSFLYER_APPLE_APP_ID: '6759302206' },
-  'production',
-);
+const RUNTIME_ON_EXTRA = { NEARSY_APPSFLYER_ENABLED: 'true', NEARSY_APPSFLYER_DEV_KEY: 'synthetickey0123456', NEARSY_APPSFLYER_APPLE_APP_ID: '6759302206' };
+const RUNTIME_ON = resolveAppsFlyerRuntimeConfig(RUNTIME_ON_EXTRA, 'production');
 
 describe('nc1 SDK runtime (C7)', () => {
   it('off unless enabled with key and App Store id; never loads the SDK when off', () => {
@@ -339,6 +337,12 @@ describe('nc1 SDK runtime (C7)', () => {
     assert.equal(loads, 0);
   });
 
+  it('SDK debug stays off on every build, nearsy-dev included', () => {
+    for (const env of ['development', 'production', undefined]) {
+      assert.equal(resolveAppsFlyerRuntimeConfig(RUNTIME_ON_EXTRA, env).debug, false, String(env));
+    }
+  });
+
   it('listener before init, privacy setters before start, start only on session ready', async () => {
     const { sdk, calls, fireReady } = fakeSdk();
     assert.equal(
@@ -350,7 +354,7 @@ describe('nc1 SDK runtime (C7)', () => {
     assert.equal(names[0], 'registerDeepLinkListener');
     assert.equal(names[1], 'init');
     assert.deepEqual(calls[1]?.params, { devKey: 'synthetickey0123456', appId: '6759302206' });
-    assert.equal(names.includes('enableDebug'), false, 'no debug logs outside nearsy-dev');
+    assert.equal(names.includes('enableDebug'), false, 'SDK debug off on every build');
     assert.equal(names.includes('start'), false);
     fireReady();
     await settle();

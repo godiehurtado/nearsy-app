@@ -40,6 +40,7 @@ const OAUTH_KEYS = [
   'token',
   'access_token',
   'id_token',
+  'refresh_token',
   'transactionid',
   'transaction_id',
   'result',

@@ -1258,6 +1258,19 @@ describe('attribution flows', () => {
     assert.equal(fake.captured('campaign_accessed').length, 1);
   });
 
+  it('a deferred touch for an existing account is dropped, never an access (nc1)', async () => {
+    const { fake, client } = setup();
+    const services = bindFacade(client, memoryStore());
+    await client.start();
+    const created = Date.parse(USER_B.creationTime!);
+    await services.attribution.save({ source: 'newsletter', campaign: 'spring', method: 'onelink_deferred', capturedAtMs: created + 60000 });
+    client.reportAuthState(USER_B);
+    await resolvePendingAttribution(services, USER_B);
+    await settle();
+    assert.equal(fake.captured('acquisition_attributed').length, 0);
+    assert.equal(fake.captured('campaign_accessed').length, 0);
+  });
+
   it('a touch captured before creation that signup missed becomes late acquisition', async () => {
     const { fake, client } = setup();
     const services = bindFacade(client, memoryStore());

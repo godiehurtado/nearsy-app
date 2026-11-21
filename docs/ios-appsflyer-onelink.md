@@ -11,18 +11,18 @@
 | Area | Rule |
 |---|---|
 | **Parameters read** | Only `deep_link_value` and `deep_link_sub1..5`. sub1 source, sub2 campaign, sub3 content, sub4 tool, sub5 must be `nc1`. Everything else (`pid`, `c`, `af_*`, `media_source`, `campaign`) is ignored |
-| **Value validation** | Slug `^[a-z0-9][a-z0-9._-]{0,63}$` after lowercasing. `organic`, `unknown`, `none`, `null`, `undefined` refused. An invalid field is dropped alone; the touch needs a source or a campaign. sub5 ≠ `nc1` → no attribution (navigation still allowed) |
-| **OAuth guard** | A payload with `code`, `state`, `token`, `access_token`, `id_token`, `transactionId`, `transaction_id`, `result`, `error` or `mode` is dropped whole (no attribution, no navigation) |
+| **Value validation** | Slug `^[a-z0-9][a-z0-9._-]{0,63}$` after lowercasing. `organic`, `unknown`, `none`, `null`, `undefined` refused. An invalid field is dropped alone; the touch needs a source or a campaign. sub5 must be exactly `nc1` (no lowercasing); otherwise no attribution (navigation still allowed) |
+| **OAuth guard** | A payload with `code`, `state`, `token`, `access_token`, `id_token`, `refresh_token`, `transactionId`, `transaction_id`, `result`, `error` or `mode` is dropped whole (no attribution, no navigation). Keys compared case-insensitively |
 | **Confirmed touch** | Direct UDL (`is_deferred=false`) → `onelink_direct`. Deferred with `match_type=referrer` → `onelink_deferred`. Unknown `is_deferred` counts as deferred |
 | **Probabilistic deferred** | Never attributed, not even as `campaign_accessed`. There is no "estimated" value. Its destination is still honored (navigation only) |
 | **Before signup** | A confirmed touch with no session is kept as pending attribution for 7 days; the last touch wins until signup |
 | **Acquisition at signup** | `signup_completed` carries `signup_source/campaign/content/tool` + `attribution_method` when the pending touch was captured before the account was created, on this install, and no other account on this install claimed acquisition. Person properties `$set_once`; never overwritten |
 | **Late evidence** | `acquisition_attributed` only when all hold: capture before Firebase `creationTime`; account created after the install marker; first account to claim on this install (else nothing, F7); no acquisition recorded yet; at most 24 h since creation (a cap, never evidence by itself) |
-| **Campaign access** | A touch opened with a session, after creation, or by an existing account → `campaign_accessed` with `campaign_source/name/content/tool` + `attribution_method`. Acquisition untouched |
+| **Campaign access** | A **direct** touch opened with a session, after creation, or by an existing account → `campaign_accessed` with `campaign_source/name/content/tool` + `attribution_method`. Acquisition untouched. A **deferred** touch for an account that already existed is dropped (it describes an install) |
 | **Deduplication** | Same source/campaign/content/tool arriving direct and deferred within 10 min counts once. Navigation: the same key isn't consumed twice within 10 min |
 | **Account switch** | A touch is classified for the account signed in when it arrives; it never moves to another account. A signed-out touch goes to the first account that signs in or up. A destination captured with account A is discarded when B signs in; a real sign-out clears it |
 | **Navigation** | `home` → Home tab, `profile` → own Profile tab, `alerts` → Alerts tab. No parameters. One pending destination, last wins. Consumed once, by the signed-in account, when the main tabs are focused (after login, OAuth and the CRJ). Expiry (proposal): 30 min direct, 24 h deferred. Never sent to analytics |
-| **Privacy** | No customer user ID, no in-app events, no ATT, no clipboard, no advertising IDs. Partner sharing filter `all`. Debug logs only on nearsy-dev. Mapping to PostHog only when PostHog is on |
+| **Privacy** | No customer user ID, no in-app events, no ATT, no clipboard, no advertising IDs. Partner sharing filter `all`. SDK debug off on every build, nearsy-dev included. Mapping to PostHog only when PostHog is on |
 | **Switch** | `NEARSY_APPSFLYER_ENABLED=true` in the profile + sensitive EAS variable `NEARSY_APPSFLYER_DEV_KEY`. Off → SDK not linked |
 
 ### Platform differences (deliberate, same outcome)
@@ -34,7 +34,8 @@
 | Conversion-data listener | Not registered | Fallback under the same rules |
 | What reaches the SDK | Only https universal links on `nearsy.onelink.me/Uxo6`, filtered in the AppDelegate; never `openURL` or launch options | App Links on the same host and path; OAuth returns excluded |
 | Off build | Module unlinked via `react-native.config.js` | Native module not linked |
-| Platform extras | Podfile strict mode (no AdSupport) | Merged Auto Backup rules; Samsung `READ_APP_INFO` removed |
+| Platform extras | Podfile strict mode (no AdSupport); iOS privacy setters (advertising identifiers, ASA, Apple Ads, SKAN, device name) | Merged Auto Backup rules; Samsung `READ_APP_INFO` removed; `setDisableNetworkData(true)`, `disableAppSetId()`, `setCollectAndroidID(false)` before start |
+| Cold start from a non-OneLink URL | The AppDelegate never forwards it; the SDK still starts | AppsFlyer is skipped for that process |
 
 ### iOS deferred attribution: limitations
 
@@ -83,14 +84,14 @@ https://nearsy.onelink.me/Uxo6/<id>?pid=…&c=…&af_channel=…&af_ad=…
 - Values are slugs (`^[a-z0-9][a-z0-9._-]{0,63}$`, lowercased).
 - `organic`, `unknown`, `none`, `null` and `undefined` are refused.
 - An invalid field is dropped on its own. The touch needs a source or a campaign.
-- A payload with an OAuth key (`code`, `state`, `token`, `transactionId`, `error`, `mode`…) is dropped whole.
+- A payload with an OAuth key (`code`, `state`, `token`, `refresh_token`, `transactionId`, `error`, `mode`…) is dropped whole.
 
 ## Three separate outcomes
 
 | Outcome | When | Effect |
 |---|---|---|
 | **Confirmed acquisition** | Direct UDL (`is_deferred=false`), captured before the account was created, on an account created on this install, first on this install | `signup_completed` with the fields, or `acquisition_attributed` within 24 h. Person `$set_once`. Never overwritten |
-| **Later campaign access** | Link opened with a session, after creation, or by an existing account | `campaign_accessed`. Acquisition is not touched |
+| **Later campaign access** | Direct link opened with a session, after creation, or by an existing account | `campaign_accessed`. Acquisition is not touched. A deferred touch for an existing account is dropped |
 | **Navigation destination** | `deep_link_value` from the closed list | Opens a tab. No effect on attribution |
 
 **Deferred matches:**
@@ -154,7 +155,7 @@ https://nearsy.onelink.me/Uxo6/<id>?pid=…&c=…&af_channel=…&af_ad=…
 - an ATT prompt;
 - reading the clipboard.
 
-**Debug logs:** `enableDebug` runs only on nearsy-dev builds.
+**Debug logs:** `enableDebug` is never called, on any build (nc1).
 
 **Mapping to PostHog:** only when PostHog is enabled. When it's off, a touch only affects navigation.
 

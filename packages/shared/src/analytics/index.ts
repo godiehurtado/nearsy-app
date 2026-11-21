@@ -370,6 +370,8 @@ export async function resolvePendingAttribution(
       ? 'campaign_accessed'
       : precheck;
   if (kind === 'none') return;
+  // nc1: a deferred touch describes the install, so it is never an access.
+  if (kind === 'campaign_accessed' && attribution.method === 'onelink_deferred') return;
   if (kind === 'late_acquisition') {
     if (s.install && generation && !(await s.install.claimFor(generation))) return;
     const acquisition = acquisitionProperties(attribution);

@@ -62,8 +62,8 @@ export function resolveAppsFlyerRuntimeConfig(
     enabled,
     devKey: enabled ? devKey : null,
     appleAppId: enabled ? appleAppId : null,
-    // Debug logs only on nearsy-dev builds; they can include link parameters.
-    debug: enabled && String(firebaseEnv ?? '').trim().toLowerCase() === 'development',
+    // nc1: SDK debug logs stay off on every build (they can include link parameters).
+    debug: false,
   };
 }
 
