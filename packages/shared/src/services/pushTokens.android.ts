@@ -14,6 +14,7 @@ import {
   unregisterDevicePushToken,
   type RegisterPushTokenResult,
 } from './pushTokenLifecycle';
+import type { RegisterPushTokenOptions } from '../notifications/onboardingPushToken';
 
 const session = createPushTokenSessionStore();
 
@@ -87,7 +88,9 @@ async function deleteToken(uid: string, token: string): Promise<void> {
   await tokenRef.delete();
 }
 
-export async function registerPushToken(): Promise<RegisterResult> {
+export async function registerPushToken(
+  options: RegisterPushTokenOptions = {},
+): Promise<RegisterResult> {
   try {
     const granted = await permissionGranted();
     if (!granted) return { ok: false, reason: 'permission-not-granted' };
@@ -99,7 +102,7 @@ export async function registerPushToken(): Promise<RegisterResult> {
       persistToken,
       deleteToken,
     });
-    if (result.ok) {
+    if (result.ok && options.reevaluateNotices !== false) {
       const { scheduleReevaluateProximityNotices } = await import(
         '../alerts/reevaluateProximityNotices'
       );

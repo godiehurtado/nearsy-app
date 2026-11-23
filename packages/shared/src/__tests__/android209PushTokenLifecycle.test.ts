@@ -56,7 +56,7 @@ describe('Android push-token persistence stays this-device only', () => {
   it('App and Alerts still register only through registerPushToken', () => {
     const app = readShared('App.tsx');
     const alerts = readShared('screens/AlertsScreen.tsx');
-    assert.match(app, /await registerPushToken\(\)/);
+    assert.match(app, /await registerPushToken\(signInPushTokenOptions\(profileSetupCompleted\)\)/);
     assert.match(alerts, /registerPushToken\(\)\.catch/);
     assert.doesNotMatch(app, /requestPermissionsAsync/);
     assert.doesNotMatch(alerts, /requestPermissionsAsync/);
