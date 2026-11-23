@@ -273,6 +273,34 @@ export function createAnalyticsSession(deps: {
     },
 
     /**
+     * Late detection of a test account (claim set after this account was
+     * identified): asks again, and only upgrades. From then on its events are
+     * marked and the person gets set_once; earlier events stay as they were.
+     * A claim that disappears takes effect at the next sign-in or app start.
+     */
+    recheckAccountTestUser(): void {
+      enqueue(async (transport) => {
+        if (!deps.resolveAccountTestUser || testAccount) return;
+        const user = deps.getAuthUser();
+        if (!user || identifiedUid !== user.uid || testCheckedUid !== user.uid) return;
+        let isTest = false;
+        try {
+          isTest = (await deps.resolveAccountTestUser(user)) === true;
+        } catch {
+          isTest = false;
+        }
+        // The account may have changed while the claim was read.
+        if (!isTest || deps.getAuthUser()?.uid !== user.uid || identifiedUid !== user.uid) return;
+        testAccount = true;
+        deps.onAccountTestUser?.(true);
+        if (testMarkedUid !== user.uid) {
+          await transport.setPersonProperties({}, { is_test_user: true });
+          testMarkedUid = user.uid;
+        }
+      });
+    },
+
+    /**
      * Event of the requesting account; dropped if it is no longer signed in.
      * `build` runs on the chain with the SDK session of that moment and may
      * return null to skip.

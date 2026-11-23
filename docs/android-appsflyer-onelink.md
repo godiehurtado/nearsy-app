@@ -190,11 +190,27 @@ historical data is deleted or reclassified.
 - **Server events:** Functions marks `is_test_user` (event, plus `$set_once` on the person) from
   `POSTHOG_BETA_UIDS`. Server capture in nearsy-pj is `all`, with 12 UIDs on the list (Functions,
   2026-11-22). The claim set must equal that list.
+- **Late detection:** a claim that arrives after the account was identified is detected:
+  - on every ID-token change (`onIdTokenChanged`: hourly refresh, forced refresh, sign-in);
+  - on returning to the foreground (a forced refresh, at most once every 5 min).
+
+  From then on the account's events are marked and the person gets `$set_once`. Earlier events
+  stay as they were. Detection only upgrades: a removed claim takes effect at the next sign-in or app
+  start, and is never written as `false`.
+- **Diagnostics without UI:** each read leaves one line in logcat (`ReactNativeJS`):
+  `[analytics] test account claim: yes|no|error`. It contains no UID, token or email.
 - **Known limits:**
-  - a claim set while the account is signed in shows up on the next token read (next app start or
-    sign-in);
+  - events captured before detection aren't marked or rewritten;
   - a brand-new test account's `signup_completed` happens before an admin can set the claim, so it
     isn't marked.
+- **QA check:**
+  1. Before QA, the Functions claim script (dry-run) shows every approved account as already set.
+  2. On each device, sign in to the dedicated account. If it was already signed in before the claim
+     was set, sign out and back in (or wait for the foreground re-check).
+  3. logcat shows `test account claim: yes`.
+  4. In PostHog, the person has `is_test_user=true`, and the session's `$identify` and later
+     events carry it.
+  5. At the end, a real account signed in on the same device has no `is_test_user`.
 - **History:** nothing is rewritten. Persons marked by earlier Beta builds keep `is_test_user=true`;
   earlier events keep their marks; nobody is unmarked.
 - **Owner decision pending:** the admin claim had been recorded as **not approved**
@@ -281,11 +297,13 @@ change.
   - production sends `distribution_channel=production` and never `is_test_user` for a real account;
   - only an account whose claim is exactly `true` is marked (events plus person `$set_once`), and only
     while it is signed in;
+  - late detection marks only later events and the person once, never the next account; a failed
+    read means a real account (`analyticsBetaTransport.test.ts`);
   - a string `"true"` doesn't count;
   - the first read refreshes the token;
   - Beta keeps its install marks.
-- Analytics suites: 300/300.
-- Full `packages/shared` suite: 2351 tests, 27 failures, the same failing files as on the base
+- Analytics suites: 302/302.
+- Full `packages/shared` suite: 2353 tests, 27 failures, the same failing files as on the base
   `70f9e1b`. `tsc --noEmit`: 0 errors. `check:metro-imports`: 0 problems.
 
 ### Tests that need a device (build 56 from Internal Testing, authorized)

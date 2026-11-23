@@ -282,8 +282,15 @@ async function readTestAccountClaim(uid: string): Promise<boolean> {
   const result =
     (await withinMs(read(true), CLAIM_FORCED_READ_MS)) ??
     (await withinMs(read(false), CLAIM_CACHED_READ_MS));
-  return result?.claims?.[TEST_ACCOUNT_CLAIM] === true;
+  const isTest = result?.claims?.[TEST_ACCOUNT_CLAIM] === true;
+  // QA diagnostics in logcat (ReactNativeJS): the outcome only, never a UID or token.
+  console.info(`[analytics] test account claim: ${result === null ? 'error' : isTest ? 'yes' : 'no'}`);
+  return isTest;
 }
+
+/** Foreground re-checks force a token refresh, so at most one every 5 minutes. */
+const TEST_CLAIM_FOREGROUND_RECHECK_MS = 5 * 60_000;
+let lastForegroundClaimRecheck = 0;
 
 /** Auth fields the session reads; RNFirebase's metadata getters may throw. */
 function toAuthUser(user: {
@@ -671,7 +678,14 @@ export const startAnalytics: AnalyticsApi['startAnalytics'] = () => {
 
     const appStateSub = AppState.addEventListener('change', (state) => {
       openTracker.noteAppState(state);
-      if (state === 'active') void readLocationPermissions();
+      if (state === 'active') {
+        void readLocationPermissions();
+        const now = Date.now();
+        if (now - lastForegroundClaimRecheck >= TEST_CLAIM_FOREGROUND_RECHECK_MS) {
+          lastForegroundClaimRecheck = now;
+          active.recheckAccountTestUser();
+        }
+      }
     });
     detachers.push(() => appStateSub.remove());
     openTracker.noteAppState(AppState.currentState);
@@ -683,6 +697,13 @@ export const startAnalytics: AnalyticsApi['startAnalytics'] = () => {
       }),
     );
     void readLocationPermissions();
+    // A claim that reaches the token later (hourly refresh, forced refresh).
+    const tokenAuth = firebaseAuth as unknown as {
+      onIdTokenChanged?: (listener: () => void) => () => void;
+    };
+    if (typeof tokenAuth.onIdTokenChanged === 'function') {
+      detachers.push(tokenAuth.onIdTokenChanged(() => active.recheckAccountTestUser()));
+    }
 
     const linkSub = Linking.addEventListener('url', ({ url }) => {
       void noteCampaignLink(url, Date.now());
