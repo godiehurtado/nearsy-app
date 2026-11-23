@@ -4,7 +4,7 @@
 - **Default:** off in every build profile except the prepared release candidate `release-candidate-appsflyer` (never built yet). A binary built without the switch contains no AppsFlyer code: the module isn't linked, nothing is forwarded from the AppDelegate, there's no Associated Domains entry and no key.
 - **Not built or validated on a device.** No binary contains this integration. The farm binaries and the CRJ test build 2.1.0 (85) have no AppsFlyer. No result from them applies to this integration.
 - **Contract nc1:** agreed with the Android agent on 2026-11-21. It stays provisional until the Owner approves it.
-- **Owner direction (2026-11-21):** navigation scope is `home`, `profile`, `alerts`, without parameters, after authentication and the CRJ. Navigation, acquisition and campaign access stay separate. Owner, 2026-11-22: keep the current times (30 min direct navigation, 24 h deferred navigation, 7 days for a campaign kept before signup). **Priority between campaigns is still pending approval** (today: the last confirmed touch before signup wins; a recorded acquisition is never overwritten). Owner, later on 2026-11-22: the next binary is a **publishable candidate** on Firebase production with AppsFlyer on, tested in TestFlight and shipped as the same binary if QA passes. Only dedicated test accounts are marked (Auth claim `nearsyTestUser`); nothing is sent from nearsy-dev.
+- **Owner direction (2026-11-21):** navigation scope is `home`, `profile`, `alerts`, without parameters, after authentication and the CRJ. Navigation, acquisition and campaign access stay separate. Owner, 2026-11-22: keep the current times (30 min direct navigation, 24 h deferred navigation, 7 days for a campaign kept before signup). **Priority between campaigns (Owner, 2026-11-23):** the last confirmed campaign before signup is the acquisition; a recorded acquisition is never overwritten (later touches are campaign access). Owner, later on 2026-11-22: the next binary is a **publishable candidate** on Firebase production with AppsFlyer on, tested in TestFlight and shipped as the same binary if QA passes. Only dedicated test accounts are marked (Auth claim `nearsyTestUser`); nothing is sent from nearsy-dev.
 
 ## Shared table (nc1, identical on iOS and Android)
 
@@ -15,7 +15,7 @@
 | **OAuth guard** | A payload with `code`, `state`, `token`, `access_token`, `id_token`, `refresh_token`, `transactionId`, `transaction_id`, `result`, `error` or `mode` is dropped whole (no attribution, no navigation). Keys compared case-insensitively |
 | **Confirmed touch** | Direct UDL (`is_deferred=false`) → `onelink_direct`. Deferred with `match_type=referrer` → `onelink_deferred`. Unknown `is_deferred` counts as deferred |
 | **Probabilistic deferred** | Never attributed, not even as `campaign_accessed`. There is no "estimated" value. Its destination is still honored (navigation only) |
-| **Before signup** | A confirmed touch with no session is kept as pending attribution for 7 days; the last touch wins until signup (priority pending Owner approval) |
+| **Before signup** | A confirmed touch with no session is kept as pending attribution for 7 days from that touch. The last confirmed touch before signup wins (Owner, 2026-11-23). The acquisition already recorded is never replaced |
 | **Acquisition at signup** | `signup_completed` carries `signup_source/campaign/content/tool` + `attribution_method` when the pending touch was captured before the account was created, on this install, and no other account on this install claimed acquisition. Person properties `$set_once`; never overwritten |
 | **Late evidence** | `acquisition_attributed` only when all hold: capture before Firebase `creationTime`; account created after the install marker; first account to claim on this install (else nothing, F7); no acquisition recorded yet; at most 24 h since creation (a cap, never evidence by itself) |
 | **Campaign access** | A **direct** touch opened with a session, after creation, or by an existing account → `campaign_accessed` with `campaign_source/name/content/tool` + `attribution_method`. Acquisition untouched. A **deferred** touch for an account that already existed is dropped (it describes an install) |
@@ -183,7 +183,7 @@ https://nearsy.onelink.me/Uxo6/<id>?pid=…&c=…&af_channel=…&af_ad=…
 
 - **Owner:**
   - approve nc1, including `onelink_direct` and `onelink_deferred`;
-  - destinations and expiry times accepted (2026-11-22); priority between campaigns still pending;
+  - destinations and expiry times accepted (2026-11-22); priority between campaigns approved (2026-11-23: last confirmed before signup, acquisition kept);
   - EU consent: there's no CMP and `setConsentData` isn't called;
   - App Privacy labels, privacy policy and AppsFlyer's data processing agreement;
   - turn off click tracking in Mailchimp, or validate it.

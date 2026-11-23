@@ -1414,6 +1414,32 @@ describe('attribution flows', () => {
     );
   });
 
+  it('nc1 priority (Owner, 2026-11-23): the last confirmed touch before signup is the acquisition', async () => {
+    const { fake, client } = setup();
+    bindFacade(client, memoryStore());
+    await client.start();
+    client.reportAuthState(null);
+    handleCampaignLink('https://go.example.com/c/x?utm_medium=qr&utm_campaign=first');
+    await settle();
+    handleCampaignLink(LINK);
+    await settle();
+    client.reportAuthState(USER_A);
+    trackSignupCompleted({ uid: 'uidA', method: 'email' });
+    await settle();
+    assert.equal(fake.captured('signup_completed').length, 1);
+    assert.equal(fake.captured('signup_completed')[0]?.properties.signup_campaign, 'altercall_summit_2026');
+    const person = fake.calls.find((c) => c.op === 'setPerson' && 'signup_campaign' in c.setOnce);
+    assert.equal(person?.op === 'setPerson' && person.setOnce.signup_campaign, 'altercall_summit_2026');
+    // After signup a new touch is an access; the original acquisition stays.
+    handleCampaignLink('https://go.example.com/c/x?utm_medium=qr&utm_campaign=later');
+    await settle();
+    assert.equal(fake.captured('campaign_accessed')[0]?.properties.campaign_name, 'later');
+    assert.equal(
+      fake.calls.some((c) => c.op === 'setPerson' && c.setOnce.signup_campaign === 'later'),
+      false,
+    );
+  });
+
   it('a second link on a fresh account does not overwrite acquisition', async () => {
     const { fake, client } = setup();
     const services = bindFacade(client, memoryStore());
