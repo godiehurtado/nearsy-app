@@ -161,15 +161,15 @@ https://nearsy.onelink.me/Uxo6/<id>?pid=…&c=…&af_channel=…&af_ad=…
 
 ## Activating it
 
-1. **EAS:** create the sensitive variable `NEARSY_APPSFLYER_DEV_KEY` in each environment that will use it. Never in Git. **Checked 2026-11-21 (names only): missing in `development` and `production`.** Until it exists, a build of the test profile fails on the builder, before compiling.
+1. **EAS:** create the sensitive variable `NEARSY_APPSFLYER_DEV_KEY` in each environment that will use it. Never in Git. **Checked 2026-11-23 (names only): present in `production`**, the environment of `release-candidate-appsflyer`; not in `development` or `preview`, which no AppsFlyer profile uses. Without it, a build fails on the builder before compiling.
 2. **Profile:** set `NEARSY_APPSFLYER_ENABLED=true` in that profile's `env`. Only `release-candidate-appsflyer` has it; a test fails if any other profile, directly or by `extends`, does.
 
 **Next binary: `release-candidate-appsflyer`** (Owner, 2026-11-22)
 - Extends `production`: store distribution, EAS environment `production`, Firebase `nearsy-pj`, Functions `us-central1`, PostHog production channel with the generation-id cutover. Only adds `NEARSY_APPSFLYER_ENABLED=true` and the version.
 - Publishable: the same binary goes to TestFlight first and, if QA passes, to the App Store. Nothing in it marks the install as a test.
 - Test users: only accounts with the Auth claim `nearsyTestUser` get `is_test_user=true` (every event of that account, and the person once). Real users, anonymous events and other accounts are never marked. See [ios-posthog-analytics.md](ios-posthog-analytics.md), "Dedicated test accounts". Shared with Android; Functions to confirm the server side.
-- Version 2.1.0 (86), reserved by the Owner. Checked 2026-11-22: no EAS iOS build uses 86 (latest is 85). Submit uses the existing `production` submit profile; build, TestFlight upload and App Store submission each need separate authorization.
-- **Version note for publishing:** if 2.1.0 (84) has been released on the App Store by then, publishing this binary needs a higher marketing version (for example 2.1.1), which means a new build.
+- Version **2.1.1 (86)** (Owner, 2026-11-23: the candidate is Nearsy 2.1.1, above the store's 2.1.0 (84), so the same binary can be published). Checked 2026-11-23: no EAS iOS build uses 86 (latest is 2.1.0 (85)); a test keeps the version above `production`. Submit uses the existing `production` submit profile; build, TestFlight upload and App Store submission each need separate authorization.
+- EAS `production` has `NEARSY_APPSFLYER_DEV_KEY` (checked by name on 2026-11-23, value not read). `app.config.js` checks its format on the builder and stops the build if it is malformed.
 - It includes the CRJ client hotfix (`a82a4a2`, in the base `e9a8fce`). **The server part (`nearsy-functions` PR #47, `531131b`) is not deployed on `nearsy-pj` yet** (only on `nearsy-dev`). The Functions agent reports it ready: only `setActiveProfileMode` and `activateVisibility`, no backfill, rollback in seconds, waiting on Owner authorization.
 - TestFlight installs never get a deterministic deferred match on iOS, so deferred and late acquisition through AppsFlyer can't be shown; direct links, campaign access, navigation and the PostHog events can.
 3. **Apple:** the App ID needs the Associated Domains capability. EAS syncs it when it signs a binary with the entitlement, so the provisioning profile gets regenerated.
@@ -218,7 +218,7 @@ https://nearsy.onelink.me/Uxo6/<id>?pid=…&c=…&af_channel=…&af_ad=…
 **Local validations done (no binary):**
 - `pnpm test:appsflyer`: nc1 parser, acquisition evidence, access, deduplication, install claim.
 - `pnpm --filter nearsy-ios test:appsflyer-native`: AppDelegate filter on the Expo 54 template (only guarded `continueUserActivity`, never `openURL` or launch options), App Check coexistence, Podfile strict mode, build switch, key never echoed, only `release-candidate-appsflyer` enabled (production Firebase, PostHog production channel).
-- `iosBinaryVersionOverride`: 2.1.0 (86) is unique and never submitted.
+- `iosBinaryVersionOverride`: 2.1.1 (86) is unique, above `production`, and never submitted.
 - Autolinking: 16 modules off, 17 on.
 - AASA served by AppsFlyer lists `4DX74Q6UH4.com.nearsy.app.client` with `/Uxo6/*`.
 - `typecheck` in `apps/nearsy-ios`. Shared and iOS suites: only the failures already present on the base.
@@ -234,7 +234,7 @@ https://nearsy.onelink.me/Uxo6/<id>?pid=…&c=…&af_channel=…&af_ad=…
 - OAuth sign-ins (Google, Facebook, LinkedIn, TikTok, X, YouTube) still work.
 
 **Pending configuration that requires a new binary:**
-- `NEARSY_APPSFLYER_DEV_KEY` in the EAS `production` environment (checked 2026-11-22 by name: missing everywhere).
+- ~~`NEARSY_APPSFLYER_DEV_KEY` in EAS `production`~~: present (checked 2026-11-23 by name).
 - CRJ server fix (PR #47) deployed on `nearsy-pj` (Owner authorization; it needs no rebuild).
 - Associated Domains capability on the App ID (EAS syncs it at signing; profile regenerated).
 - Named production test accounts and TestFlight testers.

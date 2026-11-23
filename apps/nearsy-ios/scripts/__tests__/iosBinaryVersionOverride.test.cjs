@@ -94,8 +94,13 @@ describe('iOS binary version override', () => {
       'NEARSY_IOS_BUILD_NUMBER',
       'NEARSY_IOS_VERSION',
     ]);
-    assert.equal(appsFlyer.env.NEARSY_IOS_VERSION, '2.1.0');
+    assert.equal(appsFlyer.env.NEARSY_IOS_VERSION, '2.1.1');
     assert.equal(appsFlyer.env.NEARSY_IOS_BUILD_NUMBER, '86');
+    // Publishable after 2.1.0 (84): its marketing version must be higher than production's.
+    const semver = (v) => v.split('.').map(Number);
+    const [ma, mi, pa] = semver(appsFlyer.env.NEARSY_IOS_VERSION);
+    const [pma, pmi, ppa] = semver(eas.build.production.env.NEARSY_IOS_VERSION);
+    assert.ok(ma > pma || (ma === pma && (mi > pmi || (mi === pmi && pa > ppa))));
     assert.equal(
       [...numbers, devInternal.env.NEARSY_IOS_BUILD_NUMBER].includes(appsFlyer.env.NEARSY_IOS_BUILD_NUMBER),
       false,
