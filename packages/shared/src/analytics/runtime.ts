@@ -137,11 +137,17 @@ let started = false;
  * token carries the claim. Only the account that still owns the session; no
  * retroactive change; a missing claim or an error never unmarks anything.
  */
-function recheckTestAccount(user: unknown): void {
+function recheckTestAccount(user: unknown, allowForcedRefresh = false): void {
   const uid = (user as { uid?: unknown } | null | undefined)?.uid;
   if (typeof uid !== 'string' || !uid || !analyticsClient) return;
   const client = analyticsClient;
-  void readCachedTestAccountClaim(user)
+  if (client.isTestAccount(uid)) return;
+  // Foreground: a forced token refresh at most once every 5 min (same as Android),
+  // so a claim set during QA arrives without signing in again.
+  const now = Date.now();
+  const force = allowForcedRefresh && now - lastForcedClaimCheckMs >= TEST_CLAIM_FOREGROUND_REFRESH_MS;
+  if (force) lastForcedClaimCheckMs = now;
+  void (force ? readTestAccountClaim(user) : readCachedTestAccountClaim(user))
     .then((isTestAccount) => {
       if (isTestAccount && client.currentAuth()?.uid === uid) client.markTestAccount(uid);
     })
@@ -149,6 +155,8 @@ function recheckTestAccount(user: unknown): void {
 }
 
 let analyticsClient: AnalyticsClient | null = null;
+const TEST_CLAIM_FOREGROUND_REFRESH_MS = 5 * 60 * 1000;
+let lastForcedClaimCheckMs = Number.NEGATIVE_INFINITY;
 
 export function startAnalyticsRuntime(): void {
   if (started) return;
@@ -417,7 +425,7 @@ export function startAnalyticsRuntime(): void {
   function onAppState(state: string): void {
     const openType = foreground.onAppState(state);
     if (state === 'active') ensureForegroundStarted();
-    if (state === 'active') recheckTestAccount(firebaseAuth.currentUser);
+    if (state === 'active') recheckTestAccount(firebaseAuth.currentUser, true);
     if (openType) {
       void captureAppOpened(openType).catch(() => {
         log('app_opened_failed');

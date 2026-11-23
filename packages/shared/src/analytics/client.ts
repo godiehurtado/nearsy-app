@@ -441,6 +441,7 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     clearClosedAccount,
     holdAccount,
     markTestAccount,
+    isTestAccount: (uid: string): boolean => testAccountUids.has(uid),
     /** UID plus every derived id seen for it, for durable deletion records. */
     distinctIdsFor: (uid: string): string[] =>
       distinctIdsFor(uid, auth?.uid === uid ? auth : (deps.readSession?.() ?? null)),
