@@ -40,7 +40,7 @@ import {
   type AnalyticsServices,
 } from '../index';
 import { createEventLedger } from '../ledger';
-import { readTestAccountClaim, TEST_ACCOUNT_CLAIM } from '../testAccount';
+import { readCachedTestAccountClaim, readTestAccountClaim, TEST_ACCOUNT_CLAIM } from '../testAccount';
 import type { StringStore } from '../lifecycle';
 import type { LinkedInAccountSignal } from '../../authentication/linkedinA3/accountCreationSignal';
 import { assertLinkedInAuthExchangeResult } from '../../authentication/linkedinA3/types';
@@ -1005,6 +1005,32 @@ describe('Dedicated test accounts (Auth claim nearsyTestUser)', () => {
     );
     assert.equal(await readTestAccountClaim(null, now), false);
     assert.equal(TEST_ACCOUNT_CLAIM, 'nearsyTestUser');
+    // Late detection reads the cached token only, never forces a refresh.
+    let forcedCalls = 0;
+    const late = {
+      getIdTokenResult: (force?: boolean) => {
+        if (force) forcedCalls += 1;
+        return token({ nearsyTestUser: true });
+      },
+    };
+    assert.equal(await readCachedTestAccountClaim(late, now), true);
+    assert.equal(forcedCalls, 0);
+    assert.equal(await readCachedTestAccountClaim(user(() => token({}), () => token({})), now), false);
+    assert.equal(await readCachedTestAccountClaim(user(() => token({}), () => new Promise(() => {})), now), false);
+    assert.equal(await readCachedTestAccountClaim(undefined, now), false);
+  });
+
+  it('a late mark never moves to another account', async () => {
+    const { fake, client } = productionClient();
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.markTestAccount('uidA');
+    client.reportAuthState(USER_B);
+    client.captureForUser('uidB', 'visibility_changed', { enabled: true });
+    assert.equal('is_test_user' in (fake.captured()[0]?.properties ?? {}), false);
+    const identifyB = fake.calls.filter((c) => c.op === 'identify')[1];
+    assert.ok(identifyB && identifyB.op === 'identify');
+    assert.equal('is_test_user' in identifyB.setOnce, false);
   });
 });
 

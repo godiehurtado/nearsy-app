@@ -52,6 +52,25 @@ function hasClaim(result: { claims?: Record<string, unknown> } | null | undefine
   return result?.claims?.[TEST_ACCOUNT_CLAIM] === true;
 }
 
+/**
+ * Late detection (token change, app back in foreground): the cached token only,
+ * which the SDK renews by itself when it has expired. Never throws.
+ */
+export async function readCachedTestAccountClaim(
+  user: unknown,
+  setTimer: Timer = setTimeout,
+): Promise<boolean> {
+  const reader = user as TokenClaimsReader | null | undefined;
+  if (!reader || typeof reader.getIdTokenResult !== 'function') return false;
+  let pending: Promise<{ claims?: Record<string, unknown> } | null | undefined>;
+  try {
+    pending = Promise.resolve(reader.getIdTokenResult(false));
+  } catch {
+    return false;
+  }
+  return hasClaim(await within(pending, TEST_CLAIM_CACHED_TIMEOUT_MS, setTimer));
+}
+
 /** Never throws; false unless the token says nearsyTestUser === true. */
 export async function readTestAccountClaim(
   user: unknown,
