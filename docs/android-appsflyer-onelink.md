@@ -169,7 +169,8 @@ historical data is deleted or reclassified.
 | App Check | Play Integrity (production), unchanged |
 | EAS environment | `production` |
 | PostHog | General production capture (`remote`), cutover `1794787200000`, the same as `production`. No Beta marks |
-| Version | **2.1.1** (`apps/nearsy-android/app.json`; the only versionName source). The remote versionCode is 55, so the build would be **56** (`autoIncrement`). iOS: 2.1.1 (86) |
+| Version | **2.1.1** (`apps/nearsy-android/app.json`; the only versionName source). versionCode comes from the EAS remote counter (`autoIncrement`), now **56**, so the next build is **57**. iOS: 2.1.1 (86) |
+| Superseded build | EAS `b785da49-394c-43df-a494-5fe396fdb841`, 2.1.1 (56), from `8d940d9`. It lacks the A → B → A dedupe fix, so it is **not distributed**: no Play upload, no testers. It is kept only as a record |
 | Artifact | AAB (`app-bundle`), `store` distribution |
 | Submit profile | `release-candidate-appsflyer`: extends `production`, `internal` track, release as draft. EAS Submit isn't used today (no Play service account); the upload is manual. If QA passes, the release is promoted to production in Play Console without rebuilding |
 

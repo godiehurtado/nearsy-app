@@ -167,12 +167,15 @@ export function readConversionFallback(result: unknown): OneLinkReading | null {
  * Dedupe of OneLink deliveries (UDL and the cold-start resolution, direct and
  * deferred): only a repeat of the latest touch within 10 min is a duplicate. A
  * map of every recent key would drop A in A, B, A and leave B as the last touch.
- */export function isDuplicateOneLinkTouch(
+ */
+export function isDuplicateOneLinkTouch(
   latest: { key: string; at: number } | null,
   key: string,
   now: number,
 ): boolean {
-  return latest !== null && latest.key === key && now - latest.at >= 0 && now - latest.at < DESTINATION_DEDUPE_MS;
+  if (latest === null || latest.key !== key) return false;
+  const age = now - latest.at;
+  return age >= 0 && age < DESTINATION_DEDUPE_MS;
 }
 
 /** Stable key of a touch, for the in-process dedupe of direct and deferred deliveries. */

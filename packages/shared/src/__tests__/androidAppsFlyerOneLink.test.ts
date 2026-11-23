@@ -574,4 +574,14 @@ describe('OneLink dedupe keeps the last confirmed touch (nc1 priority)', () => {
   it('a repeat after 10 min counts again', () => {
     assert.deepEqual(run([['A', 0], ['A', DESTINATION_DEDUPE_MS]]), ['A', 'A']);
   });
+
+  it('the Android binding dedupes only against the latest touch', () => {
+    const source = readFileSync(
+      join(here, '..', 'analytics', 'analytics.android.ts'),
+      'utf8',
+    );
+    assert.match(source, /isDuplicateOneLinkTouch\(latestOneLinkTouch, key, now\)/);
+    assert.match(source, /latestOneLinkTouch = \{ key, at: now \};/);
+    assert.doesNotMatch(source, /recentOneLinkTouches|new Map<string, number>\(\)/);
+  });
 });
