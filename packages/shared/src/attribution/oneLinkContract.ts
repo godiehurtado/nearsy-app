@@ -163,6 +163,18 @@ export function readConversionFallback(result: unknown): OneLinkReading | null {
   return touch || destination ? { deferred: true, touch, destination } : null;
 }
 
+/**
+ * Dedupe of OneLink deliveries (UDL and the cold-start resolution, direct and
+ * deferred): only a repeat of the latest touch within 10 min is a duplicate. A
+ * map of every recent key would drop A in A, B, A and leave B as the last touch.
+ */export function isDuplicateOneLinkTouch(
+  latest: { key: string; at: number } | null,
+  key: string,
+  now: number,
+): boolean {
+  return latest !== null && latest.key === key && now - latest.at >= 0 && now - latest.at < DESTINATION_DEDUPE_MS;
+}
+
 /** Stable key of a touch, for the in-process dedupe of direct and deferred deliveries. */
 export function oneLinkTouchKey(touch: CampaignTouch): string {
   // Direct and deferred deliveries of the same touch share the key (nc1 table).
