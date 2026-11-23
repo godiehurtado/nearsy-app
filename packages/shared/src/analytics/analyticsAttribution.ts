@@ -225,9 +225,13 @@ export function createCampaignTouchStore(deps: {
   }
   return {
     read,
-    /** The first touch stays until it is used or expires. */
+    /**
+     * The last confirmed touch before signup wins (nc1 priority, approved by the
+     * Owner on 2026-11-23); each touch is kept 7 days from when it arrived. The
+     * acquisition already written for a person is never changed here: it goes out
+     * once, as set_once, and later campaigns are `campaign_accessed`.
+     */
     async save(touch: CampaignTouch): Promise<void> {
-      if (await read()) return;
       const stored: StoredCampaignTouch = { ...touch, storedAt: deps.now() };
       await deps.storage.setItem(ATTRIBUTION_STORAGE_KEY, JSON.stringify(stored));
     },

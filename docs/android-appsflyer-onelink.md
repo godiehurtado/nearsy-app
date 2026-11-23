@@ -9,7 +9,8 @@ Contract nc1 was agreed between the Android and iOS sessions on 2026-11-21. Owne
 day: navigation scope `home`, `profile`, `alerts`, no parameters, after authentication and the CRJ.
 Navigation, acquisition and campaign access stay separate. The current terms stand (Owner,
 2026-11-22): 30 min for direct navigation, 24 h for deferred navigation, and 7 days to keep a campaign
-captured before signup. **The priority between campaigns is still pending approval.**
+captured before signup. Priority between campaigns (Owner, 2026-11-23): the last confirmed
+campaign before signup wins, and the acquisition already recorded is kept. nc1 is closed.
 
 Nothing has been validated on a device.
 
@@ -29,7 +30,7 @@ Nothing has been validated on a device.
 
 Final on both platforms (2026-11-21): Android `feature/android-appsflyer` (godiehurtado/nearsy-app#125)
 and iOS `feature/ios-appsflyer-onelink` `b2a3d8a` (godiehurtado/nearsy-app#124). Both carry this same
-text. Closing nc1 still needs the Owner to approve the priority between campaigns.
+text. The priority between campaigns was approved by the Owner on 2026-11-23; nc1 is closed.
 
 | Area | Rule |
 |---|---|
@@ -38,7 +39,7 @@ text. Closing nc1 still needs the Owner to approve the priority between campaign
 | OAuth guard | A payload with `code`, `state`, `token`, `access_token`, `id_token`, `refresh_token`, `transactionId`, `transaction_id`, `result`, `error` or `mode` is dropped whole: no attribution and no navigation. Keys are compared case-insensitively |
 | Confirmed touch | A direct UDL result (`is_deferred=false`) is `onelink_direct`. A deferred one with `match_type=referrer` is `onelink_deferred`. An unknown `is_deferred` counts as deferred |
 | Probabilistic deferred | Never attributed, not even as `campaign_accessed`, and there is no "estimated" value. The destination is still honored (navigation only) |
-| Before signup | A confirmed touch with no session is kept as pending attribution for 7 days; the last touch wins until signup (priority pending Owner approval) |
+| Before signup | A confirmed touch with no session is kept as pending attribution for 7 days from that touch. The last confirmed touch before signup wins (Owner, 2026-11-23). The acquisition already recorded is never replaced |
 | Acquisition at signup | `signup_completed` carries `signup_source`/`campaign`/`content`/`tool` plus `attribution_method` when the pending touch was captured before the account was created, on this install, and no other account on this install has claimed acquisition. Sent as `$set_once`; never overwritten |
 | Late evidence | `acquisition_attributed` is sent only when all of these hold: the touch was captured before Firebase `creationTime`; the account was created after the install marker; it's the first account on this install to claim (otherwise nothing is sent); no acquisition is recorded yet; and it's ≤ 24 h since creation. The 24 h is a cap, never evidence by itself |
 | Campaign access | A **direct** touch opened with a session, after account creation, or by an existing account becomes `campaign_accessed` with `campaign_source`/`name`/`content`/`tool` plus `attribution_method`. Acquisition is untouched. A **deferred** touch for an account that already existed is dropped, because it describes an install |
@@ -345,7 +346,6 @@ AppsFlyer, and no result for this integration is attributed to them.
 
 ### Other items, no rebuild needed
 
-- Approval of the priority between campaigns, then closing nc1.
 - Google Play Data safety and the privacy policy, before publishing with AppsFlyer.
 - Separate from this PR: EAS builds of `development-nearsy-dev` can't find their Firebase file. It
   exists only as the EAS file variable `GOOGLE_SERVICES_JSON_DEV`, and `app.config.js` doesn't read it.

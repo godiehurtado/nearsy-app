@@ -1123,14 +1123,17 @@ describe('campaign attribution', () => {
     };
   }
 
-  it('the store holds the first touch, expires it, and consumes once', async () => {
+  it('the store holds the last touch before signup, expires it, and consumes once', async () => {
     const storage = memoryStorage();
     let now = 1_000;
     const store = createCampaignTouchStore({ storage, now: () => now, expiryMs: 100 });
     await store.save({ source: 'first', method: 'app_link' });
+    now += 60;
     await store.save({ source: 'second', method: 'app_link' });
-    assert.equal((await store.read())?.source, 'first');
-    assert.equal((await store.consume())?.source, 'first');
+    // The expiry counts from the last touch, not the first.
+    now += 60;
+    assert.equal((await store.read())?.source, 'second');
+    assert.equal((await store.consume())?.source, 'second');
     assert.equal(await store.consume(), null);
 
     await store.save({ source: 'old', method: 'app_link' });
