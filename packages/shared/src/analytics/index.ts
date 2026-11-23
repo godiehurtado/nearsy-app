@@ -76,7 +76,7 @@ export function markAnalyticsConfigured(): void {
 export function bindAnalyticsServices(next: AnalyticsServices | null): void {
   services = next;
   matchDedupe = createMatchSessionDedupe();
-  recentTouches = new Map();
+  lastTouch = null;
   if (!next) {
     configured = false;
     earlyAlerts = [];
@@ -388,7 +388,11 @@ export async function resolvePendingAttribution(
 
 /** Same touch from direct and deferred delivery counts once (contract nc1, C6). */
 export const ONELINK_TOUCH_DEDUPE_MS = 10 * 60 * 1000;
-let recentTouches = new Map<string, number>();
+/**
+ * Only a repeat of the latest touch is a duplicate: A, B, A keeps A pending
+ * (Owner, 2026-11-23: the last confirmed touch before signup wins).
+ */
+let lastTouch: { key: string; atMs: number } | null = null;
 let earlyTouch: CampaignAttribution | null = null;
 
 function touchKey(a: CampaignAttribution): string {
@@ -408,12 +412,9 @@ export function handleOneLinkTouch(attribution: CampaignAttribution): void {
   }
   safely(async (s) => {
     const now = s.now();
-    for (const [key, at] of recentTouches) {
-      if (now - at > ONELINK_TOUCH_DEDUPE_MS) recentTouches.delete(key);
-    }
     const key = touchKey(attribution);
-    if (recentTouches.has(key)) return;
-    recentTouches.set(key, now);
+    if (lastTouch && lastTouch.key === key && now - lastTouch.atMs <= ONELINK_TOUCH_DEDUPE_MS) return;
+    lastTouch = { key, atMs: now };
     await s.attribution.save(attribution);
     const user = s.client.currentAuth();
     if (user) await resolvePendingAttribution(s, user);

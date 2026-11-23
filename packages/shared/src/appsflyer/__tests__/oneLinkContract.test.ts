@@ -230,6 +230,24 @@ describe('nc1 → PostHog', () => {
     assert.equal(fake.captured('campaign_accessed').length, 1);
   });
 
+  it('nc1 priority: A, B, then A again within 10 min → A is the acquisition', async () => {
+    const { fake, client } = facade(NOW);
+    await client.start();
+    client.reportAuthState(null);
+    const a = parseOneLinkResult(direct(), NOW - 60000)!.attribution!;
+    const b = { ...a, campaign: 'otra-campana' };
+    handleOneLinkTouch(a);
+    await settle();
+    handleOneLinkTouch(b);
+    await settle();
+    handleOneLinkTouch(a);
+    await settle();
+    client.reportAuthState(user('uidN', NOW - 1000));
+    trackSignupCompleted({ uid: 'uidN', method: 'email' });
+    await settle();
+    assert.equal(fake.captured('signup_completed')[0]?.properties.signup_campaign, 'lanzamiento-27');
+  });
+
   it('F7 second account created on the same install gets no acquisition', async () => {
     const store = memoryStore();
     const first = facade(NOW, store);
