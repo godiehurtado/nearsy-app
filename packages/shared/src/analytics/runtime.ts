@@ -28,6 +28,7 @@ import {
 import { createInstallRecord, createPendingAttributionStore } from './attribution';
 import { createAnalyticsClient, type AuthSnapshot } from './client';
 import { resolveAnalyticsConfig } from './config';
+import { readTestAccountClaim } from './testAccount';
 import type { AnalyticsSocialPlatform } from './contract';
 import {
   bindAnalyticsServices,
@@ -353,8 +354,23 @@ export function startAnalyticsRuntime(): void {
     subscribeAccountDeletionSession(syncAccountDeletion);
     subscribePendingAccountDeletion(syncAccountDeletion);
     syncAccountDeletion();
+    // The first identify waits (≤ 2 s) for the test-account claim, so a dedicated
+    // test account's first events are already marked. Fail-closed: real user.
+    let authSequence = 0;
     firebaseAuth.onAuthStateChanged((user: unknown) => {
-      onAuthChanged(toSnapshot(user));
+      const sequence = ++authSequence;
+      const snapshot = toSnapshot(user);
+      if (!snapshot) {
+        onAuthChanged(null);
+        return;
+      }
+      void readTestAccountClaim(user)
+        .catch(() => false)
+        .then((isTestAccount) => {
+          if (sequence !== authSequence) return; // a newer auth state won
+          if (isTestAccount) client.markTestAccount(snapshot.uid);
+          onAuthChanged(snapshot);
+        });
     });
     if (config.attributionHosts.length > 0) {
       void Linking.getInitialURL()

@@ -40,6 +40,7 @@ import {
   type AnalyticsServices,
 } from '../index';
 import { createEventLedger } from '../ledger';
+import { readTestAccountClaim, TEST_ACCOUNT_CLAIM } from '../testAccount';
 import type { StringStore } from '../lifecycle';
 import type { LinkedInAccountSignal } from '../../authentication/linkedinA3/accountCreationSignal';
 import { assertLinkedInAuthExchangeResult } from '../../authentication/linkedinA3/types';
@@ -888,7 +889,10 @@ describe('Beta classification', () => {
       (c): c is Extract<typeof c, { op: 'identify' }> => c.op === 'identify',
     );
     assert.deepEqual(identifies.map((c) => c.uid), ['uidA', 'uidB']);
-    for (const { set } of identifies) assert.equal(set.is_test_user, true);
+    for (const { set, setOnce } of identifies) {
+      assert.equal(setOnce.is_test_user, true);
+      assert.equal('is_test_user' in set, false, 'only ever $set_once');
+    }
   });
 
   it('production never writes is_test_user, so a Beta mark on the person stays', async () => {
@@ -922,6 +926,85 @@ describe('Beta classification', () => {
     client.setPersonProperties('uidA', { is_test_user: false }, { is_test_user: false });
     assert.equal(JSON.stringify(fake.calls).includes('is_test_user'), false);
     assert.equal(fake.captured()[0]?.properties.distribution_channel, undefined);
+  });
+});
+
+describe('Dedicated test accounts (Auth claim nearsyTestUser)', () => {
+  function productionClient() {
+    const fake = createFakeTransport();
+    const client = createAnalyticsClient({
+      config: { ...ENABLED, distributionChannel: 'production', isTestInstall: false },
+      createTransport: async () => fake,
+      binary: () => ({ appVersion: '2.1.0', appBuild: '86' }),
+    });
+    return { fake, client };
+  }
+
+  it('only the marked account is a test user; anonymous events and real users never are', async () => {
+    const { fake, client } = productionClient();
+    await client.start();
+    client.reportAuthState(null);
+    client.captureDeviceEvent('app_opened', { open_type: 'cold_start' });
+    client.markTestAccount('uidA');
+    client.reportAuthState(USER_A);
+    client.captureForUser('uidA', 'visibility_changed', { enabled: true });
+    client.reportAuthState(USER_B);
+    client.captureForUser('uidB', 'visibility_changed', { enabled: true });
+    const [anonymous, testEvent, realEvent] = fake.captured();
+    assert.equal('is_test_user' in (anonymous?.properties ?? {}), false);
+    assert.equal(testEvent?.properties.is_test_user, true);
+    assert.equal('is_test_user' in (realEvent?.properties ?? {}), false);
+    for (const event of fake.captured()) assert.equal(event.properties.distribution_channel, 'production');
+    const identifies = fake.calls.filter(
+      (c): c is Extract<typeof c, { op: 'identify' }> => c.op === 'identify',
+    );
+    assert.equal(identifies[0]?.setOnce.is_test_user, true);
+    assert.equal('is_test_user' in (identifies[0]?.set ?? {}), false);
+    assert.equal('is_test_user' in (identifies[1]?.setOnce ?? {}), false);
+    assert.equal('is_test_user' in (identifies[1]?.set ?? {}), false);
+  });
+
+  it('a claim found after identify marks the person once and later events; never false', async () => {
+    const { fake, client } = productionClient();
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.captureForUser('uidA', 'visibility_changed', { enabled: true });
+    client.markTestAccount('uidA');
+    client.markTestAccount('uidA');
+    client.captureForUser('uidA', 'visibility_changed', { enabled: false });
+    const persons = fake.calls.filter((c) => c.op === 'setPerson');
+    assert.equal(persons.length, 1);
+    assert.deepEqual(persons[0]?.op === 'setPerson' ? persons[0].setOnce : null, { is_test_user: true });
+    const [before, after] = fake.captured();
+    assert.equal('is_test_user' in (before?.properties ?? {}), false, 'no history rewrite');
+    assert.equal(after?.properties.is_test_user, true);
+    assert.equal(JSON.stringify(fake.calls).includes('"is_test_user":false'), false);
+  });
+
+  it('readTestAccountClaim: fail-closed; forced refresh first, cached token as fallback', async () => {
+    const now = (fn: () => void) => setImmediate(fn);
+    const token = (claims: Record<string, unknown>) => Promise.resolve({ claims });
+    const user = (forced: () => Promise<unknown>, cached: () => Promise<unknown>) => ({
+      getIdTokenResult: (force?: boolean) => (force ? forced() : cached()) as Promise<{ claims?: Record<string, unknown> }>,
+    });
+    assert.equal(await readTestAccountClaim(user(() => token({ nearsyTestUser: true }), () => token({})), now), true);
+    assert.equal(await readTestAccountClaim(user(() => token({}), () => token({ nearsyTestUser: true })), now), false);
+    assert.equal(await readTestAccountClaim(user(() => token({ nearsyTestUser: 'true' }), () => token({})), now), false);
+    assert.equal(
+      await readTestAccountClaim(user(() => Promise.reject(new Error('offline')), () => token({ nearsyTestUser: true })), now),
+      true,
+    );
+    assert.equal(
+      await readTestAccountClaim(user(() => new Promise(() => {}), () => token({ nearsyTestUser: true })), now),
+      true,
+    );
+    assert.equal(await readTestAccountClaim(user(() => new Promise(() => {}), () => new Promise(() => {})), now), false);
+    assert.equal(
+      await readTestAccountClaim({ getIdTokenResult: () => { throw new Error('x'); } }, now),
+      false,
+    );
+    assert.equal(await readTestAccountClaim(null, now), false);
+    assert.equal(TEST_ACCOUNT_CLAIM, 'nearsyTestUser');
   });
 });
 

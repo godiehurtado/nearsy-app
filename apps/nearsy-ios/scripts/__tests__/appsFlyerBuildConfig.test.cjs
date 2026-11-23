@@ -56,7 +56,7 @@ describe('appsFlyerBuildConfig', () => {
     assert.equal(extra.NEARSY_ONELINK_TEMPLATE_ID, 'Uxo6');
   });
 
-  it('only the Beta test profile (nearsy-pj, TestFlight, test users marked) switches AppsFlyer on; no profile carries a key', () => {
+  it('only the release candidate (nearsy-pj, PostHog production, publishable) switches AppsFlyer on; no profile carries a key', () => {
     const eas = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'eas.json'), 'utf8'));
     // Resolve `extends` so an inherited switch is caught too.
     const resolveEnv = (name) => {
@@ -74,18 +74,19 @@ describe('appsFlyerBuildConfig', () => {
       assert.equal(env.NEARSY_APPSFLYER_DEV_KEY, undefined, `${name}: the key lives only in EAS`);
       if (env.NEARSY_APPSFLYER_ENABLED === 'true') enabled.push(name);
     }
-    assert.deepEqual(enabled, ['beta-appsflyer']);
-    const name = 'beta-appsflyer';
+    assert.deepEqual(enabled, ['release-candidate-appsflyer']);
+    const name = 'release-candidate-appsflyer';
     const env = resolveEnv(name);
     // Store distribution (TestFlight), production Firebase and EAS environment.
     assert.equal(resolveField(name, 'distribution'), undefined);
     assert.equal(resolveField(name, 'environment'), 'production');
     assert.equal(resolveField(name, 'developmentClient'), undefined);
     assert.equal(env.EXPO_PUBLIC_NEARSY_FIREBASE_ENV, 'production');
-    // Existing PostHog setup, Beta channel: every event and person is_test_user=true.
-    // Never nearsy-dev: no development override.
+    // Publishable: PostHog production channel, so real users are never marked.
+    // Only accounts with the Auth claim nearsyTestUser get is_test_user. Never nearsy-dev.
     assert.equal(env.EXPO_PUBLIC_POSTHOG_ENABLED, 'true');
-    assert.equal(env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL, 'beta');
+    assert.equal(env.EXPO_PUBLIC_POSTHOG_DISTRIBUTION_CHANNEL, 'production');
+    assert.equal(env.EXPO_PUBLIC_POSTHOG_GENERATION_ID_SINCE_MS, '1794787200000');
     assert.equal(env.EXPO_PUBLIC_POSTHOG_ALLOW_DEVELOPMENT, undefined);
     assert.equal(eas.submit?.[name], undefined);
   });

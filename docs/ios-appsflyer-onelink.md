@@ -1,10 +1,10 @@
 # Nearsy iOS: AppsFlyer / OneLink
 
 - **Status (2026-11-21):** implemented on `feature/ios-appsflyer-onelink`, based on `develop-ios` `e9a8fce`. That base includes the CRJ hotfix (`a82a4a2`, PR #123).
-- **Default:** off in every build profile except the prepared Beta test profile `beta-appsflyer` (never built yet). A binary built without the switch contains no AppsFlyer code: the module isn't linked, nothing is forwarded from the AppDelegate, there's no Associated Domains entry and no key.
+- **Default:** off in every build profile except the prepared release candidate `release-candidate-appsflyer` (never built yet). A binary built without the switch contains no AppsFlyer code: the module isn't linked, nothing is forwarded from the AppDelegate, there's no Associated Domains entry and no key.
 - **Not built or validated on a device.** No binary contains this integration. The farm binaries and the CRJ test build 2.1.0 (85) have no AppsFlyer. No result from them applies to this integration.
 - **Contract nc1:** agreed with the Android agent on 2026-11-21. It stays provisional until the Owner approves it.
-- **Owner direction (2026-11-21):** navigation scope is `home`, `profile`, `alerts`, without parameters, after authentication and the CRJ. Navigation, acquisition and campaign access stay separate. Owner, 2026-11-22: keep the current times (30 min direct navigation, 24 h deferred navigation, 7 days for a campaign kept before signup). **Priority between campaigns is still pending approval** (today: the last confirmed touch before signup wins; a recorded acquisition is never overwritten). The next binary is Beta on Firebase production with the existing PostHog Beta channel; nothing is sent from nearsy-dev.
+- **Owner direction (2026-11-21):** navigation scope is `home`, `profile`, `alerts`, without parameters, after authentication and the CRJ. Navigation, acquisition and campaign access stay separate. Owner, 2026-11-22: keep the current times (30 min direct navigation, 24 h deferred navigation, 7 days for a campaign kept before signup). **Priority between campaigns is still pending approval** (today: the last confirmed touch before signup wins; a recorded acquisition is never overwritten). Owner, later on 2026-11-22: the next binary is a **publishable candidate** on Firebase production with AppsFlyer on, tested in TestFlight and shipped as the same binary if QA passes. Only dedicated test accounts are marked (Auth claim `nearsyTestUser`); nothing is sent from nearsy-dev.
 
 ## Shared table (nc1, identical on iOS and Android)
 
@@ -162,15 +162,16 @@ https://nearsy.onelink.me/Uxo6/<id>?pid=…&c=…&af_channel=…&af_ad=…
 ## Activating it
 
 1. **EAS:** create the sensitive variable `NEARSY_APPSFLYER_DEV_KEY` in each environment that will use it. Never in Git. **Checked 2026-11-21 (names only): missing in `development` and `production`.** Until it exists, a build of the test profile fails on the builder, before compiling.
-2. **Profile:** set `NEARSY_APPSFLYER_ENABLED=true` in that profile's `env`. Only `beta-appsflyer` has it; a test fails if any other profile, directly or by `extends`, does.
+2. **Profile:** set `NEARSY_APPSFLYER_ENABLED=true` in that profile's `env`. Only `release-candidate-appsflyer` has it; a test fails if any other profile, directly or by `extends`, does.
 
-**Next test binary: `beta-appsflyer`** (Owner, 2026-11-22)
-- Extends `qa-generation-ids` (the 2.1.0 Beta): store distribution for TestFlight, EAS environment `production`, Firebase `nearsy-pj`, Functions `us-central1`.
-- PostHog: the existing project and token with the Beta channel. Every event and the person carry `is_test_user=true` and `distribution_channel=beta`. No new PostHog project and no sending from nearsy-dev.
-- Test users: Beta installs are marked by the channel; the Owner provides the named production test accounts so their events can be found.
-- Version 2.1.0 (86), reserved by the Owner. Checked 2026-11-22: no EAS iOS build uses 86 (latest is 85). No submit profile of its own; build, TestFlight upload and submit each need separate authorization.
+**Next binary: `release-candidate-appsflyer`** (Owner, 2026-11-22)
+- Extends `production`: store distribution, EAS environment `production`, Firebase `nearsy-pj`, Functions `us-central1`, PostHog production channel with the generation-id cutover. Only adds `NEARSY_APPSFLYER_ENABLED=true` and the version.
+- Publishable: the same binary goes to TestFlight first and, if QA passes, to the App Store. Nothing in it marks the install as a test.
+- Test users: only accounts with the Auth claim `nearsyTestUser` get `is_test_user=true` (every event of that account, and the person once). Real users, anonymous events and other accounts are never marked. See [ios-posthog-analytics.md](ios-posthog-analytics.md), "Dedicated test accounts". Shared with Android; Functions to confirm the server side.
+- Version 2.1.0 (86), reserved by the Owner. Checked 2026-11-22: no EAS iOS build uses 86 (latest is 85). Submit uses the existing `production` submit profile; build, TestFlight upload and App Store submission each need separate authorization.
+- **Version note for publishing:** if 2.1.0 (84) has been released on the App Store by then, publishing this binary needs a higher marketing version (for example 2.1.1), which means a new build.
 - It includes the CRJ client hotfix (`a82a4a2`, in the base `e9a8fce`). **The server part (`nearsy-functions` PR #47, `531131b`) is not deployed on `nearsy-pj` yet** (only on `nearsy-dev`). The Functions agent reports it ready: only `setActiveProfileMode` and `activateVisibility`, no backfill, rollback in seconds, waiting on Owner authorization.
-- TestFlight needs no ad hoc device list. Its installs never get a deterministic deferred match on iOS, so deferred and late acquisition through AppsFlyer can't be shown; direct links, campaign access, navigation and the PostHog events can.
+- TestFlight installs never get a deterministic deferred match on iOS, so deferred and late acquisition through AppsFlyer can't be shown; direct links, campaign access, navigation and the PostHog events can.
 3. **Apple:** the App ID needs the Associated Domains capability. EAS syncs it when it signs a binary with the entitlement, so the provisioning profile gets regenerated.
 4. **Build:** a new binary is required. OTA can't add native code.
 
@@ -216,7 +217,7 @@ https://nearsy.onelink.me/Uxo6/<id>?pid=…&c=…&af_channel=…&af_ad=…
 
 **Local validations done (no binary):**
 - `pnpm test:appsflyer`: nc1 parser, acquisition evidence, access, deduplication, install claim.
-- `pnpm --filter nearsy-ios test:appsflyer-native`: AppDelegate filter on the Expo 54 template (only guarded `continueUserActivity`, never `openURL` or launch options), App Check coexistence, Podfile strict mode, build switch, key never echoed, only `beta-appsflyer` enabled (production Firebase, PostHog Beta).
+- `pnpm --filter nearsy-ios test:appsflyer-native`: AppDelegate filter on the Expo 54 template (only guarded `continueUserActivity`, never `openURL` or launch options), App Check coexistence, Podfile strict mode, build switch, key never echoed, only `release-candidate-appsflyer` enabled (production Firebase, PostHog production channel).
 - `iosBinaryVersionOverride`: 2.1.0 (86) is unique and never submitted.
 - Autolinking: 16 modules off, 17 on.
 - AASA served by AppsFlyer lists `4DX74Q6UH4.com.nearsy.app.client` with `/Uxo6/*`.

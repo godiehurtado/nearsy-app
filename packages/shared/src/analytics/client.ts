@@ -148,6 +148,14 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     }
   }
 
+  /** Dedicated test accounts seen in this process (Auth claim, set by an admin). */
+  const testAccountUids = new Set<string>();
+
+  function isTestSession(): boolean {
+    if (deps.config.isTestInstall) return true;
+    return !!auth && testAccountUids.has(auth.uid);
+  }
+
   function superProperties(): AnalyticsProps {
     const binary = safeBinary();
     return sanitizeProperties(SUPER_PROPERTY_RULES, {
@@ -156,8 +164,9 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
       app_build: binary.appBuild,
       environment: deps.config.environment,
       distribution_channel: deps.config.distributionChannel,
-      // Never false: a build outside Beta cannot clear this on a person.
-      is_test_user: deps.config.isTestInstall ? true : undefined,
+      // Never false: a Beta install, or a signed-in dedicated test account
+      // (Auth claim nearsyTestUser). Nothing can clear it on a person.
+      is_test_user: isTestSession() ? true : undefined,
       tracking_plan_version: TRACKING_PLAN_VERSION,
     }).values;
   }
@@ -217,13 +226,16 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     if (!next || !nextId) return;
     rememberDistinctId(next.uid, nextId);
     const createdAt = toIsoCreationTime(next.creationTime);
+    const { is_test_user: testMark, ...personSuper } = superProperties();
     const { values: set } = sanitizeProperties(PERSON_PROPERTY_RULES, {
-      ...superProperties(),
+      ...personSuper,
       user_id: next.uid,
       email: next.email?.trim() || undefined,
     });
+    // is_test_user is only ever true, so $set_once (same as Android and Functions).
     const { values: setOnce } = sanitizeProperties(PERSON_PROPERTY_RULES, {
       account_created_at: createdAt ?? undefined,
+      is_test_user: testMark,
     });
     run((t) => t.identify(nextId, set, setOnce), true);
   }
@@ -405,6 +417,18 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
    * The closure ended: a later sign-in, or a sign-out of a deletion that was never
    * confirmed. Returns whether an account was closed until now.
    */
+  /**
+   * The signed-in account carries the admin claim nearsyTestUser. From now on its
+   * events carry is_test_user=true and its person gets it once. Never undone.
+   */
+  function markTestAccount(uid: string): void {
+    if (!enabled || !uid || testAccountUids.has(uid)) return;
+    testAccountUids.add(uid);
+    if (auth?.uid === uid && identifiedUid === uid && uid !== heldUid) {
+      run((t) => t.setPersonProperties({}, { is_test_user: true }));
+    }
+  }
+
   function clearClosedAccount(): boolean {
     const wasClosed = closedAccount !== null;
     closedAccount = null;
@@ -416,6 +440,7 @@ export function createAnalyticsClient(deps: AnalyticsClientDeps) {
     discardAccount,
     clearClosedAccount,
     holdAccount,
+    markTestAccount,
     /** UID plus every derived id seen for it, for durable deletion records. */
     distinctIdsFor: (uid: string): string[] =>
       distinctIdsFor(uid, auth?.uid === uid ? auth : (deps.readSession?.() ?? null)),

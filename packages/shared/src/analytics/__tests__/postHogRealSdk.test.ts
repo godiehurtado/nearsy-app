@@ -263,7 +263,9 @@ describe('real SDK: capture and identity', () => {
     assert.ok(identify);
     assert.equal(identify.distinct_id, 'uidA');
     assert.equal(identify.properties.$set.user_id, 'uidA');
-    assert.equal(identify.properties.$set.is_test_user, true);
+    // Only ever true, so $set_once (contract shared with Android and Functions).
+    assert.equal(identify.properties.$set_once.is_test_user, true);
+    assert.equal('is_test_user' in identify.properties.$set, false);
     assert.equal(identify.properties.$set.distribution_channel, 'beta');
     assert.equal(identify.properties.$set_once.account_created_at, '2026-11-02T10:00:00.000Z');
 
