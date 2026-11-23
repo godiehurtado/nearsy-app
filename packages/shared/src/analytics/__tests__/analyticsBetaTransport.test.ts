@@ -615,8 +615,13 @@ describe('beta classification with the real SDK', () => {
 
   it('nothing else writes is_test_user', () => {
     const binding = readFileSync(join(here, '..', 'analytics.android.ts'), 'utf8');
-    assert.equal(binding.match(/is_test_user/g)?.length, 2);
-    assert.ok(binding.includes("config.mode === 'beta' ? { accountClassification: { is_test_user: true } }"));
+    // Beta install stamp, Beta account set_once, the production test-account mark,
+    // and one doc comment. The production mark depends only on the Auth claim.
+    assert.equal(binding.match(/is_test_user/g)?.length, 4);
+    assert.match(binding, /config\.mode === 'beta'\s+\? \{ accountClassification: \{ is_test_user: true \} \}/);
+    assert.match(binding, /return signedInTestAccount\s+\? \{ is_test_user: true, distribution_channel: 'production' \}/);
+    assert.match(binding, /claims\?\.\[TEST_ACCOUNT_CLAIM\] === true/);
+    assert.match(binding, /TEST_ACCOUNT_CLAIM = 'nearsyTestUser'/);
   });
 });
 
@@ -1057,5 +1062,109 @@ describe('compatibility contract with the real SDK', () => {
     assert.ok(screen.includes("'nearby_list'"));
     const profile = readFileSync(join(here, '..', '..', 'screens', 'DiscoveryProfileScreen.tsx'), 'utf8');
     assert.ok(profile.includes("trackMatchPresented(viewerUid, uid, score, 'discovery_profile')"));
+  });
+});
+
+describe('production test accounts (claim nearsyTestUser) with the real SDK', () => {
+  function productionSession(state: { claim: boolean; user: { uid: string } | null }) {
+    let marked = false;
+    const transportPromise = createSdkTransport({
+      PostHog,
+      token: TOKEN,
+      host: POSTHOG_US_HOST,
+      persistence: 'memory',
+      eventMarks: () =>
+        marked
+          ? { is_test_user: true, distribution_channel: 'production' }
+          : { distribution_channel: 'production' },
+      sdkOptions: FAST_SDK_OPTIONS,
+    });
+    const session = createAnalyticsSession({
+      loadTransport: () => transportPromise,
+      getAuthUser: () => state.user,
+      readCreationTime: () => undefined,
+      buildBaseProperties: () => ({}),
+      buildProfileProperties: () => null,
+      superProperties: { environment: 'production', platform: 'Android' },
+      now: () => 0,
+      resolveAccountTestUser: async () => state.claim,
+      onAccountTestUser: (isTestUser) => {
+        marked = isTestUser;
+      },
+    });
+    return { session, transportPromise };
+  }
+
+  it('late detection marks only later events, the person once, and never the next account', async () => {
+    const server = installFakeServer(answering());
+    const state = { claim: false, user: { uid: 'uid-tester' } as { uid: string } | null };
+    const { session, transportPromise } = productionSession(state);
+
+    session.noteAuthChange();
+    session.trackAppOpened();
+    await session.settled();
+
+    // The admin sets the claim; the token listener or a foreground check asks again.
+    state.claim = true;
+    session.recheckAccountTestUser({ refreshToken: false });
+    session.trackAppOpened();
+    session.recheckAccountTestUser({ refreshToken: true });
+    await session.settled();
+
+    state.user = { uid: 'uid-real' };
+    state.claim = false;
+    session.noteAuthChange();
+    session.trackAppOpened();
+    await session.settled();
+    await (await transportPromise).flush();
+
+    const events = server.events();
+    assert.deepEqual(events.map((item) => item.event), [
+      '$identify',
+      'app_opened',
+      '$set',
+      'app_opened',
+      '$identify',
+      'app_opened',
+    ]);
+    const marks = events.map((item) => item.properties.is_test_user);
+    assert.deepEqual(marks, [undefined, undefined, true, true, undefined, undefined]);
+    for (const item of events) assert.equal(item.properties.distribution_channel, 'production');
+    const personMarks = events.filter((item) => item.properties.$set_once?.is_test_user === true);
+    assert.equal(personMarks.length, 1, 'set_once once, for the tester only');
+  });
+
+  it('a claim read that fails is a real account', async () => {
+    const server = installFakeServer(answering());
+    let marked = false;
+    const transport = await createSdkTransport({
+      PostHog,
+      token: TOKEN,
+      host: POSTHOG_US_HOST,
+      persistence: 'memory',
+      eventMarks: () => (marked ? { is_test_user: true } : {}),
+      sdkOptions: FAST_SDK_OPTIONS,
+    });
+    const session = createAnalyticsSession({
+      loadTransport: async () => transport,
+      getAuthUser: () => ({ uid: 'uid-x' }),
+      readCreationTime: () => undefined,
+      buildBaseProperties: () => ({}),
+      buildProfileProperties: () => null,
+      superProperties: { environment: 'production' },
+      now: () => 0,
+      resolveAccountTestUser: async () => {
+        throw new Error('network');
+      },
+      onAccountTestUser: (isTestUser) => {
+        marked = isTestUser;
+      },
+    });
+    session.noteAuthChange();
+    session.trackAppOpened();
+    session.recheckAccountTestUser({ refreshToken: true });
+    await session.settled();
+    await transport.flush();
+    for (const item of server.events()) assert.ok(!('is_test_user' in item.properties), item.event);
   });
 });

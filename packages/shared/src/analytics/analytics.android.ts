@@ -22,6 +22,12 @@ import {
   type AttributionSettings,
   type CampaignTouch,
 } from './analyticsAttribution';
+import {
+  acceptOneLinkAcquisition,
+  createInstallClaim,
+  DESTINATION_DEDUPE_MS,
+  oneLinkTouchKey,
+} from '../attribution/oneLinkContract.ts';
 import { createAppOpenedTracker } from './appOpenedTracker';
 import {
   INTERCEPT_HOST,
@@ -45,6 +51,7 @@ import {
   scoreProperties,
   TRACKING_PLAN_VERSION,
   type AnalyticsProperties,
+  type EventMarks,
 } from './analyticsContract';
 import {
   createAnalyticsSession,
@@ -216,7 +223,7 @@ async function createTransport(config: AnalyticsConfig): Promise<AnalyticsTransp
                   distribution_channel: config.distributionChannel,
                 },
               }
-            : {}),
+            : { eventMarks: productionEventMarks }),
         });
   try {
     await transport.purgeQueued(guard.droppedIds());
@@ -225,6 +232,67 @@ async function createTransport(config: AnalyticsConfig): Promise<AnalyticsTransp
   }
   return transport;
 }
+
+/**
+ * Production builds mark only dedicated test accounts: Auth custom claim
+ * `nearsyTestUser === true`, set by an admin (Functions), the same accounts as the
+ * server list. Real accounts and anonymous events carry no `is_test_user`.
+ */
+let signedInTestAccount = false;
+
+function productionEventMarks(): EventMarks {
+  return signedInTestAccount
+    ? { is_test_user: true, distribution_channel: 'production' }
+    : { distribution_channel: 'production' };
+}
+
+export const TEST_ACCOUNT_CLAIM = 'nearsyTestUser';
+const CLAIM_FORCED_READ_MS = 2000;
+const CLAIM_CACHED_READ_MS = 1000;
+
+function withinMs<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      },
+    );
+  });
+}
+
+/**
+ * Reads the claim of the signed-in account: a refreshed token first (2 s), so a
+ * claim set by an admin shows up on the next app open; then the cached one. Any
+ * failure means a real account. The token itself is never stored or logged.
+ */
+async function readTestAccountClaim(uid: string, refreshToken: boolean): Promise<boolean> {
+  const user = firebaseAuth.currentUser as {
+    uid: string;
+    getIdTokenResult(forceRefresh?: boolean): Promise<{ claims?: Record<string, unknown> }>;
+  } | null;
+  if (!user || user.uid !== uid || typeof user.getIdTokenResult !== 'function') return false;
+  const read = (force: boolean) =>
+    Promise.resolve().then(() => user.getIdTokenResult(force));
+  // A token change must read the cached token only: forcing a refresh there would
+  // fire another token change, a refresh loop for every real account.
+  const result =
+    (refreshToken ? await withinMs(read(true), CLAIM_FORCED_READ_MS) : null) ??
+    (await withinMs(read(false), CLAIM_CACHED_READ_MS));
+  const isTest = result?.claims?.[TEST_ACCOUNT_CLAIM] === true;
+  // QA diagnostics in logcat (ReactNativeJS): the outcome only, never a UID or token.
+  console.info(`[analytics] test account claim: ${result === null ? 'error' : isTest ? 'yes' : 'no'}`);
+  return isTest;
+}
+
+/** Foreground re-checks force a token refresh, so at most one every 5 minutes. */
+const TEST_CLAIM_FOREGROUND_RECHECK_MS = 5 * 60_000;
+let lastForegroundClaimRecheck = 0;
 
 /** Auth fields the session reads; RNFirebase's metadata getters may throw. */
 function toAuthUser(user: {
@@ -350,7 +418,15 @@ function getSession(): Session | null {
         personModeMemory().write(user.uid, (doc as { mode?: unknown } | null)?.mode),
       superProperties,
       now: () => Date.now(),
-      ...(config.mode === 'beta' ? { accountClassification: { is_test_user: true } } : {}),
+      ...(config.mode === 'beta'
+        ? { accountClassification: { is_test_user: true } }
+        : {
+            resolveAccountTestUser: (user: { uid: string }, options: { refreshToken: boolean }) =>
+              readTestAccountClaim(user.uid, options.refreshToken),
+            onAccountTestUser: (isTestUser: boolean) => {
+              signedInTestAccount = isTestUser;
+            },
+          }),
     });
   } catch {
     session = null;
@@ -452,16 +528,92 @@ async function sendLateAcquisition(uid: string, touch: CampaignTouch): Promise<v
 
 async function noteEvidence(touch: CampaignTouch, observedAt: number): Promise<void> {
   const uid = currentUid();
+  const signup = uid ? await signupRecords().read(uid) : null;
   const decision = decideEvidence({
     signedIn: uid !== null,
     touch,
     observedAt,
-    signup: uid ? await signupRecords().read(uid) : null,
+    signup,
   });
   if (decision === 'hold') await campaignStore().save(touch);
   else if (uid && decision === 'campaign_accessed') sendCampaignAccessed(uid, touch);
-  else if (uid && decision === 'acquisition_attributed') await sendLateAcquisition(uid, touch);
+  else if (uid && decision === 'acquisition_attributed') {
+    if (!isOneLinkMethod(touch.method)) {
+      await sendLateAcquisition(uid, touch);
+      return;
+    }
+    const accepted =
+      signup !== null &&
+      (await oneLinkAcquisitionAccepted(uid, touch, observedAt, { now: Date.now() }));
+    if (accepted) {
+      await sendLateAcquisition(uid, touch);
+      await claimInstall(uid);
+    } else if (decideHeldTouchForExistingAccount(touch) === 'campaign_accessed') {
+      sendCampaignAccessed(uid, touch);
+    }
+  }
 }
+
+function isOneLinkMethod(method: CampaignTouch['method']): boolean {
+  return method === 'onelink_direct' || method === 'onelink_deferred';
+}
+
+/** First install time from the package manager: a reinstall resets it, a backup cannot. */
+async function readInstallTime(): Promise<number | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Application = require('expo-application');
+    const value = (await Application.getInstallationTimeAsync())?.getTime?.();
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function installClaim() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const storage = require('@react-native-async-storage/async-storage').default;
+  return createInstallClaim(storage);
+}
+
+async function claimInstall(uid: string): Promise<void> {
+  const installTime = await readInstallTime();
+  if (installTime !== null) await installClaim().claim(installTime, uid);
+}
+
+/** C4 on top of `decideEvidence`: install, creation time and one claim per install. */
+async function oneLinkAcquisitionAccepted(
+  uid: string,
+  touch: CampaignTouch,
+  observedAt: number,
+  late: { now: number } | null,
+): Promise<boolean> {
+  const user = firebaseAuth.currentUser;
+  const created = user?.uid === uid ? Date.parse(user.metadata?.creationTime ?? '') : Number.NaN;
+  const installTime = await readInstallTime();
+  return acceptOneLinkAcquisition({
+    touch,
+    observedAt,
+    accountCreatedAt: Number.isFinite(created) ? created : null,
+    installTime,
+    installClaimedBy: installTime === null ? null : await installClaim().claimedBy(installTime),
+    uid,
+    late,
+  });
+}
+
+/** In-process dedupe: the same touch delivered by UDL and the cold-start resolution. */
+const recentOneLinkTouches = new Map<string, number>();
+
+export const noteOneLinkTouch: AnalyticsApi['noteOneLinkTouch'] = safely((touch, observedAt) => {
+  if (!getSession() || !isOneLinkMethod(touch.method)) return;
+  const key = oneLinkTouchKey(touch);
+  const now = Date.now();
+  const previous = recentOneLinkTouches.get(key);
+  if (previous !== undefined && now - previous < DESTINATION_DEDUPE_MS) return;
+  recentOneLinkTouches.set(key, now);
+  void noteEvidence(touch, observedAt).catch(() => {});
+});
 
 async function noteCampaignLink(url: unknown, observedAt: number): Promise<void> {
   try {
@@ -474,7 +626,13 @@ async function noteCampaignLink(url: unknown, observedAt: number): Promise<void>
 
 /** Held evidence becomes acquisition; the record judges evidence that comes later. */
 async function consumeSignupAttribution(uid: string): Promise<AnalyticsProperties | null> {
-  const touch = await campaignStore().consume();
+  let touch: CampaignTouch | null = await campaignStore().consume();
+  if (touch && isOneLinkMethod(touch.method)) {
+    // Held while signed out, so it precedes this signup by construction.
+    const accepted = await oneLinkAcquisitionAccepted(uid, touch, Number.NEGATIVE_INFINITY, null);
+    if (accepted) await claimInstall(uid);
+    else touch = null;
+  }
   await signupRecords().write(uid, { at: Date.now(), attributed: touch !== null });
   return touch ? signupAttributionProperties(touch) : null;
 }
@@ -523,7 +681,14 @@ export const startAnalytics: AnalyticsApi['startAnalytics'] = () => {
 
     const appStateSub = AppState.addEventListener('change', (state) => {
       openTracker.noteAppState(state);
-      if (state === 'active') void readLocationPermissions();
+      if (state === 'active') {
+        void readLocationPermissions();
+        const now = Date.now();
+        if (now - lastForegroundClaimRecheck >= TEST_CLAIM_FOREGROUND_RECHECK_MS) {
+          lastForegroundClaimRecheck = now;
+          active.recheckAccountTestUser({ refreshToken: true });
+        }
+      }
     });
     detachers.push(() => appStateSub.remove());
     openTracker.noteAppState(AppState.currentState);
@@ -535,6 +700,15 @@ export const startAnalytics: AnalyticsApi['startAnalytics'] = () => {
       }),
     );
     void readLocationPermissions();
+    // A claim that reaches the token later (hourly refresh, forced refresh).
+    const tokenAuth = firebaseAuth as unknown as {
+      onIdTokenChanged?: (listener: () => void) => () => void;
+    };
+    if (typeof tokenAuth.onIdTokenChanged === 'function') {
+      detachers.push(
+        tokenAuth.onIdTokenChanged(() => active.recheckAccountTestUser({ refreshToken: false })),
+      );
+    }
 
     const linkSub = Linking.addEventListener('url', ({ url }) => {
       void noteCampaignLink(url, Date.now());

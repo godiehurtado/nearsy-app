@@ -15,6 +15,7 @@
  *   acquisition of the person.
  */
 import type { AnalyticsProperties } from './analyticsContract.ts';
+import { ONELINK_HOST } from '../attribution/oneLinkContract.ts';
 
 export const DEFAULT_ATTRIBUTION_EXPIRY_HOURS = 7 * 24;
 const MAX_ATTRIBUTION_EXPIRY_HOURS = 90 * 24;
@@ -23,7 +24,21 @@ export const INSTALL_REFERRER_READ_KEY = 'NEARSY_ANALYTICS_INSTALL_REFERRER_READ
 /** Reserved for campaign links on the existing custom scheme. */
 export const CAMPAIGN_SCHEME_URL = 'nearsy://campaign';
 
-export type AttributionMethod = 'app_link' | 'custom_scheme' | 'install_referrer';
+/**
+ * `onelink_direct` and `onelink_deferred` come only from the AppsFlyer binding
+ * (contract nc1, see attribution/oneLinkContract.ts), never from a parsed URL.
+ */
+export type AttributionMethod =
+  | 'app_link'
+  | 'custom_scheme'
+  | 'install_referrer'
+  | 'onelink_direct'
+  | 'onelink_deferred';
+
+/** Evidence about the install, not about a later visit: never a `campaign_accessed`. */
+export function isInstallLevelMethod(method: AttributionMethod): boolean {
+  return method === 'install_referrer' || method === 'onelink_deferred';
+}
 
 export type CampaignTouch = {
   source?: string;
@@ -145,6 +160,8 @@ export function parseCampaignLink(
       ? touchFromQuery(query, 'custom_scheme')
       : null;
   }
+  // AppsFlyer alone handles OneLink; reading it here too would count it twice.
+  if (host === ONELINK_HOST) return null;
   const appLinks = settings.appLinks;
   if (scheme !== 'https' || !appLinks || host !== appLinks.host) return null;
   const prefix = appLinks.pathPrefix.replace(/\/+$/, '');
@@ -208,9 +225,13 @@ export function createCampaignTouchStore(deps: {
   }
   return {
     read,
-    /** The first touch stays until it is used or expires. */
+    /**
+     * The last confirmed touch before signup wins (nc1 priority, approved by the
+     * Owner on 2026-11-23); each touch is kept 7 days from when it arrived. The
+     * acquisition already written for a person is never changed here: it goes out
+     * once, as set_once, and later campaigns are `campaign_accessed`.
+     */
     async save(touch: CampaignTouch): Promise<void> {
-      if (await read()) return;
       const stored: StoredCampaignTouch = { ...touch, storedAt: deps.now() };
       await deps.storage.setItem(ATTRIBUTION_STORAGE_KEY, JSON.stringify(stored));
     },
@@ -280,12 +301,12 @@ export function decideEvidence(input: {
   if (input.signup && !input.signup.attributed && input.observedAt <= input.signup.at) {
     return 'acquisition_attributed';
   }
-  return input.touch.method === 'install_referrer' ? 'drop' : 'campaign_accessed';
+  return isInstallLevelMethod(input.touch.method) ? 'drop' : 'campaign_accessed';
 }
 
 /** A held touch after a sign-in that Firebase confirmed was an existing account. */
 export function decideHeldTouchForExistingAccount(
   touch: CampaignTouch,
 ): 'campaign_accessed' | 'drop' {
-  return touch.method === 'install_referrer' ? 'drop' : 'campaign_accessed';
+  return isInstallLevelMethod(touch.method) ? 'drop' : 'campaign_accessed';
 }

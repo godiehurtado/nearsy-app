@@ -198,8 +198,8 @@ surveys or GeoIP. Event names are final: the app reports these exact ones.
 | `app_build` | string | Binary build; omitted if unreadable |
 | `environment` | string | `production` (`beta`, `remote`); `development`, `sdk_intercept` locally |
 | `tracking_plan_version` | string | `v1` |
-| `is_test_user` | boolean | `true` on Beta builds. **Absent otherwise**, never `false` |
-| `distribution_channel` | string | `beta` on Beta builds. **Absent otherwise** |
+| `is_test_user` | boolean | `true` on Beta builds; on production builds only while an account with the Auth claim `nearsyTestUser === true` is signed in. **Absent otherwise**, never `false` |
+| `distribution_channel` | string | `beta` on Beta builds, `production` on production builds (from the 2.1.0 AppsFlyer candidate; earlier production events have none). Absent in `inspect` |
 
 ### Events
 
@@ -253,9 +253,9 @@ surveys or GeoIP. Event names are final: the app reports these exact ones.
 | `alert_opened` | `source` | string | `push`, `inbox` | Always |
 | | `alert_id` | string | `data.alertId` of the push | Push that carries it. None does yet |
 | `campaign_accessed` | `campaign_source`, `campaign_name`, `campaign_content`, `campaign_tool` | string | Safe tokens, up to 64 characters | Those present in the link |
-| | `attribution_method` | string | `custom_scheme`, `app_link` | Always |
+| | `attribution_method` | string | `custom_scheme`, `app_link`, `onelink_direct` | Always |
 | `signup_completed`, `acquisition_attributed` | `signup_source`, `signup_campaign`, `signup_content`, `signup_tool` | string | Safe tokens, up to 64 characters | Those present in the evidence |
-| | `attribution_method` | string | `custom_scheme`, `app_link`, `install_referrer` | Only with evidence; never `organic` or `unknown` |
+| | `attribution_method` | string | `custom_scheme`, `app_link`, `install_referrer`, `onelink_direct`, `onelink_deferred` | Only with evidence; never `organic` or `unknown` |
 
 Renamed for the shared contract, with no old name sent alongside: `step_name` is `step`, `score` is
 `match_score`, `connection_type` is `link_type`.
@@ -287,7 +287,7 @@ unknown one is never written as empty. See "Changing mode" for what happens to i
 | `foreground_location_granted`, `background_location_granted` | boolean | | Current permission |
 | `is_test_user` | boolean | `true`, set_once. **Beta builds only; absent is not `false`** | Build |
 | `signup_source`, `signup_campaign`, `signup_content`, `signup_tool` | string | Safe tokens, set_once | Confirmed signup with evidence |
-| `attribution_method` | string | `custom_scheme`, `app_link`, `install_referrer`, set_once | Same |
+| `attribution_method` | string | `custom_scheme`, `app_link`, `install_referrer`, `onelink_direct`, `onelink_deferred`, set_once | Same |
 
 Details:
 
@@ -497,6 +497,7 @@ Sources:
 |---|---|
 | `nearsy://campaign?...` | Parser and rules tested. Only reaches people who **already have the app installed**: a custom scheme does not survive an install |
 | App Links | Configuration only. No filter exists until `NEARSY_APP_LINKS_HOST` and `NEARSY_APP_LINKS_PATH_PREFIX` are set, and no domain or `assetlinks.json` exists. `/` alone is rejected |
+| AppsFlyer OneLink (`onelink_direct`, `onelink_deferred`) | Contract nc1, provisional with iOS. Enabled only in the EAS profile `release-candidate-appsflyer` (production on nearsy-pj, publishable, tested on Play Internal Testing), which also needs the dev key. Extra rules on top of this table (deterministic match, install time, one account per install, 24 h cap from Firebase creation). See [android-appsflyer-onelink.md](android-appsflyer-onelink.md). Not validated on a device |
 | Install Referrer | Parser and rules tested with synthetic strings. Off until `NEARSY_ATTRIBUTION_INSTALL_REFERRER=true`, which the `beta` profile does not set. Read once per install. **Never run against a real Play install**, so it is not validated attribution after install |
 
 Real coverage today: a signed-out person who already has the app, opens a `nearsy://campaign` link and

@@ -61,10 +61,17 @@ function extrasFor(env: Record<string, string>): Record<string, unknown> {
 
 type Stubs = {
   auth: {
-    currentUser: { uid: string; email?: string; metadata?: { creationTime?: string } } | null;
+    currentUser: {
+      uid: string;
+      email?: string;
+      metadata?: { creationTime?: string };
+      getIdTokenResult?: (force?: boolean) => Promise<{ claims?: Record<string, unknown> }>;
+    } | null;
     app: { options: { projectId: string } };
     onAuthStateChanged(listener: () => void): () => void;
     listeners: Array<() => void>;
+    onIdTokenChanged(listener: () => void): () => void;
+    tokenListeners: Array<() => void>;
   };
 };
 const stubs = globalThis as unknown as { __analyticsStubs: Stubs & Record<string, unknown> };
@@ -76,6 +83,11 @@ const authStub: Stubs['auth'] = {
   onAuthStateChanged(listener) {
     authStub.listeners.push(listener);
     listener();
+    return () => {};
+  },
+  tokenListeners: [],
+  onIdTokenChanged(listener) {
+    authStub.tokenListeners.push(listener);
     return () => {};
   },
 };
@@ -148,6 +160,7 @@ after(() => {
 beforeEach(() => {
   authStub.currentUser = null;
   authStub.listeners.length = 0;
+  authStub.tokenListeners.length = 0;
   linkListeners.length = 0;
   referrer = null;
 });
@@ -550,22 +563,85 @@ describe('LinkedIn account outcome', () => {
 });
 
 describe('production profile capture (2.1.0)', () => {
-  it('the production profile sends production events, with no Beta marks', async () => {
+  it('the production profile sends production events; a real account is never a test user', async () => {
     const env = { ...profileEnv('production'), NEARSY_POSTHOG_TOKEN: FAKE_TOKEN };
     const { binding, constructed, server, signIn } = await startBuild(extrasFor(env));
     assert.equal(constructed.length, 1);
-    await signIn({ uid: REAL_UID });
+    // A real account: no claim (or no claim API at all) means not a test user.
+    await signIn({ uid: REAL_UID, getIdTokenResult: async () => ({ claims: {} }) });
     binding.trackSignupCompleted(REAL_UID);
     await tick(40);
     const events = server.events();
     assert.ok(events.some((item) => item.event === 'signup_completed'));
     for (const item of events) {
       assert.equal(item.properties.environment, 'production', item.event);
+      assert.equal(item.properties.distribution_channel, 'production', item.event);
       assert.ok(!('is_test_user' in item.properties), item.event);
-      assert.ok(!('distribution_channel' in item.properties), item.event);
       assert.ok(!('is_test_user' in (item.properties.$set ?? {})), item.event);
       assert.ok(!('is_test_user' in (item.properties.$set_once ?? {})), item.event);
     }
+  });
+
+  it('a token change reads the cached token: a forced refresh never loops', async () => {
+    const env = { ...profileEnv('production'), NEARSY_POSTHOG_TOKEN: FAKE_TOKEN };
+    const { signIn } = await startBuild(extrasFor(env));
+    const reads: boolean[] = [];
+    await signIn({
+      uid: REAL_UID,
+      getIdTokenResult: async (force) => {
+        reads.push(force === true);
+        // A real refresh fires the ID-token listeners.
+        if (force === true && reads.length < 20) for (const listener of authStub.tokenListeners) listener();
+        return { claims: {} };
+      },
+    });
+    await tick(60);
+    for (let i = 0; i < 5; i += 1) for (const listener of authStub.tokenListeners) listener();
+    await tick(60);
+    assert.ok(authStub.tokenListeners.length > 0, 'the binding listens to token changes');
+    assert.equal(reads.filter(Boolean).length, 1, 'only the identify read forces a refresh');
+    assert.ok(reads.length >= 2 && reads.length <= 8, `bounded reads: ${reads.length}`);
+  });
+
+  it('production: only an account with the nearsyTestUser claim is marked, and only while signed in', async () => {
+    const env = { ...profileEnv('production'), NEARSY_POSTHOG_TOKEN: FAKE_TOKEN };
+    const { binding, server, signIn } = await startBuild(extrasFor(env));
+    const forced: boolean[] = [];
+    await signIn({
+      uid: 'testAccountUid0001',
+      getIdTokenResult: async (force) => {
+        forced.push(force === true);
+        return { claims: { nearsyTestUser: true } };
+      },
+    });
+    binding.trackSignupCompleted('testAccountUid0001');
+    await tick(40);
+    assert.equal(forced[0], true, 'the first read refreshes the token');
+    await signIn(null);
+    await tick(20);
+    await signIn({ uid: REAL_UID, getIdTokenResult: async () => ({ claims: { nearsyTestUser: 'true' } }) });
+    binding.trackSignupCompleted(REAL_UID);
+    await tick(40);
+    const events = server.events();
+    const tester = events.filter((item) => item.distinct_id === 'testAccountUid0001');
+    const real = events.filter((item) => item.distinct_id === REAL_UID);
+    assert.ok(tester.some((item) => item.event === 'signup_completed'));
+    assert.ok(real.some((item) => item.event === 'signup_completed'));
+    for (const item of tester) {
+      assert.equal(item.properties.is_test_user, true, item.event);
+      assert.equal(item.properties.distribution_channel, 'production', item.event);
+    }
+    assert.ok(
+      tester.some((item) => item.properties.$set_once?.is_test_user === true),
+      'the person is marked with set_once',
+    );
+    for (const item of [...real, ...events.filter((e) => e.distinct_id !== 'testAccountUid0001' && e.distinct_id !== REAL_UID)]) {
+      // A string "true" is not the claim; anonymous events are never marked.
+      assert.ok(!('is_test_user' in item.properties), `${item.event} ${item.distinct_id}`);
+      assert.ok(!('is_test_user' in (item.properties.$set ?? {})), item.event);
+      assert.ok(!('is_test_user' in (item.properties.$set_once ?? {})), item.event);
+    }
+    for (const item of events) assert.notEqual(item.properties.is_test_user, false);
   });
 });
 

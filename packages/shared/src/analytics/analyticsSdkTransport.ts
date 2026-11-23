@@ -15,6 +15,7 @@
 import {
   applyInstallClassification,
   sanitizeOutgoingEvent,
+  type EventMarks,
   type InstallClassification,
 } from './analyticsContract.ts';
 import type { AnalyticsTransport } from './analyticsCore.ts';
@@ -245,6 +246,8 @@ export async function createSdkTransport(input: {
   onTransportIssue?: (issue: TransportIssue) => void;
   /** Declared by a Beta build; stamped on every event of this install. */
   installClassification?: InstallClassification;
+  /** Production builds: the marks of the account signed in when each event is captured. */
+  eventMarks?: () => EventMarks | undefined;
   /** Account deletion: events of a held or deleted account never leave. */
   deliveryGuard?: DeliveryGuard;
   /** Timing and storage overrides for tests. */
@@ -279,7 +282,10 @@ export async function createSdkTransport(input: {
     // Only read by /flags, which is off.
     setDefaultPersonProperties: false,
     before_send: (event: { event?: unknown } | null) =>
-      applyInstallClassification(sanitizeOutgoingEvent(event), input.installClassification),
+      applyInstallClassification(
+        sanitizeOutgoingEvent(event),
+        input.installClassification ?? input.eventMarks?.(),
+      ),
     // A readable body and prompt flushes, only while requests are intercepted.
     ...(input.onInterceptedRequest ? { disableCompression: true, flushAt: 1 } : {}),
     ...input.sdkOptions,

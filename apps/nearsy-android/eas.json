@@ -55,6 +55,12 @@
         "NEARSY_ANALYTICS_ENABLED": "false"
       }
     },
+    "release-candidate-appsflyer": {
+      "extends": "production",
+      "env": {
+        "NEARSY_APPSFLYER_ENABLED": "true"
+      }
+    },
     "qa": {
       "extends": "beta",
       "env": {
@@ -70,6 +76,12 @@
       }
     },
     "beta": {
+      "extends": "production",
+      "android": {
+        "track": "internal"
+      }
+    },
+    "release-candidate-appsflyer": {
       "extends": "production",
       "android": {
         "track": "internal"

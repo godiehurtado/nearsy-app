@@ -1,3 +1,4 @@
+import type { CampaignTouch } from './analyticsAttribution.ts';
 import type { OnboardingStepInput } from './analyticsOnboarding.ts';
 import type { VerifiedSocialPlatform } from './analyticsSocial.ts';
 
@@ -17,6 +18,11 @@ export type AnalyticsApi = {
     signal: { accountOutcome: 'created' | 'existing'; authCreationTimeMs: number } | undefined,
   ): void;
   trackProfileCompleted(uid: string): void;
+  /**
+   * A OneLink touch already validated by the AppsFlyer binding (contract nc1).
+   * `observedAt`: when the evidence came into being (the install for deferred).
+   */
+  noteOneLinkTouch(touch: CampaignTouch, observedAt: number): void;
   syncAnalyticsPersonProfile(uid: string, doc: unknown): void;
 
   /** The CRJ resumed at this step: milestones behind it count as done, unsent. */

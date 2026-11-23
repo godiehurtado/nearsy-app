@@ -79,6 +79,17 @@ export function createAnalyticsSession(deps: {
    */
   accountClassification?: AnalyticsProperties;
   /**
+   * Production builds: whether the signed-in account is a dedicated test account
+   * (Auth claim `nearsyTestUser`). Asked once per account and process, before it
+   * is identified. Any error counts as a real account.
+   */
+  resolveAccountTestUser?: (
+    user: AnalyticsAuthUser,
+    options: { refreshToken: boolean },
+  ) => Promise<boolean> | boolean;
+  /** Receives the answer for the account whose events come next; false when signed out. */
+  onAccountTestUser?: (isTestUser: boolean) => void;
+  /**
    * The PostHog distinct_id of the account (proposal G), or null when it must not
    * be identified yet. Defaults to the UID.
    */
@@ -95,6 +106,10 @@ export function createAnalyticsSession(deps: {
   /** Derived once per sign-in (contract §3); cleared on reset. */
   const derivedIds = new Map<string, string>();
   let classifiedId: string | null = null;
+  /** UID whose test-account answer is in force, and that answer. */
+  let testCheckedUid: string | null = null;
+  let testAccount = false;
+  let testMarkedUid: string | null = null;
   let lastPersonFingerprint: string | null = null;
   const lastDirectPersonValues = new Map<string, string>();
   const emittedOnce = new Set<string>();
@@ -136,6 +151,10 @@ export function createAnalyticsSession(deps: {
     identifiedUid = null;
     derivedIds.clear();
     classifiedId = null;
+    testCheckedUid = null;
+    testAccount = false;
+    testMarkedUid = null;
+    deps.onAccountTestUser?.(false);
     lastPersonFingerprint = null;
     lastDirectPersonValues.clear();
     // reset() clears registered properties.
@@ -184,8 +203,19 @@ export function createAnalyticsSession(deps: {
       if (identifiedId !== null) await resetIdentity(transport);
       return 'pending';
     }
+    if (identifiedId !== id && identifiedId !== null) await resetIdentity(transport);
+    if (deps.resolveAccountTestUser && testCheckedUid !== user.uid) {
+      let isTest = false;
+      try {
+        isTest = (await deps.resolveAccountTestUser(user, { refreshToken: true })) === true;
+      } catch {
+        isTest = false;
+      }
+      testCheckedUid = user.uid;
+      testAccount = isTest;
+      deps.onAccountTestUser?.(isTest);
+    }
     if (identifiedId !== id) {
-      if (identifiedId !== null) await resetIdentity(transport);
       derivedIds.set(user.uid, id);
       await transport.identify(id, deps.buildBaseProperties(user));
       identifiedId = id;
@@ -194,6 +224,11 @@ export function createAnalyticsSession(deps: {
     if (deps.accountClassification && classifiedId !== user.uid) {
       await transport.setPersonProperties({}, deps.accountClassification);
       classifiedId = user.uid;
+    }
+    if (testAccount && testMarkedUid !== user.uid) {
+      // Only true, with set_once: a person is never unmarked or reclassified.
+      await transport.setPersonProperties({}, { is_test_user: true });
+      testMarkedUid = user.uid;
     }
     return 'identified';
   }
@@ -238,6 +273,34 @@ export function createAnalyticsSession(deps: {
   return {
     noteAuthChange(): void {
       enqueue(alignWithAuth);
+    },
+
+    /**
+     * Late detection of a test account (claim set after this account was
+     * identified): asks again, and only upgrades. From then on its events are
+     * marked and the person gets set_once; earlier events stay as they were.
+     * A claim that disappears takes effect at the next sign-in or app start.
+     */
+    recheckAccountTestUser(options: { refreshToken: boolean }): void {
+      enqueue(async (transport) => {
+        if (!deps.resolveAccountTestUser || testAccount) return;
+        const user = deps.getAuthUser();
+        if (!user || identifiedUid !== user.uid || testCheckedUid !== user.uid) return;
+        let isTest = false;
+        try {
+          isTest = (await deps.resolveAccountTestUser(user, options)) === true;
+        } catch {
+          isTest = false;
+        }
+        // The account may have changed while the claim was read.
+        if (!isTest || deps.getAuthUser()?.uid !== user.uid || identifiedUid !== user.uid) return;
+        testAccount = true;
+        deps.onAccountTestUser?.(true);
+        if (testMarkedUid !== user.uid) {
+          await transport.setPersonProperties({}, { is_test_user: true });
+          testMarkedUid = user.uid;
+        }
+      });
     },
 
     /**
