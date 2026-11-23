@@ -83,7 +83,10 @@ export function createAnalyticsSession(deps: {
    * (Auth claim `nearsyTestUser`). Asked once per account and process, before it
    * is identified. Any error counts as a real account.
    */
-  resolveAccountTestUser?: (user: AnalyticsAuthUser) => Promise<boolean> | boolean;
+  resolveAccountTestUser?: (
+    user: AnalyticsAuthUser,
+    options: { refreshToken: boolean },
+  ) => Promise<boolean> | boolean;
   /** Receives the answer for the account whose events come next; false when signed out. */
   onAccountTestUser?: (isTestUser: boolean) => void;
   /**
@@ -204,7 +207,7 @@ export function createAnalyticsSession(deps: {
     if (deps.resolveAccountTestUser && testCheckedUid !== user.uid) {
       let isTest = false;
       try {
-        isTest = (await deps.resolveAccountTestUser(user)) === true;
+        isTest = (await deps.resolveAccountTestUser(user, { refreshToken: true })) === true;
       } catch {
         isTest = false;
       }
@@ -278,14 +281,14 @@ export function createAnalyticsSession(deps: {
      * marked and the person gets set_once; earlier events stay as they were.
      * A claim that disappears takes effect at the next sign-in or app start.
      */
-    recheckAccountTestUser(): void {
+    recheckAccountTestUser(options: { refreshToken: boolean }): void {
       enqueue(async (transport) => {
         if (!deps.resolveAccountTestUser || testAccount) return;
         const user = deps.getAuthUser();
         if (!user || identifiedUid !== user.uid || testCheckedUid !== user.uid) return;
         let isTest = false;
         try {
-          isTest = (await deps.resolveAccountTestUser(user)) === true;
+          isTest = (await deps.resolveAccountTestUser(user, options)) === true;
         } catch {
           isTest = false;
         }

@@ -70,6 +70,8 @@ type Stubs = {
     app: { options: { projectId: string } };
     onAuthStateChanged(listener: () => void): () => void;
     listeners: Array<() => void>;
+    onIdTokenChanged(listener: () => void): () => void;
+    tokenListeners: Array<() => void>;
   };
 };
 const stubs = globalThis as unknown as { __analyticsStubs: Stubs & Record<string, unknown> };
@@ -81,6 +83,11 @@ const authStub: Stubs['auth'] = {
   onAuthStateChanged(listener) {
     authStub.listeners.push(listener);
     listener();
+    return () => {};
+  },
+  tokenListeners: [],
+  onIdTokenChanged(listener) {
+    authStub.tokenListeners.push(listener);
     return () => {};
   },
 };
@@ -153,6 +160,7 @@ after(() => {
 beforeEach(() => {
   authStub.currentUser = null;
   authStub.listeners.length = 0;
+  authStub.tokenListeners.length = 0;
   linkListeners.length = 0;
   referrer = null;
 });
@@ -572,6 +580,27 @@ describe('production profile capture (2.1.0)', () => {
       assert.ok(!('is_test_user' in (item.properties.$set ?? {})), item.event);
       assert.ok(!('is_test_user' in (item.properties.$set_once ?? {})), item.event);
     }
+  });
+
+  it('a token change reads the cached token: a forced refresh never loops', async () => {
+    const env = { ...profileEnv('production'), NEARSY_POSTHOG_TOKEN: FAKE_TOKEN };
+    const { signIn } = await startBuild(extrasFor(env));
+    const reads: boolean[] = [];
+    await signIn({
+      uid: REAL_UID,
+      getIdTokenResult: async (force) => {
+        reads.push(force === true);
+        // A real refresh fires the ID-token listeners.
+        if (force === true && reads.length < 20) for (const listener of authStub.tokenListeners) listener();
+        return { claims: {} };
+      },
+    });
+    await tick(60);
+    for (let i = 0; i < 5; i += 1) for (const listener of authStub.tokenListeners) listener();
+    await tick(60);
+    assert.ok(authStub.tokenListeners.length > 0, 'the binding listens to token changes');
+    assert.equal(reads.filter(Boolean).length, 1, 'only the identify read forces a refresh');
+    assert.ok(reads.length >= 2 && reads.length <= 8, `bounded reads: ${reads.length}`);
   });
 
   it('production: only an account with the nearsyTestUser claim is marked, and only while signed in', async () => {

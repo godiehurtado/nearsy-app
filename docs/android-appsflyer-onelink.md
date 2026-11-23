@@ -191,14 +191,20 @@ historical data is deleted or reclassified.
   `POSTHOG_BETA_UIDS`. Server capture in nearsy-pj is `all`, with 12 UIDs on the list (Functions,
   2026-11-22). The claim set must equal that list.
 - **Late detection:** a claim that arrives after the account was identified is detected:
-  - on every ID-token change (`onIdTokenChanged`: hourly refresh, forced refresh, sign-in);
+  - on every ID-token change (`onIdTokenChanged`: hourly refresh, forced refresh, sign-in), reading
+    only the cached token: forcing a refresh there would fire another change, a refresh loop for
+    every real account;
   - on returning to the foreground (a forced refresh, at most once every 5 min).
+
+  Once an account is marked, it is not checked again.
 
   From then on the account's events are marked and the person gets `$set_once`. Earlier events
   stay as they were. Detection only upgrades: a removed claim takes effect at the next sign-in or app
   start, and is never written as `false`.
 - **Diagnostics without UI:** each read leaves one line in logcat (`ReactNativeJS`):
-  `[analytics] test account claim: yes|no|error`. It contains no UID, token or email.
+  `[analytics] test account claim: yes|no|error`. It contains no UID, token or email. iOS doesn't
+  write it: its production logger is off, and changing that needs the Owner. It is a documented
+  platform difference.
 - **Known limits:**
   - events captured before detection aren't marked or rewritten;
   - a brand-new test account's `signup_completed` happens before an admin can set the claim, so it
@@ -299,11 +305,13 @@ change.
     while it is signed in;
   - late detection marks only later events and the person once, never the next account; a failed
     read means a real account (`analyticsBetaTransport.test.ts`);
+  - a token change reads the cached token, so a forced refresh never loops. This was checked against
+    the earlier version, which looped and fails the test;
   - a string `"true"` doesn't count;
   - the first read refreshes the token;
   - Beta keeps its install marks.
-- Analytics suites: 302/302.
-- Full `packages/shared` suite: 2353 tests, 27 failures, the same failing files as on the base
+- Analytics suites: 303/303.
+- Full `packages/shared` suite: 2354 tests, 27 failures, the same failing files as on the base
   `70f9e1b`. `tsc --noEmit`: 0 errors. `check:metro-imports`: 0 problems.
 
 ### Tests that need a device (build 56 from Internal Testing, authorized)

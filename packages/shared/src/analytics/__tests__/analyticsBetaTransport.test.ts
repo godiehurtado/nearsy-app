@@ -1106,9 +1106,9 @@ describe('production test accounts (claim nearsyTestUser) with the real SDK', ()
 
     // The admin sets the claim; the token listener or a foreground check asks again.
     state.claim = true;
-    session.recheckAccountTestUser();
+    session.recheckAccountTestUser({ refreshToken: false });
     session.trackAppOpened();
-    session.recheckAccountTestUser();
+    session.recheckAccountTestUser({ refreshToken: true });
     await session.settled();
 
     state.user = { uid: 'uid-real' };
@@ -1162,7 +1162,7 @@ describe('production test accounts (claim nearsyTestUser) with the real SDK', ()
     });
     session.noteAuthChange();
     session.trackAppOpened();
-    session.recheckAccountTestUser();
+    session.recheckAccountTestUser({ refreshToken: true });
     await session.settled();
     await transport.flush();
     for (const item of server.events()) assert.ok(!('is_test_user' in item.properties), item.event);

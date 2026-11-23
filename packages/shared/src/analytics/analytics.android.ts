@@ -271,7 +271,7 @@ function withinMs<T>(promise: Promise<T>, ms: number): Promise<T | null> {
  * claim set by an admin shows up on the next app open; then the cached one. Any
  * failure means a real account. The token itself is never stored or logged.
  */
-async function readTestAccountClaim(uid: string): Promise<boolean> {
+async function readTestAccountClaim(uid: string, refreshToken: boolean): Promise<boolean> {
   const user = firebaseAuth.currentUser as {
     uid: string;
     getIdTokenResult(forceRefresh?: boolean): Promise<{ claims?: Record<string, unknown> }>;
@@ -279,8 +279,10 @@ async function readTestAccountClaim(uid: string): Promise<boolean> {
   if (!user || user.uid !== uid || typeof user.getIdTokenResult !== 'function') return false;
   const read = (force: boolean) =>
     Promise.resolve().then(() => user.getIdTokenResult(force));
+  // A token change must read the cached token only: forcing a refresh there would
+  // fire another token change, a refresh loop for every real account.
   const result =
-    (await withinMs(read(true), CLAIM_FORCED_READ_MS)) ??
+    (refreshToken ? await withinMs(read(true), CLAIM_FORCED_READ_MS) : null) ??
     (await withinMs(read(false), CLAIM_CACHED_READ_MS));
   const isTest = result?.claims?.[TEST_ACCOUNT_CLAIM] === true;
   // QA diagnostics in logcat (ReactNativeJS): the outcome only, never a UID or token.
@@ -419,7 +421,8 @@ function getSession(): Session | null {
       ...(config.mode === 'beta'
         ? { accountClassification: { is_test_user: true } }
         : {
-            resolveAccountTestUser: (user: { uid: string }) => readTestAccountClaim(user.uid),
+            resolveAccountTestUser: (user: { uid: string }, options: { refreshToken: boolean }) =>
+              readTestAccountClaim(user.uid, options.refreshToken),
             onAccountTestUser: (isTestUser: boolean) => {
               signedInTestAccount = isTestUser;
             },
@@ -683,7 +686,7 @@ export const startAnalytics: AnalyticsApi['startAnalytics'] = () => {
         const now = Date.now();
         if (now - lastForegroundClaimRecheck >= TEST_CLAIM_FOREGROUND_RECHECK_MS) {
           lastForegroundClaimRecheck = now;
-          active.recheckAccountTestUser();
+          active.recheckAccountTestUser({ refreshToken: true });
         }
       }
     });
@@ -702,7 +705,9 @@ export const startAnalytics: AnalyticsApi['startAnalytics'] = () => {
       onIdTokenChanged?: (listener: () => void) => () => void;
     };
     if (typeof tokenAuth.onIdTokenChanged === 'function') {
-      detachers.push(tokenAuth.onIdTokenChanged(() => active.recheckAccountTestUser()));
+      detachers.push(
+        tokenAuth.onIdTokenChanged(() => active.recheckAccountTestUser({ refreshToken: false })),
+      );
     }
 
     const linkSub = Linking.addEventListener('url', ({ url }) => {
