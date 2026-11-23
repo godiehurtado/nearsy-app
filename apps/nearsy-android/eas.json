@@ -17,18 +17,6 @@
         "NEARSY_DEV_CLIENT": "true"
       }
     },
-    "appsflyer-nearsy-dev": {
-      "extends": "development-nearsy-dev",
-      "developmentClient": false,
-      "environment": "development",
-      "env": {
-        "NEARSY_APPSFLYER_ENABLED": "true",
-        "NEARSY_ANALYTICS_QA_ENABLED": "true"
-      },
-      "android": {
-        "buildType": "apk"
-      }
-    },
     "preview": {
       "distribution": "internal",
       "prebuildCommand": "npx expo prebuild --platform android --clean",
@@ -67,6 +55,12 @@
         "NEARSY_ANALYTICS_ENABLED": "false"
       }
     },
+    "beta-appsflyer": {
+      "extends": "beta",
+      "env": {
+        "NEARSY_APPSFLYER_ENABLED": "true"
+      }
+    },
     "qa": {
       "extends": "beta",
       "env": {
@@ -86,6 +80,9 @@
       "android": {
         "track": "internal"
       }
+    },
+    "beta-appsflyer": {
+      "extends": "beta"
     }
   }
 }

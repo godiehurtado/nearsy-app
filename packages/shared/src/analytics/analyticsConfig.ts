@@ -8,7 +8,6 @@
  * | inspect         | dev         | no       | none, sanitized logs             |
  * | sdk_intercept   | dev client  | yes      | none, requests intercepted       |
  * | beta            | release     | yes      | PostHog, events marked as tests  |
- * | qa              | release, nearsy-dev | yes | PostHog, events and people marked as tests |
  * | remote          | release     | yes      | PostHog                          |
  */
 import { parseGenerationIdSinceMs } from './analyticsDistinctId.ts';
@@ -21,8 +20,6 @@ export const INTERCEPT_HOST = 'https://posthog-intercept.invalid';
 export const INTERCEPT_TOKEN = 'phc_intercepted_requests_only_not_a_token';
 
 export const PRODUCTION_FIREBASE_PROJECT_ID = 'nearsy-pj';
-/** QA capture: nearsy-dev accounts only, every event and person marked as a test. */
-export const DEVELOPMENT_FIREBASE_PROJECT_ID = 'nearsy-dev';
 
 export const DEFAULT_APP_OPENED_MIN_BACKGROUND_SEC = 30;
 const MAX_APP_OPENED_MIN_BACKGROUND_SEC = 3600;
@@ -44,14 +41,6 @@ export type AnalyticsConfig =
       environment: 'production';
       token: string;
       host: typeof POSTHOG_US_HOST;
-    }
-  | {
-      mode: 'qa';
-      environment: 'development';
-      /** Declared by the build; marks every event and person as a test. */
-      distributionChannel: 'qa';
-      token: string;
-      host: typeof POSTHOG_US_HOST;
     };
 
 export type AnalyticsExtras = {
@@ -61,12 +50,6 @@ export type AnalyticsExtras = {
     token?: unknown;
     sdkIntercept?: unknown;
     beta?: {
-      enabled?: unknown;
-      environment?: unknown;
-      distributionChannel?: unknown;
-      token?: unknown;
-    } | null;
-    qa?: {
       enabled?: unknown;
       environment?: unknown;
       distributionChannel?: unknown;
@@ -126,39 +109,6 @@ function resolveBetaMode(input: {
   };
 }
 
-/**
- * QA capture for test binaries on nearsy-dev: real SDK and network, every event
- * and person marked `is_test_user` with `distribution_channel: qa`, environment
- * `development`. Never runs against nearsy-pj, so real users cannot be counted.
- */
-function resolveQaMode(input: {
-  extras: AnalyticsExtras | null | undefined;
-  runtimeFirebaseProjectId?: unknown;
-}): AnalyticsConfig {
-  const qa = input.extras?.nearsyAnalytics?.qa;
-  if (qa?.environment !== 'development' || qa.distributionChannel !== 'qa') {
-    return { mode: 'off', reason: 'qa_not_declared' };
-  }
-  if (
-    input.extras?.nearsyFirebaseEnv !== 'development' ||
-    input.extras?.nearsyFirebaseProjectId !== DEVELOPMENT_FIREBASE_PROJECT_ID ||
-    // Read from the initialized Firebase app: a stale extra cannot widen it.
-    input.runtimeFirebaseProjectId !== DEVELOPMENT_FIREBASE_PROJECT_ID
-  ) {
-    return { mode: 'off', reason: 'firebase_environment_mismatch' };
-  }
-  if (typeof qa.token !== 'string' || !PROJECT_TOKEN.test(qa.token)) {
-    return { mode: 'off', reason: 'invalid_token' };
-  }
-  return {
-    mode: 'qa',
-    environment: 'development',
-    distributionChannel: 'qa',
-    token: qa.token,
-    host: POSTHOG_US_HOST,
-  };
-}
-
 export function resolveAnalyticsConfig(input: {
   extras: AnalyticsExtras | null | undefined;
   isDev: boolean;
@@ -170,12 +120,10 @@ export function resolveAnalyticsConfig(input: {
 
   const settings = input.extras?.nearsyAnalytics;
   const betaRequested = settings?.beta?.enabled === true;
-  const qaRequested = settings?.qa?.enabled === true;
   // Which population a build reports must never be a guess.
-  if ([settings?.enabled === true, betaRequested, qaRequested].filter(Boolean).length > 1) {
+  if (settings?.enabled === true && betaRequested) {
     return { mode: 'off', reason: 'ambiguous_mode' };
   }
-  if (qaRequested) return resolveQaMode(input);
   if (betaRequested) return resolveBetaMode(input);
   if (settings?.enabled !== true) return { mode: 'off', reason: 'not_enabled' };
   // Preview and other profiles share production Firebase UIDs. Without the Beta

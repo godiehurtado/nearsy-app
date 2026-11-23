@@ -35,15 +35,8 @@ const nearsyDevClient =
     .trim()
     .toLowerCase() === 'true';
 
-/**
- * On EAS the nearsy-dev file is never uploaded (.easignore). It arrives as the
- * EAS file variable GOOGLE_SERVICES_JSON_DEV (environment "development",
- * visibility Secret), whose value is a path on the builder. Production never
- * reads it.
- */
-const devGoogleServicesPath = String(process.env.GOOGLE_SERVICES_JSON_DEV || '').trim();
 const googleServicesFile = useNearsyDev
-  ? devGoogleServicesPath || './google-services.nearsy-dev.json'
+  ? './google-services.nearsy-dev.json'
   : './google-services.json';
 
 /** Canonical labels for JS (never print secrets). */

@@ -428,7 +428,7 @@ describe('build configuration', () => {
     assert.deepEqual(load('true').dependencies, {});
   });
 
-  it('only the appsflyer-nearsy-dev profile enables AppsFlyer, on nearsy-dev', () => {
+  it('only the beta-appsflyer profile enables AppsFlyer: Beta on production Firebase', () => {
     type Profile = {
       extends?: string;
       env?: Record<string, string>;
@@ -453,40 +453,75 @@ describe('build configuration', () => {
     const enabled = Object.keys(eas.build).filter(
       (name) => resolve(name).env?.NEARSY_APPSFLYER_ENABLED === 'true',
     );
-    assert.deepEqual(enabled, ['appsflyer-nearsy-dev']);
-    const profile = resolve('appsflyer-nearsy-dev');
-    assert.equal(profile.env?.NEARSY_FIREBASE_ENV, 'development');
-    assert.equal(profile.env?.NEARSY_DEV_CLIENT, 'true');
-    assert.equal(profile.environment, 'development');
-    assert.equal(profile.developmentClient, false);
-    assert.equal(profile.distribution, 'internal');
-    assert.equal(profile.android?.buildType, 'apk');
+    assert.deepEqual(enabled, ['beta-appsflyer']);
+    const profile = resolve('beta-appsflyer');
+    // Production Firebase, existing Beta channel (every event is_test_user), no nearsy-dev.
+    assert.equal(profile.extends, 'beta');
+    assert.equal(profile.env?.NEARSY_FIREBASE_ENV, 'production');
+    assert.equal(profile.env?.NEARSY_DEV_CLIENT, 'false');
+    assert.equal(profile.env?.NEARSY_ANALYTICS_BETA_ENABLED, 'true');
+    assert.equal(profile.env?.NEARSY_ANALYTICS_DISTRIBUTION_CHANNEL, 'beta');
+    assert.equal(profile.env?.NEARSY_ANALYTICS_ENABLED, 'false');
+    assert.equal(profile.environment, 'production');
+    assert.equal(profile.distribution, 'store');
+    assert.equal(profile.android?.buildType, 'app-bundle');
+    // Same as beta apart from the AppsFlyer switch.
+    const { NEARSY_APPSFLYER_ENABLED: _switch, ...rest } = profile.env ?? {};
+    assert.deepEqual(rest, resolve('beta').env);
+    // The public production profile never enables it.
+    assert.notEqual(resolve('production').env?.NEARSY_APPSFLYER_ENABLED, 'true');
+    // Distribution: Play Internal Testing, like Beta.
+    const submit = (
+      JSON.parse(readFileSync(join(androidApp, 'eas.json'), 'utf8')) as {
+        submit: Record<string, { extends?: string }>;
+      }
+    ).submit;
+    assert.equal(submit['beta-appsflyer']?.extends, 'beta');
     for (const value of Object.values(eas.build)) {
       assert.equal(value.env?.NEARSY_APPSFLYER_DEV_KEY, undefined, 'the key never lives in eas.json');
     }
   });
 
-  it('the EAS dev Firebase file variable is read only for nearsy-dev', () => {
-    const keys = ['NEARSY_FIREBASE_ENV', 'NEARSY_DEV_CLIENT', 'GOOGLE_SERVICES_JSON_DEV'] as const;
-    const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
-    const load = (firebaseEnv: string) => {
-      process.env.NEARSY_FIREBASE_ENV = firebaseEnv;
-      process.env.NEARSY_DEV_CLIENT = 'false';
-      process.env.GOOGLE_SERVICES_JSON_DEV = '/builder/synthetic-dev.json';
+  it('beta-appsflyer config: nearsy-pj, Beta capture, AppsFlyer and the OneLink filter', () => {
+    const { build } = JSON.parse(readFileSync(join(androidApp, 'eas.json'), 'utf8')) as {
+      build: Record<string, { extends?: string; env?: Record<string, string> }>;
+    };
+    const envOf = (name: string): Record<string, string> => {
+      const own = build[name];
+      return { ...(own.extends ? envOf(own.extends) : {}), ...(own.env ?? {}) };
+    };
+    const saved = { ...process.env };
+    for (const key of Object.keys(process.env)) {
+      if (key.startsWith('NEARSY_') || key === 'EAS_BUILD') delete process.env[key];
+    }
+    Object.assign(process.env, envOf('beta-appsflyer'), {
+      NEARSY_APPSFLYER_DEV_KEY: 'SyntheticKey0001',
+      NEARSY_POSTHOG_TOKEN: 'phc_fake_token_only_for_this_test_0001',
+    });
+    try {
       const appRequire = createRequire(join(androidApp, 'package.json'));
       delete appRequire.cache[appRequire.resolve('./app.config.js')];
-      return appRequire('./app.config.js') as {
-        expo: { android?: { googleServicesFile?: string } };
+      const { expo } = appRequire('./app.config.js') as {
+        expo: {
+          android?: { googleServicesFile?: string; intentFilters?: Array<{ data?: Array<{ host?: string }> }> };
+          extra?: Record<string, any>;
+        };
       };
-    };
-    try {
-      assert.equal(load('development').expo.android?.googleServicesFile, '/builder/synthetic-dev.json');
-      assert.equal(load('production').expo.android?.googleServicesFile, './google-services.json');
+      assert.equal(expo.android?.googleServicesFile, './google-services.json');
+      assert.equal(expo.extra?.nearsyFirebaseEnv, 'production');
+      assert.equal(expo.extra?.nearsyFirebaseProjectId, 'nearsy-pj');
+      assert.equal(expo.extra?.nearsyDevClient, false);
+      assert.equal(expo.extra?.nearsyAnalytics?.enabled, false);
+      assert.equal(expo.extra?.nearsyAnalytics?.beta?.distributionChannel, 'beta');
+      assert.equal(expo.extra?.nearsyAppsFlyer?.enabled, true);
+      assert.ok(
+        (expo.android?.intentFilters ?? []).some((filter) =>
+          (filter.data ?? []).some((data) => data.host === 'nearsy.onelink.me'),
+        ),
+      );
     } finally {
-      for (const key of keys) {
-        if (previous[key] === undefined) delete process.env[key];
-        else process.env[key] = previous[key];
-      }
+      for (const key of Object.keys(process.env)) delete process.env[key];
+      Object.assign(process.env, saved);
     }
   });
 

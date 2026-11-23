@@ -56,13 +56,7 @@ function resolveAnalyticsExtras(env) {
   const environment = text(env, 'NEARSY_ANALYTICS_ENV');
   const generalRequested = flag(env, 'NEARSY_ANALYTICS_ENABLED');
   const betaRequested = flag(env, 'NEARSY_ANALYTICS_BETA_ENABLED');
-  // QA capture: nearsy-dev test binaries only, every event marked as a test.
-  const qaRequested = flag(env, 'NEARSY_ANALYTICS_QA_ENABLED');
-  const ambiguous = [generalRequested, betaRequested, qaRequested].filter(Boolean).length > 1;
-  const nearsyDevBuild = ['development', 'dev'].includes(
-    text(env, 'NEARSY_FIREBASE_ENV').toLowerCase(),
-  );
-  const qaEnabled = qaRequested && nearsyDevBuild && !ambiguous;
+  const ambiguous = generalRequested && betaRequested;
   const remoteEnabled = generalRequested && environment === 'production' && !ambiguous;
   const betaEnabled =
     betaRequested &&
@@ -75,14 +69,12 @@ function resolveAnalyticsExtras(env) {
   // read the config locally (eas config, build:version:get) do not receive them,
   // so they only warn, and the token stays out of that config.
   if (
-    (betaEnabled || remoteEnabled || qaEnabled) &&
+    (betaEnabled || remoteEnabled) &&
     !/^phc_[A-Za-z0-9_-]{20,}$/.test(text(env, 'NEARSY_POSTHOG_TOKEN'))
   ) {
-    const label = qaEnabled ? 'QA' : betaEnabled ? 'Beta' : 'Production';
-    const easEnvironment = qaEnabled ? 'development' : 'production';
     const message =
-      `[analytics] ${label} build declared without a valid NEARSY_POSTHOG_TOKEN. ` +
-      `Create it in the EAS "${easEnvironment}" environment with visibility Sensitive. ` +
+      `[analytics] ${betaEnabled ? 'Beta' : 'Production'} build declared without a valid NEARSY_POSTHOG_TOKEN. ` +
+      'Create it in the EAS "production" environment with visibility Sensitive. ' +
       'The value is never printed.';
     if (flag(env, 'EAS_BUILD')) throw new Error(message);
     console.warn(message);
@@ -112,16 +104,6 @@ function resolveAnalyticsExtras(env) {
             enabled: true,
             environment,
             distributionChannel: 'beta',
-            token: text(env, 'NEARSY_POSTHOG_TOKEN'),
-          },
-        }
-      : {}),
-    ...(qaEnabled
-      ? {
-          qa: {
-            enabled: true,
-            environment: 'development',
-            distributionChannel: 'qa',
             token: text(env, 'NEARSY_POSTHOG_TOKEN'),
           },
         }

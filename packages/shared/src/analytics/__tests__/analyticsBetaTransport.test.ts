@@ -616,11 +616,7 @@ describe('beta classification with the real SDK', () => {
   it('nothing else writes is_test_user', () => {
     const binding = readFileSync(join(here, '..', 'analytics.android.ts'), 'utf8');
     assert.equal(binding.match(/is_test_user/g)?.length, 2);
-    // Beta and QA (nearsy-dev test binaries) are the only modes that mark people.
-    assert.match(
-      binding,
-      /config.mode === 'beta' || config.mode === 'qa's+? { accountClassification: { is_test_user: true } }/,
-    );
+    assert.ok(binding.includes("config.mode === 'beta' ? { accountClassification: { is_test_user: true } }"));
   });
 });
 
