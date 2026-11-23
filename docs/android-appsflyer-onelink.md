@@ -168,7 +168,7 @@ historical data is deleted or reclassified.
 | App Check | Play Integrity (production), unchanged |
 | EAS environment | `production` |
 | PostHog | General production capture (`remote`), cutover `1794787200000`, the same as `production`. No Beta marks |
-| Version | 2.1.0. The remote versionCode is 55, so the build would be **56** (`autoIncrement`). iOS: 2.1.0 (86) |
+| Version | **2.1.1** (`apps/nearsy-android/app.json`; the only versionName source). The remote versionCode is 55, so the build would be **56** (`autoIncrement`). iOS: 2.1.1 (86) |
 | Artifact | AAB (`app-bundle`), `store` distribution |
 | Submit profile | `release-candidate-appsflyer`: extends `production`, `internal` track, release as draft. EAS Submit isn't used today (no Play service account); the upload is manual. If QA passes, the release is promoted to production in Play Console without rebuilding |
 
