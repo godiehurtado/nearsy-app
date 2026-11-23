@@ -79,6 +79,14 @@
         "NEARSY_IOS_VERSION": "2.1.0",
         "NEARSY_IOS_BUILD_NUMBER": "83"
       }
+    },
+    "release-candidate-appsflyer": {
+      "extends": "production",
+      "env": {
+        "NEARSY_APPSFLYER_ENABLED": "true",
+        "NEARSY_IOS_VERSION": "2.1.1",
+        "NEARSY_IOS_BUILD_NUMBER": "86"
+      }
     }
   },
   "submit": {

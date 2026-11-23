@@ -1195,10 +1195,32 @@ describe('attribution classification', () => {
       classifyAttributionAccess({
         creationTime: created,
         nowMs: base + 3600000,
+        capturedAtMs: base - 1000,
         acquisitionAlreadyRecorded: false,
       }),
       'late_acquisition',
     );
+  });
+
+  it('contract nc1 evidence: capture before creation, born on this install, first account', () => {
+    const at = (extra: Record<string, unknown>) =>
+      classifyAttributionAccess({
+        creationTime: created,
+        nowMs: base + 3600000,
+        capturedAtMs: base - 1000,
+        acquisitionAlreadyRecorded: false,
+        ...extra,
+      });
+    // A link opened with a session, or after creation, is an access (C5).
+    assert.equal(at({ capturedAtMs: base + 1000 }), 'campaign_accessed');
+    assert.equal(at({ capturedAtMs: base }), 'campaign_accessed');
+    // Account older than this install: it only signed in here.
+    assert.equal(at({ installMarkerMs: base + 1 }), 'campaign_accessed');
+    assert.equal(at({ installMarkerMs: base - 60000 }), 'late_acquisition');
+    // Another account already claimed this install: nothing (F7).
+    assert.equal(at({ installClaimedByOtherAccount: true }), 'none');
+    // 24 h is only a cap.
+    assert.equal(at({ nowMs: base + 25 * 3600000 }), 'campaign_accessed');
   });
 
   it('old accounts, recorded acquisition and unknown dates are access', () => {
@@ -1206,6 +1228,7 @@ describe('attribution classification', () => {
       classifyAttributionAccess({
         creationTime: created,
         nowMs: base + 2 * 86400000,
+        capturedAtMs: base - 1000,
         acquisitionAlreadyRecorded: false,
       }),
       'campaign_accessed',
@@ -1214,6 +1237,7 @@ describe('attribution classification', () => {
       classifyAttributionAccess({
         creationTime: created,
         nowMs: base + 1000,
+        capturedAtMs: base - 1000,
         acquisitionAlreadyRecorded: true,
       }),
       'campaign_accessed',
@@ -1222,6 +1246,7 @@ describe('attribution classification', () => {
       classifyAttributionAccess({
         creationTime: null,
         nowMs: base,
+        capturedAtMs: base - 1000,
         acquisitionAlreadyRecorded: false,
       }),
       'campaign_accessed',

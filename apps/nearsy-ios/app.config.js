@@ -36,6 +36,12 @@ const {
   CONTACTS_DIAGNOSTICS_UNTIL_EXTRA,
   resolveContactsDiagnosticsUntil,
 } = require('./scripts/contactsDiagnosticsConfig.cjs');
+const {
+  ONELINK_HOST,
+  ONELINK_TEMPLATE_ID,
+  resolveAppsFlyerBuildConfig,
+  appsFlyerExtra,
+} = require('./scripts/appsFlyerBuildConfig.cjs');
 
 const FUNCTIONS_REGION = 'us-central1';
 const DEV_PLIST = './GoogleService-Info.development.plist';
@@ -327,9 +333,15 @@ module.exports = ({ config }) => {
 
   // Off unless explicitly set. See docs/ios-posthog-analytics.md before using it:
   // the entitlement needs a domain that serves the matching AASA file.
-  const associatedDomains = resolveAttributionAssociatedDomains(
+  const attributionDomains = resolveAttributionAssociatedDomains(
     process.env.NEARSY_ATTRIBUTION_ASSOCIATED_DOMAINS,
   );
+
+  // AppsFlyer/OneLink (contract nc1): off unless the profile switches it on.
+  const appsFlyer = resolveAppsFlyerBuildConfig(process.env);
+  const associatedDomains = [
+    ...new Set([...attributionDomains, ...(appsFlyer.associatedDomains ?? [])]),
+  ];
 
   // A profile that declares analytics must carry its token. Others need none.
   assertAnalyticsBuildConfig(process.env);
@@ -409,10 +421,17 @@ module.exports = ({ config }) => {
       'expo-localization',
       'expo-apple-authentication',
       '@react-native-community/datetimepicker',
+      // Only OneLink universal links reach AppsFlyer; OAuth returns and launch URLs
+      // never do. When off, it only checks that no AppsFlyer code is present.
+      [
+        './plugins/withNearsyAppsFlyer',
+        { enabled: appsFlyer.enabled, host: ONELINK_HOST, template: ONELINK_TEMPLATE_ID },
+      ],
     ],
     extra: {
       ...config.extra,
       ...extraBase,
+      ...appsFlyerExtra(appsFlyer),
       eas: config.extra?.eas,
     },
   };

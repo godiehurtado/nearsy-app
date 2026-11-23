@@ -85,8 +85,33 @@ describe('iOS binary version override', () => {
     assert.equal(devInternal.env.NEARSY_IOS_BUILD_NUMBER, '85');
     assert.equal(numbers.includes(devInternal.env.NEARSY_IOS_BUILD_NUMBER), false);
     assert.equal(eas.submit['dev-internal'], undefined);
+    // AppsFlyer release candidate: production plus the switch, its own number. The same
+    // binary goes to TestFlight and, if QA passes, to the App Store.
+    const appsFlyer = eas.build['release-candidate-appsflyer'];
+    assert.equal(appsFlyer.extends, 'production');
+    assert.deepEqual(Object.keys(appsFlyer.env).sort(), [
+      'NEARSY_APPSFLYER_ENABLED',
+      'NEARSY_IOS_BUILD_NUMBER',
+      'NEARSY_IOS_VERSION',
+    ]);
+    assert.equal(appsFlyer.env.NEARSY_IOS_VERSION, '2.1.1');
+    assert.equal(appsFlyer.env.NEARSY_IOS_BUILD_NUMBER, '86');
+    // Publishable after 2.1.0 (84): its marketing version must be higher than production's.
+    const semver = (v) => v.split('.').map(Number);
+    const [ma, mi, pa] = semver(appsFlyer.env.NEARSY_IOS_VERSION);
+    const [pma, pmi, ppa] = semver(eas.build.production.env.NEARSY_IOS_VERSION);
+    assert.ok(ma > pma || (ma === pma && (mi > pmi || (mi === pmi && pa > ppa))));
+    assert.equal(
+      [...numbers, devInternal.env.NEARSY_IOS_BUILD_NUMBER].includes(appsFlyer.env.NEARSY_IOS_BUILD_NUMBER),
+      false,
+    );
+    assert.equal(eas.submit['release-candidate-appsflyer'], undefined);
     for (const [name, profile] of Object.entries(eas.build)) {
-      if (['beta', 'production', 'testflight-contacts-diagnostics', 'qa-generation-ids', 'dev-internal'].includes(name)) continue;
+      if (
+        ['beta', 'production', 'testflight-contacts-diagnostics', 'qa-generation-ids', 'dev-internal', 'release-candidate-appsflyer'].includes(name)
+      ) {
+        continue;
+      }
       const env = profile.env ?? {};
       assert.equal('NEARSY_IOS_VERSION' in env, false, name);
       assert.equal('NEARSY_IOS_BUILD_NUMBER' in env, false, name);

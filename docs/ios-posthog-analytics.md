@@ -24,8 +24,8 @@ No Personal API Key is needed.
 
 | Channel | Build | Events | Person |
 |---|---|---|---|
-| `beta` | EAS profile `beta`, for TestFlight | `distribution_channel=beta`, `is_test_user=true` | `is_test_user=true`, permanent |
-| `production` | Not enabled today | `distribution_channel=production`, no `is_test_user` | Never writes `is_test_user`, so an earlier Beta mark stays |
+| `beta` | EAS profile `beta`, for TestFlight | `distribution_channel=beta`, `is_test_user=true` | `is_test_user=true` (`$set_once`), permanent |
+| `production` | Profiles `production` and `release-candidate-appsflyer` | `distribution_channel=production`. `is_test_user=true` only for a signed-in dedicated test account (see below) | Only a dedicated test account gets `is_test_user=true` (`$set_once`). Never false, so an earlier Beta mark stays |
 | none | Every other build, including the current `production` profile | Nothing is sent | Nothing |
 
 **Enabling general capture after QA needs no code change**, only configuration and a new build. Add these to the `production` profile's `env` in `eas.json`, then build:
@@ -113,7 +113,7 @@ These are two different facts:
 | Event | `is_test_user=true`, `distribution_channel=beta` | This event came from a Beta install |
 | Person | `is_test_user=true` | This account has been used on a Beta install at least once |
 
-The person flag does not mean the account was created for testing. The app has no list of test accounts. A real customer who signs in on a Beta install is marked too.
+On a Beta install the person flag does not mean the account was created for testing: a real customer who signs in there is marked too. For dedicated test accounts on the production channel, see the next section.
 
 | Situation | Events | Person |
 |---|---|---|
@@ -125,6 +125,29 @@ The person flag does not mean the account was created for testing. The app has n
 - **The flag can only be true.** The contract rule rejects `false` from any caller or build, so another build cannot clear it by accident.
 - **To remove a person's mark:** edit the person in PostHog by hand.
 - **To filter:** use the event property to exclude Beta traffic. Use the person property to exclude every event of accounts that passed through Beta, which also removes a real customer's later activity.
+
+### Dedicated test accounts (production channel, 2026-11-22)
+
+For a publishable candidate (same binary in TestFlight and the App Store), installs are never marked. Only dedicated test accounts are. Contract shared with Android.
+
+**Status: needs an explicit Owner decision.** The earlier recorded decision ([ios-210-release.md](ios-210-release.md), Resolved decisions, Test users) says the admin custom claim is not approved; Functions' `ANALYTICS_DISTINCT_ID_CONTRACT.md` and `POSTHOG_PRIVACY_INVENTORY.md` say the same. The code below is inert until an admin sets the claim: with no claim, the candidate marks nobody.
+- **If approved:** Functions writes an admin script (dry-run by default, merges claims, only sets true) that makes the claims match `POSTHOG_BETA_UIDS`. Running it on nearsy-pj needs its own authorization. The three documents get updated.
+- **Without it:** the only test mark is the server's person property `is_test_user` (`$set_once`) for the UIDs in `POSTHOG_BETA_UIDS`, applied after a server event about that person. Events themselves aren't marked.
+- **Either way:** the Owner must confirm that the 12 UIDs in `POSTHOG_BETA_UIDS` (nearsy-pj) are dedicated test accounts, not real people who were in the Beta.
+
+- **Source:** Firebase Auth custom claim `nearsyTestUser === true`. An admin sets it on the dedicated test UIDs; users can't. No list ships in the app, so changing the accounts needs no new build.
+- **Reading it:** from the signed-in account's ID token. First a forced refresh (up to 1.5 s), then the cached token (up to 0.5 s). No claim, an error or a timeout means a real user. The first identify waits for it (at most 2 s), so the account's first events are already marked. Code: `analytics/testAccount.ts`, wired in `runtime.ts`.
+- **Late detection:** the app also listens for ID-token changes (hourly refresh, sign-in, forced refresh) and re-checks each time it returns to the foreground, with a forced token refresh at most once every 5 minutes (same as Android; otherwise the cached token). When the signed-in account's token shows the claim, events from then on are marked and the person gets `$set_once is_test_user=true`. Earlier events stay as they were. The mark is per UID, only while that UID is signed in, and is never moved to another account.
+- **Diagnostics:** the analytics logger only writes in development builds, so a production binary shows no claim log line. On a QA device, check the result in PostHog instead (person and `$identify` with `is_test_user=true`). A production log line would be a change of logging policy and needs an Owner decision. **Platform difference:** Android prints `[analytics] test account claim: yes|no|error` (no UID or token) to logcat in production; iOS does not, pending that decision.
+- **QA check (with Functions):** before QA, the claim script's dry-run shows the claim already set for every approved account. On each device, sign in to the dedicated account (sign out and back in if it was signed in before the claim). In PostHog the person and the session's `$identify` and next events carry `is_test_user=true`. At the end, a real account on the same device has none.
+- **Events:** every event of that signed-in account carries `is_test_user=true`. Anonymous events (before login) and other accounts never carry it.
+- **Person:** `is_test_user=true` with `$set_once`, at identify or when the claim is found later. Never false.
+- **History:** nothing is deleted or reclassified. Persons marked earlier by Beta keep their mark; events already sent keep their values.
+- **Limits:**
+  - a claim set while the person is signed in applies from the next token read (next sign-in or app start);
+  - a brand-new test account's `signup_completed` can't be marked, because the claim is set after the account exists. Reuse prepared test accounts, or filter that one event by UID;
+  - an event sent through the live-session path just before the claim is read can go out unmarked.
+- **Server events (Functions):** keep marking from `POSTHOG_BETA_UIDS`, the single list. The claims are made to match it, so client and server mark the same accounts.
 
 ### While off
 
@@ -186,7 +209,7 @@ Every event also carries `platform` (`iOS`), `app_version`, `app_build`, `enviro
 |---|---|---|
 | `app_opened` | `open_type` (`cold_start`, `return_from_background`), `session_id`? | Real arrival to foreground. Waits for the Auth session |
 | `signup_completed` | `signup_method`, `signup_source`?, `signup_campaign`?, `signup_content`?, `signup_tool`?, `attribution_method`? | Confirmed account creation |
-| `acquisition_attributed` | `signup_source`?, `signup_campaign`?, `signup_content`?, `signup_tool`?, `attribution_method`? | A link arrives after signup, within 24 h, with no acquisition recorded |
+| `acquisition_attributed` | `signup_source`?, `signup_campaign`?, `signup_content`?, `signup_tool`?, `attribution_method`? | A touch captured before the account was created reaches it later (see Attribution) |
 | `campaign_accessed` | `campaign_source`?, `campaign_name`?, `campaign_content`?, `campaign_tool`?, `attribution_method` | Campaign link from an existing user |
 | `onboarding_step_completed` | `step`, `step_number`, `skipped`?, `item_count`?, `catalog_count`?, `custom_count`?, `manual_count`?, `verified_count`? | Successful save of the milestone |
 | `profile_completed` | `completion_time_min`?, `account_created_at`? | Successful `profileSetupCompleted: true` write |
@@ -416,7 +439,7 @@ An open is a real arrival to foreground.
 
 ## Attribution
 
-Contract: `signup_source` channel, `signup_campaign` campaign, `signup_content` piece, `signup_tool` tool, `attribution_method` method.
+Contract: `signup_source` channel, `signup_campaign` campaign, `signup_content` piece, `signup_tool` tool, `attribution_method` method (`universal_link`, `onelink_direct`, `onelink_deferred`). OneLink touches follow contract nc1 in [ios-appsflyer-onelink.md](ios-appsflyer-onelink.md); this section is the PostHog side shared by both sources.
 
 Link format: `https://<host>/c/<anything>?utm_medium=<channel>&utm_campaign=<campaign>&utm_content=<piece>&utm_source=<tool>`.
 
@@ -427,15 +450,16 @@ Link format: `https://<host>/c/<anything>?utm_medium=<channel>&utm_campaign=<cam
 **Order of operations:**
 
 1. Link, then signup: the fields go on `signup_completed` and `$set_once`.
-2. Signup, then link within 24 h: `acquisition_attributed` and `$set_once`.
-3. Existing user or later link: `campaign_accessed`, without touching acquisition.
+2. Link captured before the account was created but not claimed by the signup (for example a sign-in path without a signup event): `acquisition_attributed` and `$set_once`, within 24 h of creation.
+3. Link opened with a session, after creation, or by an existing user: `campaign_accessed`, without touching acquisition.
 4. With no evidence, nothing is written. There is no `unknown` to block a later value, and `organic` is never claimed.
 
 A logged-out link waits 5 s after sign-in so a signup can claim it first.
 
 **`acquisition_attributed` is evidence of late acquisition:**
 
-- **When:** the link arrives after signup, the account is under 24 h old, and this device has no acquisition recorded for that account generation.
+- **When (all required, contract nc1 C4):** the touch was captured before the Firebase creation time; the account was created after this install's local marker (`nearsy.analytics.install.v1`, first analytics launch); no other account on this install claimed an acquisition (otherwise nothing is sent); the account is under 24 h old (a cap, never evidence) and has nothing recorded.
+- **Changed on 2026-11-21:** before, any link reaching a fresh account within 24 h counted as late acquisition. A link opened after signup is now `campaign_accessed`.
 - **Not overwriting:** the person properties use `$set_once`, so an original acquisition always wins.
 - **Not duplicating:** a local ledger entry by UID + creation time allows it once. A later link becomes `campaign_accessed`.
 - **Limit:** the ledger is local, so a second device could emit it again within 24 h. `$set_once` still protects the person.
@@ -451,13 +475,11 @@ A logged-out link waits 5 s after sign-in so a signup can claim it first.
 
 This covers **installed apps only**. Links rewritten by Mailchimp, opened in in-app browsers or scanned from old QR codes need to be tested.
 
-### New installs: not implemented
+### New installs
 
-**Attribution after a new install does not exist in this code.** Universal Links only reach an installed app. No deferred link SDK is installed.
+AppsFlyer/OneLink is the chosen provider; see [ios-appsflyer-onelink.md](ios-appsflyer-onelink.md). On iOS, without IDFA, a deferred match is probabilistic and is never written as acquisition. No clipboard method is used. The options below are kept as history of the evaluation.
 
-The requirement stays open and no provider is chosen. Nothing here promises automatic coverage.
-
-1. **Run one time-boxed proof of concept** of a clipboard-based deferred link, which is a documented option in Branch (`checkPasteboardOnInstall`) and Adjust (LinkMe, iOS 15+, with a system paste prompt). It carries the click through the clipboard rather than matching device traits, which is why it goes first, but each provider's exact behaviour still has to be confirmed.
+1. ~~**Run one time-boxed proof of concept** of a clipboard-based deferred link~~ (superseded: no clipboard), which is a documented option in Branch (`checkPasteboardOnInstall`) and Adjust (LinkMe, iOS 15+, with a system paste prompt). It carries the click through the clipboard rather than matching device traits, which is why it goes first, but each provider's exact behaviour still has to be confirmed.
 2. **Measure it on real devices before deciding:** match rate with Mailchimp links, QR and in-app browsers; how often the paste prompt is accepted; what the SDK sends, per its privacy documentation.
 3. **Do not add ATT or an IDFA dependency** until the concrete flow is confirmed to need it.
 4. **Use App Store campaign links as a cross-check:** they cover new installs with no SDK, but only in aggregate and with no link to a user.

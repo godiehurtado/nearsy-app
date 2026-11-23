@@ -40,6 +40,7 @@ import {
   type AnalyticsServices,
 } from '../index';
 import { createEventLedger } from '../ledger';
+import { readCachedTestAccountClaim, readTestAccountClaim, TEST_ACCOUNT_CLAIM } from '../testAccount';
 import type { StringStore } from '../lifecycle';
 import type { LinkedInAccountSignal } from '../../authentication/linkedinA3/accountCreationSignal';
 import { assertLinkedInAuthExchangeResult } from '../../authentication/linkedinA3/types';
@@ -888,7 +889,10 @@ describe('Beta classification', () => {
       (c): c is Extract<typeof c, { op: 'identify' }> => c.op === 'identify',
     );
     assert.deepEqual(identifies.map((c) => c.uid), ['uidA', 'uidB']);
-    for (const { set } of identifies) assert.equal(set.is_test_user, true);
+    for (const { set, setOnce } of identifies) {
+      assert.equal(setOnce.is_test_user, true);
+      assert.equal('is_test_user' in set, false, 'only ever $set_once');
+    }
   });
 
   it('production never writes is_test_user, so a Beta mark on the person stays', async () => {
@@ -922,6 +926,111 @@ describe('Beta classification', () => {
     client.setPersonProperties('uidA', { is_test_user: false }, { is_test_user: false });
     assert.equal(JSON.stringify(fake.calls).includes('is_test_user'), false);
     assert.equal(fake.captured()[0]?.properties.distribution_channel, undefined);
+  });
+});
+
+describe('Dedicated test accounts (Auth claim nearsyTestUser)', () => {
+  function productionClient() {
+    const fake = createFakeTransport();
+    const client = createAnalyticsClient({
+      config: { ...ENABLED, distributionChannel: 'production', isTestInstall: false },
+      createTransport: async () => fake,
+      binary: () => ({ appVersion: '2.1.0', appBuild: '86' }),
+    });
+    return { fake, client };
+  }
+
+  it('only the marked account is a test user; anonymous events and real users never are', async () => {
+    const { fake, client } = productionClient();
+    await client.start();
+    client.reportAuthState(null);
+    client.captureDeviceEvent('app_opened', { open_type: 'cold_start' });
+    client.markTestAccount('uidA');
+    client.reportAuthState(USER_A);
+    client.captureForUser('uidA', 'visibility_changed', { enabled: true });
+    client.reportAuthState(USER_B);
+    client.captureForUser('uidB', 'visibility_changed', { enabled: true });
+    const [anonymous, testEvent, realEvent] = fake.captured();
+    assert.equal('is_test_user' in (anonymous?.properties ?? {}), false);
+    assert.equal(testEvent?.properties.is_test_user, true);
+    assert.equal('is_test_user' in (realEvent?.properties ?? {}), false);
+    for (const event of fake.captured()) assert.equal(event.properties.distribution_channel, 'production');
+    const identifies = fake.calls.filter(
+      (c): c is Extract<typeof c, { op: 'identify' }> => c.op === 'identify',
+    );
+    assert.equal(identifies[0]?.setOnce.is_test_user, true);
+    assert.equal('is_test_user' in (identifies[0]?.set ?? {}), false);
+    assert.equal('is_test_user' in (identifies[1]?.setOnce ?? {}), false);
+    assert.equal('is_test_user' in (identifies[1]?.set ?? {}), false);
+  });
+
+  it('a claim found after identify marks the person once and later events; never false', async () => {
+    const { fake, client } = productionClient();
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.captureForUser('uidA', 'visibility_changed', { enabled: true });
+    client.markTestAccount('uidA');
+    client.markTestAccount('uidA');
+    client.captureForUser('uidA', 'visibility_changed', { enabled: false });
+    const persons = fake.calls.filter((c) => c.op === 'setPerson');
+    assert.equal(persons.length, 1);
+    assert.deepEqual(persons[0]?.op === 'setPerson' ? persons[0].setOnce : null, { is_test_user: true });
+    const [before, after] = fake.captured();
+    assert.equal('is_test_user' in (before?.properties ?? {}), false, 'no history rewrite');
+    assert.equal(after?.properties.is_test_user, true);
+    assert.equal(JSON.stringify(fake.calls).includes('"is_test_user":false'), false);
+  });
+
+  it('readTestAccountClaim: fail-closed; forced refresh first, cached token as fallback', async () => {
+    const now = (fn: () => void) => setImmediate(fn);
+    const token = (claims: Record<string, unknown>) => Promise.resolve({ claims });
+    const user = (forced: () => Promise<unknown>, cached: () => Promise<unknown>) => ({
+      getIdTokenResult: (force?: boolean) => (force ? forced() : cached()) as Promise<{ claims?: Record<string, unknown> }>,
+    });
+    assert.equal(await readTestAccountClaim(user(() => token({ nearsyTestUser: true }), () => token({})), now), true);
+    assert.equal(await readTestAccountClaim(user(() => token({}), () => token({ nearsyTestUser: true })), now), false);
+    assert.equal(await readTestAccountClaim(user(() => token({ nearsyTestUser: 'true' }), () => token({})), now), false);
+    assert.equal(
+      await readTestAccountClaim(user(() => Promise.reject(new Error('offline')), () => token({ nearsyTestUser: true })), now),
+      true,
+    );
+    assert.equal(
+      await readTestAccountClaim(user(() => new Promise(() => {}), () => token({ nearsyTestUser: true })), now),
+      true,
+    );
+    assert.equal(await readTestAccountClaim(user(() => new Promise(() => {}), () => new Promise(() => {})), now), false);
+    assert.equal(
+      await readTestAccountClaim({ getIdTokenResult: () => { throw new Error('x'); } }, now),
+      false,
+    );
+    assert.equal(await readTestAccountClaim(null, now), false);
+    assert.equal(TEST_ACCOUNT_CLAIM, 'nearsyTestUser');
+    // Late detection reads the cached token only, never forces a refresh.
+    let forcedCalls = 0;
+    const late = {
+      getIdTokenResult: (force?: boolean) => {
+        if (force) forcedCalls += 1;
+        return token({ nearsyTestUser: true });
+      },
+    };
+    assert.equal(await readCachedTestAccountClaim(late, now), true);
+    assert.equal(forcedCalls, 0);
+    assert.equal(await readCachedTestAccountClaim(user(() => token({}), () => token({})), now), false);
+    assert.equal(await readCachedTestAccountClaim(user(() => token({}), () => new Promise(() => {})), now), false);
+    assert.equal(await readCachedTestAccountClaim(undefined, now), false);
+  });
+
+  it('a late mark never moves to another account', async () => {
+    const { fake, client } = productionClient();
+    await client.start();
+    client.reportAuthState(USER_A);
+    client.markTestAccount('uidA');
+    client.reportAuthState(USER_B);
+    client.captureForUser('uidB', 'visibility_changed', { enabled: true });
+    assert.equal('is_test_user' in (fake.captured()[0]?.properties ?? {}), false);
+    const identifyB = fake.calls.filter((c) => c.op === 'identify')[1];
+    assert.ok(identifyB && identifyB.op === 'identify');
+    assert.equal('is_test_user' in identifyB.setOnce, false);
   });
 });
 
@@ -1245,7 +1354,7 @@ describe('attribution flows', () => {
     assert.equal(fake.calls.some((c) => c.op === 'setPerson'), false);
   });
 
-  it('attribution arriving after signup can still fill acquisition', async () => {
+  it('a link opened after signup is an access, never acquisition (nc1 C5)', async () => {
     const { fake, client } = setup();
     bindFacade(client, memoryStore());
     await client.start();
@@ -1253,6 +1362,33 @@ describe('attribution flows', () => {
     trackSignupCompleted({ uid: 'uidB', method: 'google' });
     await settle();
     handleCampaignLink(LINK);
+    await settle();
+    assert.equal(fake.captured('acquisition_attributed').length, 0);
+    assert.equal(fake.captured('campaign_accessed').length, 1);
+  });
+
+  it('a deferred touch for an existing account is dropped, never an access (nc1)', async () => {
+    const { fake, client } = setup();
+    const services = bindFacade(client, memoryStore());
+    await client.start();
+    const created = Date.parse(USER_B.creationTime!);
+    await services.attribution.save({ source: 'newsletter', campaign: 'spring', method: 'onelink_deferred', capturedAtMs: created + 60000 });
+    client.reportAuthState(USER_B);
+    await resolvePendingAttribution(services, USER_B);
+    await settle();
+    assert.equal(fake.captured('acquisition_attributed').length, 0);
+    assert.equal(fake.captured('campaign_accessed').length, 0);
+  });
+
+  it('a touch captured before creation that signup missed becomes late acquisition', async () => {
+    const { fake, client } = setup();
+    const services = bindFacade(client, memoryStore());
+    await client.start();
+    const attribution = parseCampaignLink(LINK, ['go.example.com'], Date.parse(USER_B.creationTime!) - 60000);
+    assert.ok(attribution);
+    await services.attribution.save(attribution);
+    client.reportAuthState(USER_B);
+    await resolvePendingAttribution(services, USER_B);
     await settle();
     assert.equal(fake.captured('acquisition_attributed').length, 1);
     assert.equal(fake.captured('campaign_accessed').length, 0);
@@ -1278,12 +1414,41 @@ describe('attribution flows', () => {
     );
   });
 
-  it('a second link on a fresh account does not overwrite acquisition', async () => {
+  it('nc1 priority (Owner, 2026-11-23): the last confirmed touch before signup is the acquisition', async () => {
     const { fake, client } = setup();
     bindFacade(client, memoryStore());
     await client.start();
-    client.reportAuthState(USER_B);
+    client.reportAuthState(null);
+    handleCampaignLink('https://go.example.com/c/x?utm_medium=qr&utm_campaign=first');
+    await settle();
     handleCampaignLink(LINK);
+    await settle();
+    client.reportAuthState(USER_A);
+    trackSignupCompleted({ uid: 'uidA', method: 'email' });
+    await settle();
+    assert.equal(fake.captured('signup_completed').length, 1);
+    assert.equal(fake.captured('signup_completed')[0]?.properties.signup_campaign, 'altercall_summit_2026');
+    const person = fake.calls.find((c) => c.op === 'setPerson' && 'signup_campaign' in c.setOnce);
+    assert.equal(person?.op === 'setPerson' && person.setOnce.signup_campaign, 'altercall_summit_2026');
+    // After signup a new touch is an access; the original acquisition stays.
+    handleCampaignLink('https://go.example.com/c/x?utm_medium=qr&utm_campaign=later');
+    await settle();
+    assert.equal(fake.captured('campaign_accessed')[0]?.properties.campaign_name, 'later');
+    assert.equal(
+      fake.calls.some((c) => c.op === 'setPerson' && c.setOnce.signup_campaign === 'later'),
+      false,
+    );
+  });
+
+  it('a second link on a fresh account does not overwrite acquisition', async () => {
+    const { fake, client } = setup();
+    const services = bindFacade(client, memoryStore());
+    await client.start();
+    const first = parseCampaignLink(LINK, ['go.example.com'], Date.parse(USER_B.creationTime!) - 60000);
+    assert.ok(first);
+    await services.attribution.save(first);
+    client.reportAuthState(USER_B);
+    await resolvePendingAttribution(services, USER_B);
     await settle();
     handleCampaignLink(
       'https://go.example.com/c/x?utm_medium=qr&utm_campaign=other',

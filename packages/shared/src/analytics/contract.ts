@@ -98,7 +98,9 @@ const COUNT: PropertyRule = { kind: 'int', min: 0, max: 100000 };
 const SOCIAL_PLATFORM: PropertyRule = { kind: 'enum', values: SOCIAL_PLATFORMS };
 const ATTRIBUTION_METHOD: PropertyRule = {
   kind: 'enum',
-  values: ['universal_link'],
+  // Same list as ATTRIBUTION_METHODS (attribution.ts). onelink_* is contract nc1,
+  // shared with Android; probabilistic matches have no value on purpose.
+  values: ['universal_link', 'onelink_direct', 'onelink_deferred'],
 };
 
 const ACQUISITION_RULES = {

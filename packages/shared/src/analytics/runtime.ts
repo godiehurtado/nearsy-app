@@ -25,9 +25,10 @@ import {
   isBackgroundPermissionEffectivelyGranted,
   readBackgroundPermissionSnapshot,
 } from '../visibility/backgroundLocationRuntime';
-import { createPendingAttributionStore } from './attribution';
-import { createAnalyticsClient, type AuthSnapshot } from './client';
+import { createInstallRecord, createPendingAttributionStore } from './attribution';
+import { createAnalyticsClient, type AnalyticsClient, type AuthSnapshot } from './client';
 import { resolveAnalyticsConfig } from './config';
+import { readCachedTestAccountClaim, readTestAccountClaim } from './testAccount';
 import type { AnalyticsSocialPlatform } from './contract';
 import {
   bindAnalyticsServices,
@@ -131,6 +132,32 @@ async function readVerifiedSocials(
 
 let started = false;
 
+/**
+ * Marks the signed-in account as a dedicated test account when its current
+ * token carries the claim. Only the account that still owns the session; no
+ * retroactive change; a missing claim or an error never unmarks anything.
+ */
+function recheckTestAccount(user: unknown, allowForcedRefresh = false): void {
+  const uid = (user as { uid?: unknown } | null | undefined)?.uid;
+  if (typeof uid !== 'string' || !uid || !analyticsClient) return;
+  const client = analyticsClient;
+  if (client.isTestAccount(uid)) return;
+  // Foreground: a forced token refresh at most once every 5 min (same as Android),
+  // so a claim set during QA arrives without signing in again.
+  const now = Date.now();
+  const force = allowForcedRefresh && now - lastForcedClaimCheckMs >= TEST_CLAIM_FOREGROUND_REFRESH_MS;
+  if (force) lastForcedClaimCheckMs = now;
+  void (force ? readTestAccountClaim(user) : readCachedTestAccountClaim(user))
+    .then((isTestAccount) => {
+      if (isTestAccount && client.currentAuth()?.uid === uid) client.markTestAccount(uid);
+    })
+    .catch(() => {});
+}
+
+let analyticsClient: AnalyticsClient | null = null;
+const TEST_CLAIM_FOREGROUND_REFRESH_MS = 5 * 60 * 1000;
+let lastForcedClaimCheckMs = Number.NEGATIVE_INFINITY;
+
 export function startAnalyticsRuntime(): void {
   if (started) return;
   started = true;
@@ -164,6 +191,7 @@ export function startAnalyticsRuntime(): void {
     readSession: readLiveSession,
     logger: log,
   });
+  analyticsClient = client;
 
   const lastSentByUid = new Map<string, Record<string, string>>();
   /** uid|mode whose verified state was sent in this process. */
@@ -253,6 +281,9 @@ export function startAnalyticsRuntime(): void {
   });
 
   const foreground = createForegroundTracker();
+  // Written on the first analytics launch of this install (contract nc1, C4).
+  const installRecord = createInstallRecord(store, () => Date.now());
+  void installRecord.markerMs().catch(() => {});
   const services: AnalyticsServices = {
     client,
     noteExternalAuthFlow: (active) => {
@@ -262,6 +293,7 @@ export function startAnalyticsRuntime(): void {
     ledger: createEventLedger(store),
     attribution: createPendingAttributionStore(store),
     attributionHosts: config.attributionHosts,
+    install: installRecord,
     now: () => Date.now(),
     scheduleProfileSync,
     noteVerifiedSocialsChanged: (uid) => {
@@ -349,8 +381,28 @@ export function startAnalyticsRuntime(): void {
     subscribeAccountDeletionSession(syncAccountDeletion);
     subscribePendingAccountDeletion(syncAccountDeletion);
     syncAccountDeletion();
+    // The first identify waits (≤ 2 s) for the test-account claim, so a dedicated
+    // test account's first events are already marked. Fail-closed: real user.
+    let authSequence = 0;
     firebaseAuth.onAuthStateChanged((user: unknown) => {
-      onAuthChanged(toSnapshot(user));
+      const sequence = ++authSequence;
+      const snapshot = toSnapshot(user);
+      if (!snapshot) {
+        onAuthChanged(null);
+        return;
+      }
+      void readTestAccountClaim(user)
+        .catch(() => false)
+        .then((isTestAccount) => {
+          if (sequence !== authSequence) return; // a newer auth state won
+          if (isTestAccount) client.markTestAccount(snapshot.uid);
+          onAuthChanged(snapshot);
+        });
+    });
+    // Late detection: a claim set while signed in arrives with the next token
+    // (hourly refresh, sign-in, or a forced refresh). Marks only from then on.
+    firebaseAuth.onIdTokenChanged((user: unknown) => {
+      recheckTestAccount(user);
     });
     if (config.attributionHosts.length > 0) {
       void Linking.getInitialURL()
@@ -373,6 +425,7 @@ export function startAnalyticsRuntime(): void {
   function onAppState(state: string): void {
     const openType = foreground.onAppState(state);
     if (state === 'active') ensureForegroundStarted();
+    if (state === 'active') recheckTestAccount(firebaseAuth.currentUser, true);
     if (openType) {
       void captureAppOpened(openType).catch(() => {
         log('app_opened_failed');

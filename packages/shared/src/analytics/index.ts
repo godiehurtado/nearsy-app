@@ -10,8 +10,11 @@ import {
   campaignAccessProperties,
   classifyAttributionAccess,
   parseCampaignLink,
+  type CampaignAttribution,
+  type InstallRecordStore,
   type PendingAttributionStore,
 } from './attribution';
+import { accountGenerationKey } from './ledger';
 import type { AnalyticsClient, AuthSnapshot } from './client';
 import type { AnalyticsSocialPlatform, OnboardingStep, SignupMethod } from './contract';
 import { buildScoreProperties, createMatchSessionDedupe } from './discoveryTracking';
@@ -46,6 +49,8 @@ export type AnalyticsServices = {
   ledger: EventLedger;
   attribution: PendingAttributionStore;
   attributionHosts: readonly string[];
+  /** Install marker + install-level acquisition claim (contract nc1, C4). */
+  install?: InstallRecordStore;
   now: () => number;
   scheduleProfileSync: (uid: string) => void;
   noteVerifiedSocialsChanged: (uid: string) => void;
@@ -71,14 +76,17 @@ export function markAnalyticsConfigured(): void {
 export function bindAnalyticsServices(next: AnalyticsServices | null): void {
   services = next;
   matchDedupe = createMatchSessionDedupe();
+  lastTouch = null;
   if (!next) {
     configured = false;
     earlyAlerts = [];
+    earlyTouch = null;
     return;
   }
   const queued = earlyAlerts;
   earlyAlerts = [];
   queued.forEach((input) => trackAlertOpened(input));
+  flushEarlyTouch();
 }
 
 function safely(fn: (s: AnalyticsServices) => void | Promise<void>): void {
@@ -110,7 +118,12 @@ export function trackSignupCompleted(input: {
       'signup_completed',
     );
     if (!first) return;
-    const attribution = await s.attribution.take(s.now());
+    let attribution = await s.attribution.take(s.now());
+    // One acquisition per install: a second account created here gets none (F7).
+    const generation = accountGenerationKey(input.uid, creationTime);
+    if (attribution && s.install && generation) {
+      if (!(await s.install.claimFor(generation))) attribution = null;
+    }
     const acquisition = attribution ? acquisitionProperties(attribution) : {};
     const sent = s.client.captureForUser(input.uid, 'signup_completed', {
       signup_method: input.method,
@@ -338,17 +351,29 @@ export async function resolvePendingAttribution(
 ): Promise<void> {
   const attribution = await s.attribution.take(s.now());
   if (!attribution) return;
-  const alreadyRecorded = !(await s.ledger.claim(
-    user.uid,
-    user.creationTime,
-    ACQUISITION_LEDGER_ITEM,
-  ));
-  const kind = classifyAttributionAccess({
+  const generation = accountGenerationKey(user.uid, user.creationTime);
+  const installMarkerMs = s.install ? await s.install.markerMs() : null;
+  const installFree =
+    s.install && generation ? await s.install.isFreeFor(generation) : true;
+  const precheck = classifyAttributionAccess({
     creationTime: user.creationTime,
     nowMs: s.now(),
-    acquisitionAlreadyRecorded: alreadyRecorded,
+    capturedAtMs: attribution.capturedAtMs,
+    acquisitionAlreadyRecorded: false,
+    installMarkerMs,
+    installClaimedByOtherAccount: !installFree,
   });
+  // The ledger item is claimed only when everything else already qualifies.
+  const kind =
+    precheck === 'late_acquisition' &&
+    !(await s.ledger.claim(user.uid, user.creationTime, ACQUISITION_LEDGER_ITEM))
+      ? 'campaign_accessed'
+      : precheck;
+  if (kind === 'none') return;
+  // nc1: a deferred touch describes the install, so it is never an access.
+  if (kind === 'campaign_accessed' && attribution.method === 'onelink_deferred') return;
   if (kind === 'late_acquisition') {
+    if (s.install && generation && !(await s.install.claimFor(generation))) return;
     const acquisition = acquisitionProperties(attribution);
     s.client.captureForUser(user.uid, 'acquisition_attributed', acquisition);
     s.client.setPersonProperties(user.uid, {}, acquisition);
@@ -359,6 +384,48 @@ export async function resolvePendingAttribution(
     'campaign_accessed',
     campaignAccessProperties(attribution),
   );
+}
+
+/** Same touch from direct and deferred delivery counts once (contract nc1, C6). */
+export const ONELINK_TOUCH_DEDUPE_MS = 10 * 60 * 1000;
+/**
+ * Only a repeat of the latest touch is a duplicate: A, B, A keeps A pending
+ * (Owner, 2026-11-23: the last confirmed touch before signup wins).
+ */
+let lastTouch: { key: string; atMs: number } | null = null;
+let earlyTouch: CampaignAttribution | null = null;
+
+function touchKey(a: CampaignAttribution): string {
+  return [a.source, a.campaign, a.content, a.tool].map((v) => v ?? '').join('|');
+}
+
+/**
+ * A confirmed OneLink touch (onelink_direct, or onelink_deferred with a
+ * deterministic match). Same path as a Nearsy link: pending until signup, or
+ * classified now when someone is signed in. Probabilistic matches never get here.
+ */
+export function handleOneLinkTouch(attribution: CampaignAttribution): void {
+  if (configured && !services) {
+    // AppsFlyer can answer before the foreground start binds analytics.
+    earlyTouch = attribution;
+    return;
+  }
+  safely(async (s) => {
+    const now = s.now();
+    const key = touchKey(attribution);
+    if (lastTouch && lastTouch.key === key && now - lastTouch.atMs <= ONELINK_TOUCH_DEDUPE_MS) return;
+    lastTouch = { key, atMs: now };
+    await s.attribution.save(attribution);
+    const user = s.client.currentAuth();
+    if (user) await resolvePendingAttribution(s, user);
+  });
+}
+
+/** Called by bindAnalyticsServices. */
+function flushEarlyTouch(): void {
+  const touch = earlyTouch;
+  earlyTouch = null;
+  if (touch) handleOneLinkTouch(touch);
 }
 
 export function handleCampaignLink(url: unknown): void {
