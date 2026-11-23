@@ -26,6 +26,7 @@ import { ThemeProvider, useAppTheme } from './theme/ThemeContext';
 import * as Notifications from 'expo-notifications';
 import * as WebBrowser from 'expo-web-browser';
 import { registerPushToken } from './services/pushTokens';
+import { signInPushTokenOptions } from './notifications/onboardingPushToken';
 import { stopBackgroundLocation as stopBackgroundLocationService } from './services/backgroundLocation';
 import { startGatedBackgroundLocation } from './location/startGatedBackgroundLocation';
 import { clearBackgroundRuntimeAuth } from './location/backgroundRuntimeAuth';
@@ -146,15 +147,15 @@ function ThemedShell({ i18nReady }: { i18nReady: boolean }) {
             if (__DEV__) console.warn('[App] BG location read error:', e);
           }
 
-          // CRJ: do not request notification permission during onboarding.
-          // Incomplete users grant (or skip) via ProfileCompletion educational step.
-          // Complete users register the token here on session restore.
-          if (profileSetupCompleted) {
-            try {
-              await registerPushToken();
-            } catch (e) {
-              if (__DEV__) console.warn('[App] registerPushToken error:', e);
-            }
+          // Never request notification permission here: the CRJ Notifications
+          // step owns the prompt. Every signed-in account registers this
+          // device's token when the permission is already granted, CRJ
+          // complete or not (onboarding-recovery pushes, Functions PR #49).
+          // registerPushToken reads the permission and writes nothing without it.
+          try {
+            await registerPushToken(signInPushTokenOptions(profileSetupCompleted));
+          } catch (e) {
+            if (__DEV__) console.warn('[App] registerPushToken error:', e);
           }
 
           // Never auto-start from bgVisible alone. Never open permission UI.

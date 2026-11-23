@@ -211,6 +211,8 @@ import {
   trackVisibilityChanged,
 } from '../analytics/analytics';
 import { ANDROID_OWNERSHIP_CARD_IDS } from '../social/postCrjSocialEditor';
+import { registerPushToken } from '../services/pushTokens';
+import { registerAfterNotificationsStep } from '../notifications/onboardingPushToken';
 import type { ManualSocialLinkId } from '../social/manualSocialLinkCard';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileCompletion'>;
@@ -1302,6 +1304,7 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
       current.granted ||
       current.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
     if (already) {
+      void registerAfterNotificationsStep(true, registerPushToken);
       await commitStepIndex(stepIndex + 1);
       return;
     }
@@ -1315,6 +1318,8 @@ export default function ProfileCompletionScreen({ navigation, route }: Props) {
     const granted =
       req.granted ||
       req.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
+    // Registered right after the grant; a denial writes nothing.
+    void registerAfterNotificationsStep(granted, registerPushToken);
     if (!granted) {
       Alert.alert(
         t('onboarding.profileCompletion.notifications.deniedTitle'),
