@@ -24,6 +24,7 @@ import {
   DEFERRED_DESTINATION_TTL_MS,
   DIRECT_DESTINATION_TTL_MS,
   DESTINATION_DEDUPE_MS,
+  isDuplicateOneLinkTouch,
   isOneLinkUrl,
   normalizeOneLinkValue,
   ONELINK_LATE_ACQUISITION_CAP_MS,
@@ -545,5 +546,42 @@ describe('build configuration', () => {
     assert.ok(source.indexOf('registerSessionReadyListener') < source.indexOf('AppsFlyer.start()'));
     assert.ok(source.indexOf('setSharingFilterForPartners') < source.indexOf('AppsFlyer.start()'));
     assert.match(source, /if \(initialUrl && !isOneLinkUrl\(initialUrl\)\) return;/);
+  });
+});
+
+describe('OneLink dedupe keeps the last confirmed touch (nc1 priority)', () => {
+  function run(keys: Array<[string, number]>): string[] {
+    let latest: { key: string; at: number } | null = null;
+    const kept: string[] = [];
+    for (const [key, at] of keys) {
+      if (isDuplicateOneLinkTouch(latest, key, at)) continue;
+      latest = { key, at };
+      kept.push(key);
+    }
+    return kept;
+  }
+
+  it('A, B, A within 10 min: the last confirmed touch is A', () => {
+    const kept = run([['A', 0], ['B', 60_000], ['A', 120_000]]);
+    assert.deepEqual(kept, ['A', 'B', 'A']);
+    assert.equal(kept.at(-1), 'A');
+  });
+
+  it('the same touch twice (direct and deferred, or UDL and cold start) counts once', () => {
+    assert.deepEqual(run([['A', 0], ['A', 1_000]]), ['A']);
+  });
+
+  it('a repeat after 10 min counts again', () => {
+    assert.deepEqual(run([['A', 0], ['A', DESTINATION_DEDUPE_MS]]), ['A', 'A']);
+  });
+
+  it('the Android binding dedupes only against the latest touch', () => {
+    const source = readFileSync(
+      join(here, '..', 'analytics', 'analytics.android.ts'),
+      'utf8',
+    );
+    assert.match(source, /isDuplicateOneLinkTouch\(latestOneLinkTouch, key, now\)/);
+    assert.match(source, /latestOneLinkTouch = \{ key, at: now \};/);
+    assert.doesNotMatch(source, /recentOneLinkTouches|new Map<string, number>\(\)/);
   });
 });

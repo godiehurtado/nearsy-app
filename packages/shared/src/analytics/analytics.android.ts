@@ -25,8 +25,8 @@ import {
 import {
   acceptOneLinkAcquisition,
   createInstallClaim,
-  DESTINATION_DEDUPE_MS,
   oneLinkTouchKey,
+  isDuplicateOneLinkTouch,
 } from '../attribution/oneLinkContract.ts';
 import { createAppOpenedTracker } from './appOpenedTracker';
 import {
@@ -602,16 +602,19 @@ async function oneLinkAcquisitionAccepted(
   });
 }
 
-/** In-process dedupe: the same touch delivered by UDL and the cold-start resolution. */
-const recentOneLinkTouches = new Map<string, number>();
+/**
+ * In-process dedupe: the same touch delivered by UDL and the cold-start resolution.
+ * Only a repeat of the latest touch is a duplicate, so A, B, A within 10 min keeps
+ * A as the last confirmed touch (nc1 priority: the last one wins).
+ */
+let latestOneLinkTouch: { key: string; at: number } | null = null;
 
 export const noteOneLinkTouch: AnalyticsApi['noteOneLinkTouch'] = safely((touch, observedAt) => {
   if (!getSession() || !isOneLinkMethod(touch.method)) return;
   const key = oneLinkTouchKey(touch);
   const now = Date.now();
-  const previous = recentOneLinkTouches.get(key);
-  if (previous !== undefined && now - previous < DESTINATION_DEDUPE_MS) return;
-  recentOneLinkTouches.set(key, now);
+  if (isDuplicateOneLinkTouch(latestOneLinkTouch, key, now)) return;
+  latestOneLinkTouch = { key, at: now };
   void noteEvidence(touch, observedAt).catch(() => {});
 });
 

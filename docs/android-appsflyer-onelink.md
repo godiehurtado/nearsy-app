@@ -43,7 +43,7 @@ text. The priority between campaigns was approved by the Owner on 2026-11-23; nc
 | Acquisition at signup | `signup_completed` carries `signup_source`/`campaign`/`content`/`tool` plus `attribution_method` when the pending touch was captured before the account was created, on this install, and no other account on this install has claimed acquisition. Sent as `$set_once`; never overwritten |
 | Late evidence | `acquisition_attributed` is sent only when all of these hold: the touch was captured before Firebase `creationTime`; the account was created after the install marker; it's the first account on this install to claim (otherwise nothing is sent); no acquisition is recorded yet; and it's ≤ 24 h since creation. The 24 h is a cap, never evidence by itself |
 | Campaign access | A **direct** touch opened with a session, after account creation, or by an existing account becomes `campaign_accessed` with `campaign_source`/`name`/`content`/`tool` plus `attribution_method`. Acquisition is untouched. A **deferred** touch for an account that already existed is dropped, because it describes an install |
-| Deduplication | The same source/campaign/content/tool, direct or deferred, within 10 min counts once. Navigation: the same key isn't consumed twice within 10 min |
+| Deduplication | A repeat of the latest touch (same source/campaign/content/tool, direct or deferred) within 10 min counts once. A different touch in between ends the window, so A, B, A keeps A as the last touch. Navigation: the same key isn't consumed twice within 10 min |
 | Account switch | A touch is classified for the account signed in when it arrives and never moves to another account. A touch from a signed-out session goes to the first account that signs in or up. A destination captured with account A is discarded when B signs in; a real sign-out clears it |
 | Navigation | `home` → Home tab, `profile` → own Profile tab, `alerts` → Alerts tab. No parameters. One pending destination; the last one wins. Consumed once by the signed-in account when the main tabs are focused (after login, OAuth and the CRJ). Expiry (accepted): 30 min direct, 24 h deferred. Never sent to analytics |
 | Privacy | No customer user ID, no in-app events, no ATT or consent prompt, no clipboard, no advertising IDs. Partner sharing filter: `all`. SDK debug is off on every build, nearsy-dev included. The PostHog mapping applies only when PostHog is on |
@@ -169,7 +169,8 @@ historical data is deleted or reclassified.
 | App Check | Play Integrity (production), unchanged |
 | EAS environment | `production` |
 | PostHog | General production capture (`remote`), cutover `1794787200000`, the same as `production`. No Beta marks |
-| Version | **2.1.1** (`apps/nearsy-android/app.json`; the only versionName source). The remote versionCode is 55, so the build would be **56** (`autoIncrement`). iOS: 2.1.1 (86) |
+| Version | **2.1.1** (`apps/nearsy-android/app.json`; the only versionName source). versionCode comes from the EAS remote counter (`autoIncrement`), now **56**, so the next build is **57**. iOS: 2.1.1 (86) |
+| Superseded build | EAS `b785da49-394c-43df-a494-5fe396fdb841`, 2.1.1 (56), from `8d940d9`. It lacks the A → B → A dedupe fix, so it is **not distributed**: no Play upload, no testers. It is kept only as a record |
 | Artifact | AAB (`app-bundle`), `store` distribution |
 | Submit profile | `release-candidate-appsflyer`: extends `production`, `internal` track, release as draft. EAS Submit isn't used today (no Play service account); the upload is manual. If QA passes, the release is promoted to production in Play Console without rebuilding |
 
