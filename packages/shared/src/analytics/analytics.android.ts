@@ -51,6 +51,7 @@ import {
   scoreProperties,
   TRACKING_PLAN_VERSION,
   type AnalyticsProperties,
+  type EventMarks,
 } from './analyticsContract';
 import {
   createAnalyticsSession,
@@ -222,7 +223,7 @@ async function createTransport(config: AnalyticsConfig): Promise<AnalyticsTransp
                   distribution_channel: config.distributionChannel,
                 },
               }
-            : {}),
+            : { eventMarks: productionEventMarks }),
         });
   try {
     await transport.purgeQueued(guard.droppedIds());
@@ -230,6 +231,58 @@ async function createTransport(config: AnalyticsConfig): Promise<AnalyticsTransp
     // The delivery guard still keeps those events from leaving.
   }
   return transport;
+}
+
+/**
+ * Production builds mark only dedicated test accounts: Auth custom claim
+ * `nearsyTestUser === true`, set by an admin (Functions), the same accounts as the
+ * server list. Real accounts and anonymous events carry no `is_test_user`.
+ */
+let signedInTestAccount = false;
+
+function productionEventMarks(): EventMarks {
+  return signedInTestAccount
+    ? { is_test_user: true, distribution_channel: 'production' }
+    : { distribution_channel: 'production' };
+}
+
+export const TEST_ACCOUNT_CLAIM = 'nearsyTestUser';
+const CLAIM_FORCED_READ_MS = 2000;
+const CLAIM_CACHED_READ_MS = 1000;
+
+function withinMs<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      },
+    );
+  });
+}
+
+/**
+ * Reads the claim of the signed-in account: a refreshed token first (2 s), so a
+ * claim set by an admin shows up on the next app open; then the cached one. Any
+ * failure means a real account. The token itself is never stored or logged.
+ */
+async function readTestAccountClaim(uid: string): Promise<boolean> {
+  const user = firebaseAuth.currentUser as {
+    uid: string;
+    getIdTokenResult(forceRefresh?: boolean): Promise<{ claims?: Record<string, unknown> }>;
+  } | null;
+  if (!user || user.uid !== uid || typeof user.getIdTokenResult !== 'function') return false;
+  const read = (force: boolean) =>
+    Promise.resolve().then(() => user.getIdTokenResult(force));
+  const result =
+    (await withinMs(read(true), CLAIM_FORCED_READ_MS)) ??
+    (await withinMs(read(false), CLAIM_CACHED_READ_MS));
+  return result?.claims?.[TEST_ACCOUNT_CLAIM] === true;
 }
 
 /** Auth fields the session reads; RNFirebase's metadata getters may throw. */
@@ -356,7 +409,14 @@ function getSession(): Session | null {
         personModeMemory().write(user.uid, (doc as { mode?: unknown } | null)?.mode),
       superProperties,
       now: () => Date.now(),
-      ...(config.mode === 'beta' ? { accountClassification: { is_test_user: true } } : {}),
+      ...(config.mode === 'beta'
+        ? { accountClassification: { is_test_user: true } }
+        : {
+            resolveAccountTestUser: (user: { uid: string }) => readTestAccountClaim(user.uid),
+            onAccountTestUser: (isTestUser: boolean) => {
+              signedInTestAccount = isTestUser;
+            },
+          }),
     });
   } catch {
     session = null;

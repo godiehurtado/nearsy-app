@@ -55,8 +55,8 @@
         "NEARSY_ANALYTICS_ENABLED": "false"
       }
     },
-    "beta-appsflyer": {
-      "extends": "beta",
+    "release-candidate-appsflyer": {
+      "extends": "production",
       "env": {
         "NEARSY_APPSFLYER_ENABLED": "true"
       }
@@ -81,8 +81,11 @@
         "track": "internal"
       }
     },
-    "beta-appsflyer": {
-      "extends": "beta"
+    "release-candidate-appsflyer": {
+      "extends": "production",
+      "android": {
+        "track": "internal"
+      }
     }
   }
 }

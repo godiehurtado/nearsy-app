@@ -86,6 +86,16 @@ export type InstallClassification = {
   distribution_channel: 'beta';
 };
 
+/**
+ * Marks of a production build, decided per event: the channel of the build and,
+ * only while a dedicated test account (Auth claim `nearsyTestUser`) is signed in,
+ * `is_test_user`. Real accounts and anonymous events carry no `is_test_user`.
+ */
+export type EventMarks = {
+  is_test_user?: true;
+  distribution_channel?: 'beta' | 'production';
+};
+
 const INSTALL_CLASSIFICATION_KEYS = ['is_test_user', 'distribution_channel'] as const;
 
 /** A person can be marked as a test user, and no code path may ever unmark one. */
@@ -99,7 +109,7 @@ function withoutFalseClassification(
 
 export function applyInstallClassification<T extends object | null>(
   event: T,
-  classification: InstallClassification | undefined,
+  classification: InstallClassification | EventMarks | undefined,
 ): T {
   if (!event) return event;
   const typed = event as {

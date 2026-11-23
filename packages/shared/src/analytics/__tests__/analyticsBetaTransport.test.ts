@@ -615,8 +615,13 @@ describe('beta classification with the real SDK', () => {
 
   it('nothing else writes is_test_user', () => {
     const binding = readFileSync(join(here, '..', 'analytics.android.ts'), 'utf8');
-    assert.equal(binding.match(/is_test_user/g)?.length, 2);
-    assert.ok(binding.includes("config.mode === 'beta' ? { accountClassification: { is_test_user: true } }"));
+    // Beta install stamp, Beta account set_once, the production test-account mark,
+    // and one doc comment. The production mark depends only on the Auth claim.
+    assert.equal(binding.match(/is_test_user/g)?.length, 4);
+    assert.match(binding, /config\.mode === 'beta'\s+\? \{ accountClassification: \{ is_test_user: true \} \}/);
+    assert.match(binding, /return signedInTestAccount\s+\? \{ is_test_user: true, distribution_channel: 'production' \}/);
+    assert.match(binding, /claims\?\.\[TEST_ACCOUNT_CLAIM\] === true/);
+    assert.match(binding, /TEST_ACCOUNT_CLAIM = 'nearsyTestUser'/);
   });
 });
 
